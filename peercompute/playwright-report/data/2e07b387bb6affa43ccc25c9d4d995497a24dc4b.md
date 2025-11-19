@@ -1,0 +1,63 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - heading "🌐 PeerCompute P2P Connectivity Test" [level=1] [ref=e2]
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Node Control" [level=2] [ref=e5]
+      - generic [ref=e6]:
+        - strong [ref=e7]: "Status:"
+        - text: Running
+      - generic [ref=e8]:
+        - button "Initialize Node" [disabled] [ref=e9]
+        - button "Start Node" [disabled] [ref=e10]
+        - button "Stop Node" [ref=e11] [cursor=pointer]
+      - generic [ref=e12]:
+        - heading "Node Info" [level=3] [ref=e13]
+        - generic [ref=e14]:
+          - strong [ref=e15]: "Node ID:"
+          - text: 1763528647608-dqup62w75
+          - strong [ref=e16]: "Initialized:"
+          - text: "true"
+          - strong [ref=e17]: "Started:"
+          - text: "true"
+          - strong [ref=e18]: "Topology:"
+          - text: distributed
+          - strong [ref=e19]: "Network:"
+          - text: "- Peer ID: 12D3KooWMzPrn9h8oN7R6MrV9k8Qpi337ZXNJRkeyt3YxNJUPRuB"
+          - text: "- Peers: 0"
+          - text: "- Connected: true"
+          - strong [ref=e20]: "State:"
+          - text: "- Keys: 5"
+          - text: "- Persistence: true"
+          - text: "- P2P Sync: false"
+    - generic [ref=e21]:
+      - heading "State Management (CRDT)" [level=2] [ref=e22]
+      - generic [ref=e23]:
+        - heading "Write to State" [level=3] [ref=e24]
+        - textbox "Key" [ref=e25]
+        - textbox "Value" [ref=e26]
+        - button "Write" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - heading "Read from State" [level=3] [ref=e29]
+        - textbox "Key" [ref=e30]
+        - button "Read" [ref=e31] [cursor=pointer]
+        - generic [ref=e32]: Result will appear here
+      - generic [ref=e33]:
+        - heading "Current State Snapshot" [level=3] [ref=e34]
+        - button "Refresh Snapshot" [ref=e35] [cursor=pointer]
+        - generic [ref=e36]: No state yet
+  - generic [ref=e37]:
+    - heading "Event Log" [level=2] [ref=e38]
+    - button "Clear Log" [ref=e39] [cursor=pointer]
+    - generic [ref=e40]:
+      - generic [ref=e41]: "[8:04:06 PM] PeerCompute P2P Test initialized. Click \"Initialize Node\" to begin."
+      - generic [ref=e42]: "[8:04:07 PM] Initializing NodeKernel..."
+      - generic [ref=e43]: "[8:04:07 PM] Using local relay from config: /ip4/127.0.0.1/tcp/9092/ws/p2p/12D3KooWT2uJEqPKieJ8Z6qv4B14kuHoQkL7kcA1bE9cxoVqCzmd"
+      - generic [ref=e44]: "[8:04:08 PM] Node initialized successfully!"
+      - generic [ref=e45]: "[8:04:08 PM] Starting node..."
+      - generic [ref=e46]: "[8:04:08 PM] State changed: status = \"active\""
+      - generic [ref=e47]: "[8:04:08 PM] State changed: startedAt = 1763528648273"
+      - generic [ref=e48]: "[8:04:08 PM] Node started! Connected to P2P network"
+```

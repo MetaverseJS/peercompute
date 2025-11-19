@@ -6,9 +6,37 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "relay": "node relay-server.js",
+    "relay:bg": "node relay-server.js &",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:with-relay": "concurrently \"npm run relay\" \"npm run test\" --kill-others --success first",
+    "test:auto": "./start-relay-and-test.sh"
   },
   "devDependencies": {
-    "vite": "^7.1.7"
+    "@playwright/test": "^1.56.1",
+    "concurrently": "^9.2.1",
+    "vite": "^7.1.7",
+    "vite-plugin-node-polyfills": "^0.24.0"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-gossipsub": "^14.1.2",
+    "@libp2p/bootstrap": "^12.0.10",
+    "@libp2p/circuit-relay-v2": "^4.1.2",
+    "@libp2p/identify": "^4.0.9",
+    "@libp2p/kad-dht": "^16.1.2",
+    "@libp2p/noise": "^1.0.1",
+    "@libp2p/plaintext": "^3.0.9",
+    "@libp2p/pubsub-peer-discovery": "^12.0.0",
+    "@libp2p/tcp": "^11.0.9",
+    "@libp2p/webrtc": "^6.0.10",
+    "@libp2p/websockets": "^10.1.2",
+    "@libp2p/yamux": "^8.0.1",
+    "libp2p": "^3.1.2",
+    "y-indexeddb": "^9.0.12",
+    "y-libp2p": "^0.0.2",
+    "yjs": "13.5.53"
   }
 }
