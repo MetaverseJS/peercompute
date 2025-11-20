@@ -1,0 +1,10 @@
+npm ERR! code ENOENT
+npm ERR! syscall open
+npm ERR! path /home/cos/projects/peercompute/package.json
+npm ERR! errno -2
+npm ERR! enoent ENOENT: no such file or directory, open '/home/cos/projects/peercompute/package.json'
+npm ERR! enoent This is related to npm not being able to find a file.
+npm ERR! enoent 
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /home/cos/.npm/_logs/2025-11-20T05_31_39_731Z-debug-0.log

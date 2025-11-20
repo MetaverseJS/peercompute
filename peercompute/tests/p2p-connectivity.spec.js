@@ -4,17 +4,18 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
   test('should initialize two nodes and test connectivity', async ({ page, context }) => {
     // Open first node
     const page1 = page;
+    // Pipe browser console logs to Playwright output for diagnostics
+    page1.on('console', msg => console.log('[page1]', msg.text()));
+    
     await page1.goto('/test-p2p.html');
     await page1.waitForLoadState('networkidle');
 
     // Open second node in new page
     const page2 = await context.newPage();
+    page2.on('console', msg => console.log('[page2]', msg.text()));
+    
     await page2.goto('/test-p2p.html');
     await page2.waitForLoadState('networkidle');
-
-    // Pipe browser console logs to Playwright output for diagnostics
-    page1.on('console', msg => console.log('[page1]', msg.text()));
-    page2.on('console', msg => console.log('[page2]', msg.text()));
 
     // Initialize both nodes
     await page1.click('button:has-text("Initialize")');

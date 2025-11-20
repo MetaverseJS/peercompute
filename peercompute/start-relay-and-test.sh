@@ -62,7 +62,7 @@ if [ ! -f "$RELAY_PID_FILE" ]; then
     echo "1️⃣  Starting relay server..."
     
     # Start relay in background and capture output
-    node relay-server.js > relay-output.log 2>&1 &
+    node src/relay/server.js > relay-output.log 2>&1 &
     RELAY_PID=$!
     echo "$RELAY_PID" > "$RELAY_PID_FILE"
     

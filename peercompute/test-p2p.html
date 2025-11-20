@@ -179,8 +179,10 @@
     <div id="log" class="log"></div>
   </div>
   
+  <script defer src="bundle.js"></script>
   <script type="module">
-    import { NodeKernel } from './src/peercompute/nodeKernel/NodeKernel.js';
+    // NodeKernel is exposed on window by bundle.js
+    // import { NodeKernel } from './src/peercompute/nodeKernel/NodeKernel.js';
     
     let node = null;
     let stateUnsubscribe = null;
@@ -241,6 +243,18 @@
         log('Initializing NodeKernel...', 'info');
         updateStatus('Initializing...', 'warning');
         
+        // Wait for bundle to load NodeKernel if needed
+        if (!window.NodeKernel) {
+            log('Waiting for NodeKernel bundle...', 'warning');
+            let retries = 0;
+            while (!window.NodeKernel && retries < 20) {
+                await new Promise(r => setTimeout(r, 100));
+                retries++;
+            }
+            if (!window.NodeKernel) throw new Error('NodeKernel not found in bundle');
+        }
+        const NodeKernel = window.NodeKernel;
+
         // Try to load relay config if available (prefer served file from /public)
         let bootstrapPeers = [];
         try {

@@ -11,6 +11,7 @@ import { createLibp2p } from 'libp2p';
 import { webRTC } from '@libp2p/webrtc';
 import { webSockets } from '@libp2p/websockets';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
+import { plaintext } from '@libp2p/plaintext';
 import { noise } from '@libp2p/noise';
 import { yamux } from '@libp2p/yamux';
 import { gossipsub } from '@chainsafe/libp2p-gossipsub';
@@ -91,26 +92,9 @@ export class NetworkManager {
         ],
         
         // Connection encryption
-        connectionEncryption: [
-          (components) => {
-            // Workaround for Vite bundling issue where noise() returns a function instead of the factory result
-            // or the factory result is missing the protocol property
-            const n = noise();
-            let crypto;
-            
-            // Handle potential double-wrapping
-            if (typeof n === 'function') {
-                crypto = n(components);
-            } else {
-                crypto = n;
-            }
-
-            // Patch missing protocol if needed (Vite bundling issue)
-            if (!crypto.protocol) {
-              crypto.protocol = '/noise';
-            }
-            return crypto;
-          }
+        connectionEncrypters: [
+          noise(),
+          plaintext()
         ],
         
         // Stream multiplexing
@@ -138,11 +122,13 @@ export class NetworkManager {
         // Peer discovery
         peerDiscovery: [
           // Bootstrap peers for initial connection
-          // Default to local relay server if no custom peers provided
-          // The local relay must be started with: npm run relay
-          bootstrap({
-            list: this.config.bootstrapPeers || []
-          }),
+          // Only add bootstrap module if peers are provided to avoid validation error
+          ...(this.config.bootstrapPeers && this.config.bootstrapPeers.length > 0 ? [
+            bootstrap({
+              list: this.config.bootstrapPeers
+            })
+          ] : []),
+          
           // Pubsub-based peer discovery for browser nodes
           pubsubPeerDiscovery({
             interval: 1000,
@@ -328,8 +314,11 @@ export class NetworkManager {
     }
     
     try {
+      // Ensure peerId is a PeerId object
+      const pid = typeof peerId === 'string' ? peerIdFromString(peerId) : peerId;
+
       // Open stream to peer
-      const stream = await this.libp2pNode.dialProtocol(peerId, protocol);
+      const stream = await this.libp2pNode.dialProtocol(pid, protocol);
       
       // Serialize message (WASM-compatible: uses structured clone algorithm)
       const messageBytes = new TextEncoder().encode(JSON.stringify(message));

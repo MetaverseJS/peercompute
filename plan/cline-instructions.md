@@ -1,3 +1,6 @@
+We are running in Ubuntu 24.04. make sure your commands are compatible. 
+Don't leave lots of terminal windows hanging around when they're not needed. 
+open additional terminals if you need to run any other commands. close the test terminals rather than leaving them serving the report via http. 
 
 
 1) review the imp-plan. 

@@ -1,7 +1,11 @@
 import './style.css';
-import { createNode, VERSION } from './peercompute/index.js';
+import { createNode, VERSION, NodeKernel } from './peercompute/index.js';
+
+// Expose NodeKernel for tests
+window.NodeKernel = NodeKernel;
 
 // Initialize the page
+if (document.querySelector('#app')) {
 document.querySelector('#app').innerHTML = `
   <div>
     <h1>PeerCompute Demo</h1>
@@ -46,6 +50,7 @@ let node = null;
 // Console logging
 function log(message) {
   const consoleEl = document.querySelector('#console');
+  if (!consoleEl) return;
   const timestamp = new Date().toLocaleTimeString();
   consoleEl.textContent += `[${timestamp}] ${message}\n`;
   consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -55,6 +60,7 @@ function log(message) {
 // Update status display
 function updateStatus() {
   const statusEl = document.querySelector('#status');
+  if (!statusEl) return;
   if (!node) {
     statusEl.textContent = 'Not initialized';
     return;
@@ -131,3 +137,4 @@ document.querySelector('#stopButton').addEventListener('click', async () => {
 
 log('PeerCompute demo ready');
 log('Configure options and click "Initialize Node" to begin');
+}

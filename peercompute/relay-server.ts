@@ -1,29 +1,25 @@
-#!/usr/bin/env node
-
 /**
- * libp2p Circuit Relay v2 Server
+ * libp2p Circuit Relay v2 Server (Deno Version)
  * 
  * This server acts as a relay to enable browser-to-browser P2P connections.
  * Browsers cannot listen for incoming connections, so they use this relay
  * for NAT traversal and initial peer discovery.
- * 
- * Based on: https://github.com/libp2p/js-libp2p/tree/main/packages/transport-circuit-relay-v2
  */
 
-import { createLibp2p } from 'libp2p';
-import { tcp } from '@libp2p/tcp';
-import { webSockets } from '@libp2p/websockets';
-import { noise } from '@libp2p/noise';
-import { yamux } from '@libp2p/yamux';
-import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
-import { identify } from '@libp2p/identify';
-import { ping } from '@libp2p/ping';
-import { gossipsub } from '@chainsafe/libp2p-gossipsub';
+import { createLibp2p } from "npm:libp2p@^3.1.2";
+import { tcp } from "npm:@libp2p/tcp@^11.0.9";
+import { webSockets } from "npm:@libp2p/websockets@^10.1.2";
+import { noise } from "npm:@libp2p/noise@^1.0.1";
+import { yamux } from "npm:@libp2p/yamux@^8.0.1";
+import { circuitRelayServer } from "npm:@libp2p/circuit-relay-v2@^4.1.2";
+import { identify } from "npm:@libp2p/identify@^4.0.9";
+import { ping } from "npm:@libp2p/ping";
+import { gossipsub } from "npm:@chainsafe/libp2p-gossipsub@^14.1.2";
 
 const WEBSOCKET_PORT = 9092;
 const TCP_PORT = 9093;
 
-console.log('🚀 Starting libp2p Circuit Relay v2 Server...');
+console.log('🚀 Starting libp2p Circuit Relay v2 Server (Deno)...');
 console.log('================================================');
 
 const node = await createLibp2p({
@@ -32,7 +28,7 @@ const node = await createLibp2p({
       `/ip4/0.0.0.0/tcp/${TCP_PORT}`,           // TCP for Node.js clients
       `/ip4/0.0.0.0/tcp/${WEBSOCKET_PORT}/ws`  // WebSocket for browsers
     ],
-    // Announce addresses explicitly to avoid stringTuples compatibility issue
+    // Announce addresses explicitly
     announce: [
       `/ip4/127.0.0.1/tcp/${TCP_PORT}`,
       `/ip4/127.0.0.1/tcp/${WEBSOCKET_PORT}/ws`
@@ -56,16 +52,15 @@ const node = await createLibp2p({
       allowPublishToZeroPeers: true
     }),
     relay: circuitRelayServer({
-      // Relay server configuration
       reservations: {
-        maxReservations: 100,              // Allow up to 100 simultaneous reservations
-        reservationTtl: 60 * 60 * 1000,    // Reservation TTL: 1 hour
-        applyDefaultLimit: true,           // Apply bandwidth/time limits
-        defaultDurationLimit: 10 * 60 * 1000,  // Max connection duration: 10 minutes
-        defaultDataLimit: BigInt(50 * 1024 * 1024)  // Max data transfer: 50MB
+        maxReservations: 100,
+        reservationTtl: 60 * 60 * 1000,
+        applyDefaultLimit: true,
+        defaultDurationLimit: 10 * 60 * 1000,
+        defaultDataLimit: BigInt(50 * 1024 * 1024)
       },
       advertise: {
-        bootDelay: 30 * 1000  // Wait 30s before advertising
+        bootDelay: 30 * 1000
       }
     })
   },
@@ -84,10 +79,6 @@ console.log('\nPeer ID:', peerId);
 console.log('\n📋 Configuration:');
 console.log(`  TCP Port:        ${TCP_PORT} (for Node.js clients)`);
 console.log(`  WebSocket Port:  ${WEBSOCKET_PORT} (for browsers)`);
-console.log(`  Max Reservations: 100`);
-console.log(`  Reservation TTL:  1 hour`);
-console.log(`  Max Data/Client:  50 MB`);
-console.log(`  Max Time/Client:  10 minutes`);
 
 console.log('\n🌐 BROWSER BOOTSTRAP ADDRESS (copy this for your config):');
 console.log(`  /ip4/127.0.0.1/tcp/${WEBSOCKET_PORT}/ws/p2p/${peerId}`);
@@ -95,20 +86,16 @@ console.log(`  /ip4/127.0.0.1/tcp/${WEBSOCKET_PORT}/ws/p2p/${peerId}`);
 console.log('\n🖥️  NODE.JS BOOTSTRAP ADDRESS (for Node.js clients):');
 console.log(`  /ip4/127.0.0.1/tcp/${TCP_PORT}/p2p/${peerId}`);
 
-console.log('\n📍 Listening on:');
-console.log(`  - TCP:       0.0.0.0:${TCP_PORT}`);
-console.log(`  - WebSocket: 0.0.0.0:${WEBSOCKET_PORT}`);
-
 console.log('\n📊 Server metrics:');
 
 // Track connections
-node.addEventListener('peer:connect', (evt) => {
+node.addEventListener('peer:connect', (evt: any) => {
   const peerId = evt.detail.toString();
   console.log(`[${new Date().toLocaleTimeString()}] ✅ Peer connected: ${peerId.substring(0, 10)}...`);
   logStats();
 });
 
-node.addEventListener('peer:disconnect', (evt) => {
+node.addEventListener('peer:disconnect', (evt: any) => {
   const peerId = evt.detail.toString();
   console.log(`[${new Date().toLocaleTimeString()}] ❌ Peer disconnected: ${peerId.substring(0, 10)}...`);
   logStats();
@@ -130,22 +117,19 @@ setInterval(() => {
     console.log(`   Active connections: ${connections.length}`);
     console.log(`   Unique peers: ${peers.size}`);
   }
-}, 60000); // Log every minute if there are connections
+}, 60000);
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
+// Deno specific signal handling
+Deno.addSignalListener("SIGINT", async () => {
   console.log('\n\n🛑 Shutting down relay server...');
   await node.stop();
   console.log('✅ Server stopped gracefully');
-  process.exit(0);
+  Deno.exit(0);
 });
 
-process.on('SIGTERM', async () => {
+Deno.addSignalListener("SIGTERM", async () => {
   console.log('\n\n🛑 Shutting down relay server...');
   await node.stop();
   console.log('✅ Server stopped gracefully');
-  process.exit(0);
+  Deno.exit(0);
 });
-
-console.log('\n💡 Tip: Press Ctrl+C to stop the server');
-console.log('================================================\n');

@@ -72,10 +72,8 @@ export class NodeKernel {
       await this.networkManager.initialize();
       console.log('[NodeKernel] NetworkManager initialized');
       
-      // 2. Initialize StateManager with libp2p node from NetworkManager
-      const libp2pNode = this.networkManager.getLibp2pNode();
-      
-      this.stateManager = new StateManager(libp2pNode, {
+      // 2. Initialize StateManager with NetworkManager
+      this.stateManager = new StateManager(this.networkManager, {
         docName: `peercompute-${this.nodeId}`,
         topic: this.config.stateTopic,
         enablePersistence: this.config.enablePersistence

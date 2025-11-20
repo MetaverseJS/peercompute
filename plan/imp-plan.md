@@ -15,13 +15,28 @@ All core modules have been stubbed with:
 
 __Current Stack:__
 
-- Build Tool: Vite (v7.1.7)
-- Module System: ES6 modules
-- **P2P Networking:** libp2p v3.1.2 ✅ (Upgraded from v2)
-- **CRDT State Sync:** Yjs v13.6.27 + y-libp2p v0.0.2 ✅
-- **Persistence:** y-indexeddb v9.0.12 ✅
+- **Client Build:** Webpack 5 (Replaced Vite)
+- **Server Runtime:** Deno (Replaced Node.js)
+- **Module System:** ES6 modules
+- **P2P Networking:** libp2p v3.1.2 ✅
+- **CRDT State Sync:** Yjs + y-libp2p ✅
+- **Persistence:** y-indexeddb ✅
 
 ## Major Architectural Decisions
+
+### 4. Architecture Migration: Webpack & Deno ✅
+**Decision Date:** 2025-11-19
+
+**Browser Client (Webpack 5):**
+- Replaced Vite with Webpack 5 to resolve persistent `libp2p` bundling issues.
+- Vite stripped essential properties from `noise` crypto module; Webpack handles these Node.js polyfills correctly.
+- Added `process`, `buffer`, `crypto-browserify`, `stream-browserify` polyfills.
+
+**Server Infrastructure (Deno):**
+- Migrated Relay Server and Root Node infrastructure to Deno.
+- Deno provides a modern, secure runtime that closely mimics the browser environment (Web Standards API).
+- Relay Server ported to TypeScript (`relay-server.ts`).
+- Uses `npm:` specifiers for identical dependency versions as client.
 
 ### 1. P2P Networking: Modern libp2p v3.1.2 ✅
 **Decision Date:** 2025-11-18
@@ -194,16 +209,20 @@ Once PeerCompute is functional, implement the Cyberborea demo:
    - Status: Diagnosed, requires advanced build configuration fix.
 
 ### 🔄 In Progress:
-1. **Fix Browser Bundle** - Resolving Vite + libp2p v3 ES module compatibility.
+1. **Debug Network Connectivity** - Resolving `signal timed out` error when connecting to local relay.
+   - Relay and Client are running compatible stacks (Webpack/Deno, libp2p v3).
+   - Initialization succeeds.
+   - Handshake fails or times out on localhost.
 
 ### ⏳ Immediate Next Steps:
 1. ✅ ~~Implement NetworkManager with libp2p v2/v3~~
 2. ✅ ~~Implement StateManager with Yjs CRDT~~
 3. ✅ ~~Wire managers together in NodeKernel~~
 4. ✅ ~~Create minimal P2P connectivity proof-of-concept~~
-5. **Fix Bundling Issue** - Ensure libp2p crypto modules work in browser (Priority #1)
-6. Verify P2P connectivity with `npm test`
-7. Test state synchronization between browser tabs
+5. ✅ ~~**Fix Bundling Issue**~~ - Replaced Vite with Webpack 5 + Polyfills.
+6. ✅ ~~**Migrate Server**~~ - Ported Relay to Deno.
+7. **Fix Connectivity** - Debug WebSocket handshake between Browser and Deno Relay.
+8. Verify P2P connectivity with `npm test`.
 
 ### ⏳ Future Steps:
 1. Evaluate WebAssembly for compute layer (see implementation log)

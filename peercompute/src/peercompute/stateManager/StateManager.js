@@ -8,6 +8,7 @@
 
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { PeerComputeProvider } from './PeerComputeProvider.js';
 
 /**
  * StateManager class - Handles distributed state coordination
@@ -15,14 +16,15 @@ import { IndexeddbPersistence } from 'y-indexeddb';
  */
 export class StateManager {
   /**
-   * @param {Object} libp2pNode - libp2p node instance from NetworkManager
+   * @param {Object} networkManager - NetworkManager instance
    * @param {Object} config - State manager configuration
    * @param {string} config.docName - Yjs document name for persistence
    * @param {string} config.topic - P2P sync topic
    * @param {boolean} config.enablePersistence - Enable IndexedDB persistence
    */
-  constructor(libp2pNode, config = {}) {
-    this.libp2pNode = libp2pNode;
+  constructor(networkManager, config = {}) {
+    this.networkManager = networkManager;
+    this.libp2pNode = networkManager ? networkManager.getLibp2pNode() : null;
     this.config = {
       docName: config.docName || 'peercompute-state',
       topic: config.topic || 'peercompute-state-sync',
@@ -75,26 +77,20 @@ export class StateManager {
         console.log('[StateManager] IndexedDB persistence loaded');
       }
       
-      // Set up libp2p synchronization
-      if (this.libp2pNode) {
-        // Import y-libp2p dynamically (it might have compatibility issues)
+      // Set up PeerComputeProvider synchronization (Custom replacement for y-libp2p)
+      if (this.networkManager) {
         try {
-          const { Libp2pProvider } = await import('y-libp2p');
-          
-          this.libp2pProvider = new Libp2pProvider(
-            this.libp2pNode,
+          this.libp2pProvider = new PeerComputeProvider(
+            this.networkManager,
             this.ydoc,
             {
-              topic: this.config.topic,
-              awareness: true // Enable awareness for cursor/presence
+              topic: this.config.topic
             }
           );
           
-          console.log('[StateManager] P2P synchronization enabled');
+          console.log('[StateManager] PeerCompute P2P synchronization enabled');
         } catch (error) {
-          console.warn('[StateManager] y-libp2p not available, using fallback sync:', error.message);
-          // Fallback: Manual P2P sync via NetworkManager will be needed
-          this._setupFallbackSync();
+          console.error('[StateManager] Failed to enable P2P sync:', error);
         }
       }
       
