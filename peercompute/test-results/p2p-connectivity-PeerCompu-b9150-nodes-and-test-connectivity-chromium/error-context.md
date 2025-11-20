@@ -17,7 +17,7 @@
         - heading "Node Info" [level=3] [ref=e13]
         - generic [ref=e14]:
           - strong [ref=e15]: "Node ID:"
-          - text: 1763671491452-yhjc6ibuc
+          - text: 1763676290815-qqk8gaqsq
           - strong [ref=e16]: "Initialized:"
           - text: "true"
           - strong [ref=e17]: "Started:"
@@ -25,7 +25,7 @@
           - strong [ref=e18]: "Topology:"
           - text: distributed
           - strong [ref=e19]: "Network:"
-          - text: "- Peer ID: 12D3KooWNRfnpyH1tHnSv6mnNzNdEbkwiVBBDyRmTtsAoYsFRfqs"
+          - text: "- Peer ID: 12D3KooWPCpM8uc2BJuiFnSXNtBE4noxQV4NsMbhpqbro18sEpxy"
           - text: "- Peers: 0"
           - text: "- Connected: true"
           - strong [ref=e20]: "State:"
@@ -52,14 +52,14 @@
     - heading "Event Log" [level=2] [ref=e38]
     - button "Clear Log" [ref=e39] [cursor=pointer]
     - generic [ref=e40]:
-      - generic [ref=e41]: "[11:44:50 AM] PeerCompute P2P Test initialized. Click \"Initialize Node\" to begin."
-      - generic [ref=e42]: "[11:44:51 AM] Initializing NodeKernel..."
-      - generic [ref=e43]: "[11:44:51 AM] Using local relay from config: /ip4/127.0.0.1/tcp/33577/ws/p2p/12D3KooWHKX4Y4YecZfYPCfmpPZxRLVFMBLTRmTz8gucQe7ARy5K"
-      - generic [ref=e44]: "[11:44:51 AM] Node initialized successfully!"
-      - generic [ref=e45]: "[11:44:51 AM] Starting node..."
-      - generic [ref=e46]: "[11:44:51 AM] State changed: connectedPeers = [\"12D3KooWHKX4Y4YecZfYPCfmpPZxRLVFMBLTRmTz8gucQe7ARy5K\"]"
-      - generic [ref=e47]: "[11:44:51 AM] State changed: status = \"active\""
-      - generic [ref=e48]: "[11:44:51 AM] State changed: startedAt = 1763671491851"
-      - generic [ref=e49]: "[11:44:51 AM] Node started! Connected to P2P network"
-      - generic [ref=e50]: "[11:45:01 AM] State changed: connectedPeers = []"
+      - generic [ref=e41]: "[1:04:49 PM] PeerCompute P2P Test initialized. Click \"Initialize Node\" to begin."
+      - generic [ref=e42]: "[1:04:50 PM] Initializing NodeKernel..."
+      - generic [ref=e43]: "[1:04:50 PM] Using local relay from config: /ip4/127.0.0.1/tcp/45085/ws/p2p/12D3KooWBio1uLXKgMwuZpETyVJ9mjRpHfSKZAZzLDReKXxn81dE"
+      - generic [ref=e44]: "[1:04:50 PM] Node initialized successfully!"
+      - generic [ref=e45]: "[1:04:51 PM] Starting node..."
+      - generic [ref=e46]: "[1:04:51 PM] State changed: connectedPeers = [\"12D3KooWBio1uLXKgMwuZpETyVJ9mjRpHfSKZAZzLDReKXxn81dE\"]"
+      - generic [ref=e47]: "[1:04:51 PM] State changed: status = \"active\""
+      - generic [ref=e48]: "[1:04:51 PM] State changed: startedAt = 1763676291275"
+      - generic [ref=e49]: "[1:04:51 PM] Node started! Connected to P2P network"
+      - generic [ref=e50]: "[1:05:00 PM] State changed: connectedPeers = []"
 ```

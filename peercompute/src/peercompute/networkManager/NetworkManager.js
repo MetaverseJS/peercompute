@@ -134,10 +134,16 @@ export class NetworkManager {
           })
         ],
         
-        // Connection manager
+        // Connection manager - aggressive settings to maintain relay connections
         connectionManager: {
           maxConnections: 100,
-          minConnections: 1
+          minConnections: 1,                      // Keep at least 1 connection (relay)
+          autoDial: true,                         // Automatically dial to maintain minConnections
+          autoDialInterval: 3000,                 // Check every 3 seconds
+          maxIncomingPendingConnections: 10,
+          inboundConnectionThreshold: Infinity,   // Never prune inbound connections
+          maxEventLoopDelay: Infinity,            // Don't close connections due to event loop delay
+          maxPeerAddrsToDial: 25                  // Dial up to 25 addresses per peer
         },
 
         // Connection gater - allow local connections for testing
@@ -148,6 +154,9 @@ export class NetworkManager {
 
       // Set up event listeners
       this._setupEventListeners();
+      
+      // Register keep-alive protocol to maintain persistent streams
+      await this._registerKeepAliveProtocol();
       
       // Start the node
       await this.libp2pNode.start();
@@ -167,14 +176,30 @@ export class NetworkManager {
    * @private
    */
   _setupEventListeners() {
+    // Connection lifecycle logging
+    this.libp2pNode.addEventListener('connection:open', (evt) => {
+      console.log(`[NetworkManager] 🔌 Connection opened to ${evt.detail.remotePeer.toString()}`);
+    });
+    
+    this.libp2pNode.addEventListener('connection:close', (evt) => {
+      console.log(`[NetworkManager] 🔌 Connection closed to ${evt.detail.remotePeer.toString()}`);
+    });
+    
     // Peer connected
     this.libp2pNode.addEventListener('peer:connect', (evt) => {
+      console.log(`[NetworkManager] ✅ Peer connected: ${evt.detail.toString()}`);
       this._handlePeerConnected(evt.detail.toString());
     });
     
     // Peer disconnected
     this.libp2pNode.addEventListener('peer:disconnect', (evt) => {
+      console.log(`[NetworkManager] ❌ Peer disconnected: ${evt.detail.toString()}`);
       this._handlePeerDisconnected(evt.detail.toString());
+    });
+    
+    // Peer discovered
+    this.libp2pNode.addEventListener('peer:discovery', (evt) => {
+      console.log(`[NetworkManager] 🔍 Peer discovered: ${evt.detail.id.toString()}`);
     });
     
     // Subscribe to pubsub topic for distributed messaging
@@ -184,6 +209,15 @@ export class NetworkManager {
         this._handlePubsubMessage(evt);
       });
     }
+    
+    // Log connection status periodically
+    setInterval(() => {
+      const connections = this.libp2pNode.getConnections().length;
+      const peers = this.libp2pNode.getPeers().length;
+      if (connections > 0 || peers > 0) {
+        console.log(`[NetworkManager] 📊 Status: ${connections} connections, ${peers} peers`);
+      }
+    }, 10000); // Every 10 seconds
   }
 
   /**
@@ -202,6 +236,11 @@ export class NetworkManager {
       console.log('[NetworkManager] P2P network enabled');
       console.log('[NetworkManager] Bootstrap peers configured:', this.config.bootstrapPeers?.length || 0);
       
+      // Subscribe to discovery topic BEFORE dialing to ensure gossipsub mesh is established
+      const discoveryTopic = 'peercompute._peer-discovery._p2p._pubsub';
+      this.libp2pNode.services.pubsub.subscribe(discoveryTopic);
+      console.log('[NetworkManager] Subscribed to discovery topic for mesh maintenance');
+      
       // Dial bootstrap peers (relay servers)
       // libp2p will automatically use them for circuit relay connections
       if (this.config.bootstrapPeers?.length > 0) {
@@ -212,6 +251,9 @@ export class NetworkManager {
             const ma = typeof peer === 'string' ? multiaddr(peer) : peer;
             const connection = await this.libp2pNode.dial(ma);
             console.log(`[NetworkManager] ✅ Connected to relay: ${connection.remotePeer.toString()}`);
+            
+            // Keep connection alive with simple keep-alive protocol
+            this._keepAlive(connection.remotePeer.toString());
           } catch (err) {
             console.warn(`[NetworkManager] Failed to dial ${peer}:`, err.message);
           }
@@ -590,5 +632,107 @@ export class NetworkManager {
     
     // Call external disconnection handler
     this.onPeerDisconnect(peerId);
+  }
+
+  /**
+   * Register keep-alive protocol handler
+   * This protocol maintains persistent streams to prevent connection closure
+   * @private
+   */
+  async _registerKeepAliveProtocol() {
+    const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
+    
+    await this.libp2pNode.handle(KEEPALIVE_PROTOCOL, async ({ stream }) => {
+      console.log('[NetworkManager] Keep-alive stream opened');
+      
+      try {
+        // Keep stream open by reading from it (even if no data comes)
+        // This prevents the muxer from closing due to inactivity
+        for await (const _ of stream.source) {
+          // Just consume any incoming data to keep stream alive
+        }
+      } catch (error) {
+        console.log('[NetworkManager] Keep-alive stream closed:', error.message);
+      }
+    });
+    
+    console.log('[NetworkManager] Keep-alive protocol registered');
+  }
+
+  /**
+   * Keep connection alive with persistent stream
+   * Send immediate heartbeat then maintain with periodic pings
+   * @private
+   * @param {string} peerId - Peer ID to keep alive
+   */
+  async _keepAlive(peerId) {
+    const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
+    
+    try {
+      const pid = peerIdFromString(peerId);
+      
+      // Open persistent stream using keep-alive protocol
+      const stream = await this.libp2pNode.dialProtocol(pid, KEEPALIVE_PROTOCOL);
+      console.log(`[NetworkManager] 🔄 Keep-alive stream established to ${peerId}`);
+      
+      // Send IMMEDIATE heartbeat to establish bidirectional flow
+      await stream.sink([new Uint8Array([1])]);
+      console.log(`[NetworkManager] 💓 Initial heartbeat sent to ${peerId}`);
+      
+      // Create a pipe to continuously read from the stream
+      (async () => {
+        try {
+          if (stream.source) {
+            for await (const data of stream.source) {
+              console.log(`[NetworkManager] 💓 Received heartbeat echo from ${peerId}`);
+            }
+          }
+        } catch (error) {
+          console.log(`[NetworkManager] Keep-alive stream to ${peerId} closed:`, error.message);
+        }
+      })();
+      
+      // Send heartbeats every 5 seconds (not 30) to keep connection very active
+      const heartbeatInterval = setInterval(async () => {
+        try {
+          if (!this.isConnected) {
+            clearInterval(heartbeatInterval);
+            await stream.close();
+            return;
+          }
+          
+          const connections = this.libp2pNode.getConnections();
+          const hasConnection = connections.some(conn => conn.remotePeer.toString() === peerId);
+          
+          if (!hasConnection) {
+            console.log(`[NetworkManager] Lost connection to ${peerId}, attempting redial...`);
+            clearInterval(heartbeatInterval);
+            await stream.close();
+            // Attempt to reconnect
+            try {
+              const ma = this.config.bootstrapPeers.find(p => p.includes(peerId));
+              if (ma) {
+                const connection = await this.libp2pNode.dial(multiaddr(ma));
+                console.log(`[NetworkManager] ✅ Reconnected to relay: ${connection.remotePeer.toString()}`);
+                this._keepAlive(peerId); // Restart keep-alive
+              }
+            } catch (err) {
+              console.warn(`[NetworkManager] Reconnect failed:`, err.message);
+            }
+            return;
+          }
+          
+          // Send heartbeat byte to keep stream active
+          await stream.sink([new Uint8Array([1])]);
+          console.log(`[NetworkManager] 💓 Heartbeat sent to ${peerId}`);
+        } catch (error) {
+          console.warn(`[NetworkManager] Heartbeat failed to ${peerId}:`, error.message);
+          clearInterval(heartbeatInterval);
+        }
+      }, 5000); // Send heartbeat every 5 seconds
+      
+    } catch (error) {
+      console.error(`[NetworkManager] Failed to establish keep-alive stream to ${peerId}:`, error.message);
+    }
   }
 }

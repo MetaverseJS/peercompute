@@ -110,23 +110,60 @@ console.log('Node status:', status);
 
 ## Current Status
 
-**Phase: Initial Stubbing** ✓
+**Phase: Development - P2P Networking** 🔧
 
-All core modules have been stubbed out with:
-- JSDoc documentation
-- Method signatures
-- TODO comments for implementation
-- Proper ES6 module structure
+Core modules implemented:
+- ✅ NodeKernel - Node orchestration and lifecycle management
+- ✅ StateManager - Yjs-based CRDT state synchronization
+- ✅ PeerComputeProvider - libp2p integration for Yjs
+- ✅ NetworkManager - libp2p v2 P2P networking (partial)
+- ✅ Relay Server - Circuit relay v2 for WebRTC connections
+- 🔄 ComputeManager - Stubbed, awaiting implementation
+- 🔄 PhysicsEngine - Stubbed, awaiting implementation
+- ✅ InputManager - Basic implementation
+- ✅ Automated testing suite with Playwright
 
-## Next Steps
+### Known Issues
 
-1. Add libp2p dependency and implement NetworkManager
-2. Implement StateManager with SharedArrayBuffer/CRDT
-3. Implement ComputeManager worker spawning and task distribution
-4. Add WebGPU compute shader execution
+**P2P Connectivity (Critical)** 🔴
+- Relay connections drop after ~10 seconds
+- Root cause: Yamux muxer closes connections with no active streams
+- Blocker: libp2p v2 stream API changes (`stream.sink is not a function`)
+- See `plan/imp-log.md` for detailed investigation
+
+**Impact:**
+- 1 of 3 P2P connectivity tests failing
+- Connections to relay server unstable
+- Peer-to-peer mesh connections not persisting
+
+**Next Steps:**
+1. Research libp2p v2 stream API (it-pipe, duplex streams)
+2. Implement proper persistent stream keep-alive
+3. Consider circuit relay reservation or WebRTC direct connections
+4. Complete ComputeManager implementation
 5. Implement PhysicsEngine
-6. Add comprehensive tests
-7. Create example applications
+6. Add WebGPU compute shader execution
+
+## Testing
+
+```bash
+# Run automated tests
+npm run test:auto
+
+# Run tests manually
+npm test
+
+# Start relay server only
+npm run relay
+
+# Start development server
+npm run dev
+```
+
+**Test Status:**
+- ✅ Node status metrics test
+- ✅ Node lifecycle test  
+- ❌ P2P connectivity test (connections drop)
 
 ## Dependencies
 

@@ -59,10 +59,15 @@ async function startServer() {
             }
         }),
         identify: identify(),
-        ping: ping()
+        ping: ping({
+          interval: 10000  // Ping every 10 seconds to keep connections alive
+        })
       },
       connectionManager: {
-        minConnections: 0
+        minConnections: 0,
+        maxConnections: 1000,
+        inboundConnectionThreshold: Infinity,  // Don't close inbound connections
+        maxIncomingPendingConnections: 100
       }
     });
 
@@ -73,6 +78,24 @@ async function startServer() {
     const addrs = server.getMultiaddrs().map(ma => ma.toString());
     console.log('Listening on:');
     addrs.forEach(addr => console.log(addr));
+
+    // Register keep-alive protocol handler
+    const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
+    await server.handle(KEEPALIVE_PROTOCOL, async ({ stream }) => {
+      console.log('[Relay] Keep-alive stream opened from peer');
+      
+      try {
+        // Keep stream open by reading from it
+        // Echo back any heartbeats to keep stream active
+        for await (const data of stream.source) {
+          // Echo heartbeat back to keep stream bidirectional
+          await stream.sink([data]);
+        }
+      } catch (error) {
+        console.log('[Relay] Keep-alive stream closed:', error.message);
+      }
+    });
+    console.log('[Relay] Keep-alive protocol registered');
 
     // Subscribe to pubsub topics for peer discovery
     const discoveryTopic = 'peercompute._peer-discovery._p2p._pubsub';
