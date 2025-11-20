@@ -17,7 +17,7 @@
         - heading "Node Info" [level=3] [ref=e13]
         - generic [ref=e14]:
           - strong [ref=e15]: "Node ID:"
-          - text: 1763528647608-dqup62w75
+          - text: 1763600845403-sou138jnc
           - strong [ref=e16]: "Initialized:"
           - text: "true"
           - strong [ref=e17]: "Started:"
@@ -25,7 +25,7 @@
           - strong [ref=e18]: "Topology:"
           - text: distributed
           - strong [ref=e19]: "Network:"
-          - text: "- Peer ID: 12D3KooWMzPrn9h8oN7R6MrV9k8Qpi337ZXNJRkeyt3YxNJUPRuB"
+          - text: "- Peer ID: 12D3KooWS86ggazjcqa3tqiJr8i7C6DFUhAUJfiim27RECADSfdq"
           - text: "- Peers: 0"
           - text: "- Connected: true"
           - strong [ref=e20]: "State:"
@@ -52,12 +52,12 @@
     - heading "Event Log" [level=2] [ref=e38]
     - button "Clear Log" [ref=e39] [cursor=pointer]
     - generic [ref=e40]:
-      - generic [ref=e41]: "[8:04:06 PM] PeerCompute P2P Test initialized. Click \"Initialize Node\" to begin."
-      - generic [ref=e42]: "[8:04:07 PM] Initializing NodeKernel..."
-      - generic [ref=e43]: "[8:04:07 PM] Using local relay from config: /ip4/127.0.0.1/tcp/9092/ws/p2p/12D3KooWT2uJEqPKieJ8Z6qv4B14kuHoQkL7kcA1bE9cxoVqCzmd"
-      - generic [ref=e44]: "[8:04:08 PM] Node initialized successfully!"
-      - generic [ref=e45]: "[8:04:08 PM] Starting node..."
-      - generic [ref=e46]: "[8:04:08 PM] State changed: status = \"active\""
-      - generic [ref=e47]: "[8:04:08 PM] State changed: startedAt = 1763528648273"
-      - generic [ref=e48]: "[8:04:08 PM] Node started! Connected to P2P network"
+      - generic [ref=e41]: "[4:07:21 PM] PeerCompute P2P Test initialized. Click \"Initialize Node\" to begin."
+      - generic [ref=e42]: "[4:07:25 PM] Initializing NodeKernel..."
+      - generic [ref=e43]: "[4:07:25 PM] Using local relay from config: /ip4/127.0.0.1/tcp/9092/ws/p2p/12D3KooWPn71u9xnjeiZqMCUL5dehEikJBoADP2G7vRMxGAezRtw"
+      - generic [ref=e44]: "[4:07:26 PM] Node initialized successfully!"
+      - generic [ref=e45]: "[4:07:26 PM] Starting node..."
+      - generic [ref=e46]: "[4:07:26 PM] State changed: status = \"active\""
+      - generic [ref=e47]: "[4:07:26 PM] State changed: startedAt = 1763600846815"
+      - generic [ref=e48]: "[4:07:26 PM] Node started! Connected to P2P network"
 ```

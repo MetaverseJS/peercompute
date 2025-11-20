@@ -92,7 +92,25 @@ export class NetworkManager {
         
         // Connection encryption
         connectionEncryption: [
-          noise()
+          (components) => {
+            // Workaround for Vite bundling issue where noise() returns a function instead of the factory result
+            // or the factory result is missing the protocol property
+            const n = noise();
+            let crypto;
+            
+            // Handle potential double-wrapping
+            if (typeof n === 'function') {
+                crypto = n(components);
+            } else {
+                crypto = n;
+            }
+
+            // Patch missing protocol if needed (Vite bundling issue)
+            if (!crypto.protocol) {
+              crypto.protocol = '/noise';
+            }
+            return crypto;
+          }
         ],
         
         // Stream multiplexing

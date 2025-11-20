@@ -9,7 +9,8 @@
  */
 
 // Core components
-export { NodeKernel } from './nodeKernel/NodeKernel.js';
+import { NodeKernel } from './nodeKernel/NodeKernel.js';
+export { NodeKernel };
 export { StateManager } from './stateManager/StateManager.js';
 export { NetworkManager } from './networkManager/NetworkManager.js';
 export { ComputeManager } from './computeManager/ComputeManager.js';

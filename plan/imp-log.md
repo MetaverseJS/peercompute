@@ -529,27 +529,22 @@ The relay infrastructure works perfectly, but libp2p in the browser is **not dia
 
 ---
 
-## Next Steps
+### Step 13: Advanced Vite Debugging & Fix Attempts (2025-11-19)
 
-### Immediate Priority: Fix Browser-Relay Connection
-- [x] Set up local libp2p relay server
-- [x] Create automation infrastructure
-- [x] Fix relay stability issues
-- [x] Test browser initialization
-- [x] Fix dependency mismatch (upgrade to libp2p v3)
-- [x] Fix connection gater for local testing
-- [x] Diagnose Vite bundling issue (missing protocol string)
-- [ ] **Resolve Vite bundling issue** (requires advanced configuration or bundler switch)
-- [ ] Verify connectivity with corrected build
+**Actions:**
+1. **Configured Vite:** Excluded `libp2p` packages from optimization (to serve as native ESM) and included CJS dependencies (`netmask`, `eventemitter3`, `hashlru`, `denque`, `debug`) in `optimizeDeps.include`.
+2. **Diagnosed `noise` bundling:** Discovered `noise()` imported from `@libp2p/noise` returns a **function** in the Vite environment, instead of the factory result object, causing "Cannot destructure property 'metrics' of 'components' as it is undefined" when called without arguments.
+3. **Implemented Wrapper:** Created a wrapper in `NetworkManager.js` to handle potential double-wrapping and manually patch the missing `protocol` property on the crypto instance.
+4. **Verified Vanilla:** Confirmed that `libp2p` v3 + `noise` works correctly in a vanilla environment (no bundler) using CDN imports.
+5. **Attempted Plaintext:** Tried switching to `plaintext` encryption, but encountered the same `EncryptionFailedError: At least one protocol must be specified`.
+6. **Fixed Logic Bug:** Fixed a bug in `src/peercompute/index.js` where `NodeKernel` was used but not imported.
 
-### Phase 2: Compute Layer
-- [ ] Implement ComputeManager with JS worker pool (MVP)
-- [ ] Add WebGPU compute workers
-- [ ] Add WASM compute workers (Phase 2 - performance optimization)
-- [ ] Create example applications
+**Current Status:**
+- **Build:** Vite build works (no runtime import errors).
+- **Initialization:** Node initializes successfully (wrapper handles `noise` factory quirk).
+- **Connectivity:** ❌ Fails with `EncryptionFailedError: At least one protocol must be specified` during dialing, even with protocol patched on the instance. This indicates `libp2p` internal state (Upgrader) is not registering the crypto module correctly, possibly due to deep bundling issues or version mismatches in transitive dependencies handled by Vite.
 
-### Testing
-- [x] Automated test suite with Playwright
-- [x] Browser-based manual testing UI
-- [ ] Multi-node connectivity verification
-- [ ] State synchronization stress tests
+**Recommendation:**
+- The current Vite + libp2p v3 setup is unstable for browser development.
+- Consider moving to **Webpack 5** (better CJS/ESM interop for legacy/complex node polyfills) or **Parcel**.
+- Alternatively, investigate if `multistream-select` or `libp2p-upgrader` has specific issues with Vite-transformed modules (e.g. using `instanceof` checks that fail).
