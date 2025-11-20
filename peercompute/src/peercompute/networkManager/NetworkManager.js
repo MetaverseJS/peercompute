@@ -122,18 +122,15 @@ export class NetworkManager {
         // Peer discovery
         peerDiscovery: [
           // Bootstrap peers for initial connection
-          // Only add bootstrap module if peers are provided to avoid validation error
           ...(this.config.bootstrapPeers && this.config.bootstrapPeers.length > 0 ? [
             bootstrap({
               list: this.config.bootstrapPeers
             })
           ] : []),
-          
-          // Pubsub-based peer discovery for browser nodes
+          // Pubsub peer discovery - announces presence and discovers peers via gossipsub
           pubsubPeerDiscovery({
             interval: 1000,
-            topics: ['peercompute._peer-discovery._p2p._pubsub'], // Standard discovery topic
-            listenOnly: false
+            topics: ['peercompute._peer-discovery._p2p._pubsub']
           })
         ],
         
@@ -205,58 +202,28 @@ export class NetworkManager {
       console.log('[NetworkManager] P2P network enabled');
       console.log('[NetworkManager] Bootstrap peers configured:', this.config.bootstrapPeers?.length || 0);
       
-      // Try manual dialing to bootstrap peers
+      // Dial bootstrap peers (relay servers)
+      // libp2p will automatically use them for circuit relay connections
       if (this.config.bootstrapPeers?.length > 0) {
-        console.log('[NetworkManager] Attempting manual dial to bootstrap peers...');
+        console.log('[NetworkManager] Connecting to relay servers...');
         
-        // Expand peers to try both 127.0.0.1 and localhost variants
-        const inputPeers = this.config.bootstrapPeers || [];
-        const expanded = [];
-        for (const p of inputPeers) {
-          const s = typeof p === 'string' ? p : p.toString();
-          expanded.push(s);
-          if (s.includes('/ip4/127.0.0.1/')) {
-            expanded.push(s.replace('/ip4/127.0.0.1/', '/dns4/localhost/'));
-          } else if (s.includes('/dns4/localhost/')) {
-            expanded.push(s.replace('/dns4/localhost/', '/ip4/127.0.0.1/'));
-          }
-        }
-        const peersToDial = [...new Set(expanded)];
-        console.log('[NetworkManager] Peers to dial:', peersToDial);
-        
-        for (const peer of peersToDial) {
+        for (const peer of this.config.bootstrapPeers) {
           try {
-            console.log(`[NetworkManager] Dialing: ${peer}`);
             const ma = typeof peer === 'string' ? multiaddr(peer) : peer;
             const connection = await this.libp2pNode.dial(ma);
-            console.log(`[NetworkManager] ✅ Successfully connected to relay!`);
-            console.log(`[NetworkManager] Connection details:`, {
-              remotePeer: connection.remotePeer.toString(),
-              remoteAddr: connection.remoteAddr.toString(),
-              status: connection.status
-            });
+            console.log(`[NetworkManager] ✅ Connected to relay: ${connection.remotePeer.toString()}`);
           } catch (err) {
-            console.error(`[NetworkManager] ❌ Failed to dial ${peer}:`, err.message);
-            console.error('[NetworkManager] Error details:', err);
+            console.warn(`[NetworkManager] Failed to dial ${peer}:`, err.message);
           }
         }
       }
       
       // Log connection status
-      const connections = this.libp2pNode.getConnections().length;
-      console.log(`[NetworkManager] Current connections: ${connections}`);
-      
-      // Log connection attempts
-      const checkInterval = setInterval(() => {
+      setTimeout(() => {
         const connections = this.libp2pNode.getConnections().length;
-        if (connections > 0) {
-          console.log(`[NetworkManager] Active connections: ${connections}`);
-          clearInterval(checkInterval);
-        }
-      }, 1000);
-      
-      // Clear interval after 30 seconds to avoid memory leak
-      setTimeout(() => clearInterval(checkInterval), 30000);
+        const peers = this.libp2pNode.getPeers().length;
+        console.log(`[NetworkManager] Status: ${connections} connections, ${peers} peers`);
+      }, 2000);
       
     } catch (error) {
       console.error('[NetworkManager] Connection failed:', error);
@@ -360,6 +327,13 @@ export class NetworkManager {
       await this.libp2pNode.services.pubsub.publish(topic, messageBytes);
       
     } catch (error) {
+      // Ignore NoPeersSubscribedToTopic error as it's expected during initialization
+      // or when peers haven't subscribed yet
+      if (error.message && error.message.includes('NoPeersSubscribedToTopic')) {
+        console.warn('[NetworkManager] Broadcast skipped: No peers subscribed to topic');
+        return;
+      }
+      
       console.error('[NetworkManager] Broadcast failed:', error);
       throw error;
     }
@@ -593,6 +567,7 @@ export class NetworkManager {
     // Call external connection handler
     this.onPeerConnect(peerId);
   }
+
 
   /**
    * Handle peer disconnection event

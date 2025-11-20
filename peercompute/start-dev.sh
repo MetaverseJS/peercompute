@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "🚀 PeerCompute Relay + Test Automation"
-echo "======================================"
+echo "🚀 PeerCompute Dev Environment"
+echo "============================"
 
 RELAY_CONFIG_FILE=".relay-config.json"
 RELAY_PID_FILE=".relay.pid"
@@ -34,22 +34,17 @@ if [ -f "$RELAY_PID_FILE" ]; then
     if kill -0 "$OLD_PID" 2>/dev/null; then
         echo "⚠️  Relay already running (PID: $OLD_PID)"
         echo "   Using existing relay server..."
-        RELAY_ADDR=""
+        
+        # Try to read config
         if [ -f "$RELAY_CONFIG_FILE" ]; then
             RELAY_ADDR=$(grep -o '/ip4/127.0.0.1/tcp/[0-9]*/ws/p2p/[A-Za-z0-9]*' "$RELAY_CONFIG_FILE" | head -1)
-        fi
-        if [ -z "$RELAY_ADDR" ] && [ -f "logs/relay-output.log" ]; then
-            RELAY_ADDR=$(grep -o '/ip4/127.0.0.1/tcp/[0-9]*/ws/p2p/[A-Za-z0-9]*' logs/relay-output.log | head -1)
-        fi
-        if [ -n "$RELAY_ADDR" ]; then
             echo "   Bootstrap address: $RELAY_ADDR"
-            # Ensure both config locations are written even when reusing relay
-            DNS_ADDR=$(echo "$RELAY_ADDR" | sed 's|/ip4/127.0.0.1|/dns4/localhost|')
-            echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > "$RELAY_CONFIG_FILE"
-            mkdir -p public
-            echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > public/relay-config.json
         else
-            echo "   ⚠️  Could not determine relay address (no config/log). Tests may fail to dial."
+             # Try to read from log if available
+            if [ -f "relay-output.log" ]; then
+                 RELAY_ADDR=$(grep -o '/ip4/127.0.0.1/tcp/[0-9]*/ws/p2p/[A-Za-z0-9]*' relay-output.log | head -1)
+                 echo "   Bootstrap address: $RELAY_ADDR"
+            fi
         fi
     else
         rm -f "$RELAY_PID_FILE"
@@ -62,8 +57,7 @@ if [ ! -f "$RELAY_PID_FILE" ]; then
     echo "1️⃣  Starting relay server..."
     
     # Start relay in background and capture output
-    mkdir -p logs
-    node src/relay/server.js > logs/relay-output.log 2>&1 &
+    node src/relay/server.js > relay-output.log 2>&1 &
     RELAY_PID=$!
     echo "$RELAY_PID" > "$RELAY_PID_FILE"
     
@@ -76,8 +70,8 @@ if [ ! -f "$RELAY_PID_FILE" ]; then
     RELAY_ADDR=""
     
     while [ $WAITED -lt $MAX_WAIT ]; do
-        if [ -f "logs/relay-output.log" ]; then
-            RELAY_ADDR=$(grep -o '/ip4/127.0.0.1/tcp/[0-9]*/ws/p2p/[A-Za-z0-9]*' logs/relay-output.log | head -1)
+        if [ -f "relay-output.log" ]; then
+            RELAY_ADDR=$(grep -o '/ip4/127.0.0.1/tcp/[0-9]*/ws/p2p/[A-Za-z0-9]*' relay-output.log | head -1)
             if [ ! -z "$RELAY_ADDR" ]; then
                 echo "   ✅ Relay started successfully!"
                 break
@@ -91,29 +85,26 @@ if [ ! -f "$RELAY_PID_FILE" ]; then
     
     if [ -z "$RELAY_ADDR" ]; then
         echo "   ❌ Failed to capture relay address"
-        echo "   Check logs/relay-output.log for errors"
-        exit 1
+        echo "   Check relay-output.log for errors"
+        # Don't exit, let dev server try anyway? No, relay is crucial.
+        # But for dev, maybe we want to inspect.
+    else
+        # Save config for app to read
+        DNS_ADDR=$(echo "$RELAY_ADDR" | sed 's|/ip4/127.0.0.1|/dns4/localhost|')
+        echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > "$RELAY_CONFIG_FILE"
+        mkdir -p public
+        echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > public/relay-config.json
+        
+        echo ""
+        echo "📋 Relay Configuration:"
+        echo "   Bootstrap Address: $RELAY_ADDR"
+        echo "   Config file: $RELAY_CONFIG_FILE"
     fi
-    
-# Save config for tests to read (include localhost and 127.0.0.1 variants)
-DNS_ADDR=$(echo "$RELAY_ADDR" | sed 's|/ip4/127.0.0.1|/dns4/localhost|')
-echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > "$RELAY_CONFIG_FILE"
-# Also write to public/ so Vite serves it at /relay-config.json
-mkdir -p public
-echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\",\"$DNS_ADDR\"]}" > public/relay-config.json
-    
-    echo ""
-    echo "📋 Relay Configuration:"
-    echo "   Bootstrap Address: $RELAY_ADDR"
-    echo "   Config file: $RELAY_CONFIG_FILE"
 fi
 
 echo ""
-echo "2️⃣  Running tests..."
+echo "2️⃣  Starting Webpack Dev Server..."
 echo ""
 
-# Run tests
-npm test
-
-echo ""
-echo "✅ Tests complete!"
+# Start Webpack Dev Server
+npm run dev

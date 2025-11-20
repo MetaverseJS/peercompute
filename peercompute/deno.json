@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "relay": "deno run --allow-net --allow-read --allow-env --unstable-broadcast-channel relay-server.ts"
+    "relay": "deno run --allow-net --allow-read --allow-env --unstable-broadcast-channel src/relay/server.ts"
   },
   "compilerOptions": {
     "lib": ["deno.window", "dom"]

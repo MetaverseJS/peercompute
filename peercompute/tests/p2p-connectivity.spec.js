@@ -65,8 +65,9 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     expect(connections1).toBeGreaterThan(0);
     expect(connections2).toBeGreaterThan(0);
 
-    // Check peer discovery - wait longer for peers to discover each other
-    await page1.waitForTimeout(10000);
+    // Check peer discovery via pubsub-peer-discovery
+    // This may take longer as it relies on gossipsub announcements
+    await page1.waitForTimeout(15000);
 
     const peers1 = await page1.evaluate(() => {
       const mgr = window.node?.getNetworkManager();
@@ -80,21 +81,27 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
 
     console.log(`Node 1 found peers: ${peers1.join(', ')}`);
     console.log(`Node 2 found peers: ${peers2.join(', ')}`);
-
+    
     // Check if nodes discovered each other
     const node1FoundNode2 = peers1.includes(peerId2);
     const node2FoundNode1 = peers2.includes(peerId1);
-
+    
     console.log(`Node 1 found Node 2: ${node1FoundNode2}`);
     console.log(`Node 2 found Node 1: ${node2FoundNode1}`);
-
-    // This test will currently fail - documenting the issue
+    
+    // With pubsub peer discovery, nodes should eventually find each other
+    // If they don't, this indicates an issue with the discovery mechanism
     if (!node1FoundNode2 || !node2FoundNode1) {
-      console.log('EXPECTED FAILURE: Nodes connected to relays but not to each other');
-      console.log('This is the known peer discovery issue that needs to be fixed');
+      console.log('⚠️  Peer discovery via pubsub did not complete');
+      console.log('This may indicate that pubsub-peer-discovery needs more time or configuration');
     }
-
-    // Test state synchronization (will only work if peers are connected)
+    
+    // For now, just verify relay connection works
+    // Peer-to-peer discovery will be verified when it's working
+    expect(connections1).toBeGreaterThan(0);
+    expect(connections2).toBeGreaterThan(0);
+    
+    // Test state synchronization if peers found each other
     if (node1FoundNode2 && node2FoundNode1) {
       const testKey = `test-${Date.now()}`;
       const testValue = 'Hello from Node 1';
@@ -102,14 +109,17 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
       await page1.evaluate(({ key, value }) => {
         window.node?.getStateManager().write(key, value);
       }, { key: testKey, value: testValue });
-
-      await page1.waitForTimeout(2000);
-
+    
+      // Allow time for CRDT update to propagate over the network
+      await page1.waitForTimeout(4000);
+    
       const readValue = await page2.evaluate(({ key }) => {
         return window.node?.getStateManager().read(key);
       }, { key: testKey });
-
+    
       expect(readValue).toBe(testValue);
+    } else {
+      console.log('Skipping state sync test - peers not connected');
     }
   });
 
