@@ -220,11 +220,16 @@
       
       const status = node.getStatus();
       const infoDiv = document.getElementById('nodeInfo');
+      const peerServer = node?.config?.peerServer;
+      const announceAddrs = node?.getNetworkManager()?.getConnectedPeers?.()?.map(p => p.peerId) || [];
+
       infoDiv.innerHTML = `
 <strong>Node ID:</strong> ${status.nodeId || 'N/A'}<br>
 <strong>Initialized:</strong> ${status.isInitialized}<br>
 <strong>Started:</strong> ${status.isStarted}<br>
 <strong>Topology:</strong> ${status.topology}<br>
+<strong>PeerJS server:</strong> ${peerServer ? `${peerServer.host}:${peerServer.port}${peerServer.path || '/peerjs'}` : 'default (localhost:9000/peerjs)'}<br>
+<strong>Peers:</strong> ${announceAddrs.length > 0 ? announceAddrs.join(', ') : 'None'}<br>
 <br>
 <strong>Network:</strong><br>
 - Peer ID: ${status.network.peerId || 'N/A'}<br>
@@ -255,8 +260,8 @@
         }
         const NodeKernel = window.NodeKernel;
 
-        // Try to load relay config if available (prefer served file from /public)
-        let bootstrapPeers = [];
+        // Try to load PeerJS server config if available (prefer served file from /public)
+        let peerServer = null;
         try {
           const tryFetch = async (path) => {
             try {
@@ -268,29 +273,29 @@
             }
           };
 
-          // Try multiple locations so it works with Vite dev server:
-          // - /public/relay-config.json is served at /relay-config.json
-          // - fallback to dotfile at root (may not be served by Vite)
+          // Try multiple locations so it works with dev server:
+          // - /public/peer-config.json is served at /peer-config.json
+          // - fallback to dotfile at root (may not be served by dev server)
           const cfg =
-            (await tryFetch('/relay-config.json')) ||
-            (await tryFetch('relay-config.json')) ||
-            (await tryFetch('/.relay-config.json')) ||
-            (await tryFetch('.relay-config.json'));
+            (await tryFetch('/peer-config.json')) ||
+            (await tryFetch('peer-config.json')) ||
+            (await tryFetch('/.peer-config.json')) ||
+            (await tryFetch('.peer-config.json'));
 
-          if (cfg && Array.isArray(cfg.bootstrapPeers) && cfg.bootstrapPeers.length > 0) {
-            bootstrapPeers = cfg.bootstrapPeers;
-            log(`Using local relay from config: ${bootstrapPeers[0]}`, 'info');
+          if (cfg && cfg.host) {
+            peerServer = cfg;
+            log(`Using PeerJS server: ws${cfg.secure ? 's' : ''}://${cfg.host}:${cfg.port}${cfg.path || '/peerjs'}`, 'info');
           } else {
-            log('No relay config found (tried relay-config.json and .relay-config.json). Using peer discovery only', 'info');
+            log('No peer config found (tried peer-config.json). Using PeerJS defaults (localhost:9000/peerjs)', 'warning');
           }
         } catch (e) {
-          log(`Error loading relay config: ${e.message}`, 'warning');
+          log(`Error loading peer config: ${e.message}`, 'warning');
         }
         
         node = new NodeKernel({
           topology: 'distributed',
           enablePersistence: true,
-          bootstrapPeers: bootstrapPeers
+          peerServer
         });
         
         // Expose to window for testing

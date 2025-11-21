@@ -51,6 +51,48 @@ export class StateManager {
   }
 
   /**
+   * Apply a Yjs update received from the network (PeerJS path)
+   * @param {Array|Uint8Array} updateArr
+   */
+  applyRemoteUpdate(updateArr) {
+    try {
+      const normalized = (() => {
+        if (updateArr instanceof Uint8Array) return updateArr;
+        if (Array.isArray(updateArr)) return new Uint8Array(updateArr);
+        if (updateArr && typeof updateArr === 'object') {
+          // Handle plain object maps of index->byte
+          const values = Object.values(updateArr);
+          return new Uint8Array(values);
+        }
+        return new Uint8Array(0);
+      })();
+      if (normalized.byteLength === 0) {
+        console.warn('[StateManager] Remote update was empty, skipping');
+        return;
+      }
+      const update = normalized;
+      Y.applyUpdate(this.ydoc, update, this);
+    } catch (err) {
+      console.error('[StateManager] Failed to apply remote update:', err);
+    }
+  }
+
+  /**
+   * Apply a simple key/value update received outside of Yjs
+   * @param {string} key
+   * @param {any} value
+   */
+  applyStateSet(key, value) {
+    try {
+      this.ydoc.transact(() => {
+        this.state.set(key, value);
+      }, 'remote-state-set');
+    } catch (err) {
+      console.error('[StateManager] Failed to apply state-set:', err);
+    }
+  }
+
+  /**
    * Initialize the state manager
    * @param {Object} initialState - Initial state data (optional)
    * @returns {Promise<void>}
@@ -194,6 +236,14 @@ export class StateManager {
     // Yjs handles the write and automatically syncs
     // No need for queuing or manual conflict resolution
     this.state.set(key, value);
+
+    // Opportunistic direct broadcast for PeerJS path
+    if (this.networkManager?.broadcast) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { key, value }
+      }).catch(() => {});
+    }
   }
 
   /**

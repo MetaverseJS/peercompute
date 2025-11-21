@@ -28,7 +28,7 @@ export class NodeKernel {
       storageMode: config.storageMode || 'local',
       enableWebGPU: config.enableWebGPU || false,
       enablePersistence: config.enablePersistence !== false,
-      bootstrapPeers: config.bootstrapPeers || [],
+      peerServer: config.peerServer || null,
       stateTopic: config.stateTopic || 'peercompute-state',
       ...config
     };
@@ -62,7 +62,7 @@ export class NodeKernel {
       // 1. Initialize NetworkManager first
       this.networkManager = new NetworkManager({
         topology: this.config.topology,
-        bootstrapPeers: this.config.bootstrapPeers,
+        peerServer: this.config.peerServer || undefined,
         pubsubTopic: this.config.stateTopic,
         onMessage: this._handleNetworkMessage.bind(this),
         onPeerConnect: this._handlePeerConnect.bind(this),
@@ -121,7 +121,7 @@ export class NodeKernel {
       console.log('[NodeKernel] Starting...');
       
       // Connect to P2P network
-      await this.networkManager.connect(bootstrapPeers);
+      await this.networkManager.connect();
       
       // Set node state to active
       this.stateManager.write('status', 'active');
@@ -272,6 +272,18 @@ export class NodeKernel {
         this._handleStateRequest(peerId, message.data);
         break;
         
+      case 'yjs-update':
+        if (this.stateManager) {
+          this.stateManager.applyRemoteUpdate(message.data);
+        }
+        break;
+
+      case 'state-set':
+        if (this.stateManager) {
+          this.stateManager.applyStateSet(message.data?.key, message.data?.value);
+        }
+        break;
+
       case 'compute-task':
         this._handleComputeTask(peerId, message.data);
         break;

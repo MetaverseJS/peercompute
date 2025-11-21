@@ -1,0 +1,1273 @@
+
+<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>P2P 3D Game</title> <style> body { margin: 0; padding: 0; overflow: hidden; font-family
+
+pasted
+
+recreate this artifact exactly
+
+
+Reconstructed HTML game artifact with comprehensive technical details.
+
+
+
+
+Here's the P2P 3D game based on your provided code. The game includes:
+
+3D environment with procedurally generated terrain
+Player character with physics-based movement
+AI-controlled peers that move around the environment
+Combat mechanics (attack with space/click)
+Dynamic lighting with spotlights
+Collision detection with buildings
+HUD showing score and position
+Third-person camera view
+Click on the game to start, and use WASD to move, mouse/arrows to look around, and space/click to attack.
+
+
+<html> <head> <title>grass</title> <meta name="description" content="touch grass simulator game for nerds who never leave their house, by djcows"> <meta name="keywords" content="djcows, grass, touch grass, x dot com the everything app, grass simulation, webgl, javascript"> <meta name="v
+
+pasted
+
+Here is another artifact my friend made. can you take the mobile joystick controls from this artifact and add them to our game?
+
+
+Strategized integrating mobile joystick controls into P2P game.
+
+
+
+
+
+I'll add the mobile joystick controls from the touch grass simulator to our P2P 3D game. This requires adding the joystick UI elements, CSS, and JavaScript class.
+
+P2P 3D Game
+Interactive artifact ∙ Version 2 
+I've added the mobile joystick controls from the grass simulator to our 3D game. Here's what I implemented:
+
+Added the joystick UI elements and CSS
+Implemented the Joystick class for touch handling
+Added mobile detection
+Updated the movement system to use joystick input on mobile devices
+Added support for looking around with the right joystick
+The game now detects if you're on a mobile device and automatically shows the joystick controls. The left joystick controls movement (forward/back/left/right) while the right joystick controls rotation/looking around.
+
+The joysticks will only appear on mobile devices with screens smaller than 768px wide. All the original keyboard and mouse controls still work on desktop.
+
+*this is great! can you reverse the forward and backward on the joystick, so pressing up moves forward and pressing down moves backward? *
+
+
+Reversing joystick controls for forward and backward movement
+
+
+
+
+
+
+
+I've reversed the joystick controls so pushing up now moves forward and pushing down moves backward. The change is now live in the artifact.
+
+ok now add an attack button on mobile.
+
+
+Strategized mobile attack button implementation for game interface.
+
+
+
+
+I've added an attack button for mobile devices that appears at the bottom center of the screen. The button:
+
+Is styled as a red circular button labeled "ATTACK"
+Only appears on mobile devices (same media query as the joysticks)
+Triggers the attack function when pressed
+Has touch-optimized handling to prevent unwanted browser behaviors
+The attack functionality works the same as when pressing the space bar or clicking on desktop.
+
+I don't see the button yet. is something missing?
+
+
+Diagnosed mobile button display issue and devised fix.
+
+
+
+
+
+
+
+Let me fix that. The button is defined but set to display: none by default. I need to explicitly show it for mobile devices:
+
+P2P 3D Game
+Interactive artifact ∙ Version 13 
+I've fixed the issue. The button was correctly defined but wasn't being displayed. Now I'm explicitly setting it to display on mobile devices.
+
+this is great! can you slow down the mobile look joystick (right side joystick) by about 50%?
+
+
+Analyzing joystick input for mobile camera rotation speed
+
+
+I've reduced the right joystick sensitivity by 50% by removing the * 2 multiplier that was making it more sensitive than the keyboard controls.
+
+
+
+
+
+
+
+
+
+sneaky woods 2
+
+Pasted content
+43.45 KB •1,151 lines
+•
+Formatting may be inconsistent from source
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P 3D Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+            text-shadow: 1px 1px 1px black;
+            pointer-events: none;
+            z-index: 10;
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #score {
+            margin-bottom: 10px;
+        }
+        #players {
+            margin-top: 10px;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px;
+            text-align: right;
+            text-shadow: 1px 1px 1px black;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div id="score">Score: 0</div>
+        <div id="position">Position: 0, 0, 0</div>
+        <div id="players">Players: 1</div>
+    </div>
+    
+    <div id="controls">
+        <div>WASD: Move</div>
+        <div>Mouse/Arrows: Look</div>
+        <div>Space/Click: Attack</div>
+        <div>Movement has momentum</div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/libp2p/0.30.10/index.min.js"></script>
+    <script>
+        // Game constants
+        const PLAYER_SIZE = 1;
+        const GRID_CELL_SIZE = 20;
+        const MIN_OBSTACLE_SIZE = 1;
+        const MAX_OBSTACLE_SIZE = 10;
+        const OBSTACLE_DENSITY = 0.2;
+        const MAX_SPEED = 0.2;          // Maximum movement speed
+        const ACCELERATION = 0.05;      // Acceleration rate
+        const FRICTION = 0.95;          // Friction coefficient (0-1, lower = more friction)
+        const MOVEMENT_SPEED = 0.1;     // For peer movement
+        const TURN_SPEED = 0.02;
+        const ATTACK_SIZE = 1;
+        const ATTACK_DISTANCE = 1.5;
+        const ATTACK_DURATION = 500;
+        const CAMERA_DISTANCE = 5;
+        const VIEW_DISTANCE = 5;
+        
+        // Game state
+        let score = 0;
+        let playerPosition = new THREE.Vector3(0, PLAYER_SIZE / 2, 0);
+        let playerRotation = 0;
+        let playerVelocity = new THREE.Vector3(0, 0, 0);  // Current movement velocity
+        let canAttack = true;
+        let attackSphere = null;
+        let attackTimeout = null;
+        let spotlightActive = false;
+        
+        // Input state
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            arrowup: false,
+            arrowdown: false,
+            arrowleft: false,
+            arrowright: false,
+            space: false
+        };
+        const mouse = { x: 0, y: 0, pressed: false };
+        
+        // P2P variables
+        let myPeerId = null;
+        let peers = new Map();
+        let peerMeshes = new Map();
+        
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, PLAYER_SIZE * 1.6, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.gammaOutput = true;
+        renderer.gammaFactor = 2.2;
+        renderer.physicallyCorrectLights = true;
+        document.body.appendChild(renderer.domElement);
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x111111, 0.2);
+        scene.add(ambientLight);
+        
+        // Player spotlight
+        const playerSpotlight = new THREE.SpotLight(0xffffff, 25, 75, Math.PI / 6, 0.3, 1);
+        playerSpotlight.position.set(0, 8, 0);
+        playerSpotlight.castShadow = true;
+        playerSpotlight.shadow.mapSize.width = 1024;
+        playerSpotlight.shadow.mapSize.height = 1024;
+        playerSpotlight.shadow.camera.near = 0.5;
+        playerSpotlight.shadow.camera.far = 100;
+        playerSpotlight.shadow.bias = -0.0001;
+        playerSpotlight.visible = false;
+        scene.add(playerSpotlight);
+        
+        // Helper for spotlight target
+        const spotlightTarget = new THREE.Object3D();
+        scene.add(spotlightTarget);
+        playerSpotlight.target = spotlightTarget;
+        
+        // Player representation
+        const playerGeometry = new THREE.BoxGeometry(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE);
+        const playerMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x00ff00, 
+            emissive: 0x003300,
+            shininess: 30,
+            specular: 0xffffff
+        });
+        const playerMesh = new THREE.Mesh(playerGeometry, playerMaterial);
+        playerMesh.castShadow = true;
+        playerMesh.receiveShadow = true;
+        scene.add(playerMesh);
+        
+        // Attack cube setup
+        const attackGeometry = new THREE.BoxGeometry(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE);
+        const attackMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8,
+            wireframe: true
+        });
+        
+        // Fog for atmospheric effect
+        scene.fog = new THREE.FogExp2(0x000000, 0.01);
+        
+        // Grid setup
+        const grid = new Map();
+        const gridObjects = new Map();
+        
+        // Get a random environment object (tree or building)
+        function getRandomEnvironmentObject(size) {
+            const objectType = Math.random() > 0.9 ? 'building' : 'tree';
+            
+            if (objectType === 'tree') {
+                // Tree (cone with green color)
+                const height = size * 2;
+                const radius = size / 2;
+                const geometry = new THREE.ConeGeometry(radius, height, 8);
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x228B22,
+                    shininess: 5,
+                    specular: 0x333333
+                });
+                const tree = new THREE.Mesh(geometry, material);
+                tree.position.y = height / 2;
+                return { mesh: tree, type: 'tree' };
+            } else {
+                // Building (rectangular box)
+                const width = size * 2;
+                const height = size * (2 + Math.random() * 3);
+                const depth = size * 2;
+                const geometry = new THREE.BoxGeometry(width, height, depth);
+                
+                const colors = [0x808080, 0xA9A9A9, 0x8B4513, 0xD2B48C, 0x696969];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    shininess: 30,
+                    specular: 0x555555
+                });
+                const building = new THREE.Mesh(geometry, material);
+                building.position.y = height / 2;
+                return { mesh: building, type: 'building' };
+            }
+        }
+        
+        // Add an environment object (tree or building)
+        function addEnvironmentObject(x, z) {
+            const size = MIN_OBSTACLE_SIZE + Math.random() * (MAX_OBSTACLE_SIZE - MIN_OBSTACLE_SIZE);
+            const { mesh, type } = getRandomEnvironmentObject(size);
+            
+            mesh.position.x = x;
+            mesh.position.z = z;
+            
+            if (type === 'tree') {
+                mesh.rotation.y = Math.random() * Math.PI * 2;
+            }
+            
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            
+            scene.add(mesh);
+            
+            const boundingBox = new THREE.Box3().setFromObject(mesh);
+            gridObjects.set(mesh.id, {
+                mesh: mesh,
+                boundingBox: boundingBox,
+                type: type
+            });
+            
+            return mesh;
+        }
+        
+        // Generate a grid cell
+        function generateGridCell(x, z) {
+            const cellKey = `${x},${z}`;
+            if (grid.has(cellKey)) return;
+            
+            grid.set(cellKey, true);
+            
+            const floorGeometry = new THREE.PlaneGeometry(GRID_CELL_SIZE, GRID_CELL_SIZE);
+            const floorMaterial = new THREE.MeshPhongMaterial({
+                color: 0xFFFFFF,
+                side: THREE.DoubleSide,
+                shininess: 10,
+                reflectivity: 0.5
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = Math.PI / 2;
+            floor.position.set(
+                x * GRID_CELL_SIZE + GRID_CELL_SIZE / 2,
+                0,
+                z * GRID_CELL_SIZE + GRID_CELL_SIZE / 2
+            );
+            floor.receiveShadow = true;
+            scene.add(floor);
+            
+            const obstacleCount = Math.floor(Math.random() * 2) + 1;
+            for (let i = 0; i < obstacleCount; i++) {
+                addEnvironmentObject(
+                    x * GRID_CELL_SIZE + Math.random() * GRID_CELL_SIZE,
+                    z * GRID_CELL_SIZE + Math.random() * GRID_CELL_SIZE
+                );
+            }
+        }
+        
+        // Initialize the grid around the origin
+        function initializeGrid() {
+            for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
+                for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
+                    generateGridCell(x, z);
+                }
+            }
+        }
+        
+        // Update grid based on player position
+        function updateGrid() {
+            const gridX = Math.floor(playerPosition.x / GRID_CELL_SIZE);
+            const gridZ = Math.floor(playerPosition.z / GRID_CELL_SIZE);
+            
+            for (let x = gridX - VIEW_DISTANCE; x <= gridX + VIEW_DISTANCE; x++) {
+                for (let z = gridZ - VIEW_DISTANCE; z <= gridZ + VIEW_DISTANCE; z++) {
+                    generateGridCell(x, z);
+                }
+            }
+        }
+        
+        // Check collision between player and obstacles
+        function checkCollisions(position) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                position,
+                new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+            );
+            
+            for (const [id, obj] of gridObjects.entries()) {
+                if (obj.type === 'building' && playerBox.intersectsBox(obj.boundingBox)) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        // Respawn on periphery
+        function respawnOnPeriphery() {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 3 * GRID_CELL_SIZE;
+            
+            playerPosition.x = Math.cos(angle) * distance;
+            playerPosition.z = Math.sin(angle) * distance;
+            playerPosition.y = PLAYER_SIZE / 2;
+            
+            let attempts = 0;
+            const maxAttempts = 20;
+            
+            while (checkCollisions(playerPosition) && attempts < maxAttempts) {
+                const newAngle = angle + (Math.PI / 4) * attempts;
+                playerPosition.x = Math.cos(newAngle) * distance;
+                playerPosition.z = Math.sin(newAngle) * distance;
+                attempts++;
+            }
+            
+            updateGrid();
+        }
+        
+        // Handle player attack
+        function attack() {
+            if (!canAttack) return;
+            
+            const direction = new THREE.Vector3(0, 0, -1)
+                .applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation)
+                .normalize();
+                
+            const attackPosition = new THREE.Vector3()
+                .copy(playerPosition)
+                .add(direction.multiplyScalar(ATTACK_DISTANCE));
+                
+            attackSphere = new THREE.Mesh(attackGeometry, attackMaterial);
+            attackSphere.position.copy(attackPosition);
+            attackSphere.rotation.y = playerRotation;
+            scene.add(attackSphere);
+            
+            playerSpotlight.visible = true;
+            
+            canAttack = false;
+            
+            broadcastAttack(attackPosition);
+            
+            const hitSomeone = checkAttackHits(attackPosition);
+            
+            if (hitSomeone) {
+                console.log("You hit someone! Score increased to", score);
+            }
+            
+            attackTimeout = setTimeout(() => {
+                scene.remove(attackSphere);
+                attackSphere = null;
+                canAttack = true;
+                
+                if (!keys.w && !keys.a && !keys.s && !keys.d && 
+                    !keys.arrowleft && !keys.arrowright && 
+                    !keys.space && !mouse.pressed) {
+                    playerSpotlight.visible = false;
+                }
+            }, ATTACK_DURATION);
+        }
+        
+        // Check if attack hits other players
+        function checkAttackHits(attackPosition) {
+            const attackBox = new THREE.Box3().setFromCenterAndSize(
+                attackPosition,
+                new THREE.Vector3(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE)
+            );
+            
+            let hitSomeone = false;
+            
+            for (const [peerId, peerData] of peers.entries()) {
+                const peerBox = new THREE.Box3().setFromCenterAndSize(
+                    peerData.position,
+                    new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+                );
+                
+                if (attackBox.intersectsBox(peerBox)) {
+                    hitSomeone = true;
+                    score++;
+                    updateHUD();
+                    
+                    const peerMesh = peerMeshes.get(peerId);
+                    if (peerMesh) {
+                        const originalColor = peerMesh.material.color.clone();
+                        peerMesh.material.color.set(0xff0000);
+                        
+                        setTimeout(() => {
+                            peerMesh.material.color.copy(originalColor);
+                        }, 500);
+                    }
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 3 * GRID_CELL_SIZE;
+                    peerData.position.set(
+                        Math.cos(angle) * distance,
+                        PLAYER_SIZE / 2,
+                        Math.sin(angle) * distance
+                    );
+                    if (peerMesh) {
+                        peerMesh.position.copy(peerData.position);
+                    }
+                    
+                    sendToPeer(peerId, {
+                        type: 'hit',
+                        attacker: myPeerId
+                    });
+                }
+            }
+            
+            return hitSomeone;
+        }
+        
+        // Update HUD
+        function updateHUD() {
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('position').textContent = `Position: ${playerPosition.x.toFixed(1)}, ${playerPosition.y.toFixed(1)}, ${playerPosition.z.toFixed(1)}`;
+            document.getElementById('players').textContent = `Players: ${peers.size + 1} | Speed: ${playerVelocity.length().toFixed(2)}`;
+        }
+        
+        // Input handling
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (key in keys) {
+                keys[key] = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            if (key in keys) {
+                keys[key] = false;
+            }
+        });
+        
+        document.addEventListener('mousemove', (event) => {
+            if (document.pointerLockElement === renderer.domElement) {
+                playerRotation -= event.movementX * 0.002;
+            }
+        });
+        
+        document.addEventListener('mousedown', (event) => {
+            if (event.button === 0) {
+                mouse.pressed = true;
+                attack();
+            }
+        });
+        
+        document.addEventListener('mouseup', (event) => {
+            if (event.button === 0) {
+                mouse.pressed = false;
+            }
+        });
+        
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' && canAttack) {
+                attack();
+            }
+        });
+        
+        renderer.domElement.addEventListener('click', () => {
+            renderer.domElement.requestPointerLock();
+        });
+        
+        // Game update loop
+        function update() {
+            // Simple movement vector based on keys
+            let direction = new THREE.Vector3(0, 0, 0);
+            
+            // Forward/backward
+            if (keys.w || keys.arrowup) {
+                direction.z -= 1;
+            }
+            if (keys.s || keys.arrowdown) {
+                direction.z += 1;
+            }
+            
+            // Left/right
+            if (keys.a) {
+                direction.x -= 1;
+            }
+            if (keys.d) {
+                direction.x += 1;
+            }
+            
+            // Rotate direction by player's rotation
+            if (direction.length() > 0) {
+                direction.normalize();
+                direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation);
+                
+                // Apply acceleration in that direction
+                playerVelocity.x += direction.x * ACCELERATION;
+                playerVelocity.z += direction.z * ACCELERATION;
+            }
+            
+            // Apply friction
+            playerVelocity.multiplyScalar(FRICTION);
+            
+            // Limit max speed
+            const speed = playerVelocity.length();
+            if (speed > MAX_SPEED) {
+                playerVelocity.normalize().multiplyScalar(MAX_SPEED);
+            }
+            
+            // Stop if very slow
+            if (speed < 0.001) {
+                playerVelocity.set(0, 0, 0);
+            }
+            
+            // Apply rotation from arrow keys
+            if (keys.arrowleft) {
+                playerRotation += TURN_SPEED;
+            }
+            if (keys.arrowright) {
+                playerRotation -= TURN_SPEED;
+            }
+            
+            // Apply velocity to position
+            if (playerVelocity.length() > 0) {
+                const nextPosition = new THREE.Vector3(
+                    playerPosition.x + playerVelocity.x,
+                    playerPosition.y,
+                    playerPosition.z + playerVelocity.z
+                );
+                
+                if (!checkCollisions(nextPosition)) {
+                    playerPosition.copy(nextPosition);
+                } else {
+                    // Collision - bounce effect
+                    playerVelocity.multiplyScalar(-0.5);
+                }
+            }
+            
+            // Update player mesh and spotlight
+            playerMesh.position.copy(playerPosition);
+            playerMesh.rotation.y = playerRotation;
+            
+            playerSpotlight.position.copy(playerPosition);
+            playerSpotlight.position.y += 8;
+            
+            const targetOffset = new THREE.Vector3(0, 0, -20);
+            targetOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation);
+            spotlightTarget.position.copy(playerPosition).add(targetOffset);
+            spotlightTarget.position.y = 0;
+            
+            spotlightTarget.updateMatrixWorld();
+            playerSpotlight.target.updateMatrixWorld();
+            
+            // Update camera position for third-person view
+            const cameraOffset = new THREE.Vector3(
+                Math.sin(playerRotation) * CAMERA_DISTANCE,
+                CAMERA_DISTANCE * 0.6,
+                Math.cos(playerRotation) * CAMERA_DISTANCE
+            );
+            camera.position.copy(playerPosition).add(cameraOffset);
+            camera.lookAt(playerPosition);
+            
+            // Update terrain
+            updateGrid();
+            
+            // Update spotlight based on movement
+            spotlightActive = keys.w || keys.a || keys.s || keys.d || 
+                             keys.arrowleft || keys.arrowright || 
+                             keys.space || mouse.pressed || 
+                             playerVelocity.length() > 0.01;
+            
+            playerSpotlight.visible = spotlightActive;
+            
+            // Update UI
+            updateHUD();
+            
+            // Update peer positions
+            for (const [peerId, mesh] of peerMeshes.entries()) {
+                const peerData = peers.get(peerId);
+                if (peerData) {
+                    mesh.position.copy(peerData.position);
+                    mesh.rotation.y = peerData.rotation;
+                }
+            }
+            
+            // Networking
+            broadcastPosition();
+            
+            // Render
+            renderer.render(scene, camera);
+            
+            // Continue loop
+            requestAnimationFrame(update);
+        }
+        
+        // Window resize handling
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Add a peer
+        function addPeer(peerId) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 3 * GRID_CELL_SIZE;
+            const position = new THREE.Vector3(
+                Math.cos(angle) * distance,
+                PLAYER_SIZE / 2,
+                Math.sin(angle) * distance
+            );
+            
+            let attempts = 0;
+            const maxAttempts = 10;
+            while (checkCollisions(position) && attempts < maxAttempts) {
+                const newAngle = angle + (Math.PI / 4) * attempts;
+                position.x = Math.cos(newAngle) * distance;
+                position.z = Math.sin(newAngle) * distance;
+                attempts++;
+            }
+            
+            peers.set(peerId, {
+                position: position,
+                rotation: Math.random() * Math.PI * 2,
+                score: 0
+            });
+            
+            const peerGeometry = new THREE.BoxGeometry(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE);
+            const peerMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x0000ff,
+                emissive: 0x000033,
+                shininess: 30,
+                specular: 0xffffff
+            });
+            const peerMesh = new THREE.Mesh(peerGeometry, peerMaterial);
+            peerMesh.position.copy(position);
+            peerMesh.castShadow = true;
+            peerMesh.receiveShadow = true;
+            scene.add(peerMesh);
+            
+            const peerSpotlight = new THREE.SpotLight(0xffffff, 25, 75, Math.PI / 6, 0.3, 1);
+            peerSpotlight.position.y = 8;
+            peerSpotlight.castShadow = true;
+            peerSpotlight.shadow.mapSize.width = 1024;
+            peerSpotlight.shadow.mapSize.height = 1024;
+            peerSpotlight.shadow.camera.near = 0.5;
+            peerSpotlight.shadow.camera.far = 100;
+            peerSpotlight.shadow.bias = -0.0001;
+            peerSpotlight.visible = false;
+            
+            const peerSpotlightTarget = new THREE.Object3D();
+            peerSpotlightTarget.position.set(0, 0, -15);
+            peerMesh.add(peerSpotlightTarget);
+            peerSpotlight.target = peerSpotlightTarget;
+            
+            peerMesh.add(peerSpotlight);
+            
+            peerMeshes.set(peerId, peerMesh);
+            
+            updateHUD();
+            
+            startPeerSimulation(peerId);
+        }
+        
+        // Simulate peer movement
+        function startPeerSimulation(peerId) {
+            // Movement constants
+            const MAX_PEER_SPEED = 0.1;
+            const PEER_ACCELERATION = 0.005;
+            const PEER_FRICTION = 0.98;
+            
+            // Store persistent movement state for this peer
+            const peerState = {
+                targetRotation: 0,
+                moveDelay: 0,
+                isMoving: false,
+                pathLength: 0,
+                velocity: new THREE.Vector3(0, 0, 0)
+            };
+            
+            setInterval(() => {
+                if (!peers.has(peerId)) return;
+                
+                const peerData = peers.get(peerId);
+                const peerMesh = peerMeshes.get(peerId);
+                
+                // Gradually rotate toward target rotation for smoother turning
+                if (Math.abs(peerData.rotation - peerState.targetRotation) > 0.01) {
+                    // Smooth rotation
+                    const rotDiff = peerState.targetRotation - peerData.rotation;
+                    // Normalize to shortest path
+                    const normalizedDiff = ((rotDiff + Math.PI) % (Math.PI * 2)) - Math.PI;
+                    // Apply only a fraction of the rotation each frame
+                    peerData.rotation += normalizedDiff * 0.1;
+                    
+                    // Update mesh rotation
+                    peerMesh.rotation.y = peerData.rotation;
+                    
+                    // Update spotlight direction
+                    if (peerMesh.children.length >= 1) {
+                        const spotlightTarget = peerMesh.children[0];
+                        if (spotlightTarget) {
+                            const targetOffset = new THREE.Vector3(0, 0, -20);
+                            targetOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), peerData.rotation);
+                            spotlightTarget.position.copy(targetOffset);
+                            spotlightTarget.updateMatrixWorld();
+                        }
+                    }
+                }
+                
+                // Movement decision making (less frequently)
+                if (peerState.moveDelay <= 0) {
+                    const moveChance = Math.random();
+                    
+                    // Only change direction occasionally (reduced from 0.7 to 0.2)
+                    if (moveChance > 0.8) {
+                        // Set a new target rotation (don't change instantly)
+                        peerState.targetRotation = Math.random() * Math.PI * 2;
+                        // Set longer paths between direction changes
+                        peerState.pathLength = Math.floor(Math.random() * 100) + 50;
+                        peerState.isMoving = true;
+                        peerState.moveDelay = 20; // Wait 2 seconds before next direction change
+                    } 
+                    // More likely to keep moving in the same direction
+                    else if (moveChance > 0.3 || peerState.isMoving) {
+                        peerState.isMoving = true;
+                        
+                        if (peerState.pathLength <= 0) {
+                            // Occasionally stop moving
+                            if (Math.random() > 0.7) {
+                                peerState.isMoving = false;
+                                peerState.moveDelay = 10; // Wait 1 second before next movement decision
+                            } else {
+                                // Set a new path length
+                                peerState.pathLength = Math.floor(Math.random() * 100) + 50;
+                            }
+                        } else {
+                            peerState.pathLength--;
+                        }
+                    } else {
+                        peerState.isMoving = false;
+                        peerState.moveDelay = 15; // Wait 1.5 seconds before next movement decision
+                    }
+                } else {
+                    peerState.moveDelay--;
+                }
+                
+                // Apply movement if moving - now with physics
+                if (peerState.isMoving) {
+                    // Calculate acceleration direction
+                    const accelDirection = new THREE.Vector3(0, 0, -1)
+                        .applyAxisAngle(new THREE.Vector3(0, 1, 0), peerData.rotation)
+                        .normalize()
+                        .multiplyScalar(PEER_ACCELERATION);
+                    
+                    // Add acceleration to velocity
+                    peerState.velocity.add(accelDirection);
+                    
+                    // Apply friction
+                    peerState.velocity.multiplyScalar(PEER_FRICTION);
+                    
+                    // Limit max speed
+                    if (peerState.velocity.length() > MAX_PEER_SPEED) {
+                        peerState.velocity.normalize().multiplyScalar(MAX_PEER_SPEED);
+                    }
+                    
+                    // Apply velocity to position
+                    const nextPosition = new THREE.Vector3().copy(peerData.position).add(peerState.velocity);
+                    
+                    const peerBox = new THREE.Box3().setFromCenterAndSize(
+                        nextPosition,
+                        new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+                    );
+                    
+                    let collision = false;
+                    for (const [id, obj] of gridObjects.entries()) {
+                        if (obj.type === 'building' && peerBox.intersectsBox(obj.boundingBox)) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!collision) {
+                        peerData.position.copy(nextPosition);
+                        peerMesh.position.copy(nextPosition);
+                    } else {
+                        // If collision, reduce velocity and try a new direction
+                        peerState.velocity.multiplyScalar(0.3);
+                        peerState.targetRotation = peerData.rotation + (Math.random() * Math.PI/2 - Math.PI/4);
+                        peerState.moveDelay = 5;
+                    }
+                } else {
+                    // Apply friction even when not actively moving
+                    peerState.velocity.multiplyScalar(PEER_FRICTION);
+                    
+                    // If we still have momentum, apply it
+                    if (peerState.velocity.length() > 0.001) {
+                        const nextPosition = new THREE.Vector3().copy(peerData.position).add(peerState.velocity);
+                        
+                        // Check for collisions
+                        const peerBox = new THREE.Box3().setFromCenterAndSize(
+                            nextPosition,
+                            new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+                        );
+                        
+                        let collision = false;
+                        for (const [id, obj] of gridObjects.entries()) {
+                            if (obj.type === 'building' && peerBox.intersectsBox(obj.boundingBox)) {
+                                collision = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!collision) {
+                            peerData.position.copy(nextPosition);
+                            peerMesh.position.copy(nextPosition);
+                        } else {
+                            // Reduce velocity on collision
+                            peerState.velocity.multiplyScalar(0.3);
+                        }
+                    } else {
+                        // Stop completely if velocity is very small
+                        peerState.velocity.set(0, 0, 0);
+                    }
+                }
+                
+                // Control spotlight visibility - light on when moving with momentum
+                if (peerMesh.children.length >= 1) {
+                    const spotlight = peerMesh.children.find(child => child instanceof THREE.SpotLight);
+                    if (spotlight) {
+                        spotlight.visible = peerState.isMoving || peerState.velocity.length() > 0.01;
+                    }
+                }
+                
+                // Reduce attack probability (from 0.95 to 0.99)
+                if (Math.random() > 0.99) {
+                    simulatePeerAttack(peerId);
+                    const spotlight = peerMesh.children.find(child => child instanceof THREE.SpotLight);
+                    if (spotlight) {
+                        spotlight.visible = true;
+                        setTimeout(() => {
+                            spotlight.visible = peerState.isMoving || peerState.velocity.length() > 0.01;
+                        }, 500);
+                    }
+                }
+            }, 100);
+        }
+        
+        // Simulate peer attack
+        function simulatePeerAttack(peerId) {
+            if (!peers.has(peerId)) return;
+            
+            const peerData = peers.get(peerId);
+            const peerMesh = peerMeshes.get(peerId);
+            
+            const direction = new THREE.Vector3(0, 0, -1)
+                .applyAxisAngle(new THREE.Vector3(0, 1, 0), peerData.rotation)
+                .normalize();
+                
+            const attackPosition = new THREE.Vector3()
+                .copy(peerData.position)
+                .add(direction.multiplyScalar(ATTACK_DISTANCE));
+            
+            const attackGeometry = new THREE.BoxGeometry(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE);
+            const attackMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.8,
+                wireframe: true
+            });
+            const attackCube = new THREE.Mesh(attackGeometry, attackMaterial);
+            attackCube.position.copy(attackPosition);
+            attackCube.rotation.y = peerData.rotation;
+            scene.add(attackCube);
+            
+            const spotlight = peerMesh.children.find(child => child instanceof THREE.SpotLight);
+            if (spotlight) {
+                spotlight.visible = true;
+            }
+            
+            const attackBox = new THREE.Box3().setFromCenterAndSize(
+                attackPosition,
+                new THREE.Vector3(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE)
+            );
+            
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                playerPosition,
+                new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+            );
+            
+            if (attackBox.intersectsBox(playerBox)) {
+                console.log("YOU WERE HIT by peer", peerId);
+                
+                const flashOverlay = document.createElement('div');
+                flashOverlay.style.position = 'fixed';
+                flashOverlay.style.top = '0';
+                flashOverlay.style.left = '0';
+                flashOverlay.style.width = '100%';
+                flashOverlay.style.height = '100%';
+                flashOverlay.style.backgroundColor = 'rgba(255,0,0,0.3)';
+                flashOverlay.style.pointerEvents = 'none';
+                flashOverlay.style.zIndex = '1000';
+                document.body.appendChild(flashOverlay);
+                
+                setTimeout(() => {
+                    document.body.removeChild(flashOverlay);
+                }, 300);
+                
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 3 * GRID_CELL_SIZE;
+                
+                playerPosition.x = Math.cos(angle) * distance;
+                playerPosition.z = Math.sin(angle) * distance;
+                playerPosition.y = PLAYER_SIZE / 2;
+                
+                let attempts = 0;
+                const maxAttempts = 20;
+                
+                while (checkCollisions(playerPosition) && attempts < maxAttempts) {
+                    const newAngle = angle + (Math.PI / 4) * attempts;
+                    playerPosition.x = Math.cos(newAngle) * distance;
+                    playerPosition.z = Math.sin(newAngle) * distance;
+                    attempts++;
+                }
+                
+                updateGrid();
+            }
+            
+            setTimeout(() => {
+                scene.remove(attackCube);
+                
+                if (spotlight) {
+                    setTimeout(() => {
+                        spotlight.visible = false;
+                    }, 300);
+                }
+            }, ATTACK_DURATION);
+        }
+        
+        // Send message to a specific peer
+        function sendToPeer(peerId, message) {
+            console.log(`Sending to ${peerId}:`, message);
+        }
+        
+        // Broadcast position to all peers
+        function broadcastPosition() {
+            const message = {
+                type: 'position',
+                peerId: myPeerId,
+                position: {
+                    x: playerPosition.x,
+                    y: playerPosition.y,
+                    z: playerPosition.z
+                },
+                rotation: playerRotation
+            };
+        }
+        
+        // Broadcast attack to all peers
+        function broadcastAttack(attackPosition) {
+            const message = {
+                type: 'attack',
+                peerId: myPeerId,
+                position: {
+                    x: attackPosition.x,
+                    y: attackPosition.y,
+                    z: attackPosition.z
+                },
+                rotation: playerRotation
+            };
+            
+            console.log('Broadcasting attack:', message);
+        }
+        
+        // Remove a peer
+        function removePeer(peerId) {
+            if (peerMeshes.has(peerId)) {
+                scene.remove(peerMeshes.get(peerId));
+                peerMeshes.delete(peerId);
+            }
+            
+            peers.delete(peerId);
+            updateHUD();
+        }
+        
+        // Handle peer message
+        function handlePeerMessage(peerId, message) {
+            switch (message.type) {
+                case 'position':
+                    updatePeerPosition(peerId, message);
+                    break;
+                case 'attack':
+                    handlePeerAttack(peerId, message);
+                    break;
+                case 'hit':
+                    handleHit(message);
+                    break;
+                case 'leave':
+                    removePeer(peerId);
+                    break;
+            }
+        }
+        
+        // Update peer position from message
+        function updatePeerPosition(peerId, message) {
+            if (!peers.has(peerId)) {
+                addPeer(peerId);
+            }
+            
+            const peerData = peers.get(peerId);
+            peerData.position.set(
+                message.position.x,
+                message.position.y,
+                message.position.z
+            );
+            peerData.rotation = message.rotation;
+        }
+        
+        // Handle peer attack
+        function handlePeerAttack(peerId, message) {
+            if (!peers.has(peerId)) return;
+            
+            const attackPosition = new THREE.Vector3(
+                message.position.x,
+                message.position.y,
+                message.position.z
+            );
+            const attackRotation = message.rotation || 0;
+            
+            const attackGeometry = new THREE.BoxGeometry(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE);
+            const attackMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.5,
+                wireframe: true
+            });
+            const attackCube = new THREE.Mesh(attackGeometry, attackMaterial);
+            attackCube.position.copy(attackPosition);
+            attackCube.rotation.y = attackRotation;
+            scene.add(attackCube);
+            
+            const attackBox = new THREE.Box3().setFromCenterAndSize(
+                attackPosition,
+                new THREE.Vector3(ATTACK_SIZE, ATTACK_SIZE, ATTACK_SIZE)
+            );
+            
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                playerPosition,
+                new THREE.Vector3(PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
+            );
+            
+            if (attackBox.intersectsBox(playerBox)) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 3 * GRID_CELL_SIZE;
+                
+                playerPosition.x = Math.cos(angle) * distance;
+                playerPosition.z = Math.sin(angle) * distance;
+                playerPosition.y = PLAYER_SIZE / 2;
+                
+                let attempts = 0;
+                const maxAttempts = 20;
+                
+                while (checkCollisions(playerPosition) && attempts < maxAttempts) {
+                    const newAngle = angle + (Math.PI / 4) * attempts;
+                    playerPosition.x = Math.cos(newAngle) * distance;
+                    playerPosition.z = Math.sin(newAngle) * distance;
+                    attempts++;
+                }
+                
+                updateGrid();
+                
+                sendToPeer(peerId, {
+                    type: 'hit',
+                    victim: myPeerId
+                });
+            }
+            
+            setTimeout(() => {
+                scene.remove(attackCube);
+            }, ATTACK_DURATION);
+        }
+        
+        // Handle hit message
+        function handleHit(message) {
+            if (message.victim === myPeerId) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 3 * GRID_CELL_SIZE;
+                
+                playerPosition.x = Math.cos(angle) * distance;
+                playerPosition.z = Math.sin(angle) * distance;
+                playerPosition.y = PLAYER_SIZE / 2;
+                
+                let attempts = 0;
+                const maxAttempts = 20;
+                
+                while (checkCollisions(playerPosition) && attempts < maxAttempts) {
+                    const newAngle = angle + (Math.PI / 4) * attempts;
+                    playerPosition.x = Math.cos(newAngle) * distance;
+                    playerPosition.z = Math.sin(newAngle) * distance;
+                    attempts++;
+                }
+                
+                updateGrid();
+            } else if (message.attacker === myPeerId) {
+                score++;
+                updateHUD();
+            }
+        }
+        
+        // P2P Communication Setup
+        async function setupP2P() {
+            try {
+                myPeerId = Math.random().toString(36).substring(2, 10);
+                console.log('My Peer ID:', myPeerId);
+                
+                simulateP2PDiscovery();
+            } catch (err) {
+                console.error('P2P setup error:', err);
+            }
+        }
+        
+        // Simulate P2P discovery
+        function simulateP2PDiscovery() {
+            const peerCount = Math.floor(Math.random() * 3) + 2;
+            
+            for (let i = 0; i < peerCount; i++) {
+                setTimeout(() => {
+                    const peerId = Math.random().toString(36).substring(2, 10);
+                    addPeer(peerId);
+                }, i * 2000);
+            }
+        }
+        
+        // Initialize the game
+        initializeGrid();
+        setupP2P();
+        update();
+    </script>
+</body>
+</html>

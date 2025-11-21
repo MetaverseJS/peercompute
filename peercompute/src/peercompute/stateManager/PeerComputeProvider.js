@@ -23,21 +23,12 @@ export class PeerComputeProvider extends Observable {
     
     // Listen to local document updates
     this.doc.on('update', this._onDocumentUpdate);
-    
-    // Listen to network messages (NetworkManager should route messages to us)
-    // We assume NetworkManager has a way to subscribe to specific message types or we hook into global handler
-    // For now, we'll register a listener on the NetworkManager if possible, or the caller should route it.
-    // But NetworkManager interface uses `onMessage` callback in constructor.
-    // We might need to register a protocol or just use broadcast.
-    
-    // We will use the 'broadcast' channel for updates
-    this.networkManager.libp2pNode.services.pubsub.addEventListener('message', (evt) => {
-        // Filter by topic if needed, though NetworkManager subscribes to one topic currently
-        if (evt.detail.topic === this.topic) {
-            this._onPubsubMessage(evt);
-        }
-    });
-    
+
+    // Listen for network messages routed by NetworkManager
+    if (this.networkManager?.addMessageHandler) {
+      this.networkManager.addMessageHandler(this._onNetworkMessage);
+    }
+
     console.log('[PeerComputeProvider] Initialized');
   }
   
@@ -69,28 +60,8 @@ export class PeerComputeProvider extends Observable {
     }
   }
 
-  /**
-   * Handle raw pubsub message (direct from libp2p)
-   * @param {Object} evt 
-   */
-  _onPubsubMessage(evt) {
-      // Verify it's not from us
-      // NetworkManager config: emitSelf: false, so we shouldn't receive our own.
-      
-      try {
-          const messageStr = new TextDecoder().decode(evt.detail.data);
-          const message = JSON.parse(messageStr);
-          
-          // We reuse _onNetworkMessage logic
-          this._onNetworkMessage(evt.detail.from.toString(), message);
-      } catch (e) {
-          console.error('[PeerComputeProvider] Failed to parse message', e);
-      }
-  }
-  
   destroy() {
     this.doc.off('update', this._onDocumentUpdate);
-    // Remove listener from pubsub? NetworkManager manages pubsub subscription.
     this.networkManager = null;
   }
 }

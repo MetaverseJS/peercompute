@@ -85,11 +85,27 @@ async function startServer() {
       console.log('[Relay] Keep-alive stream opened from peer');
       
       try {
-        // Keep stream open by reading from it
-        // Echo back any heartbeats to keep stream active
-        for await (const data of stream.source) {
-          // Echo heartbeat back to keep stream bidirectional
-          await stream.sink([data]);
+        // Support both async-iterable streams and legacy .source/.sink shapes
+        const reader = (typeof stream?.[Symbol.asyncIterator] === 'function')
+          ? stream
+          : stream?.source;
+        const sender = (typeof stream?.send === 'function')
+          ? stream.send.bind(stream)
+          : stream?.sink
+            ? async (chunk) => stream.sink([chunk])
+            : null;
+
+        if (!reader || !sender) {
+          console.log('[Relay] Keep-alive stream missing reader/sender, closing');
+          await stream?.abort?.(new Error('invalid stream shape'));
+          return;
+        }
+
+        for await (const data of reader) {
+          const buffer = (data?.subarray && typeof data.subarray === 'function')
+            ? data.subarray()
+            : data;
+          await sender(buffer);
         }
       } catch (error) {
         console.log('[Relay] Keep-alive stream closed:', error.message);

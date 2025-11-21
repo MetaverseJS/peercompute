@@ -48,8 +48,8 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     expect(peerId2).toBeTruthy();
     expect(peerId1).not.toBe(peerId2);
 
-    // Wait for connections to establish (to relay servers)
-    await page1.waitForTimeout(15000);
+    // Wait for connections to establish
+    await page1.waitForTimeout(5000);
 
     // Check connections
     const connections1 = await page1.evaluate(() => {
@@ -65,9 +65,8 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     expect(connections1).toBeGreaterThan(0);
     expect(connections2).toBeGreaterThan(0);
 
-    // Check peer discovery via pubsub-peer-discovery
-    // This may take longer as it relies on gossipsub announcements
-    await page1.waitForTimeout(15000);
+    // Allow discovery/handshake to settle
+    await page1.waitForTimeout(5000);
 
     const peers1 = await page1.evaluate(() => {
       const mgr = window.node?.getNetworkManager();
