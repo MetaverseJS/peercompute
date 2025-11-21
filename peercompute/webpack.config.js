@@ -16,9 +16,15 @@ export default {
     clean: true,
   },
   devServer: {
-    static: {
-      directory: path.join(__dirname, 'public'),
-    },
+    static: [
+      {
+        directory: path.join(__dirname, 'public'),
+      },
+      {
+        directory: path.join(__dirname, 'games'),
+        publicPath: '/games',
+      }
+    ],
     compress: true,
     port: 5173, // Keep same port as Vite for convenience
     hot: true,
@@ -49,7 +55,8 @@ export default {
         { from: 'public', to: '' }, // Copy public assets to root of dist
         // Also copy test files if they exist and are needed
         { from: 'test-p2p.html', to: 'test-p2p.html', noErrorOnMissing: true },
-        { from: 'test-automated.html', to: 'test-automated.html', noErrorOnMissing: true }
+        { from: 'test-automated.html', to: 'test-automated.html', noErrorOnMissing: true },
+        { from: 'games', to: 'games', noErrorOnMissing: true }
       ],
     }),
     new webpack.ProvidePlugin({

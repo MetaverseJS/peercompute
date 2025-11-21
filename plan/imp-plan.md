@@ -1,5 +1,19 @@
 Task Completed
 
+# Update - Nov 22, 2025
+
+- Current networking stack uses **PeerJS** (browser WebRTC) for signaling and data, with a Node-based PeerJS server. Libp2p remains a future option; abstractions preserved.
+- Added room/game scoping to the networking layer to support multiple games/instances (e.g., Sneaky Woods) and future overworld/instance hopping.
+- State sync remains Yjs-based via `StateManager`/`PeerComputeProvider`, with scoped state helpers for per-game state.
+
+# Update - Nov 23, 2025
+
+- Cleaned up the 3D Sneaky Woods demo (`games/sw2.html`) to use the PeerCompute stack end-to-end (global room, name updates, throttled state heartbeats) and removed the old fake peer simulation.
+- Added stale-peer pruning and UI wiring for player names; HUD now surfaces names.
+- Synced game copies in `/games` and `/peercompute/games` to avoid drift; expect `/peercompute/start-dev.sh` + `http://localhost:5173/games/sw2.html` as the canonical path.
+- Tests currently blocked in this sandbox because the dev servers cannot bind to localhost:5173/9000 (`EPERM`); rerun Playwright once port binding is allowed.
+- Added PeerJS discovery fallback (server `allow_discovery` + `listAllPeers` polling) so multiple browsers on different devices can find each other without manual IDs; state heartbeat loop in sw2 restored via rAF.
+
 # PeerCompute Project Status & Next Steps
 
 ## Current Status

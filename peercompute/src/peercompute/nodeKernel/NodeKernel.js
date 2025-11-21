@@ -29,6 +29,8 @@ export class NodeKernel {
       enableWebGPU: config.enableWebGPU || false,
       enablePersistence: config.enablePersistence !== false,
       peerServer: config.peerServer || null,
+      gameId: config.gameId || 'default-game',
+      roomId: config.roomId || 'default-room',
       stateTopic: config.stateTopic || 'peercompute-state',
       ...config
     };
@@ -63,6 +65,8 @@ export class NodeKernel {
       this.networkManager = new NetworkManager({
         topology: this.config.topology,
         peerServer: this.config.peerServer || undefined,
+        gameId: this.config.gameId,
+        roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
         onMessage: this._handleNetworkMessage.bind(this),
         onPeerConnect: this._handlePeerConnect.bind(this),
@@ -280,7 +284,11 @@ export class NodeKernel {
 
       case 'state-set':
         if (this.stateManager) {
-          this.stateManager.applyStateSet(message.data?.key, message.data?.value);
+          this.stateManager.applyStateSet(
+            message.data?.key,
+            message.data?.value,
+            message.data?.namespace
+          );
         }
         break;
 

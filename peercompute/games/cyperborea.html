@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperborea</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; overflow: hidden; background: #000; }
+        #gameCanvas { display: block; width: 100vw; height: 100vh; }
+        #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+        #hud { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; font-size: 14px; line-height: 1.6; pointer-events: none; }
+        #controls { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; font-size: 12px; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div id="hud">
+            <div><strong>HYPERBOREA</strong></div>
+            <div id="timeInfo">Day: 1 | Season: Spring</div>
+            <div id="posInfo">X: 0 Y: 0 Z: 0</div>
+            <div id="tempInfo">Temperature: 0°C</div>
+        </div>
+        <div id="controls">
+            <strong>Controls:</strong><br>
+            WASD - Move | Arrow Keys - Look<br>
+            Space - Jump/Up | Shift - Down<br>
+            F - Torch | G - God Mode | V - Wide FOV<br>
+            - Slower | = Faster Time
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const CONFIG = {
+            DAY_DURATION: 6 * 60 * 1000,
+            YEAR_DURATION: 60 * 60 * 1000,
+            CHUNK_SIZE: 64,
+            RENDER_DISTANCE: 32,
+            WORLD_SEED: 12345,
+            PLAYER_SPEED: 15,
+            JUMP_FORCE: 10,
+            GRAVITY: -25
+        };
+
+        class SeededRandom {
+            constructor(seed) { this.seed = seed; }
+            next() { this.seed = (this.seed * 9301 + 49297) % 233280; return this.seed / 233280; }
+        }
+
+        class SimplexNoise {
+            constructor(seed) {
+                const rng = new SeededRandom(seed);
+                this.perm = [];
+                for (let i = 0; i < 256; i++) this.perm[i] = i;
+                for (let i = 255; i > 0; i--) {
+                    const j = Math.floor(rng.next() * (i + 1));
+                    [this.perm[i], this.perm[j]] = [this.perm[j], this.perm[i]];
+                }
+                this.perm = [...this.perm, ...this.perm];
+            }
+            fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            lerp(t, a, b) { return a + t * (b - a); }
+            grad(hash, x, y) {
+                const h = hash & 3;
+                const u = h < 2 ? x : y;
+                const v = h < 2 ? y : x;
+                return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+            }
+            noise(x, y) {
+                const X = Math.floor(x) & 255;
+                const Y = Math.floor(y) & 255;
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                const u = this.fade(x);
+                const v = this.fade(y);
+                const a = this.perm[X] + Y;
+                const b = this.perm[X + 1] + Y;
+                return this.lerp(v,
+                    this.lerp(u, this.grad(this.perm[a], x, y), this.grad(this.perm[b], x - 1, y)),
+                    this.lerp(u, this.grad(this.perm[a + 1], x, y - 1), this.grad(this.perm[b + 1], x - 1, y - 1))
+                );
+            }
+            octave(x, y, octaves, persistence, scale) {
+                let total = 0, frequency = 1, amplitude = 1, maxValue = 0;
+                for (let i = 0; i < octaves; i++) {
+                    total += this.noise(x * frequency / scale, y * frequency / scale) * amplitude;
+                    maxValue += amplitude;
+                    amplitude *= persistence;
+                    frequency *= 2;
+                }
+                return total / maxValue;
+            }
+        }
+
+        class TimeSystem {
+            constructor() {
+                this.startTime = Date.now();
+                this.timeMultiplier = 1;
+                // Start at noon (0.5 of day) in middle of winter (0.125 of year = mid-winter)
+                this.timeOffset = CONFIG.DAY_DURATION * 0.5 + CONFIG.YEAR_DURATION * 0.125;
+            }
+            getTime() { return (Date.now() - this.startTime) * this.timeMultiplier + this.timeOffset; }
+            setTimeMultiplier(newMultiplier) {
+                // Preserve current time when changing speed
+                const currentTime = this.getTime();
+                this.startTime = Date.now();
+                this.timeOffset = currentTime;
+                this.timeMultiplier = newMultiplier;
+            }
+            getDayProgress() { return (this.getTime() % CONFIG.DAY_DURATION) / CONFIG.DAY_DURATION; }
+            getYearProgress() { return (this.getTime() % CONFIG.YEAR_DURATION) / CONFIG.YEAR_DURATION; }
+            getSeason() {
+                const p = this.getYearProgress();
+                if (p < 0.25) return 'Winter';
+                if (p < 0.5) return 'Spring';
+                if (p < 0.75) return 'Summer';
+                return 'Fall';
+            }
+            getDayNumber() { return Math.floor(this.getTime() / CONFIG.DAY_DURATION) + 1; }
+            getSunPosition() {
+                const dayProgress = this.getDayProgress();
+                const yearProgress = this.getYearProgress();
+                const daylightRatio = 0.5 + Math.cos(yearProgress * Math.PI * 2) * 0.33;
+                let adjustedProgress;
+                if (dayProgress < daylightRatio) {
+                    adjustedProgress = dayProgress / daylightRatio * 0.5;
+                } else {
+                    adjustedProgress = 0.5 + (dayProgress - daylightRatio) / (1 - daylightRatio) * 0.5;
+                }
+                return adjustedProgress;
+            }
+            getMoonPhase() { return this.getYearProgress(); }
+            getTemperature() { return -5 + Math.cos(this.getYearProgress() * Math.PI * 2) * 25; }
+        }
+
+        class TerrainGenerator {
+            constructor(seed) {
+                this.heightNoise = new SimplexNoise(seed);
+                this.moistureNoise = new SimplexNoise(seed + 1);
+                this.treeNoise = new SimplexNoise(seed + 2);
+                this.structureNoise = new SimplexNoise(seed + 3);
+            }
+            
+            getHeight(x, z) {
+                const large = this.heightNoise.octave(x, z, 4, 0.5, 3000);
+                const medium = this.heightNoise.octave(x, z, 4, 0.5, 800);
+                const small = this.heightNoise.octave(x, z, 3, 0.5, 200);
+                
+                let height = large * 50;
+                height += medium * 40;
+                
+                if (medium > 0.15) {
+                    height += Math.pow((medium - 0.15) / 0.85, 2) * 400;
+                }
+                
+                height += small * 10;
+                return height;
+            }
+            
+            getMoisture(x, z) {
+                return this.moistureNoise.octave(x, z, 3, 0.5, 1000);
+            }
+            
+            shouldPlaceTree(x, z, height, moisture) {
+                if (height < 10 || height > 200) return false;
+                
+                const d = 3;
+                const h1 = this.getHeight(x + d, z);
+                const h2 = this.getHeight(x - d, z);
+                const slope = Math.abs(h1 - h2) / (d * 2);
+                if (slope > 0.5) return false;
+                
+                const density = moisture > 0.2 ? 0.3 : 0.05;
+                return this.treeNoise.noise(x * 0.2, z * 0.2) > (1 - density * 2);
+            }
+            
+            shouldPlaceStructure(x, z, height) {
+                if (height < 20 || height > 150) return false;
+                
+                // Check if relatively flat area
+                const d = 15;
+                const h1 = this.getHeight(x + d, z);
+                const h2 = this.getHeight(x - d, z);
+                const h3 = this.getHeight(x, z + d);
+                const h4 = this.getHeight(x, z - d);
+                const flatness = Math.max(Math.abs(h1 - height), Math.abs(h2 - height), 
+                                         Math.abs(h3 - height), Math.abs(h4 - height));
+                if (flatness > 20) return false;
+                
+                // Very rare structures
+                return this.structureNoise.noise(x * 0.01, z * 0.01) > 0.95;
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.initThree();
+                this.initTime();
+                this.initTerrain();
+                this.initPlayer();
+                this.initSkyDome();
+                this.initControls();
+                
+                this.chunks = new Map();
+                this.structures = new Map();
+                this.collisionBoxes = []; // Store building collision boxes
+                this.baseFOV = 75; // Store base FOV
+                this.godMode = false;
+                this.wideFOV = false; // Track FOV state
+                this.lastUpdate = Date.now();
+                this.lastColorUpdate = 0; // Track terrain color updates
+                this.keys = {};
+                
+                this.hasTorch = false;
+                this.hasSpear = true;
+                
+                // Mobile detection and controls
+                this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                this.touchControls = {
+                    moveX: 0,
+                    moveY: 0,
+                    lookX: 0,
+                    lookY: 0,
+                    activeTouches: {}
+                };
+                
+                this.initPlayerEquipment();
+                if (this.isMobile) {
+                    this.initMobileControls();
+                }
+                
+                // Tree instancing - CRITICAL: Use InstancedMesh
+                this.treeGeometry = new THREE.ConeGeometry(1, 1, 3);
+                this.treeMaterial = new THREE.MeshLambertMaterial({ color: 0x1a5010 });
+                this.treeInstancedMesh = new THREE.InstancedMesh(this.treeGeometry, this.treeMaterial, 100000);
+                this.treeInstancedMesh.castShadow = true;
+                this.treeInstancedMesh.receiveShadow = true;
+                this.scene.add(this.treeInstancedMesh);
+                this.treeCount = 0;
+                
+                this.generateInitialTerrain();
+                this.animate();
+            }
+            
+            initThree() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.Fog(0x87CEEB, 1600, 8000);
+                
+                // Calculate FOV based on aspect ratio (vertical FOV)
+                const aspect = window.innerWidth / window.innerHeight;
+                const vFOV = this.baseFOV;
+                
+                this.camera = new THREE.PerspectiveCamera(vFOV, aspect, 0.5, 15000);
+                this.scene.add(this.camera);
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true;
+                
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.fov = this.wideFOV ? 120 : this.baseFOV;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            initTime() { this.timeSystem = new TimeSystem(); }
+            initTerrain() { this.terrainGen = new TerrainGenerator(CONFIG.WORLD_SEED); }
+            
+            initPlayer() {
+                // Spawn south of the temple complex, facing north towards it
+                const spawnX = 0;
+                const spawnZ = 320; // South of temple (70 units outside obelisk ring at radius 250)
+                const spawnHeight = this.terrainGen.getHeight(spawnX, spawnZ);
+                this.position = new THREE.Vector3(spawnX, spawnHeight + 3, spawnZ); // Just above ground
+                this.velocity = new THREE.Vector3(0, 0, 0);
+                this.pitch = 0;
+                this.yaw = 0; // Yaw 0 = facing north (negative Z direction) towards temple at (0,0)
+                this.onGround = false;
+            }
+            
+            initPlayerEquipment() {
+                // Torch
+                const torchGroup = new THREE.Group();
+                
+                const handle = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.05, 0.05, 1.5),
+                    new THREE.MeshLambertMaterial({ color: 0x8b4513 })
+                );
+                handle.position.y = -0.75;
+                torchGroup.add(handle);
+                
+                const flame = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.15, 0.4, 6),
+                    new THREE.MeshBasicMaterial({ 
+                        color: 0xff6600,
+                        emissive: 0xff6600,
+                        emissiveIntensity: 1
+                    })
+                );
+                flame.position.y = 0.2;
+                torchGroup.add(flame);
+                
+                torchGroup.position.set(-0.3, -0.5, -0.8);
+                torchGroup.rotation.set(0, 0, Math.PI / 6);
+                torchGroup.visible = false;
+                this.camera.add(torchGroup);
+                this.torch = torchGroup;
+                
+                // Torch light
+                this.torchLight = new THREE.PointLight(0xff6600, 3, 40);
+                this.torchLight.position.set(-0.3, -0.3, -0.8);
+                this.torchLight.castShadow = true;
+                this.torchLight.visible = false;
+                this.camera.add(this.torchLight);
+                
+                // Spear
+                const spearGroup = new THREE.Group();
+                
+                const shaft = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.03, 0.03, 2),
+                    new THREE.MeshLambertMaterial({ color: 0x8b6914 })
+                );
+                shaft.position.y = -1;
+                spearGroup.add(shaft);
+                
+                const blade = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.08, 0.4, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x888888 })
+                );
+                blade.position.y = 0.2;
+                spearGroup.add(blade);
+                
+                spearGroup.position.set(0.4, -0.3, -0.6);
+                spearGroup.rotation.set(-Math.PI / 4, 0, Math.PI / 12);
+                this.camera.add(spearGroup);
+                this.spear = spearGroup;
+            }
+            
+            initSkyDome() {
+                // Sky dome that follows player
+                const skyGeo = new THREE.SphereGeometry(8000, 32, 32);
+                const skyMat = new THREE.MeshBasicMaterial({ 
+                    color: 0x87CEEB, 
+                    side: THREE.BackSide 
+                });
+                this.skyDome = new THREE.Mesh(skyGeo, skyMat);
+                this.scene.add(this.skyDome);
+                
+                // Stars on inner surface of dome - properly randomized
+                const starGeo = new THREE.BufferGeometry();
+                const starVerts = [];
+                const starSizes = [];
+                const starBrightness = [];
+                
+                for (let i = 0; i < 3000; i++) {
+                    // Proper uniform random distribution on sphere
+                    const u = Math.random();
+                    const v = Math.random();
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    
+                    const r = 7950;
+                    const x = r * Math.sin(phi) * Math.cos(theta);
+                    const y = r * Math.sin(phi) * Math.sin(theta);
+                    const z = r * Math.cos(phi);
+                    
+                    starVerts.push(x, y, z);
+                    
+                    // Vary size and brightness - most stars small/dim, some large/bright
+                    const brightness = 0.3 + Math.pow(Math.random(), 2) * 0.7; // 0.3-1.0, bias toward dimmer
+                    const size = 1 + Math.pow(Math.random(), 1.5) * 3; // 1-4, bias toward smaller (50% of original 2-8)
+                    
+                    starSizes.push(size);
+                    starBrightness.push(brightness);
+                }
+                
+                starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts, 3));
+                starGeo.setAttribute('size', new THREE.Float32BufferAttribute(starSizes, 1));
+                starGeo.setAttribute('brightness', new THREE.Float32BufferAttribute(starBrightness, 1));
+                
+                this.stars = new THREE.Points(starGeo, new THREE.ShaderMaterial({
+                    uniforms: {
+                        color: { value: new THREE.Color(0xffffff) },
+                        opacity: { value: 1.0 }
+                    },
+                    vertexShader: `
+                        attribute float size;
+                        attribute float brightness;
+                        varying float vBrightness;
+                        void main() {
+                            vBrightness = brightness;
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = size;
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform vec3 color;
+                        uniform float opacity;
+                        varying float vBrightness;
+                        void main() {
+                            gl_FragColor = vec4(color * vBrightness, vBrightness * opacity);
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending
+                }));
+                this.stars.frustumCulled = false;
+                this.scene.add(this.stars);
+                
+                // Sun
+                this.sun = new THREE.Mesh(
+                    new THREE.SphereGeometry(120, 16, 16),
+                    new THREE.MeshBasicMaterial({ color: 0xffff00 })
+                );
+                this.skyDome.add(this.sun);
+                
+                // Moon
+                this.moon = new THREE.Mesh(
+                    new THREE.SphereGeometry(100, 16, 16),
+                    new THREE.MeshBasicMaterial({ 
+                        color: 0xffffff,
+                        emissive: 0xffffff,
+                        emissiveIntensity: 1
+                    })
+                );
+                this.skyDome.add(this.moon);
+                
+                // Northern Lights (Aurora Borealis) - cylindrical curtain around north celestial pole
+                const auroraGeometry = new THREE.CylinderGeometry(
+                    5000, 5000,  // radius top, radius bottom
+                    3000,        // height
+                    64,          // radial segments
+                    32,          // height segments
+                    true         // open ended
+                );
+                
+                // Add wave distortion to cylinder
+                const vertices = auroraGeometry.attributes.position.array;
+                for (let i = 0; i < vertices.length; i += 3) {
+                    const x = vertices[i];
+                    const y = vertices[i + 1];
+                    const z = vertices[i + 2];
+                    const angle = Math.atan2(z, x);
+                    // Radial waves
+                    const wave = Math.sin(angle * 8 + y * 0.003) * 100;
+                    const r = Math.sqrt(x * x + z * z) + wave;
+                    vertices[i] = Math.cos(angle) * r;
+                    vertices[i + 2] = Math.sin(angle) * r;
+                }
+                auroraGeometry.computeVertexNormals();
+                
+                this.aurora = new THREE.Mesh(auroraGeometry, new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0 },
+                        opacity: { value: 0 }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        varying vec3 vPosition;
+                        void main() {
+                            vUv = uv;
+                            vPosition = position;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float time;
+                        uniform float opacity;
+                        varying vec2 vUv;
+                        varying vec3 vPosition;
+                        
+                        // 3D noise function for seamless wrapping
+                        float noise3D(vec3 p) {
+                            return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+                        }
+                        
+                        float smoothNoise3D(vec3 p) {
+                            vec3 i = floor(p);
+                            vec3 f = fract(p);
+                            f = f * f * (3.0 - 2.0 * f);
+                            
+                            float a = noise3D(i);
+                            float b = noise3D(i + vec3(1.0, 0.0, 0.0));
+                            float c = noise3D(i + vec3(0.0, 1.0, 0.0));
+                            float d = noise3D(i + vec3(1.0, 1.0, 0.0));
+                            float e = noise3D(i + vec3(0.0, 0.0, 1.0));
+                            float f1 = noise3D(i + vec3(1.0, 0.0, 1.0));
+                            float g = noise3D(i + vec3(0.0, 1.0, 1.0));
+                            float h = noise3D(i + vec3(1.0, 1.0, 1.0));
+                            
+                            float x1 = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+                            float x2 = mix(mix(e, f1, f.x), mix(g, h, f.x), f.y);
+                            
+                            return mix(x1, x2, f.z);
+                        }
+                        
+                        void main() {
+                            // Map cylinder to 3D space for seamless wrapping
+                            // Use normalized position on cylinder surface
+                            float angle = atan(vPosition.z, vPosition.x);
+                            float radius = sqrt(vPosition.x * vPosition.x + vPosition.z * vPosition.z);
+                            
+                            // Create 3D coordinates that wrap seamlessly around cylinder
+                            vec3 p = vec3(
+                                cos(angle) * 2.0,  // X wraps seamlessly
+                                vPosition.y * 0.0005,  // Y is height
+                                sin(angle) * 2.0   // Z wraps seamlessly
+                            );
+                            
+                            // Add time-based flow
+                            vec3 flow = vec3(time * 0.2, time * 0.1, time * 0.15);
+                            
+                            // Sample 3D noise at different scales
+                            float n1 = smoothNoise3D(p + flow);
+                            float n2 = smoothNoise3D(p * 2.0 + flow * 1.5);
+                            float n3 = smoothNoise3D(p * 4.0 + flow * 0.8);
+                            
+                            float waves = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+                            
+                            // Vertical gradient - fade at top and bottom
+                            float verticalFade = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.8, vUv.y);
+                            
+                            // Fade out near horizon (bottom of cylinder)
+                            float horizonFade = smoothstep(0.0, 0.4, vUv.y);
+                            
+                            // Aurora colors - green, blue, purple, pink
+                            vec3 green = vec3(0.3, 1.0, 0.4);
+                            vec3 blue = vec3(0.2, 0.6, 1.0);
+                            vec3 purple = vec3(0.8, 0.3, 1.0);
+                            vec3 pink = vec3(1.0, 0.4, 0.7);
+                            
+                            // Mix colors based on noise and position
+                            vec3 color = mix(green, blue, smoothstep(0.3, 0.5, waves));
+                            color = mix(color, purple, smoothstep(0.5, 0.7, n2));
+                            color = mix(color, pink, smoothstep(0.6, 0.8, n3));
+                            
+                            // Brightness variation
+                            float brightness = waves * verticalFade * horizonFade * (0.4 + n3 * 0.6);
+                            
+                            gl_FragColor = vec4(color * brightness, brightness * opacity * 1.5);
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                }));
+                
+                // Orient cylinder toward north celestial pole at 65° latitude
+                // Celestial pole is 65° above northern horizon
+                const poleElevation = 65 * Math.PI / 180;
+                this.aurora.rotation.x = Math.PI / 2 - poleElevation; // Tilt cylinder axis toward north celestial pole
+                this.aurora.position.set(0, 1500, 0); // Centered on player, elevated
+                this.scene.add(this.aurora);
+                
+                // Directional light (not parented to dome)
+                this.sunLight = new THREE.DirectionalLight(0xffffff, 1);
+                this.sunLight.castShadow = true;
+                this.sunLight.shadow.camera.left = -1000;
+                this.sunLight.shadow.camera.right = 1000;
+                this.sunLight.shadow.camera.top = 1000;
+                this.sunLight.shadow.camera.bottom = -1000;
+                this.sunLight.shadow.camera.far = 2000;
+                this.sunLight.shadow.mapSize.width = 2048;
+                this.sunLight.shadow.mapSize.height = 2048;
+                this.scene.add(this.sunLight);
+                
+                this.ambient = new THREE.AmbientLight(0x404040, 0.5);
+                this.scene.add(this.ambient);
+            }
+            
+            initControls() {
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    if (e.code === 'KeyG') this.godMode = !this.godMode;
+                    if (e.code === 'KeyV') {
+                        this.wideFOV = !this.wideFOV;
+                        this.camera.fov = this.wideFOV ? 120 : 75;
+                        this.camera.updateProjectionMatrix();
+                    }
+                    if (e.code === 'KeyF') {
+                        this.hasTorch = !this.hasTorch;
+                        this.torch.visible = this.hasTorch;
+                        this.torchLight.visible = this.hasTorch;
+                    }
+                    if (e.code === 'Equal') {
+                        const newMultiplier = Math.min(this.timeSystem.timeMultiplier * 2, 128);
+                        this.timeSystem.setTimeMultiplier(newMultiplier);
+                    }
+                    if (e.code === 'Minus') {
+                        const newMultiplier = Math.max(this.timeSystem.timeMultiplier / 2, 0.25);
+                        this.timeSystem.setTimeMultiplier(newMultiplier);
+                    }
+                });
+                window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+            }
+            
+            initMobileControls() {
+                // Create twin stick UI
+                const leftStick = document.createElement('div');
+                leftStick.id = 'leftStick';
+                leftStick.style.cssText = 'position:absolute; bottom:80px; left:60px; width:120px; height:120px; background:rgba(255,255,255,0.2); border-radius:50%; border:2px solid rgba(255,255,255,0.5); pointer-events:auto; touch-action:none;';
+                
+                const leftKnob = document.createElement('div');
+                leftKnob.id = 'leftKnob';
+                leftKnob.style.cssText = 'position:absolute; top:45px; left:45px; width:30px; height:30px; background:rgba(255,255,255,0.6); border-radius:50%; pointer-events:none;';
+                leftStick.appendChild(leftKnob);
+                
+                const rightStick = document.createElement('div');
+                rightStick.id = 'rightStick';
+                rightStick.style.cssText = 'position:absolute; bottom:80px; right:60px; width:120px; height:120px; background:rgba(255,255,255,0.2); border-radius:50%; border:2px solid rgba(255,255,255,0.5); pointer-events:auto; touch-action:none;';
+                
+                const rightKnob = document.createElement('div');
+                rightKnob.id = 'rightKnob';
+                rightKnob.style.cssText = 'position:absolute; top:45px; left:45px; width:30px; height:30px; background:rgba(255,255,255,0.6); border-radius:50%; pointer-events:none;';
+                rightStick.appendChild(rightKnob);
+                
+                document.body.appendChild(leftStick);
+                document.body.appendChild(rightStick);
+                
+                // Touch handlers
+                const handleTouch = (stick, isMove) => (e) => {
+                    e.preventDefault();
+                    const touches = e.touches;
+                    const rect = stick.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    let touch = null;
+                    for (let i = 0; i < touches.length; i++) {
+                        const t = touches[i];
+                        const dx = t.clientX - centerX;
+                        const dy = t.clientY - centerY;
+                        if (Math.sqrt(dx*dx + dy*dy) < 80) {
+                            touch = t;
+                            break;
+                        }
+                    }
+                    
+                    if (touch) {
+                        const dx = touch.clientX - centerX;
+                        const dy = touch.clientY - centerY;
+                        const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 45);
+                        const angle = Math.atan2(dy, dx);
+                        
+                        const knob = stick.children[0];
+                        knob.style.left = (45 + Math.cos(angle) * dist) + 'px';
+                        knob.style.top = (45 + Math.sin(angle) * dist) + 'px';
+                        
+                        if (isMove) {
+                            this.touchControls.moveX = (dist / 45) * Math.cos(angle);
+                            this.touchControls.moveY = (dist / 45) * Math.sin(angle);
+                        } else {
+                            this.touchControls.lookX = (dist / 45) * Math.cos(angle);
+                            this.touchControls.lookY = (dist / 45) * Math.sin(angle);
+                        }
+                    } else {
+                        const knob = stick.children[0];
+                        knob.style.left = '45px';
+                        knob.style.top = '45px';
+                        if (isMove) {
+                            this.touchControls.moveX = 0;
+                            this.touchControls.moveY = 0;
+                        } else {
+                            this.touchControls.lookX = 0;
+                            this.touchControls.lookY = 0;
+                        }
+                    }
+                };
+                
+                leftStick.addEventListener('touchstart', handleTouch(leftStick, true));
+                leftStick.addEventListener('touchmove', handleTouch(leftStick, true));
+                leftStick.addEventListener('touchend', handleTouch(leftStick, true));
+                
+                rightStick.addEventListener('touchstart', handleTouch(rightStick, false));
+                rightStick.addEventListener('touchmove', handleTouch(rightStick, false));
+                rightStick.addEventListener('touchend', handleTouch(rightStick, false));
+                
+                // Add jump button
+                const jumpBtn = document.createElement('button');
+                jumpBtn.textContent = '↑';
+                jumpBtn.style.cssText = 'position:absolute; bottom:220px; left:80px; width:60px; height:60px; font-size:24px; background:rgba(255,255,255,0.3); border:2px solid rgba(255,255,255,0.5); border-radius:50%; color:white; pointer-events:auto; touch-action:none;';
+                jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.keys['Space'] = true; });
+                jumpBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.keys['Space'] = false; });
+                document.body.appendChild(jumpBtn);
+                
+                // Hide keyboard controls on mobile
+                document.getElementById('controls').style.display = 'none';
+            }
+            
+            generateInitialTerrain() {
+                for (let cx = -2; cx <= 2; cx++) {
+                    for (let cz = -2; cz <= 2; cz++) {
+                        this.generateChunk(cx, cz);
+                    }
+                }
+                
+                // Create temple complex at spawn
+                this.createTempleComplex(0, 0);
+                
+                // Initialize terrain colors based on starting season
+                this.updateTerrainColors();
+            }
+            
+            createTempleComplex(centerX, centerZ) {
+                const groundHeight = this.terrainGen.getHeight(centerX, centerZ);
+                
+                // Main pyramid - largest central structure
+                const mainPyramid = this.createLargePyramid(centerX, groundHeight, centerZ, 80);
+                this.scene.add(mainPyramid);
+                this.collisionBoxes.push({
+                    minX: centerX - 80, maxX: centerX + 80,
+                    minY: groundHeight, maxY: groundHeight + 120,
+                    minZ: centerZ - 80, maxZ: centerZ + 80
+                });
+                
+                // Four medium pyramids at cardinal directions
+                const positions = [
+                    [centerX + 150, centerZ],
+                    [centerX - 150, centerZ],
+                    [centerX, centerZ + 150],
+                    [centerX, centerZ - 150]
+                ];
+                
+                positions.forEach(([x, z]) => {
+                    const h = this.terrainGen.getHeight(x, z);
+                    const pyramid = this.createLargePyramid(x, h, z, 50);
+                    this.scene.add(pyramid);
+                    this.collisionBoxes.push({
+                        minX: x - 50, maxX: x + 50,
+                        minY: h, maxY: h + 75,
+                        minZ: z - 50, maxZ: z + 50
+                    });
+                });
+                
+                // Eight smaller temples around the perimeter
+                const templePositions = [
+                    [centerX + 120, centerZ + 120],
+                    [centerX - 120, centerZ + 120],
+                    [centerX + 120, centerZ - 120],
+                    [centerX - 120, centerZ - 120],
+                    [centerX + 200, centerZ + 80],
+                    [centerX - 200, centerZ + 80],
+                    [centerX + 200, centerZ - 80],
+                    [centerX - 200, centerZ - 80]
+                ];
+                
+                templePositions.forEach(([x, z]) => {
+                    const h = this.terrainGen.getHeight(x, z);
+                    const temple = this.createTemple(x, h, z);
+                    this.scene.add(temple);
+                    this.collisionBoxes.push({
+                        minX: x - 40, maxX: x + 40,
+                        minY: h, maxY: h + 60,
+                        minZ: z - 40, maxZ: z + 40
+                    });
+                });
+                
+                // Ring of obelisks
+                for (let i = 0; i < 16; i++) {
+                    const angle = (i / 16) * Math.PI * 2;
+                    const radius = 250;
+                    const x = centerX + Math.cos(angle) * radius;
+                    const z = centerZ + Math.sin(angle) * radius;
+                    const h = this.terrainGen.getHeight(x, z);
+                    const obelisk = this.createObelisk(x, h, z);
+                    this.scene.add(obelisk);
+                    this.collisionBoxes.push({
+                        minX: x - 4, maxX: x + 4,
+                        minY: h, maxY: h + 50,
+                        minZ: z - 4, maxZ: z + 4
+                    });
+                }
+            }
+            
+            createLargePyramid(x, y, z, baseSize) {
+                const group = new THREE.Group();
+                const height = baseSize * 1.3;
+                
+                // Main pyramid body - granite gray
+                const pyramid = new THREE.Mesh(
+                    new THREE.ConeGeometry(baseSize, height, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x707070 })
+                );
+                pyramid.position.y = height / 2;
+                pyramid.rotation.y = Math.PI / 4;
+                pyramid.castShadow = true;
+                pyramid.receiveShadow = true;
+                group.add(pyramid);
+                
+                // Multiple step layers - darker granite
+                const steps = 8;
+                for (let i = 0; i < steps; i++) {
+                    const stepSize = baseSize * (1 - i * 0.1);
+                    const step = new THREE.Mesh(
+                        new THREE.BoxGeometry(stepSize * 2, 6, stepSize * 2),
+                        new THREE.MeshLambertMaterial({ color: 0x606060 })
+                    );
+                    step.position.y = i * 6 + 3;
+                    step.castShadow = true;
+                    step.receiveShadow = true;
+                    group.add(step);
+                }
+                
+                // Entrance platform - medium granite
+                const entrance = new THREE.Mesh(
+                    new THREE.BoxGeometry(baseSize * 0.4, 8, baseSize * 0.4),
+                    new THREE.MeshLambertMaterial({ color: 0x505050 })
+                );
+                entrance.position.set(0, 4, baseSize);
+                entrance.castShadow = true;
+                entrance.receiveShadow = true;
+                group.add(entrance);
+                
+                // Decorative top - gold capstone
+                const capstone = new THREE.Mesh(
+                    new THREE.SphereGeometry(8, 8, 8),
+                    new THREE.MeshLambertMaterial({ color: 0xffd700 })
+                );
+                capstone.position.y = height;
+                capstone.castShadow = true;
+                group.add(capstone);
+                
+                group.position.set(x, y, z);
+                return group;
+            }
+            
+            createObelisk(x, y, z) {
+                const group = new THREE.Group();
+                const height = 40;
+                
+                // Main shaft - granite gray
+                const shaft = new THREE.Mesh(
+                    new THREE.BoxGeometry(4, height, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x707070 })
+                );
+                shaft.position.y = height / 2;
+                shaft.castShadow = true;
+                shaft.receiveShadow = true;
+                group.add(shaft);
+                
+                // Pyramid top - lighter granite
+                const top = new THREE.Mesh(
+                    new THREE.ConeGeometry(3, 8, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x808080 })
+                );
+                top.position.y = height + 4;
+                top.rotation.y = Math.PI / 4;
+                top.castShadow = true;
+                group.add(top);
+                
+                // Base - dark granite
+                const base = new THREE.Mesh(
+                    new THREE.BoxGeometry(8, 4, 8),
+                    new THREE.MeshLambertMaterial({ color: 0x505050 })
+                );
+                base.position.y = 2;
+                base.castShadow = true;
+                base.receiveShadow = true;
+                group.add(base);
+                
+                group.position.set(x, y, z);
+                return group;
+            }
+            
+            createPyramid(x, y, z) {
+                const group = new THREE.Group();
+                const size = 30 + Math.random() * 20;
+                const height = size * 1.2;
+                
+                // Main pyramid - granite gray
+                const pyramid = new THREE.Mesh(
+                    new THREE.ConeGeometry(size, height, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x707070 })
+                );
+                pyramid.position.y = height / 2;
+                pyramid.rotation.y = Math.PI / 4;
+                pyramid.castShadow = true;
+                pyramid.receiveShadow = true;
+                group.add(pyramid);
+                
+                // Steps - darker granite
+                for (let i = 0; i < 5; i++) {
+                    const stepSize = size * (1 - i * 0.15);
+                    const step = new THREE.Mesh(
+                        new THREE.BoxGeometry(stepSize * 2, 5, stepSize * 2),
+                        new THREE.MeshLambertMaterial({ color: 0x606060 })
+                    );
+                    step.position.y = i * 5 + 2.5;
+                    step.castShadow = true;
+                    step.receiveShadow = true;
+                    group.add(step);
+                }
+                
+                group.position.set(x, y, z);
+                return group;
+            }
+            
+            createTemple(x, y, z) {
+                const group = new THREE.Group();
+                const baseSize = 25 + Math.random() * 15;
+                
+                // Base platform - dark granite
+                const base = new THREE.Mesh(
+                    new THREE.BoxGeometry(baseSize * 2, 8, baseSize * 2),
+                    new THREE.MeshLambertMaterial({ color: 0x505050 })
+                );
+                base.position.y = 4;
+                base.castShadow = true;
+                base.receiveShadow = true;
+                group.add(base);
+                
+                // Columns - lighter granite
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i === 0 && j === 0) continue;
+                        const column = new THREE.Mesh(
+                            new THREE.CylinderGeometry(2, 2, 30, 8),
+                            new THREE.MeshLambertMaterial({ color: 0x808080 })
+                        );
+                        column.position.set(i * baseSize * 0.7, 23, j * baseSize * 0.7);
+                        column.castShadow = true;
+                        group.add(column);
+                    }
+                }
+                
+                // Roof - medium granite
+                const roof = new THREE.Mesh(
+                    new THREE.ConeGeometry(baseSize * 1.2, 20, 4),
+                    new THREE.MeshLambertMaterial({ color: 0x606060 })
+                );
+                roof.position.y = 48;
+                roof.rotation.y = Math.PI / 4;
+                roof.castShadow = true;
+                group.add(roof);
+                
+                group.position.set(x, y, z);
+                return group;
+            }
+            
+            generateChunk(chunkX, chunkZ, playerDist = 0) {
+                const key = `${chunkX},${chunkZ}`;
+                if (this.chunks.has(key)) return;
+                
+                // LOD based on distance
+                let lodStep = 1;
+                if (playerDist > 24) lodStep = 8;
+                else if (playerDist > 16) lodStep = 4;
+                else if (playerDist > 8) lodStep = 2;
+                
+                const size = CONFIG.CHUNK_SIZE;
+                const startX = chunkX * size;
+                const startZ = chunkZ * size;
+                
+                // Terrain mesh with LOD
+                const geo = new THREE.BufferGeometry();
+                const verts = [];
+                const colors = [];
+                const indices = [];
+                
+                const gridSize = Math.floor(size / lodStep);
+                const terrainTypes = []; // Store terrain type for seasonal updates
+                
+                for (let z = 0; z <= gridSize; z++) {
+                    for (let x = 0; x <= gridSize; x++) {
+                        const wx = startX + x * lodStep;
+                        const wz = startZ + z * lodStep;
+                        let h = this.terrainGen.getHeight(wx, wz);
+                        const m = this.terrainGen.getMoisture(wx, wz);
+                        
+                        // Flatten water areas - terrain below water level becomes flat at water level
+                        const waterLevel = 3;
+                        if (h < waterLevel) {
+                            h = waterLevel - 1; // Slightly below water surface for visual depth
+                        }
+                        
+                        verts.push(wx, h, wz);
+                        
+                        // Store terrain type for seasonal color updates
+                        let terrainType = 'lowland';
+                        if (h < 5) terrainType = 'water';
+                        else if (h > 300) terrainType = 'peak';
+                        else if (h > 200) terrainType = 'mountain';
+                        else if (m > 0.2) terrainType = 'forest';
+                        else if (m < -0.1) terrainType = 'sandy';
+                        
+                        terrainTypes.push({ type: terrainType, height: h, moisture: m });
+                        
+                        // Initial color will be set by updateTerrainColors
+                        colors.push(1, 1, 1);
+                    }
+                }
+                
+                for (let z = 0; z < gridSize; z++) {
+                    for (let x = 0; x < gridSize; x++) {
+                        const a = x + z * (gridSize + 1);
+                        const b = x + (z + 1) * (gridSize + 1);
+                        const c = (x + 1) + z * (gridSize + 1);
+                        const d = (x + 1) + (z + 1) * (gridSize + 1);
+                        indices.push(a, b, c, b, d, c);
+                    }
+                }
+                
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                geo.setIndex(indices);
+                geo.computeVertexNormals();
+                
+                const mesh = new THREE.Mesh(geo, 
+                    new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+                mesh.receiveShadow = (lodStep === 1); // Only shadows on high detail chunks
+                this.scene.add(mesh);
+                
+                // Snow layer - only for close/medium chunks
+                let snowMesh = null;
+                if (lodStep <= 4) {
+                    const snowGeo = geo.clone();
+                    snowMesh = new THREE.Mesh(snowGeo, 
+                        new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }));
+                    snowMesh.position.y = 0.2;
+                    snowMesh.receiveShadow = (lodStep === 1);
+                    snowMesh.visible = false;
+                    this.scene.add(snowMesh);
+                }
+                
+                // Water - only for close/medium chunks
+                let water = null;
+                if (lodStep <= 4) {
+                    water = new THREE.Mesh(
+                        new THREE.PlaneGeometry(size, size),
+                        new THREE.MeshLambertMaterial({ color: 0x1e90ff, transparent: true, opacity: 0.7 })
+                    );
+                    water.rotation.x = -Math.PI / 2;
+                    water.position.set(startX + size/2, 3, startZ + size/2);
+                    this.scene.add(water);
+                }
+                
+                // Trees - ONLY for close chunks (LOD 1-2)
+                const treeIndices = [];
+                const matrix = new THREE.Matrix4();
+                
+                if (lodStep <= 2) { // Only add trees to high/medium detail chunks
+                    for (let z = 0; z < size; z += 3) {
+                        for (let x = 0; x < size; x += 3) {
+                            const wx = startX + x;
+                            const wz = startZ + z;
+                            const h = this.terrainGen.getHeight(wx, wz);
+                            const m = this.terrainGen.getMoisture(wx, wz);
+                            
+                            if (this.terrainGen.shouldPlaceTree(wx, wz, h, m)) {
+                                if (this.treeCount < 100000) {
+                                    const seed = Math.sin(wx * 12.9898 + wz * 78.233) * 43758.5453;
+                                    const treeH = 8 + (Math.abs(seed) % 1) * 6;
+                                    const treeR = 1.5 + (Math.abs(seed * 7) % 1) * 1;
+                                    
+                                    matrix.makeTranslation(wx, h + treeH / 2, wz);
+                                    matrix.scale(new THREE.Vector3(treeR, treeH, treeR));
+                                    this.treeInstancedMesh.setMatrixAt(this.treeCount, matrix);
+                                    
+                                    treeIndices.push(this.treeCount);
+                                    this.treeCount++;
+                                }
+                            }
+                        }
+                    }
+                    
+                    this.treeInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+                
+                // Structures - ONLY for close chunks
+                if (lodStep === 1) {
+                    const centerX = startX + size / 2;
+                    const centerZ = startZ + size / 2;
+                    const h = this.terrainGen.getHeight(centerX, centerZ);
+                    
+                    if (this.terrainGen.shouldPlaceStructure(centerX, centerZ, h)) {
+                        const structType = Math.random() > 0.5 ? 'pyramid' : 'temple';
+                        let structure;
+                        if (structType === 'pyramid') {
+                            structure = this.createPyramid(centerX, h, centerZ);
+                            // Add collision box for pyramid
+                            this.collisionBoxes.push({
+                                minX: centerX - 40, maxX: centerX + 40,
+                                minY: h, maxY: h + 60,
+                                minZ: centerZ - 40, maxZ: centerZ + 40,
+                                chunkKey: key
+                            });
+                        } else {
+                            structure = this.createTemple(centerX, h, centerZ);
+                            // Add collision box for temple
+                            this.collisionBoxes.push({
+                                minX: centerX - 40, maxX: centerX + 40,
+                                minY: h, maxY: h + 60,
+                                minZ: centerZ - 40, maxZ: centerZ + 40,
+                                chunkKey: key
+                            });
+                        }
+                        this.scene.add(structure);
+                        this.structures.set(key, structure);
+                    }
+                }
+                
+                this.chunks.set(key, { mesh, snowMesh, water, treeIndices, terrainTypes, gridSize });
+            }
+            
+            updateTerrainColors() {
+                const yearProgress = this.timeSystem.getYearProgress();
+                
+                // Smoothstep for smooth transitions
+                const smoothstep = (edge0, edge1, x) => {
+                    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+                    return t * t * (3 - 2 * t);
+                };
+                
+                // Calculate seasonal blend factors
+                let winterFactor = 0, springFactor = 0, summerFactor = 0, fallFactor = 0;
+                
+                if (yearProgress < 0.2) {
+                    // Winter
+                    winterFactor = 1;
+                } else if (yearProgress < 0.35) {
+                    // Winter to spring
+                    const t = smoothstep(0.2, 0.35, yearProgress);
+                    winterFactor = 1 - t;
+                    springFactor = t;
+                } else if (yearProgress < 0.45) {
+                    // Spring
+                    springFactor = 1;
+                } else if (yearProgress < 0.55) {
+                    // Spring to summer
+                    const t = smoothstep(0.45, 0.55, yearProgress);
+                    springFactor = 1 - t;
+                    summerFactor = t;
+                } else if (yearProgress < 0.65) {
+                    // Summer
+                    summerFactor = 1;
+                } else if (yearProgress < 0.75) {
+                    // Summer to fall
+                    const t = smoothstep(0.65, 0.75, yearProgress);
+                    summerFactor = 1 - t;
+                    fallFactor = t;
+                } else if (yearProgress < 0.85) {
+                    // Fall
+                    fallFactor = 1;
+                } else {
+                    // Fall to winter
+                    const t = smoothstep(0.85, 0.95, yearProgress);
+                    fallFactor = 1 - t;
+                    winterFactor = t;
+                }
+                
+                // Define seasonal colors per terrain type
+                const seasonalColors = {
+                    forest: {
+                        winter: new THREE.Color(0xf5f5ff),  // Snow white
+                        spring: new THREE.Color(0x7aa05a),  // Light fresh green
+                        summer: new THREE.Color(0x4a6e2a),  // Dark green
+                        fall: new THREE.Color(0x8b4513)     // Reddish brown
+                    },
+                    lowland: {
+                        winter: new THREE.Color(0xf5f5ff),  // Snow white
+                        spring: new THREE.Color(0x9ab089),  // Light gray-green
+                        summer: new THREE.Color(0xa8b5a0),  // Gray-green tundra
+                        fall: new THREE.Color(0x9a7b4f)     // Brown
+                    },
+                    sandy: {
+                        winter: new THREE.Color(0xf0f0f0),  // Light snow
+                        spring: new THREE.Color(0xd4c4a8),  // Light sand
+                        summer: new THREE.Color(0xc4b89f),  // Sandy beige
+                        fall: new THREE.Color(0xb89968)     // Golden brown
+                    }
+                };
+                
+                // Update each chunk's colors
+                for (const [key, chunk] of this.chunks) {
+                    if (!chunk.terrainTypes) continue;
+                    
+                    const colorAttr = chunk.mesh.geometry.getAttribute('color');
+                    const colorArray = colorAttr.array;
+                    
+                    for (let i = 0; i < chunk.terrainTypes.length; i++) {
+                        const terrain = chunk.terrainTypes[i];
+                        const color = new THREE.Color();
+                        
+                        // Terrain that doesn't change with seasons
+                        if (terrain.type === 'water') {
+                            color.setHex(0x1e5a8a);
+                        } else if (terrain.type === 'peak') {
+                            color.setHex(0xf0f0f0);
+                        } else if (terrain.type === 'mountain') {
+                            color.setHex(0xd0d0d0);
+                        } else {
+                            // Get terrain-specific seasonal colors
+                            let terrainColors;
+                            if (terrain.type === 'forest') {
+                                terrainColors = seasonalColors.forest;
+                            } else if (terrain.type === 'sandy') {
+                                terrainColors = seasonalColors.sandy;
+                            } else {
+                                terrainColors = seasonalColors.lowland;
+                            }
+                            
+                            // Blend colors across seasons
+                            color.r = terrainColors.winter.r * winterFactor +
+                                     terrainColors.spring.r * springFactor +
+                                     terrainColors.summer.r * summerFactor +
+                                     terrainColors.fall.r * fallFactor;
+                            
+                            color.g = terrainColors.winter.g * winterFactor +
+                                     terrainColors.spring.g * springFactor +
+                                     terrainColors.summer.g * summerFactor +
+                                     terrainColors.fall.g * fallFactor;
+                            
+                            color.b = terrainColors.winter.b * winterFactor +
+                                     terrainColors.spring.b * springFactor +
+                                     terrainColors.summer.b * summerFactor +
+                                     terrainColors.fall.b * fallFactor;
+                        }
+                        
+                        colorArray[i * 3] = color.r;
+                        colorArray[i * 3 + 1] = color.g;
+                        colorArray[i * 3 + 2] = color.b;
+                    }
+                    
+                    colorAttr.needsUpdate = true;
+                }
+            }
+            
+            updateChunks() {
+                const px = Math.floor(this.position.x / CONFIG.CHUNK_SIZE);
+                const pz = Math.floor(this.position.z / CONFIG.CHUNK_SIZE);
+                
+                // Generate chunks within render distance with LOD
+                for (let dx = -CONFIG.RENDER_DISTANCE; dx <= CONFIG.RENDER_DISTANCE; dx++) {
+                    for (let dz = -CONFIG.RENDER_DISTANCE; dz <= CONFIG.RENDER_DISTANCE; dz++) {
+                        const dist = Math.max(Math.abs(dx), Math.abs(dz));
+                        this.generateChunk(px + dx, pz + dz, dist);
+                    }
+                }
+                
+                // Remove far chunks AND their trees
+                for (const [key, chunk] of this.chunks.entries()) {
+                    const [cx, cz] = key.split(',').map(Number);
+                    const dist = Math.max(Math.abs(cx - px), Math.abs(cz - pz));
+                    
+                    if (dist > CONFIG.RENDER_DISTANCE + 1) {
+                        this.scene.remove(chunk.mesh);
+                        if (chunk.snowMesh) this.scene.remove(chunk.snowMesh);
+                        if (chunk.water) this.scene.remove(chunk.water);
+                        
+                        // Hide trees by scaling to 0
+                        const hideMatrix = new THREE.Matrix4();
+                        hideMatrix.makeScale(0, 0, 0);
+                        chunk.treeIndices.forEach(idx => {
+                            this.treeInstancedMesh.setMatrixAt(idx, hideMatrix);
+                        });
+                        this.treeInstancedMesh.instanceMatrix.needsUpdate = true;
+                        
+                        // Remove structures and their collision boxes
+                        if (this.structures.has(key)) {
+                            this.scene.remove(this.structures.get(key));
+                            this.structures.delete(key);
+                            // Remove collision boxes for this chunk
+                            this.collisionBoxes = this.collisionBoxes.filter(box => box.chunkKey !== key);
+                        }
+                        
+                        this.chunks.delete(key);
+                    }
+                }
+            }
+            
+            updateSnow() {
+                const isWinter = this.timeSystem.getSeason() === 'Winter';
+                for (const chunk of this.chunks.values()) {
+                    if (chunk.snowMesh) {
+                        chunk.snowMesh.visible = isWinter;
+                    }
+                    if (chunk.water) {
+                        chunk.water.material.color.setHex(isWinter ? 0xd0e0ff : 0x1e90ff);
+                        chunk.water.material.opacity = isWinter ? 0.9 : 0.7;
+                    }
+                }
+            }
+            
+            updateSky() {
+                // Sky dome and stars follow player
+                this.skyDome.position.copy(this.position);
+                this.stars.position.copy(this.position);
+                
+                const sunPos = this.timeSystem.getSunPosition();
+                const angle = sunPos * Math.PI * 2 - Math.PI / 2;
+                const dist = 4000;
+                
+                // Latitude setting: 65° North
+                const latitude = 65 * Math.PI / 180; // 65 degrees in radians
+                
+                // At 65° latitude, the celestial sphere is tilted
+                // The celestial pole is 65° above the horizon
+                // Calculate sun/moon positions with latitude tilt
+                const x = Math.cos(angle) * dist;
+                const y = Math.sin(angle) * dist;
+                
+                // Apply latitude tilt: rotate around X-axis (east-west) by (90° - latitude)
+                const tilt = Math.PI / 2 - latitude; // 25° tilt from vertical
+                const yTilted = y * Math.cos(tilt);
+                const zTilted = -y * Math.sin(tilt);
+                
+                // Position sun and moon on tilted dome
+                this.sun.position.set(x, yTilted, zTilted);
+                this.moon.position.set(-x, -yTilted, -zTilted);
+                
+                // Light direction (not on dome)
+                this.sunLight.position.copy(this.position).add(
+                    new THREE.Vector3(x * 0.2, yTilted * 0.2, zTilted * 0.2)
+                );
+                this.sunLight.target.position.copy(this.position);
+                this.sunLight.target.updateMatrixWorld();
+                
+                // Update shadow camera to follow player for shadows to work everywhere
+                // The shadow camera needs to have its matrix updated after the light moves
+                this.sunLight.shadow.camera.updateProjectionMatrix();
+                this.sunLight.updateMatrixWorld();
+                this.sunLight.shadow.camera.updateMatrixWorld();
+                
+                const moonPhase = this.timeSystem.getMoonPhase();
+                this.moon.scale.setScalar(0.5 + (0.5 - Math.abs(0.5 - moonPhase)));
+                
+                // Sun elevation angle accounting for 65° latitude tilt
+                const sunElevation = Math.asin(yTilted / dist);
+                const horizonFadeAngle = -0.2618; // -15 degrees
+                
+                // Smooth interpolation helper
+                const smoothstep = (edge0, edge1, x) => {
+                    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+                    return t * t * (3 - 2 * t);
+                };
+                
+                // Calculate continuous fade factors
+                const dayFactor = smoothstep(-0.1, 0.3, sunElevation); // 0 at -6°, 1 at 17°
+                const twilightFactor = smoothstep(horizonFadeAngle, 0.05, sunElevation); // 0 at -15°, 1 at 3°
+                const nightFactor = 1 - smoothstep(horizonFadeAngle, -0.05, sunElevation); // 0 at -3°, 1 at -15°
+                
+                // Sun light intensity - continuous fade
+                const sunIntensity = Math.max(0, Math.sin(Math.max(0, sunElevation))) * dayFactor + 
+                                    twilightFactor * (1 - dayFactor) * 0.3;
+                
+                // Sun color - fully continuous with blended transitions
+                const sunColor = new THREE.Color();
+                
+                // Use multiple blend ranges for smooth color gradient
+                if (sunElevation < 0) {
+                    // Low/sunset: blend from deep red through orange to yellow
+                    const sunsetBlend = smoothstep(horizonFadeAngle, 0, sunElevation);
+                    const red = 1;
+                    const green = 0.2 + sunsetBlend * 0.8; // 0.2 → 1.0
+                    const blue = sunsetBlend * sunsetBlend * 0.5; // 0 → 0.5
+                    sunColor.setRGB(red, green, blue);
+                } else if (sunElevation < 0.5) {
+                    // Mid: blend from yellow to white
+                    const midBlend = smoothstep(0, 0.5, sunElevation);
+                    const red = 1;
+                    const green = 1;
+                    const blue = 0.5 + midBlend * 0.5; // 0.5 → 1.0
+                    sunColor.setRGB(red, green, blue);
+                } else {
+                    // High: pure white
+                    sunColor.setRGB(1, 1, 1);
+                }
+                
+                // Sky color - continuous transition
+                const skyColor = new THREE.Color();
+                const dayBlue = new THREE.Color(0.53, 0.65, 0.85);
+                const twilightPurple = new THREE.Color(0.4, 0.25, 0.5);
+                const nightBlue = new THREE.Color(0.04, 0.04, 0.1);
+                
+                // Blend between night → twilight → day
+                if (dayFactor > 0.01) {
+                    skyColor.lerpColors(twilightPurple, dayBlue, dayFactor);
+                } else {
+                    skyColor.lerpColors(nightBlue, twilightPurple, twilightFactor);
+                }
+                
+                // Ambient light - continuous fade with brighter nights
+                const ambientIntensity = 0.15 + nightFactor * 0.05 + twilightFactor * 0.2 + dayFactor * 0.5;
+                
+                // Moonlight contribution at night
+                const moonBright = (0.5 - Math.abs(0.5 - moonPhase)) * nightFactor;
+                const moonIntensity = moonBright * 0.6; // Increased from 0.2 for brighter nights
+                const totalIntensity = Math.max(sunIntensity, moonIntensity);
+                
+                // Moon color for night lighting
+                const moonColor = new THREE.Color(0.7, 0.7, 1);
+                const lightColor = new THREE.Color();
+                if (nightFactor > 0.5) {
+                    lightColor.copy(moonColor);
+                } else {
+                    lightColor.lerpColors(sunColor, moonColor, nightFactor);
+                }
+                
+                // Star opacity - smooth fade based on night factor
+                const starOpacity = smoothstep(0.2, 0.8, nightFactor);
+                this.stars.material.uniforms.opacity.value = starOpacity;
+                
+                // Visibility - keep stars always rendering but invisible when opacity is 0
+                this.sun.visible = twilightFactor > 0.01;
+                this.moon.visible = nightFactor > 0.01 || (twilightFactor > 0.01 && twilightFactor < 0.99);
+                this.stars.visible = true; // Always visible, opacity handles fading
+                
+                // Update sun visual appearance
+                this.sun.material.color.copy(sunColor);
+                
+                // Apply lighting
+                this.sunLight.color.copy(lightColor);
+                this.sunLight.intensity = totalIntensity;
+                this.ambient.intensity = ambientIntensity;
+                this.skyDome.material.color.copy(skyColor);
+                this.scene.fog.color.copy(skyColor);
+                
+                // Rotate stars to match celestial motion at 65° latitude
+                // Tilt FIRST to align rotation axis with celestial pole, then rotate around it
+                this.stars.rotation.set(0, 0, 0);
+                this.stars.rotateX(tilt);  // Latitude tilt first - tilts the rotation axis
+                this.stars.rotateY(angle); // Daily rotation around the now-tilted Y axis
+                
+                // Update northern lights (aurora) - follows player
+                this.aurora.position.x = this.position.x;
+                this.aurora.position.z = this.position.z;
+                this.aurora.material.uniforms.time.value = this.timeSystem.getTime() * 0.001;
+                
+                // Aurora only visible during winter nights
+                const season = this.timeSystem.getSeason();
+                const isWinter = season === 'Winter';
+                const auroraOpacity = isWinter ? nightFactor * 0.7 : 0; // 70% max opacity in winter
+                this.aurora.material.uniforms.opacity.value = auroraOpacity;
+                this.aurora.visible = auroraOpacity > 0.01;
+            }
+            
+            updatePlayer(delta) {
+                // Look controls - keyboard or touch
+                if (this.isMobile && (this.touchControls.lookX !== 0 || this.touchControls.lookY !== 0)) {
+                    const lookSpeed = 3 * delta;
+                    this.yaw -= this.touchControls.lookX * lookSpeed;
+                    this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch - this.touchControls.lookY * lookSpeed));
+                } else {
+                    const lookSpeed = 2 * delta;
+                    if (this.keys['ArrowLeft']) this.yaw += lookSpeed;
+                    if (this.keys['ArrowRight']) this.yaw -= lookSpeed;
+                    if (this.keys['ArrowUp']) this.pitch = Math.min(this.pitch + lookSpeed, Math.PI / 2);
+                    if (this.keys['ArrowDown']) this.pitch = Math.max(this.pitch - lookSpeed, -Math.PI / 2);
+                }
+                
+                if (this.godMode) {
+                    const speed = CONFIG.PLAYER_SPEED * 20;
+                    const forward = new THREE.Vector3(
+                        -Math.sin(this.yaw) * Math.cos(this.pitch),
+                        -Math.sin(this.pitch),
+                        -Math.cos(this.yaw) * Math.cos(this.pitch)
+                    );
+                    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+                    const movement = new THREE.Vector3();
+                    
+                    // Mobile touch or keyboard
+                    if (this.isMobile && (this.touchControls.moveX !== 0 || this.touchControls.moveY !== 0)) {
+                        const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+                        const rgt = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+                        movement.add(fwd.multiplyScalar(-this.touchControls.moveY));
+                        movement.add(rgt.multiplyScalar(this.touchControls.moveX));
+                    } else {
+                        if (this.keys['KeyW']) movement.add(forward);
+                        if (this.keys['KeyS']) movement.sub(forward);
+                        if (this.keys['KeyD']) movement.add(right);
+                        if (this.keys['KeyA']) movement.sub(right);
+                    }
+                    if (this.keys['Space']) movement.y += 1;
+                    if (this.keys['ShiftLeft']) movement.y -= 1;
+                    
+                    if (movement.length() > 0) {
+                        movement.normalize().multiplyScalar(speed * delta);
+                        this.position.add(movement);
+                    }
+                } else {
+                    // Normal physics mode - 4x speed
+                    const normalSpeed = CONFIG.PLAYER_SPEED * 4;
+                    this.velocity.y += CONFIG.GRAVITY * delta;
+                    
+                    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+                    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+                    
+                    // Mobile touch or keyboard input
+                    if (this.isMobile && (this.touchControls.moveX !== 0 || this.touchControls.moveY !== 0)) {
+                        this.velocity.x += (-forward.x * this.touchControls.moveY + right.x * this.touchControls.moveX) * normalSpeed * delta;
+                        this.velocity.z += (-forward.z * this.touchControls.moveY + right.z * this.touchControls.moveX) * normalSpeed * delta;
+                    } else {
+                        if (this.keys['KeyW']) {
+                            this.velocity.x += forward.x * normalSpeed * delta;
+                            this.velocity.z += forward.z * normalSpeed * delta;
+                        }
+                        if (this.keys['KeyS']) {
+                            this.velocity.x -= forward.x * normalSpeed * delta;
+                            this.velocity.z -= forward.z * normalSpeed * delta;
+                        }
+                        if (this.keys['KeyD']) {
+                            this.velocity.x += right.x * normalSpeed * delta;
+                            this.velocity.z += right.z * normalSpeed * delta;
+                        }
+                        if (this.keys['KeyA']) {
+                            this.velocity.x -= right.x * normalSpeed * delta;
+                            this.velocity.z -= right.z * normalSpeed * delta;
+                        }
+                    }
+                    
+                    // Apply friction
+                    this.velocity.x *= 0.85;
+                    this.velocity.z *= 0.85;
+                    
+                    // Calculate new position
+                    const newPos = this.position.clone().add(this.velocity.clone().multiplyScalar(delta));
+                    
+                    // Check collisions with buildings - horizontal and vertical
+                    let collided = false;
+                    let structureHeight = -Infinity;
+                    const playerRadius = 1;
+                    const playerHeight = 3;
+                    
+                    for (const box of this.collisionBoxes) {
+                        // Check if player is horizontally within the building footprint
+                        const inFootprint = newPos.x + playerRadius > box.minX && newPos.x - playerRadius < box.maxX &&
+                                          newPos.z + playerRadius > box.minZ && newPos.z - playerRadius < box.maxZ;
+                        
+                        if (inFootprint) {
+                            // Check if player is above the structure (can stand on top)
+                            if (this.position.y >= box.maxY - 2 && newPos.y >= box.maxY - 2) {
+                                // Player is on top of structure - track the height
+                                structureHeight = Math.max(structureHeight, box.maxY);
+                            } 
+                            // Check if player is colliding with interior
+                            else if (newPos.y + playerHeight > box.minY && newPos.y < box.maxY) {
+                                collided = true;
+                                
+                                // Push player out horizontally
+                                const centerX = (box.minX + box.maxX) / 2;
+                                const centerZ = (box.minZ + box.maxZ) / 2;
+                                const dx = newPos.x - centerX;
+                                const dz = newPos.z - centerZ;
+                                const dist = Math.sqrt(dx * dx + dz * dz);
+                                if (dist > 0) {
+                                    const pushDist = Math.max(Math.abs(box.maxX - box.minX), Math.abs(box.maxZ - box.minZ)) / 2 + playerRadius;
+                                    newPos.x = centerX + (dx / dist) * pushDist;
+                                    newPos.z = centerZ + (dz / dist) * pushDist;
+                                }
+                                
+                                // Stop horizontal velocity on collision
+                                this.velocity.x = 0;
+                                this.velocity.z = 0;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Update position
+                    this.position.copy(newPos);
+                    
+                    // Ground collision - check terrain, structures, and frozen water
+                    const groundH = this.terrainGen.getHeight(this.position.x, this.position.z);
+                    let effectiveGroundHeight = groundH;
+                    
+                    // Check if standing on structure
+                    if (structureHeight > groundH && this.position.y <= structureHeight + playerHeight) {
+                        effectiveGroundHeight = structureHeight;
+                    }
+                    
+                    // Check frozen water (winter season)
+                    const season = this.timeSystem.getSeason();
+                    const waterLevel = 3;
+                    if (season === 'Winter' && groundH < waterLevel && waterLevel > effectiveGroundHeight) {
+                        effectiveGroundHeight = waterLevel; // Stand on ice
+                    }
+                    
+                    if (this.position.y <= effectiveGroundHeight + playerHeight) {
+                        this.position.y = effectiveGroundHeight + playerHeight;
+                        this.velocity.y = 0;
+                        this.onGround = true;
+                    } else {
+                        this.onGround = false;
+                    }
+                    
+                    // Jump
+                    if (this.keys['Space'] && this.onGround) {
+                        this.velocity.y = CONFIG.JUMP_FORCE;
+                        this.onGround = false;
+                    }
+                }
+                
+                this.camera.position.copy(this.position);
+                this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+                this.camera.updateMatrixWorld(); // Force update so children (torch light) move with camera
+                
+                // Update torch light
+                if (this.hasTorch) {
+                    const flicker = 2.5 + Math.random() * 0.5;
+                    this.torchLight.intensity = flicker;
+                    // Animate flame
+                    this.torch.children[1].scale.y = 0.9 + Math.random() * 0.2;
+                }
+            }
+            
+            updateUI() {
+                const torchStatus = this.hasTorch ? ' | TORCH ON' : '';
+                const fovStatus = this.wideFOV ? ' | WIDE FOV' : '';
+                document.getElementById('timeInfo').textContent = 
+                    `Day: ${this.timeSystem.getDayNumber()} | Season: ${this.timeSystem.getSeason()} (${this.timeSystem.timeMultiplier}x)${this.godMode ? ' | GOD' : ''}${torchStatus}${fovStatus}`;
+                document.getElementById('posInfo').textContent = 
+                    `X: ${Math.floor(this.position.x)} Y: ${Math.floor(this.position.y)} Z: ${Math.floor(this.position.z)}`;
+                document.getElementById('tempInfo').textContent = 
+                    `Temp: ${Math.floor(this.timeSystem.getTemperature())}°C | Trees: ${this.treeCount}`;
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                const now = Date.now();
+                const delta = Math.min((now - this.lastUpdate) / 1000, 0.1);
+                this.lastUpdate = now;
+                
+                // Update terrain colors every 2 seconds
+                if (now - this.lastColorUpdate > 2000) {
+                    this.updateTerrainColors();
+                    this.lastColorUpdate = now;
+                }
+                
+                this.updatePlayer(delta);
+                this.updateChunks();
+                this.updateSky();
+                this.updateSnow();
+                this.updateUI();
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        window.addEventListener('load', () => new Game());
+    </script>
+</body>
+</html>

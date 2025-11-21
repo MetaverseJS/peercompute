@@ -106,5 +106,49 @@ Files modified:
 - Optional: serve `peer-config.json` to avoid 404 warnings in test logs (defaults already work).
 - Harden PeerJS server startup for CI (currently started via `npm run dev:peer` in Playwright config).
 
+## Date: 2025-11-22
+
+### Changes
+- Networking: added game/room scoping to PeerJS layer (handshake + discovery filtering) to support multiple games/instances. Broadcast now filters by matched room/game.
+- StateManager: added scoped read/write/delete and namespace observers; improved remote state-set handling and fallback broadcast.
+- New Playwright test (`p2p-room-isolation.spec.js`) verifies nodes in different rooms do not connect.
+- Sneaky Woods demo rewritten to use PeerCompute/PeerJS: room-select UI, state stored under `sneakywoods` namespace, shared player positions with heartbeat pruning, top-down canvas renderer.
+- Dev tooling: `start-dev.sh` now starts PeerJS server + webpack; default `peer-config.json` added to `public/`.
+
+### Results
+- Playwright suite passes (including new room isolation test). State sync works in-game via Yjs + state-set fallback.
+- Room/game isolation confirmed by handshake gate; discovery only dials matching room/game.
+
+### Sneaky Woods (sw2.html) Integration
+- Adapted the 3D Sneaky Woods game to use PeerCompute/PeerJS with a single global match (gameId: sneakywoods, roomId: global).
+- Player state (name/position/rotation/color) syncs via StateManager scoped namespace `sw2`; users can update their name anytime.
+- Removed fake P2P simulation; attacks remain local-only for now. Gameplay otherwise intact.
+
+### Follow-ups
+- Add teardown/TTL cleanup for player entries on shutdown to reduce stale entries further.
+- Consider richer game state channels (actions/events) and replication frequency controls before scaling to overworld/instance hopping.
+
 ### Time Spent
 Approximately 3-4 hours of iterative debugging and implementation attempts.
+
+## Date: 2025-11-23
+
+### Changes
+- Fixed runtime gaps in `games/sw2.html`: defined `broadcastPosition`, added attack broadcast stub, removed unused peer movement simulation, and wired `log` helper to avoid ReferenceError.
+- Added player naming UI wiring (enter name + update button) that republishes presence through the PeerCompute state layer; HUD now shows peer names.
+- Added stale-peer pruning and throttled position heartbeats (single global match, room `global`, game `sneakywoods`).
+- Synced the updated `sw2.html` into the root `games/` copies to avoid drift between served and checked-in assets.
+
+### Tests
+- Attempted `npm test -- tests/p2p-room-isolation.spec.js`; dev server failed to bind to localhost:5173/9000 in the sandbox (`EPERM`), so the suite did not run. No additional automated results.
+
+### Follow-up (same day)
+- Fixed cross-browser discovery: enabled `allow_discovery` on the PeerJS server and added `listAllPeers` polling in NetworkManager so remote browsers can find each other (BroadcastChannel only worked per-device).
+- Restored continuous state heartbeats in `sw2.html` (requestAnimationFrame loop) and removed redundant per-frame broadcast call to avoid duplicate scheduling.
+- Added peer spotlights and replicated attacks via shared state in `sw2.html` so other players' flashlights render and attacks trigger remote hits/respawns.
+- Enhanced sw2 demo: peer spotlights now cast shadows and only enable on movement/attacks; added name labels above players; synced score/killstreak across peers with a shared high-score HUD and death resets.
+- World parity + UX tweaks: deterministic terrain generation via per-cell seeded RNG, reduced/hid self nameplates (smaller labels for others only), shadows remain, and spawning now favors periphery near existing players.
+- Added peer movement smoothing (lerp position/rotation) to reduce jerkiness between network updates.
+- Added player color picker; color syncs via state so remote players display the chosen cube tint.
+- Color rendering improved: we apply color (including emissive) to self immediately and to peers on receipt so hues are visible even without a flashlight.
+- Added inactivity safeguards: background heartbeat keeps presence/position updating when the tab is hidden, and the render loop skips heavy work while hidden to reduce performance impact from throttled tabs.

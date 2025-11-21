@@ -51,6 +51,21 @@ export class StateManager {
   }
 
   /**
+   * Internal helper to get or create a namespaced Y.Map within the root state
+   * @param {string} namespace
+   * @returns {Y.Map}
+   * @private
+   */
+  _getNamespaceMap(namespace) {
+    let nsMap = this.state.get(namespace);
+    if (!nsMap) {
+      nsMap = new Y.Map();
+      this.state.set(namespace, nsMap);
+    }
+    return nsMap;
+  }
+
+  /**
    * Apply a Yjs update received from the network (PeerJS path)
    * @param {Array|Uint8Array} updateArr
    */
@@ -82,10 +97,23 @@ export class StateManager {
    * @param {string} key
    * @param {any} value
    */
-  applyStateSet(key, value) {
+  applyStateSet(key, value, namespace) {
     try {
       this.ydoc.transact(() => {
-        this.state.set(key, value);
+        if (namespace) {
+          const nsMap = this._getNamespaceMap(namespace);
+          if (value === undefined) {
+            nsMap.delete(key);
+          } else {
+            nsMap.set(key, value);
+          }
+        } else {
+          if (value === undefined) {
+            this.state.delete(key);
+          } else {
+            this.state.set(key, value);
+          }
+        }
       }, 'remote-state-set');
     } catch (err) {
       console.error('[StateManager] Failed to apply state-set:', err);
@@ -247,6 +275,52 @@ export class StateManager {
   }
 
   /**
+   * Write a value in a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   * @param {any} value
+   */
+  writeScoped(namespace, key, value) {
+    const nsMap = this._getNamespaceMap(namespace);
+    nsMap.set(key, value);
+
+    if (this.networkManager?.broadcast) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { namespace, key, value }
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * Read a value from a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   */
+  readScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return undefined;
+    return nsMap.get(key);
+  }
+
+  /**
+   * Delete a value from a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   */
+  deleteScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return;
+    nsMap.delete(key);
+    if (this.networkManager?.broadcast) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { namespace, key, value: undefined }
+      }).catch(() => {});
+    }
+  }
+
+  /**
    * Delete a key from state
    * @param {string} key - State key to delete
    * @returns {void}
@@ -329,6 +403,23 @@ export class StateManager {
         }
       };
     }
+  }
+
+  /**
+   * Observe changes within a namespaced map
+   * @param {string} namespace
+   * @param {Function} callback - (value, key) => void
+   * @returns {Function} unsubscribe
+   */
+  observeNamespace(namespace, callback) {
+    const nsMap = this._getNamespaceMap(namespace);
+    const handler = (event) => {
+      event.keysChanged.forEach((key) => {
+        callback(nsMap.get(key), key);
+      });
+    };
+    nsMap.observe(handler);
+    return () => nsMap.unobserve(handler);
   }
 
   /**

@@ -11,6 +11,7 @@ A monorepo containing PeerCompute - a browser-based P2P distributed compute netw
 │   ├── tests/            # Playwright tests
 │   ├── docs/             # Documentation
 │   └── README.md         # Detailed project documentation
+├── games/                # Game artifacts (e.g., sw2.html)
 ├── cyberborea/           # Cyberborea metaverse project
 ├── plan/                 # Planning and implementation docs
 │   ├── imp-plan.md       # Implementation plan

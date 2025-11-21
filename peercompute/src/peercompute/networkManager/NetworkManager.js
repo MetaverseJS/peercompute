@@ -16,7 +16,9 @@ export class NetworkManager {
         path: '/peerjs',
         secure: false,
         ...(config.peerServer || {})
-      }
+      },
+      gameId: config.gameId || 'default-game',
+      roomId: config.roomId || 'default-room'
     };
     this.config = { ...defaults, ...config, peerServer: defaults.peerServer };
 
@@ -103,8 +105,11 @@ export class NetworkManager {
   }
 
   async broadcast(message) {
-    for (const conn of this.connections.values()) {
-      conn.send(message);
+    for (const [peerId, conn] of this.connections.entries()) {
+      const meta = this.peers.get(peerId);
+      if (meta?.gameId === this.config.gameId && meta?.roomId === this.config.roomId) {
+        conn.send(message);
+      }
     }
   }
 
@@ -133,17 +138,40 @@ export class NetworkManager {
   _startDiscovery() {
     this.discoveryChannel = new BroadcastChannel('peercompute-discovery');
     this.discoveryChannel.onmessage = (evt) => {
-      const otherId = evt.data;
+      const data = evt.data;
+      const otherId = data?.peerId || data;
+      const gameId = data?.gameId;
+      const roomId = data?.roomId;
       if (!otherId || otherId === this.peerId) return;
+      if (gameId && gameId !== this.config.gameId) return;
+      if (roomId && roomId !== this.config.roomId) return;
       if (this.connections.has(otherId)) return;
       this._dialPeer(otherId);
     };
     // announce ourselves
     const announce = () => {
-      if (this.peerId) this.discoveryChannel.postMessage(this.peerId);
+      if (this.peerId) {
+        this.discoveryChannel.postMessage({
+          peerId: this.peerId,
+          gameId: this.config.gameId,
+          roomId: this.config.roomId
+        });
+      }
     };
     announce();
     setInterval(announce, 3000);
+
+    // PeerServer discovery fallback (cross-device)
+    const pollPeerServer = () => {
+      if (!this.peer?.listAllPeers) return;
+      this.peer.listAllPeers((ids) => {
+        ids
+          .filter((id) => id && id !== this.peerId && !this.connections.has(id))
+          .forEach((id) => this._dialPeer(id));
+      });
+    };
+    pollPeerServer();
+    setInterval(pollPeerServer, 5000);
   }
 
   _dialPeer(peerId) {
@@ -175,7 +203,13 @@ export class NetworkManager {
     conn.on('open', () => {
       this.connections.set(conn.peer, conn);
       this.peers.set(conn.peer, { connectedAt: Date.now() });
-      this.onPeerConnect(conn.peer);
+      // Send handshake for room/game scoping
+      conn.send({
+        type: 'handshake',
+        gameId: this.config.gameId,
+        roomId: this.config.roomId,
+        peerId: this.peerId
+      });
       if (onReady) onReady(conn);
     });
 
@@ -195,6 +229,27 @@ export class NetworkManager {
   }
 
   _handleIncomingMessage(peerId, message) {
+    // Handshake gate for room/game scoping
+    if (message?.type === 'handshake') {
+      if (message.gameId !== this.config.gameId || message.roomId !== this.config.roomId) {
+        console.warn(`[NetworkManager] Rejecting peer ${peerId} due to room/game mismatch`);
+        const conn = this.connections.get(peerId);
+        conn?.close();
+        this.connections.delete(peerId);
+        this.peers.delete(peerId);
+        return;
+      }
+      const meta = this.peers.get(peerId) || {};
+      this.peers.set(peerId, {
+        ...meta,
+        gameId: message.gameId,
+        roomId: message.roomId,
+        lastMessageTime: Date.now()
+      });
+      this.onPeerConnect(peerId);
+      return;
+    }
+
     this.peers.set(peerId, {
       ...(this.peers.get(peerId) || {}),
       lastMessageTime: Date.now()
