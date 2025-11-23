@@ -43,6 +43,76 @@ npm run dev
 
 See `peercompute/README.md` for detailed documentation.
 
+### Using PeerCompute for Multiplayer Games
+
+The current multiplayer stack uses PeerJS for signaling and data + Yjs for state sync, wrapped by `NodeKernel`:
+
+1) **Start the dev stack**  
+   ```bash
+   cd peercompute
+   ./start-dev.sh
+   ```  
+   - Spins up the PeerJS server on `ws://localhost:9000/peerjs` and webpack dev server on `http://localhost:5173`.
+   - `peer-config.json` (in `public/`) is auto-served; games fetch it.
+   - **HTTPS / WebXR**: for VR on LAN you need HTTPS + WSS. Use a local cert (e.g., `mkcert`) and run:  
+     ```bash
+     HTTPS=1 SSL_CERT=/path/to/cert.pem SSL_KEY=/path/to/key.pem ./start-dev.sh
+     ```  
+     This enables `https://localhost:5173` and `wss://localhost:9000/peerjs` with your cert.
+   - **mkcert quickstart (self-signed but trusted locally)**:  
+     ```bash
+     sudo apt-get install libnss3-tools         # so mkcert can trust Chrome/Chromium profiles
+     cd peercompute
+     mkcert -install                            # installs local CA
+     mkcert -key-file certs/dev.key -cert-file certs/dev.crt 192.168.x.x localhost 127.0.0.1 ::1
+     HTTPS=1 ./start-dev.sh                     # auto-picks certs/dev.* if present
+     ```  
+     - Trust on other devices (e.g., Meta Quest): install the mkcert root CA on the device, or use a public tunnel with a real cert. Without trust, WSS will be blocked.
+
+2) **Initialize networking in your game** (see `games/sw2.html` or `games/cb.html`):  
+   ```js
+   const cfg = await fetch('/peer-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
+   const node = new window.NodeKernel({
+     peerServer: cfg || { host: 'localhost', port: 9000, path: '/peerjs', secure: false },
+     enablePersistence: false,
+     gameId: 'my-game',    // scope connectivity to a game
+     roomId: 'lobby-1'     // scope to a room/instance
+   });
+   await node.initialize();
+   await node.start();
+   const state = node.getStateManager();
+   ```
+
+3) **Publish player state** (namespaced to avoid collisions):  
+   ```js
+   const ns = 'my-game';
+   const myId = node.getStatus().network.peerId;
+   state.writeScoped(ns, `player-${myId}`, {
+     name: 'Alice',
+     position: { x, y, z },
+     rotation: yaw,
+     color: 0xff00ff,
+     ts: Date.now()
+   });
+   ```
+
+4) **Listen for other players**:  
+   ```js
+   state.observeNamespace(ns, (value, key) => {
+     if (!key.startsWith('player-')) return;
+     const id = key.replace('player-', '');
+     if (id === myId) return;
+     // create/update remote avatar with `value`
+   });
+   ```
+
+5) **Broadcast transient events** (e.g., attacks) with state keys like `attack-<peerId>` and observe similarly.  
+   Filtering by `gameId`/`roomId` is handled in the NetworkManager handshake; use consistent IDs across clients to stay in the same match.
+
+6) **Test pages**  
+   - `http://localhost:5173/test-p2p.html` for quick connectivity checks.  
+   - `games/sw2.html`, `games/cb.html` show end-to-end integration (desktop + mobile + VR for CB).
+
 ### Current Development Status
 
 **Implemented:**

@@ -7,16 +7,23 @@ import Peer from 'peerjs';
 
 export class NetworkManager {
   constructor(config = {}) {
+    const isBrowser = typeof window !== 'undefined';
+    const httpsDefault = isBrowser && typeof window.location !== 'undefined' && window.location.protocol === 'https:';
+    const peerServerCfg = config.peerServer || {};
+    const defaultHost = peerServerCfg.host || (isBrowser ? window.location.hostname : 'localhost');
+    const secureFlag = httpsDefault ? true : !!peerServerCfg.secure;
+    const mergedPeerServer = {
+      host: defaultHost,
+      port: 9000,
+      path: '/peerjs',
+      ...peerServerCfg,
+      secure: secureFlag
+    };
+
     const defaults = {
       topology: config.topology || 'distributed',
       pubsubTopic: config.pubsubTopic || 'peercompute-default',
-      peerServer: {
-        host: 'localhost',
-        port: 9000,
-        path: '/peerjs',
-        secure: false,
-        ...(config.peerServer || {})
-      },
+      peerServer: mergedPeerServer,
       gameId: config.gameId || 'default-game',
       roomId: config.roomId || 'default-room'
     };

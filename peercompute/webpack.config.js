@@ -1,11 +1,18 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import webpack from 'webpack';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
 import CopyWebpackPlugin from 'copy-webpack-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const useHttps = process.env.HTTPS === '1' || process.env.HTTPS === 'true';
+const httpsOptions = useHttps && process.env.SSL_CERT && process.env.SSL_KEY ? {
+  cert: fs.readFileSync(process.env.SSL_CERT),
+  key: fs.readFileSync(process.env.SSL_KEY)
+} : undefined;
 
 export default {
   mode: 'development',
@@ -25,8 +32,11 @@ export default {
         publicPath: '/games',
       }
     ],
+    host: '0.0.0.0',
+    allowedHosts: 'all',
     compress: true,
     port: 5173, // Keep same port as Vite for convenience
+    server: useHttps ? { type: 'https', options: httpsOptions } : 'http',
     hot: true,
     historyApiFallback: true,
   },

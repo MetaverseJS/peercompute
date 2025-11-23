@@ -1096,7 +1096,7 @@
                 const cfg = await fetch('/peer-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
                 const NodeKernel = window.NodeKernel;
                 node = new NodeKernel({
-                    peerServer: cfg || { host: 'localhost', port: 9000, path: '/peerjs', secure: false },
+                    peerServer: cfg || { host: 'localhost', port: 9000, path: '/peerjs', secure: window.location.protocol === 'https:' },
                     enablePersistence: false,
                     gameId: 'sneakywoods',
                     roomId: 'global'

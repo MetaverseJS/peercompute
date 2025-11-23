@@ -152,3 +152,40 @@ Approximately 3-4 hours of iterative debugging and implementation attempts.
 - Added player color picker; color syncs via state so remote players display the chosen cube tint.
 - Color rendering improved: we apply color (including emissive) to self immediately and to peers on receipt so hues are visible even without a flashlight.
 - Added inactivity safeguards: background heartbeat keeps presence/position updating when the tab is hidden, and the render loop skips heavy work while hidden to reduce performance impact from throttled tabs.
+- Began Hyperborea (cb.html) multiplayer refactor: added PeerCompute hookup (gameId cb/global), broadcast/receive player transforms and avatar meshes, softened renderer shadow type, skipped heavy color/shadow updates when tab is hidden, and synced chunk copy.
+- Fixed cb.html WebXR black screen: replaced broken VRButton with minimal XR-safe version and moved render loop to `renderer.setAnimationLoop` (XR-friendly) instead of nested requestAnimationFrame.
+- Added spear combat to cb: desktop (LMB/Ctrl) + mobile attack button, VR spear on controller grip with continuous collision; spear tip hitboxes broadcast kills via state (`attack-*`) and victims respawn near other players.
+
+## Date: 2025-11-23 (presence cleanup follow-up)
+
+### Changes
+- Added timestamped presence heartbeats for Hyperborea (`games/cb.html` + synced root copy) so peers stay discoverable while the tab is hidden.
+- Added stale-peer pruning (10s idle) and teardown of heartbeat/cleanup listeners on unload so orphaned avatars get removed promptly.
+
+### Tests
+- Not run (browser-only change; sandbox still blocks binding dev ports for Playwright).
+
+## Date: 2025-11-23 (time sync)
+
+### Changes
+- Added cross-peer time sync in `games/cb.html`: any peer adjusting speed (+=/-= keys) broadcasts the time multiplier + current world time; other peers apply the remote time anchor to keep day/season progression in lockstep.
+- Added `/peer-config.json` back under `peercompute/public/` to avoid 404s when fetching config over LAN/HTTPS; game still falls back to host/protocol if missing.
+
+### Tests
+- Not run (manual browser validation required).
+
+## Date: 2025-11-23 (evented state sync)
+
+### Changes
+- Switched Hyperborea player updates to event-based state sync with movement/rotation thresholds and a keepalive: peers now emit `evt-<peerId>` packets only when moving, turning, color-changing, or after 1.5s idle, reducing traffic. Presence is still mirrored onto `player-<peerId>` for late joiners/stale-prune.
+
+### Tests
+- Not run (manual browser validation required).
+
+## Date: 2025-11-23 (LOD zones)
+
+### Changes
+- Added distance-based terrain/tree LOD in `games/cb.html`: far chunks render coarse terrain only, medium chunks use slimmer terrain/3-sided trees, and close chunks keep the full detail plus 6-sided trees. Trees now live in two instanced mesh layers so each zone can use the appropriate geometry while removal/regen still hides the right indices.
+
+### Tests
+- Not run (visual check in browser recommended).
