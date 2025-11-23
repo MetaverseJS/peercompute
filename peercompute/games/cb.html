@@ -97,10 +97,10 @@
         const CONFIG = {
             DAY_DURATION: 6 * 60 * 1000,
             YEAR_DURATION: 60 * 60 * 1000,
-            CHUNK_SIZE: 1024,
-            RENDER_DISTANCE: 32, // reduce chunk fanout for perf
+            CHUNK_SIZE: 2048,
+            RENDER_DISTANCE: 8, // reduce chunk fanout for perf
             WORLD_SEED: 12345,
-            PLAYER_SPEED: 22.5, // 50% faster
+            PLAYER_SPEED: 200, // 50% faster
             JUMP_FORCE: 10,
             GRAVITY: -25
         };
@@ -243,11 +243,15 @@
             }
             
             getMoisture(x, z) {
-                return this.moistureNoise.octave(x, z, 3, 0.5, 1000);
+                const base = this.moistureNoise.octave(x, z, 3, 0.5, 2000);
+                const elevation = this.getHeight(x, z);
+                // Normalize elevation effect: wetter at low elevations, drier at high
+                const elevFactor = 1 - Math.min(Math.max(elevation / 4000, 0), 1);
+                return base * 0.6 + (base * elevFactor) * 0.4;
             }
             
             shouldPlaceTree(x, z, height, moisture) {
-                if (height < 10 || height > 1000) return false;
+                if (height < 10 || height > 2000) return false;
                 
                 const d = 3;
                 const h1 = this.getHeight(x + d, z);
@@ -255,9 +259,8 @@
                 const slope = Math.abs(h1 - h2) / (d * 2);
                 if (slope > 0.5) return false;
                 
-                // Increase forested areas further: higher baseline density, stronger moisture bias
-                // Much sparser baseline to avoid forests covering entire landscape
-                const density = moisture > 0.05 ? 0.35 : 0.15;
+                // Higher baseline density to repopulate trees after mountain amplification
+                const density = moisture > 0.05 ? 0.55 : 0.35;
                 return this.treeNoise.noise(x * 0.18, z * 0.18) > (1 - density);
             }
             
@@ -717,6 +720,65 @@
                 this.stars.frustumCulled = false;
                 this.scene.add(this.stars);
                 
+                // North Star (Polaris) - bright fixed point near celestial pole
+                const northStarGeo = new THREE.PlaneGeometry(1600, 1600);
+                const northStarMat = new THREE.ShaderMaterial({
+                    transparent: true,
+                    depthWrite: false,
+                    depthTest: false,
+                    blending: THREE.AdditiveBlending,
+                    uniforms: {
+                        time: { value: 0 },
+                        color: { value: new THREE.Color(0xb8dfff) }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float time;
+                        uniform vec3 color;
+                        varying vec2 vUv;
+                        void main() {
+                            // Centered UV
+                            vec2 uv = vUv * 2.0 - 1.0;
+                            float r = length(uv);
+                            
+                            // Pulsing halo
+                            float pulse = 0.5 + 0.5 * sin(time * 2.0);
+                            float halo = exp(-r * 6.0) * (0.6 + 0.4 * pulse);
+                            
+                            // Diffraction spikes
+                            float angle = atan(uv.y, uv.x);
+                            float spikes = pow(abs(cos(angle * 4.0)), 24.0) * (0.4 + 0.6 * pulse);
+                            
+                            // Core
+                            float core = exp(-r * 20.0);
+                            
+                            float brightness = core + halo + spikes;
+                            vec3 col = color * brightness;
+                            
+                            // Subtle ring/bubble
+                            float ring = smoothstep(0.4, 0.32, r) * 0.35;
+                            float bubble = smoothstep(0.9, 0.4, r) * 0.25;
+                            
+                            col += color * ring * (0.6 + 0.4 * pulse);
+                            col += vec3(0.8) * bubble;
+                            
+                            float alpha = clamp(brightness + ring * 0.6 + bubble, 0.0, 1.0);
+                            gl_FragColor = vec4(col, alpha);
+                        }
+                    `
+                });
+                this.northStar = new THREE.Mesh(northStarGeo, northStarMat);
+                this.northStarRadius = 7950 * 8 - 50;
+                this.northStar.position.set(0, this.northStarRadius, 0);
+                this.northStar.renderOrder = 999;
+                this.skyDome.add(this.northStar);
+                
                 // Sun
                 this.sun = new THREE.Mesh(
                     new THREE.SphereGeometry(120 * 8, 16, 16),
@@ -734,22 +796,26 @@
                 // Northern Lights (Aurora Borealis) - cylindrical curtain around north celestial pole
                 const auroraGeometry = new THREE.CylinderGeometry(
                     5000 * 8, 5000 * 8,  // radius top, radius bottom
-                    3000 * 8,        // height
-                    64,          // radial segments
-                    32,          // height segments
+                    4000 * 8,        // height
+                    256,          // radial segments
+                    64,          // height segments
                     true         // open ended
                 );
                 
-                // Add wave distortion to cylinder
+                // Add wave distortion to cylinder with varied amplitudes/wavelengths
                 const vertices = auroraGeometry.attributes.position.array;
                 for (let i = 0; i < vertices.length; i += 3) {
                     const x = vertices[i];
                     const y = vertices[i + 1];
                     const z = vertices[i + 2];
                     const angle = Math.atan2(z, x);
-                    // Radial waves
-                    const wave = Math.sin(angle * 8 + y * 0.0004) * 800; // reduced frequency, larger amplitude post-scale
-                    const r = Math.sqrt(x * x + z * z) + wave;
+                    const rBase = Math.sqrt(x * x + z * z);
+                    // Multiple superimposed waves with slightly different scales/phases
+                    const w1 = Math.sin(angle * 8 + y * 0.00035) * 4000;
+                    const w2 = Math.sin(angle * 5.3 + y * 0.00022 + 1.1) * 2500;
+                    const w3 = Math.sin(angle * -11.7 + y * 0.00048 - 0.6) * 1800;
+                    const wave = w1 + w2 + w3;
+                    const r = rBase + wave;
                     vertices[i] = Math.cos(angle) * r;
                     vertices[i + 2] = Math.sin(angle) * r;
                 }
@@ -761,12 +827,25 @@
                         opacity: { value: 0 }
                     },
                     vertexShader: `
+                        uniform float time;
                         varying vec2 vUv;
                         varying vec3 vPosition;
                         void main() {
                             vUv = uv;
-                            vPosition = position;
-                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                            vec3 pos = position;
+                            float angle = atan(pos.z, pos.x);
+                            float radius = length(pos.xz);
+                            float w1 = sin(angle * 8.0 + pos.y * 0.00035 + time * 0.6) * 3208.0;
+                            float w2 = sin(angle * 5.3 + pos.y * 0.00022 + time * 0.5 + 1.1) * 2048.0;
+                            float w3 = sin(angle * 11.7 + pos.y * 0.00048 + time * -0.3) * 666.0;
+                            float yWave = sin(pos.y * 0.0008 + time * 0.7) * 200.0; // vertical traveling wave
+                            pos.y += yWave;
+                            float wave = w1 + w2 + w3;
+                            float newR = radius + wave;
+                            pos.x = cos(angle) * newR;
+                            pos.z = sin(angle) * newR;
+                            vPosition = pos;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                         }
                     `,
                     fragmentShader: `
@@ -862,15 +941,15 @@
                 // Directional light (not parented to dome)
                 this.sunLight = new THREE.DirectionalLight(0xffffff, 1);
                 this.sunLight.castShadow = true;
-                this.sunLight.shadow.camera.left = -500;
-                this.sunLight.shadow.camera.right = 500;
-                this.sunLight.shadow.camera.top = 500;
-                this.sunLight.shadow.camera.bottom = -500;
+                this.sunLight.shadow.camera.left = -4000;
+                this.sunLight.shadow.camera.right = 4000;
+                this.sunLight.shadow.camera.top = 4000;
+                this.sunLight.shadow.camera.bottom = -4000;
                 this.sunLight.shadow.camera.near = 0.5;
-                this.sunLight.shadow.camera.far = 1500;
-                this.sunLight.shadow.mapSize.width = 2048;
-                this.sunLight.shadow.mapSize.height = 2048;
-                this.sunLight.shadow.bias = -0.0001;
+                this.sunLight.shadow.camera.far = 12000;
+                this.sunLight.shadow.mapSize.width = 4096;
+                this.sunLight.shadow.mapSize.height = 4096;
+                this.sunLight.shadow.bias = -0.0002;
                 this.scene.add(this.sunLight);
                 this.scene.add(this.sunLight.target);
                 
@@ -1466,7 +1545,7 @@
                 
                 const gridSize = Math.floor(size / lodStep);
                 const terrainTypes = []; // Store terrain type for seasonal updates
-                
+                let maxHeight = -Infinity;
                 for (let z = 0; z <= gridSize; z++) {
                     for (let x = 0; x <= gridSize; x++) {
                         const wx = startX + x * lodStep;
@@ -1480,15 +1559,16 @@
                             h = waterLevel - 1; // Slightly below water surface for visual depth
                         }
                         
+                        maxHeight = Math.max(maxHeight, h);
                         verts.push(wx, h, wz);
                         
                         // Store terrain type for seasonal color updates
                         let terrainType = 'lowland';
                         if (h < 5) terrainType = 'water';
-                        else if (h > 300) terrainType = 'peak';
-                        else if (h > 200) terrainType = 'mountain';
+                        else if (h >= 5000) terrainType = 'peak';
+                        else if (h >= 2500) terrainType = 'mountain';
                         else if (m > 0.2) terrainType = 'forest';
-                        else if (m < -0.1) terrainType = 'sandy';
+                        else if (m < -0.1) terrainType = 'rocky';
                         
                         terrainTypes.push({ type: terrainType, height: h, moisture: m });
                         
@@ -1532,8 +1612,8 @@
                 
                 const mesh = new THREE.Mesh(geo, 
                     new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 10, specular: 0x222222 }));
-                mesh.receiveShadow = (zone.name === 'close');
-                mesh.castShadow = false; // Terrain doesn't cast shadows
+                mesh.receiveShadow = true;
+                mesh.castShadow = true; // Terrain casts shadows at all distances
                 this.scene.add(mesh);
                 
                 // Snow layer - only for close/medium chunks
@@ -1543,17 +1623,22 @@
                     snowMesh = new THREE.Mesh(snowGeo, 
                         new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 5, specular: 0x222222 }));
                     snowMesh.position.y = 0.2;
-                    snowMesh.receiveShadow = (zone.name === 'close');
+                    snowMesh.receiveShadow = true;
+                    snowMesh.castShadow = true;
                     snowMesh.visible = false;
                     this.scene.add(snowMesh);
                 }
                 
-                // Water - render in all zones to the horizon
-                let water = null;
-                water = new THREE.Mesh(
-                    new THREE.PlaneGeometry(size, size),
-                    new THREE.MeshPhongMaterial({ color: 0x1f6fbf, transparent: true, opacity: 0.4, depthWrite: false, shininess: 60, specular: 0x336699 })
-                );
+                // Water - use the high-quality shaded material for all distances
+                const waterMat = new THREE.MeshPhongMaterial({
+                    color: 0x155a9c,
+                    transparent: true,
+                    opacity: 0.55,
+                    depthWrite: false,
+                    shininess: 40,
+                    specular: 0x204d80
+                });
+                const water = new THREE.Mesh(new THREE.PlaneGeometry(size, size), waterMat);
                 water.rotation.x = -Math.PI / 2;
                 water.position.set(startX + size/2, 3, startZ + size/2);
                 this.scene.add(water);
@@ -1563,7 +1648,7 @@
                 const matrix = new THREE.Matrix4();
                 
                 if (zone.treeLevel) {
-                    const step = zone.name === 'close' ? lodStep * 3 : lodStep * 5; // sparser per LOD
+                    const step = zone.name === 'close' ? Math.max(16, lodStep * 2) : Math.max(48, lodStep * 3); // denser planting
                     for (let z = 0; z < size; z += step) {
                         for (let x = 0; x < size; x += step) {
                             const wx = startX + x;
@@ -1580,7 +1665,7 @@
                                     const treeH = 8 + (Math.abs(seed) % 1) * 6;
                                     const treeR = 1.5 + (Math.abs(seed * 7) % 1) * 1;
                                     
-                                    matrix.makeTranslation(wx, h + treeH / 2, wz);
+                                    matrix.makeTranslation(wx, h + treeH * 0.65, wz); // raise trees above ground
                                     matrix.scale(new THREE.Vector3(treeR, treeH, treeR));
                                     instancedMesh.setMatrixAt(this[counterKey], matrix);
                                     
@@ -1630,7 +1715,7 @@
                     }
                 }
                 
-                const chunkData = { mesh, snowMesh, water, treeIndices, terrainTypes, gridSize, zoneName: zone.name };
+                const chunkData = { mesh, snowMesh, water, treeIndices, terrainTypes, gridSize, zoneName: zone.name, maxHeight };
                 this.chunks.set(key, chunkData);
                 // Immediately apply current season so new chunks don't pop with default colors
                 this.applySeasonToChunk(chunkData, this.getSeasonFactors());
@@ -1672,15 +1757,17 @@
                 const chunk = this.chunks.get(key);
                 if (!chunk) return;
                 
-                // Determine if shadows should be enabled
-                const shouldHaveShadows = playerDist <= 2;
+                // Shadows enabled at all distances
+                const shouldHaveShadows = true;
                 
                 if (chunk.mesh.receiveShadow !== shouldHaveShadows) {
                     chunk.mesh.receiveShadow = shouldHaveShadows;
+                    chunk.mesh.castShadow = shouldHaveShadows;
                 }
                 
                 if (chunk.snowMesh && chunk.snowMesh.receiveShadow !== shouldHaveShadows) {
                     chunk.snowMesh.receiveShadow = shouldHaveShadows;
+                    chunk.snowMesh.castShadow = shouldHaveShadows;
                 }
             }
             
@@ -1750,21 +1837,27 @@
                 const seasonalColors = {
                     forest: {
                         winter: new THREE.Color(0xf5f5ff),
-                        spring: new THREE.Color(0x7aa05a),
-                        summer: new THREE.Color(0x4a6e2a),
+                        spring: new THREE.Color(0x4f6f3c),
+                        summer: new THREE.Color(0x33542a),
                         fall: new THREE.Color(0x8b4513)
                     },
                     lowland: {
                         winter: new THREE.Color(0xf5f5ff),
-                        spring: new THREE.Color(0x9ab089),
-                        summer: new THREE.Color(0xa8b5a0),
-                        fall: new THREE.Color(0x9a7b4f)
+                        spring: new THREE.Color(0x5f8152),
+                        summer: new THREE.Color(0x5a7750),
+                        fall: new THREE.Color(0x7f8b5a)
                     },
-                    sandy: {
-                        winter: new THREE.Color(0xf0f0f0),
-                        spring: new THREE.Color(0xd4c4a8),
-                        summer: new THREE.Color(0xc4b89f),
-                        fall: new THREE.Color(0xb89968)
+                    rocky: {
+                        winter: new THREE.Color(0x8c929b),
+                        spring: new THREE.Color(0x6d747d),
+                        summer: new THREE.Color(0x5a616a),
+                        fall: new THREE.Color(0x737a83)
+                    },
+                    mountain: {
+                        winter: new THREE.Color(0xe9edf2),
+                        spring: new THREE.Color(0xc8ccd2),
+                        summer: new THREE.Color(0xb4b8bf),
+                        fall: new THREE.Color(0xc0c4ca)
                     }
                 };
                 const colorAttr = chunk.mesh.geometry.getAttribute('color');
@@ -1776,13 +1869,26 @@
                     if (terrain.type === 'water') {
                         color.setHex(0xd4c4a8); // sandy seafloor; water surface tinted separately
                     } else if (terrain.type === 'peak') {
-                        color.setHex(0xf0f0f0);
+                        // Permanent snow only on the highest peaks
+                        color.setHex(0xf5f8ff);
                     } else if (terrain.type === 'mountain') {
-                        color.setHex(0xd0d0d0);
+                        const terrainColors = seasonalColors.mountain;
+                        color.r = terrainColors.winter.r * winterFactor +
+                                 terrainColors.spring.r * springFactor +
+                                 terrainColors.summer.r * summerFactor +
+                                 terrainColors.fall.r * fallFactor;
+                        color.g = terrainColors.winter.g * winterFactor +
+                                 terrainColors.spring.g * springFactor +
+                                 terrainColors.summer.g * summerFactor +
+                                 terrainColors.fall.g * fallFactor;
+                        color.b = terrainColors.winter.b * winterFactor +
+                                 terrainColors.spring.b * springFactor +
+                                 terrainColors.summer.b * summerFactor +
+                                 terrainColors.fall.b * fallFactor;
                     } else {
                         let terrainColors;
                         if (terrain.type === 'forest') terrainColors = seasonalColors.forest;
-                        else if (terrain.type === 'sandy') terrainColors = seasonalColors.sandy;
+                        else if (terrain.type === 'rocky') terrainColors = seasonalColors.rocky;
                         else terrainColors = seasonalColors.lowland;
                         color.r = terrainColors.winter.r * winterFactor +
                                  terrainColors.spring.r * springFactor +
@@ -1846,7 +1952,9 @@
                 const isWinter = season === 'Winter';
                 for (const chunk of this.chunks.values()) {
                     if (chunk.snowMesh) {
-                        chunk.snowMesh.visible = isWinter;
+                        const highEnough = (chunk.maxHeight || 0) >= 5000;
+                        // Use snow mesh only for winter storms; keep summers clean
+                        chunk.snowMesh.visible = isWinter && highEnough;
                     }
                     if (chunk.water) {
                         chunk.water.material.color.setHex(isWinter ? 0xd0e0ff : 0x1e90ff);
@@ -1859,6 +1967,7 @@
                 // Sky dome and stars follow player
                 this.skyDome.position.copy(this.position);
                 this.stars.position.copy(this.position);
+                if (this.northStar) this.northStar.position.copy(this.position);
                 
                 const sunPos = this.timeSystem.getSunPosition();
                 const angle = sunPos * Math.PI * 2 - Math.PI / 2;
@@ -1912,9 +2021,8 @@
                 const twilightFactor = smoothstep(horizonFadeAngle, 0.05, sunElevation); // 0 at -15°, 1 at 3°
                 const nightFactor = 1 - smoothstep(horizonFadeAngle, -0.05, sunElevation); // 0 at -3°, 1 at -15°
                 
-                // Sun light intensity - continuous fade
-                const sunIntensity = Math.max(0, Math.sin(Math.max(0, sunElevation))) * dayFactor + 
-                                    twilightFactor * (1 - dayFactor) * 0.3;
+                // Sun light intensity - continuous fade; no extra boost during twilight
+                const sunIntensity = Math.max(0, Math.sin(Math.max(0, sunElevation))) * dayFactor;
                 
                 // Sun color - fully continuous with blended transitions
                 const sunColor = new THREE.Color();
@@ -1941,9 +2049,9 @@
                 
                 // Sky color - continuous transition
                 const skyColor = new THREE.Color();
-                const dayBlue = new THREE.Color(0.53, 0.65, 0.85);
-                const twilightPurple = new THREE.Color(0.4, 0.25, 0.5);
-                const nightBlue = new THREE.Color(0.04, 0.04, 0.1);
+                const dayBlue = new THREE.Color(0.3, 0.45, 0.7);
+                const twilightPurple = new THREE.Color(0.28, 0.18, 0.35);
+                const nightBlue = new THREE.Color(0.02, 0.02, 0.08);
                 
                 // Blend between night → twilight → day
                 if (dayFactor > 0.01) {
@@ -2000,11 +2108,21 @@
                 this.stars.rotation.set(0, 0, 0);
                 this.stars.rotateX(tilt);  // Latitude tilt first - tilts the rotation axis
                 this.stars.rotateY(angle); // Daily rotation around the now-tilted Y axis
+                if (this.northStar) {
+                    // Keep Polaris on the rotation axis: tilt only, no daily spin
+                    const poleOffset = new THREE.Vector3(0, this.northStarRadius, 0);
+                    poleOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), tilt);
+                    this.northStar.position.copy(this.position).add(poleOffset);
+                    this.northStar.lookAt(this.position); // face the camera
+                }
                 
                 // Update northern lights (aurora) - follows player
                 this.aurora.position.x = this.position.x;
                 this.aurora.position.z = this.position.z;
                 this.aurora.material.uniforms.time.value = this.timeSystem.getTime() * 0.001;
+                if (this.northStar?.material?.uniforms?.time) {
+                    this.northStar.material.uniforms.time.value = this.timeSystem.getTime() * 0.001;
+                }
                 
                 // Aurora only visible during winter nights
                 const season = this.timeSystem.getSeason();
