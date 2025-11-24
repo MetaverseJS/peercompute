@@ -94,6 +94,61 @@
         }
     </script>
     <script>
+        // Minimal NURBS support (de Boor evaluation) so we can draw a thick curved beam
+        if (!THREE.NURBSUtils) {
+            THREE.NURBSUtils = {
+                findSpan: (degree, knots, u, numControlPoints) => {
+                    const n = numControlPoints - 1;
+                    if (u >= knots[n + 1]) return n;
+                    if (u <= knots[degree]) return degree;
+                    let low = degree, high = n + 1;
+                    while (high - low > 1) {
+                        const mid = Math.floor((low + high) / 2);
+                        if (u < knots[mid]) high = mid; else low = mid;
+                    }
+                    return low;
+                },
+                calcBSplinePoint: (degree, knots, controlPoints, u) => {
+                    const k = THREE.NURBSUtils.findSpan(degree, knots, u, controlPoints.length);
+                    const d = [];
+                    for (let j = 0; j <= degree; j++) {
+                        d[j] = controlPoints[k - degree + j].clone();
+                    }
+                    for (let r = 1; r <= degree; r++) {
+                        for (let j = degree; j >= r; j--) {
+                            const i = k - degree + j;
+                            const left = knots[i];
+                            const right = knots[i + degree - r + 1];
+                            const alpha = right !== left ? (u - left) / (right - left) : 0;
+                            d[j] = d[j - 1].clone().multiplyScalar(1 - alpha).add(d[j].clone().multiplyScalar(alpha));
+                        }
+                    }
+                    return d[degree];
+                }
+            };
+        }
+
+        if (!THREE.NURBSCurve) {
+            class NURBSCurve extends THREE.Curve {
+                constructor(degree, knots, controlPoints, startKnot = 0, endKnot = knots.length - 1) {
+                    super();
+                    this.degree = degree;
+                    this.knots = knots;
+                    this.controlPoints = controlPoints.map((p) => new THREE.Vector4(p.x, p.y, p.z, p.w ?? 1));
+                    this.startKnot = startKnot;
+                    this.endKnot = endKnot;
+                }
+                getPoint(t, target = new THREE.Vector3()) {
+                    const u = this.knots[this.startKnot] + t * (this.knots[this.endKnot] - this.knots[this.startKnot]);
+                    const hpoint = THREE.NURBSUtils.calcBSplinePoint(this.degree, this.knots, this.controlPoints, u);
+                    if (hpoint.w !== 1 && hpoint.w !== 0) hpoint.divideScalar(hpoint.w);
+                    return target.set(hpoint.x, hpoint.y, hpoint.z);
+                }
+            }
+            THREE.NURBSCurve = NURBSCurve;
+        }
+
+        const PERSIST_KEY = 'cb-player-persist';
         const getRenderDistanceFromQuery = () => {
             try {
                 const params = new URLSearchParams(window.location.search);
@@ -250,21 +305,21 @@
                 const warped = this.warpCoords(x, z, 9000, 260);
                 const wx = warped.x;
                 const wz = warped.z;
-                const macro = this.heightNoise.octave(wx, wz, 5, 0.5, 16384); // very large, stronger trends
-                const large = this.heightNoise.octave(wx, wz, 4, 0.5, 4096);
-                const medium = this.heightNoise.octave(wx, wz, 3, 0.5, 1024);
-                const small = this.heightNoise.octave(wx, wz, 2, 0.5, 256);
+                const macro = this.macroNoise.octave(wx, wz, 5, 0.5, 16000); // very large, stronger trends
+                const large = this.heightNoise.octave(wx, wz, 5, 0.5, 4096);
+                const medium = this.heightNoise.octave(wx, wz, 5, 0.5, 1024);
+                const small = this.heightNoise.octave(wx, wz, 5, 0.5, 256);
                 
-                let height = macro * 5000;         // more pronounced broad mountains/valleys
-                height += large * 800;              // regional variation
-                height += medium * 50;             // local undulation
+                let height = macro * 6000;         // more pronounced broad mountains/valleys
+                height += large * 600;              // regional variation
+                height += medium * 60;             // local undulation
                 
-                if (medium > 0.2) {
-                    // softer boost to avoid super-steep walls
-                    height += Math.pow((medium - 0.2) / 0.8, 1.5) * 400;
-                }
+                // if (medium > 0.2) {
+                //     // softer boost to avoid super-steep walls
+                //     height += Math.pow((medium - 0.2) / 0.8, 1.5) * 400;
+                // }
                 
-                height += small * 20;
+                // height += small * 20;
                 return height;
             }
             
@@ -273,12 +328,15 @@
                 const base = this.moistureNoise.octave(warped.x, warped.z, 4, 0.45, 3200);
                 const elevation = this.getHeight(x, z);
                 // Elevation-weighted but balanced with noise
-                const elevFactor = 1 - Math.min(Math.max(elevation / 5000, 0), 1);
-                return(0.33*elevFactor + 0.66*base)
+                const elevFactor = 1 - Math.min(Math.max(elevation / 6000, 0), 1);
+                return base * 0.9 + elevFactor * 0.1;
             }
             
             shouldPlaceTree(x, z, height, moisture) {
-                if (height < 10 || height > 2000) return false;
+                const ELEV_MAX = 3000;
+                const minTreeH = ELEV_MAX * 0.15; // align with boreal band lower bound
+                const maxTreeH = ELEV_MAX * 0.6;  // align with boreal upper bound
+                if (height < minTreeH || height > maxTreeH) return false;
                 
                 const d = 3;
                 const h1 = this.getHeight(x + d, z);
@@ -325,6 +383,8 @@
                 this.attackActiveUntil = 0;
                 this.myColor = Math.random() * 0xffffff;
                 this.spearThrustProgress = 0;
+                this.persistedState = this.loadPersistedState();
+                this.lastPersistSave = 0;
                 this.initThree();
                 this.initTime();
                 this.initTerrain();
@@ -337,6 +397,10 @@
                 this.collisionBoxes = []; // Store building collision boxes
                 this.prevChunkX = null;
                 this.prevChunkZ = null;
+                this.mainTempleBeam = null;
+                this.mainTempleApex = null;
+                this.foundationInfo = null;
+                this.globeMaterial = null;
                 this.structureShadowCount = 0;
                 this.lastSnowUpdate = 0;
                 this.lastSnowSeason = null;
@@ -368,6 +432,12 @@
                 
                 this.hasTorch = false;
                 this.hasSpear = true;
+                this.templePosition = null;
+                this.persistedState = this.loadPersistedState();
+                this.lastPersistSave = 0;
+                if (this.persistedState?.godMode !== undefined) {
+                    this.godMode = !!this.persistedState.godMode;
+                }
                 
                 // Mobile detection and controls
                 this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -407,6 +477,35 @@
                 this.renderer.setAnimationLoop(() => this.animate());
             }
             
+            loadPersistedState() {
+                try {
+                    const raw = localStorage.getItem(PERSIST_KEY);
+                    if (!raw) return null;
+                    return JSON.parse(raw);
+                } catch (_) {
+                    return null;
+                }
+            }
+            
+            savePersistedState() {
+                try {
+                    const payload = {
+                        pos: { x: this.position.x, y: this.position.y, z: this.position.z },
+                        yaw: this.yaw,
+                        pitch: this.pitch,
+                        godMode: this.godMode,
+                        time: {
+                            multiplier: this.timeSystem?.timeMultiplier,
+                            time: this.timeSystem?.getTime(),
+                            sentAt: Date.now()
+                        }
+                    };
+                    localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
+                } catch (_) {
+                    // ignore storage errors
+                }
+            }
+            
             initThree() {
                 this.scene = new THREE.Scene();
                 // Fog removed for long-range clarity
@@ -444,9 +543,31 @@
                 });
             }
             
-            initTime() { this.timeSystem = new TimeSystem(); }
+            initTime() { 
+                this.timeSystem = new TimeSystem(); 
+                if (this.persistedState?.time) {
+                    this.timeSystem.applyRemoteSync(this.persistedState.time);
+                }
+            }
             initTerrain() { 
                 this.terrainGen = new TerrainGenerator(this.currentSeed); 
+            }
+            
+            findSummitLocation() {
+                const ELEV_MAX = 3000;
+                const summitTh = ELEV_MAX * 0.8;
+                let best = { x: 0, z: 0, h: -Infinity };
+                const step = 256;
+                const radius = 8000;
+                for (let x = -radius; x <= radius; x += step) {
+                    for (let z = -radius; z <= radius; z += step) {
+                        const h = this.terrainGen.getHeight(x, z);
+                        if (h >= summitTh && h > best.h) {
+                            best = { x, z, h };
+                        }
+                    }
+                }
+                return best;
             }
 
             ensureAboveGround(vec, extra = 4) {
@@ -511,6 +632,7 @@
                     window.addEventListener('beforeunload', () => {
                         this.stopBackgroundHeartbeat();
                         this.stopPeerCleanup();
+                        this.savePersistedState();
                         if (this.visibilityHandler) {
                             document.removeEventListener('visibilitychange', this.visibilityHandler);
                             this.visibilityHandler = null;
@@ -606,14 +728,22 @@
             }
             
             initPlayer() {
-                // Spawn south of the temple complex, facing north towards it
-                const spawnX = 0;
-                const spawnZ = 320; // South of temple (70 units outside obelisk ring at radius 250)
-                const spawnHeight = this.terrainGen.getHeight(spawnX, spawnZ);
-                this.position = new THREE.Vector3(spawnX, spawnHeight + 6, spawnZ); // Above ground for VR/headset
+                // Spawn just outside the temple complex, facing north toward it
+                const base = this.templePosition || { x: 0, z: 0 };
+                const dir = new THREE.Vector2(0, 1).normalize(); // south side
+                const offsetDist = 400;
+                let spawnX = base.x + dir.x * offsetDist;
+                let spawnZ = base.z + dir.y * offsetDist;
+                let spawnHeight = this.terrainGen.getHeight(spawnX, spawnZ);
+                if (this.persistedState?.pos) {
+                    spawnX = this.persistedState.pos.x;
+                    spawnZ = this.persistedState.pos.z;
+                    spawnHeight = this.persistedState.pos.y;
+                }
+                this.position = new THREE.Vector3(spawnX, spawnHeight, spawnZ); // Above ground for VR/headset
                 this.velocity = new THREE.Vector3(0, 0, 0);
-                this.pitch = 0;
-                this.yaw = 0; // Yaw 0 = facing north (negative Z direction) towards temple at (0,0)
+                this.pitch = this.persistedState?.pitch ?? 0;
+                this.yaw = this.persistedState?.yaw ?? 0; // facing north
                 this.onGround = false;
                 if (this.rig) this.rig.position.copy(this.position);
             }
@@ -623,26 +753,27 @@
                 const torchGroup = new THREE.Group();
                 
                 const handle = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.04, 0.04, 0.5),
+                    new THREE.CylinderGeometry(0.04 / 3, 0.04 / 3, 0.5 / 3),
                     new THREE.MeshLambertMaterial({ color: 0x8b4513 })
                 );
-                handle.position.y = -0.75;
+                handle.position.y = -0.5 / 3; // bottom aligns near controller
                 torchGroup.add(handle);
                 
                 const flame = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.15, 0.4, 6),
+                    new THREE.ConeGeometry(0.15 / 3, 0.4 / 3, 6),
                     new THREE.MeshBasicMaterial({ color: 0xff6600 })
                 );
-                flame.position.y = 0.2;
+                flame.position.y = 0.25 / 3; // sit on top of shaft
                 torchGroup.add(flame);
                 
                 torchGroup.position.set(-0.3, -0.5, -0.8);
                 torchGroup.rotation.set(0, 0, Math.PI / 6);
+                torchGroup.scale.setScalar(1 / 3);
                 torchGroup.visible = false;
                 this.torch = torchGroup;
                 
                 // Torch light
-                this.torchLight = new THREE.PointLight(0xff6600, 10, 120, 1.4);
+                this.torchLight = new THREE.PointLight(0xff6600, 100, 120, 1.4);
                 this.torchLight.position.set(0, 0, 0);
                 this.torchLight.castShadow = true;
                 this.torchLight.shadow.mapSize.width = 1024;
@@ -1136,7 +1267,7 @@
                 const rightStick = readStick(rightGp);
                 input.turnX = rightStick.x;
                 input.turnY = rightStick.y;
-                if (readButtons(rightGp).trigger) input.torch = true;
+                if (readButtons(leftGp).trigger) input.torch = true; // left trigger toggles torch
 
                 // Fallback: iterate XR inputSources to find left/right hands
                 const session = this.renderer.xr.getSession?.();
@@ -1177,15 +1308,15 @@
             attachWeaponsVR() {
                 if (this.spear && this.controllerGrip1) {
                     this.controllerGrip1.add(this.spear);
-                    // Align spear pointing forward along -Z of controller, grip near mid shaft
-                    this.spear.position.set(0.04, -0.4, -0.25);
-                    this.spear.rotation.set(-Math.PI / 2.2, 0.05, 0);
+                    // Align spear with controller forward axis (-Z), centered at the grip
+                    this.spear.position.set(0, -0.15, -0.05);
+                    this.spear.rotation.set(-Math.PI / 2, 0, 0);
                 }
                 if (this.torch && this.controllerGrip0) {
                     this.controllerGrip0.add(this.torch);
-                    // Torch oriented like spear grip, pointing forward
-                    this.torch.position.set(0.04, -0.45, -0.25);
-                    this.torch.rotation.set(-Math.PI / 2.2, 0.05, 0);
+                    // Torch aligned to controller forward axis (-Z)
+                    this.torch.position.set(0, -0.05, 0.0); // bottom of shaft at controller
+                    this.torch.rotation.set(-Math.PI / 2, 0, 0);
                     if (this.torchLight?.shadow) this.torchLight.shadow.needsUpdate = true;
                 }
             }
@@ -1290,8 +1421,9 @@
                     }
                 }
                 
-                // Create temple complex at spawn
-                this.createTempleComplex(0, 0);
+                // Find and place temple complex on a summit
+                this.templePosition = this.findSummitLocation();
+                this.createTempleComplex(this.templePosition.x, this.templePosition.z);
                 
                 // Initialize terrain colors based on starting season
                 this.updateTerrainColors();
@@ -1300,60 +1432,50 @@
             createTempleComplex(centerX, centerZ) {
                 const groundHeight = this.terrainGen.getHeight(centerX, centerZ);
                 const complexKey = '0,0'; // Temple complex is at origin
+                const obeliskRadius = 300; // 20% wider circle than before (was 250)
+                const foundationTopRadius = obeliskRadius * 1.1; // 10% larger than obelisk circle diameter -> radius
+                const foundationBottomRadius = 520;
+                const samples = 24;
+                let highest = groundHeight;
+                let lowest = groundHeight;
+                for (let i = 0; i < samples; i++) {
+                    const ang = (i / samples) * Math.PI * 2;
+                    const r = foundationBottomRadius * 0.98;
+                    const sx = centerX + Math.cos(ang) * r;
+                    const sz = centerZ + Math.sin(ang) * r;
+                    const h = this.terrainGen.getHeight(sx, sz);
+                    if (h > highest) highest = h;
+                    if (h < lowest) lowest = h;
+                }
+                const platformY = highest + 12; // raise a few more units above the highest terrain
+                const foundationHeight = Math.max(140, platformY - lowest + 120); // extra buffer to prevent poke-through
+                const foundationMat = new THREE.MeshLambertMaterial({ color: 0x2f2f2f });
+                const foundation = new THREE.Mesh(
+                    new THREE.CylinderGeometry(foundationTopRadius, foundationBottomRadius, foundationHeight, 48, 1, false),
+                    foundationMat
+                );
+                foundation.position.set(centerX, platformY - foundationHeight / 2, centerZ);
+                foundation.castShadow = true;
+                foundation.receiveShadow = true;
+                this.scene.add(foundation);
+                this.foundationInfo = {
+                    centerX,
+                    centerZ,
+                    topRadius: foundationTopRadius,
+                    bottomRadius: foundationBottomRadius,
+                    topY: platformY,
+                    height: foundationHeight,
+                    lowestTerrain: lowest
+                };
                 
-                // Main pyramid - largest central structure
-                const mainPyramid = this.createLargePyramid(centerX, groundHeight, centerZ, 80);
-                this.scene.add(mainPyramid);
-                this.structures.set(`${complexKey}-main`, mainPyramid);
-                this.collisionBoxes.push({
-                    minX: centerX - 80, maxX: centerX + 80,
-                    minY: groundHeight, maxY: groundHeight + 120,
-                    minZ: centerZ - 80, maxZ: centerZ + 80,
-                    chunkKey: complexKey
-                });
-                
-                // Four medium pyramids at cardinal directions
-                const positions = [
-                    [centerX + 150, centerZ],
-                    [centerX - 150, centerZ],
-                    [centerX, centerZ + 150],
-                    [centerX, centerZ - 150]
-                ];
-                
-                positions.forEach(([x, z], idx) => {
-                    const h = this.terrainGen.getHeight(x, z);
-                    const pyramid = this.createLargePyramid(x, h, z, 50);
-                    this.scene.add(pyramid);
-                    this.structures.set(`${complexKey}-pyramid-${idx}`, pyramid);
+                // Central grand temple with pyramid roof
+                const mainData = this.createGrandTempleWithPyramidRoof(centerX, platformY, centerZ);
+                this.scene.add(mainData.group);
+                this.structures.set(`${complexKey}-main`, mainData.group);
+                this.createMainTempleBeam(mainData.apex.clone());
+                mainData.colliders.forEach((c) => {
                     this.collisionBoxes.push({
-                        minX: x - 50, maxX: x + 50,
-                        minY: h, maxY: h + 75,
-                        minZ: z - 50, maxZ: z + 50,
-                        chunkKey: complexKey
-                    });
-                });
-                
-                // Eight smaller temples around the perimeter
-                const templePositions = [
-                    [centerX + 120, centerZ + 120],
-                    [centerX - 120, centerZ + 120],
-                    [centerX + 120, centerZ - 120],
-                    [centerX - 120, centerZ - 120],
-                    [centerX + 200, centerZ + 80],
-                    [centerX - 200, centerZ + 80],
-                    [centerX + 200, centerZ - 80],
-                    [centerX - 200, centerZ - 80]
-                ];
-                
-                templePositions.forEach(([x, z], idx) => {
-                    const h = this.terrainGen.getHeight(x, z);
-                    const temple = this.createTemple(x, h, z);
-                    this.scene.add(temple);
-                    this.structures.set(`${complexKey}-temple-${idx}`, temple);
-                    this.collisionBoxes.push({
-                        minX: x - 40, maxX: x + 40,
-                        minY: h, maxY: h + 60,
-                        minZ: z - 40, maxZ: z + 40,
+                        ...c,
                         chunkKey: complexKey
                     });
                 });
@@ -1361,25 +1483,276 @@
                 // Ring of obelisks
                 for (let i = 0; i < 16; i++) {
                     const angle = (i / 16) * Math.PI * 2;
-                    const radius = 250;
+                    const radius = obeliskRadius;
                     const x = centerX + Math.cos(angle) * radius;
                     const z = centerZ + Math.sin(angle) * radius;
-                    const h = this.terrainGen.getHeight(x, z);
+                    const h = platformY;
                     const obelisk = this.createObelisk(x, h, z);
                     this.scene.add(obelisk);
                     this.structures.set(`${complexKey}-obelisk-${i}`, obelisk);
                     this.collisionBoxes.push({
                         minX: x - 4, maxX: x + 4,
-                        minY: h, maxY: h + 50,
+                        minY: h - 8, maxY: h + 50,
                         minZ: z - 4, maxZ: z + 4,
                         chunkKey: complexKey
                     });
                 }
             }
+
+            getFoundationHeightAt(x, z) {
+                if (!this.foundationInfo) return null;
+                const { centerX, centerZ, topRadius, bottomRadius, topY, height } = this.foundationInfo;
+                const dx = x - centerX;
+                const dz = z - centerZ;
+                const r = Math.sqrt(dx * dx + dz * dz);
+                if (r > bottomRadius) return null;
+                if (bottomRadius === topRadius) return topY;
+                const t = (r - topRadius) / (bottomRadius - topRadius);
+                const y = topY - t * height;
+                const bottomY = topY - height;
+                return Math.max(Math.min(y, topY), bottomY);
+            }
             
+            createGrandTempleWithPyramidRoof(x, y, z) {
+                const group = new THREE.Group();
+                const goldenRatio = 1.618;
+                const footprintX = 240;
+                const footprintZ = footprintX * goldenRatio;
+                const floorHeight = 6;
+                const columnHeight = 95;
+                const columnRadius = 5;
+                const beamHeight = 10;
+                const roofStepCount = 9;
+                const roofStepHeight = 6;
+                const colliders = [];
+
+                // Radiating stepped foundation (walkable stairs)
+                const stepCount = 7;
+                const stepHeight = 4;
+                const baseWidth = footprintX * 1.25;
+                const baseDepth = footprintZ * 1.25;
+                const startY = -stepHeight * 2; // sink the first step modestly for visual grounding
+                let topStepY = startY;
+                // Deep footing extending straight down
+                const buriedDepth = 0.5 * (floorHeight + columnHeight + roofStepCount * roofStepHeight + beamHeight);
+                const footing = new THREE.Mesh(
+                    new THREE.BoxGeometry(baseWidth, buriedDepth, baseDepth),
+                    new THREE.MeshLambertMaterial({ color: 0x2f2f2f })
+                );
+                footing.position.y = startY - buriedDepth / 2;
+                footing.receiveShadow = true;
+                group.add(footing);
+                for (let i = 0; i < stepCount; i++) {
+                    const t = i / stepCount;
+                    const width = baseWidth * (1 - t * 0.35);
+                    const depth = baseDepth * (1 - t * 0.35);
+                    const step = new THREE.Mesh(
+                        new THREE.BoxGeometry(width, stepHeight, depth),
+                        new THREE.MeshLambertMaterial({ color: 0x3d3d3d })
+                    );
+                    step.position.y = startY + i * stepHeight + stepHeight / 2;
+                    step.castShadow = true;
+                    step.receiveShadow = true;
+                    group.add(step);
+                    topStepY = step.position.y + stepHeight / 2;
+                    colliders.push({
+                        minX: x - width / 2,
+                        maxX: x + width / 2,
+                        minY: y + step.position.y - stepHeight / 2,
+                        maxY: y + step.position.y + stepHeight / 2,
+                        minZ: z - depth / 2,
+                        maxZ: z + depth / 2
+                    });
+                }
+
+                const platformY = topStepY + 0.2; // where columns and interior start
+
+                // Colonnade (doubled density)
+                const colMat = new THREE.MeshLambertMaterial({ color: 0x8a8a8a });
+                const colPositions = [];
+                const insetX = footprintX * 0.35;
+                const insetZ = footprintZ * 0.35;
+                const stepX = 18;
+                const stepZ = 18;
+                for (let xPos = -insetX; xPos <= insetX; xPos += stepX) {
+                    colPositions.push([xPos, -insetZ]);
+                    colPositions.push([xPos, insetZ]);
+                }
+                for (let zPos = -insetZ + stepZ; zPos <= insetZ - stepZ; zPos += stepZ) {
+                    colPositions.push([-insetX, zPos]);
+                    colPositions.push([insetX, zPos]);
+                }
+                for (const [cx, cz] of colPositions) {
+                    const column = new THREE.Mesh(
+                        new THREE.CylinderGeometry(columnRadius, columnRadius, columnHeight, 14),
+                        colMat
+                    );
+                    column.position.set(cx, platformY + columnHeight / 2, cz);
+                    column.castShadow = true;
+                    column.receiveShadow = true;
+                    group.add(column);
+                }
+
+                // Architrave and roof deck
+                const beamWidth = footprintX * 0.78;
+                const beamDepth = footprintZ * 0.78;
+                const beam = new THREE.Mesh(
+                    new THREE.BoxGeometry(beamWidth, beamHeight, beamDepth),
+                    new THREE.MeshLambertMaterial({ color: 0x6a6a6a })
+                );
+                beam.position.y = platformY + columnHeight + beamHeight / 2;
+                beam.castShadow = true;
+                beam.receiveShadow = true;
+                group.add(beam);
+
+                // Stepped pyramid roof continuing the base steps
+                const baseTopWidth = baseWidth * (1 - ((stepCount - 1) / stepCount) * 0.35);
+                const baseTopDepth = baseDepth * (1 - ((stepCount - 1) / stepCount) * 0.35);
+                let roofCurrentWidth = baseTopWidth * 0.9;
+                let roofCurrentDepth = baseTopDepth * 0.9;
+                let roofCurrentY = beam.position.y;
+                for (let i = 0; i < roofStepCount; i++) {
+                    const t = i / roofStepCount;
+                    const shrink = 0.14 + 0.02 * i;
+                    const stepW = roofCurrentWidth * (1 - shrink);
+                    const stepD = roofCurrentDepth * (1 - shrink);
+                    const roofStep = new THREE.Mesh(
+                        new THREE.BoxGeometry(stepW, roofStepHeight, stepD),
+                        new THREE.MeshLambertMaterial({ color: 0x707070 })
+                    );
+                    roofStep.position.y = roofCurrentY + roofStepHeight / 2;
+                    roofStep.castShadow = true;
+                    roofStep.receiveShadow = true;
+                    group.add(roofStep);
+                    roofCurrentY = roofStep.position.y + roofStepHeight / 2;
+                    roofCurrentWidth = stepW;
+                    roofCurrentDepth = stepD;
+                }
+                // Tiny cap to finish the point
+                const capSize = Math.max(roofCurrentWidth, roofCurrentDepth) * 0.3;
+                const cap = new THREE.Mesh(
+                    new THREE.BoxGeometry(capSize, roofStepHeight * 0.8, capSize),
+                    new THREE.MeshLambertMaterial({ color: 0x707070 })
+                );
+                cap.position.y = roofCurrentY + roofStepHeight * 0.4;
+                cap.castShadow = true;
+                cap.receiveShadow = true;
+                group.add(cap);
+                roofCurrentY = cap.position.y + (roofStepHeight * 0.4);
+
+                // Gold globe at apex
+                const globeRadius = 12;
+                const globe = new THREE.Mesh(
+                    new THREE.SphereGeometry(globeRadius, 24, 24),
+                    new THREE.ShaderMaterial({
+                        uniforms: {
+                            time: { value: 0 },
+                            baseColor: { value: new THREE.Color(0xffd700) }
+                        },
+                        vertexShader: `
+                            varying vec3 vNormal;
+                            varying vec3 vWorldPos;
+                            void main() {
+                                vNormal = normalize(normalMatrix * normal);
+                                vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                                vWorldPos = worldPos.xyz;
+                                gl_Position = projectionMatrix * viewMatrix * worldPos;
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform float time;
+                            uniform vec3 baseColor;
+                            varying vec3 vNormal;
+                            varying vec3 vWorldPos;
+                            float hash(vec3 p) {
+                                return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+                            }
+                            void main() {
+                                vec3 n = normalize(vNormal);
+                                float ndotl = max(dot(n, normalize(vec3(0.2, 0.9, 0.4))), 0.0);
+                                float spec = pow(ndotl, 24.0);
+                                float sparkle = 0.0;
+                                vec3 cell = floor(vWorldPos * 6.0 + time * 2.0);
+                                float h = hash(cell);
+                                sparkle += smoothstep(0.92, 1.0, h) * 1.2;
+                                float flicker = 0.5 + 0.5 * sin(time * 5.0 + h * 20.0);
+                                sparkle *= flicker;
+                                vec3 color = baseColor * (0.6 + 0.8 * ndotl) + vec3(spec * 1.4) + vec3(sparkle);
+                                gl_FragColor = vec4(color, 1.0);
+                            }
+                        `,
+                        transparent: false
+                    })
+                );
+                globe.position.y = roofCurrentY + globeRadius;
+                globe.castShadow = true;
+                globe.receiveShadow = true;
+                group.add(globe);
+                this.globeMaterial = globe.material;
+
+                // Fire altar
+                const brazier = new THREE.Mesh(
+                    new THREE.CylinderGeometry(10, 12, 10, 12),
+                    new THREE.MeshLambertMaterial({ color: 0x4b2f1b })
+                );
+                brazier.position.set(0, platformY + 6, 0);
+                brazier.castShadow = true;
+                brazier.receiveShadow = true;
+                group.add(brazier);
+
+                const flame = new THREE.Mesh(
+                    new THREE.ConeGeometry(8, 18, 10),
+                    new THREE.MeshPhongMaterial({
+                        color: 0xff8a3c,
+                        emissive: 0xff5a00,
+                        emissiveIntensity: 1.6,
+                        transparent: true,
+                        opacity: 0.9
+                    })
+                );
+                flame.position.set(0, platformY + 15, 0);
+                flame.castShadow = false;
+                group.add(flame);
+
+                const fireLight = new THREE.PointLight(0xffb15a, 2.4, 220, 2);
+                fireLight.position.set(0, platformY + 24, 0);
+                fireLight.castShadow = true;
+                fireLight.shadow.mapSize.width = 1024;
+                fireLight.shadow.mapSize.height = 1024;
+                group.add(fireLight);
+
+                // Bounding box and apex for beam
+                const apexY = globe.position.y + globeRadius;
+                const apex = new THREE.Vector3(x, y + apexY, z);
+                group.position.set(x, y, z);
+                return {
+                    group,
+                    apex,
+                    colliders,
+                    bounds: {
+                        minX: x - baseWidth * 0.55,
+                        maxX: x + baseWidth * 0.55,
+                        minY: y + startY,
+                        maxY: y + apexY,
+                        minZ: z - baseDepth * 0.55,
+                        maxZ: z + baseDepth * 0.55
+                    }
+                };
+            }
+
             createLargePyramid(x, y, z, baseSize) {
                 const group = new THREE.Group();
                 const height = baseSize * 1.3;
+
+                // Foundation sunk into the ground
+                const foundationHeight = 30;
+                const foundation = new THREE.Mesh(
+                    new THREE.BoxGeometry(baseSize * 2.2, foundationHeight, baseSize * 2.2),
+                    new THREE.MeshLambertMaterial({ color: 0x3c3c3c })
+                );
+                foundation.position.y = -foundationHeight * 0.4;
+                foundation.receiveShadow = true;
+                group.add(foundation);
                 
                 // Main pyramid body - granite gray
                 const pyramid = new THREE.Mesh(
@@ -1432,6 +1805,16 @@
             createObelisk(x, y, z) {
                 const group = new THREE.Group();
                 const height = 40;
+
+                // Foundation sunk into terrain
+                const foundationHeight = 18;
+                const foundation = new THREE.Mesh(
+                    new THREE.BoxGeometry(12, foundationHeight, 12),
+                    new THREE.MeshLambertMaterial({ color: 0x3c3c3c })
+                );
+                foundation.position.y = -foundationHeight * 0.4;
+                foundation.receiveShadow = true;
+                group.add(foundation);
                 
                 // Main shaft - granite gray
                 const shaft = new THREE.Mesh(
@@ -1471,6 +1854,16 @@
                 const group = new THREE.Group();
                 const size = 30 + Math.random() * 20;
                 const height = size * 1.2;
+
+                // Foundation sunk into terrain
+                const foundationHeight = 24;
+                const foundation = new THREE.Mesh(
+                    new THREE.BoxGeometry(size * 2.4, foundationHeight, size * 2.4),
+                    new THREE.MeshLambertMaterial({ color: 0x3c3c3c })
+                );
+                foundation.position.y = -foundationHeight * 0.35;
+                foundation.receiveShadow = true;
+                group.add(foundation);
                 
                 // Main pyramid - granite gray
                 const pyramid = new THREE.Mesh(
@@ -1499,49 +1892,6 @@
                 group.position.set(x, y, z);
                 return group;
             }
-            
-            createTemple(x, y, z) {
-                const group = new THREE.Group();
-                const baseSize = 25 + Math.random() * 15;
-                
-                // Base platform - dark granite
-                const base = new THREE.Mesh(
-                    new THREE.BoxGeometry(baseSize * 2, 8, baseSize * 2),
-                    new THREE.MeshLambertMaterial({ color: 0x505050 })
-                );
-                base.position.y = 4;
-                base.castShadow = true;
-                base.receiveShadow = true;
-                group.add(base);
-                
-                // Columns - lighter granite
-                for (let i = -1; i <= 1; i++) {
-                    for (let j = -1; j <= 1; j++) {
-                        if (i === 0 && j === 0) continue;
-                        const column = new THREE.Mesh(
-                            new THREE.CylinderGeometry(2, 2, 30, 8),
-                            new THREE.MeshLambertMaterial({ color: 0x808080 })
-                        );
-                        column.position.set(i * baseSize * 0.7, 23, j * baseSize * 0.7);
-                        column.castShadow = true;
-                        group.add(column);
-                    }
-                }
-                
-                // Roof - medium granite
-                const roof = new THREE.Mesh(
-                    new THREE.ConeGeometry(baseSize * 1.2, 20, 4),
-                    new THREE.MeshLambertMaterial({ color: 0x606060 })
-                );
-                roof.position.y = 48;
-                roof.rotation.y = Math.PI / 4;
-                roof.castShadow = true;
-                group.add(roof);
-                
-                group.position.set(x, y, z);
-                return group;
-            }
-            
             generateChunk(chunkX, chunkZ, playerDist = 0) {
                 const key = `${chunkX},${chunkZ}`;
                 if (this.chunks.has(key)) {
@@ -1574,6 +1924,12 @@
                 
                 const gridSize = Math.floor(size / lodStep);
                 const terrainTypes = []; // Store terrain type for seasonal updates
+                const ELEV_MAX = 3000;
+                const peakTh = ELEV_MAX * 0.9;
+                const summitTh = ELEV_MAX * 0.8;
+                const alpineTh = ELEV_MAX * 0.6;
+                const borealTh = ELEV_MAX * 0.15;
+                const beachTh = ELEV_MAX * 0.025;
                 let maxHeight = -Infinity;
                 for (let z = 0; z <= gridSize; z++) {
                     for (let x = 0; x <= gridSize; x++) {
@@ -1583,21 +1939,30 @@
                         const m = this.terrainGen.getMoisture(wx, wz);
                         
                         // Flatten water areas - terrain below water level becomes flat at water level
-                        const waterLevel = 3;
-                        if (h < waterLevel) {
-                            h = waterLevel - 1; // Slightly below water surface for visual depth
-                        }
+                        // const waterLevel = 3;
+                        // if (h < waterLevel) {
+                        //     h = waterLevel - 1; // Slightly below water surface for visual depth
+                        // }
                         
                         maxHeight = Math.max(maxHeight, h);
                         verts.push(wx, h, wz);
                         
-                        // Store terrain type for seasonal color updates
-                        let terrainType = 'lowland';
-                        if (h < 5) terrainType = 'water';
-                        else if (h >= 5000) terrainType = 'peak';
-                        else if (h >= 2500) terrainType = 'mountain';
-                        else if (m > 0.2) terrainType = 'forest';
-                        else if (m < -0.1) terrainType = 'rocky';
+                    const moistNorm = Math.max(0, Math.min(1, (m + 1) * 0.5));
+                    const threshOffset = (moistNorm - 0.5) * 0.03 * ELEV_MAX; // wetter lowers thresholds slightly
+                        const localPeak = peakTh + threshOffset;
+                        const localSummit = summitTh + threshOffset;
+                        const localAlpine = alpineTh + threshOffset;
+                        const localBoreal = borealTh + threshOffset;
+                        const localBeach = beachTh + threshOffset;
+                        
+                        // Store terrain type for seasonal updates
+                        let terrainType = 'boreal';
+                        if (h < localBeach) terrainType = 'water';
+                        else if (h >= localPeak) terrainType = 'peak';
+                        else if (h >= localSummit) terrainType = 'summit';
+                        else if (h >= localAlpine) terrainType = 'alpine';
+                        else if (h >= localBoreal) terrainType = 'boreal';
+                        else terrainType = 'beach';
                         
                         terrainTypes.push({ type: terrainType, height: h, moisture: m });
                         
@@ -1645,9 +2010,9 @@
                 mesh.castShadow = true; // Terrain casts shadows at all distances
                 this.scene.add(mesh);
                 
-                // Snow layer - only for close/medium chunks
+                // Snow layer - only for close chunks; distant chunks tint base geometry instead
                 let snowMesh = null;
-                if (zone.name !== 'far') {
+                if (zone.name === 'close') {
                     const snowGeo = geo.clone();
                     snowMesh = new THREE.Mesh(snowGeo, 
                         new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 5, specular: 0x222222 }));
@@ -1660,16 +2025,16 @@
                 
                 // Water - use the high-quality shaded material for all distances
                 const waterMat = new THREE.MeshPhongMaterial({
-                    color: 0x155a9c,
+                    color: 0x21374d,
                     transparent: true,
-                    opacity: 0.55,
+                    opacity: 0.01,
                     depthWrite: false,
                     shininess: 40,
-                    specular: 0x204d80
+                    specular: 0x2d4345
                 });
                 const water = new THREE.Mesh(new THREE.PlaneGeometry(size, size), waterMat);
                 water.rotation.x = -Math.PI / 2;
-                water.position.set(startX + size/2, 3, startZ + size/2);
+                water.position.set(startX + size/2, 300, startZ + size/2);
                 this.scene.add(water);
                 
                 // Trees - include close/medium chunks only, sparse at distance
@@ -1677,7 +2042,8 @@
                 const matrix = new THREE.Matrix4();
                 
                 if (zone.treeLevel) {
-                    const step = zone.name === 'close' ? Math.max(16, lodStep * 2) : Math.max(48, lodStep * 3); // denser planting
+                    // Keep tree counts consistent across close/medium; only geometry LOD changes
+                    const step = Math.max(16, lodStep * 2);
                     for (let z = 0; z < size; z += step) {
                         for (let x = 0; x < size; x += step) {
                             const wx = startX + x;
@@ -1718,27 +2084,13 @@
                     const h = this.terrainGen.getHeight(centerX, centerZ);
                     
                     if (this.terrainGen.shouldPlaceStructure(centerX, centerZ, h)) {
-                        const structType = Math.random() > 0.5 ? 'pyramid' : 'temple';
-                        let structure;
-                        if (structType === 'pyramid') {
-                            structure = this.createPyramid(centerX, h, centerZ);
-                            // Add collision box for pyramid
-                            this.collisionBoxes.push({
-                                minX: centerX - 40, maxX: centerX + 40,
-                                minY: h, maxY: h + 60,
-                                minZ: centerZ - 40, maxZ: centerZ + 40,
-                                chunkKey: key
-                            });
-                        } else {
-                            structure = this.createTemple(centerX, h, centerZ);
-                            // Add collision box for temple
-                            this.collisionBoxes.push({
-                                minX: centerX - 40, maxX: centerX + 40,
-                                minY: h, maxY: h + 60,
-                                minZ: centerZ - 40, maxZ: centerZ + 40,
-                                chunkKey: key
-                            });
-                        }
+                        const structure = this.createObelisk(centerX, h, centerZ);
+                        this.collisionBoxes.push({
+                            minX: centerX - 8, maxX: centerX + 8,
+                            minY: h - 8, maxY: h + 55,
+                            minZ: centerZ - 8, maxZ: centerZ + 8,
+                            chunkKey: key
+                        });
                         this.scene.add(structure);
                         this.structures.set(key, structure);
                     }
@@ -1864,23 +2216,17 @@
                 if (!chunk?.mesh) return;
                 const { winterFactor, springFactor, summerFactor, fallFactor } = factors;
                 const seasonalColors = {
-                    forest: {
+                    boreal: {
                         winter: new THREE.Color(0xf5f5ff),
                         spring: new THREE.Color(0x4f6f3c),
                         summer: new THREE.Color(0x33542a),
-                        fall: new THREE.Color(0x8b4513)
+                        fall: new THREE.Color(0xd9b13f) // yellowed fall
                     },
-                    lowland: {
-                        winter: new THREE.Color(0xf5f5ff),
-                        spring: new THREE.Color(0x5f8152),
-                        summer: new THREE.Color(0x5a7750),
-                        fall: new THREE.Color(0x7f8b5a)
-                    },
-                    rocky: {
-                        winter: new THREE.Color(0x8c929b),
-                        spring: new THREE.Color(0x6d747d),
-                        summer: new THREE.Color(0x5a616a),
-                        fall: new THREE.Color(0x737a83)
+                    alpine: {
+                        winter: new THREE.Color(0xe3eed7),
+                        spring: new THREE.Color(0x808f5f), // olive green
+                        summer: new THREE.Color(0x6f7d50), // olive green darker
+                        fall: new THREE.Color(0x8b1a1a)   // deep red
                     },
                     mountain: {
                         winter: new THREE.Color(0xe9edf2),
@@ -1896,10 +2242,26 @@
                     const terrain = terrainTypes[i];
                     const color = new THREE.Color();
                     if (terrain.type === 'water') {
-                        color.setHex(0xd4c4a8); // sandy seafloor; water surface tinted separately
+                        color.setHex(0x2b3541); // dark silt; water surface tinted separately
                     } else if (terrain.type === 'peak') {
                         // Permanent snow only on the highest peaks
                         color.setHex(0xf5f8ff);
+                    } else if (terrain.type === 'summit') {
+                        color.setHex(0x4b525b); // gunmetal
+                    } else if (terrain.type === 'alpine') {
+                        const terrainColors = seasonalColors.alpine;
+                        color.r = terrainColors.winter.r * winterFactor +
+                                 terrainColors.spring.r * springFactor +
+                                 terrainColors.summer.r * summerFactor +
+                                 terrainColors.fall.r * fallFactor;
+                        color.g = terrainColors.winter.g * winterFactor +
+                                 terrainColors.spring.g * springFactor +
+                                 terrainColors.summer.g * summerFactor +
+                                 terrainColors.fall.g * fallFactor;
+                        color.b = terrainColors.winter.b * winterFactor +
+                                 terrainColors.spring.b * springFactor +
+                                 terrainColors.summer.b * summerFactor +
+                                 terrainColors.fall.b * fallFactor;
                     } else if (terrain.type === 'mountain') {
                         const terrainColors = seasonalColors.mountain;
                         color.r = terrainColors.winter.r * winterFactor +
@@ -1914,11 +2276,8 @@
                                  terrainColors.spring.b * springFactor +
                                  terrainColors.summer.b * summerFactor +
                                  terrainColors.fall.b * fallFactor;
-                    } else {
-                        let terrainColors;
-                        if (terrain.type === 'forest') terrainColors = seasonalColors.forest;
-                        else if (terrain.type === 'rocky') terrainColors = seasonalColors.rocky;
-                        else terrainColors = seasonalColors.lowland;
+                    } else if (terrain.type === 'boreal') {
+                        let terrainColors = seasonalColors.boreal;
                         color.r = terrainColors.winter.r * winterFactor +
                                  terrainColors.spring.r * springFactor +
                                  terrainColors.summer.r * summerFactor +
@@ -1931,6 +2290,15 @@
                                  terrainColors.spring.b * springFactor +
                                  terrainColors.summer.b * summerFactor +
                                  terrainColors.fall.b * fallFactor;
+                    } else if (terrain.type === 'beach') {
+                        color.setHex(0x4a4f57);
+                    } else {
+                        // fallback
+                        color.setHex(0x4b525b);
+                    }
+                    // Distant snow tint: for medium/far chunks, fade base color toward white in winter
+                    if (chunk.zoneName !== 'close' && winterFactor > 0) {
+                        color.lerp(new THREE.Color(0xffffff), winterFactor);
                     }
                     colorArray[i * 3] = color.r;
                     colorArray[i * 3 + 1] = color.g;
@@ -1979,16 +2347,116 @@
                 this.lastSnowSeason = season;
                 this.lastSnowUpdate = now;
                 const isWinter = season === 'Winter';
+                const summitSnowLine = 3000 * 0.8; // match summit band threshold
                 for (const chunk of this.chunks.values()) {
                     if (chunk.snowMesh) {
-                        const highEnough = (chunk.maxHeight || 0) >= 5000;
-                        // Use snow mesh only for winter storms; keep summers clean
-                        chunk.snowMesh.visible = isWinter && highEnough;
+                        // Snow mesh only exists for close chunks; keep visible in winter
+                        chunk.snowMesh.visible = isWinter && (chunk.maxHeight || 0) >= summitSnowLine;
                     }
                     if (chunk.water) {
-                        chunk.water.material.color.setHex(isWinter ? 0xd0e0ff : 0x1e90ff);
-                        chunk.water.material.opacity = isWinter ? 0.9 : 0.7;
+                        chunk.water.material.color.setHex(isWinter ? 0xd0e0ff : 0x16405e);
+                        chunk.water.material.opacity = isWinter ? 0.9 : 0.99;
                     }
+                }
+            }
+
+            createMainTempleBeam(origin) {
+                this.mainTempleApex = origin.clone();
+                const seedTarget = origin.clone().add(new THREE.Vector3(0, 4000, 0));
+                const curve = this.buildMainBeamCurve(origin, seedTarget);
+                const coreMat = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.95,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    toneMapped: false
+                });
+                const glowMat = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.3,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    toneMapped: false
+                });
+                const coreRadius = 12; // match gold orb radius
+                const glowRadius = 18;
+                const core = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, coreRadius, 28, false), coreMat);
+                const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, glowRadius, 20, false), glowMat);
+                const group = new THREE.Group();
+                group.add(glow);
+                group.add(core);
+                group.visible = false;
+                group.renderOrder = 999;
+                this.scene.add(group);
+                this.mainTempleBeam = {
+                    group,
+                    core,
+                    glow,
+                    origin: origin.clone(),
+                    lastTarget: null,
+                    lastUpdate: 0,
+                    coreRadius,
+                    glowRadius
+                };
+            }
+
+            buildMainBeamCurve(origin, target) {
+                const dir = target.clone().sub(origin);
+                const dist = dir.length() || 1;
+                const lift = Math.min(Math.max(dist * 0.18, 3000), 16000);
+                dir.normalize();
+                const lateral = new THREE.Vector3(0, 1, 0).cross(dir);
+                if (lateral.lengthSq() < 1e-6) lateral.set(1, 0, 0);
+                lateral.normalize();
+                const cp1 = origin.clone()
+                    .add(new THREE.Vector3(0, lift * 0.35, 0))
+                    .add(lateral.clone().multiplyScalar(400));
+                const cp2 = origin.clone()
+                    .add(dir.clone().multiplyScalar(dist * 0.55))
+                    .add(new THREE.Vector3(0, lift, 0))
+                    .add(lateral.clone().multiplyScalar(-250));
+                const knots = [0, 0, 0, 0, 1, 1, 1, 1];
+                const controlPoints = [
+                    new THREE.Vector4(origin.x, origin.y, origin.z, 1),
+                    new THREE.Vector4(cp1.x, cp1.y, cp1.z, 0.6),
+                    new THREE.Vector4(cp2.x, cp2.y, cp2.z, 0.8),
+                    new THREE.Vector4(target.x, target.y, target.z, 1)
+                ];
+                return new THREE.NURBSCurve(3, knots, controlPoints);
+            }
+
+            refreshMainTempleBeam(target) {
+                if (!this.mainTempleBeam) return;
+                const now = performance.now();
+                if (!this.mainTempleBeam.lastTarget) {
+                    this.mainTempleBeam.lastTarget = target.clone().addScalar(1e6);
+                }
+                if (this.mainTempleBeam.lastTarget.distanceToSquared(target) < 4 &&
+                    now - this.mainTempleBeam.lastUpdate < 120) {
+                    return;
+                }
+                this.mainTempleBeam.lastTarget.copy(target);
+                this.mainTempleBeam.lastUpdate = now;
+                const curve = this.buildMainBeamCurve(this.mainTempleBeam.origin, target);
+                const segments = 180;
+                const coreGeom = new THREE.TubeGeometry(curve, segments, this.mainTempleBeam.coreRadius, 32, false);
+                const glowGeom = new THREE.TubeGeometry(curve, segments, this.mainTempleBeam.glowRadius, 24, false);
+                this.mainTempleBeam.core.geometry.dispose();
+                this.mainTempleBeam.glow.geometry.dispose();
+                this.mainTempleBeam.core.geometry = coreGeom;
+                this.mainTempleBeam.glow.geometry = glowGeom;
+            }
+
+            updateTempleBeams(nightFactor) {
+                if (!this.mainTempleBeam) return;
+                const visible = nightFactor > 0.2;
+                this.mainTempleBeam.group.visible = visible;
+                if (visible && this.northStar) {
+                    const end = new THREE.Vector3();
+                    this.northStar.getWorldPosition(end);
+                    this.refreshMainTempleBeam(end);
                 }
             }
             
@@ -1997,6 +2465,9 @@
                 this.skyDome.position.copy(this.position);
                 this.stars.position.copy(this.position);
                 if (this.northStar) this.northStar.position.copy(this.position);
+                if (this.globeMaterial?.uniforms?.time) {
+                    this.globeMaterial.uniforms.time.value = this.timeSystem.getTime() * 0.001;
+                }
                 
                 const sunPos = this.timeSystem.getSunPosition();
                 const angle = sunPos * Math.PI * 2 - Math.PI / 2;
@@ -2141,9 +2612,11 @@
                     // Keep Polaris on the rotation axis: tilt only, no daily spin
                     const poleOffset = new THREE.Vector3(0, this.northStarRadius, 0);
                     poleOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), tilt);
-                    this.northStar.position.copy(this.position).add(poleOffset);
-                    this.northStar.lookAt(this.position); // face the camera
+                    this.northStar.position.copy(poleOffset); // local to sky dome so it follows player
+                    this.northStar.lookAt(this.camera.position); // face the camera
                 }
+
+                this.updateTempleBeams(nightFactor);
                 
                 // Update northern lights (aurora) - follows player
                 this.aurora.position.x = this.position.x;
@@ -2167,7 +2640,7 @@
                 if (this.isInVR) {
                     vrInput = this.getVRControllerInput();
                     
-                    // Toggle torch with right trigger
+                    // Toggle torch with left trigger
                     if (vrInput.torch && !this.vrTorchPressed) {
                         this.hasTorch = !this.hasTorch;
                         this.torch.visible = this.hasTorch;
@@ -2273,6 +2746,7 @@
                     let structureHeight = -Infinity;
                     const playerRadius = 1;
                     const playerHeight = 3;
+                    const maxStepHeight = 5;
                     
                     for (const box of this.collisionBoxes) {
                         // Check if player is horizontally within the building footprint
@@ -2280,6 +2754,13 @@
                                           newPos.z + playerRadius > box.minZ && newPos.z - playerRadius < box.maxZ;
                         
                         if (inFootprint) {
+                            // Gentle step-up allowance: treat low rises as ground instead of blocking
+                            const heightDiff = box.maxY - this.position.y;
+                            if (heightDiff > -maxStepHeight && heightDiff <= maxStepHeight && newPos.y + playerHeight > box.minY) {
+                                structureHeight = Math.max(structureHeight, box.maxY);
+                                continue;
+                            }
+
                             // Check if player is above the structure (can stand on top)
                             if (this.position.y >= box.maxY - 2 && newPos.y >= box.maxY - 2) {
                                 // Player is on top of structure - track the height
@@ -2313,9 +2794,11 @@
                     this.position.copy(newPos);
                     if (this.rig) this.rig.position.copy(this.position);
                     
-                    // Ground collision - check terrain, structures, and frozen water
+                    // Ground collision - check terrain, structures, foundation slope, and frozen water
                     const groundH = this.terrainGen.getHeight(this.position.x, this.position.z);
+                    const foundationH = this.getFoundationHeightAt(this.position.x, this.position.z);
                     let effectiveGroundHeight = groundH;
+                    if (foundationH !== null) effectiveGroundHeight = Math.max(effectiveGroundHeight, foundationH);
                     
                     // Check if standing on structure
                     if (structureHeight > groundH && this.position.y <= structureHeight + playerHeight) {
@@ -2324,7 +2807,7 @@
                     
                     // Check frozen water (winter season)
                     const season = this.timeSystem.getSeason();
-                    const waterLevel = 3;
+                    const waterLevel = 300;
                     if (season === 'Winter' && groundH < waterLevel && waterLevel > effectiveGroundHeight) {
                         effectiveGroundHeight = waterLevel; // Stand on ice
                     }
@@ -2427,6 +2910,11 @@
                     this.updateSky();
                     this.updateSnow();
                     this.updateUI();
+                    // Persist state periodically
+                    if (now - this.lastPersistSave > 3000) {
+                        this.savePersistedState();
+                        this.lastPersistSave = now;
+                    }
                 }
 
                 // Smooth peer avatars
