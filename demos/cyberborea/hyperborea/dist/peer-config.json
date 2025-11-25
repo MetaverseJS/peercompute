@@ -1,0 +1,6 @@
+{
+  "host": "localhost",
+  "port": 9000,
+  "path": "/peerjs",
+  "secure": false
+}
