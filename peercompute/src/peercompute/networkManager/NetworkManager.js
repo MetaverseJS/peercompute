@@ -34,6 +34,8 @@ export class NetworkManager {
     this.connections = new Map(); // peerId -> PeerJS DataConnection
     this.discoveryChannel = null;
     this.isConnected = false;
+    this.discoveryAnnounceInterval = null;
+    this.discoveryPeerPollInterval = null;
 
     this.peers = new Map();
     this.onMessage = config.onMessage || (() => {});
@@ -88,6 +90,7 @@ export class NetworkManager {
 
   async disconnect() {
     this.isConnected = false;
+    this._clearDiscoveryTimers();
     if (this.discoveryChannel) {
       this.discoveryChannel.close();
       this.discoveryChannel = null;
@@ -143,6 +146,7 @@ export class NetworkManager {
 
   /* Internal */
   _startDiscovery() {
+    this._clearDiscoveryTimers();
     this.discoveryChannel = new BroadcastChannel('peercompute-discovery');
     this.discoveryChannel.onmessage = (evt) => {
       const data = evt.data;
@@ -166,7 +170,7 @@ export class NetworkManager {
       }
     };
     announce();
-    setInterval(announce, 3000);
+    this.discoveryAnnounceInterval = setInterval(announce, 3000);
 
     // PeerServer discovery fallback (cross-device)
     const pollPeerServer = () => {
@@ -178,7 +182,18 @@ export class NetworkManager {
       });
     };
     pollPeerServer();
-    setInterval(pollPeerServer, 5000);
+    this.discoveryPeerPollInterval = setInterval(pollPeerServer, 5000);
+  }
+
+  _clearDiscoveryTimers() {
+    if (this.discoveryAnnounceInterval) {
+      clearInterval(this.discoveryAnnounceInterval);
+      this.discoveryAnnounceInterval = null;
+    }
+    if (this.discoveryPeerPollInterval) {
+      clearInterval(this.discoveryPeerPollInterval);
+      this.discoveryPeerPollInterval = null;
+    }
   }
 
   _dialPeer(peerId) {

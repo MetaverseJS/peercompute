@@ -6,6 +6,7 @@
 
 import { NetworkManager } from '../networkManager/NetworkManager.js';
 import { StateManager } from '../stateManager/StateManager.js';
+import { ComputeManager } from '../computeManager/ComputeManager.js';
 import { generateId } from '../utils/Utils.js';
 
 /**
@@ -28,10 +29,13 @@ export class NodeKernel {
       storageMode: config.storageMode || 'local',
       enableWebGPU: config.enableWebGPU || false,
       enablePersistence: config.enablePersistence !== false,
+      disableStateNetworkProvider: config.disableStateNetworkProvider || false,
+      disableStateBroadcast: config.disableStateBroadcast || false,
       peerServer: config.peerServer || null,
       gameId: config.gameId || 'default-game',
       roomId: config.roomId || 'default-room',
       stateTopic: config.stateTopic || 'peercompute-state',
+      docName: config.docName,
       ...config
     };
 
@@ -77,10 +81,13 @@ export class NodeKernel {
       console.log('[NodeKernel] NetworkManager initialized');
       
       // 2. Initialize StateManager with NetworkManager
+      const stateDocName = this.config.docName || `peercompute-${this.config.gameId}-${this.config.roomId}`;
       this.stateManager = new StateManager(this.networkManager, {
-        docName: `peercompute-${this.nodeId}`,
+        docName: stateDocName,
         topic: this.config.stateTopic,
-        enablePersistence: this.config.enablePersistence
+        enablePersistence: this.config.enablePersistence,
+        disableNetworkProvider: this.config.disableStateNetworkProvider,
+        disableBroadcast: this.config.disableStateBroadcast
       });
       
       await this.stateManager.initialize({
@@ -90,12 +97,14 @@ export class NodeKernel {
       });
       console.log('[NodeKernel] StateManager initialized');
       
-      // 3. Initialize ComputeManager (TODO - placeholder)
-      // this.computeManager = new ComputeManager({
-      //   enableWebGPU: this.config.enableWebGPU
-      // });
-      // await this.computeManager.initialize();
-      console.log('[NodeKernel] ComputeManager: TODO');
+      // 3. Initialize ComputeManager
+      this.computeManager = new ComputeManager({
+        enableWebGPU: this.config.enableWebGPU,
+        maxWorkers: this.config.maxWorkers,
+        enableWorkers: this.config.enableWorkers !== false
+      });
+      await this.computeManager.initialize();
+      console.log('[NodeKernel] ComputeManager initialized');
       
       this.isInitialized = true;
       console.log('[NodeKernel] Initialization complete');
@@ -194,10 +203,10 @@ export class NodeKernel {
     if (!this.isStarted) {
       throw new Error('Node not started');
     }
-    
-    // TODO: Route task to compute manager
-    console.log('[NodeKernel] Task submission: TODO (ComputeManager not implemented)');
-    throw new Error('ComputeManager not yet implemented');
+    if (!this.computeManager) {
+      throw new Error('ComputeManager not initialized');
+    }
+    return this.computeManager.submitTask(task);
   }
 
   /**
@@ -231,8 +240,8 @@ export class NodeKernel {
       
       // Compute status
       compute: {
-        enabled: this.config.enableWebGPU,
-        available: false // TODO: Update when ComputeManager implemented
+        enabled: true,
+        available: !!this.computeManager
       }
     };
   }

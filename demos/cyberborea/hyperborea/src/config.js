@@ -1,5 +1,8 @@
 export const GAME_NAMESPACE = 'cb';
+export const GAME_VERSION = '0.2.1';
 export const PERSIST_KEY = 'cb-player-persist';
+// Bundle hash used for persistence/versioning; override by defining globalThis.__BUNDLE_HASH__ at build time.
+export const BUNDLE_HASH = typeof globalThis !== 'undefined' && globalThis.__BUNDLE_HASH__ ? globalThis.__BUNDLE_HASH__ : GAME_VERSION;
 
 export const getRenderDistanceFromQuery = () => {
   try {

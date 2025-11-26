@@ -29,6 +29,8 @@ export class StateManager {
       docName: config.docName || 'peercompute-state',
       topic: config.topic || 'peercompute-state-sync',
       enablePersistence: config.enablePersistence !== false,
+      disableNetworkProvider: config.disableNetworkProvider || false,
+      disableBroadcast: config.disableBroadcast || false,
       ...config
     };
     
@@ -48,6 +50,7 @@ export class StateManager {
     
     // State
     this.isInitialized = false;
+    this.persistenceFailed = false;
   }
 
   /**
@@ -148,7 +151,7 @@ export class StateManager {
       }
       
       // Set up PeerComputeProvider synchronization (Custom replacement for y-libp2p)
-      if (this.networkManager) {
+      if (this.networkManager && !this.config.disableNetworkProvider) {
         try {
           this.libp2pProvider = new PeerComputeProvider(
             this.networkManager,
@@ -217,7 +220,7 @@ export class StateManager {
           }
         });
       });
-    });
+    }, { captureTransactions: false });
   }
 
   /**
@@ -263,10 +266,10 @@ export class StateManager {
     
     // Yjs handles the write and automatically syncs
     // No need for queuing or manual conflict resolution
-    this.state.set(key, value);
+    this._safeSetMap(this.state, key, value);
 
     // Opportunistic direct broadcast for PeerJS path
-    if (this.networkManager?.broadcast) {
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
       this.networkManager.broadcast({
         type: 'state-set',
         data: { key, value }
@@ -282,9 +285,9 @@ export class StateManager {
    */
   writeScoped(namespace, key, value) {
     const nsMap = this._getNamespaceMap(namespace);
-    nsMap.set(key, value);
+    this._safeSetMap(nsMap, key, value);
 
-    if (this.networkManager?.broadcast) {
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
       this.networkManager.broadcast({
         type: 'state-set',
         data: { namespace, key, value }
@@ -304,6 +307,47 @@ export class StateManager {
   }
 
   /**
+   * Check existence of a key within a namespace without pulling the value.
+   */
+  hasScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return false;
+    return nsMap.has(key);
+  }
+
+  /**
+   * List keys within a namespace
+   * @param {string} namespace
+   * @returns {string[]}
+   */
+  listNamespaceKeys(namespace) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return [];
+    return Array.from(nsMap.keys());
+  }
+
+  /**
+   * Clear all entries in a namespace
+   * @param {string} namespace
+   */
+  clearNamespace(namespace) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return;
+    const keys = Array.from(nsMap.keys());
+    this.ydoc.transact(() => {
+      keys.forEach((k) => nsMap.delete(k));
+    });
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+      keys.forEach((key) => {
+        this.networkManager.broadcast({
+          type: 'state-set',
+          data: { namespace, key, value: undefined }
+        }).catch(() => {});
+      });
+    }
+  }
+
+  /**
    * Delete a value from a namespaced map
    * @param {string} namespace
    * @param {string} key
@@ -312,7 +356,7 @@ export class StateManager {
     const nsMap = this.state.get(namespace);
     if (!nsMap) return;
     nsMap.delete(key);
-    if (this.networkManager?.broadcast) {
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
       this.networkManager.broadcast({
         type: 'state-set',
         data: { namespace, key, value: undefined }
@@ -344,6 +388,30 @@ export class StateManager {
     }
     
     return this.state.has(key);
+  }
+
+  /**
+   * Safe setter with persistence fallback
+   * @private
+   */
+  _safeSetMap(map, key, value) {
+    if (this.persistenceFailed) {
+      map.set(key, value);
+      return;
+    }
+    try {
+      map.set(key, value);
+    } catch (err) {
+      if (err?.name === 'InvalidStateError') {
+        console.warn('[StateManager] Persistence unavailable, disabling IndexedDB provider', err);
+        this.indexeddbProvider?.destroy?.();
+        this.indexeddbProvider = null;
+        this.persistenceFailed = true;
+        map.set(key, value);
+      } else {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -560,6 +628,49 @@ export class StateManager {
       console.error('[StateManager] Destroy failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Clear persisted IndexedDB data for this document.
+   * Note: this clears the whole document, not just a namespace.
+   */
+  async clearPersistence() {
+    if (this.indexeddbProvider?.clearData) {
+      try {
+        await this.indexeddbProvider.clearData();
+        console.log('[StateManager] IndexedDB persistence cleared');
+      } catch (err) {
+        console.error('[StateManager] Failed to clear IndexedDB persistence', err);
+      }
+    }
+  }
+
+  /**
+   * Delete any IndexedDB databases that start with the given prefix.
+   * Useful to clean up docName-per-node databases from previous runs.
+   */
+  async clearAllPersistenceByPrefix(prefix, excludeNames = []) {
+    if (typeof indexedDB?.databases !== 'function') return;
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs || []) {
+        if (db?.name && db.name.startsWith(prefix) && !excludeNames.includes(db.name)) {
+          await new Promise((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(db.name);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+            req.onblocked = () => resolve(); // best-effort
+          });
+        }
+      }
+      console.log(`[StateManager] Cleared IndexedDB databases with prefix ${prefix}`);
+    } catch (err) {
+      console.warn('[StateManager] Failed to enumerate/delete IndexedDB databases', err);
+    }
+  }
+
+  getDocName() {
+    return this.config.docName;
   }
 
   /**

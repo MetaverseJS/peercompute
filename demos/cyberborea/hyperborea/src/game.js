@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 import { NodeKernel } from '@peercompute/index.js';
-import { CONFIG, GAME_NAMESPACE, PERSIST_KEY, PRESENCE_HEARTBEAT_MS, PEER_PRUNE_INTERVAL_MS, PEER_STALE_MS, STATE_POS_THRESHOLD, STATE_ROT_THRESHOLD, STATE_KEEPALIVE_MS, STATE_EVENT_MIN_MS, TIME_ANCHOR_KEY } from './config.js';
+import { CONFIG, GAME_NAMESPACE, GAME_VERSION, BUNDLE_HASH, PERSIST_KEY, PRESENCE_HEARTBEAT_MS, PEER_PRUNE_INTERVAL_MS, PEER_STALE_MS, STATE_POS_THRESHOLD, STATE_ROT_THRESHOLD, STATE_KEEPALIVE_MS, STATE_EVENT_MIN_MS, TIME_ANCHOR_KEY } from './config.js';
 import { TimeSystem } from './systems/timeSystem.js';
 import { TerrainGenerator } from './systems/terrainGenerator.js';
+import { ELEV_MAX, TERRAIN_THRESHOLDS, SUMMIT_SEARCH } from './world/constants.js';
+import { StateStore } from './world/stateStore.js';
+import { TerrainCache } from './world/terrainCache.js';
+import { computeTerrainChunk } from './world/terrainTask.js';
 
 class VRButton {
   static createButton(renderer) {
@@ -53,6 +57,12 @@ export class Game {
                 this.gameNamespace = GAME_NAMESPACE;
                 this.peerMeshes = new Map();
                 this.peers = new Map();
+                this.terrainCache = null;
+                this.chunkJobs = new Map();
+                this.readyToRender = false;
+                this.computeManager = null;
+                this.computeReadyPromise = new Promise((resolve) => { this._resolveComputeReady = resolve; });
+                this.spiralCache = new Map(); // cache of spiral offsets per radius
                 this.visibilityHandler = null;
                 this.backgroundHeartbeat = null;
                 this.peerCleanupInterval = null;
@@ -74,6 +84,7 @@ export class Game {
                 this.initControls();
                 
                 this.chunks = new Map();
+                this.chunkJobs = new Map();
                 this.structures = new Map();
                 this.collisionBoxes = []; // Store building collision boxes
                 this.prevChunkX = null;
@@ -123,6 +134,9 @@ export class Game {
                 if (this.persistedState?.godMode !== undefined) {
                     this.godMode = !!this.persistedState.godMode;
                 }
+                if (this.persistedState?.wideFOV !== undefined) {
+                    this.wideFOV = !!this.persistedState.wideFOV;
+                }
                 
                 // Mobile detection and controls
                 this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -145,12 +159,13 @@ export class Game {
                 this.treeGeometryClose = new THREE.ConeGeometry(10, 10, 6);
                 this.treeGeometryMedium = new THREE.ConeGeometry(10, 10, 3);
                 this.treeMaterial = new THREE.MeshPhongMaterial({ color: 0x1a5010, shininess: 8, specular: 0x111111 });
-                this.treeInstancedMeshClose = new THREE.InstancedMesh(this.treeGeometryClose, this.treeMaterial, 100000);
+                // Keep instance pools tighter to avoid overdraw; frustum culling stays disabled because instances span many chunks
+                this.treeInstancedMeshClose = new THREE.InstancedMesh(this.treeGeometryClose, this.treeMaterial, 60000);
                 this.treeInstancedMeshClose.castShadow = false; // avoid heavy shadow map cost for thousands of instances
                 this.treeInstancedMeshClose.receiveShadow = true;
                 this.treeInstancedMeshClose.frustumCulled = false;
                 this.scene.add(this.treeInstancedMeshClose);
-                this.treeInstancedMeshMedium = new THREE.InstancedMesh(this.treeGeometryMedium, this.treeMaterial, 100000);
+                this.treeInstancedMeshMedium = new THREE.InstancedMesh(this.treeGeometryMedium, this.treeMaterial, 40000);
                 this.treeInstancedMeshMedium.castShadow = false;
                 this.treeInstancedMeshMedium.receiveShadow = true;
                 this.treeInstancedMeshMedium.frustumCulled = false;
@@ -158,9 +173,6 @@ export class Game {
                 this.treeCountClose = 0;
                 this.treeCountMedium = 0;
                 
-                this.generateInitialTerrain();
-                // Use XR-friendly animation loop
-                this.renderer.setAnimationLoop(() => this.animate());
             }
             
             loadPersistedState() {
@@ -180,6 +192,7 @@ export class Game {
                         yaw: this.yaw,
                         pitch: this.pitch,
                         godMode: this.godMode,
+                        wideFOV: this.wideFOV,
                         kills: this.killCount,
                         time: {
                             multiplier: this.timeSystem?.timeMultiplier,
@@ -247,10 +260,10 @@ export class Game {
                 
                 window.addEventListener('resize', () => {
                     this.camera.aspect = window.innerWidth / window.innerHeight;
-                    this.camera.fov = this.wideFOV ? 120 : this.baseFOV;
-                    this.camera.updateProjectionMatrix();
+                    this.applyFovSetting();
                     this.renderer.setSize(window.innerWidth, window.innerHeight);
                 });
+                this.applyFovSetting();
             }
             
             initTime() { 
@@ -264,11 +277,10 @@ export class Game {
             }
             
             findSummitLocation() {
-                const ELEV_MAX = 3000;
-                const summitTh = ELEV_MAX * 0.8;
+                const summitTh = TERRAIN_THRESHOLDS.summit;
                 let best = { x: 0, z: 0, h: -Infinity };
-                const step = 256;
-                const radius = 8000;
+                const step = SUMMIT_SEARCH.step;
+                const radius = SUMMIT_SEARCH.radius;
                 for (let x = -radius; x <= radius; x += step) {
                     for (let z = -radius; z <= radius; z += step) {
                         const h = this.terrainGen.getHeight(x, z);
@@ -308,21 +320,32 @@ export class Game {
                 if (!NodeKernel) return;
                 try {
                     const cfg = await this.loadPeerConfig();
-                    this.node = new NodeKernel({
-                        peerServer: cfg,
-                        enablePersistence: false,
-                        gameId: 'cb',
-                        roomId: 'global'
-                    });
-                    await this.node.initialize();
-                    await this.node.start();
-                    this.stateManager = this.node.getStateManager();
-                    this.myPeerId = this.node.getStatus().network.peerId;
-                    this.syncExistingTimeAnchor();
-                    this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
-                        if (key.startsWith('player-')) {
-                            const id = key.replace('player-', '');
-                            if (id === this.myPeerId) return;
+                this.node = new NodeKernel({
+                    peerServer: cfg,
+                    enablePersistence: true,
+                    gameId: 'cb',
+                    roomId: 'global',
+                    docName: `peercompute-cb-${BUNDLE_HASH}`,
+                    maxWorkers: 128,
+                    enableWorkers: true,
+                    disableStateNetworkProvider: true,
+                    disableStateBroadcast: true
+                });
+                await this.node.initialize();
+                await this.node.start();
+                this.stateManager = this.node.getStateManager();
+                this.myPeerId = this.node.getStatus().network.peerId;
+                this.computeManager = this.node.getComputeManager();
+                if (this.computeManager && this._resolveComputeReady) {
+                    this._resolveComputeReady(true);
+                }
+                // Re-enable local terrain cache (IndexedDB) without network sync
+                this.terrainCache = new TerrainCache(new StateStore(this.stateManager, 'terrain'), BUNDLE_HASH);
+                this.syncExistingTimeAnchor();
+                this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
+                    if (key.startsWith('player-')) {
+                        const id = key.replace('player-', '');
+                        if (id === this.myPeerId) return;
                             this.applyRemotePlayer(id, value);
                         }
                         if (key.startsWith('attack-')) {
@@ -351,15 +374,20 @@ export class Game {
                     this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
                     this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
                 });
-                    this.publishPlayerState();
-                    this.broadcastTimeAnchor();
-                    if (document.hidden) {
-                        this.startBackgroundHeartbeat();
-                    }
-                } catch (err) {
-                    console.error('Multiplayer init failed', err);
+                await this.computeReadyPromise;
+                await this.generateInitialTerrain();
+                this.readyToRender = true;
+                this.applyFovSetting(); // ensure camera projection is set once render starts
+                this.renderer.setAnimationLoop(() => this.animate());
+                this.publishPlayerState();
+                this.broadcastTimeAnchor();
+                if (document.hidden) {
+                    this.startBackgroundHeartbeat();
                 }
+            } catch (err) {
+                console.error('Multiplayer init failed', err);
             }
+        }
             
             regenerateTerrain() {
                 // Generate new random seed
@@ -451,11 +479,11 @@ export class Game {
                     spawnZ = this.persistedState.pos.z;
                     spawnHeight = this.persistedState.pos.y;
                 }
-                this.position = new THREE.Vector3(spawnX, spawnHeight, spawnZ); // Above ground for VR/headset
-                this.velocity = new THREE.Vector3(0, 0, 0);
-                this.pitch = this.persistedState?.pitch ?? 0;
-                this.yaw = this.persistedState?.yaw ?? 0; // facing north
-                this.onGround = false;
+                    this.position = new THREE.Vector3(spawnX, spawnHeight, spawnZ); // Above ground for VR/headset
+                    this.velocity = new THREE.Vector3(0, 0, 0);
+                    this.pitch = this.persistedState?.pitch ?? 0;
+                    this.yaw = this.persistedState?.yaw ?? 0; // facing north
+                    this.onGround = false;
                 if (this.rig) this.rig.position.copy(this.position);
             }
             
@@ -810,17 +838,18 @@ export class Game {
                 this.scene.add(this.aurora);
                 
                 // Directional light (not parented to dome)
+                const shadowRange = CONFIG.CHUNK_SIZE * 1.25; // tighter shadow frustum around the player
                 this.sunLight = new THREE.DirectionalLight(0xffffff, 1);
                 this.sunLight.castShadow = true;
-                this.sunLight.shadow.camera.left = -4000;
-                this.sunLight.shadow.camera.right = 4000;
-                this.sunLight.shadow.camera.top = 4000;
-                this.sunLight.shadow.camera.bottom = -4000;
-                this.sunLight.shadow.camera.near = 0.5;
-                this.sunLight.shadow.camera.far = 12000;
-                this.sunLight.shadow.mapSize.width = 4096;
-                this.sunLight.shadow.mapSize.height = 4096;
-                this.sunLight.shadow.bias = -0.0002;
+                this.sunLight.shadow.camera.left = -shadowRange;
+                this.sunLight.shadow.camera.right = shadowRange;
+                this.sunLight.shadow.camera.top = shadowRange;
+                this.sunLight.shadow.camera.bottom = -shadowRange;
+                this.sunLight.shadow.camera.near = 1;
+                this.sunLight.shadow.camera.far = CONFIG.CHUNK_SIZE * 3;
+                this.sunLight.shadow.mapSize.width = 2048;
+                this.sunLight.shadow.mapSize.height = 2048;
+                this.sunLight.shadow.bias = -0.0006;
                 this.scene.add(this.sunLight);
                 this.scene.add(this.sunLight.target);
                 
@@ -834,8 +863,7 @@ export class Game {
                     if (e.code === 'KeyG') this.godMode = !this.godMode;
                     if (e.code === 'KeyV') {
                         this.wideFOV = !this.wideFOV;
-                        this.camera.fov = this.wideFOV ? 120 : 75;
-                        this.camera.updateProjectionMatrix();
+                        this.applyFovSetting();
                     }
                     if (e.code === 'KeyF') {
                         this.hasTorch = !this.hasTorch;
@@ -855,10 +883,20 @@ export class Game {
                 window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
                 // Pointer lock FPS look
                 this.canvas.addEventListener('click', () => {
-                    if (!this.isInVR && !this.isMobile) this.canvas.requestPointerLock();
+                    if (this.isInVR || this.isMobile) return;
+                    if (document.pointerLockElement === this.canvas) return;
+                    const res = this.canvas.requestPointerLock();
+                    // Newer browsers return a promise; swallow rejections when user exits early
+                    if (res && typeof res.catch === 'function') {
+                        res.catch((err) => console.warn('Pointer lock request failed', err));
+                    }
                 });
                 document.addEventListener('pointerlockchange', () => {
                     this.pointerLocked = document.pointerLockElement === this.canvas;
+                });
+                document.addEventListener('pointerlockerror', (e) => {
+                    console.warn('Pointer lock error', e);
+                    this.pointerLocked = false;
                 });
                 document.addEventListener('mousemove', (e) => {
                     if (this.pointerLocked && !this.isInVR) {
@@ -1125,11 +1163,12 @@ export class Game {
                 document.getElementById('controls').style.display = 'none';
             }
             
-            generateInitialTerrain() {
-                for (let cx = -2; cx <= 2; cx++) {
-                    for (let cz = -2; cz <= 2; cz++) {
-                        this.generateChunk(cx, cz);
-                    }
+            async generateInitialTerrain() {
+                const startCx = Math.floor(this.position.x / CONFIG.CHUNK_SIZE);
+                const startCz = Math.floor(this.position.z / CONFIG.CHUNK_SIZE);
+                const offsets = this.getSpiralOffsets(2);
+                for (const [dx, dz] of offsets) {
+                    await this.generateChunk(startCx + dx, startCz + dz);
                 }
                 
                 // Find and place temple complex on a summit
@@ -1603,95 +1642,135 @@ export class Game {
                 group.position.set(x, y, z);
                 return group;
             }
-            generateChunk(chunkX, chunkZ, playerDist = 0) {
+            async generateChunk(chunkX, chunkZ, playerDist = 0) {
                 const key = `${chunkX},${chunkZ}`;
-                if (this.chunks.has(key)) {
-                    // Update existing chunk LOD if needed
-                    const existing = this.chunks.get(key);
-                    const desiredZone = this.getChunkZone(playerDist).name;
-                    if (existing.zoneName !== desiredZone) {
-                        this.removeChunk(key, existing);
-                    } else {
-                        this.updateChunkLOD(key, playerDist);
-                        return;
-                    }
-                }
+                if (this.chunkJobs.has(key)) return this.chunkJobs.get(key);
                 
-                // Low-poly terrain: fixed coarse grid for all chunks to avoid seams
-                // Use a divisor of CHUNK_SIZE to avoid cracks between chunks
                 const zone = this.getChunkZone(playerDist);
-                const lodStep = zone.terrainStep; // balanced low-poly without edge gaps
-                
                 const size = CONFIG.CHUNK_SIZE;
                 const startX = chunkX * size;
                 const startZ = chunkZ * size;
-                
-                // Terrain mesh with LOD
+                const lodStep = zone.terrainStep;
+                const cacheKey = this.getLodCacheKey(key, lodStep);
+                const cached = this.terrainCache?.getChunk(cacheKey);
+                if (cached && cached.gridSize === Math.floor(size / lodStep)) {
+                    const chunkData = this.buildChunkFromData(key, zone, cached);
+                    if (chunkData) {
+                        if (this.chunks.has(key)) this.removeChunk(key, this.chunks.get(key));
+                        this.chunks.set(key, chunkData);
+                        this.applySeasonToChunk(chunkData, this.getSeasonFactors());
+                        return chunkData;
+                    }
+                }
+                const promise = this.computeTerrainChunkAsync({
+                    seed: this.currentSeed,
+                    startX,
+                    startZ,
+                    lodStep,
+                    size,
+                    treeLevel: zone.treeLevel,
+                    includeStructures: zone.name === 'close'
+                }).then((data) => {
+                    if (!data) return null;
+                    const chunkData = this.buildChunkFromData(key, zone, data);
+                    if (chunkData) {
+                        if (this.chunks.has(key)) {
+                            this.removeChunk(key, this.chunks.get(key));
+                        }
+                        this.chunks.set(key, chunkData);
+                        if (this.terrainCache) {
+                            this.terrainCache.putChunk(cacheKey, data);
+                        }
+                        this.applySeasonToChunk(chunkData, this.getSeasonFactors());
+                    }
+                    return chunkData;
+                }).catch((err) => {
+                    console.error('Chunk compute failed', err);
+                    return null;
+                }).finally(() => {
+                    this.chunkJobs.delete(key);
+                });
+                this.chunkJobs.set(key, promise);
+                return promise;
+            }
+
+            getLodCacheKey(chunkKey, lodStep) {
+                return `${chunkKey}::lod-${lodStep}`;
+            }
+
+            getSpiralOffsets(radius) {
+                if (this.spiralCache.has(radius)) return this.spiralCache.get(radius);
+                const offsets = [];
+                for (let dx = -radius; dx <= radius; dx++) {
+                    for (let dz = -radius; dz <= radius; dz++) {
+                        const dist = Math.max(Math.abs(dx), Math.abs(dz));
+                        if (dist > radius) continue;
+                        const manhattan = Math.abs(dx) + Math.abs(dz);
+                        const angle = Math.atan2(dz, dx);
+                        offsets.push({ dx, dz, dist, manhattan, angle });
+                    }
+                }
+                offsets.sort((a, b) => {
+                    if (a.manhattan !== b.manhattan) return a.manhattan - b.manhattan;
+                    return a.angle - b.angle;
+                });
+                const ordered = offsets.map(o => [o.dx, o.dz, o.dist]);
+                this.spiralCache.set(radius, ordered);
+                return ordered;
+            }
+
+            async computeTerrainChunkAsync(params) {
+                if (!this.computeManager) {
+                    throw new Error('Compute manager unavailable; cannot generate terrain');
+                }
+                await this.computeReadyPromise;
+                return this.computeManager.submitTask({
+                    module: new URL('./world/terrainTask.js', import.meta.url).toString(),
+                    exportName: 'computeTerrainChunk',
+                    data: params
+                });
+            }
+
+            buildChunkFromData(key, zone, data) {
+                const {
+                    startX,
+                    startZ,
+                    size,
+                    lodStep,
+                    gridSize,
+                    heights,
+                    moisture,
+                    terrainTypes,
+                    maxHeight,
+                    trees,
+                    structures
+                } = data;
                 const geo = new THREE.BufferGeometry();
                 const verts = [];
                 const colors = [];
                 const normals = [];
                 const indices = [];
-                
-                const gridSize = Math.floor(size / lodStep);
-                const terrainTypes = []; // Store terrain type for seasonal updates
-                const ELEV_MAX = 3000;
-                const peakTh = ELEV_MAX * 0.9;
-                const summitTh = ELEV_MAX * 0.8;
-                const alpineTh = ELEV_MAX * 0.6;
-                const borealTh = ELEV_MAX * 0.15;
-                const beachTh = ELEV_MAX * 0.025;
-                let maxHeight = -Infinity;
-                for (let z = 0; z <= gridSize; z++) {
-                    for (let x = 0; x <= gridSize; x++) {
-                        const wx = startX + x * lodStep;
-                        const wz = startZ + z * lodStep;
-                        let h = this.terrainGen.getHeight(wx, wz);
-                        const m = this.terrainGen.getMoisture(wx, wz);
-                        
-                        // Flatten water areas - terrain below water level becomes flat at water level
-                        // const waterLevel = 3;
-                        // if (h < waterLevel) {
-                        //     h = waterLevel - 1; // Slightly below water surface for visual depth
-                        // }
-                        
-                        maxHeight = Math.max(maxHeight, h);
-                        verts.push(wx, h, wz);
-                        
-                    const moistNorm = Math.max(0, Math.min(1, (m + 1) * 0.5));
-                    const threshOffset = (moistNorm - 0.5) * 0.03 * ELEV_MAX; // wetter lowers thresholds slightly
-                        const localPeak = peakTh + threshOffset;
-                        const localSummit = summitTh + threshOffset;
-                        const localAlpine = alpineTh + threshOffset;
-                        const localBoreal = borealTh + threshOffset;
-                        const localBeach = beachTh + threshOffset;
-                        
-                        // Store terrain type for seasonal updates
-                        let terrainType = 'boreal';
-                        if (h < localBeach) terrainType = 'water';
-                        else if (h >= localPeak) terrainType = 'peak';
-                        else if (h >= localSummit) terrainType = 'summit';
-                        else if (h >= localAlpine) terrainType = 'alpine';
-                        else if (h >= localBoreal) terrainType = 'boreal';
-                        else terrainType = 'beach';
-                        
-                        terrainTypes.push({ type: terrainType, height: h, moisture: m });
-                        
-                        // Initial color will be set by updateTerrainColors
-                        colors.push(1, 1, 1);
-                    }
-                }
+                const terrainList = [];
+                const sampleHeight = (x, z) => {
+                    const ix = Math.max(0, Math.min(gridSize, x));
+                    const iz = Math.max(0, Math.min(gridSize, z));
+                    return heights[iz * (gridSize + 1) + ix];
+                };
 
-                // Compute smooth normals using sampled heights (cross-chunk consistent)
-                const sampleH = (x, z) => this.terrainGen.getHeight(x, z);
                 for (let z = 0; z <= gridSize; z++) {
                     for (let x = 0; x <= gridSize; x++) {
                         const wx = startX + x * lodStep;
                         const wz = startZ + z * lodStep;
-                        const hL = sampleH(wx - lodStep, wz);
-                        const hR = sampleH(wx + lodStep, wz);
-                        const hD = sampleH(wx, wz - lodStep);
-                        const hU = sampleH(wx, wz + lodStep);
+                        const idx = z * (gridSize + 1) + x;
+                        const h = heights[idx];
+                        verts.push(wx, h, wz);
+                        terrainList.push(terrainTypes[idx]);
+                        colors.push(1, 1, 1);
+
+                        const hL = sampleHeight(x - 1, z);
+                        const hR = sampleHeight(x + 1, z);
+                        const hD = sampleHeight(x, z - 1);
+                        const hU = sampleHeight(x, z + 1);
                         const nx = hL - hR;
                         const ny = 2 * lodStep;
                         const nz = hD - hU;
@@ -1699,7 +1778,7 @@ export class Game {
                         normals.push(normal.x, normal.y, normal.z);
                     }
                 }
-                
+
                 for (let z = 0; z < gridSize; z++) {
                     for (let x = 0; x < gridSize; x++) {
                         const a = x + z * (gridSize + 1);
@@ -1709,19 +1788,18 @@ export class Game {
                         indices.push(a, b, c, b, d, c);
                     }
                 }
-                
+
                 geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
                 geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
                 geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
                 geo.setIndex(indices);
-                
+
                 const mesh = new THREE.Mesh(geo, 
                     new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 10, specular: 0x222222 }));
                 mesh.receiveShadow = true;
                 mesh.castShadow = true; // Terrain casts shadows at all distances
                 this.scene.add(mesh);
-                
-                // Snow layer - only for close chunks; distant chunks tint base geometry instead
+
                 let snowMesh = null;
                 if (zone.name === 'close') {
                     const snowGeo = geo.clone();
@@ -1733,8 +1811,7 @@ export class Game {
                     snowMesh.visible = false;
                     this.scene.add(snowMesh);
                 }
-                
-                // Water - use the high-quality shaded material for all distances
+
                 const waterMat = new THREE.MeshPhongMaterial({
                     color: 0x21374d,
                     transparent: true,
@@ -1747,70 +1824,43 @@ export class Game {
                 water.rotation.x = -Math.PI / 2;
                 water.position.set(startX + size/2, 300, startZ + size/2);
                 this.scene.add(water);
-                
-                // Trees - include close/medium chunks only, sparse at distance
+
                 const treeIndices = { close: [], medium: [] };
                 const matrix = new THREE.Matrix4();
-                
-                if (zone.treeLevel) {
-                    // Keep tree counts consistent across close/medium; only geometry LOD changes
-                    const step = Math.max(16, lodStep * 2);
-                    for (let z = 0; z < size; z += step) {
-                        for (let x = 0; x < size; x += step) {
-                            const wx = startX + x;
-                            const wz = startZ + z;
-                            const h = this.terrainGen.getHeight(wx, wz);
-                            const m = this.terrainGen.getMoisture(wx, wz);
-                            
-                            if (this.terrainGen.shouldPlaceTree(wx, wz, h, m)) {
-                                const treeLevel = zone.treeLevel;
-                                const instancedMesh = treeLevel === 'close' ? this.treeInstancedMeshClose : this.treeInstancedMeshMedium;
-                                const counterKey = treeLevel === 'close' ? 'treeCountClose' : 'treeCountMedium';
-                                if (this[counterKey] < instancedMesh.instanceMatrix.count) {
-                                    const seed = Math.sin(wx * 12.9898 + wz * 78.233) * 43758.5453;
-                                    const treeH = 8 + (Math.abs(seed) % 1) * 6;
-                                    const treeR = 1.5 + (Math.abs(seed * 7) % 1) * 1;
-                                    
-                                    matrix.makeTranslation(wx, h + treeH * 0.65, wz); // raise trees above ground
-                                    matrix.scale(new THREE.Vector3(treeR, treeH, treeR));
-                                    instancedMesh.setMatrixAt(this[counterKey], matrix);
-                                    
-                                    treeIndices[treeLevel].push(this[counterKey]);
-                                    this[counterKey]++;
-                                }
-                            }
-                        }
-                    }
-                    
-                    this.treeInstancedMeshClose.instanceMatrix.needsUpdate = true;
-                    this.treeInstancedMeshMedium.instanceMatrix.needsUpdate = true;
-                    this.treeInstancedMeshClose.count = this.treeCountClose;
-                    this.treeInstancedMeshMedium.count = this.treeCountMedium;
+                for (const tree of trees || []) {
+                    const instancedMesh = tree.level === 'close' ? this.treeInstancedMeshClose : this.treeInstancedMeshMedium;
+                    const counterKey = tree.level === 'close' ? 'treeCountClose' : 'treeCountMedium';
+                    if (!instancedMesh || this[counterKey] >= instancedMesh.instanceMatrix.count) continue;
+                    matrix.makeTranslation(tree.x, tree.y, tree.z);
+                    matrix.scale(new THREE.Vector3(tree.radius, tree.height, tree.radius));
+                    instancedMesh.setMatrixAt(this[counterKey], matrix);
+                    treeIndices[tree.level].push(this[counterKey]);
+                    this[counterKey]++;
                 }
-                
-                // Structures - ONLY for close chunks
-                if (zone.name === 'close') {
-                    const centerX = startX + size / 2;
-                    const centerZ = startZ + size / 2;
-                    const h = this.terrainGen.getHeight(centerX, centerZ);
-                    
-                    if (this.terrainGen.shouldPlaceStructure(centerX, centerZ, h)) {
-                        const structure = this.createObelisk(centerX, h, centerZ);
+                this.treeInstancedMeshClose.instanceMatrix.needsUpdate = true;
+                this.treeInstancedMeshMedium.instanceMatrix.needsUpdate = true;
+                this.treeInstancedMeshClose.count = this.treeCountClose;
+                this.treeInstancedMeshMedium.count = this.treeCountMedium;
+
+                const structureKeys = [];
+                if (structures && structures.length) {
+                    structures.forEach((s, idx) => {
+                        const structure = this.createObelisk(s.x, s.y, s.z);
+                        const chunkKey = `${key}-structure-${idx}`;
+                        structureKeys.push(chunkKey);
                         this.collisionBoxes.push({
-                            minX: centerX - 8, maxX: centerX + 8,
-                            minY: h - 8, maxY: h + 55,
-                            minZ: centerZ - 8, maxZ: centerZ + 8,
-                            chunkKey: key
+                            minX: s.x - 8, maxX: s.x + 8,
+                            minY: s.y - 8, maxY: s.y + 55,
+                            minZ: s.z - 8, maxZ: s.z + 8,
+                            chunkKey
                         });
                         this.scene.add(structure);
-                        this.structures.set(key, structure);
-                    }
+                        this.structures.set(chunkKey, structure);
+                    });
                 }
-                
-                const chunkData = { mesh, snowMesh, water, treeIndices, terrainTypes, gridSize, zoneName: zone.name, maxHeight };
-                this.chunks.set(key, chunkData);
-                // Immediately apply current season so new chunks don't pop with default colors
-                this.applySeasonToChunk(chunkData, this.getSeasonFactors());
+
+                const chunkData = { mesh, snowMesh, water, treeIndices, terrainTypes: terrainList, gridSize, zoneName: zone.name, maxHeight, structuresKeys: structureKeys };
+                return chunkData;
             }
 
             hideTreeMatrices(indices, mesh) {
@@ -1845,12 +1895,12 @@ export class Game {
             }
             
             updateChunkLOD(key, playerDist) {
-                // Update LOD and shadows for existing chunks based on distance
+                // Update LOD-related toggles (currently just shadows) based on distance
                 const chunk = this.chunks.get(key);
                 if (!chunk) return;
                 
-                // Shadows enabled at all distances
-                const shouldHaveShadows = true;
+                const shadowDistance = 2; // only the nearest ring gets full shadows
+                const shouldHaveShadows = playerDist <= shadowDistance;
                 
                 if (chunk.mesh.receiveShadow !== shouldHaveShadows) {
                     chunk.mesh.receiveShadow = shouldHaveShadows;
@@ -1860,6 +1910,11 @@ export class Game {
                 if (chunk.snowMesh && chunk.snowMesh.receiveShadow !== shouldHaveShadows) {
                     chunk.snowMesh.receiveShadow = shouldHaveShadows;
                     chunk.snowMesh.castShadow = shouldHaveShadows;
+                }
+                
+                if (chunk.water && chunk.water.receiveShadow !== shouldHaveShadows) {
+                    chunk.water.receiveShadow = shouldHaveShadows;
+                    chunk.water.castShadow = shouldHaveShadows;
                 }
             }
             
@@ -2026,27 +2081,28 @@ export class Game {
             }
             
             updateChunks() {
+                if (!this.readyToRender) return;
                 const px = Math.floor(this.position.x / CONFIG.CHUNK_SIZE);
                 const pz = Math.floor(this.position.z / CONFIG.CHUNK_SIZE);
                 if (px === this.prevChunkX && pz === this.prevChunkZ) return;
                 this.prevChunkX = px;
                 this.prevChunkZ = pz;
                 
-                // Generate chunks within render distance with LOD
-                for (let dx = -CONFIG.RENDER_DISTANCE; dx <= CONFIG.RENDER_DISTANCE; dx++) {
-                    for (let dz = -CONFIG.RENDER_DISTANCE; dz <= CONFIG.RENDER_DISTANCE; dz++) {
-                        const dist = Math.max(Math.abs(dx), Math.abs(dz));
-                        this.generateChunk(px + dx, pz + dz, dist);
-                    }
+                // Generate chunks within render distance with LOD in spiral order
+                const offsets = this.getSpiralOffsets(CONFIG.RENDER_DISTANCE);
+                for (const [dx, dz, dist] of offsets) {
+                    this.generateChunk(px + dx, pz + dz, dist);
                 }
                 
                 // Remove far chunks AND their trees AND structures
                 for (const [key, chunk] of this.chunks.entries()) {
                     const [cx, cz] = key.split(',').map(Number);
                     const dist = Math.max(Math.abs(cx - px), Math.abs(cz - pz));
-                    
                     if (dist > CONFIG.RENDER_DISTANCE + 2) {
+                        if (this.chunkJobs.has(key)) continue; // keep until job finishes
                         this.removeChunk(key, chunk);
+                    } else {
+                        this.updateChunkLOD(key, dist);
                     }
                 }
             }
@@ -2591,6 +2647,7 @@ export class Game {
             }
             
             animate() {
+                if (!this.readyToRender) return;
                 const now = Date.now();
                 const delta = Math.min((now - this.lastUpdate) / 1000, 0.1);
                 this.lastUpdate = now;
@@ -2698,6 +2755,12 @@ export class Game {
             adjustTimeMultiplier(next) {
                 this.timeSystem.setTimeMultiplier(next);
                 this.broadcastTimeAnchor(true);
+            }
+
+            applyFovSetting() {
+                if (!this.camera) return;
+                this.camera.fov = this.wideFOV ? 120 : this.baseFOV;
+                this.camera.updateProjectionMatrix();
             }
 
             broadcastTimeAnchor(force = false) {
@@ -2979,21 +3042,24 @@ export class Game {
                     this.hideTreeMatrices(chunk.treeIndices.medium, this.treeInstancedMeshMedium);
                 }
                 // Remove structures and collision boxes
-                if (this.structures.has(key)) {
-                    const structure = this.structures.get(key);
-                    structure.traverse((child) => {
-                        if (child.isMesh) {
-                            child.geometry?.dispose();
-                            if (child.material) {
-                                if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
-                                else child.material.dispose();
+                const structKeys = chunk.structuresKeys && chunk.structuresKeys.length ? chunk.structuresKeys : [key];
+                structKeys.forEach((sKey) => {
+                    if (this.structures.has(sKey)) {
+                        const structure = this.structures.get(sKey);
+                        structure.traverse((child) => {
+                            if (child.isMesh) {
+                                child.geometry?.dispose();
+                                if (child.material) {
+                                    if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
+                                    else child.material.dispose();
+                                }
                             }
-                        }
-                    });
-                    this.scene.remove(structure);
-                    this.structures.delete(key);
-                    this.collisionBoxes = this.collisionBoxes.filter(box => box.chunkKey !== key);
-                }
+                        });
+                        this.scene.remove(structure);
+                        this.structures.delete(sKey);
+                    }
+                    this.collisionBoxes = this.collisionBoxes.filter(box => box.chunkKey !== sKey);
+                });
                 this.chunks.delete(key);
                 this.recalcTreeCounts();
             }

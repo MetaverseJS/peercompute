@@ -13,11 +13,16 @@ export class ComputeManager {
    * @param {Object} config - Compute configuration
    * @param {boolean} config.enableWebGPU - Enable WebGPU acceleration
    * @param {number} config.maxWorkers - Maximum number of compute workers
+   * @param {boolean} config.enableWorkers - Allow spawning Web Workers (browser environments)
    */
   constructor(config = {}) {
+    const defaultWorkers = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+      ? navigator.hardwareConcurrency
+      : 4;
     this.config = {
       enableWebGPU: config.enableWebGPU || false,
-      maxWorkers: config.maxWorkers || navigator.hardwareConcurrency || 4,
+      enableWorkers: config.enableWorkers !== false,
+      maxWorkers: config.maxWorkers || defaultWorkers,
       ...config
     };
 
@@ -28,6 +33,7 @@ export class ComputeManager {
       cpu: true,
       webgpu: false
     };
+    this.initialized = false;
   }
 
   /**
@@ -35,27 +41,61 @@ export class ComputeManager {
    * @returns {Promise<void>}
    */
   async initialize() {
-    // TODO: Detect WebGPU availability
-    // TODO: Spawn CPU compute workers
-    // TODO: Spawn WebGPU compute worker if enabled
-    // TODO: Set up task scheduling
+    if (this.initialized) return;
+    this.initialized = true;
+
+    const supportsWorkers = typeof Worker !== 'undefined' && this.config.enableWorkers;
+    if (!supportsWorkers) {
+      console.warn('[ComputeManager] Web Workers not available; falling back to inline execution');
+      return;
+    }
+
+    const workerURL = new URL('./computeWorker.js', import.meta.url);
+    const count = Math.max(1, Math.min(this.config.maxWorkers, 128));
+    for (let i = 0; i < count; i++) {
+      const worker = new Worker(workerURL, { type: 'module' });
+      worker.onmessage = (evt) => this._handleWorkerMessage(worker, evt.data);
+      worker.onerror = (err) => console.error('[ComputeManager] Worker error', err);
+      this.workers.push(worker);
+    }
   }
 
   /**
    * Submit a compute task
    * @param {Object} task - Task definition
    * @param {string} task.id - Unique task ID
-   * @param {string} task.type - Task type (e.g., 'webgpu', 'cpu', 'physics')
-   * @param {Object} task.data - Task input data
-   * @param {Function} task.compute - Compute function (for CPU tasks)
-   * @param {string} task.shader - WGSL shader code (for WebGPU tasks)
+   * @param {Object} task.data - Task input data (structured cloneable)
+   * @param {Function} task.fn - Inline function to run (will be serialized)
+   * @param {string} task.module - Module URL to import inside the worker
+   * @param {string} task.exportName - Exported function name in module (defaults to 'default')
    * @returns {Promise<any>} Task result
    */
   async submitTask(task) {
-    // TODO: Validate task
-    // TODO: Determine optimal worker for task
-    // TODO: Queue task if no workers available
-    // TODO: Execute task and return result
+    if (!task) throw new Error('Task is required');
+    if (!task.fn && !task.module) throw new Error('Task must provide fn or module');
+
+    const idSource = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`;
+    const id = task.id || idSource;
+    const payload = {
+      id,
+      data: task.data ?? null,
+      fn: task.fn ? task.fn.toString() : undefined,
+      module: task.module,
+      exportName: task.exportName || 'default'
+    };
+
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    return new Promise((resolve, reject) => {
+      const wrapped = { id, payload, resolve, reject };
+      if (this._dispatchToWorker(wrapped)) return;
+      this.taskQueue.push(wrapped);
+      this._scheduleNext();
+    });
   }
 
   /**
@@ -155,5 +195,67 @@ export class ComputeManager {
     // TODO: Log error
     // TODO: Retry task if appropriate
     // TODO: Return error to submitter
+  }
+
+  /* Internal helpers */
+  _dispatchToWorker(task) {
+    const worker = this.workers.find((w) => !Array.from(this.activeTasks.values()).some(t => t.worker === w));
+    if (!worker) return false;
+    this.activeTasks.set(task.id, { ...task, worker });
+    worker.postMessage({ type: 'run', ...task.payload });
+    return true;
+  }
+
+  async _executeInline(task) {
+    try {
+      let fn;
+      if (task.payload.fn) {
+        // eslint-disable-next-line no-new-func
+        fn = new Function(`return (${task.payload.fn});`)();
+      } else if (task.payload.module) {
+        // Hint webpack to allow dynamic import while restricting to JS assets
+        if (typeof task.payload.module !== 'string') {
+          throw new Error('module path must be a string');
+        }
+        const mod = await import(
+          /* webpackChunkName: "compute-task" */
+          /* webpackMode: "lazy" */
+          /* webpackInclude: /\.js$/ */
+          `${task.payload.module}`
+        );
+        fn = mod[task.payload.exportName || 'default'];
+      }
+      const result = await fn(task.payload.data);
+      task.resolve(result);
+    } catch (err) {
+      task.reject(err);
+    }
+  }
+
+  _handleWorkerMessage(worker, message) {
+    const { id, type, result, error } = message || {};
+    const task = this.activeTasks.get(id);
+    if (!task) return;
+
+    if (type === 'result') {
+      task.resolve(result);
+    } else if (type === 'error') {
+      task.reject(new Error(error || 'Worker task failed'));
+    }
+    this.activeTasks.delete(id);
+    this._scheduleNext();
+  }
+
+  _scheduleNext() {
+    if (this.taskQueue.length === 0) return;
+    const next = this.taskQueue.shift();
+    if (this.workers.length === 0) {
+      this._executeInline(next);
+      return;
+    }
+    if (!this._dispatchToWorker(next)) {
+      // No worker free; push back and try later
+      this.taskQueue.unshift(next);
+    }
   }
 }

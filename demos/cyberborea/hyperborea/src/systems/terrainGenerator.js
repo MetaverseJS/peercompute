@@ -1,4 +1,5 @@
 import { SimplexNoise } from '../utils/noise.js';
+import { TREE_BAND } from '../world/constants.js';
 
 export class TerrainGenerator {
   constructor(seed) {
@@ -49,9 +50,8 @@ export class TerrainGenerator {
   }
 
   shouldPlaceTree(x, z, height, moisture) {
-    const ELEV_MAX = 3000;
-    const minTreeH = ELEV_MAX * 0.15; // align with boreal band lower bound
-    const maxTreeH = ELEV_MAX * 0.6;  // align with boreal upper bound
+    const minTreeH = TREE_BAND.min; // align with boreal band lower bound
+    const maxTreeH = TREE_BAND.max;  // align with boreal upper bound
     if (height < minTreeH || height > maxTreeH) return false;
 
     const d = 3;
