@@ -5,10 +5,11 @@ const META_VERSION_KEY = '__version';
  * Keeps an in-memory map and mirrors to the shared state so peers can reuse data.
  */
 export class TerrainCache {
-  constructor(store, version) {
+  constructor(store, version, networkEnabled = true) {
     this.store = store;
     this.version = version;
     this.memory = new Map();
+    this.networkEnabled = networkEnabled;
     this.ensureVersion();
   }
 
@@ -53,6 +54,12 @@ export class TerrainCache {
     return data || null;
   }
 
+  hasChunk(key) {
+    if (this.memory.has(key)) return true;
+    if (this.store?.has?.(key)) return true;
+    return false;
+  }
+
   putChunk(key, data) {
     if (!key || !data) return;
     // Avoid re-writing if persistence already has this chunk; Yjs persistence appends updates
@@ -62,6 +69,8 @@ export class TerrainCache {
       }
       return;
     }
+    // Mark source of data for network gating
+    data.lodStep = data.lodStep || (data.size && data.gridSize ? Math.floor(data.size / (data.gridSize || 1)) : data.lodStep);
     this.memory.set(key, data);
     if (!this.store) return;
     try {

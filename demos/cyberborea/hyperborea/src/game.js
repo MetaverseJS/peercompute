@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 import { NodeKernel } from '@peercompute/index.js';
-import { CONFIG, GAME_NAMESPACE, GAME_VERSION, BUNDLE_HASH, PERSIST_KEY, PRESENCE_HEARTBEAT_MS, PEER_PRUNE_INTERVAL_MS, PEER_STALE_MS, STATE_POS_THRESHOLD, STATE_ROT_THRESHOLD, STATE_KEEPALIVE_MS, STATE_EVENT_MIN_MS, TIME_ANCHOR_KEY } from './config.js';
+import { CONFIG, GAME_NAMESPACE, GAME_VERSION, BUNDLE_HASH, PERSIST_KEY, PRESENCE_HEARTBEAT_MS, PEER_PRUNE_INTERVAL_MS, PEER_STALE_MS, STATE_POS_THRESHOLD, STATE_ROT_THRESHOLD, STATE_KEEPALIVE_MS, STATE_EVENT_MIN_MS, TIME_ANCHOR_KEY, isTerrainGenEnabled } from './config.js';
 import { TimeSystem } from './systems/timeSystem.js';
 import { TerrainGenerator } from './systems/terrainGenerator.js';
 import { ELEV_MAX, TERRAIN_THRESHOLDS, SUMMIT_SEARCH } from './world/constants.js';
@@ -114,6 +114,7 @@ export class Game {
                 };
                 this.keys = {};
                 this.currentSeed = CONFIG.WORLD_SEED; // Track current terrain seed
+                this.terrainGenEnabled = isTerrainGenEnabled();
                 this.pointerLocked = false;
                 
                 // VR state
@@ -172,6 +173,7 @@ export class Game {
                 this.scene.add(this.treeInstancedMeshMedium);
                 this.treeCountClose = 0;
                 this.treeCountMedium = 0;
+                this.terrainSharingEnabled = false; // disable network chunk sharing
                 
             }
             
@@ -273,10 +275,11 @@ export class Game {
                 }
             }
             initTerrain() { 
-                this.terrainGen = new TerrainGenerator(this.currentSeed); 
+                this.terrainGen = this.terrainGenEnabled ? new TerrainGenerator(this.currentSeed) : null; 
             }
             
             findSummitLocation() {
+                if (!this.terrainGen) return { x: 0, z: 0, h: 0 };
                 const summitTh = TERRAIN_THRESHOLDS.summit;
                 let best = { x: 0, z: 0, h: -Infinity };
                 const step = SUMMIT_SEARCH.step;
@@ -293,6 +296,7 @@ export class Game {
             }
 
             ensureAboveGround(vec, extra = 4) {
+                if (!this.terrainGen) return;
                 const h = this.terrainGen.getHeight(vec.x, vec.z);
                 if (vec.y < h + extra) vec.y = h + extra;
             }
@@ -329,19 +333,23 @@ export class Game {
                     stateBroadcastNamespaces: [this.gameNamespace],
                     maxWorkers: 128,
                     enableWorkers: true,
-                    disableStateNetworkProvider: true,
+                    disableStateNetworkProvider: false, // allow Yjs provider for terrain sync
                     disableStateBroadcast: false
                 });
                 await this.node.initialize();
                 await this.node.start();
                 this.stateManager = this.node.getStateManager();
+                this.network = this.node.getNetworkManager?.();
                 this.myPeerId = this.node.getStatus().network.peerId;
                 this.computeManager = this.node.getComputeManager();
                 if (this.computeManager && this._resolveComputeReady) {
                     this._resolveComputeReady(true);
                 }
                 // Re-enable local terrain cache (IndexedDB) without network sync
-                this.terrainCache = new TerrainCache(new StateStore(this.stateManager, 'terrain'), BUNDLE_HASH);
+                this.terrainCache = new TerrainCache(new StateStore(this.stateManager, 'terrain'), BUNDLE_HASH, true);
+                if (this.terrainSharingEnabled && this.network?.addMessageHandler) {
+                    this.network.addMessageHandler((peerId, message) => this.handleNetworkMessage(peerId, message));
+                }
                 this.syncExistingTimeAnchor();
                 this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
                     if (key.startsWith('player-')) {
@@ -391,6 +399,7 @@ export class Game {
         }
             
             regenerateTerrain() {
+                if (!this.terrainGenEnabled) return;
                 // Generate new random seed
                 this.currentSeed = Math.floor(Math.random() * 1000000);
                 
@@ -450,7 +459,7 @@ export class Game {
                 this.prevChunkZ = null;
                 
                 // Reinitialize terrain generator
-                this.terrainGen = new TerrainGenerator(this.currentSeed);
+                this.terrainGen = this.terrainGenEnabled ? new TerrainGenerator(this.currentSeed) : null;
                 
                 // Regenerate terrain around player
                 this.generateInitialTerrain();
@@ -466,6 +475,34 @@ export class Game {
                 }
                 return { name: 'far', terrainStep: 64, treeLevel: null };           // 2x2 grid, no trees
             }
+
+            getChunkZoneFromLod(lodStep) {
+                if (lodStep <= 16) return { name: 'close', terrainStep: 16, treeLevel: 'close' };
+                if (lodStep <= 32) return { name: 'medium', terrainStep: 32, treeLevel: 'medium' };
+                return { name: 'far', terrainStep: 64, treeLevel: null };
+            }
+
+            requestMissingFarChunks(px, pz, offsets) {
+                if (!this.network || !this.terrainSharingEnabled) return;
+                const reversed = [...offsets].reverse(); // start from render edge inward
+                for (const [dx, dz, dist] of reversed) {
+                    const zone = this.getChunkZone(dist);
+                    if (zone.name !== 'far') continue;
+                    const cx = px + dx;
+                    const cz = pz + dz;
+                    const key = `${cx},${cz}`;
+                    const cacheKey = this.getLodCacheKey(key, zone.terrainStep);
+                    if (this.chunks.has(key) || this.chunkJobs.has(key)) continue;
+                    if (this.requestedTerrain?.has(cacheKey)) continue;
+                    if (this.terrainCache?.hasChunk(cacheKey)) continue;
+                    if (!this.requestedTerrain) this.requestedTerrain = new Set();
+                    this.requestedTerrain.add(cacheKey);
+                    this.network.broadcast({
+                        type: 'terrain-request',
+                        data: { key: cacheKey }
+                    }).catch?.(() => {});
+                }
+            }
             
             initPlayer() {
                 // Spawn just outside the temple complex, facing north toward it
@@ -474,7 +511,7 @@ export class Game {
                 const offsetDist = 400;
                 let spawnX = base.x + dir.x * offsetDist;
                 let spawnZ = base.z + dir.y * offsetDist;
-                let spawnHeight = this.terrainGen.getHeight(spawnX, spawnZ);
+                let spawnHeight = this.terrainGen ? this.terrainGen.getHeight(spawnX, spawnZ) : 0;
                 if (this.persistedState?.pos) {
                     spawnX = this.persistedState.pos.x;
                     spawnZ = this.persistedState.pos.z;
@@ -1165,6 +1202,7 @@ export class Game {
             }
             
             async generateInitialTerrain() {
+                if (!this.terrainGen) return;
                 const startCx = Math.floor(this.position.x / CONFIG.CHUNK_SIZE);
                 const startCz = Math.floor(this.position.z / CONFIG.CHUNK_SIZE);
                 const offsets = this.getSpiralOffsets(2);
@@ -1175,13 +1213,24 @@ export class Game {
                 // Find and place temple complex on a summit
                 this.templePosition = this.findSummitLocation();
                 this.createTempleComplex(this.templePosition.x, this.templePosition.z);
+                // If we don't have a persisted position, start the player near the temple
+                if (!this.persistedState?.pos) {
+                    const dir = new THREE.Vector2(0, 1).normalize();
+                    const offsetDist = 400;
+                    const spawnX = this.templePosition.x + dir.x * offsetDist;
+                    const spawnZ = this.templePosition.z + dir.y * offsetDist;
+                    const spawnHeight = this.terrainGen ? this.terrainGen.getHeight(spawnX, spawnZ) : 0;
+                    this.position.set(spawnX, spawnHeight, spawnZ);
+                    if (this.rig) this.rig.position.copy(this.position);
+                }
                 
                 // Initialize terrain colors based on starting season
                 this.updateTerrainColors();
             }
             
             createTempleComplex(centerX, centerZ) {
-                const groundHeight = this.terrainGen.getHeight(centerX, centerZ);
+                if (!this.terrainGen) return;
+                const groundHeight = this.terrainGen ? this.terrainGen.getHeight(centerX, centerZ) : 0;
                 const complexKey = '0,0'; // Temple complex is at origin
                 const obeliskRadius = 300; // 20% wider circle than before (was 250)
                 const foundationTopRadius = obeliskRadius * 1.1; // 10% larger than obelisk circle diameter -> radius
@@ -1663,6 +1712,11 @@ export class Game {
                         return chunkData;
                     }
                 }
+                // For far LOD, if we already asked peers, wait for response instead of regenerating immediately
+                if (this.terrainSharingEnabled && zone.name === 'far' && this.requestedTerrain?.has(cacheKey)) {
+                    return null;
+                }
+                if (!this.terrainGenEnabled) return null;
                 const promise = this.computeTerrainChunkAsync({
                     seed: this.currentSeed,
                     startX,
@@ -1696,7 +1750,7 @@ export class Game {
             }
 
             getLodCacheKey(chunkKey, lodStep) {
-                return `${chunkKey}::lod-${lodStep}`;
+                return `${chunkKey}::lod-${lodStep}::seed-${this.currentSeed}`;
             }
 
             getSpiralOffsets(radius) {
@@ -1844,7 +1898,7 @@ export class Game {
                 this.treeInstancedMeshMedium.count = this.treeCountMedium;
 
                 const structureKeys = [];
-                if (structures && structures.length) {
+                if (structures && structures.length && zone.name === 'close') {
                     structures.forEach((s, idx) => {
                         const structure = this.createObelisk(s.x, s.y, s.z);
                         const chunkKey = `${key}-structure-${idx}`;
@@ -2091,9 +2145,13 @@ export class Game {
                 
                 // Generate chunks within render distance with LOD in spiral order
                 const offsets = this.getSpiralOffsets(CONFIG.RENDER_DISTANCE);
-                for (const [dx, dz, dist] of offsets) {
-                    this.generateChunk(px + dx, pz + dz, dist);
+                if (this.terrainGenEnabled) {
+                    for (const [dx, dz, dist] of offsets) {
+                        this.generateChunk(px + dx, pz + dz, dist);
+                    }
                 }
+                // Request far LOD chunks from peers starting from the edge inward to avoid clashing with local outward spiral
+                this.requestMissingFarChunks(px, pz, offsets);
                 
                 // Remove far chunks AND their trees AND structures
                 for (const [key, chunk] of this.chunks.entries()) {
@@ -2109,6 +2167,7 @@ export class Game {
             }
             
             updateSnow() {
+                if (!this.terrainGenEnabled) return;
                 const now = Date.now();
                 const season = this.timeSystem.getSeason();
                 if (season === this.lastSnowSeason && (now - this.lastSnowUpdate) < 1000) return;
@@ -2563,9 +2622,9 @@ export class Game {
                     if (this.rig) this.rig.position.copy(this.position);
                     
                     // Ground collision - check terrain, structures, foundation slope, and frozen water
-                    const groundH = this.terrainGen.getHeight(this.position.x, this.position.z);
+                    const groundH = this.terrainGen ? this.terrainGen.getHeight(this.position.x, this.position.z) : -Infinity;
                     const foundationH = this.getFoundationHeightAt(this.position.x, this.position.z);
-                    let effectiveGroundHeight = groundH;
+                    let effectiveGroundHeight = Number.isFinite(groundH) ? groundH : -Infinity;
                     if (foundationH !== null) effectiveGroundHeight = Math.max(effectiveGroundHeight, foundationH);
                     
                     // Check if standing on structure
@@ -2576,7 +2635,7 @@ export class Game {
                     // Check frozen water (winter season)
                     const season = this.timeSystem.getSeason();
                     const waterLevel = 300;
-                    if (season === 'Winter' && groundH < waterLevel && waterLevel > effectiveGroundHeight) {
+                    if (season === 'Winter' && Number.isFinite(groundH) && groundH < waterLevel && waterLevel > effectiveGroundHeight) {
                         effectiveGroundHeight = waterLevel; // Stand on ice
                     }
                     
@@ -2938,6 +2997,49 @@ export class Game {
                 }
             }
 
+            handleNetworkMessage(peerId, message) {
+                if (!this.terrainSharingEnabled) return;
+                if (!message?.type) return;
+                if (message.type === 'terrain-request') {
+                    this.handleTerrainRequest(peerId, message.data);
+                } else if (message.type === 'terrain-response') {
+                    this.handleTerrainResponse(message.data);
+                }
+            }
+
+            handleTerrainRequest(peerId, data) {
+                if (!this.terrainSharingEnabled) return;
+                if (!data?.key || !this.network) return;
+                const cached = this.terrainCache?.getChunk(data.key);
+                if (!cached || cached.lodStep > 64) return; // only send low LOD
+                const zone = this.getChunkZoneFromLod(cached.lodStep);
+                if (zone.name !== 'far') return;
+                this.network.sendToPeer?.(peerId, {
+                    type: 'terrain-response',
+                    data: { key: data.key, chunk: cached }
+                }).catch?.(() => {});
+            }
+
+            handleTerrainResponse(data) {
+                if (!this.terrainSharingEnabled) return;
+                if (!data?.key || !data?.chunk) return;
+                const { key, chunk } = data;
+                const parts = key.split('::');
+                const chunkKey = parts[0];
+                const lodMatch = key.match(/::lod-(\d+)/);
+                const lodStep = chunk.lodStep || (lodMatch ? parseInt(lodMatch[1], 10) : 64);
+                const zone = this.getChunkZoneFromLod(lodStep);
+                if (zone.name !== 'far') return;
+                this.requestedTerrain?.delete(key);
+                this.terrainCache?.putChunk(key, chunk);
+                if (this.chunks.has(chunkKey)) return;
+                const built = this.buildChunkFromData(chunkKey, zone, chunk);
+                if (built) {
+                    this.chunks.set(chunkKey, built);
+                    this.applySeasonToChunk(built, this.getSeasonFactors());
+                }
+            }
+
             createPeerRig(color) {
                 const group = new THREE.Group();
                 group.userData.targetPos = new THREE.Vector3();
@@ -3104,7 +3206,7 @@ export class Game {
                     0,
                     base.z + Math.sin(angle) * radius
                 );
-                const h = this.terrainGen.getHeight(pos.x, pos.z);
+                const h = this.terrainGen ? this.terrainGen.getHeight(pos.x, pos.z) : 0;
                 pos.y = h + 6;
                 this.position.copy(pos);
                 if (this.rig) this.rig.position.copy(this.position);

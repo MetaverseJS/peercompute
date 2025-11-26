@@ -15,6 +15,17 @@ export const getRenderDistanceFromQuery = () => {
   return null;
 };
 
+export const isTerrainGenEnabled = () => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const tg = params.get('tg');
+    if (tg === '0') return false;
+  } catch (_) {
+    // ignore
+  }
+  return true;
+};
+
 export const CONFIG = {
   DAY_DURATION: 6 * 60 * 1000,
   YEAR_DURATION: 60 * 60 * 1000,
