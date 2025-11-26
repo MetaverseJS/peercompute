@@ -36,6 +36,7 @@ export class NodeKernel {
       roomId: config.roomId || 'default-room',
       stateTopic: config.stateTopic || 'peercompute-state',
       docName: config.docName,
+      stateBroadcastNamespaces: config.stateBroadcastNamespaces,
       ...config
     };
 
@@ -82,13 +83,14 @@ export class NodeKernel {
       
       // 2. Initialize StateManager with NetworkManager
       const stateDocName = this.config.docName || `peercompute-${this.config.gameId}-${this.config.roomId}`;
-      this.stateManager = new StateManager(this.networkManager, {
-        docName: stateDocName,
-        topic: this.config.stateTopic,
-        enablePersistence: this.config.enablePersistence,
-        disableNetworkProvider: this.config.disableStateNetworkProvider,
-        disableBroadcast: this.config.disableStateBroadcast
-      });
+    this.stateManager = new StateManager(this.networkManager, {
+      docName: stateDocName,
+      topic: this.config.stateTopic,
+      enablePersistence: this.config.enablePersistence,
+      disableNetworkProvider: this.config.disableStateNetworkProvider,
+      disableBroadcast: this.config.disableStateBroadcast,
+      broadcastNamespaces: this.config.stateBroadcastNamespaces
+    });
       
       await this.stateManager.initialize({
         nodeId: this.nodeId,

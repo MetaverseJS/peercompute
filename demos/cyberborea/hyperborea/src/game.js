@@ -326,10 +326,11 @@ export class Game {
                     gameId: 'cb',
                     roomId: 'global',
                     docName: `peercompute-cb-${BUNDLE_HASH}`,
+                    stateBroadcastNamespaces: [this.gameNamespace],
                     maxWorkers: 128,
                     enableWorkers: true,
                     disableStateNetworkProvider: true,
-                    disableStateBroadcast: true
+                    disableStateBroadcast: false
                 });
                 await this.node.initialize();
                 await this.node.start();

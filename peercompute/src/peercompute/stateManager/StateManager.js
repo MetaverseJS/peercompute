@@ -31,6 +31,7 @@ export class StateManager {
       enablePersistence: config.enablePersistence !== false,
       disableNetworkProvider: config.disableNetworkProvider || false,
       disableBroadcast: config.disableBroadcast || false,
+      broadcastNamespaces: Array.isArray(config.broadcastNamespaces) ? config.broadcastNamespaces : null,
       ...config
     };
     
@@ -288,10 +289,12 @@ export class StateManager {
     this._safeSetMap(nsMap, key, value);
 
     if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
-      this.networkManager.broadcast({
-        type: 'state-set',
-        data: { namespace, key, value }
-      }).catch(() => {});
+      if (!this.config.broadcastNamespaces || this.config.broadcastNamespaces.includes(namespace)) {
+        this.networkManager.broadcast({
+          type: 'state-set',
+          data: { namespace, key, value }
+        }).catch(() => {});
+      }
     }
   }
 
