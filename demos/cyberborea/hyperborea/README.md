@@ -3,7 +3,7 @@
 Standalone build of the original `cb.html` demo, now bundled with webpack and ES modules.
 
 ## Run
-- `npm run dev` (serves on `http(s)://localhost:5180`; enable HTTPS by exporting `HTTPS=1 SSL_CERT=... SSL_KEY=...` to reuse the PeerCompute certs)
+- `npm run dev` (defaults to **HTTPS** at `https://localhost:5180` when `peercompute/certs/dev.{crt,key}` exist; override with `HTTPS=0` or custom `SSL_CERT`/`SSL_KEY`)
 - `npm run build` outputs `dist/`
 - `npm run tests` runs unit tests and a production build smoke check
 

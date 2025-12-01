@@ -8,11 +8,20 @@ import CopyWebpackPlugin from 'copy-webpack-plugin';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const useHttps = process.env.HTTPS === '1' || process.env.HTTPS === 'true';
-const hasCert = process.env.SSL_CERT && process.env.SSL_KEY;
+const defaultCertPath = path.resolve(__dirname, '../../../peercompute/certs/dev.crt');
+const defaultKeyPath = path.resolve(__dirname, '../../../peercompute/certs/dev.key');
+
+// Default to HTTPS if certs exist; allow env override
+const envHttps = process.env.HTTPS;
+const useHttps = envHttps ? (envHttps === '1' || envHttps === 'true') : true;
+
+const certPath = process.env.SSL_CERT || (fs.existsSync(defaultCertPath) ? defaultCertPath : undefined);
+const keyPath = process.env.SSL_KEY || (fs.existsSync(defaultKeyPath) ? defaultKeyPath : undefined);
+const hasCert = certPath && keyPath;
+
 const httpsOptions = useHttps && hasCert ? {
-  cert: fs.readFileSync(process.env.SSL_CERT),
-  key: fs.readFileSync(process.env.SSL_KEY)
+  cert: fs.readFileSync(certPath),
+  key: fs.readFileSync(keyPath)
 } : undefined;
 
 const publicDir = path.resolve(__dirname, 'public');
@@ -36,7 +45,7 @@ export default {
     allowedHosts: 'all',
     compress: true,
     port: 5180,
-    server: useHttps ? { type: 'https', options: httpsOptions } : 'http',
+    server: useHttps && httpsOptions ? { type: 'https', options: httpsOptions } : 'http',
     hot: true,
     historyApiFallback: true,
   },

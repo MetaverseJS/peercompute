@@ -319,9 +319,33 @@ export class Game {
                 }
                 return fallback;
             }
-
+            
             async initMultiplayer() {
-                if (!NodeKernel) return;
+                const resolveComputeReady = () => {
+                    if (this._resolveComputeReady) {
+                        this._resolveComputeReady(true);
+                        this._resolveComputeReady = null;
+                    }
+                };
+                const startRenderLoop = async () => {
+                    await this.generateInitialTerrain();
+                    this.readyToRender = true;
+                    this.applyFovSetting(); // ensure camera projection is set once render starts
+                    this.renderer.setAnimationLoop(() => this.animate());
+                    this.publishPlayerState();
+                    this.broadcastTimeAnchor();
+                    if (document.hidden) {
+                        this.startBackgroundHeartbeat();
+                    }
+                };
+
+                // Run offline if NodeKernel is unavailable; still render terrain/temple.
+                if (!NodeKernel) {
+                    console.warn('NodeKernel unavailable; running offline');
+                    resolveComputeReady();
+                    await startRenderLoop();
+                    return;
+                }
                 try {
                     const cfg = await this.loadPeerConfig();
                 this.node = new NodeKernel({
@@ -339,17 +363,15 @@ export class Game {
                 await this.node.initialize();
                 await this.node.start();
                 this.stateManager = this.node.getStateManager();
-                this.network = this.node.getNetworkManager?.();
-                this.myPeerId = this.node.getStatus().network.peerId;
-                this.computeManager = this.node.getComputeManager();
-                if (this.computeManager && this._resolveComputeReady) {
-                    this._resolveComputeReady(true);
-                }
-                // Re-enable local terrain cache (IndexedDB) without network sync
-                this.terrainCache = new TerrainCache(new StateStore(this.stateManager, 'terrain'), BUNDLE_HASH, true);
-                if (this.terrainSharingEnabled && this.network?.addMessageHandler) {
-                    this.network.addMessageHandler((peerId, message) => this.handleNetworkMessage(peerId, message));
-                }
+                    this.network = this.node.getNetworkManager?.();
+                    this.myPeerId = this.node.getStatus().network.peerId;
+                    this.computeManager = this.node.getComputeManager();
+                    resolveComputeReady();
+                    // Re-enable local terrain cache (IndexedDB) without network sync
+                    this.terrainCache = new TerrainCache(new StateStore(this.stateManager, 'terrain'), BUNDLE_HASH, true);
+                    if (this.terrainSharingEnabled && this.network?.addMessageHandler) {
+                        this.network.addMessageHandler((peerId, message) => this.handleNetworkMessage(peerId, message));
+                    }
                 this.syncExistingTimeAnchor();
                 this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
                     if (key.startsWith('player-')) {
@@ -383,19 +405,13 @@ export class Game {
                     this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
                     this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
                 });
-                await this.computeReadyPromise;
-                await this.generateInitialTerrain();
-                this.readyToRender = true;
-                this.applyFovSetting(); // ensure camera projection is set once render starts
-                this.renderer.setAnimationLoop(() => this.animate());
-                this.publishPlayerState();
-                this.broadcastTimeAnchor();
-                if (document.hidden) {
-                    this.startBackgroundHeartbeat();
-                }
             } catch (err) {
                 console.error('Multiplayer init failed', err);
+                resolveComputeReady();
             }
+                // Always start the render loop, even if networking failed
+                await this.computeReadyPromise;
+                await startRenderLoop();
         }
             
             regenerateTerrain() {
