@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Planet First Person Controller</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            border-radius: 8px;
+            pointer-events: none;
+            user-select: none;
+            border-left: 4px solid #00d2ff;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; }
+        p { margin: 5px 0; font-size: 0.9rem; color: #ccc; }
+        .key { color: #fff; font-weight: bold; background: #333; padding: 2px 6px; border-radius: 4px; }
+        #status { margin-top: 15px; font-weight: bold; color: #00d2ff; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h1>Tiny Planet Explorer</h1>
+    <p><span class="key">WASD</span> to Move</p>
+    <p><span class="key">SHIFT</span> to Run</p>
+    <p><span class="key">SPACE</span> to Jump / Fly Up</p>
+    <p><span class="key">CTRL</span> to Fly Down</p>
+    <p><span class="key">F</span> to Toggle Fly Mode</p>
+    <p><span class="key">Click</span> to Capture Mouse</p>
+    <div id="status">Mode: WALKING</div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
+
+// --- CONFIGURATION ---
+const PLANET_RADIUS = 50;
+const TERRAIN_AMPLITUDE = 6; // Height of hills
+const PLAYER_HEIGHT = 2;
+const WALK_SPEED = 10;
+const RUN_SPEED = 25;
+const FLY_SPEED = 40;
+const JUMP_FORCE = 0.8;
+const GRAVITY = 1.5;
+
+// --- STATE ---
+let isLocked = false;
+let isFlying = false;
+let moveForward = false;
+let moveBackward = false;
+let moveLeft = false;
+let moveRight = false;
+let moveUp = false; // For flying
+let moveDown = false; // For flying
+let isRunning = false;
+let canJump = false;
+
+// Physics Vars
+let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3();
+let verticalVelocity = 0; // Local Y velocity (jumping)
+
+// Raycaster for terrain following
+const raycaster = new THREE.Raycaster();
+const downVector = new THREE.Vector3(); // Reused vector for ray direction
+
+// --- SCENE SETUP ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050510, 0.005);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// --- LIGHTING ---
+const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+sunLight.position.set(100, 50, 50);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 500;
+scene.add(sunLight);
+
+// --- THE PLANET & TERRAIN ---
+// Create a procedural grid texture
+const canvas = document.createElement('canvas');
+canvas.width = 512;
+canvas.height = 512;
+const context = canvas.getContext('2d');
+context.fillStyle = '#222';
+context.fillRect(0,0,512,512);
+context.strokeStyle = '#00d2ff';
+context.lineWidth = 2;
+context.beginPath();
+for(let i=0; i<=512; i+=64) {
+    context.moveTo(i, 0); context.lineTo(i, 512);
+    context.moveTo(0, i); context.lineTo(512, i);
+}
+context.stroke();
+const gridTexture = new THREE.CanvasTexture(canvas);
+gridTexture.wrapS = THREE.RepeatWrapping;
+gridTexture.wrapT = THREE.RepeatWrapping;
+gridTexture.repeat.set(10, 5);
+
+// Create Sphere with Terrain
+const planetGeo = new THREE.SphereGeometry(PLANET_RADIUS, 128, 128);
+
+// Perturb vertices to create hills
+const posAttribute = planetGeo.attributes.position;
+const vertex = new THREE.Vector3();
+
+for (let i = 0; i < posAttribute.count; i++) {
+    vertex.fromBufferAttribute(posAttribute, i);
+    
+    // Normalize to get direction
+    const direction = vertex.clone().normalize();
+    
+    // Generate simple noise using sine waves based on direction
+    // We use direction (x,y,z) so the noise wraps perfectly around the sphere
+    let noise = Math.sin(direction.x * 10) * Math.sin(direction.z * 10) +
+                Math.cos(direction.y * 8) * 0.5 +
+                Math.sin(direction.x * 25 + direction.y * 20) * 0.2;
+    
+    // Apply amplitude
+    const radiusOffset = noise * TERRAIN_AMPLITUDE;
+    
+    // Apply new radius
+    vertex.normalize().multiplyScalar(PLANET_RADIUS + radiusOffset);
+    
+    posAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
+}
+
+// Update geometry required for lighting and raycasting
+planetGeo.computeVertexNormals();
+planetGeo.attributes.position.needsUpdate = true;
+
+const planetMat = new THREE.MeshStandardMaterial({ 
+    map: gridTexture,
+    roughness: 0.8,
+    metalness: 0.2,
+    flatShading: false // Smooth shading looks better on hills
+});
+const planet = new THREE.Mesh(planetGeo, planetMat);
+planet.receiveShadow = true;
+scene.add(planet);
+
+// Random Cubes
+const boxGeo = new THREE.BoxGeometry(4, 4, 4);
+const boxMat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+// Use a temp group to place objects easily on surface
+const helperObj = new THREE.Object3D(); 
+
+for (let i = 0; i < 20; i++) {
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    
+    // Random direction
+    const phi = Math.random() * Math.PI * 2;
+    const theta = Math.random() * Math.PI;
+    
+    // Find surface height at this location
+    const r = PLANET_RADIUS + 100; // Start high
+    const x = r * Math.sin(theta) * Math.cos(phi);
+    const y = r * Math.sin(theta) * Math.sin(phi);
+    const z = r * Math.cos(theta);
+    
+    // Raycast to find ground to place box on ground
+    raycaster.set(new THREE.Vector3(x,y,z), new THREE.Vector3(-x,-y,-z).normalize());
+    const intersects = raycaster.intersectObject(planet);
+    
+    if (intersects.length > 0) {
+        box.position.copy(intersects[0].point);
+    } else {
+        box.position.set(x,y,z).setLength(PLANET_RADIUS);
+    }
+    
+    box.lookAt(0, 0, 0);
+    box.castShadow = true;
+    scene.add(box);
+}
+
+// --- PLAYER RIG ---
+const player = new THREE.Object3D();
+// Initial position needs to find ground
+raycaster.set(new THREE.Vector3(0, PLANET_RADIUS + 50, 0), new THREE.Vector3(0, -1, 0));
+const startIntersect = raycaster.intersectObject(planet);
+const startY = startIntersect.length > 0 ? startIntersect[0].point.length() + PLAYER_HEIGHT : PLANET_RADIUS + PLAYER_HEIGHT;
+
+player.position.set(0, startY, 0);
+scene.add(player);
+
+player.add(camera);
+
+const startUp = player.position.clone().normalize();
+const quaternion = new THREE.Quaternion();
+quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), startUp);
+player.quaternion.copy(quaternion);
+player.up.copy(startUp);
+
+
+// --- INPUT HANDLING ---
+
+const onKeyDown = function (event) {
+    switch (event.code) {
+        case 'ArrowUp':
+        case 'KeyW': moveForward = true; break;
+        case 'ArrowLeft':
+        case 'KeyA': moveLeft = true; break;
+        case 'ArrowDown':
+        case 'KeyS': moveBackward = true; break;
+        case 'ArrowRight':
+        case 'KeyD': moveRight = true; break;
+        case 'Space': 
+            if(isFlying) moveUp = true;
+            else if (canJump) { verticalVelocity = JUMP_FORCE; canJump = false; }
+            break;
+        case 'ControlLeft': moveDown = true; break;
+        case 'ShiftLeft': isRunning = true; break;
+        case 'KeyF': toggleFlight(); break;
+    }
+};
+
+const onKeyUp = function (event) {
+    switch (event.code) {
+        case 'ArrowUp':
+        case 'KeyW': moveForward = false; break;
+        case 'ArrowLeft':
+        case 'KeyA': moveLeft = false; break;
+        case 'ArrowDown':
+        case 'KeyS': moveBackward = false; break;
+        case 'ArrowRight':
+        case 'KeyD': moveRight = false; break;
+        case 'Space': moveUp = false; break;
+        case 'ControlLeft': moveDown = false; break;
+        case 'ShiftLeft': isRunning = false; break;
+    }
+};
+
+const onMouseMove = function (event) {
+    if (!isLocked) return;
+
+    const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+    const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+
+    if (isFlying) {
+        // FLY MODE
+        const camLocalUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        player.rotateOnAxis(camLocalUp, -movementX * 0.002);
+        camera.rotateX(-movementY * 0.002);
+    } else {
+        // WALK MODE
+        player.rotateY(-movementX * 0.002);
+        camera.rotateX(-movementY * 0.002);
+        camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+    }
+};
+
+document.addEventListener('keydown', onKeyDown);
+document.addEventListener('keyup', onKeyUp);
+document.addEventListener('mousemove', onMouseMove);
+
+document.body.addEventListener('click', () => {
+    document.body.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+    isLocked = document.pointerLockElement === document.body;
+});
+
+function toggleFlight() {
+    isFlying = !isFlying;
+    verticalVelocity = 0;
+    
+    if (!isFlying) {
+        // Reset orientation to gravity on land
+        const planetNormal = player.position.clone().normalize();
+        const dummyUp = new THREE.Vector3(0, 1, 0);
+        const alignQuat = new THREE.Quaternion().setFromUnitVectors(dummyUp, planetNormal);
+        player.quaternion.copy(alignQuat);
+        player.up.copy(planetNormal);
+        camera.rotation.x = 0;
+        velocity.set(0,0,0);
+    }
+    
+    const statusEl = document.getElementById('status');
+    statusEl.innerText = isFlying ? "Mode: FLYING" : "Mode: WALKING";
+    statusEl.style.color = isFlying ? "#ffaa00" : "#00d2ff";
+}
+
+// --- PHYSICS & MOVEMENT LOGIC ---
+
+const clock = new THREE.Clock();
+
+function updatePlayer(delta) {
+    
+    if (!isFlying) {
+        // ... Logic handled in Step 5 for walking
+    }
+
+    velocity.x -= velocity.x * 10.0 * delta; // Friction
+    velocity.z -= velocity.z * 10.0 * delta;
+    
+    const speed = isFlying ? FLY_SPEED : (isRunning ? RUN_SPEED : WALK_SPEED);
+    
+    direction.z = Number(moveForward) - Number(moveBackward);
+    direction.x = Number(moveRight) - Number(moveLeft);
+    direction.normalize();
+
+    if (moveForward || moveBackward) velocity.z += direction.z * speed * delta;
+    if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+
+    if (isFlying) {
+        // FLYING MODE (6DoF)
+        const camQuat = camera.getWorldQuaternion(new THREE.Quaternion());
+        const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
+        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camQuat);
+        const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camQuat);
+
+        if (moveForward) player.position.add(camDir.multiplyScalar(speed * delta));
+        if (moveBackward) player.position.add(camDir.multiplyScalar(-speed * delta));
+        if (moveRight) player.position.add(camRight.multiplyScalar(speed * delta));
+        if (moveLeft) player.position.add(camRight.multiplyScalar(-speed * delta));
+        if (moveUp) player.position.add(camUp.multiplyScalar(speed * delta));
+        if (moveDown) player.position.add(camUp.multiplyScalar(-speed * delta));
+
+    } else {
+        // WALKING MODE
+        player.translateX(-velocity.x * delta);
+        player.translateZ(-velocity.z * delta);
+        
+        verticalVelocity -= GRAVITY * delta * 50; 
+        
+        // --- TERRAIN FOLLOWING (RAYCAST) ---
+        // 1. Raycast from above player towards planet center
+        // origin: player pos normalized * (max radius + buffer)
+        // dir: towards center
+        
+        const rayOrigin = player.position.clone().normalize().multiplyScalar(PLANET_RADIUS + TERRAIN_AMPLITUDE + 50);
+        const rayDir = player.position.clone().negate().normalize();
+        
+        raycaster.set(rayOrigin, rayDir);
+        const intersects = raycaster.intersectObject(planet);
+        
+        let targetHeight = PLANET_RADIUS + PLAYER_HEIGHT; // Fallback
+        
+        if (intersects.length > 0) {
+            // Distance from center to intersection point
+            const groundRadius = intersects[0].point.length();
+            targetHeight = groundRadius + PLAYER_HEIGHT;
+        }
+
+        // Current distance from center
+        const distanceFromCenter = player.position.length();
+        
+        let currentHeight = distanceFromCenter;
+        currentHeight += verticalVelocity;
+
+        if (currentHeight < targetHeight) {
+            currentHeight = targetHeight;
+            verticalVelocity = 0;
+            canJump = true;
+        }
+        
+        player.position.setLength(currentHeight);
+    }
+
+    if (!isFlying) {
+        // Align to Planet Gravity (Radial)
+        const newUp = player.position.clone().normalize();
+        const alignQuaternion = new THREE.Quaternion();
+        alignQuaternion.setFromUnitVectors(player.up, newUp);
+        player.quaternion.premultiply(alignQuaternion);
+        player.up.copy(newUp);
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    const delta = Math.min(clock.getDelta(), 0.1); 
+    updatePlayer(delta);
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+
+</script>
+</body>
+</html>
