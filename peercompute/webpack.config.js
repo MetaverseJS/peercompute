@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const useHttps = process.env.HTTPS === '1' || process.env.HTTPS === 'true';
+const devHost = process.env.DEV_HOST || '0.0.0.0';
 const httpsOptions = useHttps && process.env.SSL_CERT && process.env.SSL_KEY ? {
   cert: fs.readFileSync(process.env.SSL_CERT),
   key: fs.readFileSync(process.env.SSL_KEY)
@@ -32,7 +33,7 @@ export default {
         publicPath: '/games',
       }
     ],
-    host: '0.0.0.0',
+    host: devHost,
     allowedHosts: 'all',
     compress: true,
     port: 5173, // Keep same port as Vite for convenience

@@ -301,23 +301,17 @@ export class Game {
                 if (vec.y < h + extra) vec.y = h + extra;
             }
 
-            async loadPeerConfig() {
-                const fallback = {
-                    host: window.location.hostname || 'localhost',
-                    port: 9000,
-                    path: '/peerjs',
-                    secure: window.location.protocol === 'https:'
-                };
+            async loadRelayConfig() {
                 try {
-                    const res = await fetch('/peer-config.json');
+                    const res = await fetch('/relay-config.json');
                     if (res.ok) {
                         const json = await res.json();
-                        return { ...fallback, ...json };
+                        return json;
                     }
                 } catch (e) {
                     // ignore and use fallback
                 }
-                return fallback;
+                return { bootstrapPeers: [] };
             }
             
             async initMultiplayer() {
@@ -347,22 +341,22 @@ export class Game {
                     return;
                 }
                 try {
-                    const cfg = await this.loadPeerConfig();
-                this.node = new NodeKernel({
-                    peerServer: cfg,
-                    enablePersistence: true,
-                    gameId: 'cb',
-                    roomId: 'global',
-                    docName: `peercompute-cb-${BUNDLE_HASH}`,
-                    stateBroadcastNamespaces: [this.gameNamespace],
-                    maxWorkers: 128,
-                    enableWorkers: true,
-                    disableStateNetworkProvider: false, // allow Yjs provider for terrain sync
-                    disableStateBroadcast: false
-                });
-                await this.node.initialize();
-                await this.node.start();
-                this.stateManager = this.node.getStateManager();
+                    const cfg = await this.loadRelayConfig();
+                    this.node = new NodeKernel({
+                        bootstrapPeers: cfg.bootstrapPeers || [],
+                        enablePersistence: true,
+                        gameId: 'cb',
+                        roomId: 'global',
+                        docName: `peercompute-cb-${BUNDLE_HASH}`,
+                        stateBroadcastNamespaces: [this.gameNamespace],
+                        maxWorkers: 128,
+                        enableWorkers: true,
+                        disableStateNetworkProvider: false, // allow Yjs provider for terrain sync
+                        disableStateBroadcast: false
+                    });
+                    await this.node.initialize();
+                    await this.node.start();
+                    this.stateManager = this.node.getStateManager();
                     this.network = this.node.getNetworkManager?.();
                     this.myPeerId = this.node.getStatus().network.peerId;
                     this.computeManager = this.node.getComputeManager();

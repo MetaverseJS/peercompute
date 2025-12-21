@@ -171,12 +171,37 @@
 
         const PRESENCE_HEARTBEAT_MS = 1000;
         const PEER_PRUNE_INTERVAL_MS = 5000;
-        const PEER_STALE_MS = 10000;
+        const PEER_STALE_MS = 15000;
         const STATE_POS_THRESHOLD = 0.5;
         const STATE_ROT_THRESHOLD = 0.05;
         const STATE_KEEPALIVE_MS = 1500;
         const STATE_EVENT_MIN_MS = 100; // 10 per second cap
         const TIME_ANCHOR_KEY = 'time-anchor';
+        const RECONNECT_INTERVAL_MS = 4000;
+        const RECONNECT_MIN_GAP_MS = 2000;
+
+        const isIpv4Host = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+        const isIpv6Host = (host) => host.includes(':');
+        const isLoopbackHost = (host) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        const hostToMultiaddrPrefix = (host) => {
+            if (isIpv6Host(host)) return `/ip6/${host}`;
+            if (isIpv4Host(host)) return `/ip4/${host}`;
+            return `/dns4/${host}`;
+        };
+        const rewriteLoopbackAddr = (addr, hostPrefix) => {
+            if (typeof addr !== 'string') return addr;
+            return addr
+                .replace('/ip4/127.0.0.1', hostPrefix)
+                .replace('/ip6/::1', hostPrefix)
+                .replace('/dns4/localhost', hostPrefix)
+                .replace('/dns/localhost', hostPrefix);
+        };
+        const getPeerIdFromAddr = (addr) => {
+            if (typeof addr !== 'string') return null;
+            const parts = addr.split('/p2p/');
+            if (parts.length < 2) return null;
+            return parts[parts.length - 1] || null;
+        };
 
         class SeededRandom {
             constructor(seed) { this.seed = seed; }
@@ -375,9 +400,15 @@
                 this.gameNamespace = 'cb';
                 this.peerMeshes = new Map();
                 this.peers = new Map();
+                this.bootstrapPeers = [];
+                this.networkManager = null;
+                this.libp2p = null;
                 this.visibilityHandler = null;
                 this.backgroundHeartbeat = null;
                 this.peerCleanupInterval = null;
+                this.reconnectTimer = null;
+                this.lastReconnectAttempt = 0;
+                this.connectionListenersBound = false;
                 this.lastStateBroadcast = 0;
                 this.attackEventsSeen = new Map();
                 this.attackActiveUntil = 0;
@@ -385,6 +416,8 @@
                 this.spearThrustProgress = 0;
                 this.persistedState = this.loadPersistedState();
                 this.lastPersistSave = 0;
+                this.joinedAt = Date.now();
+                this.timeAnchor = null;
                 this.initThree();
                 this.initTime();
                 this.initTerrain();
@@ -575,31 +608,91 @@
                 if (vec.y < h + extra) vec.y = h + extra;
             }
 
-            async loadPeerConfig() {
-                const fallback = {
-                    host: window.location.hostname || 'localhost',
-                    port: 9000,
-                    path: '/peerjs',
-                    secure: window.location.protocol === 'https:'
-                };
+            async loadRelayConfig() {
                 try {
-                    const res = await fetch('/peer-config.json');
-                    if (res.ok) {
-                        const json = await res.json();
-                        return { ...fallback, ...json };
-                    }
+                    const tryFetch = async (path) => {
+                        try {
+                            const res = await fetch(path, { cache: 'no-store' });
+                            if (res.ok) return await res.json();
+                        } catch (_) {}
+                        return null;
+                    };
+                    const cfg =
+                        (await tryFetch('/relay-config.json')) ||
+                        (await tryFetch('relay-config.json')) ||
+                        (await tryFetch('/.relay-config.json')) ||
+                        (await tryFetch('.relay-config.json'));
+                    if (cfg) return cfg;
                 } catch (e) {
                     // ignore and use fallback
                 }
-                return fallback;
+                return { bootstrapPeers: [] };
+            }
+
+            normalizeBootstrapPeers(peers) {
+                if (!Array.isArray(peers)) return [];
+                const host = window.location.hostname;
+                if (!host || isLoopbackHost(host)) return peers;
+                const hostPrefix = hostToMultiaddrPrefix(host);
+                const expanded = peers.flatMap((addr) => {
+                    const rewritten = rewriteLoopbackAddr(addr, hostPrefix);
+                    return rewritten === addr ? [addr] : [addr, rewritten];
+                });
+                return Array.from(new Set(expanded));
+            }
+
+            async ensureRelayConnection(force = false) {
+                if (!this.libp2p || this.bootstrapPeers.length === 0 || !this.networkManager) return;
+                const connections = this.libp2p.getConnections?.() || [];
+                const connectionList = Array.isArray(connections)
+                    ? connections
+                    : typeof connections?.values === 'function'
+                        ? Array.from(connections.values()).reduce((acc, value) => acc.concat(value), [])
+                        : [];
+                const relayPeerIds = this.bootstrapPeers
+                    .map(getPeerIdFromAddr)
+                    .filter(Boolean);
+                const hasRelayConnection = relayPeerIds.length > 0
+                    ? connectionList.some((conn) => relayPeerIds.includes(conn?.remotePeer?.toString?.()))
+                    : connectionList.length > 0;
+                if (!force && hasRelayConnection) return;
+                const now = Date.now();
+                if (!force && (now - this.lastReconnectAttempt) < RECONNECT_MIN_GAP_MS) return;
+                this.lastReconnectAttempt = now;
+                try {
+                    await this.networkManager.redialBootstrapPeers();
+                } catch (err) {
+                    console.warn('Relay redial failed', err?.message || err);
+                }
+            }
+
+            startNetworkWatchdog() {
+                if (this.reconnectTimer || !this.libp2p) return;
+                this.reconnectTimer = setInterval(() => {
+                    this.ensureRelayConnection().catch(() => {});
+                }, RECONNECT_INTERVAL_MS);
+                if (!this.connectionListenersBound) {
+                    this.connectionListenersBound = true;
+                    this.libp2p.addEventListener('connection:close', () => {
+                        this.ensureRelayConnection(true).catch(() => {});
+                    });
+                }
+            }
+
+            stopNetworkWatchdog() {
+                if (this.reconnectTimer) {
+                    clearInterval(this.reconnectTimer);
+                    this.reconnectTimer = null;
+                }
             }
 
             async initMultiplayer() {
                 if (!window.NodeKernel) return;
                 try {
-                    const cfg = await this.loadPeerConfig();
+                    const cfg = await this.loadRelayConfig();
+                    this.bootstrapPeers = this.normalizeBootstrapPeers(cfg.bootstrapPeers || []);
                     this.node = new window.NodeKernel({
-                        peerServer: cfg,
+                        bootstrapPeers: this.bootstrapPeers,
                         enablePersistence: false,
                         gameId: 'cb',
                         roomId: 'global'
@@ -607,6 +700,8 @@
                     await this.node.initialize();
                     await this.node.start();
                     this.stateManager = this.node.getStateManager();
+                    this.networkManager = this.node.getNetworkManager();
+                    this.libp2p = this.networkManager?.getLibp2pNode?.() || null;
                     this.myPeerId = this.node.getStatus().network.peerId;
                     this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
                         if (key.startsWith('player-')) {
@@ -619,7 +714,7 @@
                             this.handleRemoteAttack(attacker, value);
                         }
                         if (key === 'time' || key === TIME_ANCHOR_KEY) {
-                            this.applyRemoteTimeSync(value);
+                            this.applyRemoteTimeSync(value, key);
                         }
                         if (key.startsWith('evt-')) {
                             const from = key.replace('evt-', '');
@@ -629,17 +724,20 @@
                     });
                     this.startPeerCleanup();
                     this.setupVisibilityHeartbeat();
+                    this.startNetworkWatchdog();
+                    this.ensureRelayConnection(true).catch(() => {});
                     window.addEventListener('beforeunload', () => {
                         this.stopBackgroundHeartbeat();
                         this.stopPeerCleanup();
+                        this.stopNetworkWatchdog();
                         this.savePersistedState();
                         if (this.visibilityHandler) {
                             document.removeEventListener('visibilitychange', this.visibilityHandler);
                             this.visibilityHandler = null;
                         }
-                    this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
-                    this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
-                });
+                        this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
+                        this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
+                    });
                     this.publishPlayerState();
                     this.broadcastTimeAnchor();
                     if (document.hidden) {
@@ -2955,6 +3053,7 @@
                     } else {
                         this.stopBackgroundHeartbeat();
                         this.publishPlayerState();
+                        this.ensureRelayConnection(true).catch(() => {});
                     }
                 };
                 document.addEventListener('visibilitychange', this.visibilityHandler);
@@ -2989,6 +3088,37 @@
                 this.broadcastTimeAnchor(true);
             }
 
+            getAnchorRank(payload) {
+                if (!payload) return null;
+                if (typeof payload.joinedAt === 'number') return payload.joinedAt;
+                if (typeof payload.sentAt === 'number') return payload.sentAt;
+                return null;
+            }
+
+            shouldAdoptAnchor(candidate) {
+                if (!candidate || !candidate.peerId) return false;
+                const candidateRank = this.getAnchorRank(candidate);
+                const currentRank = this.getAnchorRank(this.timeAnchor);
+                if (currentRank === null) return true;
+                if (candidateRank === null) return false;
+                if (candidateRank < currentRank) return true;
+                if (candidateRank === currentRank) {
+                    const currentPeer = this.timeAnchor?.peerId || '';
+                    return String(candidate.peerId) < String(currentPeer);
+                }
+                return false;
+            }
+
+            normalizeAnchor(payload) {
+                if (!payload) return null;
+                return {
+                    ...payload,
+                    joinedAt: typeof payload.joinedAt === 'number'
+                        ? payload.joinedAt
+                        : (typeof payload.sentAt === 'number' ? payload.sentAt : Date.now())
+                };
+            }
+
             broadcastTimeAnchor(force = false) {
                 if (!this.stateManager || !this.myPeerId) return;
                 const now = Date.now();
@@ -2996,27 +3126,47 @@
                 const anchor = this.stateManager.readScoped
                     ? this.stateManager.readScoped(this.gameNamespace, TIME_ANCHOR_KEY)
                     : null;
-                if (!force && anchor && anchor.peerId !== this.myPeerId) return;
+                if (anchor && this.shouldAdoptAnchor(anchor)) {
+                    this.timeAnchor = this.normalizeAnchor(anchor);
+                }
+                if (this.timeAnchor && this.timeAnchor.peerId !== this.myPeerId) return;
                 // throttle to avoid spamming
-                if (now - this.lastTimeSyncBroadcast < 500) return;
+                if (!force && (now - this.lastTimeSyncBroadcast) < 500) return;
                 this.lastTimeSyncBroadcast = now;
-                this.stateManager.writeScoped(this.gameNamespace, 'time', {
+                const payload = {
                     multiplier: this.timeSystem.timeMultiplier,
                     time: this.timeSystem.getTime(),
                     sentAt: now,
-                    peerId: this.myPeerId
-                });
-                this.stateManager.writeScoped(this.gameNamespace, TIME_ANCHOR_KEY, {
-                    multiplier: this.timeSystem.timeMultiplier,
-                    time: this.timeSystem.getTime(),
-                    sentAt: now,
-                    peerId: this.myPeerId
-                });
+                    peerId: this.myPeerId,
+                    joinedAt: this.joinedAt
+                };
+                this.timeAnchor = this.normalizeAnchor(payload);
+                this.stateManager.writeScoped(this.gameNamespace, 'time', payload);
+                this.stateManager.writeScoped(this.gameNamespace, TIME_ANCHOR_KEY, payload);
             }
 
-            applyRemoteTimeSync(payload) {
+            applyRemoteTimeSync(payload, key) {
                 if (!payload || payload.peerId === this.myPeerId) return;
-                this.timeSystem.applyRemoteSync(payload);
+                const candidate = this.normalizeAnchor(payload);
+                if (key === TIME_ANCHOR_KEY) {
+                    if (this.shouldAdoptAnchor(candidate)) {
+                        this.timeAnchor = candidate;
+                        this.timeSystem.applyRemoteSync(candidate);
+                    } else if (
+                        this.timeAnchor?.peerId === this.myPeerId &&
+                        this.getAnchorRank(candidate) !== null &&
+                        this.getAnchorRank(this.timeAnchor) !== null &&
+                        this.getAnchorRank(candidate) > this.getAnchorRank(this.timeAnchor)
+                    ) {
+                        this.broadcastTimeAnchor(true);
+                    }
+                    return;
+                }
+                if (!this.timeAnchor) {
+                    this.timeAnchor = candidate;
+                }
+                if (this.timeAnchor?.peerId && candidate.peerId !== this.timeAnchor.peerId) return;
+                this.timeSystem.applyRemoteSync(candidate);
             }
 
             maybeBroadcastState(force = false) {

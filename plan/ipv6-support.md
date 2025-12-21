@@ -2,7 +2,7 @@
 
 ## libp2p IPv6 Support
 
-Yes, modern libp2p v2 has **full IPv6 support**. Here's the breakdown for each component:
+Yes, modern libp2p v3 has **full IPv6 support**. Here's the breakdown for each component:
 
 ### Core libp2p
 - ✅ **Fully IPv6-ready** - libp2p is designed to be transport-agnostic and supports both IPv4 and IPv6 multiaddresses
@@ -120,7 +120,7 @@ To test if your implementation works with IPv6:
 
 ✅ **PeerCompute will support IPv6 out of the box**
 
-The modern libp2p stack we installed (v2.10.0) has full IPv6 support across all transports. For browser-based P2P via WebRTC, IPv6 support is automatic and transparent - no special configuration needed. The browser and libp2p handle IPv4/IPv6 negotiation automatically, choosing the best available connection path.
+The libp2p stack we installed (v3.1.2) has full IPv6 support across all transports. For browser-based P2P via WebRTC, IPv6 support is automatic and transparent - no special configuration needed. The browser and libp2p handle IPv4/IPv6 negotiation automatically, choosing the best available connection path.
 
 **No action required** - IPv6 will work automatically when:
 - The network supports IPv6
@@ -128,3 +128,7 @@ The modern libp2p stack we installed (v2.10.0) has full IPv6 support across all 
 - Or it will gracefully fall back to IPv4
 
 The implementation is **future-proof** as IPv6 adoption increases globally.
+
+## Recent Fix Summary (2025-12-21)
+- Relay now supports WSS with `RELAY_PUBLIC_HOST` so browsers can connect over HTTPS.
+- Pubsub switched to floodsub for reliable discovery over the relay.

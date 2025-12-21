@@ -2,7 +2,7 @@
  * @fileoverview State Manager - Manages shared data state using Yjs CRDT
  * Coordinates read/write access with automatic P2P synchronization
  * 
- * Uses Yjs for conflict-free replicated data types (CRDT) and y-libp2p
+ * Uses Yjs for conflict-free replicated data types (CRDT) and PeerComputeProvider
  * for automatic synchronization across the P2P network.
  */
 
@@ -70,7 +70,7 @@ export class StateManager {
   }
 
   /**
-   * Apply a Yjs update received from the network (PeerJS path)
+   * Apply a Yjs update received from the network (libp2p pubsub path)
    * @param {Array|Uint8Array} updateArr
    */
   applyRemoteUpdate(updateArr) {
@@ -225,7 +225,7 @@ export class StateManager {
   }
 
   /**
-   * Fallback P2P sync when y-libp2p is not available
+   * Fallback P2P sync when the network provider is disabled
    * Uses NetworkManager directly
    * @private
    */
@@ -233,7 +233,7 @@ export class StateManager {
     if (!this.libp2pNode) return;
     
     // Listen for state update requests
-    // This is a simplified fallback - y-libp2p is much more efficient
+    // This is a simplified fallback - PeerComputeProvider is more efficient
     console.log('[StateManager] Using fallback P2P sync via NetworkManager');
     
     // TODO: Implement manual CRDT sync protocol via NetworkManager
@@ -269,7 +269,7 @@ export class StateManager {
     // No need for queuing or manual conflict resolution
     this._safeSetMap(this.state, key, value);
 
-    // Opportunistic direct broadcast for PeerJS path
+    // Opportunistic direct broadcast for libp2p pubsub path
     if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
       this.networkManager.broadcast({
         type: 'state-set',
@@ -532,14 +532,14 @@ export class StateManager {
   /**
    * Synchronize state with network peers
    * 
-   * Note: With Yjs + y-libp2p, synchronization is automatic.
+   * Note: With Yjs + PeerComputeProvider, synchronization is automatic.
    * This method is provided for compatibility but is mostly a no-op.
    * 
    * @param {Array<Object>} peerStates - States from peer nodes (unused with Yjs)
    * @returns {Promise<void>}
    */
   async synchronize(peerStates) {
-    // With Yjs + y-libp2p, sync is automatic via CRDT
+    // With Yjs + PeerComputeProvider, sync is automatic via CRDT
     // This method is here for API compatibility
     console.log('[StateManager] Synchronization is automatic with Yjs CRDT');
   }

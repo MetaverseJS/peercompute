@@ -1093,10 +1093,10 @@
         // P2P Communication Setup (PeerCompute)
         async function setupP2P() {
             try {
-                const cfg = await fetch('/peer-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
+                const cfg = await fetch('/relay-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
                 const NodeKernel = window.NodeKernel;
                 node = new NodeKernel({
-                    peerServer: cfg || { host: 'localhost', port: 9000, path: '/peerjs', secure: window.location.protocol === 'https:' },
+                    bootstrapPeers: cfg?.bootstrapPeers || [],
                     enablePersistence: false,
                     gameId: 'sneakywoods',
                     roomId: 'global'

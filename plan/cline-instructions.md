@@ -10,3 +10,5 @@ open additional terminals if you need to run any other commands. close the test 
 5) do you need to update your implementation log?
 6) do you need to update the imp-plan? 
 7) did you run the tests to see if your changes worked? 
+
+Project status (2025-12-21): relay/bootstrap path is Node.js + WSS, pubsub is floodsub, cb time sync anchored to first joiner.

@@ -1,5 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const useExistingServer = process.env.USE_EXISTING_SERVER === '1' || process.env.USE_EXISTING_SERVER === 'true';
+const webServer = useExistingServer
+  ? undefined
+  : {
+      command: 'HTTPS=0 DEV_HOST=127.0.0.1 ./start-dev.sh',
+      url: 'http://localhost:5173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000,
+    };
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -18,10 +28,5 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev:peer',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-  },
+  webServer,
 });

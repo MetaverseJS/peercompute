@@ -1,18 +1,21 @@
 #!/bin/bash
- HTTPS=1 
- SSL_CERT=./certs/dev.crt 
- SSL_KEY=./certs/dev.key
-SSL_CA=~/.local/share/mkcert/rootCA.pem
+HTTPS="${HTTPS:-1}"
+SSL_CERT="${SSL_CERT:-}"
+SSL_KEY="${SSL_KEY:-}"
+SSL_CA="${SSL_CA:-~/.local/share/mkcert/rootCA.pem}"
 set -e
 
-echo "🚀 PeerCompute Dev Environment (PeerJS)"
+echo "🚀 PeerCompute Dev Environment (libp2p)"
 echo "======================================="
 
-PEER_PID_FILE=".peer.pid"
+RELAY_PID_FILE=".relay.pid"
+RELAY_CONFIG_FILE=".relay-config.json"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEFAULT_CERT="$ROOT_DIR/certs/dev.crt"
 DEFAULT_KEY="$ROOT_DIR/certs/dev.key"
 EXPORT_CERT_DIR="$ROOT_DIR/public/certs"
+SKIP_RELAY="${SKIP_RELAY:-0}"
+STARTED_RELAY=0
 
 # If HTTPS=1 is set, prefer provided SSL_CERT/SSL_KEY, else fall back to dev certs
 if [ "${HTTPS:-}" = "1" ]; then
@@ -22,6 +25,11 @@ if [ "${HTTPS:-}" = "1" ]; then
   if [ -z "${SSL_KEY:-}" ] && [ -f "$DEFAULT_KEY" ]; then
     SSL_KEY="$DEFAULT_KEY"
   fi
+fi
+
+# If advertising a public host, ensure we listen on all interfaces by default
+if [ -n "${RELAY_PUBLIC_HOST:-}" ] && [ -z "${RELAY_LISTEN_HOST:-}" ]; then
+  export RELAY_LISTEN_HOST="0.0.0.0"
 fi
 
 # If we have certs/keys, force HTTPS=1 for both servers
@@ -62,14 +70,17 @@ fi
 cleanup() {
   echo ""
   echo "🧹 Cleaning up..."
-  if [ -f "$PEER_PID_FILE" ]; then
-    PEER_PID=$(cat "$PEER_PID_FILE")
-    if kill -0 "$PEER_PID" 2>/dev/null; then
-      echo "   Stopping PeerJS server (PID: $PEER_PID)"
-      kill "$PEER_PID" 2>/dev/null || true
-      wait "$PEER_PID" 2>/dev/null || true
+  if [ "$STARTED_RELAY" -eq 1 ] && [ -f "$RELAY_PID_FILE" ]; then
+    RELAY_PID=$(cat "$RELAY_PID_FILE")
+    if kill -0 "$RELAY_PID" 2>/dev/null; then
+      echo "   Stopping relay server (PID: $RELAY_PID)"
+      kill "$RELAY_PID" 2>/dev/null || true
+      wait "$RELAY_PID" 2>/dev/null || true
     fi
-    rm -f "$PEER_PID_FILE"
+    rm -f "$RELAY_PID_FILE"
+  fi
+  if [ "$STARTED_RELAY" -eq 1 ]; then
+    rm -f "$RELAY_CONFIG_FILE" public/relay-config.json
   fi
   echo "✅ Cleanup complete"
 }
@@ -77,19 +88,56 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo ""
-echo "1️⃣  Starting PeerJS signaling server..."
-if [ -z "$SSL_CERT" ] || [ -z "$SSL_KEY" ]; then
-  echo "   SSL_CERT/SSL_KEY not set, running PeerJS over WS (port 9000)."
+echo "1️⃣  Starting libp2p relay server..."
+if [ "$SKIP_RELAY" = "1" ]; then
+  echo "   SKIP_RELAY=1 set; using existing relay."
+  if [ ! -f "$RELAY_CONFIG_FILE" ]; then
+    RELAY_ADDR=$(grep -m1 "Relay Address:" logs/relay-server-dev.log | awk '{print $3}') || true
+    if [ -z "$RELAY_ADDR" ]; then
+      RELAY_ADDR=$(grep -m1 "Relay Address:" logs/relay-server.log | awk '{print $3}') || true
+    fi
+    if [ -n "$RELAY_ADDR" ]; then
+      echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\"]}" > "$RELAY_CONFIG_FILE"
+    fi
+  fi
+  mkdir -p public
+  if [ -f "$RELAY_CONFIG_FILE" ]; then
+    cp "$RELAY_CONFIG_FILE" public/relay-config.json
+  elif [ ! -f public/relay-config.json ]; then
+    echo "{\"bootstrapPeers\":[]}" > public/relay-config.json
+  fi
 else
-  echo "   Using SSL_CERT=$SSL_CERT"
-  echo "   Using SSL_KEY=$SSL_KEY"
+  if [ -z "$SSL_CERT" ] || [ -z "$SSL_KEY" ]; then
+    echo "   SSL_CERT/SSL_KEY not set; relay server will listen on ws."
+  else
+    echo "   Using SSL_CERT=$SSL_CERT"
+    echo "   Using SSL_KEY=$SSL_KEY"
+  fi
+  mkdir -p logs
+  node src/relay/server.js > logs/relay-server-dev.log 2>&1 &
+  RELAY_PID=$!
+  STARTED_RELAY=1
+  echo "$RELAY_PID" > "$RELAY_PID_FILE"
+
+  # Capture relay address for browser bootstrap config
+RELAY_ADDR=""
+for i in $(seq 1 30); do
+    RELAY_ADDR=$(grep -m1 "Relay Address:" logs/relay-server-dev.log | awk '{print $3}') || true
+    if [ -n "$RELAY_ADDR" ]; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [ -n "$RELAY_ADDR" ]; then
+    echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\"]}" > "$RELAY_CONFIG_FILE"
+    mkdir -p public
+    echo "{\"bootstrapPeers\":[\"$RELAY_ADDR\"]}" > public/relay-config.json
+    echo "   Relay address: $RELAY_ADDR"
+  else
+    echo "   Relay address not detected yet; update relay-config.json manually if needed."
+  fi
 fi
-node src/peer-server.js > logs/peer-server-dev.log 2>&1 &
-PEER_PID=$!
-echo "$PEER_PID" > "$PEER_PID_FILE"
-PROTO="ws"
-if [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ]; then PROTO="wss"; fi
-echo "   PeerJS PID: $PEER_PID (${PROTO}://localhost:9000/peerjs)"
 
 echo ""
 echo "2️⃣  Starting Webpack Dev Server..."

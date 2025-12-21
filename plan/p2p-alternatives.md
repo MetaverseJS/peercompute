@@ -1,28 +1,35 @@
-# P2P Networking Alternatives Analysis
+# P2P Networking Alternatives Analysis (Legacy)
 
-## Issue with Current Approach
-The installed libp2p version (3.1.2) is severely outdated. Modern libp2p is much more complex and primarily designed for Node.js environments. The browser support, while present, requires significant configuration and isn't as straightforward as initially thought.
+Status: Archived. This document captures alternatives explored before the libp2p-first decision. Keep for historical reference only.
 
-## Deprecation Warnings Observed
-- `inflight@1.0.6` - Memory leak issues
-- `rimraf@3.0.2` - Old version
-- `glob@7.2.3` - Old version
+## Current Direction (Active)
+- libp2p v3.x in browsers (WebRTC + WebSockets + Circuit Relay v2)
+- Relay server as the bootstrap rendezvous point
+- pubsubPeerDiscovery + floodsub for discovery and messaging
+- PeerJS/Gun/Trystero are not part of the runtime path
 
-## Alternative Approaches for Browser P2P
+## Recent Fix Summary (2025-12-21)
+- Switched pubsub to floodsub (client + relay) after gossipsub failed to form a mesh over the relay.
+- Confirmed relay logs show presence/state messages after the switch.
 
-### Option 1: **PeerJS** (Recommended for Simplicity)
+## Historical Context
+At the time of this evaluation, libp2p v3.1.2 was considered old and the browser setup felt complex. We explored alternatives for faster progress. The notes below are preserved but are not recommended for the current branch.
+
+## Archived Alternatives (Do Not Implement)
+
+### Option 1: PeerJS (Deprecated)
 **Pros:**
 - Specifically designed for browser WebRTC
 - Very simple API
 - Handles signaling server automatically (or can self-host)
 - Mature and widely used
-- Perfect for getting started quickly
+- Fast to prototype
 
 **Cons:**
 - Less control over low-level networking
 - Requires signaling server for initial connection
 
-**Use Case Fit:** Good for multiplayer games, basic P2P compute
+**Use Case Fit:** Deprecated for PeerCompute; kept for historical reference only
 
 ```javascript
 // Example usage
@@ -33,20 +40,19 @@ conn.on('data', (data) => console.log(data));
 
 ---
 
-### Option 2: **Gun.js** (Recommended for Distributed State)
+### Option 2: Gun.js (Historical)
 **Pros:**
 - Built-in CRDT state synchronization
 - P2P networking built-in
 - Decentralized graph database
 - Works seamlessly in browsers
 - No central server required (can use public relay peers)
-- Perfect match for distributed state management
 
 **Cons:**
 - Different paradigm (graph database)
-- May be overkill if not using the database features
+- Overkill if not using database features
 
-**Use Case Fit:** Excellent for metaverse/distributed state applications
+**Use Case Fit:** Historical consideration for distributed state
 
 ```javascript
 // Example usage
@@ -56,19 +62,17 @@ gun.get('shared-state').on((data) => console.log(data));
 
 ---
 
-### Option 3: **Trystero** (Recommended for Serverless)
+### Option 3: Trystero (Historical)
 **Pros:**
 - Modern, lightweight
-- Truly serverless (uses BitTorrent DHT, IPFS, or Firebase)
+- Serverless discovery options
 - Simple API
-- No signaling server needed
-- Open source and actively maintained
 
 **Cons:**
 - Newer library (less battle-tested)
-- May have discovery latency
+- Discovery latency in some topologies
 
-**Use Case Fit:** Great for decentralized apps without infrastructure
+**Use Case Fit:** Historical consideration for serverless P2P
 
 ```javascript
 // Example usage
@@ -79,21 +83,20 @@ room.onPeerJoin(peerId => console.log(`${peerId} joined`))
 
 ---
 
-### Option 4: **Simple-peer + Custom Signaling**
+### Option 4: Simple-peer + Custom Signaling (Historical)
 **Pros:**
 - Lightweight WebRTC wrapper
 - Full control over signaling
 - Well-tested
 
 **Cons:**
-- Need to build signaling infrastructure
-- More manual work
+- Requires custom signaling infrastructure
 
-**Use Case Fit:** When you need complete control
+**Use Case Fit:** When full signaling control is required
 
 ---
 
-### Option 5: **Modern libp2p (js-libp2p 1.x+)**
+### Option 5: Modern libp2p (js-libp2p 1.x+)
 **Pros:**
 - Most powerful and flexible
 - Used by IPFS
@@ -103,80 +106,11 @@ room.onPeerJoin(peerId => console.log(`${peerId} joined`))
 - Complex setup for browsers
 - Larger bundle size
 - Steep learning curve
-- Requires WebRTC-star or similar relay for browser connections
 
-**Use Case Fit:** When you need maximum flexibility and power
-
----
-
-## Recommended Path Forward
-
-### For PeerCompute Project:
-
-**Hybrid Approach - Gun.js for State + PeerJS for Compute:**
-
-1. **NetworkManager & StateManager**: Use **Gun.js**
-   - Built-in P2P networking
-   - Built-in CRDT synchronization
-   - Perfect for shared state management
-   - No signaling server needed (uses public relays)
-
-2. **ComputeManager**: Keep direct WebRTC via **PeerJS** or **Simple-peer**
-   - Direct peer connections for compute task distribution
-   - Lower latency for compute workloads
-
-3. **Benefits:**
-   - Simpler implementation
-   - Better browser support
-   - Faster development
-   - Smaller bundle size
-   - Less infrastructure needed
-
-### Alternative: All-in-One with Gun.js
-
-Use Gun.js for everything:
-- State synchronization (built-in)
-- P2P networking (built-in)
-- Compute task distribution (via Gun's messaging)
-- Storage (IndexedDB/localStorage)
-
-This is the simplest path and matches your architecture well.
+**Use Case Fit:** This is the active direction (see Current Direction above)
 
 ---
 
-## Proposed New Dependencies
-
-### Gun.js Approach:
-```json
-{
-  "gun": "^0.2020.1240",
-  "gun/sea": "For encryption if needed"
-}
-```
-
-### PeerJS Approach:
-```json
-{
-  "peerjs": "^1.5.4"
-}
-```
-
-### Trystero Approach:
-```json
-{
-  "trystero": "^0.20.0"
-}
-```
-
----
-
-## Next Steps
-
-1. Choose which approach to pursue
-2. Remove deprecated libp2p packages
-3. Install chosen P2P library
-4. Update NetworkManager architecture
-5. Update StateManager to use chosen solution
-6. Create simple proof-of-concept
-
-**Recommendation: Start with Gun.js** - It matches your architecture perfectly with built-in state sync and P2P networking.
+## Archived Recommendations (Superseded)
+- Prior suggestions to pivot to Gun.js or PeerJS are superseded by the libp2p-first decision.
+- Any dependency changes or proofs-of-concept proposed here should be treated as historical notes only.

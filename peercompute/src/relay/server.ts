@@ -1,5 +1,7 @@
 /**
- * libp2p Circuit Relay v2 Server (Deno Version)
+ * libp2p Circuit Relay v2 Server (Legacy Deno Version)
+ *
+ * Node.js is the supported runtime for the relay. Use src/relay/server.js.
  * 
  * This server acts as a relay to enable browser-to-browser P2P connections.
  * Browsers cannot listen for incoming connections, so they use this relay
@@ -14,7 +16,7 @@ import { yamux } from "npm:@libp2p/yamux@^8.0.1";
 import { circuitRelayServer } from "npm:@libp2p/circuit-relay-v2@^4.1.2";
 import { identify } from "npm:@libp2p/identify@^4.0.9";
 import { ping } from "npm:@libp2p/ping";
-import { gossipsub } from "npm:@chainsafe/libp2p-gossipsub@^14.1.2";
+import { floodsub } from "npm:@libp2p/floodsub@^11.0.10";
 
 const WEBSOCKET_PORT = 9092;
 const TCP_PORT = 9093;
@@ -47,10 +49,7 @@ const node = await createLibp2p({
   services: {
     identify: identify(),
     ping: ping(),
-    pubsub: gossipsub({
-      emitSelf: false,
-      allowPublishToZeroPeers: true
-    }),
+    pubsub: floodsub(),
     relay: circuitRelayServer({
       reservations: {
         maxReservations: 100,

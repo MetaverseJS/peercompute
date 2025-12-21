@@ -220,7 +220,7 @@
       
       const status = node.getStatus();
       const infoDiv = document.getElementById('nodeInfo');
-      const peerServer = node?.config?.peerServer;
+      const bootstrapPeers = node?.config?.bootstrapPeers || [];
       const announceAddrs = node?.getNetworkManager()?.getConnectedPeers?.()?.map(p => p.peerId) || [];
 
       infoDiv.innerHTML = `
@@ -228,7 +228,7 @@
 <strong>Initialized:</strong> ${status.isInitialized}<br>
 <strong>Started:</strong> ${status.isStarted}<br>
 <strong>Topology:</strong> ${status.topology}<br>
-<strong>PeerJS server:</strong> ${peerServer ? `${peerServer.host}:${peerServer.port}${peerServer.path || '/peerjs'}` : 'default (localhost:9000/peerjs)'}<br>
+<strong>Bootstrap peers:</strong> ${bootstrapPeers.length ? bootstrapPeers.join(', ') : 'None'}<br>
 <strong>Peers:</strong> ${announceAddrs.length > 0 ? announceAddrs.join(', ') : 'None'}<br>
 <br>
 <strong>Network:</strong><br>
@@ -260,8 +260,8 @@
         }
         const NodeKernel = window.NodeKernel;
 
-        // Try to load PeerJS server config if available (prefer served file from /public)
-        let peerServer = null;
+        // Try to load relay config if available (prefer served file from /public)
+        let bootstrapPeers = null;
         try {
           const tryFetch = async (path) => {
             try {
@@ -274,28 +274,28 @@
           };
 
           // Try multiple locations so it works with dev server:
-          // - /public/peer-config.json is served at /peer-config.json
+          // - /public/relay-config.json is served at /relay-config.json
           // - fallback to dotfile at root (may not be served by dev server)
           const cfg =
-            (await tryFetch('/peer-config.json')) ||
-            (await tryFetch('peer-config.json')) ||
-            (await tryFetch('/.peer-config.json')) ||
-            (await tryFetch('.peer-config.json'));
+            (await tryFetch('/relay-config.json')) ||
+            (await tryFetch('relay-config.json')) ||
+            (await tryFetch('/.relay-config.json')) ||
+            (await tryFetch('.relay-config.json'));
 
-          if (cfg && cfg.host) {
-            peerServer = cfg;
-            log(`Using PeerJS server: ws${cfg.secure ? 's' : ''}://${cfg.host}:${cfg.port}${cfg.path || '/peerjs'}`, 'info');
+          if (cfg && Array.isArray(cfg.bootstrapPeers) && cfg.bootstrapPeers.length > 0) {
+            bootstrapPeers = cfg.bootstrapPeers;
+            log(`Using relay bootstrap peers: ${bootstrapPeers.join(', ')}`, 'info');
           } else {
-            log('No peer config found (tried peer-config.json). Using PeerJS defaults (localhost:9000/peerjs)', 'warning');
+            log('No relay peers configured (tried relay-config.json). Bootstrapping disabled.', 'warning');
           }
         } catch (e) {
-          log(`Error loading peer config: ${e.message}`, 'warning');
+          log(`Error loading relay config: ${e.message}`, 'warning');
         }
         
         node = new NodeKernel({
           topology: 'distributed',
           enablePersistence: true,
-          peerServer
+          bootstrapPeers
         });
         
         // Expose to window for testing

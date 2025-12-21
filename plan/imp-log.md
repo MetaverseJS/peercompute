@@ -1,5 +1,66 @@
 # Implementation Log - PeerCompute P2P Connectivity Issue
 
+Note: entries from the temporary PeerJS branch (2025-11-21 later updates through 2025-11-23) are historical only; the current branch is libp2p-first.
+
+## Date: 2025-12-21 (relay + floodsub + time anchor)
+
+### Changes
+- Switched pubsub from gossipsub to floodsub in `NetworkManager` and the Node.js relay (`src/relay/server.js`); updated the legacy Deno relay to match.
+- Added `@libp2p/peer-id` dependency required by NetworkManager after refactors.
+- Enabled WSS relay flows with `RELAY_PUBLIC_HOST` + `RELAY_LISTEN_HOST` in dev scripts; relay now announces LAN/WSS addresses for browsers.
+- Observed gossipsub failures: no pubsub peers/subscribers and no announce addrs even after directPeers/floodPublish tuning; mixed-content WS dials blocked under HTTPS.
+- Added cb time sync anchoring: the first peer to join becomes the time anchor (stored in `TIME_ANCHOR_KEY`), broadcasts time/multiplier, and late joiners adopt it.
+- Hardened time anchor enforcement so later peers cannot override the first anchor; anchor reasserts if needed.
+
+### Results
+- Relay logs show discovery + presence + state messages over floodsub.
+- Browser peers connect reliably and can see each other; cb time and state sync align.
+
+### Tests
+- Manual validation with `start-dev.sh` and two browser peers.
+- Playwright still blocked in sandbox (Chromium EPERM/report port bind).
+
+## Date: 2025-12-21
+
+### Changes
+- Aligned plan/log docs to the libp2p-first direction; marked CRDT/alternatives docs as legacy.
+- Updated Playwright webServer to use `start-dev.sh` with `HTTPS=0` for relay + config in tests.
+- Added `DEV_HOST=127.0.0.1` for Playwright to avoid EPERM bind on 0.0.0.0.
+- Added `USE_EXISTING_SERVER` support to reuse a running dev server in Playwright.
+- Made `start-dev.sh` respect HTTPS overrides so tests can run on HTTP.
+- Set `SKIP_RELAY=1` for `test:auto` so Playwright reuses the relay started by the script.
+- Extended relay address polling in `start-relay-and-test.sh` for more reliable config generation.
+- Reuse running relay log to generate `relay-config.json` when the PID already exists.
+- Fixed relay address logging to avoid double `/p2p/` segments in bootstrap multiaddrs.
+- Added relay listen/public host overrides (`RELAY_LISTEN_HOST`, `RELAY_PUBLIC_HOST`) for LAN testing.
+- Added `@libp2p/ping` dependency for NetworkManager/relay.
+- Normalized bootstrap multiaddrs and parsed them before dialing to avoid `getComponents` errors.
+- Updated gossipsub config to allow publishing when zero peers are subscribed.
+- Prevented `start-relay-and-test.sh` from stopping relays it did not start and added dev-server reuse detection.
+- Switched relay address polling loops to `seq` so running scripts via `sh` still waits correctly.
+- Added browser listen addrs (`/p2p-circuit`, `/webrtc`) and a local-dial override in NetworkManager to match the libp2p browser example.
+
+### Results
+- Dev/test flow starts relay + dev server with `relay-config.json` (pending verification).
+- Build no longer fails on missing `@libp2p/ping` once installed.
+- Playwright connectivity test failed with `multiaddrs[0].getComponents is not a function` and 0 connections; relay config contained a double `/p2p/` segment. Fixed relay address logging to avoid duplicate segments.
+
+### Tests
+- `npm run test:auto` (host) ran 4 tests; 1 failed (connectivity), 3 passed.
+- `npm run test:auto` with `start-dev.sh` already running failed with EADDRINUSE on 127.0.0.1:5173.
+- `npm run test:auto` (sandbox) failed: relay server could not bind to 127.0.0.1 (EPERM) and webpack-dev-server could not bind to 127.0.0.1:5173 (EPERM).
+
+## Date: 2025-11-26
+
+### Changes
+- Pivoted back to libp2p: replaced PeerJS NetworkManager with libp2p pubsub/presence transport.
+- Updated relay config flow (`relay-config.json`) and dev/test scripts to start the libp2p relay.
+- Refreshed docs/tests to remove PeerJS references.
+
+### Results
+- Libp2p stack is the single supported networking path; PeerJS is no longer used.
+- Note: Older log entries below reference PeerJS; those are historical and no longer reflect the current architecture.
+
 ## Date: 2025-11-20
 
 ### Issue
@@ -54,7 +115,7 @@ Files modified:
 - 2 of 3 tests passing (status metrics, lifecycle)
 - 1 test failing: "should initialize two nodes and test connectivity" - connections drop before 10-second mark
 
-###Recommendations
+### Recommendations
 1. Study lib p2p v2 documentation for proper stream API usage
 2. Consider using it-pipe and it-length-prefixed for proper stream handling
 3. May need to implement circuit relay reservation to maintain relay connections

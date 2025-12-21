@@ -45,20 +45,20 @@ See `peercompute/README.md` for detailed documentation.
 
 ### Using PeerCompute for Multiplayer Games
 
-The current multiplayer stack uses PeerJS for signaling and data + Yjs for state sync, wrapped by `NodeKernel`:
+The current multiplayer stack uses libp2p (relay + pubsub + presence) with Yjs state sync, wrapped by `NodeKernel`:
 
 1) **Start the dev stack**  
    ```bash
    cd peercompute
    ./start-dev.sh
    ```  
-   - Spins up the PeerJS server on `ws://localhost:9000/peerjs` and webpack dev server on `http://localhost:5173`.
-   - `peer-config.json` (in `public/`) is auto-served; games fetch it.
+   - Spins up the libp2p relay server and webpack dev server on `http://localhost:5173`.
+   - `relay-config.json` (in `public/`) is auto-served; games fetch it.
    - **HTTPS / WebXR**: for VR on LAN you need HTTPS + WSS. Use a local cert (e.g., `mkcert`) and run:  
      ```bash
      HTTPS=1 SSL_CERT=/path/to/cert.pem SSL_KEY=/path/to/key.pem ./start-dev.sh
      ```  
-     This enables `https://localhost:5173` and `wss://localhost:9000/peerjs` with your cert.
+     This enables `https://localhost:5173`; proxy the relay server behind WSS if your clients require secure WebSocket transport.
    - **mkcert quickstart (self-signed but trusted locally)**:  
      ```bash
      sudo apt-get install libnss3-tools         # so mkcert can trust Chrome/Chromium profiles
@@ -71,9 +71,9 @@ The current multiplayer stack uses PeerJS for signaling and data + Yjs for state
 
 2) **Initialize networking in your game** (see `games/sw2.html` or `games/cb.html`):  
    ```js
-   const cfg = await fetch('/peer-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
+   const cfg = await fetch('/relay-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
    const node = new window.NodeKernel({
-     peerServer: cfg || { host: 'localhost', port: 9000, path: '/peerjs', secure: false },
+     bootstrapPeers: cfg?.bootstrapPeers || [],
      enablePersistence: false,
      gameId: 'my-game',    // scope connectivity to a game
      roomId: 'lobby-1'     // scope to a room/instance
@@ -107,7 +107,7 @@ The current multiplayer stack uses PeerJS for signaling and data + Yjs for state
    ```
 
 5) **Broadcast transient events** (e.g., attacks) with state keys like `attack-<peerId>` and observe similarly.  
-   Filtering by `gameId`/`roomId` is handled in the NetworkManager handshake; use consistent IDs across clients to stay in the same match.
+   Filtering by `gameId`/`roomId` is handled by NetworkManager scope filters; use consistent IDs across clients to stay in the same match.
 
 6) **Test pages**  
    - `http://localhost:5173/test-p2p.html` for quick connectivity checks.  

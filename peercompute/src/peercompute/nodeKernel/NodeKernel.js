@@ -31,7 +31,7 @@ export class NodeKernel {
       enablePersistence: config.enablePersistence !== false,
       disableStateNetworkProvider: config.disableStateNetworkProvider || false,
       disableStateBroadcast: config.disableStateBroadcast || false,
-      peerServer: config.peerServer || null,
+      bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
       roomId: config.roomId || 'default-room',
       stateTopic: config.stateTopic || 'peercompute-state',
@@ -69,7 +69,7 @@ export class NodeKernel {
       // 1. Initialize NetworkManager first
       this.networkManager = new NetworkManager({
         topology: this.config.topology,
-        peerServer: this.config.peerServer || undefined,
+        bootstrapPeers: this.config.bootstrapPeers,
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,

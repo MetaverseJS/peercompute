@@ -1,6 +1,9 @@
-# libp2p Circuit Relay v2 Server
+# libp2p Circuit Relay v2 Server (Node.js)
 
 This is a local relay server for PeerCompute that enables browser-to-browser P2P connections.
+
+**Canonical runtime:** Node.js via `src/relay/server.js`.
+The Deno relay (`src/relay/server.ts`) is legacy and not used by the dev/test scripts.
 
 ## Why Do We Need a Relay Server?
 
@@ -26,15 +29,13 @@ npm run relay
 
 The server will start and display:
 - Peer ID
-- WebSocket address for browsers (port 9090)
-- TCP address for Node.js clients (port 9091)
+- WebSocket address for browsers (WS/WSS)
 
 ### 2. Copy the WebSocket Address
 
 Look for output like:
 ```
-🌐 Browser clients should use:
-  /ip4/127.0.0.1/tcp/9090/ws/p2p/12D3KooW...
+Relay Address: /ip4/127.0.0.1/tcp/12345/ws/p2p/12D3KooW...
 ```
 
 ### 3. Use in Your Application
@@ -54,10 +55,10 @@ const node = new NodeKernel({
 
 ### Automated Test with Relay
 
-The `test:with-relay` script automatically starts the relay and runs tests:
+The `test:auto` script automatically starts the relay and runs tests:
 
 ```bash
-npm run test:with-relay
+npm run test:auto
 ```
 
 This will:
@@ -85,31 +86,20 @@ npm run dev
 
 ## Configuration
 
-The relay server is configured in `relay-server.js`:
+The relay server is configured in `src/relay/server.js`. It binds to a random port (`/tcp/0`) and prints the selected WebSocket multiaddr on startup.
 
-### Ports
-- **WebSocket**: 9090 (for browsers)
-- **TCP**: 9091 (for Node.js)
+### Environment Variables
 
-### Limits
-- **Max Reservations**: 100 simultaneous clients
-- **Reservation TTL**: 1 hour
-- **Max Data per Client**: 50 MB
-- **Max Connection Time**: 10 minutes
+- `RELAY_PUBLIC_HOST`: Public IP/hostname to announce (e.g. `192.168.1.174`).
+- `RELAY_LISTEN_HOST`: Interface to bind (defaults to `127.0.0.1`, or `0.0.0.0` when `RELAY_PUBLIC_HOST` is set).
+- `RELAY_SSL_CERT` / `RELAY_SSL_KEY`: TLS certificate and key for WSS (falls back to `SSL_CERT` / `SSL_KEY`).
 
 ### Modify Configuration
 
-Edit `relay-server.js` to change:
-```javascript
-const WEBSOCKET_PORT = 9090;  // Change WebSocket port
-const TCP_PORT = 9091;         // Change TCP port
-
-reservations: {
-  maxReservations: 100,              // Max simultaneous clients
-  reservationTtl: 60 * 60 * 1000,    // How long reservations last
-  defaultDataLimit: BigInt(50 * 1024 * 1024)  // Max data per connection
-}
-```
+Edit `src/relay/server.js` to adjust:
+- transport options
+- relay reservation limits
+- pubsub implementation
 
 ## Production Deployment
 
@@ -119,7 +109,7 @@ For production, you'll want to:
 
 1. **Use a process manager** (PM2, systemd, etc.):
 ```bash
-pm2 start relay-server.js --name peercompute-relay
+pm2 start src/relay/server.js --name peercompute-relay
 ```
 
 2. **Use a reverse proxy** (nginx, Caddy) for SSL:
@@ -163,13 +153,9 @@ npm run relay | tee relay.log
 
 ### Issue: "Address already in use"
 
-Another process is using port 9090 or 9091.
+Another process is using the chosen port.
 
-**Solution**: Change ports in `relay-server.js` or kill the conflicting process:
-```bash
-lsof -ti:9090 | xargs kill
-lsof -ti:9091 | xargs kill
-```
+**Solution**: Restart the relay to pick a new port, or change the listen address in `src/relay/server.js`.
 
 ### Issue: Browser can't connect to relay
 
@@ -195,6 +181,16 @@ curl http://localhost:9090
 **Verify both nodes are connected**:
 - Check relay console for "Peer connected" messages
 - Should show 2+ active connections
+
+## Relay Config for Browsers
+
+The dev/test scripts write a `relay-config.json` file with bootstrap peers:
+
+```json
+{ \"bootstrapPeers\": [\"/ip4/127.0.0.1/tcp/9090/ws/p2p/12D3KooW...\"] }
+```
+
+Browser clients should load this file and pass it into `NodeKernel` as `bootstrapPeers`.
 
 ## Advanced Usage
 
@@ -222,13 +218,13 @@ pubsubPeerDiscovery({
 
 ### Node.js Client Example
 
-Node.js clients can use the TCP address for better performance:
+Node.js clients can use the same WebSocket multiaddr shown by the relay:
 
 ```javascript
 const node = new NodeKernel({
   topology: 'distributed',
   bootstrapPeers: [
-    '/ip4/127.0.0.1/tcp/9091/p2p/12D3KooW...'  // TCP for Node.js
+    '/ip4/127.0.0.1/tcp/12345/ws/p2p/12D3KooW...'
   ]
 });
 ```

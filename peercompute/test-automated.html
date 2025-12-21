@@ -278,8 +278,8 @@
       }
       const NodeKernel = window.NodeKernel;
 
-      // Try to load PeerJS server config
-      let peerServer = null;
+      // Try to load relay config
+      let bootstrapPeers = null;
       try {
         const tryFetch = async (path) => {
           try {
@@ -289,16 +289,16 @@
           } catch { return null; }
         };
         
-        const cfg = (await tryFetch('/peer-config.json')) || 
-                   (await tryFetch('peer-config.json')) ||
-                   (await tryFetch('/.peer-config.json')) ||
-                   (await tryFetch('.peer-config.json'));
+        const cfg = (await tryFetch('/relay-config.json')) || 
+                   (await tryFetch('relay-config.json')) ||
+                   (await tryFetch('/.relay-config.json')) ||
+                   (await tryFetch('.relay-config.json'));
                    
-        if (cfg && cfg.host) {
-          peerServer = cfg;
-          log(nodeId, `Using PeerJS server: ws${cfg.secure ? 's' : ''}://${cfg.host}:${cfg.port}${cfg.path || '/peerjs'}`, 'info');
+        if (cfg && Array.isArray(cfg.bootstrapPeers)) {
+          bootstrapPeers = cfg.bootstrapPeers;
+          log(nodeId, `Using relay bootstrap peers: ${bootstrapPeers.join(', ')}`, 'info');
         } else {
-          log(nodeId, 'No peer config found. Using PeerJS defaults (localhost:9000/peerjs).', 'warning');
+          log(nodeId, 'No relay config found. Bootstrapping disabled.', 'warning');
         }
       } catch (e) {
         log(nodeId, `Config error: ${e.message}`, 'warning');
@@ -307,7 +307,7 @@
       const node = new NodeKernel({
         topology: 'distributed',
         enablePersistence: true,
-        peerServer
+        bootstrapPeers
       });
       
       await node.initialize();

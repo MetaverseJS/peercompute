@@ -88,7 +88,7 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     console.log(`Node 1 found Node 2: ${node1FoundNode2}`);
     console.log(`Node 2 found Node 1: ${node2FoundNode1}`);
     
-    // With pubsub peer discovery, nodes should eventually find each other
+    // With libp2p presence signaling, nodes should eventually find each other
     // If they don't, this indicates an issue with the discovery mechanism
     if (!node1FoundNode2 || !node2FoundNode1) {
       console.log('⚠️  Peer discovery via pubsub did not complete');

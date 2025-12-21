@@ -25,7 +25,7 @@ const httpsOptions = useHttps && hasCert ? {
 } : undefined;
 
 const publicDir = path.resolve(__dirname, 'public');
-const peerConfigPath = path.resolve(__dirname, '../../../peercompute/public/peer-config.json');
+const relayConfigPath = path.resolve(__dirname, '../../../peercompute/public/relay-config.json');
 
 export default {
   mode: 'development',
@@ -74,7 +74,7 @@ export default {
     new CopyWebpackPlugin({
       patterns: [
         { from: publicDir, to: '', noErrorOnMissing: true },
-        { from: peerConfigPath, to: 'peer-config.json', noErrorOnMissing: true }
+        { from: relayConfigPath, to: 'relay-config.json', noErrorOnMissing: true }
       ],
     }),
     new webpack.ProvidePlugin({
