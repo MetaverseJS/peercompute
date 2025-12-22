@@ -25,6 +25,13 @@ const PEER_DIAL_THROTTLE_MS = 5000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const DEBUG_P2P = typeof __PC_DEBUG__ !== 'undefined' && __PC_DEBUG__ === true;
+const debugLog = (...args) => {
+  if (DEBUG_P2P) console.log(...args);
+};
+const debugWarn = (...args) => {
+  if (DEBUG_P2P) console.warn(...args);
+};
 
 const isLocalDialAddr = (addr) => {
   if (typeof addr !== 'string') return false;
@@ -58,7 +65,7 @@ const toPeerMultiaddr = (addr) => {
   try {
     return multiaddr(addr);
   } catch (err) {
-    console.warn('[NetworkManager] Invalid peer multiaddr', addr, err?.message || err);
+    debugWarn('[NetworkManager] Invalid peer multiaddr', addr, err?.message || err);
     return null;
   }
 };
@@ -71,7 +78,7 @@ const toMultiaddr = (addr) => {
   try {
     return multiaddr(normalized);
   } catch (err) {
-    console.warn('[NetworkManager] Invalid bootstrap multiaddr', normalized, err?.message || err);
+    debugWarn('[NetworkManager] Invalid bootstrap multiaddr', normalized, err?.message || err);
     return null;
   }
 };
@@ -266,6 +273,11 @@ export class NetworkManager {
 
   _wireLibp2pEvents() {
     if (!this.libp2p) return;
+    const allowedTopics = new Set([
+      this.config.pubsubTopic,
+      this.config.directTopic,
+      this.config.presenceTopic
+    ]);
 
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const peerId = evt.detail?.id?.toString?.() || evt.detail?.id?.toString?.();
@@ -293,12 +305,13 @@ export class NetworkManager {
     this.libp2p.services.pubsub.addEventListener('message', (evt) => {
       const { topic, data } = evt.detail || {};
       if (!topic || !data) return;
+      if (!allowedTopics.has(topic)) return;
 
       let parsed = null;
       try {
         parsed = JSON.parse(decoder.decode(data));
       } catch (err) {
-        console.warn('[NetworkManager] Failed to parse pubsub payload', err);
+        debugWarn('[NetworkManager] Failed to parse pubsub payload', err);
         return;
       }
 
@@ -442,7 +455,7 @@ export class NetworkManager {
       const last = this.publishErrorAt.get(topic) || 0;
       if (now - last > 5000) {
         this.publishErrorAt.set(topic, now);
-        console.warn('[NetworkManager] Publish failed', topic, err?.message || err);
+        debugWarn('[NetworkManager] Publish failed', topic, err?.message || err);
       }
     }
   }
@@ -468,9 +481,9 @@ export class NetworkManager {
             }
           }
           await this.libp2p.dial(addr);
-          console.log('[NetworkManager] Dialed bootstrap peer', addr.toString());
+          debugLog('[NetworkManager] Dialed bootstrap peer', addr.toString());
         } catch (err) {
-          console.warn('[NetworkManager] Failed to dial bootstrap peer', addr.toString(), err?.message || err);
+          debugWarn('[NetworkManager] Failed to dial bootstrap peer', addr.toString(), err?.message || err);
         }
       })
     );
@@ -492,10 +505,10 @@ export class NetworkManager {
       for (const addr of maybeDialTargets) {
         try {
           await this.libp2p.dial(addr);
-          console.log('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
+          debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
           return;
         } catch (err) {
-          console.warn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
+          debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
         }
       }
     }
@@ -507,9 +520,9 @@ export class NetworkManager {
     }
     try {
       await this.libp2p.dial(target);
-      console.log('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
+      debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
     } catch (err) {
-      console.warn('[NetworkManager] Failed to dial discovered peer', peerId, err?.message || err);
+      debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, err?.message || err);
     }
   }
 
@@ -525,20 +538,21 @@ export class NetworkManager {
 
   _logPubsubStatus(label) {
     if (!this.libp2p?.services?.pubsub) return;
+    if (!DEBUG_P2P) return;
     const pubsub = this.libp2p.services.pubsub;
     const peers = typeof pubsub.getPeers === 'function' ? pubsub.getPeers() : [];
     const presencePeers = typeof pubsub.getSubscribers === 'function'
       ? pubsub.getSubscribers(this.config.presenceTopic)
       : [];
     if (Array.isArray(peers) && peers.length === 0) {
-      console.warn(`[NetworkManager] Pubsub has no peers (${label})`);
+      debugWarn(`[NetworkManager] Pubsub has no peers (${label})`);
     }
     if (Array.isArray(presencePeers) && presencePeers.length === 0) {
-      console.warn(`[NetworkManager] No subscribers on presence topic (${label})`);
+      debugWarn(`[NetworkManager] No subscribers on presence topic (${label})`);
     }
     const announceAddrs = this._getAnnounceAddrs();
     if (announceAddrs.length === 0) {
-      console.warn(`[NetworkManager] No announce addrs available (${label})`);
+      debugWarn(`[NetworkManager] No announce addrs available (${label})`);
     }
   }
 

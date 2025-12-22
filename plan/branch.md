@@ -1,6 +1,6 @@
 # Plan
 
-Finalize the libp2p-first stack by making the dev/test workflow reliable, documenting the current libp2p architecture, and clearing legacy PeerJS/CRDT detours. Keep NodeKernel/StateManager APIs stable and focus on relay-based discovery + pubsub messaging.
+Finalize the libp2p-first stack by making the dev/test workflow reliable, documenting the current libp2p architecture, and clearing legacy PeerJS/CRDT detours. Keep NodeKernel/StateManager APIs stable and focus on relay-based discovery + pubsub messaging. See `plan/netman.md` for the NetworkManager scheduler spec + plan.
 
 ## Requirements
 - libp2p-only networking (relay bootstrap + pubsub discovery + floodsub messaging).
@@ -21,6 +21,7 @@ Finalize the libp2p-first stack by making the dev/test workflow reliable, docume
 - `peercompute/start-dev.sh`
 - `peercompute/start-relay-and-test.sh`
 - `peercompute/package.json`
+- `plan/netman.md`
 - `plan/*.md`
 
 ## Data model / API changes
@@ -37,6 +38,7 @@ Finalize the libp2p-first stack by making the dev/test workflow reliable, docume
 [x] Restart relay and verify bootstrap multiaddr is valid (single `/p2p/<peerId>` segment).
 [x] Switch pubsub to floodsub (client + relay) to match the working browser example.
 [x] Add first-joiner time anchor logic for cb time sync.
+[x] Draft NetworkManager scheduler spec + plan (`plan/netman.md`).
 [ ] Re-run Playwright suite and record results in `plan/imp-log.md` (blocked by sandbox EPERM).
 
 ## Testing and validation

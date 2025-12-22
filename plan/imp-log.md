@@ -1,65 +1,8 @@
 # Implementation Log - PeerCompute P2P Connectivity Issue
 
+Ordering: entries are oldest to newest (most recent last).
+
 Note: entries from the temporary PeerJS branch (2025-11-21 later updates through 2025-11-23) are historical only; the current branch is libp2p-first.
-
-## Date: 2025-12-21 (relay + floodsub + time anchor)
-
-### Changes
-- Switched pubsub from gossipsub to floodsub in `NetworkManager` and the Node.js relay (`src/relay/server.js`); updated the legacy Deno relay to match.
-- Added `@libp2p/peer-id` dependency required by NetworkManager after refactors.
-- Enabled WSS relay flows with `RELAY_PUBLIC_HOST` + `RELAY_LISTEN_HOST` in dev scripts; relay now announces LAN/WSS addresses for browsers.
-- Observed gossipsub failures: no pubsub peers/subscribers and no announce addrs even after directPeers/floodPublish tuning; mixed-content WS dials blocked under HTTPS.
-- Added cb time sync anchoring: the first peer to join becomes the time anchor (stored in `TIME_ANCHOR_KEY`), broadcasts time/multiplier, and late joiners adopt it.
-- Hardened time anchor enforcement so later peers cannot override the first anchor; anchor reasserts if needed.
-
-### Results
-- Relay logs show discovery + presence + state messages over floodsub.
-- Browser peers connect reliably and can see each other; cb time and state sync align.
-
-### Tests
-- Manual validation with `start-dev.sh` and two browser peers.
-- Playwright still blocked in sandbox (Chromium EPERM/report port bind).
-
-## Date: 2025-12-21
-
-### Changes
-- Aligned plan/log docs to the libp2p-first direction; marked CRDT/alternatives docs as legacy.
-- Updated Playwright webServer to use `start-dev.sh` with `HTTPS=0` for relay + config in tests.
-- Added `DEV_HOST=127.0.0.1` for Playwright to avoid EPERM bind on 0.0.0.0.
-- Added `USE_EXISTING_SERVER` support to reuse a running dev server in Playwright.
-- Made `start-dev.sh` respect HTTPS overrides so tests can run on HTTP.
-- Set `SKIP_RELAY=1` for `test:auto` so Playwright reuses the relay started by the script.
-- Extended relay address polling in `start-relay-and-test.sh` for more reliable config generation.
-- Reuse running relay log to generate `relay-config.json` when the PID already exists.
-- Fixed relay address logging to avoid double `/p2p/` segments in bootstrap multiaddrs.
-- Added relay listen/public host overrides (`RELAY_LISTEN_HOST`, `RELAY_PUBLIC_HOST`) for LAN testing.
-- Added `@libp2p/ping` dependency for NetworkManager/relay.
-- Normalized bootstrap multiaddrs and parsed them before dialing to avoid `getComponents` errors.
-- Updated gossipsub config to allow publishing when zero peers are subscribed.
-- Prevented `start-relay-and-test.sh` from stopping relays it did not start and added dev-server reuse detection.
-- Switched relay address polling loops to `seq` so running scripts via `sh` still waits correctly.
-- Added browser listen addrs (`/p2p-circuit`, `/webrtc`) and a local-dial override in NetworkManager to match the libp2p browser example.
-
-### Results
-- Dev/test flow starts relay + dev server with `relay-config.json` (pending verification).
-- Build no longer fails on missing `@libp2p/ping` once installed.
-- Playwright connectivity test failed with `multiaddrs[0].getComponents is not a function` and 0 connections; relay config contained a double `/p2p/` segment. Fixed relay address logging to avoid duplicate segments.
-
-### Tests
-- `npm run test:auto` (host) ran 4 tests; 1 failed (connectivity), 3 passed.
-- `npm run test:auto` with `start-dev.sh` already running failed with EADDRINUSE on 127.0.0.1:5173.
-- `npm run test:auto` (sandbox) failed: relay server could not bind to 127.0.0.1 (EPERM) and webpack-dev-server could not bind to 127.0.0.1:5173 (EPERM).
-
-## Date: 2025-11-26
-
-### Changes
-- Pivoted back to libp2p: replaced PeerJS NetworkManager with libp2p pubsub/presence transport.
-- Updated relay config flow (`relay-config.json`) and dev/test scripts to start the libp2p relay.
-- Refreshed docs/tests to remove PeerJS references.
-
-### Results
-- Libp2p stack is the single supported networking path; PeerJS is no longer used.
-- Note: Older log entries below reference PeerJS; those are historical and no longer reflect the current architecture.
 
 ## Date: 2025-11-20
 
@@ -250,3 +193,91 @@ Approximately 3-4 hours of iterative debugging and implementation attempts.
 
 ### Tests
 - Not run (visual check in browser recommended).
+
+## Date: 2025-11-26
+
+### Changes
+- Pivoted back to libp2p: replaced PeerJS NetworkManager with libp2p pubsub/presence transport.
+- Updated relay config flow (`relay-config.json`) and dev/test scripts to start the libp2p relay.
+- Refreshed docs/tests to remove PeerJS references.
+
+### Results
+- Libp2p stack is the single supported networking path; PeerJS is no longer used.
+- Note: Older log entries below reference PeerJS; those are historical and no longer reflect the current architecture.
+
+## Date: 2025-12-21
+
+### Changes
+- Aligned plan/log docs to the libp2p-first direction; marked CRDT/alternatives docs as legacy.
+- Updated Playwright webServer to use `start-dev.sh` with `HTTPS=0` for relay + config in tests.
+- Added `DEV_HOST=127.0.0.1` for Playwright to avoid EPERM bind on 0.0.0.0.
+- Added `USE_EXISTING_SERVER` support to reuse a running dev server in Playwright.
+- Made `start-dev.sh` respect HTTPS overrides so tests can run on HTTP.
+- Set `SKIP_RELAY=1` for `test:auto` so Playwright reuses the relay started by the script.
+- Extended relay address polling in `start-relay-and-test.sh` for more reliable config generation.
+- Reuse running relay log to generate `relay-config.json` when the PID already exists.
+- Fixed relay address logging to avoid double `/p2p/` segments in bootstrap multiaddrs.
+- Added relay listen/public host overrides (`RELAY_LISTEN_HOST`, `RELAY_PUBLIC_HOST`) for LAN testing.
+- Added `@libp2p/ping` dependency for NetworkManager/relay.
+- Normalized bootstrap multiaddrs and parsed them before dialing to avoid `getComponents` errors.
+- Updated gossipsub config to allow publishing when zero peers are subscribed.
+- Prevented `start-relay-and-test.sh` from stopping relays it did not start and added dev-server reuse detection.
+- Switched relay address polling loops to `seq` so running scripts via `sh` still waits correctly.
+- Added browser listen addrs (`/p2p-circuit`, `/webrtc`) and a local-dial override in NetworkManager to match the libp2p browser example.
+
+### Results
+- Dev/test flow starts relay + dev server with `relay-config.json` (pending verification).
+- Build no longer fails on missing `@libp2p/ping` once installed.
+- Playwright connectivity test failed with `multiaddrs[0].getComponents is not a function` and 0 connections; relay config contained a double `/p2p/` segment. Fixed relay address logging to avoid duplicate segments.
+
+### Tests
+- `npm run test:auto` (host) ran 4 tests; 1 failed (connectivity), 3 passed.
+- `npm run test:auto` with `start-dev.sh` already running failed with EADDRINUSE on 127.0.0.1:5173.
+- `npm run test:auto` (sandbox) failed: relay server could not bind to 127.0.0.1 (EPERM) and webpack-dev-server could not bind to 127.0.0.1:5173 (EPERM).
+
+## Date: 2025-12-21 (libp2p relay recovery + floodsub pivot + time anchor)
+
+### Starting symptoms
+- Playwright connectivity test and manual cb sessions showed peers connecting to the relay but never seeing each other.
+- Console warnings: `PublishError.NoPeersSubscribedToTopic`, `multiaddrs[0].getComponents is not a function`, and mixed-content blocks when HTTPS pages tried to dial `ws://`.
+- Relay logs showed peer connects/disconnects but no pubsub messages.
+
+### What we tried (in order)
+1. **Bootstrap multiaddr cleanup**
+   - Fixed double `/p2p/<peerId>` segments in relay address logging.
+   - Normalized bootstrap multiaddrs before dialing; added `toMultiaddr` guards.
+   - Added `@libp2p/ping` and later `@libp2p/peer-id` deps to satisfy the refactored NetworkManager.
+2. **Browser relay dial parity**
+   - Allowed local dial addresses in the browser to match the example.
+   - Ensured browser nodes listen on `/p2p-circuit` and `/webrtc`.
+   - Disabled `abortConnectionOnPingFailure` to avoid relay churn.
+3. **WSS + LAN relay**
+   - Added WSS support to the Node.js relay with `SSL_CERT`/`SSL_KEY`.
+   - Added `RELAY_PUBLIC_HOST`/`RELAY_LISTEN_HOST` so the relay advertises the LAN IP.
+   - Updated `start-dev.sh`/`start-relay-and-test.sh` to write `relay-config.json` from the relay log.
+   - This fixed mixed-content failures (HTTPS pages can dial WSS).
+4. **Gossipsub tuning**
+   - Set `allowPublishToZeroTopicPeers` and `runOnLimitedConnection`.
+   - Added `directPeers` from bootstrap multiaddrs and enabled flood publishing.
+   - Added pubsub health logs to confirm mesh formation.
+   - Outcome: gossipsub still reported no peers/subscribers and no announce addrs.
+5. **Pivot to floodsub (match working example)**
+   - Switched pubsub to `@libp2p/floodsub` on both client and relay.
+   - Updated the legacy Deno relay to match for completeness.
+   - Relay logs immediately showed discovery + presence + state messages.
+6. **Time sync anchor in cb**
+   - Added a time anchor (`TIME_ANCHOR_KEY`) that selects the first-joiner by `joinedAt`.
+   - Only the anchor can broadcast time updates; others adopt it.
+   - Anchor reasserts if a later peer tries to override.
+
+### What ultimately worked
+- Floodsub + WSS relay resolved pubsub visibility; peers discovered each other and state sync flowed.
+- First-joiner time anchor kept day/season progression consistent across peers.
+
+### Evidence
+- `logs/relay-server-dev.log` now shows discovery + presence + state messages.
+- Browser consoles show peer connections and stable state sync after floodsub switch.
+
+### Tests
+- Manual validation with `RELAY_PUBLIC_HOST=192.168.1.174 sh start-dev.sh` + two cb tabs.
+- Playwright still blocked in sandbox (Chromium EPERM/report port bind).

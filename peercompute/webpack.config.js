@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 
 const useHttps = process.env.HTTPS === '1' || process.env.HTTPS === 'true';
 const devHost = process.env.DEV_HOST || '0.0.0.0';
+const debugP2p = process.env.PEERCOMPUTE_DEBUG === '1' || process.env.PEERCOMPUTE_DEBUG === 'true';
 const httpsOptions = useHttps && process.env.SSL_CERT && process.env.SSL_KEY ? {
   cert: fs.readFileSync(process.env.SSL_CERT),
   key: fs.readFileSync(process.env.SSL_KEY)
@@ -73,6 +74,9 @@ export default {
     new webpack.ProvidePlugin({
       Buffer: ['buffer', 'Buffer'],
       process: 'process',
+    }),
+    new webpack.DefinePlugin({
+      __PC_DEBUG__: JSON.stringify(debugP2p)
     }),
   ],
   module: {

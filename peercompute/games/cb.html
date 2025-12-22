@@ -157,6 +157,15 @@
             } catch (_) {}
             return null;
         };
+        const getNetHzFromQuery = () => {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const raw = params.get('netHz') || params.get('nethz') || params.get('net') || '';
+                const hz = parseInt(raw, 10);
+                if (!Number.isNaN(hz) && hz > 0 && hz <= 60) return hz;
+            } catch (_) {}
+            return 20;
+        };
 
         const CONFIG = {
             DAY_DURATION: 6 * 60 * 1000,
@@ -175,7 +184,7 @@
         const STATE_POS_THRESHOLD = 0.5;
         const STATE_ROT_THRESHOLD = 0.05;
         const STATE_KEEPALIVE_MS = 1500;
-        const STATE_EVENT_MIN_MS = 100; // 10 per second cap
+        const STATE_EVENT_MIN_MS = Math.round(1000 / getNetHzFromQuery()); // default ~20 per second
         const TIME_ANCHOR_KEY = 'time-anchor';
         const RECONNECT_INTERVAL_MS = 4000;
         const RECONNECT_MIN_GAP_MS = 2000;
@@ -448,11 +457,15 @@
                 this.lastShadowUpdate = 0; // Track shadow updates
                 this.lastTimeSyncBroadcast = 0;
                 this.lastStateSend = 0;
+                this.stateDirty = true;
                 this.lastSentState = {
                     position: new THREE.Vector3(),
                     rotationY: 0,
-                    color: this.myColor
+                    color: this.myColor,
+                    torch: false,
+                    spearThrust: 0
                 };
+                this.stateScratch = new THREE.Vector3();
                 this.keys = {};
                 this.currentSeed = CONFIG.WORLD_SEED; // Track current terrain seed
                 this.pointerLocked = false;
@@ -1218,6 +1231,7 @@
             initControls() {
                 window.addEventListener('keydown', (e) => {
                     this.keys[e.code] = true;
+                    this.markStateDirty();
                     if (e.code === 'KeyG') this.godMode = !this.godMode;
                     if (e.code === 'KeyV') {
                         this.wideFOV = !this.wideFOV;
@@ -1239,7 +1253,10 @@
                         this.regenerateTerrain();
                     }
                 });
-                window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                    this.markStateDirty();
+                });
                 // Pointer lock FPS look
                 this.canvas.addEventListener('click', () => {
                     if (!this.isInVR && !this.isMobile) this.canvas.requestPointerLock();
@@ -1251,6 +1268,7 @@
                     if (this.pointerLocked && !this.isInVR) {
                         this.yaw -= e.movementX * 0.002;
                         this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch - e.movementY * 0.002));
+                        this.markStateDirty();
                     }
                 });
                 
@@ -1490,6 +1508,7 @@
                             this.touchControls.lookY = 0;
                         }
                     }
+                    this.markStateDirty();
                 };
                 
                 leftStick.addEventListener('touchstart', handleTouch(leftStick, true));
@@ -1504,8 +1523,16 @@
                 const jumpBtn = document.createElement('button');
                 jumpBtn.textContent = '↑';
                 jumpBtn.style.cssText = 'position:absolute; bottom:220px; left:80px; width:60px; height:60px; font-size:24px; background:rgba(255,255,255,0.3); border:2px solid rgba(255,255,255,0.5); border-radius:50%; color:white; pointer-events:auto; touch-action:none;';
-                jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.keys['Space'] = true; });
-                jumpBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.keys['Space'] = false; });
+                jumpBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.keys['Space'] = true;
+                    this.markStateDirty();
+                });
+                jumpBtn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.keys['Space'] = false;
+                    this.markStateDirty();
+                });
                 document.body.appendChild(jumpBtn);
                 
                 // Hide keyboard controls on mobile
@@ -2744,6 +2771,7 @@
                         this.torch.visible = this.hasTorch;
                         this.torchLight.visible = this.hasTorch;
                         this.vrTorchPressed = true;
+                        this.markStateDirty();
                     } else if (!vrInput.torch) {
                         this.vrTorchPressed = false;
                     }
@@ -2754,10 +2782,12 @@
                     // Smooth turn with right stick
                     const turnSpeed = 1.5 * delta;
                     this.yaw -= vrInput.turnX * turnSpeed;
+                    if (Math.abs(vrInput.turnX) > 0.01) this.markStateDirty();
                 } else if (this.isMobile && (this.touchControls.lookX !== 0 || this.touchControls.lookY !== 0)) {
                     const lookSpeed = 3 * delta;
                     this.yaw -= this.touchControls.lookX * lookSpeed;
                     this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch - this.touchControls.lookY * lookSpeed));
+                    this.markStateDirty();
                 }
                 
                 if (this.godMode) {
@@ -2790,6 +2820,7 @@
                     if (movement.length() > 0) {
                         movement.normalize().multiplyScalar(speed * delta);
                         this.position.add(movement);
+                        this.markStateDirty();
                     }
                 } else {
                     // Normal physics mode - 4x speed
@@ -2810,9 +2841,13 @@
                         } else if (!vrInput.jump) {
                             this.vrJumpPressed = false;
                         }
+                        if (Math.abs(vrInput.moveX) > 0.01 || Math.abs(vrInput.moveY) > 0.01 || vrInput.jump) {
+                            this.markStateDirty();
+                        }
                     } else if (this.isMobile && (this.touchControls.moveX !== 0 || this.touchControls.moveY !== 0)) {
                         this.velocity.x += (-forward.x * this.touchControls.moveY + right.x * this.touchControls.moveX) * normalSpeed * delta;
                         this.velocity.z += (-forward.z * this.touchControls.moveY + right.z * this.touchControls.moveX) * normalSpeed * delta;
+                        this.markStateDirty();
                     } else { // desktop pointer-lock WASD
                         if (this.keys['KeyW']) {
                             this.velocity.x += forward.x * normalSpeed * delta;
@@ -2829,6 +2864,12 @@
                         if (this.keys['KeyA']) {
                             this.velocity.x -= right.x * normalSpeed * delta;
                             this.velocity.z -= right.z * normalSpeed * delta;
+                        }
+                        if (
+                            this.keys['KeyW'] || this.keys['KeyS'] || this.keys['KeyA'] ||
+                            this.keys['KeyD'] || this.keys['Space'] || this.keys['ShiftLeft']
+                        ) {
+                            this.markStateDirty();
                         }
                     }
                     
@@ -3169,23 +3210,34 @@
                 this.timeSystem.applyRemoteSync(candidate);
             }
 
+            markStateDirty() {
+                this.stateDirty = true;
+            }
+
             maybeBroadcastState(force = false) {
                 if (!this.stateManager || !this.myPeerId) return;
                 const now = Date.now();
                 if (!force && (now - this.lastStateSend) < STATE_EVENT_MIN_MS) return;
-                const pos = new THREE.Vector3();
+                const pos = this.stateScratch;
                 this.camera.getWorldPosition(pos);
                 const rotY = this.camera.rotation.y;
                 const moved = pos.distanceTo(this.lastSentState.position) > STATE_POS_THRESHOLD;
                 const rotated = Math.abs(rotY - this.lastSentState.rotationY) > STATE_ROT_THRESHOLD;
                 const colorChanged = this.lastSentState.color !== this.myColor;
                 const keepalive = (now - this.lastStateSend) > STATE_KEEPALIVE_MS;
-                if (!force && !(moved || rotated || colorChanged || keepalive)) return;
+                const torchChanged = this.lastSentState.torch !== this.hasTorch;
+                const spearChanged = this.lastSentState.spearThrust !== this.spearThrustProgress;
+                if (!force && !(moved || rotated || colorChanged || torchChanged || spearChanged || keepalive || this.stateDirty)) {
+                    return;
+                }
 
                 this.lastSentState.position.copy(pos);
                 this.lastSentState.rotationY = rotY;
                 this.lastSentState.color = this.myColor;
+                this.lastSentState.torch = this.hasTorch;
+                this.lastSentState.spearThrust = this.spearThrustProgress;
                 this.lastStateSend = now;
+                this.stateDirty = false;
 
                 const payload = {
                     type: 'state',
@@ -3219,6 +3271,7 @@
                 const now = performance.now();
                 this.attackActiveUntil = now + 350;
                 this.spearThrustProgress = 1;
+                this.markStateDirty();
                 this.performSpearHitTest(true);
             }
 

@@ -3,6 +3,7 @@ HTTPS="${HTTPS:-1}"
 SSL_CERT="${SSL_CERT:-}"
 SSL_KEY="${SSL_KEY:-}"
 SSL_CA="${SSL_CA:-~/.local/share/mkcert/rootCA.pem}"
+PEERCOMPUTE_DEBUG="${PEERCOMPUTE_DEBUG:-0}"
 set -e
 
 echo "🚀 PeerCompute Dev Environment (libp2p)"
@@ -39,6 +40,7 @@ fi
 
 # Export so both peer server and webpack see them
 export SSL_CERT SSL_KEY
+export PEERCOMPUTE_DEBUG
 
 # Export certs for download (Quest/etc.)
 mkdir -p "$EXPORT_CERT_DIR"

@@ -313,6 +313,17 @@
         let playerLabel = null;
         const log = (...args) => console.log('[sw2]', ...args);
         let backgroundHeartbeat = null;
+        const STATE_EVENT_MIN_MS = 33;
+        const STATE_KEEPALIVE_MS = 1500;
+        let lastStateSend = 0;
+        let stateDirty = true;
+        const lastSentState = {
+            position: new THREE.Vector3(),
+            rotation: 0,
+            color: myColor,
+            score,
+            name: myName
+        };
         
         // Scene setup
         const scene = new THREE.Scene();
@@ -656,7 +667,8 @@
                         hitSomeone = true;
                         score++;
                         updateHUD();
-                        publishPlayerState();
+                        markStateDirty();
+                        publishPlayerState(true);
                         
                         const peerMesh = peerMeshes.get(peerId);
                         if (peerMesh) {
@@ -705,6 +717,7 @@
             const key = event.key.toLowerCase();
             if (key in keys) {
                 keys[key] = true;
+                markStateDirty();
             }
         });
         
@@ -712,18 +725,21 @@
             const key = event.key.toLowerCase();
             if (key in keys) {
                 keys[key] = false;
+                markStateDirty();
             }
         });
         
         document.addEventListener('mousemove', (event) => {
             if (document.pointerLockElement === renderer.domElement) {
                 playerRotation -= event.movementX * 0.002;
+                markStateDirty();
             }
         });
         
         document.addEventListener('mousedown', (event) => {
             if (event.button === 0) {
                 mouse.pressed = true;
+                markStateDirty();
                 attack();
             }
         });
@@ -731,11 +747,13 @@
         document.addEventListener('mouseup', (event) => {
             if (event.button === 0) {
                 mouse.pressed = false;
+                markStateDirty();
             }
         });
         
         document.addEventListener('keydown', (event) => {
             if (event.code === 'Space' && canAttack) {
+                markStateDirty();
                 attack();
             }
         });
@@ -748,6 +766,7 @@
         const attackButton = document.getElementById('attack-button');
         attackButton.addEventListener('touchstart', function(e) {
             e.preventDefault();
+            markStateDirty();
             attack();
         });
 
@@ -768,7 +787,8 @@
             const next = nameInput?.value?.trim();
             if (!next) return;
             myName = next;
-            publishPlayerState();
+            markStateDirty();
+            publishPlayerState(true);
             updateHUD();
         }
         if (nameBtn) {
@@ -786,7 +806,8 @@
                 const hex = e.target.value || '#00ff00';
                 myColor = parseInt(hex.replace('#','0x'), 16);
                 applyMeshColor(playerMesh, myColor);
-                publishPlayerState();
+                markStateDirty();
+                publishPlayerState(true);
             });
         }
         document.addEventListener('visibilitychange', () => {
@@ -794,7 +815,8 @@
                 startBackgroundHeartbeat();
             } else {
                 stopBackgroundHeartbeat();
-                publishPlayerState();
+                markStateDirty();
+                publishPlayerState(true);
             }
         });
         
@@ -805,6 +827,7 @@
                 requestAnimationFrame(update);
                 return;
             }
+            let inputActive = false;
             // Simple movement vector based on keys or joystick
             let direction = new THREE.Vector3(0, 0, 0);
             
@@ -814,22 +837,27 @@
                 if (Math.abs(leftValues.x) > 0.1 || Math.abs(leftValues.y) > 0.1) {
                     direction.z += leftValues.y; // Forward/backward (reversed)
                     direction.x += leftValues.x; // Left/right
+                    inputActive = true;
                 }
             } else {
                 // Forward/backward with keyboard
                 if (keys.w || keys.arrowup) {
                     direction.z -= 1;
+                    inputActive = true;
                 }
                 if (keys.s || keys.arrowdown) {
                     direction.z += 1;
+                    inputActive = true;
                 }
                 
                 // Left/right with keyboard
                 if (keys.a) {
                     direction.x -= 1;
+                    inputActive = true;
                 }
                 if (keys.d) {
                     direction.x += 1;
+                    inputActive = true;
                 }
             }
             
@@ -862,14 +890,17 @@
                 const rightValues = rightJoystick.getValues();
                 if (Math.abs(rightValues.x) > 0.1) {
                     playerRotation -= rightValues.x * TURN_SPEED * 2; // More sensitive for mobile
+                    inputActive = true;
                 }
             } else {
                 // Apply rotation from arrow keys
                 if (keys.arrowleft) {
                     playerRotation += TURN_SPEED;
+                    inputActive = true;
                 }
                 if (keys.arrowright) {
                     playerRotation -= TURN_SPEED;
+                    inputActive = true;
                 }
             }
             
@@ -923,6 +954,9 @@
                              playerVelocity.length() > 0.01;
             
             playerSpotlight.visible = spotlightActive;
+            if (inputActive || mouse.pressed) {
+                markStateDirty();
+            }
             
             // Update UI
             updateHUD();
@@ -1133,7 +1167,8 @@
                 }, 5000);
 
                 // Publish our initial state and kick off heartbeats
-                publishPlayerState();
+                markStateDirty();
+                publishPlayerState(true);
                 broadcastPosition(); // will repeat via requestAnimationFrame below
                 window.addEventListener('beforeunload', () => {
                     if (stateManager) {
@@ -1150,28 +1185,51 @@
             // Intentionally empty; state sync handled via Yjs/state-set
         }
 
-        const POSITION_BROADCAST_MS = 250;
-        let lastPositionBroadcast = 0;
+        function markStateDirty() {
+            stateDirty = true;
+        }
 
-        function publishPlayerState() {
+        function maybeBroadcastState(force = false) {
             if (!stateManager || !myPeerId) return;
+            const now = Date.now();
+            if (!force && (now - lastStateSend) < STATE_EVENT_MIN_MS) return;
+
+            const moved = playerPosition.distanceTo(lastSentState.position) > 0.05;
+            const rotated = Math.abs(playerRotation - lastSentState.rotation) > 0.02;
+            const colorChanged = lastSentState.color !== myColor;
+            const scoreChanged = lastSentState.score !== score;
+            const nameChanged = lastSentState.name !== myName;
+            const keepalive = (now - lastStateSend) > STATE_KEEPALIVE_MS;
+
+            if (!force && !(moved || rotated || colorChanged || scoreChanged || nameChanged || keepalive || stateDirty)) {
+                return;
+            }
+
+            lastSentState.position.copy(playerPosition);
+            lastSentState.rotation = playerRotation;
+            lastSentState.color = myColor;
+            lastSentState.score = score;
+            lastSentState.name = myName;
+            lastStateSend = now;
+            stateDirty = false;
+
             const payload = {
                 name: myName,
                 position: { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z },
                 rotation: playerRotation,
-                ts: Date.now(),
+                ts: now,
                 color: myColor,
                 score
             };
             stateManager.writeScoped(gameNamespace, `player-${myPeerId}`, payload);
         }
 
+        function publishPlayerState(force = false) {
+            maybeBroadcastState(force);
+        }
+
         function broadcastPosition() {
-            const now = performance.now();
-            if (now - lastPositionBroadcast >= POSITION_BROADCAST_MS) {
-                lastPositionBroadcast = now;
-                publishPlayerState();
-            }
+            maybeBroadcastState(false);
             requestAnimationFrame(broadcastPosition);
         }
 
@@ -1219,7 +1277,8 @@
             }
             updateGrid();
             score = 0;
-            publishPlayerState();
+            markStateDirty();
+            publishPlayerState(true);
             updateHUD();
         }
 
