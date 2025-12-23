@@ -48,8 +48,8 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     expect(peerId2).toBeTruthy();
     expect(peerId1).not.toBe(peerId2);
 
-    // Wait for connections to establish (to relay servers)
-    await page1.waitForTimeout(15000);
+    // Wait for connections to establish
+    await page1.waitForTimeout(5000);
 
     // Check connections
     const connections1 = await page1.evaluate(() => {
@@ -65,9 +65,8 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     expect(connections1).toBeGreaterThan(0);
     expect(connections2).toBeGreaterThan(0);
 
-    // Check peer discovery via pubsub-peer-discovery
-    // This may take longer as it relies on gossipsub announcements
-    await page1.waitForTimeout(15000);
+    // Allow discovery/handshake to settle
+    await page1.waitForTimeout(5000);
 
     const peers1 = await page1.evaluate(() => {
       const mgr = window.node?.getNetworkManager();
@@ -89,7 +88,7 @@ test.describe('PeerCompute P2P Connectivity Tests', () => {
     console.log(`Node 1 found Node 2: ${node1FoundNode2}`);
     console.log(`Node 2 found Node 1: ${node2FoundNode1}`);
     
-    // With pubsub peer discovery, nodes should eventually find each other
+    // With libp2p presence signaling, nodes should eventually find each other
     // If they don't, this indicates an issue with the discovery mechanism
     if (!node1FoundNode2 || !node2FoundNode1) {
       console.log('⚠️  Peer discovery via pubsub did not complete');

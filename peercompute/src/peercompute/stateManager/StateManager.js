@@ -2,7 +2,7 @@
  * @fileoverview State Manager - Manages shared data state using Yjs CRDT
  * Coordinates read/write access with automatic P2P synchronization
  * 
- * Uses Yjs for conflict-free replicated data types (CRDT) and y-libp2p
+ * Uses Yjs for conflict-free replicated data types (CRDT) and PeerComputeProvider
  * for automatic synchronization across the P2P network.
  */
 
@@ -29,6 +29,9 @@ export class StateManager {
       docName: config.docName || 'peercompute-state',
       topic: config.topic || 'peercompute-state-sync',
       enablePersistence: config.enablePersistence !== false,
+      disableNetworkProvider: config.disableNetworkProvider || false,
+      disableBroadcast: config.disableBroadcast || false,
+      broadcastNamespaces: Array.isArray(config.broadcastNamespaces) ? config.broadcastNamespaces : null,
       ...config
     };
     
@@ -48,6 +51,77 @@ export class StateManager {
     
     // State
     this.isInitialized = false;
+    this.persistenceFailed = false;
+  }
+
+  /**
+   * Internal helper to get or create a namespaced Y.Map within the root state
+   * @param {string} namespace
+   * @returns {Y.Map}
+   * @private
+   */
+  _getNamespaceMap(namespace) {
+    let nsMap = this.state.get(namespace);
+    if (!nsMap) {
+      nsMap = new Y.Map();
+      this.state.set(namespace, nsMap);
+    }
+    return nsMap;
+  }
+
+  /**
+   * Apply a Yjs update received from the network (libp2p pubsub path)
+   * @param {Array|Uint8Array} updateArr
+   */
+  applyRemoteUpdate(updateArr) {
+    try {
+      const normalized = (() => {
+        if (updateArr instanceof Uint8Array) return updateArr;
+        if (Array.isArray(updateArr)) return new Uint8Array(updateArr);
+        if (updateArr && typeof updateArr === 'object') {
+          // Handle plain object maps of index->byte
+          const values = Object.values(updateArr);
+          return new Uint8Array(values);
+        }
+        return new Uint8Array(0);
+      })();
+      if (normalized.byteLength === 0) {
+        console.warn('[StateManager] Remote update was empty, skipping');
+        return;
+      }
+      const update = normalized;
+      Y.applyUpdate(this.ydoc, update, this);
+    } catch (err) {
+      console.error('[StateManager] Failed to apply remote update:', err);
+    }
+  }
+
+  /**
+   * Apply a simple key/value update received outside of Yjs
+   * @param {string} key
+   * @param {any} value
+   */
+  applyStateSet(key, value, namespace) {
+    try {
+      this.ydoc.transact(() => {
+        if (namespace) {
+          const nsMap = this._getNamespaceMap(namespace);
+          if (value === undefined) {
+            nsMap.delete(key);
+          } else {
+            nsMap.set(key, value);
+          }
+        } else {
+          if (value === undefined) {
+            this.state.delete(key);
+          } else {
+            this.state.set(key, value);
+          }
+        }
+      }, 'remote-state-set');
+    } catch (err) {
+      console.error('[StateManager] Failed to apply state-set:', err);
+    }
   }
 
   /**
@@ -78,7 +152,7 @@ export class StateManager {
       }
       
       // Set up PeerComputeProvider synchronization (Custom replacement for y-libp2p)
-      if (this.networkManager) {
+      if (this.networkManager && !this.config.disableNetworkProvider) {
         try {
           this.libp2pProvider = new PeerComputeProvider(
             this.networkManager,
@@ -147,11 +221,11 @@ export class StateManager {
           }
         });
       });
-    });
+    }, { captureTransactions: false });
   }
 
   /**
-   * Fallback P2P sync when y-libp2p is not available
+   * Fallback P2P sync when the network provider is disabled
    * Uses NetworkManager directly
    * @private
    */
@@ -159,7 +233,7 @@ export class StateManager {
     if (!this.libp2pNode) return;
     
     // Listen for state update requests
-    // This is a simplified fallback - y-libp2p is much more efficient
+    // This is a simplified fallback - PeerComputeProvider is more efficient
     console.log('[StateManager] Using fallback P2P sync via NetworkManager');
     
     // TODO: Implement manual CRDT sync protocol via NetworkManager
@@ -193,7 +267,104 @@ export class StateManager {
     
     // Yjs handles the write and automatically syncs
     // No need for queuing or manual conflict resolution
-    this.state.set(key, value);
+    this._safeSetMap(this.state, key, value);
+
+    // Opportunistic direct broadcast for libp2p pubsub path
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { key, value }
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * Write a value in a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   * @param {any} value
+   */
+  writeScoped(namespace, key, value) {
+    const nsMap = this._getNamespaceMap(namespace);
+    this._safeSetMap(nsMap, key, value);
+
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+      if (!this.config.broadcastNamespaces || this.config.broadcastNamespaces.includes(namespace)) {
+        this.networkManager.broadcast({
+          type: 'state-set',
+          data: { namespace, key, value }
+        }).catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Read a value from a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   */
+  readScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return undefined;
+    return nsMap.get(key);
+  }
+
+  /**
+   * Check existence of a key within a namespace without pulling the value.
+   */
+  hasScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return false;
+    return nsMap.has(key);
+  }
+
+  /**
+   * List keys within a namespace
+   * @param {string} namespace
+   * @returns {string[]}
+   */
+  listNamespaceKeys(namespace) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return [];
+    return Array.from(nsMap.keys());
+  }
+
+  /**
+   * Clear all entries in a namespace
+   * @param {string} namespace
+   */
+  clearNamespace(namespace) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return;
+    const keys = Array.from(nsMap.keys());
+    this.ydoc.transact(() => {
+      keys.forEach((k) => nsMap.delete(k));
+    });
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+      keys.forEach((key) => {
+        this.networkManager.broadcast({
+          type: 'state-set',
+          data: { namespace, key, value: undefined }
+        }).catch(() => {});
+      });
+    }
+  }
+
+  /**
+   * Delete a value from a namespaced map
+   * @param {string} namespace
+   * @param {string} key
+   */
+  deleteScoped(namespace, key) {
+    const nsMap = this.state.get(namespace);
+    if (!nsMap) return;
+    nsMap.delete(key);
+    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { namespace, key, value: undefined }
+      }).catch(() => {});
+    }
   }
 
   /**
@@ -220,6 +391,30 @@ export class StateManager {
     }
     
     return this.state.has(key);
+  }
+
+  /**
+   * Safe setter with persistence fallback
+   * @private
+   */
+  _safeSetMap(map, key, value) {
+    if (this.persistenceFailed) {
+      map.set(key, value);
+      return;
+    }
+    try {
+      map.set(key, value);
+    } catch (err) {
+      if (err?.name === 'InvalidStateError') {
+        console.warn('[StateManager] Persistence unavailable, disabling IndexedDB provider', err);
+        this.indexeddbProvider?.destroy?.();
+        this.indexeddbProvider = null;
+        this.persistenceFailed = true;
+        map.set(key, value);
+      } else {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -282,6 +477,23 @@ export class StateManager {
   }
 
   /**
+   * Observe changes within a namespaced map
+   * @param {string} namespace
+   * @param {Function} callback - (value, key) => void
+   * @returns {Function} unsubscribe
+   */
+  observeNamespace(namespace, callback) {
+    const nsMap = this._getNamespaceMap(namespace);
+    const handler = (event) => {
+      event.keysChanged.forEach((key) => {
+        callback(nsMap.get(key), key);
+      });
+    };
+    nsMap.observe(handler);
+    return () => nsMap.unobserve(handler);
+  }
+
+  /**
    * Get all keys in state
    * @returns {Array<string>} Array of state keys
    */
@@ -320,14 +532,14 @@ export class StateManager {
   /**
    * Synchronize state with network peers
    * 
-   * Note: With Yjs + y-libp2p, synchronization is automatic.
+   * Note: With Yjs + PeerComputeProvider, synchronization is automatic.
    * This method is provided for compatibility but is mostly a no-op.
    * 
    * @param {Array<Object>} peerStates - States from peer nodes (unused with Yjs)
    * @returns {Promise<void>}
    */
   async synchronize(peerStates) {
-    // With Yjs + y-libp2p, sync is automatic via CRDT
+    // With Yjs + PeerComputeProvider, sync is automatic via CRDT
     // This method is here for API compatibility
     console.log('[StateManager] Synchronization is automatic with Yjs CRDT');
   }
@@ -419,6 +631,49 @@ export class StateManager {
       console.error('[StateManager] Destroy failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Clear persisted IndexedDB data for this document.
+   * Note: this clears the whole document, not just a namespace.
+   */
+  async clearPersistence() {
+    if (this.indexeddbProvider?.clearData) {
+      try {
+        await this.indexeddbProvider.clearData();
+        console.log('[StateManager] IndexedDB persistence cleared');
+      } catch (err) {
+        console.error('[StateManager] Failed to clear IndexedDB persistence', err);
+      }
+    }
+  }
+
+  /**
+   * Delete any IndexedDB databases that start with the given prefix.
+   * Useful to clean up docName-per-node databases from previous runs.
+   */
+  async clearAllPersistenceByPrefix(prefix, excludeNames = []) {
+    if (typeof indexedDB?.databases !== 'function') return;
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs || []) {
+        if (db?.name && db.name.startsWith(prefix) && !excludeNames.includes(db.name)) {
+          await new Promise((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(db.name);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+            req.onblocked = () => resolve(); // best-effort
+          });
+        }
+      }
+      console.log(`[StateManager] Cleared IndexedDB databases with prefix ${prefix}`);
+    } catch (err) {
+      console.warn('[StateManager] Failed to enumerate/delete IndexedDB databases', err);
+    }
+  }
+
+  getDocName() {
+    return this.config.docName;
   }
 
   /**

@@ -1,11 +1,20 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import webpack from 'webpack';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
 import CopyWebpackPlugin from 'copy-webpack-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const useHttps = process.env.HTTPS === '1' || process.env.HTTPS === 'true';
+const devHost = process.env.DEV_HOST || '0.0.0.0';
+const debugP2p = process.env.PEERCOMPUTE_DEBUG === '1' || process.env.PEERCOMPUTE_DEBUG === 'true';
+const httpsOptions = useHttps && process.env.SSL_CERT && process.env.SSL_KEY ? {
+  cert: fs.readFileSync(process.env.SSL_CERT),
+  key: fs.readFileSync(process.env.SSL_KEY)
+} : undefined;
 
 export default {
   mode: 'development',
@@ -16,11 +25,20 @@ export default {
     clean: true,
   },
   devServer: {
-    static: {
-      directory: path.join(__dirname, 'public'),
-    },
+    static: [
+      {
+        directory: path.join(__dirname, 'public'),
+      },
+      {
+        directory: path.join(__dirname, 'games'),
+        publicPath: '/games',
+      }
+    ],
+    host: devHost,
+    allowedHosts: 'all',
     compress: true,
     port: 5173, // Keep same port as Vite for convenience
+    server: useHttps ? { type: 'https', options: httpsOptions } : 'http',
     hot: true,
     historyApiFallback: true,
   },
@@ -49,12 +67,16 @@ export default {
         { from: 'public', to: '' }, // Copy public assets to root of dist
         // Also copy test files if they exist and are needed
         { from: 'test-p2p.html', to: 'test-p2p.html', noErrorOnMissing: true },
-        { from: 'test-automated.html', to: 'test-automated.html', noErrorOnMissing: true }
+        { from: 'test-automated.html', to: 'test-automated.html', noErrorOnMissing: true },
+        { from: 'games', to: 'games', noErrorOnMissing: true }
       ],
     }),
     new webpack.ProvidePlugin({
       Buffer: ['buffer', 'Buffer'],
       process: 'process',
+    }),
+    new webpack.DefinePlugin({
+      __PC_DEBUG__: JSON.stringify(debugP2p)
     }),
   ],
   module: {

@@ -1,0 +1,42 @@
+{
+  "name": "cyberborea",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cyberborea/Hyperborea demo refactored from cb.html with modular ES6 code and webpack dev server.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "test:unit": "node --test",
+    "test:build": "npm run build",
+    "tests": "npm run test:unit && npm run test:build"
+  },
+  "keywords": [
+    "threejs",
+    "webxr",
+    "peercompute",
+    "cyberborea"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.0",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "three": "0.181.0",
+    "y-indexeddb": "^9.0.12",
+    "yjs": "13.5.53"
+  },
+  "devDependencies": {
+    "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.0",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.2"
+  }
+}

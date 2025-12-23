@@ -1,0 +1,84 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  background: #000;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#ui {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+#hud {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 15px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+#controls {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 15px;
+  border-radius: 8px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+#VRButton {
+  z-index: 999;
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 24px;
+  border: 1px solid white;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font: normal 13px sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#attackButton {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  padding: 14px 18px;
+  background: rgba(220, 38, 38, 0.85);
+  color: white;
+  border: 1px solid #b91c1c;
+  border-radius: 10px;
+  font-weight: bold;
+  pointer-events: auto;
+  display: none;
+}
+
+#fpsInfo {
+  font-weight: bold;
+}

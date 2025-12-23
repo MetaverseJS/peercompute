@@ -6,12 +6,13 @@
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack serve --mode development",
-    "relay": "deno task relay",
+    "relay": "node src/relay/server.js",
+    "dev:relay": "concurrently \"node src/relay/server.js\" \"webpack serve --mode development\"",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
-    "test:with-relay": "concurrently \"npm run relay\" \"npm run test\" --kill-others --success first",
-    "test:auto": "./start-relay-and-test.sh"
+    "test:auto": "./start-relay-and-test.sh",
+    "test:unit": "node --test tests/unit/*.test.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
@@ -25,18 +26,20 @@
     "webpack-dev-server": "^5.0.2"
   },
   "dependencies": {
-    "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@libp2p/bootstrap": "^12.0.10",
     "@libp2p/circuit-relay-v2": "^4.1.2",
+    "@libp2p/floodsub": "^11.0.10",
     "@libp2p/identify": "^4.0.9",
-    "@libp2p/kad-dht": "^16.1.2",
     "@libp2p/noise": "^1.0.1",
+    "@libp2p/peer-id": "^6.0.4",
+    "@libp2p/ping": "^3.0.9",
     "@libp2p/plaintext": "^3.0.9",
     "@libp2p/pubsub-peer-discovery": "^12.0.0",
     "@libp2p/tcp": "^11.0.9",
     "@libp2p/webrtc": "^6.0.10",
     "@libp2p/websockets": "^10.1.2",
     "@libp2p/yamux": "^8.0.1",
+    "@multiformats/multiaddr": "^13.0.1",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.0",
@@ -45,7 +48,6 @@
     "process": "^0.11.10",
     "stream-browserify": "^3.0.0",
     "y-indexeddb": "^9.0.12",
-    "y-libp2p": "^0.0.2",
     "yjs": "13.5.53"
   }
 }

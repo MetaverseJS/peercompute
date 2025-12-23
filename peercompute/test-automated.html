@@ -279,7 +279,7 @@
       const NodeKernel = window.NodeKernel;
 
       // Try to load relay config
-      let bootstrapPeers = [];
+      let bootstrapPeers = null;
       try {
         const tryFetch = async (path) => {
           try {
@@ -290,13 +290,15 @@
         };
         
         const cfg = (await tryFetch('/relay-config.json')) || 
-                   (await tryFetch('relay-config.json'));
+                   (await tryFetch('relay-config.json')) ||
+                   (await tryFetch('/.relay-config.json')) ||
+                   (await tryFetch('.relay-config.json'));
                    
-        if (cfg && Array.isArray(cfg.bootstrapPeers) && cfg.bootstrapPeers.length > 0) {
+        if (cfg && Array.isArray(cfg.bootstrapPeers)) {
           bootstrapPeers = cfg.bootstrapPeers;
-          log(nodeId, `Using relay: ${bootstrapPeers[0]}`, 'info');
+          log(nodeId, `Using relay bootstrap peers: ${bootstrapPeers.join(', ')}`, 'info');
         } else {
-          log(nodeId, 'No relay config found. Using peer discovery only.', 'warning');
+          log(nodeId, 'No relay config found. Bootstrapping disabled.', 'warning');
         }
       } catch (e) {
         log(nodeId, `Config error: ${e.message}`, 'warning');
@@ -305,7 +307,7 @@
       const node = new NodeKernel({
         topology: 'distributed',
         enablePersistence: true,
-        bootstrapPeers: bootstrapPeers
+        bootstrapPeers
       });
       
       await node.initialize();

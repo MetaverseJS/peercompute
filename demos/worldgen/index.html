@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planet Forge Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #04060d;
+      --panel: rgba(6, 10, 20, 0.8);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #7dd3fc;
+      --accent-strong: #38bdf8;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at 20% 20%, #0b1225, #03040a 60%), radial-gradient(circle at 80% 10%, #0b1f3b, #03040a 55%);
+      color: var(--text);
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      padding: 14px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      max-width: 320px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+    #hud h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; }
+    #hud .subtitle { margin: 0 0 10px; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; }
+    #hud .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    #hud .section:first-of-type { border-top: none; padding-top: 0; margin-top: 10px; }
+    #hud .section-title { font-size: 11px; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; }
+    #hud label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--muted); }
+    #hud select, #hud input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .field { margin-bottom: 10px; }
+    .range-row { display: flex; align-items: center; gap: 10px; }
+    .range-row input[type="range"] { flex: 1; accent-color: var(--accent-strong); }
+    .range-row .value { min-width: 42px; text-align: right; color: var(--text); font-size: 12px; }
+    #hud button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 11px 12px;
+      background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+      color: #0a0c12;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+    }
+    #hud button:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(34, 211, 238, 0.25); filter: saturate(1.1); }
+    #hud button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; transform: none; }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: 0.01em;
+      min-height: 18px;
+    }
+    #hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    details summary { color: var(--muted); }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="viewport"></canvas>
+  <div id="hud">
+    <h1>Planet Forge</h1>
+    <p class="subtitle">Procedural tectonics + erosion</p>
+    <label for="preset">Preset</label>
+    <select id="preset">
+      <option value="fast">Fast preview</option>
+      <option value="balanced" selected>Balanced</option>
+      <option value="high">High fidelity</option>
+    </select>
+    <div class="section">
+      <div class="section-title">Scale</div>
+      <div class="field">
+        <label for="planetDiameter">Planet diameter (km)</label>
+        <div class="range-row">
+          <input id="planetDiameter" type="range" min="1" max="1000" step="1" value="1000">
+          <span class="value" id="planetDiameterValue">1000</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Tectonics</div>
+      <div class="field">
+        <label for="subdivisions">Mesh subdivisions</label>
+        <div class="range-row">
+          <input id="subdivisions" type="range" min="0" max="512" step="1" value="60">
+          <span class="value" id="subdivisionsValue">60</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="resolution">Heightmap resolution</label>
+        <select id="resolution">
+          <option value="256">256</option>
+          <option value="384">384</option>
+          <option value="512">512</option>
+          <option value="768">768</option>
+          <option value="1024">1024</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="plates">Plates</label>
+        <input id="plates" type="number" min="6" max="200" step="1" value="16">
+      </div>
+      <div class="field">
+        <label for="jitter">Jitter</label>
+        <div class="range-row">
+          <input id="jitter" type="range" min="0" max="1" step="0.01" value="0.60">
+          <span class="value" id="jitterValue">0.60</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="heightScale">Height scale</label>
+        <div class="range-row">
+          <input id="heightScale" type="range" min="0.2" max="40" step="0.1" value="18.2">
+          <span class="value" id="heightScaleValue">18.20</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Erosion</div>
+      <div class="field">
+        <label for="iterations">Iterations</label>
+        <input id="iterations" type="number" min="10000" max="2000000" step="5000" value="80000">
+      </div>
+      <div class="field">
+        <label for="erosionRate">Erosion rate</label>
+        <div class="range-row">
+          <input id="erosionRate" type="range" min="0.01" max="1" step="0.01" value="0.36">
+          <span class="value" id="erosionRateValue">0.36</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="evaporation">Evaporation</label>
+        <div class="range-row">
+          <input id="evaporation" type="range" min="0" max="1" step="0.005" value="0.5">
+          <span class="value" id="evaporationValue">0.500</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Shaping</div>
+      <div class="field">
+        <label for="seaLevel">Sea level</label>
+        <div class="range-row">
+          <input id="seaLevel" type="range" min="0" max="1" step="0.01" value="0.53">
+          <span class="value" id="seaLevelValue">0.53</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="atmosphereHeight">Atmosphere height</label>
+        <div class="range-row">
+          <input id="atmosphereHeight" type="range" min="0" max="5" step="0.05" value="0.5">
+          <span class="value" id="atmosphereHeightValue">0.50</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="plateDelta">Plate height delta</label>
+        <div class="range-row">
+          <input id="plateDelta" type="range" min="0" max="2" step="0.05" value="1.25">
+          <span class="value" id="plateDeltaValue">1.25</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="faultType">Fault style</label>
+        <select id="faultType">
+          <option value="ridge" selected>Ridge (uplift)</option>
+          <option value="trench">Trench (subduction)</option>
+          <option value="shear">Shear (minimal)</option>
+          <option value="mixed">Mixed</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="smoothPasses">Smoothing passes</label>
+        <div class="range-row">
+          <input id="smoothPasses" type="range" min="0" max="20" step="1" value="20">
+          <span class="value" id="smoothPassesValue">20</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="iceCap">Ice cap size</label>
+        <div class="range-row">
+          <input id="iceCap" type="range" min="0" max="1" step="0.01" value="0.15">
+          <span class="value" id="iceCapValue">0.15</span>
+        </div>
+      </div>
+    </div>
+    <details id="atmoClouds" class="section" open>
+      <summary class="section-title" style="cursor:pointer;">Atmosphere & Clouds</summary>
+      <div class="field">
+        <label><input type="checkbox" id="atmosphereToggle" checked> Atmosphere enabled</label>
+      </div>
+      <div class="field">
+        <label for="atmosphere">Atmosphere thickness</label>
+        <div class="range-row">
+          <input id="atmosphere" type="range" min="0.05" max="1.5" step="0.05" value="0.35">
+          <span class="value" id="atmosphereValue">0.35</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="atmosphereAlpha">Atmosphere alpha</label>
+        <div class="range-row">
+          <input id="atmosphereAlpha" type="range" min="0" max="1" step="0.01" value="0.4">
+          <span class="value" id="atmosphereAlphaValue">0.40</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="atmosphereColor">Atmosphere color</label>
+        <input id="atmosphereColor" type="color" value="#4da8ff">
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="cloudToggle" checked> Cloud layer enabled</label>
+      </div>
+      <div class="field">
+        <label for="cloudAlpha">Cloud alpha</label>
+        <div class="range-row">
+          <input id="cloudAlpha" type="range" min="0" max="1" step="0.01" value="0.74">
+          <span class="value" id="cloudAlphaValue">0.74</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cloudSpeed">Cloud speed</label>
+        <div class="range-row">
+          <input id="cloudSpeed" type="range" min="0" max="2" step="0.05" value="0.9">
+          <span class="value" id="cloudSpeedValue">0.90</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cloudQuantity">Cloud quantity</label>
+        <div class="range-row">
+          <input id="cloudQuantity" type="range" min="0" max="1" step="0.01" value="0.76">
+          <span class="value" id="cloudQuantityValue">0.76</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cloudHeight">Cloud height</label>
+        <div class="range-row">
+          <input id="cloudHeight" type="range" min="-5" max="5" step="0.05" value="-2.4">
+          <span class="value" id="cloudHeightValue">-2.40</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cloudColor">Cloud color</label>
+        <input id="cloudColor" type="color" value="#ffffff">
+      </div>
+      <div class="field">
+        <label for="cloudResolution">Cloud resolution</label>
+        <div class="range-row">
+          <input id="cloudResolution" type="range" min="1" max="256" step="1" value="256">
+          <span class="value" id="cloudResolutionValue">256</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cloudShader">Cloud shader</label>
+        <select id="cloudShader">
+          <option value="fbm">FBM</option>
+          <option value="billow" selected>Billow</option>
+          <option value="cellular">Cellular</option>
+        </select>
+      </div>
+      <div class="field">
+        <button id="addCloudLayer" type="button">Add cloud layer</button>
+      </div>
+      <div id="cloudLayers"></div>
+    </details>
+    <button id="regen">Generate world</button>
+    <div id="status">Preparing…</div>
+    <div id="hint">Drag to orbit · Scroll to zoom · Regenerate to see new plates</div>
+  </div>
+  <script type="module" src="./index.js"></script>
+</body>
+</html>

@@ -1,738 +1,810 @@
 /**
- * @fileoverview Network Manager - Handles P2P networking using libp2p v2
- * Manages peer connections, topology, and message routing
- * 
- * WASM Compatibility: All messages use structured cloneable data types
- * (plain objects, ArrayBuffers, TypedArrays) for compatibility with
- * WebAssembly compute workers.
+ * @fileoverview Network Manager - libp2p-based P2P networking
+ * Provides pubsub broadcasts, presence discovery, and direct messaging over libp2p.
  */
 
 import { createLibp2p } from 'libp2p';
-import { webRTC } from '@libp2p/webrtc';
 import { webSockets } from '@libp2p/websockets';
+import { webRTC } from '@libp2p/webrtc';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
-import { plaintext } from '@libp2p/plaintext';
 import { noise } from '@libp2p/noise';
+import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
-import { gossipsub } from '@chainsafe/libp2p-gossipsub';
-import { bootstrap } from '@libp2p/bootstrap';
-import { kadDHT } from '@libp2p/kad-dht';
+import { floodsub } from '@libp2p/floodsub';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
+import { bootstrap } from '@libp2p/bootstrap';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
-import { multiaddr } from '@multiformats/multiaddr';
 import { peerIdFromString } from '@libp2p/peer-id';
+import { multiaddr } from '@multiformats/multiaddr';
+import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 
-/**
- * NetworkManager class - Manages P2P network connections and communication
- * Supports hierarchy, distributed, and emergent topologies
- */
+const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
+const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
+const DEFAULT_PRESENCE_TOPIC = 'peercompute-presence';
+const PEER_DIAL_THROTTLE_MS = 5000;
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const DEBUG_P2P = typeof __PC_DEBUG__ !== 'undefined' && __PC_DEBUG__ === true;
+const debugLog = (...args) => {
+  if (DEBUG_P2P) console.log(...args);
+};
+const debugWarn = (...args) => {
+  if (DEBUG_P2P) console.warn(...args);
+};
+
+const isLocalDialAddr = (addr) => {
+  if (typeof addr !== 'string') return false;
+  if (addr.includes('/dns4/localhost') || addr.includes('/dns/localhost')) return true;
+  if (addr.includes('/ip6/::1')) return true;
+  if (addr.includes('/ip4/127.')) return true;
+  if (addr.includes('/ip4/10.')) return true;
+  if (addr.includes('/ip4/192.168.')) return true;
+  return /\/ip4\/172\.(1[6-9]|2\d|3[01])\./.test(addr);
+};
+
+const normalizeBootstrapAddr = (addr) => {
+  if (typeof addr !== 'string') return addr;
+  const parts = addr.split('/p2p/');
+  if (parts.length <= 2) return addr;
+  const peerId = parts[parts.length - 1];
+  return `${parts[0]}/p2p/${peerId}`;
+};
+
+const getPeerIdFromAddr = (addr) => {
+  if (typeof addr !== 'string') return null;
+  const parts = addr.split('/p2p/');
+  if (parts.length < 2) return null;
+  return parts[parts.length - 1] || null;
+};
+
+const toPeerMultiaddr = (addr) => {
+  if (!addr) return null;
+  if (typeof addr.getComponents === 'function') return addr;
+  if (typeof addr !== 'string') return null;
+  try {
+    return multiaddr(addr);
+  } catch (err) {
+    debugWarn('[NetworkManager] Invalid peer multiaddr', addr, err?.message || err);
+    return null;
+  }
+};
+
+const toMultiaddr = (addr) => {
+  if (!addr) return null;
+  if (typeof addr.getComponents === 'function') return addr;
+  if (typeof addr !== 'string') return null;
+  const normalized = normalizeBootstrapAddr(addr);
+  try {
+    return multiaddr(normalized);
+  } catch (err) {
+    debugWarn('[NetworkManager] Invalid bootstrap multiaddr', normalized, err?.message || err);
+    return null;
+  }
+};
+
+const ensurePeerIdSuffix = (addr, peerId) => {
+  if (!peerId || typeof addr !== 'string') return addr;
+  const suffix = `/p2p/${peerId}`;
+  if (addr.includes(suffix)) return addr;
+  return `${addr}${suffix}`;
+};
+
+
 export class NetworkManager {
-  /**
-   * @param {Object} config - Network configuration
-   * @param {string} config.topology - 'hierarchy' | 'distributed' | 'emergent'
-   * @param {Array<string>} config.bootstrapPeers - Bootstrap peer multiaddrs
-   * @param {Array<string>} config.stunServers - STUN servers for WebRTC
-   * @param {Function} config.onMessage - Message handler callback
-   * @param {Function} config.onPeerConnect - Peer connection callback
-   * @param {Function} config.onPeerDisconnect - Peer disconnection callback
-   */
   constructor(config = {}) {
-    this.config = config;
-    this.topology = config.topology || 'distributed';
-    this.peers = new Map();
-    this.parentNode = null;
-    this.childNodes = new Set();
+    const defaults = {
+      topology: config.topology || 'distributed',
+      pubsubTopic: config.pubsubTopic || DEFAULT_PUBSUB_TOPIC,
+      directTopic: config.directTopic || DEFAULT_DIRECT_TOPIC,
+      presenceTopic: config.presenceTopic || DEFAULT_PRESENCE_TOPIC,
+      discoveryTopic: config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub',
+      bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
+      gameId: config.gameId || 'default-game',
+      roomId: config.roomId || 'default-room',
+      enforceRoomIsolation: config.enforceRoomIsolation !== false
+    };
+
+    const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
+      typeof addr === 'string' ? normalizeBootstrapAddr(addr) : addr
+    );
+    const allowLocalDial = config.allowLocalDial ?? normalizedBootstrapPeers.some(isLocalDialAddr);
+    this.config = {
+      ...defaults,
+      ...config,
+      bootstrapPeers: normalizedBootstrapPeers,
+      allowLocalDial
+    };
+    this.bootstrapPeerIds = new Set(
+      normalizedBootstrapPeers.map(getPeerIdFromAddr).filter(Boolean)
+    );
+
+    this.libp2p = null;
+    this.peerId = null;
     this.isConnected = false;
-    this.libp2pNode = null;
-    
-    // Message handlers
+    this.presenceInterval = null;
+    this.publishErrorAt = new Map();
+
+    this.peers = new Map();
+    this.recentDialAttempts = new Map();
     this.onMessage = config.onMessage || (() => {});
     this.onPeerConnect = config.onPeerConnect || (() => {});
     this.onPeerDisconnect = config.onPeerDisconnect || (() => {});
-    
-    // Topic for pubsub (used in distributed topology)
-    this.pubsubTopic = config.pubsubTopic || 'peercompute-default';
-    
-    // Message handlers by protocol
-    this.messageHandlers = new Map();
+    this.messageHandlers = [];
+    this.scheduler = null;
+    this.schedulerTimer = null;
+    this.schedulerEnabled = config.enableScheduler || false;
+    this.schedulerClock = config.schedulerClock || 'internal';
+    this.schedulerProfile = {
+      ...DEFAULT_SCHEDULER_PROFILE,
+      ...(config.schedulerProfile || {})
+    };
+    this.authorityId = config.authorityId || null;
+    this.lastRxAt = 0;
+    this.lastTxAt = 0;
+    this.allowedTopics = new Set([
+      this.config.pubsubTopic,
+      this.config.directTopic,
+      this.config.presenceTopic
+    ]);
+    [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
+      .filter(Boolean)
+      .forEach((topic) => this.allowedTopics.add(topic));
   }
 
-  /**
-   * Initialize the network manager and libp2p node
-   * @returns {Promise<Object>} The libp2p node instance
-   */
-  async initialize() {
-    try {
-      // Create libp2p node with modern v2 API
-      this.libp2pNode = await createLibp2p({
-        // Addresses to listen on (empty for browser, will use WebRTC)
-        addresses: {
-          listen: []
-        },
-        
-        // Transports - WebRTC for browser P2P, WebSockets for signaling, Circuit Relay for NAT traversal
-        transports: [
-          webRTC({
-            rtcConfiguration: {
-              iceServers: this.config.stunServers || [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-              ]
-            }
-          }),
-          webSockets({
-            // Allow dialing ws:// and IP addresses in browser during local dev
-            // Browser default filter only allows wss:// DNS addresses
-            filter: (addrs) => addrs
-          }),
-          circuitRelayTransport({
-            discoverRelays: 1
-          })
-        ],
-        
-        // Connection encryption
-        connectionEncrypters: [
-          noise(),
-          plaintext()
-        ],
-        
-        // Stream multiplexing
-        streamMuxers: [yamux({})],
-        
-        // Pubsub for distributed messaging
-        services: {
-          pubsub: gossipsub({
-            emitSelf: false,
-            allowPublishToZeroPeers: true
-          }),
-          
-          // DHT for distributed topology
-          dht: kadDHT({
-            clientMode: true
-          }),
-          
-          // Identify protocol
-          identify: identify(),
-          
-          // Ping service (required by DHT)
-          ping: ping()
-        },
-        
-        // Peer discovery
-        peerDiscovery: [
-          // Bootstrap peers for initial connection
-          ...(this.config.bootstrapPeers && this.config.bootstrapPeers.length > 0 ? [
-            bootstrap({
-              list: this.config.bootstrapPeers
-            })
-          ] : []),
-          // Pubsub peer discovery - announces presence and discovers peers via gossipsub
-          pubsubPeerDiscovery({
-            interval: 1000,
-            topics: ['peercompute._peer-discovery._p2p._pubsub']
-          })
-        ],
-        
-        // Connection manager - aggressive settings to maintain relay connections
-        connectionManager: {
-          maxConnections: 100,
-          minConnections: 1,                      // Keep at least 1 connection (relay)
-          autoDial: true,                         // Automatically dial to maintain minConnections
-          autoDialInterval: 3000,                 // Check every 3 seconds
-          maxIncomingPendingConnections: 10,
-          inboundConnectionThreshold: Infinity,   // Never prune inbound connections
-          maxEventLoopDelay: Infinity,            // Don't close connections due to event loop delay
-          maxPeerAddrsToDial: 25                  // Dial up to 25 addresses per peer
-        },
-
-        // Connection gater - allow local connections for testing
-        connectionGater: {
-          denyDialMultiaddr: () => false
-        }
-      });
-
-      // Set up event listeners
-      this._setupEventListeners();
-      
-      // Register keep-alive protocol to maintain persistent streams
-      await this._registerKeepAliveProtocol();
-      
-      // Start the node
-      await this.libp2pNode.start();
-      
-      console.log(`[NetworkManager] Initialized with peer ID: ${this.libp2pNode.peerId.toString()}`);
-      
-      return this.libp2pNode;
-      
-    } catch (error) {
-      console.error('[NetworkManager] Initialization failed:', error);
-      throw error;
-    }
+  addMessageHandler(handler) {
+    this.messageHandlers.push(handler);
   }
 
-  /**
-   * Set up libp2p event listeners
-   * @private
-   */
-  _setupEventListeners() {
-    // Connection lifecycle logging
-    this.libp2pNode.addEventListener('connection:open', (evt) => {
-      console.log(`[NetworkManager] 🔌 Connection opened to ${evt.detail.remotePeer.toString()}`);
-    });
-    
-    this.libp2pNode.addEventListener('connection:close', (evt) => {
-      console.log(`[NetworkManager] 🔌 Connection closed to ${evt.detail.remotePeer.toString()}`);
-    });
-    
-    // Peer connected
-    this.libp2pNode.addEventListener('peer:connect', (evt) => {
-      console.log(`[NetworkManager] ✅ Peer connected: ${evt.detail.toString()}`);
-      this._handlePeerConnected(evt.detail.toString());
-    });
-    
-    // Peer disconnected
-    this.libp2pNode.addEventListener('peer:disconnect', (evt) => {
-      console.log(`[NetworkManager] ❌ Peer disconnected: ${evt.detail.toString()}`);
-      this._handlePeerDisconnected(evt.detail.toString());
-    });
-    
-    // Peer discovered
-    this.libp2pNode.addEventListener('peer:discovery', (evt) => {
-      console.log(`[NetworkManager] 🔍 Peer discovered: ${evt.detail.id.toString()}`);
-    });
-    
-    // Subscribe to pubsub topic for distributed messaging
-    if (this.topology === 'distributed') {
-      this.libp2pNode.services.pubsub.subscribe(this.pubsubTopic);
-      this.libp2pNode.services.pubsub.addEventListener('message', (evt) => {
-        this._handlePubsubMessage(evt);
-      });
-    }
-    
-    // Log connection status periodically
-    setInterval(() => {
-      const connections = this.libp2pNode.getConnections().length;
-      const peers = this.libp2pNode.getPeers().length;
-      if (connections > 0 || peers > 0) {
-        console.log(`[NetworkManager] 📊 Status: ${connections} connections, ${peers} peers`);
-      }
-    }, 10000); // Every 10 seconds
+  configureScheduler(profile = {}) {
+    this.schedulerProfile = {
+      ...this.schedulerProfile,
+      ...profile
+    };
+    [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
+      .filter(Boolean)
+      .forEach((topic) => this.allowedTopics.add(topic));
+    this.schedulerEnabled = true;
+    this._ensureScheduler();
+    this.scheduler.configure(this.schedulerProfile);
+    this._startScheduler();
   }
 
-  /**
-   * Connect to the P2P network
-   * @param {Array<string>} bootstrapPeers - Initial peer multiaddrs (optional)
-   * @returns {Promise<void>}
-   */
-  async connect(bootstrapPeers = []) {
-    if (this.isConnected) {
-      console.warn('[NetworkManager] Already connected');
+  setSchedulerClock(mode = 'internal') {
+    const next = mode === 'external' ? 'external' : 'internal';
+    if (this.schedulerClock === next) return;
+    this.schedulerClock = next;
+    if (next === 'external') {
+      this._stopScheduler();
       return;
     }
-    
-    try {
-      this.isConnected = true;
-      console.log('[NetworkManager] P2P network enabled');
-      console.log('[NetworkManager] Bootstrap peers configured:', this.config.bootstrapPeers?.length || 0);
-      
-      // Subscribe to discovery topic BEFORE dialing to ensure gossipsub mesh is established
-      const discoveryTopic = 'peercompute._peer-discovery._p2p._pubsub';
-      this.libp2pNode.services.pubsub.subscribe(discoveryTopic);
-      console.log('[NetworkManager] Subscribed to discovery topic for mesh maintenance');
-      
-      // Dial bootstrap peers (relay servers)
-      // libp2p will automatically use them for circuit relay connections
-      if (this.config.bootstrapPeers?.length > 0) {
-        console.log('[NetworkManager] Connecting to relay servers...');
-        
-        for (const peer of this.config.bootstrapPeers) {
-          try {
-            const ma = typeof peer === 'string' ? multiaddr(peer) : peer;
-            const connection = await this.libp2pNode.dial(ma);
-            console.log(`[NetworkManager] ✅ Connected to relay: ${connection.remotePeer.toString()}`);
-            
-            // Keep connection alive with simple keep-alive protocol
-            this._keepAlive(connection.remotePeer.toString());
-          } catch (err) {
-            console.warn(`[NetworkManager] Failed to dial ${peer}:`, err.message);
-          }
-        }
+    if (this.schedulerEnabled && this.isConnected) {
+      this._startScheduler();
+    }
+  }
+
+  getSchedulerClock() {
+    return this.schedulerClock;
+  }
+
+  tickScheduler(now = Date.now()) {
+    if (!this.scheduler || !this.schedulerEnabled) return;
+    this.scheduler.tick(now);
+  }
+
+  getSchedulerProfile() {
+    return this.scheduler ? this.scheduler.getProfile() : { ...this.schedulerProfile };
+  }
+
+  registerStateProvider(fn, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    return this.scheduler.registerStateProvider(fn, options);
+  }
+
+  registerCommandProvider(fn, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    return this.scheduler.registerCommandProvider(fn, options);
+  }
+
+  unregisterStateProvider(id) {
+    this.scheduler?.unregisterStateProvider(id);
+  }
+
+  unregisterCommandProvider(id) {
+    this.scheduler?.unregisterCommandProvider(id);
+  }
+
+  markStateDirty() {
+    this.scheduler?.markStateDirty();
+  }
+
+  queueEvent(payload, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    const hasReliabilityFlag =
+      Object.prototype.hasOwnProperty.call(options, 'reliable') ||
+      Object.prototype.hasOwnProperty.call(options, 'critical');
+    let nextOptions = options;
+    if (!hasReliabilityFlag && payload?.type) {
+      const profile = this.scheduler?.getProfile?.() || this.schedulerProfile;
+      if (Array.isArray(profile.reliableEventTypes) && profile.reliableEventTypes.includes(payload.type)) {
+        nextOptions = { ...options, reliable: true };
       }
-      
-      // Log connection status
-      setTimeout(() => {
-        const connections = this.libp2pNode.getConnections().length;
-        const peers = this.libp2pNode.getPeers().length;
-        console.log(`[NetworkManager] Status: ${connections} connections, ${peers} peers`);
-      }, 2000);
-      
-    } catch (error) {
-      console.error('[NetworkManager] Connection failed:', error);
-      throw error;
+    }
+    this.scheduler.queueEvent(payload, nextOptions);
+  }
+
+  addSnapshotHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addSnapshotHandler(handler);
+  }
+
+  addCommandHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addCommandHandler(handler);
+  }
+
+  addEventHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addEventHandler(handler);
+  }
+
+  setAuthority(peerId) {
+    this.authorityId = peerId || null;
+    if (this.scheduler) {
+      this.scheduler.setAuthority(this.authorityId);
     }
   }
 
-  /**
-   * Disconnect from the network
-   * @returns {Promise<void>}
-   */
-  async disconnect() {
-    if (!this.libp2pNode) {
-      return;
-    }
-    
-    try {
-      // Unsubscribe from pubsub
-      if (this.topology === 'distributed') {
-        this.libp2pNode.services.pubsub.unsubscribe(this.pubsubTopic);
-      }
-      
-      // Stop the node
-      await this.libp2pNode.stop();
-      
-      this.isConnected = false;
-      this.peers.clear();
-      this.parentNode = null;
-      this.childNodes.clear();
-      
-      console.log('[NetworkManager] Disconnected from P2P network');
-      
-    } catch (error) {
-      console.error('[NetworkManager] Disconnect failed:', error);
-      throw error;
-    }
+  getAuthority() {
+    return this.authorityId;
   }
 
-  /**
-   * Send message to specific peer using custom protocol
-   * 
-   * WASM Compatible: Message data should be structured cloneable
-   * (plain objects, ArrayBuffer, TypedArray)
-   * 
-   * @param {string} peerId - Target peer ID
-   * @param {Object} message - Message to send
-   * @param {string} message.type - Message type
-   * @param {*} message.data - Message data (must be structured cloneable)
-   * @param {string} protocol - Protocol name (default: '/peercompute/1.0.0')
-   * @returns {Promise<void>}
-   */
-  async sendToPeer(peerId, message, protocol = '/peercompute/1.0.0') {
-    if (!this.libp2pNode) {
-      throw new Error('NetworkManager not initialized');
-    }
-    
-    try {
-      // Ensure peerId is a PeerId object
-      const pid = typeof peerId === 'string' ? peerIdFromString(peerId) : peerId;
-
-      // Open stream to peer
-      const stream = await this.libp2pNode.dialProtocol(pid, protocol);
-      
-      // Serialize message (WASM-compatible: uses structured clone algorithm)
-      const messageBytes = new TextEncoder().encode(JSON.stringify(message));
-      
-      // Send message
-      await stream.sink([messageBytes]);
-      await stream.close();
-      
-    } catch (error) {
-      console.error(`[NetworkManager] Failed to send to peer ${peerId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Broadcast message to all connected peers via pubsub
-   * 
-   * WASM Compatible: Message data should be structured cloneable
-   * 
-   * @param {Object} message - Message to broadcast
-   * @param {string} message.type - Message type
-   * @param {*} message.data - Message data (must be structured cloneable)
-   * @param {Object} options - Broadcast options
-   * @param {string} options.topic - Custom topic (optional)
-   * @returns {Promise<void>}
-   */
-  async broadcast(message, options = {}) {
-    if (!this.libp2pNode) {
-      throw new Error('NetworkManager not initialized');
-    }
-    
-    const topic = options.topic || this.pubsubTopic;
-    
-    try {
-      // Serialize message (WASM-compatible)
-      const messageBytes = new TextEncoder().encode(JSON.stringify(message));
-      
-      // Publish to topic
-      await this.libp2pNode.services.pubsub.publish(topic, messageBytes);
-      
-    } catch (error) {
-      // Ignore NoPeersSubscribedToTopic error as it's expected during initialization
-      // or when peers haven't subscribed yet
-      if (error.message && error.message.includes('NoPeersSubscribedToTopic')) {
-        console.warn('[NetworkManager] Broadcast skipped: No peers subscribed to topic');
-        return;
-      }
-      
-      console.error('[NetworkManager] Broadcast failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Register a custom protocol handler
-   * Useful for compute task distribution to/from WASM workers
-   * 
-   * @param {string} protocol - Protocol name
-   * @param {Function} handler - Handler function (stream) => Promise<void>
-   */
-  async registerProtocol(protocol, handler) {
-    if (!this.libp2pNode) {
-      throw new Error('NetworkManager not initialized');
-    }
-    
-    await this.libp2pNode.handle(protocol, async ({ stream }) => {
-      try {
-        await handler(stream);
-      } catch (error) {
-        console.error(`[NetworkManager] Protocol ${protocol} handler error:`, error);
-      }
-    });
-    
-    console.log(`[NetworkManager] Registered protocol: ${protocol}`);
-  }
-
-  /**
-   * Join a parent node (hierarchy topology)
-   * @param {string} parentPeerId - Parent node peer ID
-   * @returns {Promise<void>}
-   */
-  async joinParent(parentPeerId) {
-    if (this.topology !== 'hierarchy') {
-      throw new Error('joinParent only available in hierarchy topology');
-    }
-    
-    try {
-      // Dial parent node
-      await this.libp2pNode.dial(parentPeerId);
-      
-      // Send join request
-      await this.sendToPeer(parentPeerId, {
-        type: 'join-request',
-        data: {
-          nodeId: this.libp2pNode.peerId.toString(),
-          timestamp: Date.now()
-        }
-      }, '/peercompute/hierarchy/1.0.0');
-      
-      this.parentNode = parentPeerId;
-      console.log(`[NetworkManager] Joined parent node: ${parentPeerId}`);
-      
-    } catch (error) {
-      console.error('[NetworkManager] Failed to join parent:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Accept a child node (hierarchy topology)
-   * @param {string} childPeerId - Child node peer ID
-   * @returns {Promise<void>}
-   */
-  async acceptChild(childPeerId) {
-    if (this.topology !== 'hierarchy') {
-      throw new Error('acceptChild only available in hierarchy topology');
-    }
-    
-    this.childNodes.add(childPeerId);
-    
-    // Send acceptance response
-    await this.sendToPeer(childPeerId, {
-      type: 'join-accepted',
-      data: {
-        parentId: this.libp2pNode.peerId.toString(),
-        timestamp: Date.now()
-      }
-    }, '/peercompute/hierarchy/1.0.0');
-    
-    console.log(`[NetworkManager] Accepted child node: ${childPeerId}`);
-  }
-
-  /**
-   * Discover nearby peers with high bandwidth/compute
-   * @returns {Promise<Array<Object>>} Discovered peers with metrics
-   */
-  async discoverNearbyPeers() {
-    if (!this.libp2pNode) {
-      return [];
-    }
-    
-    const peers = [];
-    const connections = this.libp2pNode.getConnections();
-    
-    for (const conn of connections) {
-      const peerId = conn.remotePeer.toString();
-      const peerData = this.peers.get(peerId) || {};
-      
-      peers.push({
-        peerId,
-        latency: peerData.latency || 0,
-        bandwidth: peerData.bandwidth || 0,
-        compute: peerData.compute || 0,
-        connectionTime: peerData.connectedAt || Date.now()
-      });
-    }
-    
-    // Sort by suitability (low latency, high bandwidth)
-    return peers.sort((a, b) => {
-      const scoreA = (1 / (a.latency + 1)) * (a.bandwidth + 1);
-      const scoreB = (1 / (b.latency + 1)) * (b.bandwidth + 1);
-      return scoreB - scoreA;
-    });
-  }
-
-  /**
-   * Optimize topology based on network conditions
-   * (Used for emergent topology mode)
-   * @returns {Promise<void>}
-   */
-  async optimizeTopology() {
-    if (this.topology !== 'emergent') {
-      return;
-    }
-    
-    // Discover nearby peers
-    const peers = await this.discoverNearbyPeers();
-    
-    // TODO: Implement intelligent topology optimization
-    // - Form subgroups for LAN peers
-    // - Reorganize connections based on bandwidth/latency
-    // - Balance load across peers
-    
-    console.log('[NetworkManager] Topology optimization (TODO)');
-  }
-
-  /**
-   * Get list of connected peers
-   * @returns {Array<Object>} Connected peers with metadata
-   */
-  getConnectedPeers() {
-    if (!this.libp2pNode) {
-      return [];
-    }
-    
-    return this.libp2pNode.getConnections().map(conn => ({
-      peerId: conn.remotePeer.toString(),
-      ...this.peers.get(conn.remotePeer.toString())
-    }));
-  }
-
-  /**
-   * Get network statistics
-   * @returns {Object} Network stats (latency, bandwidth, peer count, etc)
-   */
-  getNetworkStats() {
+  getHealth() {
+    const reliability = this.scheduler?.getReliabilityStats?.();
     return {
-      peerId: this.libp2pNode?.peerId.toString(),
-      peerCount: this.peers.size,
-      isConnected: this.isConnected,
-      topology: this.topology,
-      connections: this.libp2pNode?.getConnections().length || 0,
-      parentNode: this.parentNode,
-      childNodeCount: this.childNodes.size
+      lastRxAt: this.lastRxAt,
+      lastTxAt: this.lastTxAt,
+      peerCount: this.getConnectedPeers().length,
+      pubsubPeers: this.libp2p?.services?.pubsub?.getPeers?.() || [],
+      reliability
     };
   }
 
-  /**
-   * Get the libp2p node instance
-   * Used by StateManager for Yjs integration
-   * @returns {Object} libp2p node
-   */
-  getLibp2pNode() {
-    return this.libp2pNode;
+  async initialize() {
+    const isBrowser = typeof window !== 'undefined';
+    const listenAddrs = isBrowser ? ['/p2p-circuit', '/webrtc'] : ['/ip4/0.0.0.0/tcp/0'];
+    const peerDiscovery = [
+      pubsubPeerDiscovery({
+        interval: 1000,
+        topics: [this.config.discoveryTopic]
+      })
+    ];
+
+    if (this.config.bootstrapPeers?.length) {
+      peerDiscovery.unshift(bootstrap({ list: this.config.bootstrapPeers }));
+    }
+
+    this.libp2p = await createLibp2p({
+      transports: [
+        webSockets(),
+        webRTC(),
+        circuitRelayTransport()
+      ],
+      connectionEncrypters: [noise(), plaintext()],
+      streamMuxers: [yamux()],
+      peerDiscovery,
+      services: {
+        identify: identify(),
+        ping: ping({ interval: 10000 }),
+        pubsub: floodsub()
+      },
+      connectionManager: {
+        minConnections: 0,
+        maxConnections: 200,
+        inboundConnectionThreshold: Infinity,
+        maxIncomingPendingConnections: 100
+      },
+      connectionMonitor: {
+        abortConnectionOnPingFailure: false
+      },
+      addresses: {
+        listen: listenAddrs
+      },
+      ...(this.config.allowLocalDial
+        ? {
+            connectionGater: {
+              denyDialMultiaddr: () => false
+            }
+          }
+        : {})
+    });
+
+    this._wireLibp2pEvents();
+    return this.libp2p;
   }
 
-  /**
-   * Handle incoming pubsub message
-   * @private
-   * @param {Object} evt - Pubsub message event
-   */
-  _handlePubsubMessage(evt) {
-    try {
-      const messageStr = new TextDecoder().decode(evt.detail.data);
-      const message = JSON.parse(messageStr);
-      
-      // Call registered message handler
-      this._handleIncomingMessage(evt.detail.from.toString(), message);
-      
-    } catch (error) {
-      console.error('[NetworkManager] Failed to handle pubsub message:', error);
+  async connect() {
+    if (this.isConnected) return;
+    if (!this.libp2p) {
+      throw new Error('NetworkManager not initialized');
+    }
+
+    await this.libp2p.start();
+    this.peerId = this.libp2p.peerId.toString();
+
+    // Subscribe to topics used by PeerCompute
+    this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.directTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+
+    await this._dialBootstrapPeers();
+
+    this._startPresence();
+    this._logPubsubStatus('connected');
+    this.isConnected = true;
+    if (this.schedulerEnabled) {
+      this._ensureScheduler();
+      this._startScheduler();
     }
   }
 
-  /**
-   * Handle incoming message from peer
-   * @private
-   * @param {string} peerId - Source peer ID
-   * @param {Object} message - Received message
-   */
-  _handleIncomingMessage(peerId, message) {
-    // Update peer stats
-    const peer = this.peers.get(peerId) || {};
-    peer.lastMessageTime = Date.now();
-    this.peers.set(peerId, peer);
-    
-    // Call external message handler
+  async redialBootstrapPeers() {
+    if (!this.libp2p) return;
+    await this._dialBootstrapPeers();
+  }
+
+  async disconnect() {
+    this.isConnected = false;
+    this._stopScheduler();
+    this._clearPresenceTimer();
+
+    if (this.libp2p) {
+      await this.libp2p.stop();
+    }
+
+    this.peers.clear();
+    this.peerId = null;
+  }
+
+  async sendToPeer(peerId, message) {
+    const payload = this._wrapPayload(message, { target: peerId });
+    await this._publish(this.config.directTopic, payload);
+  }
+
+  async broadcast(message, options = {}) {
+    const topic = options.topic || this.config.pubsubTopic;
+    const payload = this._wrapPayload(message);
+    await this._publish(topic, payload);
+  }
+
+  getConnectedPeers() {
+    const connectionPeers = this._getConnectionPeers();
+    const scopedPeers = this._getScopedPeers();
+    const merged = new Map();
+    connectionPeers.forEach((peer) => merged.set(peer.peerId, peer));
+    scopedPeers.forEach((peer) => {
+      const existing = merged.get(peer.peerId) || {};
+      merged.set(peer.peerId, { ...existing, ...peer });
+    });
+    return Array.from(merged.values());
+  }
+
+  getNetworkStats() {
+    const connectionPeers = this._getConnectionPeers();
+    const connections = this.libp2p?.getConnections?.() || [];
+    const connectionCount = Array.isArray(connections)
+      ? connections.length
+      : typeof connections.size === 'number'
+        ? connections.size
+        : 0;
+    return {
+      peerId: this.peerId,
+      peerCount: connectionPeers.length,
+      isConnected: this.isConnected,
+      topology: this.config.topology,
+      connections: connectionCount
+    };
+  }
+
+  getLibp2pNode() {
+    return this.libp2p;
+  }
+
+  _wireLibp2pEvents() {
+    if (!this.libp2p) return;
+
+    this.libp2p.addEventListener('peer:discovery', (evt) => {
+      const peerId = evt.detail?.id?.toString?.() || evt.detail?.id?.toString?.();
+      if (!peerId || peerId === this.peerId) return;
+      if (!this._shouldDialDiscoveredPeer(peerId)) return;
+      this._maybeDialPeer(peerId, 'discovery').catch(() => {});
+    });
+
+    this.libp2p.addEventListener('peer:connect', (evt) => {
+      const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
+      if (!peerId) return;
+      const isNewPeer = !this.peers.has(peerId);
+      this._touchPeer(peerId, { connectedAt: Date.now(), via: 'connection' });
+      if (isNewPeer) {
+        this.onPeerConnect(peerId);
+      }
+    });
+
+    this.libp2p.addEventListener('peer:disconnect', (evt) => {
+      const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
+      if (!peerId) return;
+      this.peers.delete(peerId);
+      this.onPeerDisconnect(peerId);
+    });
+
+    this.libp2p.services.pubsub.addEventListener('message', (evt) => {
+      const { topic, data } = evt.detail || {};
+      if (!topic || !data) return;
+      if (!this.allowedTopics.has(topic)) return;
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(decoder.decode(data));
+      } catch (err) {
+        debugWarn('[NetworkManager] Failed to parse pubsub payload', err);
+        return;
+      }
+      const now = Date.now();
+      this.lastRxAt = now;
+      this.scheduler?.recordRx(now);
+
+      const sender = parsed?.header?.peerId || parsed?.from || 'unknown';
+      if (this.scheduler?.handleMessage(parsed, sender)) {
+        return;
+      }
+
+      if (topic === this.config.presenceTopic) {
+        this._handlePresence(parsed);
+        return;
+      }
+
+      if (topic === this.config.directTopic) {
+        if (parsed?.target && parsed.target !== this.peerId) return;
+      }
+
+      if (!this._matchesScope(parsed)) return;
+
+      const payload = parsed?.payload ?? parsed;
+      const from = parsed?.from;
+      if (from && from !== this.peerId) {
+        this._touchPeer(from, { lastMessageTime: Date.now() });
+      }
+
+      this._dispatchMessage(from || 'unknown', payload);
+    });
+  }
+
+  _dispatchMessage(peerId, message) {
+    this.messageHandlers.forEach((fn) => {
+      try {
+        fn(peerId, message);
+      } catch (err) {
+        console.error('[NetworkManager] Message handler failed', err);
+      }
+    });
+
     this.onMessage(peerId, message);
   }
 
-  /**
-   * Handle peer connection event
-   * @private
-   * @param {string} peerId - Connected peer ID
-   */
-  _handlePeerConnected(peerId) {
-    // Initialize peer metadata
-    this.peers.set(peerId, {
-      peerId,
-      connectedAt: Date.now(),
-      latency: 0,
-      bandwidth: 0,
-      compute: 0,
-      lastMessageTime: Date.now()
-    });
-    
-    console.log(`[NetworkManager] Peer connected: ${peerId}`);
-    
-    // Call external connection handler
-    this.onPeerConnect(peerId);
+  _wrapPayload(payload, extra = {}) {
+    return {
+      type: 'peercompute-message',
+      from: this.peerId,
+      gameId: this.config.gameId,
+      roomId: this.config.roomId,
+      payload,
+      ...extra
+    };
   }
 
+  _matchesScope(message) {
+    if (!message) return true;
+    if (message.gameId && message.gameId !== this.config.gameId) return false;
+    if (message.roomId && message.roomId !== this.config.roomId) return false;
+    return true;
+  }
 
-  /**
-   * Handle peer disconnection event
-   * @private
-   * @param {string} peerId - Disconnected peer ID
-   */
-  _handlePeerDisconnected(peerId) {
-    // Remove from peers
-    this.peers.delete(peerId);
-    
-    // Remove from child nodes if present
-    this.childNodes.delete(peerId);
-    
-    // Clear parent if this was parent node
-    if (this.parentNode === peerId) {
-      this.parentNode = null;
+  _handlePresence(message) {
+    if (!message || !this._matchesScope(message)) return;
+    if (!message.from || message.from === this.peerId) return;
+    const isNewPeer = !this.peers.has(message.from);
+    this._touchPeer(message.from, {
+      gameId: message.gameId,
+      roomId: message.roomId,
+      lastSeen: Date.now(),
+      via: 'presence'
+    });
+    if (isNewPeer) {
+      this.onPeerConnect(message.from);
     }
-    
-    console.log(`[NetworkManager] Peer disconnected: ${peerId}`);
-    
-    // Call external disconnection handler
-    this.onPeerDisconnect(peerId);
+    if (Array.isArray(message.multiaddrs) && message.multiaddrs.length > 0) {
+      this._rememberPeerAddresses(message.from, message.multiaddrs);
+    }
+    this._maybeDialPeer(message.from, 'presence', message.multiaddrs).catch(() => {});
   }
 
-  /**
-   * Register keep-alive protocol handler
-   * This protocol maintains persistent streams to prevent connection closure
-   * @private
-   */
-  async _registerKeepAliveProtocol() {
-    const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
-    
-    await this.libp2pNode.handle(KEEPALIVE_PROTOCOL, async ({ stream }) => {
-      console.log('[NetworkManager] Keep-alive stream opened');
-      
-      try {
-        // Keep stream open by reading from it (even if no data comes)
-        // This prevents the muxer from closing due to inactivity
-        for await (const _ of stream.source) {
-          // Just consume any incoming data to keep stream alive
-        }
-      } catch (error) {
-        console.log('[NetworkManager] Keep-alive stream closed:', error.message);
-      }
-    });
-    
-    console.log('[NetworkManager] Keep-alive protocol registered');
+  _getScopedPeers() {
+    return Array.from(this.peers.entries())
+      .filter(([, meta]) => meta?.gameId === this.config.gameId && meta?.roomId === this.config.roomId)
+      .map(([peerId, meta]) => ({ peerId, ...meta }));
   }
 
-  /**
-   * Keep connection alive with persistent stream
-   * Send immediate heartbeat then maintain with periodic pings
-   * @private
-   * @param {string} peerId - Peer ID to keep alive
-   */
-  async _keepAlive(peerId) {
-    const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
-    
+  _getConnectionPeers() {
+    if (!this.libp2p?.getConnections) return [];
+    const byId = new Map();
+    const connections = this.libp2p.getConnections();
+    const connectionList = Array.isArray(connections)
+      ? connections
+      : typeof connections?.values === 'function'
+        ? Array.from(connections.values()).reduce((acc, value) => acc.concat(value), [])
+        : [];
+    for (const conn of connectionList) {
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId) continue;
+      const meta = this.peers.get(peerId) || {};
+      byId.set(peerId, {
+        peerId,
+        ...meta,
+        via: meta.via || 'connection'
+      });
+    }
+    return Array.from(byId.values());
+  }
+
+  _shouldDialDiscoveredPeer(peerId) {
+    if (!peerId) return false;
+    if (!this.config.enforceRoomIsolation) return true;
+    if (this.bootstrapPeerIds.has(peerId)) return true;
+    return this.peers.has(peerId);
+  }
+
+  _touchPeer(peerId, updates) {
+    const existing = this.peers.get(peerId) || {};
+    this.peers.set(peerId, { ...existing, ...updates });
+  }
+
+  _startPresence() {
+    this._clearPresenceTimer();
+    const publishPresence = async () => {
+      if (!this.peerId) return;
+      const payload = {
+        type: 'presence',
+        from: this.peerId,
+        gameId: this.config.gameId,
+        roomId: this.config.roomId,
+        multiaddrs: this._getAnnounceAddrs()
+      };
+      await this._publish(this.config.presenceTopic, payload);
+    };
+
+    publishPresence().catch(() => {});
+    this.presenceInterval = setInterval(() => {
+      publishPresence().catch(() => {});
+    }, 3000);
+  }
+
+  _clearPresenceTimer() {
+    if (this.presenceInterval) {
+      clearInterval(this.presenceInterval);
+      this.presenceInterval = null;
+    }
+  }
+
+  _ensureScheduler() {
+    if (this.scheduler) return;
+    this.scheduler = new NetworkScheduler(this._buildSchedulerAdapter(), this.schedulerProfile);
+    if (this.authorityId) {
+      this.scheduler.setAuthority(this.authorityId);
+    }
+  }
+
+  _startScheduler() {
+    if (!this.schedulerEnabled) return;
+    if (!this.isConnected) return;
+    if (this.schedulerClock === 'external') return;
+    if (!this.scheduler || this.schedulerTimer) return;
+    const tick = () => {
+      if (!this.scheduler) return;
+      this.scheduler.tick(Date.now());
+      this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+    };
+    this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+  }
+
+  _stopScheduler() {
+    if (this.schedulerTimer) {
+      clearTimeout(this.schedulerTimer);
+      this.schedulerTimer = null;
+    }
+  }
+
+  _buildSchedulerAdapter() {
+    return {
+      sendSnapshot: (message) => this._sendScheduledSnapshot(message),
+      sendCommand: (message) => this._sendScheduledCommand(message),
+      sendEvent: (message) => this._sendScheduledEvent(message),
+      reconnect: () => this._schedulerReconnect(),
+      getPeerId: () => this.peerId,
+      getAuthority: () => this.authorityId,
+      getGameId: () => this.config.gameId,
+      getRoomId: () => this.config.roomId,
+      isInScope: (message) => this._matchesScope(message)
+    };
+  }
+
+  async _sendScheduledSnapshot(message) {
+    if (!this.isConnected) return;
+    if (this.schedulerProfile.snapshotsRequireAuthority && this.authorityId && this.authorityId !== this.peerId) {
+      return;
+    }
+    const topic = this.scheduler?.getProfile()?.snapshotTopic || this.config.pubsubTopic;
+    await this._publish(topic, message);
+  }
+
+  async _sendScheduledCommand(message) {
+    if (!this.isConnected) return;
+    const topic = this.scheduler?.getProfile()?.commandTopic || this.config.directTopic;
+    const target = this.authorityId && this.authorityId !== this.peerId ? this.authorityId : null;
+    const payload = target ? { ...message, target } : message;
+    await this._publish(topic, payload);
+  }
+
+  async _sendScheduledEvent(message) {
+    if (!this.isConnected) return;
+    const topic = this.scheduler?.getProfile()?.eventTopic || this.config.pubsubTopic;
+    await this._publish(topic, message);
+  }
+
+  async _schedulerReconnect() {
+    await this.redialBootstrapPeers();
+    this._resubscribeTopics();
+    this._startPresence();
+  }
+
+  _resubscribeTopics() {
+    if (!this.libp2p?.services?.pubsub) return;
+    this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.directTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+  }
+
+  async _publish(topic, payload) {
+    if (!this.libp2p?.services?.pubsub) return;
+    const data = encoder.encode(JSON.stringify(payload));
     try {
-      const pid = peerIdFromString(peerId);
-      
-      // Open persistent stream using keep-alive protocol
-      const stream = await this.libp2pNode.dialProtocol(pid, KEEPALIVE_PROTOCOL);
-      console.log(`[NetworkManager] 🔄 Keep-alive stream established to ${peerId}`);
-      
-      // Send IMMEDIATE heartbeat to establish bidirectional flow
-      await stream.sink([new Uint8Array([1])]);
-      console.log(`[NetworkManager] 💓 Initial heartbeat sent to ${peerId}`);
-      
-      // Create a pipe to continuously read from the stream
-      (async () => {
-        try {
-          if (stream.source) {
-            for await (const data of stream.source) {
-              console.log(`[NetworkManager] 💓 Received heartbeat echo from ${peerId}`);
-            }
-          }
-        } catch (error) {
-          console.log(`[NetworkManager] Keep-alive stream to ${peerId} closed:`, error.message);
-        }
-      })();
-      
-      // Send heartbeats every 5 seconds (not 30) to keep connection very active
-      const heartbeatInterval = setInterval(async () => {
-        try {
-          if (!this.isConnected) {
-            clearInterval(heartbeatInterval);
-            await stream.close();
-            return;
-          }
-          
-          const connections = this.libp2pNode.getConnections();
-          const hasConnection = connections.some(conn => conn.remotePeer.toString() === peerId);
-          
-          if (!hasConnection) {
-            console.log(`[NetworkManager] Lost connection to ${peerId}, attempting redial...`);
-            clearInterval(heartbeatInterval);
-            await stream.close();
-            // Attempt to reconnect
-            try {
-              const ma = this.config.bootstrapPeers.find(p => p.includes(peerId));
-              if (ma) {
-                const connection = await this.libp2pNode.dial(multiaddr(ma));
-                console.log(`[NetworkManager] ✅ Reconnected to relay: ${connection.remotePeer.toString()}`);
-                this._keepAlive(peerId); // Restart keep-alive
-              }
-            } catch (err) {
-              console.warn(`[NetworkManager] Reconnect failed:`, err.message);
-            }
-            return;
-          }
-          
-          // Send heartbeat byte to keep stream active
-          await stream.sink([new Uint8Array([1])]);
-          console.log(`[NetworkManager] 💓 Heartbeat sent to ${peerId}`);
-        } catch (error) {
-          console.warn(`[NetworkManager] Heartbeat failed to ${peerId}:`, error.message);
-          clearInterval(heartbeatInterval);
-        }
-      }, 5000); // Send heartbeat every 5 seconds
-      
-    } catch (error) {
-      console.error(`[NetworkManager] Failed to establish keep-alive stream to ${peerId}:`, error.message);
+      await this.libp2p.services.pubsub.publish(topic, data);
+      const now = Date.now();
+      this.lastTxAt = now;
+      this.scheduler?.recordTx(now);
+    } catch (err) {
+      const now = Date.now();
+      const last = this.publishErrorAt.get(topic) || 0;
+      if (now - last > 5000) {
+        this.publishErrorAt.set(topic, now);
+        debugWarn('[NetworkManager] Publish failed', topic, err?.message || err);
+      }
     }
+  }
+
+  async _dialBootstrapPeers() {
+    const dialAddrs = (this.config.bootstrapPeers || [])
+      .map(toMultiaddr)
+      .filter(Boolean);
+    await Promise.all(
+      dialAddrs.map(async (addr) => {
+        try {
+          const addrStr = addr.toString();
+          const peerIdStr = getPeerIdFromAddr(addrStr);
+          if (peerIdStr) {
+            try {
+              const peerId = peerIdFromString(peerIdStr);
+              const existing = this.libp2p?.getConnections?.(peerId) || [];
+              if (existing.length > 0) {
+                return;
+              }
+            } catch (_) {
+              // Fall through and attempt dial if peer ID parsing fails.
+            }
+          }
+          await this.libp2p.dial(addr);
+          debugLog('[NetworkManager] Dialed bootstrap peer', addr.toString());
+        } catch (err) {
+          debugWarn('[NetworkManager] Failed to dial bootstrap peer', addr.toString(), err?.message || err);
+        }
+      })
+    );
+  }
+
+  async _maybeDialPeer(peerId, source, addrs = null) {
+    if (!this.libp2p || !peerId || peerId === this.peerId) return;
+    if (this.bootstrapPeerIds.has(peerId)) return;
+    const active = this.libp2p.getConnections?.(peerId) || [];
+    if (active.length > 0) return;
+    const now = Date.now();
+    const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
+    if (now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
+    this.recentDialAttempts.set(peerId, now);
+    const maybeDialTargets = Array.isArray(addrs) && addrs.length > 0
+      ? addrs.map(toPeerMultiaddr).filter(Boolean)
+      : [];
+    if (maybeDialTargets.length > 0) {
+      for (const addr of maybeDialTargets) {
+        try {
+          await this.libp2p.dial(addr);
+          debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
+          return;
+        } catch (err) {
+          debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
+        }
+      }
+    }
+    let target = peerId;
+    try {
+      target = peerIdFromString(peerId);
+    } catch (_) {
+      return;
+    }
+    try {
+      await this.libp2p.dial(target);
+      debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
+    } catch (err) {
+      debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, err?.message || err);
+    }
+  }
+
+  _getAnnounceAddrs() {
+    if (!this.libp2p?.getMultiaddrs) return [];
+    const addrs = this.libp2p.getMultiaddrs().map((addr) => addr.toString());
+    const scoped = addrs.filter((addr) => addr.includes('/p2p-circuit') || addr.includes('/webrtc'));
+    const candidates = scoped.length > 0 ? scoped : addrs;
+    const peerId = this.peerId;
+    const normalized = candidates.map((addr) => ensurePeerIdSuffix(addr, peerId));
+    return Array.from(new Set(normalized));
+  }
+
+  _logPubsubStatus(label) {
+    if (!this.libp2p?.services?.pubsub) return;
+    if (!DEBUG_P2P) return;
+    const pubsub = this.libp2p.services.pubsub;
+    const peers = typeof pubsub.getPeers === 'function' ? pubsub.getPeers() : [];
+    const presencePeers = typeof pubsub.getSubscribers === 'function'
+      ? pubsub.getSubscribers(this.config.presenceTopic)
+      : [];
+    if (Array.isArray(peers) && peers.length === 0) {
+      debugWarn(`[NetworkManager] Pubsub has no peers (${label})`);
+    }
+    if (Array.isArray(presencePeers) && presencePeers.length === 0) {
+      debugWarn(`[NetworkManager] No subscribers on presence topic (${label})`);
+    }
+    const announceAddrs = this._getAnnounceAddrs();
+    if (announceAddrs.length === 0) {
+      debugWarn(`[NetworkManager] No announce addrs available (${label})`);
+    }
+  }
+
+  _rememberPeerAddresses(peerId, addrs) {
+    if (!this.libp2p?.peerStore?.merge) return;
+    if (!Array.isArray(addrs) || addrs.length === 0) return;
+    let peer;
+    try {
+      peer = peerIdFromString(peerId);
+    } catch (_) {
+      return;
+    }
+    const multiaddrs = addrs.map(toPeerMultiaddr).filter(Boolean);
+    if (multiaddrs.length === 0) return;
+    this.libp2p.peerStore.merge(peer, { multiaddrs }).catch(() => {});
   }
 }

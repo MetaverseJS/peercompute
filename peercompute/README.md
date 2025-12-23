@@ -1,184 +1,152 @@
 # PeerCompute
 
-A browser-based P2P distributed compute network leveraging WebGPU and libp2p for distributed computing, multiplayer gaming, and metaverse applications.
+PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Architecture
+## Key Innovation
+Given a network of compute nodes with varying mutual bandwidth and compute power it's possible to use cellular automata rules (where each node attempts to maximize it's own compute throughput) to form optimal compute networks for arbitrary workloads. 
 
-PeerCompute follows a modular architecture with the following core components:
+
+## What You Can Use Today
+- **libp2p relay + floodsub + presence** for browser P2P sessions.
+- **NodeKernel** orchestrator with State, Network, and Compute managers.
+- **NetworkScheduler** for decoupled network cadence (snapshots/events/commands).
+- **Room + game scoping** so different sessions do not collide.
+- **LAN-friendly relay config** via `relay-config.json`.
+
+## Architecture Overview
 
 ### Core Components
+- **NodeKernel**: orchestration and policy. Chooses what to send, when to send it, and who to send/request from.
+- **NetworkManager**: transport, routing, discovery, and scoping (libp2p).
+- **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
+- **StateManager**: shared state sync (Yjs + scoped namespaces).
+- **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
+- **ioManager**: controls local input/output (like threejs and your keyboard).
 
-- **NodeKernel** - Central orchestrator that manages all subsystems
-- **StateManager** - Coordinates read/write access to shared state with CRDT-based synchronization
-- **NetworkManager** - Handles P2P networking using libp2p with configurable topologies
-- **ComputeManager** - Manages distributed compute tasks across CPU and WebGPU workers
+### Orchestration vs Transport
+- NodeKernel defines **policy** (clock mode, profiles, dynamic throttling).
+- NetworkManager executes **transport** (dial, pubsub, presence, scope filters).
+- NetworkScheduler enforces **cadence** once policy is set.
 
-### Subsystems
+### Block Diagram
+![PeerCompute Node Block Diagram](../plan/compute-node-block-diagram.png)
 
-- **PhysicsEngine** - Rigid body physics simulation
-- **InputManager** - Multi-device input handling with network synchronization
-- **Utils** - Common utility functions
+### Network Topology
+![PeerCompute Topology Examples](../plan/p2p-network-topology-examples.png)
 
-## Project Structure
+### Clocking Modes (Configurable)
+PeerCompute supports multiple timing models:
+- **independent**: managers run event-driven; best throughput, least deterministic.
+- **kernel**: NodeKernel drives ticks; best determinism, higher latency.
+- **hybrid**: managers run independently but sync at kernel-defined points.
 
-```
-peercompute/src/peercompute/
-├── index.js                          # Main entry point
-├── nodeKernel/
-│   └── NodeKernel.js                # Node orchestrator
-├── stateManager/
-│   └── StateManager.js              # State management
-├── networkManager/
-│   └── NetworkManager.js            # P2P networking
-├── computeManager/
-│   ├── ComputeManager.js            # Compute coordination
-│   └── compute/
-│       ├── WebGPUComputeWorker.js   # GPU compute worker
-│       └── CPUComputeWorker.js      # CPU compute worker
-├── physics/
-│   └── PhysicsEngine.js             # Physics simulation
-├── input/
-│   └── InputManager.js              # Input handling
-└── utils/
-    └── Utils.js                     # Utility functions
-```
+## Network Scheduler Features
+- Separate **snapshot**, **event**, and **command** streams.
+- **Keepalive** and **reconnect** behavior when idle.
+- **Reliable events** with retries + ack (bounded retry budget).
+- **Profile-based rates** so different games or rooms can use different cadence.
 
-## Features
-
-### Network Topologies
-
-- **Hierarchy** - Tree-based structure with parent/child relationships
-- **Distributed** - Fully connected peer-to-peer mesh
-- **Emergent** - Self-organizing topology based on network conditions
-
-### Compute Capabilities
-
-- CPU-based parallel compute workers
-- WebGPU-accelerated compute shaders (WGSL)
-- Distributed task execution across network
-- Automatic work distribution and result aggregation
-
-### State Management
-
-- Shared state access across all managers
-- CRDT-based conflict-free state synchronization
-- Efficient network state propagation
-- Snapshot and versioning support
-
-### Use Cases
-
-- Player-hosted online gaming
-- Distributed physics simulations
-- Procedural world generation
-- Metaverse backend infrastructure
-- Collaborative computing workloads
-
-## Usage
-
-```javascript
-import { createNode } from './peercompute/index.js';
-
-// Create and initialize a node
-const node = await createNode({
-  topology: 'distributed',
-  storageMode: 'local',
-  enableWebGPU: true,
-  enablePhysics: true,
-  enableInput: true
-});
-
-// Start the node and connect to network
-await node.start();
-
-// Submit a compute task
-const result = await node.submitTask({
-  id: 'task-1',
-  type: 'webgpu',
-  shader: `
-    @compute @workgroup_size(64)
-    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-      // WGSL shader code
-    }
-  `,
-  data: { /* input data */ }
-});
-
-// Get node status
-const status = node.getStatus();
-console.log('Node status:', status);
-```
-
-## Current Status
-
-**Phase: Development - P2P Networking** 🔧
-
-Core modules implemented:
-- ✅ NodeKernel - Node orchestration and lifecycle management
-- ✅ StateManager - Yjs-based CRDT state synchronization
-- ✅ PeerComputeProvider - libp2p integration for Yjs
-- ✅ NetworkManager - libp2p v2 P2P networking (partial)
-- ✅ Relay Server - Circuit relay v2 for WebRTC connections
-- 🔄 ComputeManager - Stubbed, awaiting implementation
-- 🔄 PhysicsEngine - Stubbed, awaiting implementation
-- ✅ InputManager - Basic implementation
-- ✅ Automated testing suite with Playwright
-
-### Known Issues
-
-**P2P Connectivity (Critical)** 🔴
-- Relay connections drop after ~10 seconds
-- Root cause: Yamux muxer closes connections with no active streams
-- Blocker: libp2p v2 stream API changes (`stream.sink is not a function`)
-- See `plan/imp-log.md` for detailed investigation
-
-**Impact:**
-- 1 of 3 P2P connectivity tests failing
-- Connections to relay server unstable
-- Peer-to-peer mesh connections not persisting
-
-**Next Steps:**
-1. Research libp2p v2 stream API (it-pipe, duplex streams)
-2. Implement proper persistent stream keep-alive
-3. Consider circuit relay reservation or WebRTC direct connections
-4. Complete ComputeManager implementation
-5. Implement PhysicsEngine
-6. Add WebGPU compute shader execution
-
-## Testing
+## Quick Start
 
 ```bash
-# Run automated tests
-npm run test:auto
+cd peercompute
+npm install
 
-# Run tests manually
-npm test
-
-# Start relay server only
-npm run relay
-
-# Start development server
-npm run dev
+# Start relay + dev server
+sh ./start-dev.sh
 ```
 
-**Test Status:**
-- ✅ Node status metrics test
-- ✅ Node lifecycle test  
-- ❌ P2P connectivity test (connections drop)
+Open:
+- `http://localhost:5173/test-p2p.html` (connectivity)
+- `games/sw2.html` or `games/cb.html` (examples)
 
-## Dependencies
+### LAN / Mobile
+Start relay with a public host so other devices can dial it:
 
-To be added:
-- libp2p (P2P networking)
-- Additional libraries as needed for CRDT, physics, etc.
+```bash
+RELAY_PUBLIC_HOST=192.168.1.174 ./start-dev.sh
+```
 
-## Design Principles
+Clients will read `relay-config.json` and rewrite loopback addresses to the page host when needed.
 
-1. **Modularity** - ES6 modules with clear separation of concerns
-2. **Worker Threads** - Heavy computation runs in separate threads
-3. **Security** - SSL-secured domains, signed executable code, non-executable JSON data
-4. **Performance** - WebGPU acceleration, efficient state synchronization
-5. **Flexibility** - Configurable topologies, storage modes, and capabilities
+## Integration: Minimal Game Setup
+
+```js
+const cfg = await fetch('/relay-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
+const node = new window.NodeKernel({
+  bootstrapPeers: cfg?.bootstrapPeers || [],
+  enablePersistence: false,
+  gameId: 'my-game',
+  roomId: 'lobby-1'
+});
+
+await node.initialize();
+await node.start();
+
+const network = node.getNetworkManager();
+
+// Scheduler configuration (optional)
+network.configureScheduler({
+  snapshotHz: 15,
+  keepaliveMs: 1000,
+  reliableEventTypes: ['spawn', 'join']
+});
+```
+
+### Publish State via Scheduler
+```js
+network.registerStateProvider(() => ({
+  position: { x, y, z },
+  rotation: { y: yaw },
+  color,
+  ts: Date.now()
+}), { id: 'player' });
+
+network.addSnapshotHandler((peerId, message) => {
+  const entries = message.payload || [];
+  entries.forEach((entry) => {
+    if (entry.id !== 'player') return;
+    // apply remote player state
+  });
+});
+```
+
+### Send Events (Reliable or Best-Effort)
+```js
+network.queueEvent({ type: 'attack', victimId, ts: Date.now() }, { reliable: true });
+```
+
+## Profiles (Suggested Defaults)
+- **Action/FPS**: snapshotHz 10-20, reliable events: spawn/join/attack
+- **Co-op**: snapshotHz 5-10, reliable events: spawn/join/revive
+- **Turn-based**: event-driven, reliable events: join/turn/commit
+- **Sandbox**: low Hz, reliable events: place/delete/join/commit
+
+## Tests
+```bash
+npm run test:unit
+npm run test:auto
+```
+
+Note: Playwright is blocked in sandboxed environments (Chromium EPERM).
+
+## Project Structure
+```
+peercompute/src/peercompute/
+├── index.js
+├── nodeKernel/NodeKernel.js
+├── stateManager/StateManager.js
+├── networkManager/NetworkManager.js
+├── networkManager/NetworkScheduler.js
+├── computeManager/ComputeManager.js
+└── utils/Utils.js
+```
+
+## Roadmap Highlights
+- Adaptive profiles (RTT/peer count aware).
+- Authority election + snapshot ownership modes.
+- Optional binary encoding for high-throughput channels.
+- ComputeManager integration with network scheduler for distributed workloads.
 
 ## License
-
-TBD
+MIT
