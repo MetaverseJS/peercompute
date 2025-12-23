@@ -377,6 +377,12 @@ Approximately 3-4 hours of iterative debugging and implementation attempts.
 ### Tests
 - `npm run test:unit` (pass).
 
+## Date: 2025-12-22 (dev relay auto host)
+
+### Changes
+- `start-dev.sh` now auto-detects a LAN IP and sets `RELAY_PUBLIC_HOST` when not provided.
+- `start-dev.sh` now prints direct links to `sw2.html` and `cb.html` for both localhost and LAN host.
+
 ## Date: 2025-12-22 (README diagrams)
 
 ### Changes
