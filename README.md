@@ -41,7 +41,7 @@ npm run test:auto
 npm run dev
 ```
 
-See `peercompute/README.md` for detailed documentation.
+See `peercompute/README.md` for detailed documentation and integration steps.
 
 ### Using PeerCompute for Multiplayer Games
 

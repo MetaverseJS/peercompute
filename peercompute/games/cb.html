@@ -188,6 +188,7 @@
         const TIME_ANCHOR_KEY = 'time-anchor';
         const RECONNECT_INTERVAL_MS = 4000;
         const RECONNECT_MIN_GAP_MS = 2000;
+        const logNet = (...args) => console.log('[cb-net]', ...args);
 
         const isIpv4Host = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
         const isIpv6Host = (host) => host.includes(':');
@@ -418,6 +419,9 @@
                 this.reconnectTimer = null;
                 this.lastReconnectAttempt = 0;
                 this.connectionListenersBound = false;
+                this.connectionLogBound = false;
+                this.relayPeerIds = [];
+                this.relayConnected = false;
                 this.lastStateBroadcast = 0;
                 this.attackEventsSeen = new Map();
                 this.attackActiveUntil = 0;
@@ -466,6 +470,8 @@
                     spearThrust: 0
                 };
                 this.stateScratch = new THREE.Vector3();
+                this.schedulerConfigured = false;
+                this.snapshotProviderId = null;
                 this.keys = {};
                 this.currentSeed = CONFIG.WORLD_SEED; // Track current terrain seed
                 this.pointerLocked = false;
@@ -668,6 +674,13 @@
                 const hasRelayConnection = relayPeerIds.length > 0
                     ? connectionList.some((conn) => relayPeerIds.includes(conn?.remotePeer?.toString?.()))
                     : connectionList.length > 0;
+                if (hasRelayConnection && !this.relayConnected) {
+                    logNet('Relay connected', relayPeerIds.join(', ') || 'unknown');
+                }
+                if (!hasRelayConnection && this.relayConnected) {
+                    logNet('Relay disconnected');
+                }
+                this.relayConnected = hasRelayConnection;
                 if (!force && hasRelayConnection) return;
                 const now = Date.now();
                 if (!force && (now - this.lastReconnectAttempt) < RECONNECT_MIN_GAP_MS) return;
@@ -675,7 +688,7 @@
                 try {
                     await this.networkManager.redialBootstrapPeers();
                 } catch (err) {
-                    console.warn('Relay redial failed', err?.message || err);
+                    logNet('Relay redial failed', err?.message || err);
                 }
             }
 
@@ -704,6 +717,12 @@
                 try {
                     const cfg = await this.loadRelayConfig();
                     this.bootstrapPeers = this.normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+                    this.relayPeerIds = this.bootstrapPeers.map(getPeerIdFromAddr).filter(Boolean);
+                    if (this.bootstrapPeers.length === 0) {
+                        logNet('No bootstrap peers; relay config missing');
+                    } else {
+                        logNet('Bootstrap peers', this.bootstrapPeers);
+                    }
                     this.node = new window.NodeKernel({
                         bootstrapPeers: this.bootstrapPeers,
                         enablePersistence: false,
@@ -716,25 +735,38 @@
                     this.networkManager = this.node.getNetworkManager();
                     this.libp2p = this.networkManager?.getLibp2pNode?.() || null;
                     this.myPeerId = this.node.getStatus().network.peerId;
+                    logNet('Node started', this.myPeerId);
+                    if (this.libp2p && !this.connectionLogBound) {
+                        this.connectionLogBound = true;
+                        this.libp2p.addEventListener('connection:open', (evt) => {
+                            const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.remotePeer?.toString?.();
+                            if (!peerId) return;
+                            const isRelay = this.relayPeerIds.includes(peerId);
+                            if (isRelay) {
+                                this.relayConnected = true;
+                                logNet('Relay connected', peerId);
+                            } else {
+                                logNet('Peer connected', peerId);
+                            }
+                        });
+                        this.libp2p.addEventListener('connection:close', (evt) => {
+                            const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.remotePeer?.toString?.();
+                            if (!peerId) return;
+                            const isRelay = this.relayPeerIds.includes(peerId);
+                            if (isRelay) {
+                                this.relayConnected = false;
+                                logNet('Relay disconnected', peerId);
+                            } else {
+                                logNet('Peer disconnected', peerId);
+                            }
+                        });
+                    }
                     this.stateManager.observeNamespace(this.gameNamespace, (value, key) => {
-                        if (key.startsWith('player-')) {
-                            const id = key.replace('player-', '');
-                            if (id === this.myPeerId) return;
-                            this.applyRemotePlayer(id, value);
-                        }
-                        if (key.startsWith('attack-')) {
-                            const attacker = key.replace('attack-', '');
-                            this.handleRemoteAttack(attacker, value);
-                        }
                         if (key === 'time' || key === TIME_ANCHOR_KEY) {
                             this.applyRemoteTimeSync(value, key);
                         }
-                        if (key.startsWith('evt-')) {
-                            const from = key.replace('evt-', '');
-                            if (from === this.myPeerId) return;
-                            this.handleRemoteEvent(from, value);
-                        }
                     });
+                    this.configureNetworkScheduler();
                     this.startPeerCleanup();
                     this.setupVisibilityHeartbeat();
                     this.startNetworkWatchdog();
@@ -759,6 +791,65 @@
                 } catch (err) {
                     console.error('Multiplayer init failed', err);
                 }
+            }
+
+            configureNetworkScheduler() {
+                if (!this.networkManager || this.schedulerConfigured) return;
+                const snapshotHz = getNetHzFromQuery();
+                this.networkManager.configureScheduler({
+                    snapshotHz,
+                    keepaliveMs: STATE_KEEPALIVE_MS,
+                    snapshotsRequireAuthority: false
+                });
+                this.snapshotProviderId = this.networkManager.registerStateProvider(
+                    () => this.buildLocalSnapshot(),
+                    { id: 'player' }
+                );
+                this.networkManager.addSnapshotHandler((peerId, message) => {
+                    this.handleNetworkSnapshot(peerId, message);
+                });
+                this.networkManager.addEventHandler((peerId, message) => {
+                    this.handleNetworkEvent(peerId, message);
+                });
+                this.schedulerConfigured = true;
+            }
+
+            buildLocalSnapshot() {
+                if (!this.myPeerId) return null;
+                const pos = this.stateScratch;
+                this.camera.getWorldPosition(pos);
+                return {
+                    position: { x: pos.x, y: pos.y, z: pos.z },
+                    rotation: { y: this.camera.rotation.y },
+                    color: this.myColor,
+                    torch: this.hasTorch,
+                    spear: {
+                        thrust: this.spearThrustProgress,
+                        visible: true
+                    },
+                    ts: Date.now()
+                };
+            }
+
+            handleNetworkSnapshot(peerId, message) {
+                const from = message?.header?.peerId || peerId;
+                if (!from || from === this.myPeerId) return;
+                const entries = Array.isArray(message?.payload) ? message.payload : [];
+                entries.forEach((entry) => {
+                    if (!entry || entry.id !== 'player' || !entry.data) return;
+                    this.applyRemotePlayer(from, entry.data);
+                });
+            }
+
+            handleNetworkEvent(peerId, message) {
+                const from = message?.header?.peerId || peerId;
+                if (!from || from === this.myPeerId) return;
+                const entries = Array.isArray(message?.payload) ? message.payload : [];
+                entries.forEach((entry) => {
+                    const payload = entry?.payload;
+                    if (!payload || payload.type !== 'attack') return;
+                    this.handleRemoteAttack(from, payload);
+                });
             }
             
             regenerateTerrain() {
@@ -3068,8 +3159,7 @@
                 // Spear hit test (VR continuous, desktop during attack window)
                 this.performSpearHitTest(this.isInVR);
 
-                // Event-based state broadcast with keepalive
-                this.maybeBroadcastState();
+                // Network scheduler handles state updates
                 
                 this.renderer.render(this.scene, this.camera);
             }
@@ -3212,55 +3302,17 @@
 
             markStateDirty() {
                 this.stateDirty = true;
+                this.networkManager?.markStateDirty?.();
             }
 
             maybeBroadcastState(force = false) {
-                if (!this.stateManager || !this.myPeerId) return;
-                const now = Date.now();
-                if (!force && (now - this.lastStateSend) < STATE_EVENT_MIN_MS) return;
-                const pos = this.stateScratch;
-                this.camera.getWorldPosition(pos);
-                const rotY = this.camera.rotation.y;
-                const moved = pos.distanceTo(this.lastSentState.position) > STATE_POS_THRESHOLD;
-                const rotated = Math.abs(rotY - this.lastSentState.rotationY) > STATE_ROT_THRESHOLD;
-                const colorChanged = this.lastSentState.color !== this.myColor;
-                const keepalive = (now - this.lastStateSend) > STATE_KEEPALIVE_MS;
-                const torchChanged = this.lastSentState.torch !== this.hasTorch;
-                const spearChanged = this.lastSentState.spearThrust !== this.spearThrustProgress;
-                if (!force && !(moved || rotated || colorChanged || torchChanged || spearChanged || keepalive || this.stateDirty)) {
-                    return;
+                if (!this.myPeerId) return;
+                if (force) {
+                    this.markStateDirty();
+                } else {
+                    this.stateDirty = true;
+                    this.networkManager?.markStateDirty?.();
                 }
-
-                this.lastSentState.position.copy(pos);
-                this.lastSentState.rotationY = rotY;
-                this.lastSentState.color = this.myColor;
-                this.lastSentState.torch = this.hasTorch;
-                this.lastSentState.spearThrust = this.spearThrustProgress;
-                this.lastStateSend = now;
-                this.stateDirty = false;
-
-                const payload = {
-                    type: 'state',
-                    position: { x: pos.x, y: pos.y, z: pos.z },
-                    rotation: { y: rotY },
-                    color: this.myColor,
-                    torch: this.hasTorch,
-                    spear: {
-                        thrust: this.spearThrustProgress,
-                        visible: true
-                    },
-                    ts: now
-                };
-                this.stateManager.writeScoped(this.gameNamespace, `evt-${this.myPeerId}`, payload);
-                // also refresh presence timestamp for pruning
-                this.stateManager.writeScoped(this.gameNamespace, `player-${this.myPeerId}`, {
-                    position: payload.position,
-                    rotation: payload.rotation,
-                    color: payload.color,
-                    torch: this.hasTorch,
-                    spear: payload.spear,
-                    ts: now
-                });
             }
 
             publishPlayerState(force = false) {
@@ -3300,9 +3352,11 @@
             }
 
             registerHit(peerId) {
-                if (!this.stateManager || !this.myPeerId) return;
+                if (!this.myPeerId) return;
                 const ts = Date.now();
-                this.stateManager.writeScoped(this.gameNamespace, `attack-${this.myPeerId}`, { victimId: peerId, ts });
+                const payload = { type: 'attack', victimId: peerId, ts };
+                this.networkManager?.queueEvent?.(payload, { reliable: true });
+                this.handleRemoteAttack(this.myPeerId, payload);
             }
 
             applyRemotePlayer(peerId, data) {
@@ -3322,21 +3376,20 @@
                 mesh.group.userData.targetPos.set(data.position.x, data.position.y, data.position.z);
                 if (data.color) mesh.body.material.color.setHex(data.color);
                 mesh.group.rotation.y = data.rotation?.y || 0;
+                if (Object.prototype.hasOwnProperty.call(data, 'torch')) {
+                    this.applyRemoteTorch(peerId, data.torch);
+                }
+                if (data.spear) {
+                    this.applyRemoteSpear(peerId, data.spear);
+                }
                 const lastSeen = typeof data.ts === 'number' ? data.ts : Date.now();
                 this.peers.set(peerId, { lastSeen });
             }
 
             handleRemoteEvent(peerId, payload) {
                 if (!payload) return;
-                if (payload.type === 'state') {
-                    this.applyRemotePlayer(peerId, {
-                        position: payload.position,
-                        rotation: payload.rotation,
-                        color: payload.color,
-                        ts: payload.ts
-                    });
-                    if (payload.torch) this.applyRemoteTorch(peerId, payload.torch);
-                    if (payload.spear) this.applyRemoteSpear(peerId, payload.spear);
+                if (payload.type === 'attack') {
+                    this.handleRemoteAttack(peerId, payload);
                 }
             }
 

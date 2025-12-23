@@ -33,6 +33,10 @@ export * as Utils from './utils/Utils.js';
  * @param {boolean} config.enablePhysics - Enable physics engine
  * @param {boolean} config.enableInput - Enable input manager
  * @param {Array<string>} config.bootstrapPeers - Bootstrap peer addresses
+ * @param {Object} config.clockPolicy - Clock policy for orchestration
+ * @param {string} config.clockPolicy.mode - 'independent' | 'kernel'
+ * @param {number} config.clockPolicy.tickHz - Kernel tick rate when mode is 'kernel'
+ * @param {Object|null} config.clockPolicy.networkProfile - Network scheduler profile overrides
  * @returns {Promise<NodeKernel>} Initialized node
  * 
  * @example
@@ -80,5 +84,10 @@ export const DEFAULT_CONFIG = {
   enableWebGPU: false,
   enablePhysics: false,
   enableInput: false,
-  bootstrapPeers: []
+  bootstrapPeers: [],
+  clockPolicy: {
+    mode: 'independent',
+    tickHz: 30,
+    networkProfile: null
+  }
 };

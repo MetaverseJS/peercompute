@@ -307,23 +307,88 @@
         let peers = new Map();
         let peerMeshes = new Map();
         const seenAttacks = new Map(); // attackerId -> lastTs
-        const gameNamespace = 'sw2';
         let node = null;
-        let stateManager = null;
         let playerLabel = null;
         const log = (...args) => console.log('[sw2]', ...args);
+        const logNet = (...args) => console.log('[sw2-net]', ...args);
         let backgroundHeartbeat = null;
-        const STATE_EVENT_MIN_MS = 33;
+        let networkManager = null;
+        let libp2p = null;
+        let relayPeerIds = [];
+        let relayConnected = false;
+        let connectionLogBound = false;
+        let schedulerConfigured = false;
         const STATE_KEEPALIVE_MS = 1500;
-        let lastStateSend = 0;
-        let stateDirty = true;
-        const lastSentState = {
-            position: new THREE.Vector3(),
-            rotation: 0,
-            color: myColor,
-            score,
-            name: myName
+        const FLASHLIGHT_GRACE_MS = 250;
+        const FLASHLIGHT_EVENT_REFRESH_MS = 750;
+        const FLASHLIGHT_TTL_MS = 1200;
+        let flashlightActive = false;
+        let flashlightLastEventAt = 0;
+        let flashlightLastMotionAt = 0;
+        const getNetHzFromQuery = () => {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const raw = params.get('netHz') || params.get('nethz') || params.get('net') || '';
+                const hz = parseInt(raw, 10);
+                if (!Number.isNaN(hz) && hz > 0 && hz <= 60) return hz;
+            } catch (_) {}
+            return 30;
         };
+        const STATE_SNAPSHOT_HZ = getNetHzFromQuery();
+        const isIpv4Host = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+        const isIpv6Host = (host) => host.includes(':');
+        const isLoopbackHost = (host) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        const hostToMultiaddrPrefix = (host) => {
+            if (isIpv6Host(host)) return `/ip6/${host}`;
+            if (isIpv4Host(host)) return `/ip4/${host}`;
+            return `/dns4/${host}`;
+        };
+        const rewriteLoopbackAddr = (addr, hostPrefix) => {
+            if (typeof addr !== 'string') return addr;
+            return addr
+                .replace('/ip4/127.0.0.1', hostPrefix)
+                .replace('/ip6/::1', hostPrefix)
+                .replace('/dns4/localhost', hostPrefix)
+                .replace('/dns/localhost', hostPrefix);
+        };
+        const getPeerIdFromAddr = (addr) => {
+            if (typeof addr !== 'string') return null;
+            const parts = addr.split('/p2p/');
+            return parts.length > 1 ? parts[1] : null;
+        };
+
+        async function loadRelayConfig() {
+            try {
+                const tryFetch = async (path) => {
+                    try {
+                        const res = await fetch(path, { cache: 'no-store' });
+                        if (res.ok) return await res.json();
+                    } catch (_) {}
+                    return null;
+                };
+                const cfg =
+                    (await tryFetch('/relay-config.json')) ||
+                    (await tryFetch('relay-config.json')) ||
+                    (await tryFetch('/.relay-config.json')) ||
+                    (await tryFetch('.relay-config.json'));
+                if (cfg) return cfg;
+            } catch (e) {
+                // ignore and use fallback
+            }
+            return { bootstrapPeers: [] };
+        }
+
+        function normalizeBootstrapPeers(peers) {
+            if (!Array.isArray(peers)) return [];
+            const host = window.location.hostname;
+            if (!host || isLoopbackHost(host)) return peers;
+            const hostPrefix = hostToMultiaddrPrefix(host);
+            const expanded = peers.flatMap((addr) => {
+                const rewritten = rewriteLoopbackAddr(addr, hostPrefix);
+                return rewritten === addr ? [addr] : [addr, rewritten];
+            });
+            return Array.from(new Set(expanded));
+        }
         
         // Scene setup
         const scene = new THREE.Scene();
@@ -668,7 +733,6 @@
                         score++;
                         updateHUD();
                         markStateDirty();
-                        publishPlayerState(true);
                         
                         const peerMesh = peerMeshes.get(peerId);
                         if (peerMesh) {
@@ -732,6 +796,7 @@
         document.addEventListener('mousemove', (event) => {
             if (document.pointerLockElement === renderer.domElement) {
                 playerRotation -= event.movementX * 0.002;
+                flashlightLastMotionAt = performance.now();
                 markStateDirty();
             }
         });
@@ -788,7 +853,6 @@
             if (!next) return;
             myName = next;
             markStateDirty();
-            publishPlayerState(true);
             updateHUD();
         }
         if (nameBtn) {
@@ -807,7 +871,6 @@
                 myColor = parseInt(hex.replace('#','0x'), 16);
                 applyMeshColor(playerMesh, myColor);
                 markStateDirty();
-                publishPlayerState(true);
             });
         }
         document.addEventListener('visibilitychange', () => {
@@ -816,7 +879,6 @@
             } else {
                 stopBackgroundHeartbeat();
                 markStateDirty();
-                publishPlayerState(true);
             }
         });
         
@@ -827,6 +889,7 @@
                 requestAnimationFrame(update);
                 return;
             }
+            const frameNow = performance.now();
             let inputActive = false;
             // Simple movement vector based on keys or joystick
             let direction = new THREE.Vector3(0, 0, 0);
@@ -948,15 +1011,17 @@
             updateGrid();
             
             // Update spotlight based on movement
-            spotlightActive = keys.w || keys.a || keys.s || keys.d || 
-                             keys.arrowleft || keys.arrowright || 
-                             keys.space || mouse.pressed || 
-                             playerVelocity.length() > 0.01;
-            
-            playerSpotlight.visible = spotlightActive;
-            if (inputActive || mouse.pressed) {
+            const movementActive = inputActive || mouse.pressed || playerVelocity.length() > 0.01;
+            if (movementActive) {
+                flashlightLastMotionAt = frameNow;
                 markStateDirty();
             }
+            const idleForMs = frameNow - flashlightLastMotionAt;
+            const shouldFlashlightBeOn = movementActive || idleForMs < FLASHLIGHT_GRACE_MS;
+            spotlightActive = shouldFlashlightBeOn || keys.space;
+            
+            playerSpotlight.visible = spotlightActive;
+            maybeBroadcastFlashlight(shouldFlashlightBeOn, frameNow);
             
             // Update UI
             updateHUD();
@@ -1127,34 +1192,53 @@
         // P2P Communication Setup (PeerCompute)
         async function setupP2P() {
             try {
-                const cfg = await fetch('/relay-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
+                const cfg = await loadRelayConfig();
+                const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+                relayPeerIds = bootstrapPeers.map(getPeerIdFromAddr).filter(Boolean);
+                if (bootstrapPeers.length === 0) {
+                    logNet('No bootstrap peers; relay config missing');
+                } else {
+                    logNet('Bootstrap peers', bootstrapPeers);
+                }
                 const NodeKernel = window.NodeKernel;
                 node = new NodeKernel({
-                    bootstrapPeers: cfg?.bootstrapPeers || [],
+                    bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'sneakywoods',
                     roomId: 'global'
                 });
                 await node.initialize();
                 await node.start();
-                stateManager = node.getStateManager();
                 myPeerId = node.getStatus().network.peerId;
-                log(`Connected as ${myPeerId}`);
-
-                // Observe namespace changes
-                stateManager.observeNamespace(gameNamespace, (value, key) => {
-                    if (key.startsWith('player-')) {
-                        const id = key.replace('player-', '');
-                        if (id === myPeerId) return;
-                        applyRemotePlayer(id, value);
-                        return;
-                    }
-                    if (key.startsWith('attack-')) {
-                        const attacker = key.replace('attack-', '');
-                        handleRemoteAttack(attacker, value);
-                        return;
-                    }
-                });
+                networkManager = node.getNetworkManager();
+                libp2p = networkManager?.getLibp2pNode?.() || null;
+                logNet('Node started', myPeerId);
+                if (libp2p && !connectionLogBound) {
+                    connectionLogBound = true;
+                    libp2p.addEventListener('connection:open', (evt) => {
+                        const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.remotePeer?.toString?.();
+                        if (!peerId) return;
+                        const isRelay = relayPeerIds.includes(peerId);
+                        if (isRelay) {
+                            relayConnected = true;
+                            logNet('Relay connected', peerId);
+                        } else {
+                            logNet('Peer connected', peerId);
+                        }
+                    });
+                    libp2p.addEventListener('connection:close', (evt) => {
+                        const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.remotePeer?.toString?.();
+                        if (!peerId) return;
+                        const isRelay = relayPeerIds.includes(peerId);
+                        if (isRelay) {
+                            relayConnected = false;
+                            logNet('Relay disconnected', peerId);
+                        } else {
+                            logNet('Peer disconnected', peerId);
+                        }
+                    });
+                }
+                configureNetworkScheduler();
 
                 // Prune stale peers if their state stops updating
                 setInterval(() => {
@@ -1168,75 +1252,82 @@
 
                 // Publish our initial state and kick off heartbeats
                 markStateDirty();
-                publishPlayerState(true);
-                broadcastPosition(); // will repeat via requestAnimationFrame below
                 window.addEventListener('beforeunload', () => {
-                    if (stateManager) {
-                        stateManager.deleteScoped(gameNamespace, `player-${myPeerId}`);
-                    }
+                    stopBackgroundHeartbeat();
                 });
             } catch (err) {
                 console.error('P2P setup error:', err);
             }
         }
 
-        // No-op placeholders for legacy peer messaging hooks
-        function sendToPeer(peerId, message) {
-            // Intentionally empty; state sync handled via Yjs/state-set
+        function configureNetworkScheduler() {
+            if (!networkManager || schedulerConfigured) return;
+            networkManager.configureScheduler({
+                snapshotHz: STATE_SNAPSHOT_HZ,
+                keepaliveMs: STATE_KEEPALIVE_MS,
+                snapshotsRequireAuthority: false
+            });
+            networkManager.registerStateProvider(() => buildLocalSnapshot(), { id: 'player' });
+            networkManager.addSnapshotHandler((peerId, message) => {
+                handleNetworkSnapshot(peerId, message);
+            });
+            networkManager.addEventHandler((peerId, message) => {
+                handleNetworkEvent(peerId, message);
+            });
+            schedulerConfigured = true;
         }
 
-        function markStateDirty() {
-            stateDirty = true;
-        }
-
-        function maybeBroadcastState(force = false) {
-            if (!stateManager || !myPeerId) return;
-            const now = Date.now();
-            if (!force && (now - lastStateSend) < STATE_EVENT_MIN_MS) return;
-
-            const moved = playerPosition.distanceTo(lastSentState.position) > 0.05;
-            const rotated = Math.abs(playerRotation - lastSentState.rotation) > 0.02;
-            const colorChanged = lastSentState.color !== myColor;
-            const scoreChanged = lastSentState.score !== score;
-            const nameChanged = lastSentState.name !== myName;
-            const keepalive = (now - lastStateSend) > STATE_KEEPALIVE_MS;
-
-            if (!force && !(moved || rotated || colorChanged || scoreChanged || nameChanged || keepalive || stateDirty)) {
-                return;
-            }
-
-            lastSentState.position.copy(playerPosition);
-            lastSentState.rotation = playerRotation;
-            lastSentState.color = myColor;
-            lastSentState.score = score;
-            lastSentState.name = myName;
-            lastStateSend = now;
-            stateDirty = false;
-
-            const payload = {
+        function buildLocalSnapshot() {
+            if (!myPeerId) return null;
+            return {
                 name: myName,
                 position: { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z },
                 rotation: playerRotation,
-                ts: now,
+                ts: Date.now(),
                 color: myColor,
                 score
             };
-            stateManager.writeScoped(gameNamespace, `player-${myPeerId}`, payload);
         }
 
-        function publishPlayerState(force = false) {
-            maybeBroadcastState(force);
+        function handleNetworkSnapshot(peerId, message) {
+            const from = message?.header?.peerId || peerId;
+            if (!from || from === myPeerId) return;
+            const entries = Array.isArray(message?.payload) ? message.payload : [];
+            entries.forEach((entry) => {
+                if (!entry || entry.id !== 'player' || !entry.data) return;
+                applyRemotePlayer(from, entry.data);
+            });
         }
 
-        function broadcastPosition() {
-            maybeBroadcastState(false);
-            requestAnimationFrame(broadcastPosition);
+        function handleNetworkEvent(peerId, message) {
+            const from = message?.header?.peerId || peerId;
+            if (!from || from === myPeerId) return;
+            const entries = Array.isArray(message?.payload) ? message.payload : [];
+            entries.forEach((entry) => {
+                const payload = entry?.payload;
+                if (!payload || !payload.type) return;
+                if (payload.type === 'attack') {
+                    handleRemoteAttack(from, payload);
+                }
+                if (payload.type === 'flashlight') {
+                    handleRemoteFlashlight(from, payload);
+                }
+            });
+        }
+
+        // No-op placeholders for legacy peer messaging hooks
+        function sendToPeer(peerId, message) {
+            // Intentionally empty; state sync handled via scheduler snapshots/events
+        }
+
+        function markStateDirty() {
+            networkManager?.markStateDirty?.();
         }
 
         function startBackgroundHeartbeat() {
             if (backgroundHeartbeat) return;
             backgroundHeartbeat = setInterval(() => {
-                publishPlayerState();
+                markStateDirty();
             }, 1000);
         }
 
@@ -1245,6 +1336,20 @@
                 clearInterval(backgroundHeartbeat);
                 backgroundHeartbeat = null;
             }
+        }
+
+        function maybeBroadcastFlashlight(active, now) {
+            if (!networkManager || !myPeerId) return;
+            const refresh = active && (now - flashlightLastEventAt) >= FLASHLIGHT_EVENT_REFRESH_MS;
+            if (active === flashlightActive && !refresh) return;
+            flashlightActive = active;
+            flashlightLastEventAt = now;
+            networkManager.queueEvent({
+                type: 'flashlight',
+                active,
+                ttlMs: active ? FLASHLIGHT_TTL_MS : 0,
+                ts: Date.now()
+            });
         }
 
         function handlePlayerHit() {
@@ -1278,24 +1383,24 @@
             updateGrid();
             score = 0;
             markStateDirty();
-            publishPlayerState(true);
             updateHUD();
         }
 
         // Broadcast attack event so other clients can test hit and render FX
         function broadcastAttack(attackPosition) {
-            if (!stateManager || !myPeerId) return;
+            if (!networkManager || !myPeerId) return;
             const payload = {
+                type: 'attack',
                 position: { x: attackPosition.x, y: attackPosition.y, z: attackPosition.z },
                 rotation: playerRotation,
                 ts: Date.now()
             };
-            stateManager.writeScoped(gameNamespace, `attack-${myPeerId}`, payload);
+            networkManager.queueEvent(payload, { reliable: true });
             handleRemoteAttack(myPeerId, payload); // apply locally to ensure visuals
         }
 
         function handleRemoteAttack(attackerId, payload) {
-            if (!payload) return;
+            if (!payload || !payload.position) return;
             const last = seenAttacks.get(attackerId);
             if (last && last === payload.ts) return;
             seenAttacks.set(attackerId, payload.ts);
@@ -1338,20 +1443,34 @@
             }
         }
 
+        function handleRemoteFlashlight(peerId, payload) {
+            if (!payload) return;
+            let peerData = peers.get(peerId);
+            if (!peerData) {
+                addPeer(peerId, payload.color);
+                peerData = peers.get(peerId);
+            }
+            const now = performance.now();
+            peerData.flashlightActiveUntil = payload.active ? (now + (payload.ttlMs || FLASHLIGHT_TTL_MS)) : 0;
+            peerData.lastSeen = Date.now();
+        }
+
         function applyRemotePlayer(peerId, data) {
             if (!data) {
                 removePeer(peerId);
                 return;
             }
+            if (!data.position) return;
             if (!peers.has(peerId)) {
                 addPeer(peerId, data.color);
             }
             const peerData = peers.get(peerId);
             const prevPos = peerData.lastPos || peerData.position.clone();
             const prevRot = peerData.lastRot || 0;
+            const rotation = typeof data.rotation === 'number' ? data.rotation : (data.rotation?.y ?? 0);
             peerData.position.set(data.position.x, data.position.y, data.position.z);
-            peerData.rotation = data.rotation || 0;
-            peerData.name = data.name;
+            peerData.rotation = rotation;
+            peerData.name = data.name || peerData.name;
             peerData.lastSeen = Date.now();
             peerData.lastPos = peerData.position.clone();
             peerData.lastRot = peerData.rotation;
@@ -1371,13 +1490,14 @@
                 if (spot && spotTarget) {
                     const moved = prevPos.distanceTo(peerData.position) > 0.02;
                     const rotChanged = Math.abs(prevRot - peerData.rotation) > 0.05;
-                const now = performance.now();
-                const active = moved || rotChanged || (peerData.attackFlashUntil || 0) > now;
-                const targetOffset = new THREE.Vector3(0, 0, -15).applyAxisAngle(new THREE.Vector3(0, 1, 0), peerData.renderRotation || peerData.rotation);
-                spotTarget.position.copy(peerData.renderPosition || peerData.position).add(targetOffset);
-                spotTarget.position.y = 0;
-                spot.visible = active;
-            }
+                    const now = performance.now();
+                    const flashlightOn = (peerData.flashlightActiveUntil || 0) > now;
+                    const active = moved || rotChanged || flashlightOn || (peerData.attackFlashUntil || 0) > now;
+                    const targetOffset = new THREE.Vector3(0, 0, -15).applyAxisAngle(new THREE.Vector3(0, 1, 0), peerData.renderRotation || peerData.rotation);
+                    spotTarget.position.copy(peerData.renderPosition || peerData.position).add(targetOffset);
+                    spotTarget.position.y = 0;
+                    spot.visible = active;
+                }
                 updateNameLabel(mesh, peerData.name || peerId);
             }
             updateHUD();

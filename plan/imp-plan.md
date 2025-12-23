@@ -5,6 +5,7 @@
 - Webpack 5 browser client + Node.js relay server (WSS supported)
 - State sync via Yjs + PeerComputeProvider (custom, no y-libp2p dependency)
 - NodeKernel/StateManager/NetworkManager wiring in place
+- NodeKernel clock policy scaffolding (independent vs kernel tick) with NetworkScheduler clock modes
 - cb time sync anchored to first-join peer
 - PeerJS is not part of the runtime path
 

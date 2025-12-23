@@ -39,6 +39,7 @@ Finalize the libp2p-first stack by making the dev/test workflow reliable, docume
 [x] Switch pubsub to floodsub (client + relay) to match the working browser example.
 [x] Add first-joiner time anchor logic for cb time sync.
 [x] Draft NetworkManager scheduler spec + plan (`plan/netman.md`).
+[x] Add NodeKernel clock policy scaffolding (kernel vs independent clock) and document scheduler clock modes.
 [ ] Re-run Playwright suite and record results in `plan/imp-log.md` (blocked by sandbox EPERM).
 
 ## Testing and validation

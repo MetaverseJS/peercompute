@@ -218,6 +218,35 @@ Approximately 3-4 hours of iterative debugging and implementation attempts.
 - Reuse running relay log to generate `relay-config.json` when the PID already exists.
 - Fixed relay address logging to avoid double `/p2p/` segments in bootstrap multiaddrs.
 - Added relay listen/public host overrides (`RELAY_LISTEN_HOST`, `RELAY_PUBLIC_HOST`) for LAN testing.
+
+## Date: 2025-12-22
+
+### Changes
+- Implemented NetworkManager scheduler core in `peercompute/src/peercompute/networkManager/NetworkScheduler.js` with snapshot/command/event ticks, keepalive, and reconnect backoff.
+- Integrated scheduler hooks into `peercompute/src/peercompute/networkManager/NetworkManager.js` (configure/register providers, authority targeting, health tracking, reconnect/resubscribe path, topic allowlist updates).
+- Added unit tests for scheduler timing, keepalive, and reconnect behavior (`peercompute/tests/unit/networkScheduler.test.js`) and a `test:unit` npm script.
+- Reduced cb network pressure knobs: `games/cb.html` now derives the network tick cap from `?netHz=` and reuses a scratch vector to avoid per-frame allocations.
+- Aligned `games/sw2.html` to event-driven state updates with a 30/s cap + keepalive and dirty-flagging (inputs and score/name/color updates mark state dirty).
+
+### Tests
+- `npm run test:unit` (pass). Initial reconnect test failed because `lastReconnectAt` initialized at 0; fixed by starting at `-Infinity`.
+
+## Date: 2025-12-22 (room isolation + Playwright)
+
+### Changes
+- Enforced room isolation at discovery time: peers only dial discovered peers after same-room presence (or if bootstrap), preventing cross-room connections.
+
+### Tests
+- `npm run test:auto` (pass).
+
+## Date: 2025-12-22 (cb scheduler integration)
+
+### Changes
+- Wired Hyperborea (`games/cb.html`) to the NetworkManager scheduler: player state now emitted via scheduler snapshots, attack events via scheduler event queue, and state updates are no longer tied to the render loop.
+- Left StateManager usage in cb for time anchor sync only; player/attack updates now bypass Yjs.
+
+### Tests
+- `npm run test:unit` (pass).
 - Added `@libp2p/ping` dependency for NetworkManager/relay.
 - Normalized bootstrap multiaddrs and parsed them before dialing to avoid `getComponents` errors.
 - Updated gossipsub config to allow publishing when zero peers are subscribed.
@@ -281,3 +310,86 @@ Approximately 3-4 hours of iterative debugging and implementation attempts.
 ### Tests
 - Manual validation with `RELAY_PUBLIC_HOST=192.168.1.174 sh start-dev.sh` + two cb tabs.
 - Playwright still blocked in sandbox (Chromium EPERM/report port bind).
+
+## Date: 2025-12-22 (sw2 scheduler integration)
+
+### Changes
+- Rewired `games/sw2.html` to use NetworkManager scheduler snapshots/events (no StateManager writes/observes).
+- Added snapshot/event handlers + attack event queue; removed the RAF broadcast loop and redundant publish calls.
+- Mark state dirty while moving (including velocity decay) so snapshots update until motion stops; keepalive heartbeat now just marks dirty while hidden.
+- Snapshot payload now carries name/position/rotation/color/score for remote HUD updates.
+
+### Follow-up
+- Added flashlight events in `games/sw2.html`: local movement/rotation emits on/off via scheduler events with TTL refresh; remote peers now honor flashlight events in addition to movement deltas and attack flashes.
+
+### Tests
+- `npm run test:unit` (pass).
+- `npm run test:auto` failed in sandbox: Chromium could not launch (`sandbox_host_linux.cc:41` EPERM), HTML reporter failed to bind `::1:9323`.
+
+## Date: 2025-12-22 (clock policy + scheduler clock modes)
+
+### Changes
+- Added NodeKernel clock policy scaffolding (independent vs kernel-driven tick) and exposed it in status.
+- NetworkManager now supports internal vs external scheduler clocks (`setSchedulerClock`, `tickScheduler`), enabling NodeKernel-driven ticks.
+- Documented orchestration policy vs transport responsibilities and configurable clock implications in `plan/plan.md` and `plan/netman.md`.
+
+### Tests
+- `npm run test:unit` (pass).
+
+## Date: 2025-12-22 (clock policy tests)
+
+### Changes
+- Added unit coverage for NodeKernel clock policy defaults and external scheduler ticking (`tests/unit/nodeKernel.clockPolicy.test.js`).
+- Documented `clockPolicy` in `peercompute/src/peercompute/index.js` (JSDoc + default config).
+
+### Tests
+- `npm run test:unit` (pass).
+
+## Date: 2025-12-22 (kernel clock test + docs)
+
+### Changes
+- Added a kernel-clock integration-style unit test to ensure the NodeKernel timer drives scheduler ticks.
+- Documented a `clockPolicy` example in `plan/netman.md`.
+
+### Tests
+- `npm run test:unit` (pass).
+
+## Date: 2025-12-22 (reliable events + LAN bootstrap fix)
+
+### Changes
+- Added reliable event support in `NetworkScheduler` (event ids, retry with backoff, ack handling).
+- Added scheduler tests for reliable events + ack behavior.
+- Normalized relay bootstrap peers in `games/sw2.html` so loopback addresses are rewritten to the page host (LAN/mobile friendly).
+- Marked attack events as reliable in `games/cb.html` and `games/sw2.html`.
+- Documented reliability tier + ack messages in `plan/netman.md`.
+
+### Tests
+- `npm run test:unit` (pass).
+
+## Date: 2025-12-22 (reliability profiles + README refresh)
+
+### Changes
+- Added `reliableEventTypes` to scheduler profiles and documented per-profile reliable events.
+- Exposed reliability stats (sent/acked/dropped/pending + retry budget) via `NetworkManager.getHealth()`.
+- Added unit coverage for NetworkManager reliability mapping and scheduler ack stats.
+- Rewrote `peercompute/README.md` with updated architecture, plan summary, and integration guidance.
+
+### Tests
+- `npm run test:unit` (pass).
+
+## Date: 2025-12-22 (README diagrams)
+
+### Changes
+- Embedded the compute block diagram and topology examples in `peercompute/README.md`.
+
+## Date: 2025-12-22 (test-p2p UI sizing)
+
+### Changes
+- Fixed `test-p2p.html` input and state display heights so text boxes no longer resize when populated.
+## Date: 2025-12-22 (relay/peer connection logs)
+
+### Changes
+- Added relay/peer connection logging in `games/cb.html` and `games/sw2.html` (bootstrap list, relay connect/disconnect, peer connect/disconnect).
+
+### Tests
+- Not run (log-only change).

@@ -11,6 +11,16 @@ using webpack 5 with vanilla js and js-libp2p create a minimal peer to peer mult
 * large components should be capable of running in their own thread as a service worker or worker
 * group common functions together. input related functions should be located in input related modules, physics code should be located in physics modules, networking code should be handled in networking modules. code that handles the interactions between these entities should be located in the location that makes the most sense architecturally (usually the kernel )
 * refer to the PNGs in this folder for architecture hints.
+
+## Clocking and Orchestration (Decision)
+* NodeKernel owns orchestration policy: what to send, when to send it, and who to send/request from.
+* NetworkManager owns transport and routing; NetworkScheduler is a timing primitive that enforces cadence once the policy is set.
+* Clocking is configurable per use case:
+  * independent clocks (event driven, high throughput)
+  * kernel clock (lockstep, deterministic ordering)
+  * hybrid (kernel sync points + independent manager loops)
+* NodeKernel should be able to drive the scheduler tick and swap profiles at runtime without touching transport internals.
+
 ### compute node block diagram
 * State, Network, and Compute managers should be child threads of the node kernel.
 * All managers and their child threads should have read access to the datastate with State manager coordinating and performing writes.

@@ -17,6 +17,7 @@ import { bootstrap } from '@libp2p/bootstrap';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
 import { peerIdFromString } from '@libp2p/peer-id';
 import { multiaddr } from '@multiformats/multiaddr';
+import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
 const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
@@ -101,7 +102,8 @@ export class NetworkManager {
       discoveryTopic: config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub',
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
-      roomId: config.roomId || 'default-room'
+      roomId: config.roomId || 'default-room',
+      enforceRoomIsolation: config.enforceRoomIsolation !== false
     };
 
     const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
@@ -130,10 +132,149 @@ export class NetworkManager {
     this.onPeerConnect = config.onPeerConnect || (() => {});
     this.onPeerDisconnect = config.onPeerDisconnect || (() => {});
     this.messageHandlers = [];
+    this.scheduler = null;
+    this.schedulerTimer = null;
+    this.schedulerEnabled = config.enableScheduler || false;
+    this.schedulerClock = config.schedulerClock || 'internal';
+    this.schedulerProfile = {
+      ...DEFAULT_SCHEDULER_PROFILE,
+      ...(config.schedulerProfile || {})
+    };
+    this.authorityId = config.authorityId || null;
+    this.lastRxAt = 0;
+    this.lastTxAt = 0;
+    this.allowedTopics = new Set([
+      this.config.pubsubTopic,
+      this.config.directTopic,
+      this.config.presenceTopic
+    ]);
+    [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
+      .filter(Boolean)
+      .forEach((topic) => this.allowedTopics.add(topic));
   }
 
   addMessageHandler(handler) {
     this.messageHandlers.push(handler);
+  }
+
+  configureScheduler(profile = {}) {
+    this.schedulerProfile = {
+      ...this.schedulerProfile,
+      ...profile
+    };
+    [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
+      .filter(Boolean)
+      .forEach((topic) => this.allowedTopics.add(topic));
+    this.schedulerEnabled = true;
+    this._ensureScheduler();
+    this.scheduler.configure(this.schedulerProfile);
+    this._startScheduler();
+  }
+
+  setSchedulerClock(mode = 'internal') {
+    const next = mode === 'external' ? 'external' : 'internal';
+    if (this.schedulerClock === next) return;
+    this.schedulerClock = next;
+    if (next === 'external') {
+      this._stopScheduler();
+      return;
+    }
+    if (this.schedulerEnabled && this.isConnected) {
+      this._startScheduler();
+    }
+  }
+
+  getSchedulerClock() {
+    return this.schedulerClock;
+  }
+
+  tickScheduler(now = Date.now()) {
+    if (!this.scheduler || !this.schedulerEnabled) return;
+    this.scheduler.tick(now);
+  }
+
+  getSchedulerProfile() {
+    return this.scheduler ? this.scheduler.getProfile() : { ...this.schedulerProfile };
+  }
+
+  registerStateProvider(fn, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    return this.scheduler.registerStateProvider(fn, options);
+  }
+
+  registerCommandProvider(fn, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    return this.scheduler.registerCommandProvider(fn, options);
+  }
+
+  unregisterStateProvider(id) {
+    this.scheduler?.unregisterStateProvider(id);
+  }
+
+  unregisterCommandProvider(id) {
+    this.scheduler?.unregisterCommandProvider(id);
+  }
+
+  markStateDirty() {
+    this.scheduler?.markStateDirty();
+  }
+
+  queueEvent(payload, options = {}) {
+    this._ensureScheduler();
+    this.schedulerEnabled = true;
+    this._startScheduler();
+    const hasReliabilityFlag =
+      Object.prototype.hasOwnProperty.call(options, 'reliable') ||
+      Object.prototype.hasOwnProperty.call(options, 'critical');
+    let nextOptions = options;
+    if (!hasReliabilityFlag && payload?.type) {
+      const profile = this.scheduler?.getProfile?.() || this.schedulerProfile;
+      if (Array.isArray(profile.reliableEventTypes) && profile.reliableEventTypes.includes(payload.type)) {
+        nextOptions = { ...options, reliable: true };
+      }
+    }
+    this.scheduler.queueEvent(payload, nextOptions);
+  }
+
+  addSnapshotHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addSnapshotHandler(handler);
+  }
+
+  addCommandHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addCommandHandler(handler);
+  }
+
+  addEventHandler(handler) {
+    this._ensureScheduler();
+    this.scheduler.addEventHandler(handler);
+  }
+
+  setAuthority(peerId) {
+    this.authorityId = peerId || null;
+    if (this.scheduler) {
+      this.scheduler.setAuthority(this.authorityId);
+    }
+  }
+
+  getAuthority() {
+    return this.authorityId;
+  }
+
+  getHealth() {
+    const reliability = this.scheduler?.getReliabilityStats?.();
+    return {
+      lastRxAt: this.lastRxAt,
+      lastTxAt: this.lastTxAt,
+      peerCount: this.getConnectedPeers().length,
+      pubsubPeers: this.libp2p?.services?.pubsub?.getPeers?.() || [],
+      reliability
+    };
   }
 
   async initialize() {
@@ -208,6 +349,10 @@ export class NetworkManager {
     this._startPresence();
     this._logPubsubStatus('connected');
     this.isConnected = true;
+    if (this.schedulerEnabled) {
+      this._ensureScheduler();
+      this._startScheduler();
+    }
   }
 
   async redialBootstrapPeers() {
@@ -217,6 +362,7 @@ export class NetworkManager {
 
   async disconnect() {
     this.isConnected = false;
+    this._stopScheduler();
     this._clearPresenceTimer();
 
     if (this.libp2p) {
@@ -273,15 +419,11 @@ export class NetworkManager {
 
   _wireLibp2pEvents() {
     if (!this.libp2p) return;
-    const allowedTopics = new Set([
-      this.config.pubsubTopic,
-      this.config.directTopic,
-      this.config.presenceTopic
-    ]);
 
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const peerId = evt.detail?.id?.toString?.() || evt.detail?.id?.toString?.();
       if (!peerId || peerId === this.peerId) return;
+      if (!this._shouldDialDiscoveredPeer(peerId)) return;
       this._maybeDialPeer(peerId, 'discovery').catch(() => {});
     });
 
@@ -305,13 +447,21 @@ export class NetworkManager {
     this.libp2p.services.pubsub.addEventListener('message', (evt) => {
       const { topic, data } = evt.detail || {};
       if (!topic || !data) return;
-      if (!allowedTopics.has(topic)) return;
+      if (!this.allowedTopics.has(topic)) return;
 
       let parsed = null;
       try {
         parsed = JSON.parse(decoder.decode(data));
       } catch (err) {
         debugWarn('[NetworkManager] Failed to parse pubsub payload', err);
+        return;
+      }
+      const now = Date.now();
+      this.lastRxAt = now;
+      this.scheduler?.recordRx(now);
+
+      const sender = parsed?.header?.peerId || parsed?.from || 'unknown';
+      if (this.scheduler?.handleMessage(parsed, sender)) {
         return;
       }
 
@@ -413,6 +563,13 @@ export class NetworkManager {
     return Array.from(byId.values());
   }
 
+  _shouldDialDiscoveredPeer(peerId) {
+    if (!peerId) return false;
+    if (!this.config.enforceRoomIsolation) return true;
+    if (this.bootstrapPeerIds.has(peerId)) return true;
+    return this.peers.has(peerId);
+  }
+
   _touchPeer(peerId, updates) {
     const existing = this.peers.get(peerId) || {};
     this.peers.set(peerId, { ...existing, ...updates });
@@ -445,11 +602,92 @@ export class NetworkManager {
     }
   }
 
+  _ensureScheduler() {
+    if (this.scheduler) return;
+    this.scheduler = new NetworkScheduler(this._buildSchedulerAdapter(), this.schedulerProfile);
+    if (this.authorityId) {
+      this.scheduler.setAuthority(this.authorityId);
+    }
+  }
+
+  _startScheduler() {
+    if (!this.schedulerEnabled) return;
+    if (!this.isConnected) return;
+    if (this.schedulerClock === 'external') return;
+    if (!this.scheduler || this.schedulerTimer) return;
+    const tick = () => {
+      if (!this.scheduler) return;
+      this.scheduler.tick(Date.now());
+      this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+    };
+    this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+  }
+
+  _stopScheduler() {
+    if (this.schedulerTimer) {
+      clearTimeout(this.schedulerTimer);
+      this.schedulerTimer = null;
+    }
+  }
+
+  _buildSchedulerAdapter() {
+    return {
+      sendSnapshot: (message) => this._sendScheduledSnapshot(message),
+      sendCommand: (message) => this._sendScheduledCommand(message),
+      sendEvent: (message) => this._sendScheduledEvent(message),
+      reconnect: () => this._schedulerReconnect(),
+      getPeerId: () => this.peerId,
+      getAuthority: () => this.authorityId,
+      getGameId: () => this.config.gameId,
+      getRoomId: () => this.config.roomId,
+      isInScope: (message) => this._matchesScope(message)
+    };
+  }
+
+  async _sendScheduledSnapshot(message) {
+    if (!this.isConnected) return;
+    if (this.schedulerProfile.snapshotsRequireAuthority && this.authorityId && this.authorityId !== this.peerId) {
+      return;
+    }
+    const topic = this.scheduler?.getProfile()?.snapshotTopic || this.config.pubsubTopic;
+    await this._publish(topic, message);
+  }
+
+  async _sendScheduledCommand(message) {
+    if (!this.isConnected) return;
+    const topic = this.scheduler?.getProfile()?.commandTopic || this.config.directTopic;
+    const target = this.authorityId && this.authorityId !== this.peerId ? this.authorityId : null;
+    const payload = target ? { ...message, target } : message;
+    await this._publish(topic, payload);
+  }
+
+  async _sendScheduledEvent(message) {
+    if (!this.isConnected) return;
+    const topic = this.scheduler?.getProfile()?.eventTopic || this.config.pubsubTopic;
+    await this._publish(topic, message);
+  }
+
+  async _schedulerReconnect() {
+    await this.redialBootstrapPeers();
+    this._resubscribeTopics();
+    this._startPresence();
+  }
+
+  _resubscribeTopics() {
+    if (!this.libp2p?.services?.pubsub) return;
+    this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.directTopic);
+    this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+  }
+
   async _publish(topic, payload) {
     if (!this.libp2p?.services?.pubsub) return;
     const data = encoder.encode(JSON.stringify(payload));
     try {
       await this.libp2p.services.pubsub.publish(topic, data);
+      const now = Date.now();
+      this.lastTxAt = now;
+      this.scheduler?.recordTx(now);
     } catch (err) {
       const now = Date.now();
       const last = this.publishErrorAt.get(topic) || 0;

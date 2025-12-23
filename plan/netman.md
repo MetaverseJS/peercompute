@@ -5,6 +5,45 @@ Status: draft
 ## Summary
 Define a NetworkManager-owned scheduler that decouples local render/input from network traffic and supports multiple game types, room sizes, and topology modes. The scheduler provides predictable update rates, event-driven bursts, and reconnection health checks while keeping NodeKernel/StateManager APIs stable.
 
+## Orchestration vs Transport
+- **NodeKernel** owns policy (what/when/who): decides cadence, targets, and dynamic throttling per workload.
+- **NetworkManager** owns transport (dial, pubsub, room scoping) and executes the policy.
+- **NetworkScheduler** is a timing primitive: it enforces cadence, batching, keepalive, and backoff once policy is set.
+
+## Clock Policy (Configurable)
+PeerCompute should allow per-room clock policies so workloads can choose between throughput and determinism.
+
+### Independent clocks (event-driven)
+- Managers tick as fast as they need and emit events to NodeKernel.
+- Pros: max throughput, low latency for local input/compute.
+- Cons: nondeterministic ordering; requires conflict resolution and versioning.
+
+### Kernel clock (lockstep)
+- NodeKernel drives a fixed tick and tells managers when to publish.
+- Pros: deterministic ordering, easier replay/debugging.
+- Cons: throughput bounded by tick rate; higher input latency.
+
+### Hybrid
+- Managers run independently but sync on kernel-defined boundaries.
+- Pros: good balance of latency and determinism.
+- Cons: more coordination logic at sync boundaries.
+
+### Example Config
+```js
+const node = new NodeKernel({
+  gameId: 'cb',
+  roomId: 'global',
+  clockPolicy: {
+    mode: 'kernel', // 'independent' | 'kernel'
+    tickHz: 30,
+    networkProfile: {
+      snapshotHz: 15,
+      keepaliveMs: 1000
+    }
+  }
+});
+```
+
 ## Goals
 - Keep local framerate and input responsiveness independent from network update frequency.
 - Support multiple network profiles (action, co-op, turn-based, sandbox) with different rates.
@@ -53,6 +92,7 @@ All messages include a header:
 - **snapshot**: authoritative or peer state (position, rotation, velocity, flags)
 - **command**: input events (move, look, action buttons)
 - **event**: low-frequency gameplay events (hits, spawns, chat)
+- **ack**: delivery receipts for reliable events (ids only)
 - **presence**: keepalive + capability flags
 - **clock**: time sync anchor payloads
 
@@ -68,24 +108,28 @@ Profiles control scheduler rates and buffers:
 - interpolationMs: 100-150
 - keepaliveMs: 1000
 - maxBurst: 2-3 updates
+- reliableEventTypes: spawn, join, attack
 
 ### Co-op / Survival
 - inputHz: 10-20
 - snapshotHz: 5-10
 - interpolationMs: 150-250
 - keepaliveMs: 1500
+- reliableEventTypes: spawn, join, revive
 
 ### Turn-based / Strategy
 - inputHz: event-driven only
 - snapshotHz: on turn/phase
 - interpolationMs: 0
 - keepaliveMs: 3000
+- reliableEventTypes: join, turn, commit
 
 ### Sandbox / Builder
 - inputHz: 5-10
 - snapshotHz: 2-5
 - events: reliable edit logs
 - keepaliveMs: 2000
+- reliableEventTypes: place, delete, join, commit
 
 ## Topology Modes
 1) **Authority-hosted** (default):
@@ -113,9 +157,17 @@ Maintain `NetworkHealth`:
   - re-announce presence
 - Never block render loop when network is stale.
 
+## Reliability Tier (Events)
+Default events are best-effort. For critical actions (spawns, kills, room joins), mark events as reliable:
+- Sender assigns an event id and retries with backoff until an ack is received (bounded retries).
+- Receiver returns an ack message with the event ids it processed.
+- Reliable events are scoped to room/game and can target a peer to reduce mesh noise.
+
 ## Integration Contract (NetworkManager)
 NetworkManager exposes a scheduler config and hooks:
 - `configureScheduler(profile)`
+- `setSchedulerClock('internal' | 'external')` (internal timer vs kernel-driven tick)
+- `tickScheduler(now)` (for kernel-driven clocks)
 - `setAuthority(peerId)` / `getAuthority()`
 - `registerStateProvider(fn)` -> returns local state snapshot
 - `registerCommandProvider(fn)` -> returns queued inputs
@@ -129,6 +181,11 @@ Games (cb/sw2/etc.) only provide local input/state; NetworkManager handles rates
 ### Phase 0: Spec + Metrics (done in this doc)
 - Finalize message header fields and profile defaults.
 - Decide authority election rule.
+
+### Phase 0.5: Clock Policy Plumbing
+- Add NodeKernel clock policy config (mode + tick Hz + network profile).
+- Allow NodeKernel to drive scheduler ticks when configured.
+- Expose scheduler clock mode in status/telemetry.
 
 ### Phase 1: Scheduler Skeleton
 - Add scheduler loop in NetworkManager (setInterval, not tied to render).

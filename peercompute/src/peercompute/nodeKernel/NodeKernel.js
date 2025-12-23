@@ -24,6 +24,7 @@ export class NodeKernel {
    * @param {string} config.stateTopic - P2P state sync topic
    */
   constructor(config = {}) {
+    const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
     this.config = {
       topology: config.topology || 'distributed',
       storageMode: config.storageMode || 'local',
@@ -37,6 +38,7 @@ export class NodeKernel {
       stateTopic: config.stateTopic || 'peercompute-state',
       docName: config.docName,
       stateBroadcastNamespaces: config.stateBroadcastNamespaces,
+      clockPolicy,
       ...config
     };
 
@@ -47,6 +49,8 @@ export class NodeKernel {
     this.isInitialized = false;
     this.isStarted = false;
     this.nodeId = null;
+    this.kernelClockTimer = null;
+    this.kernelTickMs = Math.round(1000 / (this.config.clockPolicy.tickHz || 30));
   }
 
   /**
@@ -73,6 +77,8 @@ export class NodeKernel {
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
+        schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
+        schedulerProfile: this.config.clockPolicy.networkProfile,
         onMessage: this._handleNetworkMessage.bind(this),
         onPeerConnect: this._handlePeerConnect.bind(this),
         onPeerDisconnect: this._handlePeerDisconnect.bind(this)
@@ -137,6 +143,13 @@ export class NodeKernel {
       
       // Connect to P2P network
       await this.networkManager.connect();
+
+      if (this.config.clockPolicy.networkProfile) {
+        this.networkManager.configureScheduler(this.config.clockPolicy.networkProfile);
+      }
+      if (this.config.clockPolicy.mode === 'kernel') {
+        this._startKernelClock();
+      }
       
       // Set node state to active
       this.stateManager.write('status', 'active');
@@ -163,6 +176,7 @@ export class NodeKernel {
 
     try {
       console.log('[NodeKernel] Stopping...');
+      this._stopKernelClock();
       
       // Update state
       if (this.stateManager) {
@@ -191,6 +205,58 @@ export class NodeKernel {
       console.error('[NodeKernel] Stop failed:', error);
       throw error;
     }
+  }
+
+  setClockPolicy(policy = {}) {
+    const next = this._normalizeClockPolicy(policy, this.config.clockPolicy);
+    this.config.clockPolicy = next;
+    this.kernelTickMs = Math.round(1000 / next.tickHz);
+    if (this.networkManager) {
+      this.networkManager.setSchedulerClock(next.mode === 'kernel' ? 'external' : 'internal');
+      if (next.networkProfile) {
+        this.networkManager.configureScheduler(next.networkProfile);
+      }
+    }
+    if (this.isStarted) {
+      if (next.mode === 'kernel') {
+        this._startKernelClock();
+      } else {
+        this._stopKernelClock();
+      }
+    }
+  }
+
+  tick(now = Date.now()) {
+    this.networkManager?.tickScheduler?.(now);
+  }
+
+  _startKernelClock() {
+    if (this.kernelClockTimer) return;
+    const intervalMs = Math.max(10, this.kernelTickMs || 33);
+    this.kernelClockTimer = setInterval(() => {
+      this.tick(Date.now());
+    }, intervalMs);
+  }
+
+  _stopKernelClock() {
+    if (!this.kernelClockTimer) return;
+    clearInterval(this.kernelClockTimer);
+    this.kernelClockTimer = null;
+  }
+
+  _normalizeClockPolicy(policy = {}, base = {}) {
+    const input = policy && typeof policy === 'object' ? policy : {};
+    const basePolicy = base && typeof base === 'object' ? base : {};
+    const mode = input.mode || basePolicy.mode || 'independent';
+    const rawTick = input.tickHz ?? basePolicy.tickHz ?? 30;
+    const tickHz = Number.isFinite(rawTick) && rawTick > 0 ? rawTick : 30;
+    const networkProfile =
+      input.networkProfile !== undefined ? input.networkProfile : basePolicy.networkProfile || null;
+    return {
+      mode: mode === 'kernel' ? 'kernel' : 'independent',
+      tickHz,
+      networkProfile
+    };
   }
 
   /**
@@ -224,6 +290,11 @@ export class NodeKernel {
       isInitialized: this.isInitialized,
       isStarted: this.isStarted,
       topology: this.config.topology,
+      clock: {
+        mode: this.config.clockPolicy.mode,
+        tickHz: this.config.clockPolicy.tickHz,
+        schedulerClock: this.networkManager?.getSchedulerClock?.()
+      },
       
       // Network status
       network: {
