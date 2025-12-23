@@ -29,10 +29,10 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - NetworkScheduler enforces **cadence** once policy is set.
 
 ### Block Diagram
-![PeerCompute Node Block Diagram](../plan/compute-node-block-diagram.png)
+![PeerCompute Node Block Diagram](./plan/compute-node-block-diagram.png)
 
 ### Network Topology
-![PeerCompute Topology Examples](../plan/p2p-network-topology-examples.png)
+![PeerCompute Topology Examples](./plan/p2p-network-topology-examples.png)
 
 ### Clocking Modes (Configurable)
 PeerCompute supports multiple timing models:
