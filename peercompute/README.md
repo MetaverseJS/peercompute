@@ -21,6 +21,7 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
 - **StateManager**: shared state sync (Yjs + scoped namespaces).
 - **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
+- **ioManager**: controls local input/output (like threejs and your keyboard).
 
 ### Orchestration vs Transport
 - NodeKernel defines **policy** (clock mode, profiles, dynamic throttling).
@@ -52,7 +53,7 @@ cd peercompute
 npm install
 
 # Start relay + dev server
-./start-dev.sh
+sh ./start-dev.sh
 ```
 
 Open:

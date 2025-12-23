@@ -18,6 +18,15 @@ EXPORT_CERT_DIR="$ROOT_DIR/public/certs"
 SKIP_RELAY="${SKIP_RELAY:-0}"
 STARTED_RELAY=0
 
+# Auto-detect LAN IP if RELAY_PUBLIC_HOST is not set
+if [ -z "${RELAY_PUBLIC_HOST:-}" ]; then
+  LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}') || true
+  if [ -n "$LOCAL_IP" ]; then
+    export RELAY_PUBLIC_HOST="$LOCAL_IP"
+    echo "   Auto-detected RELAY_PUBLIC_HOST=$RELAY_PUBLIC_HOST"
+  fi
+fi
+
 # If HTTPS=1 is set, prefer provided SSL_CERT/SSL_KEY, else fall back to dev certs
 if [ "${HTTPS:-}" = "1" ]; then
   if [ -z "${SSL_CERT:-}" ] && [ -f "$DEFAULT_CERT" ]; then
@@ -143,6 +152,18 @@ fi
 
 echo ""
 echo "2️⃣  Starting Webpack Dev Server..."
+DEV_PROTO="http"
+if [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ]; then
+  DEV_PROTO="https"
+fi
+DEV_HOST="${DEV_HOST:-${RELAY_PUBLIC_HOST:-localhost}}"
+echo "   Game links:"
+echo "     ${DEV_PROTO}://localhost:5173/games/sw2.html"
+echo "     ${DEV_PROTO}://localhost:5173/games/cb.html"
+if [ "$DEV_HOST" != "localhost" ]; then
+  echo "     ${DEV_PROTO}://${DEV_HOST}:5173/games/sw2.html"
+  echo "     ${DEV_PROTO}://${DEV_HOST}:5173/games/cb.html"
+fi
 if [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ]; then
   echo "   HTTPS=1 with SSL cert/key detected; dev server will use HTTPS"
   HTTPS=1 SSL_CERT="$SSL_CERT" SSL_KEY="$SSL_KEY" npm run dev
