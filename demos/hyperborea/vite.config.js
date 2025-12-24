@@ -1,16 +1,18 @@
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { ensureDevHttpsCert } from '../../scripts/https.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
 const docsRoot = path.resolve(__dirname, '../../docs');
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
   server: {
     port: 5175,
+    https: command === 'serve' ? ensureDevHttpsCert() : undefined,
     fs: {
       allow: [__dirname, peercomputeRoot]
     }
@@ -31,4 +33,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));

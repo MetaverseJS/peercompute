@@ -1,0 +1,12 @@
+{
+  "WebSocketsComponents": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsComponents.html",
+  ".:WebSocketsComponents": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsComponents.html",
+  "WebSocketsInit": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsInit.html",
+  ".:WebSocketsInit": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsInit.html",
+  "WebSocketsMetrics": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsMetrics.html",
+  ".:WebSocketsMetrics": "https://libp2p.github.io/js-libp2p/interfaces/_libp2p_websockets.WebSocketsMetrics.html",
+  "WebSocketsDialEvents": "https://libp2p.github.io/js-libp2p/types/_libp2p_websockets.WebSocketsDialEvents.html",
+  ".:WebSocketsDialEvents": "https://libp2p.github.io/js-libp2p/types/_libp2p_websockets.WebSocketsDialEvents.html",
+  "webSockets": "https://libp2p.github.io/js-libp2p/functions/_libp2p_websockets.webSockets.html",
+  ".:webSockets": "https://libp2p.github.io/js-libp2p/functions/_libp2p_websockets.webSockets.html"
+}

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Physics - Toychest</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: #1a1a2e; 
+      color: #eee; 
+      font-family: system-ui, sans-serif; 
+      width: 100vw; 
+      height: 100vh; 
+      overflow: hidden; 
+      position: relative;
+    }
+    canvas { 
+      display: block;
+      width: 100%; 
+      height: 100%; 
+    }
+    #info { 
+      position: absolute; 
+      bottom: 20px; 
+      left: 20px; 
+      font-size: 14px; 
+      color: rgba(255, 255, 255, 0.8); 
+      background: rgba(0, 0, 0, 0.5);
+      padding: 8px 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      user-select: none;
+    }
+    #error { 
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff6b6b; 
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 80%;
+      text-align: center; 
+      display: none; /* Hidden by default, JS can show it */
+    }
+    #error:not(:empty) {
+      display: block;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19"></script>
+  <script type="module" crossorigin src="../assets/toychest-E_4KQ5tp.js"></script>
+  <link rel="modulepreload" crossorigin href="../assets/device-CAsdAK37.js">
+  <link rel="modulepreload" crossorigin href="../assets/orbitControls-BUIKUCvn.js">
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="info">Particles: <span id="particleCount">0</span> | FPS: <span id="fps">0</span></div>
+  <div id="error"></div>
+</body>
+</html>

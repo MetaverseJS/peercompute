@@ -38,6 +38,11 @@ const relayListenHost = process.env.RELAY_LISTEN_HOST || (relayPublicHost ? '0.0
 const relaySslCert = process.env.RELAY_SSL_CERT || process.env.SSL_CERT || '';
 const relaySslKey = process.env.RELAY_SSL_KEY || process.env.SSL_KEY || '';
 const useWss = Boolean(relaySslCert && relaySslKey);
+const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+const relayConfigFile = (process.env.RELAY_CONFIG_FILE || '').trim();
 
 async function startServer() {
   try {
@@ -183,7 +188,7 @@ async function startServer() {
       }
     });
 
-    // Write config to file for tests to pick up
+    // Write config to file for demos/tests to pick up
     // We prefer the WebSocket address for browser clients
     const wsAddr = addrs.find(a => a.includes('/wss')) || addrs.find(a => a.includes('/ws'));
     if (wsAddr) {
@@ -195,6 +200,27 @@ async function startServer() {
           : relayAddr;
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);
+        const relayConfig = JSON.stringify({ bootstrapPeers: [announceAddr] }, null, 2);
+        const writeConfig = (filePath) => {
+          if (!filePath) return;
+          try {
+            const dir = path.dirname(filePath);
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, `${relayConfig}\n`, 'utf8');
+            console.log(`[Relay] Wrote relay-config.json -> ${filePath}`);
+          } catch (err) {
+            console.warn(`[Relay] Failed to write relay-config.json to ${filePath}:`, err?.message || err);
+          }
+        };
+        if (relayConfigFile) {
+          writeConfig(path.resolve(relayConfigFile));
+        }
+        if (relayConfigDirs.length) {
+          relayConfigDirs.forEach((dirPath) => {
+            const filePath = path.resolve(dirPath, 'relay-config.json');
+            writeConfig(filePath);
+          });
+        }
     } else {
         console.log('No WebSocket address found!');
     }
