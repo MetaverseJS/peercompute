@@ -85,6 +85,56 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-23
 
 ### Prompt
+- first thiing I'd like you to do is refactor demos/hyperborea/cb.html it should be made more modular, broken out into ES6 modules and it should use vite. then update it for the changes we've made to peercompute.
+
+### Changes
+- Converted demos/hyperborea into a Vite-based module structure with a new entrypoint and styles.
+- Split Hyperborea demo logic into ES module files (config, net utils, noise, time system, terrain generator, VR/NURBS helpers, Game class).
+- Updated the demo to import NodeKernel directly from the PeerCompute source alias instead of relying on a global bundle.
+
+## Date: 2025-12-23
+
+### Prompt
+- I get a 404 when I try to run it
+
+### Changes
+- Added `demos/hyperborea/index.html` to avoid a root 404 and updated Vite build inputs.
+
+## Date: 2025-12-23
+
+### Prompt
+- alright it's running: [Immersive Web Emulator] ... nurbs.js:3 Uncaught TypeError: Cannot add property NURBSUtils, object is not extensible ... Please run it yourself until it loads without console errors.
+
+### Changes
+- Reworked NURBS helpers to avoid mutating the frozen `three` module namespace and updated the game to use the new helper.
+
+## Date: 2025-12-23
+
+### Prompt
+- OK we're rendering! but we have a multiplayer issue ... getNetHzFromQuery is not defined
+
+### Changes
+- Imported `getNetHzFromQuery` into the Hyperborea Game module to fix multiplayer scheduler setup.
+
+## Date: 2025-12-23
+
+### Prompt
+- OK I don't see any errors but the players don't seem to be connecting to one another.
+
+### Changes
+- Added a relay-config.json under demos/hyperborea/public so the Vite demo can discover bootstrap peers.
+
+## Date: 2025-12-23
+
+### Prompt
+- OK we're rendering! ... players don't seem to be connecting ... season/day/time doesn't seem to be syncing yet
+
+### Changes
+- Broadcast the time anchor on peer connections to ensure late joiners receive the current time sync payload.
+
+## Date: 2025-12-23
+
+### Prompt
 - go ahead
 
 ### Changes
