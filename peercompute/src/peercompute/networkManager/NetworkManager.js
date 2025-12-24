@@ -204,6 +204,11 @@ export class NetworkManager {
     return this.scheduler.registerStateProvider(fn, options);
   }
 
+  registerWarmDeltaProvider(fn, options = {}) {
+    const id = options.id || 'warm-deltas';
+    return this.registerStateProvider(() => fn(), { ...options, id });
+  }
+
   registerCommandProvider(fn, options = {}) {
     this._ensureScheduler();
     this.schedulerEnabled = true;

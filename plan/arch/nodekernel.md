@@ -11,12 +11,15 @@ Status: active; orchestrates managers and policies.
 - Set topology role and authority decisions.
 - Drive NetworkScheduler when kernel clock is enabled.
 - Route input, network events, and compute results into state updates.
+- Coordinate task modes (shared-GPU vs isolated GPU) with ComputeManager/GPU hub.
+- Register warm-delta provider with NetworkManager when enabled.
 
 ## Inputs
 - Input commands from Input Handler.
 - Network snapshots/events from NetworkManager.
 - Compute results from ComputeManager.
 - Config: gameId, roomId, clockPolicy, network profile.
+- Optional flags: enableGPUHub, enableWarmDeltaProvider, deltaNamespace.
 
 ## Outputs
 - Scheduler ticks/policy updates to NetworkManager.

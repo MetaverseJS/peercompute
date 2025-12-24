@@ -10,11 +10,16 @@ Status: active; hierarchical shared state store.
 - Support parallel reads/writes via State Workers.
 - Persist to IndexedDB for durability.
 
-### Big Possible Change
-    - layered datastate architecture. 
-        -   a high performance, in memory representation in webGPU buffers 
-        -   a videoDB representation https://github.com/dgriebel2014/VideoDBProject
-        -   a persistant storage representation kept in indexeddb
+## Layered DataState (Adopted)
+- Hot GPU layer: per-task GPUBuffers (fast, transient) owned by the GPU hub context.
+- Warm CPU layer: typed arrays + compact structs for netman, UI, and Yjs metadata.
+- Cold layer: IndexedDB snapshots/journal for persistence; optional VideoDB hot-store accelerator.
+
+## Commit Contract
+- Tasks publish deltas, not raw buffers.
+- `commitDelta({ taskId, scope, version, payload, timestamp })` where payload is CPU-friendly (typed arrays, JSON, or binary packets).
+- DataState applies ordering (timestamp/seq/vector clock) and updates hot/warm/cold layers as needed.
+- Warm deltas are retrievable via `getWarmDeltas()` for netman publishing.
  
 
 ## Shape + Conventions
@@ -28,6 +33,8 @@ Status: active; hierarchical shared state store.
 
 ## Execution Context
 - Backed by IndexedDB; accessed via StateManager/State Workers.
+- GPU hub on main thread owns shared-GPU hot layer; isolated compute workers emit CPU deltas.
+- NetworkManager consumes warm deltas via a registered provider.
 
 ## Failure Modes
 - Partial writes if workers crash mid-transaction.
@@ -39,3 +46,4 @@ Status: active; hierarchical shared state store.
 
 ## Open Questions
 - When to adopt binary encoding (CBOR) for deltas?
+- What is the conflict authority: per-task, per-room, or global?

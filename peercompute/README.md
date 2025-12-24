@@ -20,8 +20,10 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - **NetworkManager**: transport, routing, discovery, and scoping (libp2p).
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
 - **StateManager**: shared state sync (Yjs + scoped namespaces).
+- **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
 - **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
 - **ioManager**: controls local input/output (like threejs and your keyboard).
+- **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
 ### Orchestration vs Transport
 - NodeKernel defines **policy** (clock mode, profiles, dynamic throttling).
@@ -29,10 +31,10 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - NetworkScheduler enforces **cadence** once policy is set.
 
 ### Block Diagram
-![PeerCompute Node Block Diagram](../plan/compute-node-block-diagram.png)
+![PeerCompute Node Block Diagram](../plan/arch/compute-node-block-diagram.png)
 
 ### Network Topology
-![PeerCompute Topology Examples](../plan/p2p-network-topology-examples.png)
+![PeerCompute Topology Examples](../plan/arch/p2p-network-topology-examples.png)
 
 ### Clocking Modes (Configurable)
 PeerCompute supports multiple timing models:
@@ -114,6 +116,88 @@ network.addSnapshotHandler((peerId, message) => {
 ### Send Events (Reliable or Best-Effort)
 ```js
 network.queueEvent({ type: 'attack', victimId, ts: Date.now() }, { reliable: true });
+```
+
+## DataState + Compute Examples
+
+### Layered DataState + commitDelta
+```js
+const node = new window.NodeKernel({
+  enableGPUHub: true,
+  enableWarmDeltaProvider: true,
+  enableWebGPU: true,
+  deltaNamespace: 'deltas'
+});
+
+await node.initialize();
+await node.start();
+
+const state = node.getStateManager();
+
+state.commitDelta({
+  taskId: 'physics',
+  scope: 'deltas',
+  version: performance.now(),
+  payload: { positions },
+  timestamp: performance.now()
+});
+
+const dataState = state.getDataState();
+dataState.writeWarm('ui:stats', { fps }, 'ui');
+
+const warmDeltas = dataState.getWarmDeltas('deltas');
+
+// Hot layer (shared GPU buffers)
+const gpuHub = node.getGPUHub();
+await gpuHub.initialize();
+const positionsBuffer = gpuHub.createHotBuffer(
+  'hot:positions',
+  byteLength,
+  GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+);
+```
+
+### Compute Workers (CPU + isolated GPU)
+```js
+// CPU task (runs in a worker when available)
+const cpuResult = await node.submitTask({
+  data: { positions },
+  fn: ({ positions }) => {
+    const next = positions.map((p) => p + 1);
+    return {
+      commitDelta: {
+        taskId: 'cpu-physics',
+        scope: 'deltas',
+        version: Date.now(),
+        payload: { positions: next }
+      },
+      value: { count: next.length }
+    };
+  }
+});
+
+// WebGPU task in a worker (module-based, isolated GPU)
+await node.submitTask({
+  module: '/compute/stepWebGPU.js',
+  exportName: 'stepWebGPU',
+  data: { /* inputs */ }
+});
+```
+
+```js
+// /compute/stepWebGPU.js
+export async function stepWebGPU(input) {
+  // Use WebGPU in the worker and emit CPU deltas for DataState.
+  return {
+    commitDelta: {
+      taskId: 'gpu-physics',
+      scope: 'deltas',
+      version: Date.now(),
+      payload: { /* compact CPU delta */ }
+    },
+    value: { ok: true }
+  };
+}
 ```
 
 ## Profiles (Suggested Defaults)

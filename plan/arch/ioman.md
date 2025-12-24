@@ -9,6 +9,7 @@ Status: draft; main-thread IO orchestration.
 - Collect input events via Input Handler.
 - Update Render State Object for visualization.
 - Forward input commands to NodeKernel.
+- Coordinate render updates with the GPU hub when on the main thread.
 
 ## Inputs
 - DOM input events (keyboard, mouse, touch, gamepad).

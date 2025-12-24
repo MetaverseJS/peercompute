@@ -13,6 +13,7 @@ Status: draft; visual state view for rendering.
 ## Inputs
 - DataState snapshots/deltas from StateManager.
 - Render configuration (quality, LOD, perf caps).
+- Shared-GPU buffers from the GPU hub when available.
 
 ## Outputs
 - Scene updates for the renderer (three.js).

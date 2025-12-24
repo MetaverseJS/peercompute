@@ -29,11 +29,25 @@ export class ComputeManager {
     this.workers = [];
     this.taskQueue = [];
     this.activeTasks = new Map();
+    this.commitDeltaHandler = null;
     this.capabilities = {
       cpu: true,
       webgpu: false
     };
     this.initialized = false;
+  }
+
+  /**
+   * Register a handler to commit CPU deltas to DataState
+   * @param {Function} handler
+   */
+  setCommitDeltaHandler(handler) {
+    this.commitDeltaHandler = handler;
+  }
+
+  commitDelta(delta) {
+    if (!this.commitDeltaHandler) return;
+    this.commitDeltaHandler(delta);
   }
 
   /**
@@ -226,6 +240,12 @@ export class ComputeManager {
         fn = mod[task.payload.exportName || 'default'];
       }
       const result = await fn(task.payload.data);
+      if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'commitDelta')) {
+        this.commitDelta(result.commitDelta);
+        const finalResult = Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result.result;
+        task.resolve(finalResult);
+        return;
+      }
       task.resolve(result);
     } catch (err) {
       task.reject(err);
@@ -238,7 +258,12 @@ export class ComputeManager {
     if (!task) return;
 
     if (type === 'result') {
-      task.resolve(result);
+      let finalResult = result;
+      if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'commitDelta')) {
+        this.commitDelta(result.commitDelta);
+        finalResult = Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result.result;
+      }
+      task.resolve(finalResult);
     } else if (type === 'error') {
       task.reject(new Error(error || 'Worker task failed'));
     }

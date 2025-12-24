@@ -4,10 +4,12 @@ Status: active; primary UI/event loop.
 
 ## Purpose
 - Host UI, input handling, and rendering without blocking.
+- Own the shared GPU hub when running shared-GPU tasks.
 
 ## Responsibilities
 - Run Local IO Manager, Input Handler, and Render State updates.
 - Keep frame time stable and avoid heavy compute.
+- Schedule shared-GPU tasks within a frame budget.
 
 ## Constraints
 - Single-threaded; long tasks cause visible jank.

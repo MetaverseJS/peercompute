@@ -12,8 +12,10 @@
 import { NodeKernel } from './nodeKernel/NodeKernel.js';
 export { NodeKernel };
 export { StateManager } from './stateManager/StateManager.js';
+export { DataState } from './stateManager/DataState.js';
 export { NetworkManager } from './networkManager/NetworkManager.js';
 export { ComputeManager } from './computeManager/ComputeManager.js';
+export { GPUHubManager } from './gpu/GPUHubManager.js';
 
 // Subsystems
 export { PhysicsEngine } from './physics/PhysicsEngine.js';

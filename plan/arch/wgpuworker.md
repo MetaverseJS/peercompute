@@ -8,6 +8,7 @@ Status: draft; GPU compute worker.
 ## Responsibilities
 - Initialize and manage WebGPU devices/queues.
 - Run compute pipelines and return results to ComputeManager.
+- Emit CPU-friendly deltas for DataState when running isolated workloads.
 - Handle device loss and reinit when needed.
 
 ## Inputs
@@ -17,6 +18,7 @@ Status: draft; GPU compute worker.
 ## Outputs
 - Result buffers and timing metrics.
 - Device/validation errors.
+- CPU deltas for warm DataState commits.
 
 ## Execution Context
 - Web Worker with WebGPU access.
