@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
+const docsRoot = path.resolve(__dirname, '../../docs');
 
 export default defineConfig({
   root: '.',
@@ -20,8 +21,9 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: 'dist',
+    outDir: path.resolve(docsRoot, 'hyperborea'),
     assetsDir: 'assets',
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, 'index.html'),

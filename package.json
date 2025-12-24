@@ -1,0 +1,15 @@
+{
+  "name": "peercompute-root",
+  "private": true,
+  "scripts": {
+    "build:hyperborea": "npm --prefix demos/hyperborea run build",
+    "build:cubechat": "npm --prefix demos/cubechat run build",
+    "build:planetgen": "npm --prefix demos/planetgen run build",
+    "build:universes": "npm --prefix demos/universes run build",
+    "build:webgpuphys": "npm --prefix demos/webgpuphys run build",
+    "build:peercompute": "npm --prefix peercompute run build",
+    "build:demos": "npm run build:hyperborea && npm run build:cubechat && npm run build:planetgen && npm run build:universes && npm run build:webgpuphys",
+    "build:all": "bash scripts/build-all.sh",
+    "build": "npm run build:all"
+  }
+}

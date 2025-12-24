@@ -135,6 +135,20 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-23
 
 ### Prompt
+- We are in a new branch called demo-ports... port all demos with "-ref" suffix ... make a detailed plan in demo-ports.md ... proceed as far as you can ... devise tests you can run.
+
+### Changes
+- Drafted a detailed porting plan in plan/branch/demo-ports.md and created scaffolds for cubechat, planetgen, universes, and webgpuphys.
+- Ported CubeChat networking to a PeerCompute-based adapter and added a relay-config.json for the demo.
+- Added a demo scaffold test at demos/tests/demo-ports.test.js and ran it.
+- Hooked webgpuphys demos to a PeerCompute GPU hub device helper for shared WebGPU ownership.
+
+### Tests
+- node --test demos/tests/demo-ports.test.js
+
+## Date: 2025-12-23
+
+### Prompt
 - go ahead
 
 ### Changes
@@ -156,3 +170,19 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - node --test peercompute/tests/unit/*.test.js
+
+## Date: 2025-12-23
+
+### Prompt
+- OK do all four of those things, write tests you can execute yourself, then execute those tests to verify everything works for every one of the demos, and then fix the things you discover broke in the demos.
+
+### Changes
+- Restored CubeChat WebRTC signaling over PeerCompute events and added screen-share renegotiation/track classification.
+- Added a shared GPU hub helper to PlanetGen and wired Ocean + WaterCycle compute to accept injected devices.
+- Offloaded Universes universe/galaxy generation to ComputeManager tasks with main-thread fallback.
+- Added isolated worker compute tasks for WebGPUPhys headless MPM and updated the demo wiring.
+- Updated demo READMEs to reflect new compute/network behavior.
+- Expanded demo-ports tests to validate compute wiring and WebRTC signaling.
+
+### Tests
+- node --test demos/tests/demo-ports.test.js

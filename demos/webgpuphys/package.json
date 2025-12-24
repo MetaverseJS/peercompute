@@ -1,0 +1,36 @@
+{
+  "name": "webgpu-physics",
+  "version": "1.0.0",
+  "description": "High-performance GPU-accelerated physics simulation using WebGPU compute shaders (plain JavaScript)",
+  "type": "module",
+  "main": "dist/webgpu-physics.js",
+  "module": "dist/webgpu-physics.js",
+  "exports": {
+    ".": {
+      "import": "./dist/webgpu-physics.js"
+    }
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:headless": "node tests/headless-runtime.js"
+  },
+  "keywords": [
+    "webgpu",
+    "physics",
+    "simulation",
+    "compute-shader",
+    "rigid-body",
+    "gpu"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.42.0",
+    "vite": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

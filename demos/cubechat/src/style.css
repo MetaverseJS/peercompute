@@ -1,0 +1,228 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  background-color: #000428;
+  color: #00ffff;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+#loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 1000;
+  background: rgba(0, 4, 40, 0.9);
+  padding: 1.5rem 2rem;
+  border: 2px solid #00ffff;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+  max-width: 90%;
+  width: auto;
+}
+
+#loading h1 {
+  font-size: clamp(1.5rem, 8vw, 3rem);
+  margin-bottom: 1rem;
+  text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+  letter-spacing: 0.1em;
+  word-wrap: break-word;
+}
+
+#loading p {
+  font-size: clamp(0.8rem, 3vw, 1.2rem);
+  margin-top: 0.8rem;
+  color: #00cccc;
+  word-wrap: break-word;
+}
+
+#scene-container {
+  width: 100%;
+  height: 100%;
+}
+
+#scene-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Info panel */
+#info {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 4, 40, 0.8);
+  padding: 1rem;
+  border: 1px solid #00ffff;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  max-width: 300px;
+  z-index: 100;
+}
+
+#info h3 {
+  margin-bottom: 0.5rem;
+  color: #00ffff;
+  text-shadow: 0 0 5px #00ffff;
+}
+
+#info p {
+  margin: 0.3rem 0;
+  color: #00cccc;
+}
+
+/* Settings button */
+#settings-button {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  background: rgba(0, 255, 255, 0.3);
+  border: 2px solid #00ffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 2000;
+  transition: all 0.2s;
+}
+
+#settings-button:hover {
+  background: rgba(0, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+/* Settings menu */
+#settings-menu {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 4, 40, 0.95);
+  border: 2px solid #00ffff;
+  border-radius: 10px;
+  padding: 2rem;
+  z-index: 3000;
+  min-width: 300px;
+  box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+}
+
+#settings-close-x {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  color: #00ffff;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#settings-close-x:hover {
+  color: #ffffff;
+  transform: scale(1.2);
+}
+
+#settings-menu h3 {
+  margin: 0 0 1.5rem 0;
+  color: #00ffff;
+  text-shadow: 0 0 10px #00ffff;
+  font-size: 1.5rem;
+}
+
+#settings-menu label {
+  display: block;
+  margin-bottom: 1.5rem;
+  color: #00ffff;
+  font-size: 1rem;
+}
+
+#settings-menu input {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid #00ffff;
+  border-radius: 5px;
+  color: #00ffff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+}
+
+#settings-menu input:focus {
+  outline: none;
+  border-color: #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+#settings-menu input[type="color"] {
+  height: 50px;
+  cursor: pointer;
+}
+
+#settings-menu button {
+  margin-top: 1rem;
+  margin-right: 0.5rem;
+  padding: 0.7rem 1.5rem;
+  background: rgba(0, 255, 255, 0.2);
+  border: 1px solid #00ffff;
+  border-radius: 5px;
+  color: #00ffff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#settings-menu button:hover {
+  background: rgba(0, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+/* VR Button */
+#vr-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 15px 30px;
+  background: rgba(138, 43, 226, 0.3);
+  border: 2px solid #8a2be2;
+  border-radius: 25px;
+  color: #8a2be2;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  z-index: 2000;
+  transition: all 0.3s ease;
+  text-shadow: 0 0 5px #8a2be2;
+  box-shadow: 0 0 15px rgba(138, 43, 226, 0.3);
+}
+
+#vr-button:hover {
+  background: rgba(138, 43, 226, 0.5);
+  transform: scale(1.05);
+  box-shadow: 0 0 25px rgba(138, 43, 226, 0.5);
+}

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PeerCompute Demos</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --ink: #1e1b16;
+      --muted: #6c6256;
+      --accent: #2d4c7c;
+      --card: #ffffff;
+      --border: #d7d0c7;
+      --shadow: rgba(14, 12, 8, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 55%, #e8e1d8 100%);
+      color: var(--ink);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 48px 6vw 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      margin: 0 0 16px;
+      max-width: 680px;
+      color: var(--muted);
+    }
+
+    main {
+      padding: 0 6vw 64px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 10px 24px var(--shadow);
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .card span {
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .links a {
+      font-size: 0.85rem;
+      text-decoration: none;
+      color: var(--accent);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(45, 76, 124, 0.2);
+    }
+
+    footer {
+      padding: 0 6vw 32px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PeerCompute Demo Deck</h1>
+    <p>Standalone demos built for GitHub Pages. Each demo lives in its own folder under <code>/docs</code> and uses relative assets for simple static hosting.</p>
+  </header>
+  <main>
+    <section class="grid">
+      <a class="card" href="./hyperborea/">
+        <h2>Hyperborea</h2>
+        <span>WebXR-ready multiplayer scene with shared GPU hub.</span>
+      </a>
+      <a class="card" href="./cubechat/">
+        <h2>CubeChat</h2>
+        <span>PeerCompute relay + WebRTC proximity video chat.</span>
+      </a>
+      <a class="card" href="./planetgen/">
+        <h2>PlanetGen</h2>
+        <span>Procedural planet generator with GPU-driven oceans and weather.</span>
+      </a>
+      <a class="card" href="./universes/">
+        <h2>Universes</h2>
+        <span>Universe + galaxy generator with ComputeManager offload.</span>
+      </a>
+      <div class="card">
+        <h2>WebGPUPhys</h2>
+        <span>GPU physics demos, MLS-MPM experiments, headless runner.</span>
+        <div class="links">
+          <a href="./webgpuphys/">Overview</a>
+          <a href="./webgpuphys/demos/toychest.html">Toychest</a>
+          <a href="./webgpuphys/demos/mpm-visual.html">MPM Visual</a>
+          <a href="./webgpuphys/demos/mpm-headless.html">MPM Headless</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer>
+    Some demos require WebGPU and a modern Chromium build. Multiplayer demos expect a reachable PeerCompute relay.
+  </footer>
+</body>
+</html>

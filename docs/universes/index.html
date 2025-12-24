@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>UNIVERSE_SIM_V1</title>
+    <!-- Green Pixel Galaxy Favicon -->
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAMNJREFUWEftlL0NwjAQhD8n0lGipUOKUJAOKVOhZACKlClTskCKgB6L/zgnJ45ISXw5+9z5fDbnzBRecfF6+QJ4uXwBvF6+AF4u/z8AL1cf6Ba9C8Bw0exz96YFTW/BqB6szV0AhlO9XcwT2yx404J7I1iZ2wB2J71fLFLLgv+24N4IVuYmgN1J7xOLbLLg3gjurWBlrgJ4Oul7YpFqFtwbwcp8BfBw0v3EIvUseDCC1XkI4O2k94lFalnwaASr8xT/g5eL3wG8XPwO4OXyBfBy+QSeF2uIK78O1gAAAABJRU5ErkJggg==" />
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --term-green: #00ff00;
+        --term-glow: rgba(0, 255, 0, 0.6);
+        --term-bg: #050505;
+      }
+      
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: var(--term-bg);
+        font-family: 'Silkscreen', cursive, monospace;
+        font-size: 16px; 
+        color: var(--term-green);
+        cursor: none; /* Hide default cursor */
+        
+        text-shadow: 0 0 2px var(--term-glow), 0 0 8px var(--term-glow);
+        -webkit-font-smoothing: none;
+        touch-action: manipulation; /* Allow panel scrolling; canvas blocks touch */
+      }
+
+      /* Retro Scrollbar */
+      ::-webkit-scrollbar {
+        width: 10px;
+        background: #001100;
+      }
+      ::-webkit-scrollbar-track {
+        background: #001100; 
+        border-left: 1px solid #004400;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--term-green); 
+        border: 2px solid #000;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #00cc00;
+      }
+      
+      /* Force hide cursor on all interactive elements */
+      button, input, label, a, .panel-close, .hud-panel {
+        cursor: none !important;
+      }
+
+      /* Custom Blinking Cursor */
+      #mouse-cursor {
+        position: fixed;
+        width: 14px;
+        height: 24px;
+        background-color: var(--term-green);
+        z-index: 9999;
+        pointer-events: none;
+        transform: translate(0, 0);
+        mix-blend-mode: normal; 
+        box-shadow: 0 0 10px var(--term-green);
+        animation: cursorBlink 1s step-end infinite;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #000;
+        font-size: 20px;
+        line-height: 24px;
+        font-weight: bold;
+      }
+
+      #mouse-cursor.active {
+        background-color: var(--term-green);
+        color: #000;
+        width: 24px;
+        height: 24px;
+        border-radius: 2px;
+        animation: none;
+        box-shadow: 0 0 15px var(--term-green);
+      }
+
+      @keyframes cursorBlink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; } 
+      }
+      
+      canvas {
+        display: block;
+        image-rendering: pixelated; 
+        touch-action: none;
+      }
+      
+      #canvas-container {
+        width: 100vw;
+        height: 100vh;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+        touch-action: none;
+      }
+      
+      #ui-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10;
+        pointer-events: none; 
+      }
+      
+      /* CRT Overlay - Sits on top of everything */
+      #crt-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 5000;
+        pointer-events: none;
+        background: transparent;
+      }
+
+      /* CRT Effects */
+      .crt-effects {
+        animation: textShadow 1.6s infinite;
+      }
+
+      .crt-effects::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        z-index: 5001;
+        background-size: 100% 2px, 3px 100%;
+        pointer-events: none;
+      }
+
+      .crt-effects::after {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: rgba(18, 16, 16, 0.1);
+        opacity: 0;
+        z-index: 5001;
+        pointer-events: none;
+        animation: flicker 0.15s infinite;
+      }
+
+      @keyframes flicker {
+        0% { opacity: 0.027951; }
+        5% { opacity: 0.048283; }
+        10% { opacity: 0.041688; }
+        15% { opacity: 0.086208; }
+        20% { opacity: 0.076896; }
+        25% { opacity: 0.046968; }
+        30% { opacity: 0.057372; }
+        35% { opacity: 0.063702; }
+        40% { opacity: 0.052601; }
+        45% { opacity: 0.093379; }
+        50% { opacity: 0.027056; }
+        55% { opacity: 0.076846; }
+        60% { opacity: 0.072237; }
+        65% { opacity: 0.074603; }
+        70% { opacity: 0.023249; }
+        75% { opacity: 0.079218; }
+        80% { opacity: 0.079361; }
+        85% { opacity: 0.029237; }
+        90% { opacity: 0.046422; }
+        95% { opacity: 0.091153; }
+        100% { opacity: 0.093375; }
+      }
+      
+      /* Panels & Modal Styles */
+      .hud-panel {
+        position: absolute;
+        padding: 15px;
+        pointer-events: auto;
+        background: rgba(0, 15, 0, 0.95);
+        border: 2px solid var(--term-green);
+        box-shadow: 0 0 20px rgba(0, 255, 0, 0.15), inset 0 0 20px rgba(0, 50, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 260px;
+        max-width: 350px;
+        z-index: 100; /* Ensure UI sits below CRT overlay */
+        overflow-wrap: anywhere; /* Prevent horizontal scroll */
+        box-sizing: border-box;
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid var(--term-green);
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+        width: 100%;
+      }
+      
+      .panel-close {
+        background: transparent;
+        border: 1px solid var(--term-green);
+        color: var(--term-green);
+        padding: 0px 8px;
+        font-size: 20px;
+        line-height: 1;
+        font-family: 'Silkscreen', monospace;
+      }
+      .panel-close:hover {
+        background: var(--term-green);
+        color: #000;
+        text-shadow: none;
+      }
+
+      /* Button Styles */
+      button {
+        background: #000;
+        color: var(--term-green);
+        border: 2px solid var(--term-green);
+        padding: 8px 14px;
+        font-family: 'Silkscreen', monospace;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        box-shadow: 0 0 10px rgba(0,255,0,0.2);
+        pointer-events: auto;
+        transition: all 0.1s;
+        text-shadow: inherit;
+        letter-spacing: 1px;
+      }
+      button:hover {
+        background: var(--term-green);
+        color: #000;
+        box-shadow: 0 0 20px rgba(0,255,0,0.6);
+        text-shadow: none;
+      }
+      button:disabled {
+        border-color: #004400;
+        color: #004400;
+        box-shadow: none;
+        text-shadow: none;
+      }
+      button.active {
+        background: var(--term-green);
+        color: #000;
+        text-shadow: none;
+      }
+
+      /* Layouts */
+      #status-toggle-btn { top: 20px; left: 20px; z-index: 100; position: absolute; }
+      #config-btn { top: 20px; right: 20px; z-index: 100; position: absolute; }
+      #sim-toggle-btn { bottom: 20px; right: 20px; z-index: 100; position: absolute; }
+      #loc-btn { bottom: 20px; left: 20px; z-index: 100; position: absolute; }
+
+      /* Docked Panels */
+      #stats-panel { top: 70px; left: 20px; display: none; }
+      #controls-panel { bottom: 70px; right: 20px; text-align: right; align-items: flex-end; display: none; }
+      
+      .coords-box {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        border-bottom: 1px dashed var(--term-green);
+        padding-bottom: 8px;
+        margin-bottom: 4px;
+      }
+      .coord-line {
+        display: flex;
+        justify-content: space-between;
+      }
+      
+      /* Target Analysis Panel */
+      #target-panel {
+        bottom: 70px;
+        left: 20px;
+        width: 350px;
+        display: none;
+        z-index: 100;
+      }
+      #target-title { margin: 0; font-size: 1.1rem; letter-spacing: 1px; }
+      #spectrograph {
+        width: 100%;
+        height: 30px;
+        background: #000;
+        border: 2px solid #004400;
+        margin: 8px 0;
+        position: relative;
+      }
+      .spec-line {
+        position: absolute;
+        top: 2px;
+        bottom: 2px;
+        width: 8px;
+      }
+      .data-row {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px dashed #004400;
+        padding: 4px 0;
+        font-size: 0.9rem;
+      }
+      .data-label { color: #0a0; text-shadow: none; }
+      .data-val { color: #fff; font-weight: normal; text-shadow: 0 0 5px #fff; }
+      
+      #warp-btn {
+        margin-top: 15px;
+        width: 100%;
+        font-size: 1.0rem;
+        padding: 10px;
+        border: 2px solid var(--term-green);
+        animation: pulse-border 2s infinite;
+      }
+      @keyframes pulse-border {
+        0% { box-shadow: 0 0 5px var(--term-green); }
+        50% { box-shadow: 0 0 20px var(--term-green); }
+        100% { box-shadow: 0 0 5px var(--term-green); }
+      }
+
+      /* Config Modal */
+      #config-modal {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        width: 320px;
+        display: none;
+        z-index: 101;
+      }
+
+      /* Content Styling */
+      h1, h2 {
+        margin: 0;
+        font-size: 1.2rem;
+        text-transform: uppercase;
+        font-weight: normal;
+        letter-spacing: 2px;
+      }
+      p { margin: 4px 0; font-size: 0.9rem; letter-spacing: 1px; }
+
+      .control-group {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 8px 0;
+        width: 100%;
+        justify-content: flex-end;
+      }
+      .control-group.left-align { justify-content: flex-start; }
+      
+      input[type="range"] {
+        accent-color: var(--term-green);
+        flex-grow: 1;
+        background: transparent;
+      }
+      
+      label {
+        font-size: 0.9rem;
+        white-space: nowrap;
+        color: var(--term-green);
+      }
+
+      .quality-selector {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 5px;
+      }
+      
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--term-green);
+        width: 20px;
+        height: 20px;
+      }
+
+      #VRButton {
+          background: #000 !important;
+          color: var(--term-green) !important;
+          border: 2px solid var(--term-green) !important;
+          font-family: 'Silkscreen', monospace !important;
+          font-size: 1.0rem !important;
+          border-radius: 0 !important;
+          opacity: 1 !important;
+          padding: 8px 16px !important;
+          box-shadow: 0 0 10px rgba(0,255,0,0.3) !important;
+          position: static !important;
+          bottom: auto !important;
+          width: 100% !important;
+          left: auto !important;
+          transform: none !important;
+          text-shadow: 0 0 5px var(--term-glow) !important;
+          z-index: 101 !important;
+          margin-top: 6px !important;
+          cursor: none !important;
+      }
+
+      #alert-box {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        border: 2px solid var(--term-green);
+        background: #000;
+        padding: 30px;
+        text-align: center;
+        display: none;
+        min-width: 400px;
+        pointer-events: auto;
+        box-shadow: 0 0 50px rgba(0,255,0,0.2);
+        z-index: 200;
+      }
+      #alert-dismiss {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: transparent;
+        border: none;
+        color: var(--term-green);
+        font-size: 1.5rem;
+        line-height: 1;
+        padding: 5px;
+        min-width: auto;
+        box-shadow: none;
+      }
+
+      /* Mobile Mode */
+      @media (max-width: 768px) {
+        .hud-panel {
+          width: 90vw;
+          max-width: none;
+          left: 50% !important;
+          transform: translateX(-50%);
+          top: 60px !important;
+          bottom: auto;
+        }
+
+        #target-panel {
+          width: 100vw;
+          left: 0 !important;
+          transform: none;
+          bottom: 0 !important;
+          top: auto !important;
+          height: 33vh;
+          border-left: none;
+          border-right: none;
+          border-bottom: none;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          box-sizing: border-box;
+          background: rgba(0, 15, 0, 0.98);
+        }
+        
+        #target-panel > * {
+          flex: 0 0 auto;
+        }
+
+        #config-modal {
+          top: 50% !important;
+          transform: translate(-50%, -50%);
+          width: 90vw;
+        }
+        
+        #controls-panel {
+          bottom: 80px; 
+          top: auto !important;
+          align-items: center;
+          text-align: center;
+        }
+        
+        .control-group {
+            justify-content: center;
+        }
+
+        #status-toggle-btn { top: 10px; left: 10px; }
+        #config-btn { top: 10px; right: 10px; }
+        #loc-btn { bottom: 10px; left: 10px; }
+        #sim-toggle-btn { bottom: 10px; right: 10px; }
+        
+        #alert-box {
+            width: 90vw;
+            min-width: 0;
+            padding: 20px;
+        }
+      }
+    </style>
+    <!-- Import Map for Three.js -->
+
+    <script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.167.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.167.0/examples/jsm/",
+    "three/": "https://esm.sh/three@^0.182.0/"
+  }
+}
+</script>
+    <script type="module" crossorigin src="./assets/index-DMCJzU6W.js"></script>
+  </head>
+  <body>
+    <!-- Custom Cursor -->
+    <div id="mouse-cursor"></div>
+
+    <div id="canvas-container"></div>
+    
+    <!-- CRT Overlay -->
+    <div id="crt-overlay" class="crt-effects"></div>
+
+    <!-- UI Layer -->
+    <div id="ui-layer">
+      
+      <!-- Top Bar Buttons -->
+      <button id="status-toggle-btn">[ STATUS ]</button>
+      <button id="config-btn">[ CONFIG ]</button>
+      
+      <!-- Bottom Bar Buttons -->
+      <button id="loc-btn">[ LOCATION ]</button>
+      <button id="sim-toggle-btn">[ SIM ]</button>
+
+      <!-- Stats Window -->
+      <div id="stats-panel" class="hud-panel">
+        <div class="panel-header">
+            <h1>SYSTEM STATUS</h1>
+            <button class="panel-close" id="stats-close">X</button>
+        </div>
+        <div class="coords-box">
+           <div class="coord-line"><span>X:</span> <span id="c-x">0</span></div>
+           <div class="coord-line"><span>Y:</span> <span id="c-y">0</span></div>
+           <div class="coord-line"><span>Z:</span> <span id="c-z">0</span></div>
+        </div>
+        <p>AGE: <span id="time">0.00</span> Bn YR</p>
+        <p>FPS: <span id="fps">60</span></p>
+        <p>OBJECTS: <span id="objects">0</span></p>
+        <p>SEED: <span id="seed-disp">UNKNOWN</span></p>
+      </div>
+
+      <!-- Simulation Controls Window -->
+      <div id="controls-panel" class="hud-panel">
+        <div class="panel-header">
+            <h2>SIM CONTROL</h2>
+            <button class="panel-close" id="sim-close">X</button>
+        </div>
+        
+        <div class="control-group">
+          <label>TIMESTEP</label>
+          <input type="range" id="timestep-slider" min="0" max="0.5" step="0.001" value="0.25">
+        </div>
+
+        <div class="control-group checkbox-group" style="justify-content: flex-end;">
+          <input type="checkbox" id="autopilot-toggle" checked>
+          <label for="autopilot-toggle">AUTOPILOT</label>
+        </div>
+        
+        <button id="back-btn" disabled>RETURN TO ORBIT</button>
+        <button id="pause-btn">PAUSE SIM</button>
+        <button id="bang-btn">BIG BANG (RESET)</button>
+        <button id="reset-btn">RESEED UNIVERSE</button>
+      </div>
+
+      <!-- Target Analysis Panel (Docked Left) -->
+      <div id="target-panel" class="hud-panel">
+        <div class="panel-header">
+            <h2 id="target-title">TARGET ANALYSIS</h2>
+            <button class="panel-close" id="target-close">X</button>
+        </div>
+        <label>EMISSION SPECTROGRAPH</label>
+        <div id="spectrograph">
+             <!-- Lines injected via JS -->
+        </div>
+        <!-- New Elemental Composition Readout -->
+        <div id="t-composition" style="font-size: 0.8rem; color: #aaffaa; margin-top: 5px; white-space: pre-wrap; text-shadow: none;"></div>
+        <div class="data-row"><span class="data-label">DESIGNATION:</span> <span class="data-val" id="t-name">UNKNOWN</span></div>
+        <div class="data-row"><span class="data-label">TYPE:</span> <span class="data-val" id="t-type">ANALYZING...</span></div>
+        <div class="data-row"><span class="data-label">AGE:</span> <span class="data-val" id="t-age">0.0 Bn YR</span></div>
+        <div class="data-row"><span class="data-label">MASS:</span> <span class="data-val" id="t-mass">0.0 M☉</span></div>
+        <div class="data-row"><span class="data-label">RADIUS:</span> <span class="data-val" id="t-rad">0.0 R☉</span></div>
+        <div class="data-row"><span class="data-label">LUMINOSITY:</span> <span class="data-val" id="t-lum">0.0 L☉</span></div>
+        
+        <button id="warp-btn">INITIATE HYPERDRIVE</button>
+      </div>
+
+      <!-- Config Modal (Docked Top Right) -->
+      <div id="config-modal" class="hud-panel">
+        <div class="panel-header">
+           <h2>CONFIGURATION</h2>
+           <button class="panel-close" id="config-close">X</button>
+        </div>
+        
+        <label>SIMULATION QUALITY</label>
+        <div class="quality-selector">
+           <button class="q-btn" data-q="LOW">LOW</button>
+           <button class="q-btn" data-q="MED">MED</button>
+           <button class="q-btn active" data-q="HIGH">HIGH</button>
+           <button class="q-btn" data-q="ULTRA">ULTRA</button>
+        </div>
+
+        <div class="control-group left-align" style="flex-direction: column; align-items: flex-start;">
+            <label>RETRO PIXELATION: <span id="retro-val">1</span></label>
+            <input type="range" id="retro-slider" min="0" max="10" step="1" value="1" style="width: 100%">
+        </div>
+
+        <div class="control-group left-align checkbox-group">
+            <input type="checkbox" id="crt-toggle" checked>
+            <label for="crt-toggle">CRT SCANLINES</label>
+        </div>
+
+        <div class="control-group left-align" style="flex-direction: column; align-items: flex-start;">
+            <label>VR MODE</label>
+            <div id="vr-button-container" style="width: 100%"></div>
+        </div>
+      </div>
+
+      <!-- Transition Alert -->
+      <div id="alert-box">
+        <button id="alert-dismiss">X</button>
+        <h2 id="alert-title">APPROACHING GALAXY</h2>
+        <p id="alert-msg">ENTERING LOCAL CLUSTER...</p>
+      </div>
+    </div>
+  </body>
+</html>
