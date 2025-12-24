@@ -49,6 +49,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Prefer data/layout choices that keep buffer interop simple.
 - DataState is hierarchical and persisted in IndexedDB; state workers handle parallel access.
 - Compute runs in CPU/WebGPU workers; IO stays on the main thread.
+- Shared-GPU tasks run under a main-thread GPU hub; isolated GPU tasks emit CPU deltas.
+- DataState is layered (hot GPU, warm CPU, cold IndexedDB) with explicit commit deltas.
 
 ## Architecture Docs:
 - See plan/arch for component summaries and topology notes.

@@ -1,19 +1,22 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" version="29.2.7">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" version="29.2.9">
   <diagram name="Page-1" id="69g39gva253gPbehGL0q">
-    <mxGraphModel dx="2416" dy="975" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="3189" dy="1438" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="aQhf20ITL6OdNdUAGhSd-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
-          <mxGeometry height="215" width="450" x="-680" y="870" as="geometry" />
+        <mxCell id="fJZjrikpft0VYZp1osr0-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;Layered hierarchical data-structure&amp;nbsp;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="530" width="370" x="-1270" y="1010" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Compute Manager [compman]&lt;br&gt;(monitors resources and dispatches compute jobs)" vertex="1">
+        <mxCell id="aQhf20ITL6OdNdUAGhSd-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="215" width="430" x="-655" y="870" as="geometry" />
+        </mxCell>
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;" value="Compute Manager [compman]&lt;br&gt;(monitors resources and dispatches compute jobs)" vertex="1">
           <mxGeometry height="100" width="390" x="-650" y="1470" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;Node Kernel [nodekernel]&lt;br&gt;(coordinates managers)&lt;/font&gt;" vertex="1">
           <mxGeometry height="370" width="390" x="-650" y="1090" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Network Manager [netman]&lt;br&gt;sends/receives updates from peers/children&lt;br&gt;reports updates to parent.&amp;nbsp;" vertex="1">
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;" value="Network Manager [netman]&lt;br&gt;sends/receives updates from peers/children&lt;br&gt;reports updates to parent.&amp;nbsp;" vertex="1">
           <mxGeometry height="370" width="110" x="-250" y="1090" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="CPU Compute Worker&lt;br&gt;[cpuworker]" vertex="1">
@@ -22,26 +25,29 @@
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="CPU Compute Worker&lt;br&gt;[cpuworker]" vertex="1">
           <mxGeometry height="80" width="90" x="-555" y="1580" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;div&gt;[wgpuworker]&lt;/div&gt;" vertex="1">
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;br&gt;(Isolated)&lt;br&gt;&lt;div&gt;[wgpuworker]&lt;/div&gt;" vertex="1">
           <mxGeometry height="80" width="90" x="-450" y="1580" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Parent" vertex="1">
           <mxGeometry height="30" width="90" x="-130" y="1190" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="State Manager [stateman]&lt;br&gt;&lt;br&gt;Dispatches workers to update or read the state data structure from network, io, and compute" vertex="1">
-          <mxGeometry height="370" width="120" x="-780" y="1090" as="geometry" />
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;" value="State Manager [stateman]&lt;br&gt;&lt;br&gt;Dispatches workers to update or read the state data structure from network, io, and compute.&amp;nbsp;&lt;br&gt;&lt;br&gt;All Managers Write to the Warm DataState via the single state worker writer.&amp;nbsp;" vertex="1">
+          <mxGeometry height="370" width="110" x="-770" y="1090" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Local IO manager [ioman]&lt;br&gt;Handles input from the Node&#39;s computer and displays&amp;nbsp;" vertex="1">
-          <mxGeometry height="90" width="390" x="-650" y="990" as="geometry" />
+          <mxGeometry height="90" width="142.5" x="-402.5" y="990" as="geometry" />
+        </mxCell>
+        <mxCell id="codex-gpuhub-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="GPU Hub Manager [gpuhubman]&lt;br&gt;(shared render + compute context)" vertex="1">
+          <mxGeometry height="90" width="122.5" x="-635" y="990" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Render State Object&lt;br&gt;visual display of datastate" vertex="1">
-          <mxGeometry height="80" width="185" x="-450" y="900" as="geometry" />
+          <mxGeometry height="80" width="80" x="-390" y="900" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Handle Input" vertex="1">
-          <mxGeometry height="80" width="190" x="-650" y="900" as="geometry" />
+          <mxGeometry height="80" width="52.5" x="-300" y="900" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-16" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
-          <mxGeometry height="80" width="80" x="-870" y="1190" as="geometry" />
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-16" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;Reader&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-860" y="1380" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-17" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Peer&amp;nbsp;" vertex="1">
           <mxGeometry height="20" width="90" x="-130" y="1240" as="geometry" />
@@ -55,14 +61,8 @@
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-20" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Grand Parent" vertex="1">
           <mxGeometry height="30" width="90" x="-130" y="1155" as="geometry" />
         </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-22" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
-          <mxGeometry height="80" width="80" x="-870" y="1280" as="geometry" />
-        </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-23" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
-          <mxGeometry height="80" width="80" x="-870" y="1370" as="geometry" />
-        </mxCell>
-        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-24" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
-          <mxGeometry height="80" width="80" x="-870" y="1090" as="geometry" />
+        <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-24" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFD966;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;Writer&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-860" y="1110" as="geometry" />
         </mxCell>
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-26" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Root Node" vertex="1">
           <mxGeometry height="50" width="90" x="-130" y="1090" as="geometry" />
@@ -70,10 +70,10 @@
         <mxCell id="Jm4xmCkBHBDVd0ZQ5fSF-28" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" value="&lt;font style=&quot;font-size: 23px;&quot;&gt;p2p Compute Node (CN)&lt;/font&gt;" vertex="1">
           <mxGeometry height="30" width="420" x="-671.25" y="515" as="geometry" />
         </mxCell>
-        <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
-          <mxGeometry height="360" width="120" x="-1010" y="1090" as="geometry" />
+        <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="HOT DataState&lt;br&gt;GPU Buffers" vertex="1">
+          <mxGeometry height="70" width="87.5" x="-505" y="900" as="geometry" />
         </mxCell>
-        <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;br&gt;[wgpuworker]" vertex="1">
+        <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;br&gt;(Isolated)&lt;br&gt;[wgpuworker]" vertex="1">
           <mxGeometry height="80" width="90" x="-350" y="1580" as="geometry" />
         </mxCell>
         <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-17" edge="1" parent="1" source="W4EHZ1ttYjTxqTpjJ2GW-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="W4EHZ1ttYjTxqTpjJ2GW-13">
@@ -719,17 +719,134 @@
         <mxCell id="W4EHZ1ttYjTxqTpjJ2GW-269" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="CN" vertex="1">
           <mxGeometry height="40" width="40" x="1250" y="1740" as="geometry" />
         </mxCell>
-        <mxCell id="-TZxVlXLealnFN9hYoVw-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
-          <mxGeometry height="350" width="120" x="-30" y="1090" as="geometry" />
-        </mxCell>
-        <mxCell id="-TZxVlXLealnFN9hYoVw-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
-          <mxGeometry height="100" width="395" x="-655" y="1670" as="geometry" />
-        </mxCell>
-        <mxCell id="-TZxVlXLealnFN9hYoVw-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
-          <mxGeometry height="100" width="395" x="-652.5" y="765" as="geometry" />
-        </mxCell>
         <mxCell id="aQhf20ITL6OdNdUAGhSd-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Main Browser thread" vertex="1">
-          <mxGeometry height="30" width="151" x="-530.5" y="865" as="geometry" />
+          <mxGeometry height="30" width="151" x="-518" y="865" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="215" width="450" x="-700" y="2715" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Compute Manager [compman]&lt;br&gt;(monitors resources and dispatches compute jobs)" vertex="1">
+          <mxGeometry height="100" width="390" x="-670" y="3315" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;Node Kernel [nodekernel]&lt;br&gt;(coordinates managers)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="370" width="390" x="-670" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Network Manager [netman]&lt;br&gt;sends/receives updates from peers/children&lt;br&gt;reports updates to parent.&amp;nbsp;" vertex="1">
+          <mxGeometry height="370" width="110" x="-270" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="CPU Compute Worker&lt;br&gt;[cpuworker]" vertex="1">
+          <mxGeometry height="80" width="90" x="-675" y="3425" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="CPU Compute Worker&lt;br&gt;[cpuworker]" vertex="1">
+          <mxGeometry height="80" width="90" x="-575" y="3425" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;div&gt;[wgpuworker]&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="90" x="-470" y="3425" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Parent" vertex="1">
+          <mxGeometry height="30" width="90" x="-150" y="3035" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="State Manager [stateman]&lt;br&gt;&lt;br&gt;Dispatches workers to update or read the state data structure from network, io, and compute" vertex="1">
+          <mxGeometry height="370" width="120" x="-800" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Local IO manager [ioman]&lt;br&gt;Handles input from the Node&#39;s computer and displays&amp;nbsp;" vertex="1">
+          <mxGeometry height="90" width="390" x="-670" y="2835" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Render State Object&lt;br&gt;visual display of datastate" vertex="1">
+          <mxGeometry height="80" width="185" x="-470" y="2745" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Handle Input" vertex="1">
+          <mxGeometry height="80" width="190" x="-670" y="2745" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-13" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-890" y="3035" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Peer&amp;nbsp;" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3085" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Peer&amp;nbsp;" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3110" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Child" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3195" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-17" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Grand Parent" vertex="1">
+          <mxGeometry height="30" width="90" x="-150" y="3000" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-18" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-890" y="3125" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-19" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-890" y="3215" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-20" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-890" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-21" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Root Node" vertex="1">
+          <mxGeometry height="50" width="90" x="-150" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-22" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
+          <mxGeometry height="360" width="120" x="-1030" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-23" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="webGPU Compute Worker&lt;br&gt;[wgpuworker]" vertex="1">
+          <mxGeometry height="80" width="90" x="-370" y="3425" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-24" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Child" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3225" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-25" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Child" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3255" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-26" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Peer&amp;nbsp;" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3140" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-27" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Peer&amp;nbsp;" vertex="1">
+          <mxGeometry height="20" width="90" x="-150" y="3165" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
+          <mxGeometry height="350" width="120" x="-50" y="2935" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-29" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
+          <mxGeometry height="100" width="395" x="-675" y="3515" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-30" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DataState [datastate]&lt;br&gt;&lt;br&gt;heirarchical datastructure&amp;nbsp; updated and accessed in parallel by state workers&amp;nbsp;&lt;br&gt;implemented in indexedDB" vertex="1">
+          <mxGeometry height="100" width="395" x="-672.5" y="2610" as="geometry" />
+        </mxCell>
+        <mxCell id="r9wUUj7PqeiNMfAK9kCS-31" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Main Browser thread" vertex="1">
+          <mxGeometry height="30" width="151" x="-550.5" y="2710" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-11" edge="1" parent="1" source="fJZjrikpft0VYZp1osr0-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="W4EHZ1ttYjTxqTpjJ2GW-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="WebGPU pipelines (shared gpu buffers with renderer)" vertex="1">
+          <mxGeometry height="80" width="80" x="-635" y="895" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-12" edge="1" parent="1" source="fJZjrikpft0VYZp1osr0-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="fJZjrikpft0VYZp1osr0-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-26" edge="1" parent="1" source="fJZjrikpft0VYZp1osr0-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;exitX=0.971;exitY=0.365;exitDx=0;exitDy=0;exitPerimeter=0;" target="fJZjrikpft0VYZp1osr0-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-27" edge="1" parent="1" source="fJZjrikpft0VYZp1osr0-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;exitX=0.971;exitY=0.618;exitDx=0;exitDy=0;exitPerimeter=0;" target="fJZjrikpft0VYZp1osr0-23">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-28" edge="1" parent="1" source="fJZjrikpft0VYZp1osr0-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;exitX=1.018;exitY=0.864;exitDx=0;exitDy=0;exitPerimeter=0;" target="Jm4xmCkBHBDVd0ZQ5fSF-16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Warm DataState&lt;br&gt;CPU backed" vertex="1">
+          <mxGeometry height="361.25" width="120" x="-1070" y="1110" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Cold DataState&lt;br&gt;IDB backed" vertex="1">
+          <mxGeometry height="361.25" width="120" x="-1230" y="1110" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-23" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;Reader&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-860" y="1290" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-24" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="State Worker&lt;br&gt;Reader&lt;br&gt;[stateworker]" vertex="1">
+          <mxGeometry height="80" width="80" x="-860" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="fJZjrikpft0VYZp1osr0-25" edge="1" parent="1" source="Jm4xmCkBHBDVd0ZQ5fSF-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.971;entryY=0.113;entryDx=0;entryDy=0;entryPerimeter=0;curved=1;" target="fJZjrikpft0VYZp1osr0-3">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

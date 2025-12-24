@@ -6,6 +6,7 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - Decouple render/input cadence from network updates.
 - Provide predictable snapshot/command/event timing and keepalive.
 - Track health and drive reconnect logic without blocking render.
+- Read from the warm DataState layer for network-visible deltas.
 
 ## Roles
 - NodeKernel owns orchestration policy (what/when/who).

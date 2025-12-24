@@ -7,6 +7,7 @@
 import { NetworkManager } from '../networkManager/NetworkManager.js';
 import { StateManager } from '../stateManager/StateManager.js';
 import { ComputeManager } from '../computeManager/ComputeManager.js';
+import { GPUHubManager } from '../gpu/GPUHubManager.js';
 import { generateId } from '../utils/Utils.js';
 
 /**
@@ -29,6 +30,8 @@ export class NodeKernel {
       topology: config.topology || 'distributed',
       storageMode: config.storageMode || 'local',
       enableWebGPU: config.enableWebGPU || false,
+      enableGPUHub: config.enableGPUHub !== false,
+      enableWarmDeltaProvider: config.enableWarmDeltaProvider || false,
       enablePersistence: config.enablePersistence !== false,
       disableStateNetworkProvider: config.disableStateNetworkProvider || false,
       disableStateBroadcast: config.disableStateBroadcast || false,
@@ -38,6 +41,8 @@ export class NodeKernel {
       stateTopic: config.stateTopic || 'peercompute-state',
       docName: config.docName,
       stateBroadcastNamespaces: config.stateBroadcastNamespaces,
+      deltaNamespace: config.deltaNamespace || 'deltas',
+      gpuHubFrameBudgetMs: config.gpuHubFrameBudgetMs,
       clockPolicy,
       ...config
     };
@@ -45,6 +50,7 @@ export class NodeKernel {
     this.stateManager = null;
     this.networkManager = null;
     this.computeManager = null;
+    this.gpuHub = null;
 
     this.isInitialized = false;
     this.isStarted = false;
@@ -89,14 +95,22 @@ export class NodeKernel {
       
       // 2. Initialize StateManager with NetworkManager
       const stateDocName = this.config.docName || `peercompute-${this.config.gameId}-${this.config.roomId}`;
-    this.stateManager = new StateManager(this.networkManager, {
-      docName: stateDocName,
-      topic: this.config.stateTopic,
-      enablePersistence: this.config.enablePersistence,
-      disableNetworkProvider: this.config.disableStateNetworkProvider,
-      disableBroadcast: this.config.disableStateBroadcast,
-      broadcastNamespaces: this.config.stateBroadcastNamespaces
-    });
+      if (this.config.enableGPUHub) {
+        this.gpuHub = new GPUHubManager({
+          frameBudgetMs: this.config.gpuHubFrameBudgetMs
+        });
+      }
+
+      this.stateManager = new StateManager(this.networkManager, {
+        docName: stateDocName,
+        topic: this.config.stateTopic,
+        enablePersistence: this.config.enablePersistence,
+        disableNetworkProvider: this.config.disableStateNetworkProvider,
+        disableBroadcast: this.config.disableStateBroadcast,
+        broadcastNamespaces: this.config.stateBroadcastNamespaces,
+        deltaNamespace: this.config.deltaNamespace,
+        hotStore: this.gpuHub?.getHotStore()
+      });
       
       await this.stateManager.initialize({
         nodeId: this.nodeId,
@@ -104,6 +118,10 @@ export class NodeKernel {
         createdAt: Date.now()
       });
       console.log('[NodeKernel] StateManager initialized');
+
+      if (this.config.enableWarmDeltaProvider) {
+        this.networkManager.registerWarmDeltaProvider(() => this.stateManager.getWarmDeltas());
+      }
       
       // 3. Initialize ComputeManager
       this.computeManager = new ComputeManager({
@@ -112,6 +130,9 @@ export class NodeKernel {
         enableWorkers: this.config.enableWorkers !== false
       });
       await this.computeManager.initialize();
+      this.computeManager.setCommitDeltaHandler((delta) => {
+        this.stateManager?.commitDelta?.(delta);
+      });
       console.log('[NodeKernel] ComputeManager initialized');
       
       this.isInitialized = true;
@@ -341,6 +362,14 @@ export class NodeKernel {
    */
   getComputeManager() {
     return this.computeManager;
+  }
+
+  /**
+   * Get the GPU hub manager (main thread)
+   * @returns {GPUHubManager|null}
+   */
+  getGPUHub() {
+    return this.gpuHub;
   }
 
   /**

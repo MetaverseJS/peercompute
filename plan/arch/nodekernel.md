@@ -11,6 +11,7 @@ Status: active; orchestrates managers and policies.
 - Set topology role and authority decisions.
 - Drive NetworkScheduler when kernel clock is enabled.
 - Route input, network events, and compute results into state updates.
+- Coordinate task modes (shared-GPU vs isolated GPU) with ComputeManager/GPU hub.
 
 ## Inputs
 - Input commands from Input Handler.

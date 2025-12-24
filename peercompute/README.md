@@ -20,8 +20,10 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - **NetworkManager**: transport, routing, discovery, and scoping (libp2p).
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
 - **StateManager**: shared state sync (Yjs + scoped namespaces).
+- **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
 - **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
 - **ioManager**: controls local input/output (like threejs and your keyboard).
+- **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
 ### Orchestration vs Transport
 - NodeKernel defines **policy** (clock mode, profiles, dynamic throttling).
@@ -29,10 +31,10 @@ Given a network of compute nodes with varying mutual bandwidth and compute power
 - NetworkScheduler enforces **cadence** once policy is set.
 
 ### Block Diagram
-![PeerCompute Node Block Diagram](../plan/compute-node-block-diagram.png)
+![PeerCompute Node Block Diagram](../plan/arch/compute-node-block-diagram.png)
 
 ### Network Topology
-![PeerCompute Topology Examples](../plan/p2p-network-topology-examples.png)
+![PeerCompute Topology Examples](../plan/arch/p2p-network-topology-examples.png)
 
 ### Clocking Modes (Configurable)
 PeerCompute supports multiple timing models:

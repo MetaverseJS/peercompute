@@ -9,6 +9,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { PeerComputeProvider } from './PeerComputeProvider.js';
+import { DataState } from './DataState.js';
 
 /**
  * StateManager class - Handles distributed state coordination
@@ -40,6 +41,14 @@ export class StateManager {
     
     // Main state map (CRDT Y.Map)
     this.state = this.ydoc.getMap('state');
+
+    // Layered DataState wrapper (hot/warm/cold)
+    this.dataState = new DataState({
+      ydoc: this.ydoc,
+      stateMap: this.state,
+      hotStore: config.hotStore,
+      deltaNamespace: config.deltaNamespace || 'deltas'
+    });
     
     // Providers
     this.indexeddbProvider = null;
@@ -122,6 +131,36 @@ export class StateManager {
     } catch (err) {
       console.error('[StateManager] Failed to apply state-set:', err);
     }
+  }
+
+  /**
+   * Commit a warm-layer delta (CPU-friendly) into the DataState
+   * @param {Object} delta
+   */
+  commitDelta(delta) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    this.dataState.commitDelta(delta);
+  }
+
+  /**
+   * Get the layered DataState wrapper
+   */
+  getDataState() {
+    return this.dataState;
+  }
+
+  getWarmDeltas(namespace) {
+    return this.dataState.getWarmDeltas(namespace);
+  }
+
+  setHotBuffer(key, buffer) {
+    this.dataState.setHotBuffer(key, buffer);
+  }
+
+  getHotBuffer(key) {
+    return this.dataState.getHotBuffer(key);
   }
 
   /**
@@ -689,7 +728,8 @@ export class StateManager {
       hasPersistence: !!this.indexeddbProvider,
       hasP2PSync: !!this.libp2pProvider,
       docName: this.config.docName,
-      topic: this.config.topic
+      topic: this.config.topic,
+      hotBufferCount: this.dataState?.listHotBuffers?.().length || 0
     };
   }
 }

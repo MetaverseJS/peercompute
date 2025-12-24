@@ -29,3 +29,62 @@ Instructions: This file contains a detailed implementation log describing choice
 - Added topology summary doc sourced from the topology diagram.
 - Aligned plan/plan.md, plan/arch/arch.md, and plan/arch/netman.md with the new overview and component docs.
 - Added main-thread summary doc and cross-links in arch/netman.
+
+## Date: 2025-12-23
+
+### Prompt
+- OK I want you to document all of these tradeoffs in the discussion/datastate.md file and note in the plans/branch/current-branch.md file that we're going to go with a main thread owned GPU hub in addition to supporting isolated compute worker threads via the compute manager. we're going to use the hot/warm/cold layered datastate approach we discussed earlier as well. ... now I want you to document all of this and update all plan/architecture files and diagrams and images and the readme to reflect this new major direction change.
+
+### Changes
+- Documented GPU hub vs worker tradeoffs and adopted layered DataState in plan/discussions/datastate.md.
+- Added GPU hub component doc and updated arch/plan docs for shared-GPU main-thread ownership, isolated GPU workers, and commit deltas.
+- Updated branch/current-branch decisions and branch TODOs to reflect the new direction.
+- Updated README files and diagram references; annotated compute-node diagram and updated drawio source.
+
+## Date: 2025-12-23
+
+### Prompt
+- OK I want you to lay out a comprehensive implementation plan for this in the plan/branch/datastate.md file and then implement it.
+
+### Changes
+- Added a layered DataState implementation plan in plan/branch/datastate.md.
+- Implemented DataState wrapper with commitDelta and hot buffer tracking.
+- Added GPUHubManager stub and wired NodeKernel/ComputeManager commitDelta flow.
+- Exposed DataState and GPUHubManager exports for integration.
+
+## Date: 2025-12-23
+
+### Prompt
+- go ahead and proceed. write your own tests and run them without my input and let me know when you can't proceed any farther.
+
+### Changes
+- Added unit coverage for DataState commitDelta and hot buffer helpers.
+- Added unit coverage for ComputeManager commitDelta handling in inline tasks.
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js
+
+## Date: 2025-12-23
+
+### Prompt
+- go ahead
+
+### Changes
+- Added a StateManager+ComputeManager integration test for commitDelta flow.
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js
+
+## Date: 2025-12-23
+
+### Prompt
+- do 1 then 2 then 3 write tests for each make sure they pass then let me know
+
+### Changes
+- Added GPUHubManager WebGPU initialization and hot buffer creation helpers.
+- Added warm delta accessors and warm-delta provider registration in NetworkManager/StateManager.
+- Added a hot/warm demo helper to show hot buffer registration and warm delta commit.
+- Added unit tests for GPUHubManager, warm delta provider, and hot/warm demo flow.
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js

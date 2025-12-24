@@ -9,6 +9,7 @@ Status: draft; resource-aware compute dispatcher.
 - Maintain a job queue and scheduling policy.
 - Select CPU vs WebGPU execution based on workload and device limits.
 - Track job progress and return results to NodeKernel/StateManager.
+- Support isolated GPU workers for out-of-band tasks that emit CPU deltas.
 
 ## Inputs
 - Compute job requests from NodeKernel.
@@ -18,6 +19,7 @@ Status: draft; resource-aware compute dispatcher.
 ## Outputs
 - Job results and progress events.
 - Backpressure signals when overloaded.
+- DataState commit deltas for isolated GPU tasks.
 
 ## Execution Context
 - Manager on main thread; heavy compute runs in workers.

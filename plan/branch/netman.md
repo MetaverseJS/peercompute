@@ -13,6 +13,8 @@ Instructions: This file contains short term goals for the current branch.
 - Verify time sync anchor stability after reconnects.
 - Confirm dev/test scripts work in a clean env and update docs if needed.
 - Resume ComputeManager work once P2P stack is stable.
+- Document and implement layered DataState (hot/warm/cold) and commit deltas.
+- Add GPU hub ownership notes (main thread) and isolated compute worker path.
 
 ### TODONT:
 - Compute/physics feature work.

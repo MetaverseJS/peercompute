@@ -11,6 +11,7 @@ Status: active; coordinates DataState and State Workers.
 - Apply CRDT/merge rules (Yjs-based) for concurrent edits.
 - Emit snapshots/deltas for NetworkManager and render paths.
 - Persist state to IndexedDB for reloads/offline recovery.
+- Apply commit deltas from shared-GPU and isolated compute tasks.
 
 ## Inputs
 - Local input-driven mutations.

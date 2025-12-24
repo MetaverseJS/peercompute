@@ -11,12 +11,14 @@ Status: active; browser-based peer in the network.
 - Managers: StateManager, NetworkManager, ComputeManager, Local IO Manager.
 - DataState store + State Workers.
 - CPU and WebGPU compute workers.
+- GPU hub on main thread for shared-GPU tasks.
 
 ## Responsibilities
 - Join/leave rooms and topologies via NetworkManager.
 - Maintain local DataState and replicate approved updates.
 - Execute compute jobs locally and optionally for children.
 - Drive local input, simulation, and rendering.
+- Use hot/warm/cold DataState layers for GPU, network/UI, and persistence needs.
 
 ## Inputs
 - Local input events and UI actions.
