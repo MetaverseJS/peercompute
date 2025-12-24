@@ -67,6 +67,24 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-23
 
 ### Prompt
+- OK update all files in plan to reflect your changes.
+
+### Changes
+- Updated branch goals to reflect completed DataState/GPU hub wiring and the next netman follow-ups.
+- Aligned arch docs (datastate, gpuhub, nodekernel, stateman, compman, wgpuworker, arch) with commitDelta, warm delta provider hooks, and GPU hub scaffolding.
+- Updated plan roadmap/completed to reflect the layered DataState and GPU hub scaffolding work.
+
+## Date: 2025-12-23
+
+### Prompt
+- yes do that and alos provide an example for how the new datastate works and how to use all the different kinds of compute workers.
+
+### Changes
+- Added DataState commitDelta and compute worker usage examples to README files.
+
+## Date: 2025-12-23
+
+### Prompt
 - go ahead
 
 ### Changes

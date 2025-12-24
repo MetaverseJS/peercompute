@@ -54,6 +54,7 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - tickScheduler(now)
 - setAuthority(peerId) / getAuthority()
 - registerStateProvider(fn)
+- registerWarmDeltaProvider(fn, options)
 - registerCommandProvider(fn)
 - onSnapshot(cb)
 - onEvent(cb)

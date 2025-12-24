@@ -1,6 +1,6 @@
 # GPU Hub (Main Thread) (Summary)
 
-Status: planned; shared-GPU owner for render + compute.
+Status: active; shared-GPU owner scaffolding implemented.
 
 ## Purpose
 - Own the shared WebGPU device/context for render-coupled compute tasks.
@@ -8,6 +8,7 @@ Status: planned; shared-GPU owner for render + compute.
 
 ## Responsibilities
 - Allocate and manage shared GPUBuffers for hot-layer state.
+- Provide a hot buffer registry for shared-GPU tasks.
 - Schedule shared-GPU tasks within a frame budget.
 - Export CPU deltas for netman/UI via staged readbacks.
 

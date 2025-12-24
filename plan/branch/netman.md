@@ -7,14 +7,15 @@ Instructions: This file contains short term goals for the current branch.
 - Relay config flow for dev/test; WSS support.
 - NetworkScheduler core + unit tests; clock policy scaffolding.
 - Room isolation and time sync anchor in cb.
+- Layered DataState + commitDelta integration notes (hot/warm/cold).
+- GPU hub ownership (main thread) and isolated compute worker path.
 
 ### TODO:
 - Re-run Playwright suite outside sandbox and record results in plan/log.md.
 - Verify time sync anchor stability after reconnects.
 - Confirm dev/test scripts work in a clean env and update docs if needed.
 - Resume ComputeManager work once P2P stack is stable.
-- Document and implement layered DataState (hot/warm/cold) and commit deltas.
-- Add GPU hub ownership notes (main thread) and isolated compute worker path.
+- Wire warm DataState deltas into netman publish path end-to-end.
 
 ### TODONT:
 - Compute/physics feature work.

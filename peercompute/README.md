@@ -118,6 +118,88 @@ network.addSnapshotHandler((peerId, message) => {
 network.queueEvent({ type: 'attack', victimId, ts: Date.now() }, { reliable: true });
 ```
 
+## DataState + Compute Examples
+
+### Layered DataState + commitDelta
+```js
+const node = new window.NodeKernel({
+  enableGPUHub: true,
+  enableWarmDeltaProvider: true,
+  enableWebGPU: true,
+  deltaNamespace: 'deltas'
+});
+
+await node.initialize();
+await node.start();
+
+const state = node.getStateManager();
+
+state.commitDelta({
+  taskId: 'physics',
+  scope: 'deltas',
+  version: performance.now(),
+  payload: { positions },
+  timestamp: performance.now()
+});
+
+const dataState = state.getDataState();
+dataState.writeWarm('ui:stats', { fps }, 'ui');
+
+const warmDeltas = dataState.getWarmDeltas('deltas');
+
+// Hot layer (shared GPU buffers)
+const gpuHub = node.getGPUHub();
+await gpuHub.initialize();
+const positionsBuffer = gpuHub.createHotBuffer(
+  'hot:positions',
+  byteLength,
+  GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+);
+```
+
+### Compute Workers (CPU + isolated GPU)
+```js
+// CPU task (runs in a worker when available)
+const cpuResult = await node.submitTask({
+  data: { positions },
+  fn: ({ positions }) => {
+    const next = positions.map((p) => p + 1);
+    return {
+      commitDelta: {
+        taskId: 'cpu-physics',
+        scope: 'deltas',
+        version: Date.now(),
+        payload: { positions: next }
+      },
+      value: { count: next.length }
+    };
+  }
+});
+
+// WebGPU task in a worker (module-based, isolated GPU)
+await node.submitTask({
+  module: '/compute/stepWebGPU.js',
+  exportName: 'stepWebGPU',
+  data: { /* inputs */ }
+});
+```
+
+```js
+// /compute/stepWebGPU.js
+export async function stepWebGPU(input) {
+  // Use WebGPU in the worker and emit CPU deltas for DataState.
+  return {
+    commitDelta: {
+      taskId: 'gpu-physics',
+      scope: 'deltas',
+      version: Date.now(),
+      payload: { /* compact CPU delta */ }
+    },
+    value: { ok: true }
+  };
+}
+```
+
 ## Profiles (Suggested Defaults)
 - **Action/FPS**: snapshotHz 10-20, reliable events: spawn/join/attack
 - **Co-op**: snapshotHz 5-10, reliable events: spawn/join/revive

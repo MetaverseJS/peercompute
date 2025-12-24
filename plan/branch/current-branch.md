@@ -5,7 +5,12 @@ Instructions: This file contains short term goals for the current branch.
 - ComputeManager supports isolated GPU workers for out-of-band workloads.
 - DataState uses a hot/warm/cold layered model with explicit commit deltas.
 
+## Completed This Branch
+- commitDelta support wired through DataState, StateManager, and ComputeManager.
+- GPUHubManager scaffolding for hot buffer sets and shared-GPU ownership.
+- Warm delta provider hook on NetworkManager (pending publish path).
+
 ## Immediate Follow-ups
-- Update DataState interfaces to accept commitDelta payloads.
 - Define warm-layer schemas for netman/UI.
+- Wire warm deltas into netman publishing end-to-end.
 - Add GPU hub scheduling budgets and telemetry.

@@ -19,11 +19,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
 - NetworkScheduler core with clock policy scaffolding.
 - cb time sync anchored to the first joiner.
+- Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
+- GPU hub scaffolding and warm delta provider hook.
 
 ### TODO:
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
 - Validate time sync anchor behavior after reconnects.
-- Resume ComputeManager work once P2P stack is stable.
+- Finish ComputeManager scheduling + GPU hub runtime integration.
+- Wire warm DataState deltas into netman publishing end-to-end.
 - Keep plan/ and log aligned with ongoing changes.
 
 ### TODONT:

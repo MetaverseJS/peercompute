@@ -12,6 +12,7 @@ Status: active; coordinates DataState and State Workers.
 - Emit snapshots/deltas for NetworkManager and render paths.
 - Persist state to IndexedDB for reloads/offline recovery.
 - Apply commit deltas from shared-GPU and isolated compute tasks.
+- Maintain the layered DataState wrapper (hot/warm/cold).
 
 ## Inputs
 - Local input-driven mutations.
@@ -26,6 +27,7 @@ Status: active; coordinates DataState and State Workers.
 ## Data + Storage
 - Hierarchical DataState persisted in IndexedDB (y-indexeddb).
 - Structured to keep buffer interop simple (arrays, typed arrays).
+- Warm deltas are stored under a configurable namespace for netman/UI.
 
 ## Execution Context
 - Manager on main thread; heavy reads/writes offloaded to State Workers.
@@ -35,6 +37,11 @@ Status: active; coordinates DataState and State Workers.
 - getSnapshot(scope)
 - observe(scope, cb)
 - registerWorkerPool(pool)
+- commitDelta(delta)
+- getWarmDeltas(namespace)
+- getDataState()
+- setHotBuffer(key, buffer)
+- getHotBuffer(key)
 
 ## Failure Modes
 - Write contention or stale snapshots under heavy load.

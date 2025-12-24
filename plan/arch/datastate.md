@@ -17,8 +17,9 @@ Status: active; hierarchical shared state store.
 
 ## Commit Contract
 - Tasks publish deltas, not raw buffers.
-- `commitDelta({ taskId, scope, version, payload })` where payload is CPU-friendly (typed arrays, JSON, or binary packets).
-- DataState applies ordering (seq/vector clock) and updates hot/warm/cold layers as needed.
+- `commitDelta({ taskId, scope, version, payload, timestamp })` where payload is CPU-friendly (typed arrays, JSON, or binary packets).
+- DataState applies ordering (timestamp/seq/vector clock) and updates hot/warm/cold layers as needed.
+- Warm deltas are retrievable via `getWarmDeltas()` for netman publishing.
  
 
 ## Shape + Conventions
@@ -33,6 +34,7 @@ Status: active; hierarchical shared state store.
 ## Execution Context
 - Backed by IndexedDB; accessed via StateManager/State Workers.
 - GPU hub on main thread owns shared-GPU hot layer; isolated compute workers emit CPU deltas.
+- NetworkManager consumes warm deltas via a registered provider.
 
 ## Failure Modes
 - Partial writes if workers crash mid-transaction.
