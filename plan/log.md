@@ -217,3 +217,21 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - npm test (in demos/planetgen)
+
+## Date: 2025-12-25
+
+### Prompt
+- make the ppf-cubic particle count configurable from 128 to 200000
+- finish the three water system enhancements and update the holistic plan
+- investigate Universes black hole lensing (no visible lensing)
+
+### Changes
+- Added holistic ocean wind coupling/update controls (UI + docs), scaled ocean wind field decode, and gated updates on a configurable cadence.
+- Scaffolded cubed-sphere grid + ocean current state modules for the holistic solver and added a round-trip mapping test.
+- Extended ocean wind field tests for scale handling.
+- Tuned Universes lensing shader with screen-space radius scaling, stronger distortion, and added uBHRadius uniforms for more visible lensing.
+- Updated holistic weather plan status notes.
+
+### Tests
+- npm test (demos/planetgen)
+- node demos/webgpuphys/tests/ppf-runtime.js (initial EPERM on listen; reran with escalated permissions)

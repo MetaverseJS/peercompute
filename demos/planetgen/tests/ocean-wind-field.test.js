@@ -21,6 +21,16 @@ function approxEqual(a, b, eps = 1e-4) {
 
 {
     const data = new Uint8Array([
+        0, 0, 255, 128
+    ]);
+    const auxTexture = { image: { data, width: 1, height: 1 } };
+    const field = decodeWindFieldFromAuxTexture(auxTexture, 1, 1, { maxWind: 10, scale: 0.5 });
+    assert.equal(field.length, 2);
+    assert.ok(approxEqual(field[0], 5));
+}
+
+{
+    const data = new Uint8Array([
         0, 0, 0, 255,
         0, 0, 255, 0,
         0, 0, 0, 255,

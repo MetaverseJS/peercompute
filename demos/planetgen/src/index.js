@@ -9,7 +9,8 @@ import { RainSystem } from './RainSystem.js';
 import { WindVisualizationSystem } from './WindVisualizationSystem.js';
 import { clamp, isMobileDevice, sampleDataTextureRGBA } from './utils.js';
 import { decodeWindFieldFromAuxTexture } from './oceanWindField.js';
-import { BASE_RADIUS_UNITS, DEFAULT_DIAMETER_KM, DEFAULT_RADIUS_M, PERSON_HEIGHT_M, MAX_DELTA_TIME, PRESETS } from './constants.js';
+import { createOceanCurrentState } from './holistic/oceanCurrents.js';
+import { BASE_RADIUS_UNITS, DEFAULT_DIAMETER_KM, DEFAULT_RADIUS_M, PERSON_HEIGHT_M, MAX_DELTA_TIME, PRESETS, DEFAULT_WEATHER_OCEAN_WIND_COUPLING, DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ } from './constants.js';
 import { UIManager } from './UIManager.js';
 import { WindSystem } from './WindSystem.js';
 import { getSharedDevice } from './peercomputeDevice.js';
@@ -116,6 +117,10 @@ const weatherWetnessEl = document.getElementById('weatherWetness');
 const weatherWetnessValueEl = document.getElementById('weatherWetnessValue');
 const weatherOceanInertiaEl = document.getElementById('weatherOceanInertia');
 const weatherOceanInertiaValueEl = document.getElementById('weatherOceanInertiaValue');
+const weatherOceanWindCouplingEl = document.getElementById('weatherOceanWindCoupling');
+const weatherOceanWindCouplingValueEl = document.getElementById('weatherOceanWindCouplingValue');
+const weatherOceanWindUpdateHzEl = document.getElementById('weatherOceanWindUpdateHz');
+const weatherOceanWindUpdateHzValueEl = document.getElementById('weatherOceanWindUpdateHzValue');
 const weatherRainFxToggleEl = document.getElementById('weatherRainFxToggle');
 const weatherRainFxEl = document.getElementById('weatherRainFx');
 const weatherRainFxValueEl = document.getElementById('weatherRainFxValue');
@@ -492,6 +497,11 @@ const OCEAN_MAX_WIND = 60;
 let oceanWindField = null;
 let oceanWindReadbackVersion = -1;
 let oceanWindFieldEnabled = false;
+let oceanWindCoupling = DEFAULT_WEATHER_OCEAN_WIND_COUPLING;
+let oceanWindUpdateIntervalS = 1 / DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ;
+let oceanWindUpdateTimerS = 0;
+let oceanWindPendingReadback = null;
+let holisticOceanState = null;
 let volumeDebugEnabled = false;
 let volumeDebugGrid = false;
 let volumeDebugSlice = 0;
@@ -779,17 +789,28 @@ function isHolisticWeatherMode() {
     return getWeatherSimMode() === 'holistic';
 }
 
+function ensureHolisticOceanState() {
+    if (!holisticOceanState) {
+        holisticOceanState = createOceanCurrentState({ resolution: 32 });
+    }
+    return holisticOceanState;
+}
+
 function syncOceanWindFieldMode() {
     const enabled = isHolisticWeatherMode() && (waterCycleToggleEl?.checked ?? false);
     if (!enabled && oceanWindFieldEnabled) {
         planetManager?.setOceanWindField?.(null);
         oceanWindFieldEnabled = false;
         oceanWindReadbackVersion = -1;
+        oceanWindPendingReadback = null;
+        oceanWindUpdateTimerS = 0;
         return;
     }
     if (enabled && !oceanWindFieldEnabled) {
         oceanWindFieldEnabled = true;
         oceanWindReadbackVersion = -1;
+        oceanWindPendingReadback = null;
+        oceanWindUpdateTimerS = oceanWindUpdateIntervalS;
     }
 }
 
@@ -800,6 +821,7 @@ function updateOceanWindFieldFromAux() {
     const gridH = planetManager.oceanComputeSystem.gridH;
     const field = decodeWindFieldFromAuxTexture(auxTex, gridW, gridH, {
         maxWind: OCEAN_MAX_WIND,
+        scale: oceanWindCoupling,
         out: oceanWindField
     });
     if (!field) return;
@@ -1003,6 +1025,8 @@ function updateRangeLabels() {
     if (weatherWindEl && weatherWindValueEl) weatherWindValueEl.textContent = Number(weatherWindEl.value).toFixed(2);
     if (weatherWetnessEl && weatherWetnessValueEl) weatherWetnessValueEl.textContent = Number(weatherWetnessEl.value).toFixed(2);
     if (weatherOceanInertiaEl && weatherOceanInertiaValueEl) weatherOceanInertiaValueEl.textContent = Number(weatherOceanInertiaEl.value).toFixed(2);
+    if (weatherOceanWindCouplingEl && weatherOceanWindCouplingValueEl) weatherOceanWindCouplingValueEl.textContent = Number(weatherOceanWindCouplingEl.value).toFixed(2);
+    if (weatherOceanWindUpdateHzEl && weatherOceanWindUpdateHzValueEl) weatherOceanWindUpdateHzValueEl.textContent = Number(weatherOceanWindUpdateHzEl.value).toFixed(0);
     if (weatherRainFxEl && weatherRainFxValueEl) weatherRainFxValueEl.textContent = Number(weatherRainFxEl.value).toFixed(2);
     if (weatherRainHazeEl && weatherRainHazeValueEl) weatherRainHazeValueEl.textContent = Number(weatherRainHazeEl.value).toFixed(2);
 }
@@ -1078,6 +1102,8 @@ function applyWeatherPreset(preset) {
     touched = setValue(weatherWindEl, preset.weatherWind) || touched;
     touched = setValue(weatherWetnessEl, preset.weatherWetness) || touched;
     touched = setValue(weatherOceanInertiaEl, preset.weatherOceanInertia) || touched;
+    touched = setValue(weatherOceanWindCouplingEl, preset.weatherOceanWindCoupling) || touched;
+    touched = setValue(weatherOceanWindUpdateHzEl, preset.weatherOceanWindUpdateHz) || touched;
     touched = setChecked(weatherRainFxToggleEl, preset.weatherRainFxEnabled) || touched;
     touched = setValue(weatherRainFxEl, preset.weatherRainFx) || touched;
     touched = setValue(weatherRainHazeEl, preset.weatherRainHaze) || touched;
@@ -1531,9 +1557,18 @@ function animate() {
     if (runWeather && waterCycleSystem?.enabled) {
         waterCycleSystem.update(delta, weatherSunLocal);
     }
-    if (oceanWindFieldEnabled && waterCycleSystem?.readbackVersion !== oceanWindReadbackVersion) {
-        oceanWindReadbackVersion = waterCycleSystem.readbackVersion;
-        updateOceanWindFieldFromAux();
+    if (oceanWindFieldEnabled && waterCycleSystem?.readbackVersion != null) {
+        oceanWindUpdateTimerS += Math.min(Math.max(delta, 0), MAX_DELTA_TIME);
+        const currentVersion = waterCycleSystem.readbackVersion;
+        if (Number.isFinite(currentVersion) && currentVersion !== oceanWindReadbackVersion) {
+            oceanWindPendingReadback = currentVersion;
+        }
+        if (oceanWindPendingReadback !== null && oceanWindUpdateTimerS >= oceanWindUpdateIntervalS) {
+            oceanWindReadbackVersion = oceanWindPendingReadback;
+            oceanWindPendingReadback = null;
+            oceanWindUpdateTimerS = 0;
+            updateOceanWindFieldFromAux();
+        }
     }
 
     // Keep AtmosphereSystem uniforms in sync with moving sun/scale/weather.
@@ -1769,6 +1804,8 @@ const waterCycleUiControls = [
     weatherWindEl,
     weatherWetnessEl,
     weatherOceanInertiaEl,
+    weatherOceanWindCouplingEl,
+    weatherOceanWindUpdateHzEl,
     weatherRainFxToggleEl,
     weatherRainFxEl,
     weatherRainHazeEl
@@ -1912,14 +1949,20 @@ function getWeatherVolumeResolutionN() {
 
 function updateWaterCycleModeUi(mode) {
     const is3d = isWeatherMode3d(mode);
+    const isHolistic = mode === 'holistic';
     if (weatherMoistureLayersEl) weatherMoistureLayersEl.disabled = is3d;
     if (weatherVolumeResEl) weatherVolumeResEl.disabled = !is3d;
+    if (weatherOceanWindCouplingEl) weatherOceanWindCouplingEl.disabled = !isHolistic;
+    if (weatherOceanWindUpdateHzEl) weatherOceanWindUpdateHzEl.disabled = !isHolistic;
 }
 
 let selectingWeatherSim = 0;
 async function selectWaterCycleSystemIfNeeded() {
     const mode = getWeatherSimMode();
     updateWaterCycleModeUi(mode);
+    if (mode === 'holistic') {
+        ensureHolisticOceanState();
+    }
 
     const token = ++selectingWeatherSim;
 
@@ -2001,6 +2044,8 @@ function applyWaterCycleConfig() {
     const windStrength = clamp(parseFloat(weatherWindEl?.value) || 1, 0, 3);
     const wetnessStrength = clamp(parseFloat(weatherWetnessEl?.value) || 0.75, 0, 2);
     const oceanInertia = clamp(parseFloat(weatherOceanInertiaEl?.value) || 0.25, 0.05, 1);
+    const oceanWindCouplingValue = clamp(parseFloat(weatherOceanWindCouplingEl?.value) || DEFAULT_WEATHER_OCEAN_WIND_COUPLING, 0, 2);
+    const oceanWindUpdateHz = clamp(parseFloat(weatherOceanWindUpdateHzEl?.value) || DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ, 1, 20);
     const rainFxEnabled = (weatherRainFxToggleEl?.checked ?? true);
     const rainFxStrength = clamp(parseFloat(weatherRainFxEl?.value) || 1, 0, 2);
     const rainHaze = clamp(parseFloat(weatherRainHazeEl?.value) || 0.9, 0, 2);
@@ -2050,6 +2095,11 @@ function applyWaterCycleConfig() {
         };
         if (mode === '2d') cfg.moistureLayers = moistureLayers;
         waterCycleSystem.setConfig(cfg);
+    }
+    oceanWindCoupling = oceanWindCouplingValue;
+    oceanWindUpdateIntervalS = 1 / oceanWindUpdateHz;
+    if (oceanWindFieldEnabled && waterCycleSystem?.enabled) {
+        updateOceanWindFieldFromAux();
     }
     setPlanetWeatherStrength(wetnessStrength);
     setPlanetWeatherDebugMode(debugMode);
@@ -2158,7 +2208,7 @@ function handleWeatherAutoToggle() {
     el.addEventListener(el.type === 'color' ? 'input' : 'change', handleCloudUpdate);
     if (el.type === 'range') el.addEventListener('input', handleCloudUpdate);
 });
-[waterCycleToggleEl, waterCycleCloudToggleEl, waterCycleRunEl, weatherSimModeEl, weatherVolumeResEl, weatherRayStepsMinEl, weatherRayStepsMaxEl, weatherRayBundleEl, weatherAtmoThicknessEl, weatherDebugEl, weatherSpeedEl, weatherUpdateHzEl, weatherMoistureLayersEl, weatherEvapEl, weatherPrecipEl, weatherWindEl, weatherWetnessEl, weatherOceanInertiaEl, weatherRainFxToggleEl, weatherRainFxEl, weatherRainHazeEl].forEach((el) => {
+[waterCycleToggleEl, waterCycleCloudToggleEl, waterCycleRunEl, weatherSimModeEl, weatherVolumeResEl, weatherRayStepsMinEl, weatherRayStepsMaxEl, weatherRayBundleEl, weatherAtmoThicknessEl, weatherDebugEl, weatherSpeedEl, weatherUpdateHzEl, weatherMoistureLayersEl, weatherEvapEl, weatherPrecipEl, weatherWindEl, weatherWetnessEl, weatherOceanInertiaEl, weatherOceanWindCouplingEl, weatherOceanWindUpdateHzEl, weatherRainFxToggleEl, weatherRainFxEl, weatherRainHazeEl].forEach((el) => {
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : (el.type === 'color' ? 'input' : 'change'), handleWaterCycleUpdate);
     if (el.type === 'range') el.addEventListener('input', handleWaterCycleUpdate);

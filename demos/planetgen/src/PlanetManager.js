@@ -141,6 +141,10 @@ export class PlanetManager {
                 const sunDir = this.sceneManager?.getSunDir();
                 if (sunDir) this.water.material.uniforms.sunDirection.value.copy(sunDir);
             }
+            if (this.water.material?.uniforms?.oceanMap && this.oceanComputeSystem?.enabled) {
+                this.water.material.uniforms.oceanMap.value = this.oceanComputeSystem.getTexture();
+                this.water.material.uniforms.useOceanMap.value = 1.0;
+            }
         }
         if (this.freshwater) this.freshwater.material.uniforms.time.value += 0.016;
         
@@ -284,7 +288,12 @@ export class PlanetManager {
             windStrength: { value: 0.8 },
             maxWind: { value: 60.0 },  // Must match weather sim's maxWind
             fetchLength: { value: 1.5 },  // Wind fetch - longer = bigger waves
-            waterRadius: { value: waterRadius }
+            waterRadius: { value: waterRadius },
+            oceanMap: { value: this.oceanComputeSystem?.getTexture?.() ?? null },
+            useOceanMap: { value: this.oceanComputeSystem?.enabled ? 1.0 : 0.0 },
+            oceanHeightScale: { value: 0.35 },
+            oceanNormalScale: { value: 0.6 },
+            oceanFoamScale: { value: 0.7 }
         };
         const material = new THREE.ShaderMaterial({
             uniforms,
@@ -303,11 +312,17 @@ export class PlanetManager {
                 uniform float useLocalWind;
                 uniform vec3 globalWindDir;
                 uniform float maxWind;
+                uniform sampler2D oceanMap;
+                uniform float useOceanMap;
+                uniform float oceanHeightScale;
+                uniform float oceanNormalScale;
+                uniform float oceanFoamScale;
                 varying vec3 vWorldPos;
                 varying vec3 vNormal;
                 varying vec3 vLocalPos;
                 varying float vWaveHeight;
                 varying float vLocalWindStrength;
+                varying float vOceanFoam;
                 
                 // Convert 3D direction to lat/lon UV for sampling weather texture
                 vec2 dirToUV(vec3 dir) {
@@ -404,6 +419,7 @@ export class PlanetManager {
                 void main() {
                     vec3 dir = normalize(position);
                     vLocalPos = dir;
+                    vOceanFoam = 0.0;
                     
                     // Get local wind from weather texture
                     vec3 localWind = getLocalWind(dir);
@@ -417,6 +433,21 @@ export class PlanetManager {
                     // Calculate wind-driven wave displacement using direction vector
                     float waveDisp = oceanWaves(dir, windDir, swellSpeed, time) * waveHeight;
                     waveDisp += oceanWaves(dir, currentDir, max(currentSpeed * 40.0, 0.4), time * 0.9) * waveHeight * 0.5;
+                    vec3 baseNormal = dir;
+                    if (useOceanMap > 0.5) {
+                        vec2 uv = dirToUV(dir);
+                        vec4 oceanSample = texture2D(oceanMap, uv);
+                        float height01 = oceanSample.r;
+                        float oceanHeight = (height01 - 0.5) / 2.5;
+                        waveDisp += oceanHeight * oceanHeightScale;
+                        float nX = (oceanSample.g - 0.5) * 2.0;
+                        float nY = (oceanSample.b - 0.5) * 2.0;
+                        vec3 up = abs(dir.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+                        vec3 east = normalize(cross(up, dir));
+                        vec3 north = normalize(cross(dir, east));
+                        baseNormal = normalize(dir - east * nX * oceanNormalScale - north * nY * oceanNormalScale);
+                        vOceanFoam = oceanSample.a * oceanFoamScale;
+                    }
                     vWaveHeight = waveDisp;
                     
                     // Displace vertex along surface normal
@@ -424,7 +455,7 @@ export class PlanetManager {
                     
                     vec4 worldPos = modelMatrix * vec4(pos, 1.0);
                     vWorldPos = worldPos.xyz;
-                    vNormal = normalize(normalMatrix * dir);
+                    vNormal = normalize(normalMatrix * baseNormal);
                     gl_Position = projectionMatrix * viewMatrix * worldPos;
                     #include <logdepthbuf_vertex>
                 }
@@ -444,6 +475,7 @@ export class PlanetManager {
                 varying vec3 vLocalPos;
                 varying float vWaveHeight;
                 varying float vLocalWindStrength;
+                varying float vOceanFoam;
 
                 void main() {
                     #include <logdepthbuf_fragment>
@@ -479,6 +511,7 @@ export class PlanetManager {
                     float foamThreshold = 0.6;
                     float foam = smoothstep(foamThreshold, 1.0, waveSlope * windFactor);
                     foam = clamp(foam * 0.3, 0.0, 0.4) * smoothstep(0.4, 0.8, windFactor);
+                    foam = clamp(foam + vOceanFoam * 0.35, 0.0, 0.6);
                     
                     // Foam color (bright white)
                     vec3 foamColor = vec3(0.95, 0.97, 1.0);
