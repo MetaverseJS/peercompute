@@ -91,7 +91,9 @@ See `docs/index.html` for the full demo index.
 ![Hyperborea](docs/assets/hyperborea.png)
 ![CubeChat](docs/assets/cubechat.png)
 ![SneakyWoods](docs/assets/sneakywoods.png)
+![Daddy Go](docs/assets/daddygo.png)
 ![PlanetGen](docs/assets/planetgen.png)
+![Universes](docs/assets/universes.png)
 ![WebGPUPhys](docs/assets/webgpuphys.png)
 
 ## Integration: Minimal Game Setup

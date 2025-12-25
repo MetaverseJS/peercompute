@@ -23,6 +23,7 @@
     "dev": "bash scripts/dev-all.sh",
     "docs:dev": "vite --config vite.docs.config.mjs",
     "docs:preview": "vite preview --config vite.docs.config.mjs",
+    "test:runtime": "node demos/tests/runtime-smoke.mjs",
     "build:hyperborea": "npm --prefix demos/hyperborea run build",
     "build:cubechat": "npm --prefix demos/cubechat run build",
     "build:planetgen": "npm --prefix demos/planetgen run build",

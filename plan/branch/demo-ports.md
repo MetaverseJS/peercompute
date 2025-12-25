@@ -95,3 +95,13 @@ Instructions: This file contains short term goals for the current branch.
 - Add relay domain config file and wire relay server to read it.
 - Update docs index to include all demos + screenshots; update main README + demo READMEs with PeerCompute integration samples.
 - Refresh plan files to reflect the release scope and new room system.
+
+
+
+##Additional demo tasks
+
+investigate slowdowns in cyberborea when loading chunks. maybe we can run that concurrently so it doesn't lock up the main thread. 
+
+universes: galaxies don't load when first approaching them from the universe. improve the gravitional lensing effect for black holes. make it really extreme. 
+
+the planetgen demo is pretty broken when it comes to how the ocean and winds work.  clean up how the code is organized so we don't just have a bunch of files sitting at the root. maybe put them in src at least.  we should actually model the ocean currents correctly and generate waves on the water from the wind.  

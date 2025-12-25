@@ -189,10 +189,10 @@ import { NodeKernel } from '@peercompute';
                 return null;
             };
             return (
-                (await tryFetch('/relay-config.json')) ||
                 (await tryFetch('./relay-config.json')) ||
-                (await tryFetch('/.relay-config.json')) ||
                 (await tryFetch('./.relay-config.json')) ||
+                (await tryFetch('/relay-config.json')) ||
+                (await tryFetch('/.relay-config.json')) ||
                 { bootstrapPeers: [] }
             );
         };

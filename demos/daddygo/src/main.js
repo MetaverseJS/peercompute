@@ -30,10 +30,10 @@ import { NodeKernel } from '@peercompute';
                 return null;
             };
             return (
-                (await tryFetch('/relay-config.json')) ||
                 (await tryFetch('./relay-config.json')) ||
-                (await tryFetch('/.relay-config.json')) ||
                 (await tryFetch('./.relay-config.json')) ||
+                (await tryFetch('/relay-config.json')) ||
+                (await tryFetch('/.relay-config.json')) ||
                 { bootstrapPeers: [] }
             );
         };
@@ -693,6 +693,32 @@ import { NodeKernel } from '@peercompute';
 
         // Initialize camera with error handling
         async function initCamera() {
+            const isAutomated = navigator.webdriver || /Headless/i.test(navigator.userAgent || '');
+            if (isAutomated) {
+                statusElement.innerHTML = `
+                    <strong>Camera Disabled:</strong><br>
+                    Automated test environment detected.<br><br>
+                    <strong>Solutions:</strong><br>
+                    1. Run in a regular browser window<br>
+                    2. Ensure camera permissions are enabled
+                `;
+                statusElement.style.color = '#ff0';
+                statusElement.style.maxWidth = '350px';
+                return;
+            }
+            if (!navigator?.mediaDevices?.getUserMedia) {
+                statusElement.innerHTML = `
+                    <strong>Camera Unavailable:</strong><br>
+                    This environment does not support camera access.<br><br>
+                    <strong>Solutions:</strong><br>
+                    1. Use Chrome or Firefox for best compatibility<br>
+                    2. Ensure camera permissions are enabled<br>
+                    3. Try opening this in a new browser tab
+                `;
+                statusElement.style.color = '#ff0';
+                statusElement.style.maxWidth = '350px';
+                return;
+            }
             try {
                 statusElement.textContent = 'Requesting camera access...';
                 statusElement.style.color = '#ff0';
@@ -709,7 +735,9 @@ import { NodeKernel } from '@peercompute';
                 statusElement.textContent = 'Camera ready!';
                 statusElement.style.color = '#0f0';
             } catch (error) {
-                console.error('Camera error:', error);
+                const isUnsupported = error?.name === 'NotSupportedError' || /NotSupported/i.test(error?.message || '');
+                const log = isUnsupported ? console.warn : console.error;
+                log('Camera error:', error);
                 statusElement.innerHTML = `
                     <strong>Camera Error:</strong><br>
                     ${error.message}<br><br>

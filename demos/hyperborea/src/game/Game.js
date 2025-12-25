@@ -278,10 +278,10 @@ export class Game {
                 return null;
             };
             const cfg =
-                (await tryFetch('/relay-config.json')) ||
                 (await tryFetch('relay-config.json')) ||
-                (await tryFetch('/.relay-config.json')) ||
-                (await tryFetch('.relay-config.json'));
+                (await tryFetch('.relay-config.json')) ||
+                (await tryFetch('/relay-config.json')) ||
+                (await tryFetch('/.relay-config.json'));
             if (cfg) return cfg;
         } catch (e) {
             // ignore and use fallback

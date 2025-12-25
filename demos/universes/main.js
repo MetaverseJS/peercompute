@@ -287,6 +287,9 @@ const elTComposition = document.getElementById('t-composition');
 const elWarpBtn = document.getElementById('warp-btn');
 const elCursor = document.getElementById('mouse-cursor');
 
+let universeGenerationToken = 0;
+let galaxyGenerationToken = 0;
+
 init();
 
 function mountVrButton() {
@@ -1815,9 +1818,6 @@ function createBlackHole(radius, x, y, z) {
 }
 
 // --- GENERATION FUNCTIONS ---
-
-let universeGenerationToken = 0;
-let galaxyGenerationToken = 0;
 
 function buildUniversePoints({ positions, colors, sizes }) {
     const geometry = new THREE.BufferGeometry();
