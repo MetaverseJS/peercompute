@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Physics - Cubic Barrier Contact</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0b0f0d;
+      color: #c8ffbf;
+      font-family: "Courier New", Courier, monospace;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      font-size: 13px;
+      color: #b6f7ae;
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(120, 255, 170, 0.35);
+      padding: 8px 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      user-select: none;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    #error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff8f8f;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 18px 22px;
+      border-radius: 6px;
+      max-width: 80%;
+      text-align: center;
+      display: none;
+      border: 1px solid rgba(255, 120, 120, 0.4);
+    }
+    #error:not(:empty) {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="info">PPF Cubic Barrier | Particles: <span id="particleCount">0</span> | FPS: <span id="fps">0</span></div>
+  <div id="error"></div>
+  <script type="module" src="./ppf-cubic-barrier.js"></script>
+</body>
+</html>

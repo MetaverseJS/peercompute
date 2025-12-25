@@ -974,28 +974,38 @@ function buildPostProcessing() {
                 vec2 uv = vUv;
                 vec2 totalOffset = vec2(0.0);
                 float halo = 0.0;
+                float shadowMask = 0.0;
                 for(int i = 0; i < ${MAX_BLACKHOLES}; i++) {
                     if (i >= uBHCount) break;
                     vec2 dir = uv - uBHPos[i];
-                    float dist = length(dir);
-                    float influence = smoothstep(0.35, 0.0, dist);
-                    float strength = uBHMass[i] * 0.0035;
-                    float distortion = (strength * influence * influence) / (dist + 0.015);
-                    distortion = min(distortion, 0.12);
-                    if (dist > 0.0) totalOffset -= (dir / dist) * distortion;
+                    float dist = length(dir) + 1e-6;
+                    vec2 dirN = dir / dist;
+                    float influence = smoothstep(0.65, 0.0, dist);
+                    float strength = uBHMass[i] * 0.02;
+                    float falloff = 1.0 / (dist * dist + 0.0009);
+                    float distortion = strength * influence * falloff;
+                    distortion = min(distortion, 0.45);
+                    totalOffset -= dirN * distortion;
 
-                    // Simple "photon ring" glow
-                    float ringCenter = 0.04 + uBHMass[i] * 0.004;
-                    float ringWidth = 0.008 + uBHMass[i] * 0.0015;
+                    // Photon ring glow
+                    float ringCenter = 0.03 + uBHMass[i] * 0.012;
+                    float ringWidth = 0.006 + uBHMass[i] * 0.004;
                     float ring = exp(-pow((dist - ringCenter) / ringWidth, 2.0));
-                    halo += ring * influence;
+                    halo += ring * influence * 2.2;
+
+                    // Event horizon shadow (lensing-only blackout)
+                    float shadowRadius = 0.012 + uBHMass[i] * 0.008;
+                    float shadowSoft = shadowRadius * 1.6;
+                    float shadow = 1.0 - smoothstep(shadowRadius, shadowSoft, dist);
+                    shadowMask = max(shadowMask, shadow);
                 }
                 vec2 warped = uv + totalOffset;
                 vec3 col;
-                col.r = texture2D(tDiffuse, warped + totalOffset * 0.15).r;
+                col.r = texture2D(tDiffuse, warped + totalOffset * 0.12).r;
                 col.g = texture2D(tDiffuse, warped).g;
-                col.b = texture2D(tDiffuse, warped - totalOffset * 0.15).b;
-                col += halo * vec3(1.0, 0.65, 0.25) * 0.35;
+                col.b = texture2D(tDiffuse, warped - totalOffset * 0.12).b;
+                col += halo * vec3(1.0, 0.65, 0.3);
+                col = mix(col, vec3(0.0), clamp(shadowMask, 0.0, 1.0));
                 gl_FragColor = vec4(col, 1.0);
             }
         `
@@ -1734,9 +1744,15 @@ function updateTargetPanel(data, readOnly = false) {
 function createBlackHole(radius, x, y, z) {
     const ehGeom = new THREE.SphereGeometry(radius, 64, 64);
     const ehMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    ehMat.colorWrite = false;
+    ehMat.depthWrite = false;
+    ehMat.depthTest = false;
+    ehMat.transparent = true;
+    ehMat.opacity = 0;
     const blackHole = new THREE.Mesh(ehGeom, ehMat);
     blackHole.position.set(x,y,z);
     blackHole.userData.isBlackHole = true;
+    blackHole.userData.ehRadius = radius;
 
     const diskGeom = new THREE.RingGeometry(radius * 1.5, radius * 8.0, 128);
     const diskMat = new THREE.ShaderMaterial({
@@ -1946,7 +1962,10 @@ async function generateDetailedGalaxy(type = 0) {
         `,
         depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, transparent: true
     });
-    localGalaxy = new THREE.Points(geom, mat); localGalaxy.frustumCulled = false; localGalaxy.visible = false; scene.add(localGalaxy);
+    localGalaxy = new THREE.Points(geom, mat);
+    localGalaxy.frustumCulled = false;
+    localGalaxy.visible = simState.viewLevel !== 0;
+    scene.add(localGalaxy);
 
     if (type !== 1) {
         const nebCount = (type === 2) ? 60 : 30;
@@ -1985,10 +2004,13 @@ async function generateDetailedGalaxy(type = 0) {
             `,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
         });
-        nebulaSystem = new THREE.Points(nebGeom, nebMat); nebulaSystem.visible = false; scene.add(nebulaSystem);
+        nebulaSystem = new THREE.Points(nebGeom, nebMat);
+        nebulaSystem.visible = simState.viewLevel === 1;
+        scene.add(nebulaSystem);
     }
     const bh = createBlackHole(radius * 0.005, 0, 0, 0);
-    smbhGroup.add(bh); smbhGroup.visible = false;
+    smbhGroup.add(bh);
+    smbhGroup.visible = simState.viewLevel === 1;
 }
 
 function generateStarSystem(seedPos) {
@@ -2225,7 +2247,7 @@ function animate() {
         const pos = bh.getWorldPosition(new THREE.Vector3()); pos.project(camera);
         if (pos.z < 1.0 && Math.abs(pos.x) < 1.5 && Math.abs(pos.y) < 1.5) {
             blackHoleUniforms.uBHPos.value[bhCount].set(pos.x * 0.5 + 0.5, pos.y * 0.5 + 0.5);
-            blackHoleUniforms.uBHMass.value[bhCount] = 2.0; bhCount++;
+            blackHoleUniforms.uBHMass.value[bhCount] = 3.5; bhCount++;
         }
     });
     blackHoleUniforms.uBHCount.value = bhCount;

@@ -79,11 +79,11 @@ test('cubechat uses PeerCompute for WebRTC signaling', () => {
 });
 
 test('planetgen uses shared GPU hub device', () => {
-  const helperPath = path.join(demosRoot, 'planetgen', 'peercomputeDevice.js');
+  const helperPath = path.join(demosRoot, 'planetgen', 'src', 'peercomputeDevice.js');
   assert.ok(exists(helperPath), 'planetgen peercomputeDevice helper missing');
-  const oceanContent = fs.readFileSync(path.join(demosRoot, 'planetgen', 'OceanComputeSystem.js'), 'utf8');
+  const oceanContent = fs.readFileSync(path.join(demosRoot, 'planetgen', 'src', 'OceanComputeSystem.js'), 'utf8');
   assert.ok(oceanContent.includes('init({ device'), 'OceanComputeSystem device injection missing');
-  const indexContent = fs.readFileSync(path.join(demosRoot, 'planetgen', 'index.js'), 'utf8');
+  const indexContent = fs.readFileSync(path.join(demosRoot, 'planetgen', 'src', 'index.js'), 'utf8');
   assert.ok(indexContent.includes('getSharedDevice'), 'planetgen missing shared device usage');
 });
 

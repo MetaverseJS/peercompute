@@ -1,0 +1,373 @@
+import * as THREE from 'three';
+
+export class TinyPlanetControls {
+    constructor(camera, domElement, scene, onExit) {
+        this.camera = camera;
+        this.domElement = domElement;
+        this.scene = scene;
+        this.onExitCallback = onExit;
+        this.planetMesh = null;
+        this.planetGroup = null;
+
+        // Configuration
+        this.planetRadius = 10; // Base radius from worldgen
+        
+        // Default scale settings (will be overwritten by setPlanetSize)
+        this.setPlanetSize(1000); 
+
+        // State
+        this.enabled = false;
+        this.isLocked = false;
+        this.isFlying = false;
+        this.moveForward = false;
+        this.moveBackward = false;
+        this.moveLeft = false;
+        this.moveRight = false;
+        this.moveUp = false;
+        this.moveDown = false;
+        this.isRunning = false;
+        this.canJump = false;
+
+        this.velocity = new THREE.Vector3();
+        this.direction = new THREE.Vector3();
+        this.verticalVelocity = 0;
+
+        // The player rig
+        this.player = new THREE.Object3D();
+        this.player.name = "TinyPlanetPlayer";
+        
+        // Helper vectors
+        this.raycaster = new THREE.Raycaster();
+        this.worldUp = new THREE.Vector3();
+        this.dummyVec = new THREE.Vector3();
+        this.dummyQuat = new THREE.Quaternion();
+
+        // Bind events
+        this.onKeyDown = this.onKeyDown.bind(this);
+        this.onKeyUp = this.onKeyUp.bind(this);
+        this.onMouseMove = this.onMouseMove.bind(this);
+        this.onPointerLockChange = this.onPointerLockChange.bind(this);
+    }
+
+    setPlanet(mesh) {
+        this.planetMesh = mesh;
+    }
+
+    setPlanetSize(diameterKm) {
+        this.diameterKm = diameterKm;
+        
+        // If active, update world scale dynamically
+        if (this.enabled) {
+            this.applyWorldScale();
+        }
+    }
+
+    applyWorldScale() {
+        if (!this.planetMesh || !this.planetMesh.parent) return;
+
+        // Real radius in meters
+        const realRadius = (this.diameterKm * 1000) / 2;
+        
+        // World Scale: How much to scale the "Radius 10" geometry to match Real Radius
+        // Scale = Real / 10
+        this.worldScale = realRadius / this.planetRadius;
+        
+        // Scale the planet group
+        this.planetMesh.parent.scale.setScalar(this.worldScale);
+        
+        // Update Physics (Meters)
+        this.playerHeight = 2.0; // 2 meters
+        this.walkSpeed = 5.0; 
+        this.runSpeed = 15.0;
+        this.flySpeed = 5000.0;
+        this.gravity = 9.8;
+        this.jumpForce = Math.sqrt(2 * 9.8 * 1.5);
+
+        // Update Camera
+        // Near plane 0.1m. Far plane needs to see horizon.
+        this.camera.near = 0.1; 
+        this.camera.far = Math.max(10000, realRadius * 2); 
+        this.camera.updateProjectionMatrix();
+        
+        // Update Fog
+        if (this.scene.fog) {
+            // Store original fog settings if not already stored
+            if (!this.originalFogSettings) {
+                this.originalFogSettings = {
+                    near: this.scene.fog.near,
+                    far: this.scene.fog.far
+                };
+            }
+            
+            // Scale fog
+            // Original fog: near 30, far 120 (based on Radius 10)
+            // We scale by worldScale
+            this.scene.fog.near = this.originalFogSettings.near * this.worldScale;
+            this.scene.fog.far = this.originalFogSettings.far * this.worldScale;
+        }
+    }
+
+    // Enter FPS mode at specific world position
+    enter(startPointWorld, planetMesh) {
+        if (this.enabled) return;
+        this.enabled = true;
+        this.planetMesh = planetMesh;
+        this.planetGroup = planetMesh.parent;
+
+        // Convert start point to Local Direction
+        const localPoint = startPointWorld.clone();
+        this.planetMesh.worldToLocal(localPoint);
+        const startDir = localPoint.normalize();
+
+        // Add player to Scene (World Space)
+        this.scene.add(this.player);
+        
+        // Apply Scale
+        this.applyWorldScale();
+        
+        // Position player in World Space
+        // We know direction `startDir` (Local) -> World Direction?
+        // Since planetMesh is at 0,0,0 locally in group, and group is at 0,0,0?
+        // Index.js says `scene.add(planetGroup)`.
+        // So `startDir` matches World Direction.
+        
+        const worldPos = startDir.clone().multiplyScalar(this.planetRadius * this.worldScale + this.playerHeight + 1.0);
+        this.player.position.copy(worldPos);
+        
+        // Align up
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), startDir);
+        this.player.quaternion.copy(quaternion);
+        this.player.up.copy(startDir);
+        
+        // Attach camera
+        this.player.add(this.camera);
+        this.camera.position.set(0, 0, 0);
+        this.camera.rotation.set(0, 0, 0);
+
+        // Reset physics
+        this.velocity.set(0, 0, 0);
+        this.verticalVelocity = 0;
+        this.isFlying = false;
+
+        // Lock pointer
+        this.domElement.requestPointerLock();
+        
+        this.addListeners();
+    }
+
+    exit() {
+        if (!this.enabled) return;
+        this.enabled = false;
+
+        this.removeListeners();
+        document.exitPointerLock();
+
+        // Detach camera
+        this.player.remove(this.camera);
+        this.scene.add(this.camera); // Return to scene root
+        
+        // Remove player from scene
+        this.scene.remove(this.player);
+        
+        // Restore Fog
+        if (this.scene.fog && this.originalFogSettings) {
+            this.scene.fog.near = this.originalFogSettings.near;
+            this.scene.fog.far = this.originalFogSettings.far;
+            this.originalFogSettings = null; // Clear
+        }
+        
+        if (this.onExitCallback) {
+            this.onExitCallback();
+        }
+    }
+
+    addListeners() {
+        document.addEventListener('keydown', this.onKeyDown);
+        document.addEventListener('keyup', this.onKeyUp);
+        document.addEventListener('mousemove', this.onMouseMove);
+        document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+
+    removeListeners() {
+        document.removeEventListener('keydown', this.onKeyDown);
+        document.removeEventListener('keyup', this.onKeyUp);
+        document.removeEventListener('mousemove', this.onMouseMove);
+        document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+
+    onPointerLockChange() {
+        this.isLocked = document.pointerLockElement === this.domElement;
+        if (!this.isLocked && this.enabled) {
+            // If user escaped pointer lock, maybe pause or exit?
+            // For now, let's just keep enabled state but input won't work well without lock
+             // Or we could auto-exit: this.exit(); 
+             // But usually games show a pause menu. Here we'll just wait for click to re-lock?
+             // Actually index.js might need to know.
+        }
+    }
+
+    onKeyDown(event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': this.moveForward = true; break;
+            case 'ArrowLeft':
+            case 'KeyA': this.moveLeft = true; break;
+            case 'ArrowDown':
+            case 'KeyS': this.moveBackward = true; break;
+            case 'ArrowRight':
+            case 'KeyD': this.moveRight = true; break;
+            case 'Space': 
+                if(this.isFlying) this.moveUp = true;
+                else if (this.canJump) { 
+                    this.verticalVelocity = this.jumpForce; 
+                    this.canJump = false; 
+                }
+                break;
+            case 'ControlLeft': this.moveDown = true; break;
+            case 'ShiftLeft': this.isRunning = true; break;
+            case 'KeyF': this.toggleFlight(); break;
+            case 'Escape': this.exit(); break; // Allow manual exit
+        }
+    }
+
+    onKeyUp(event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': this.moveForward = false; break;
+            case 'ArrowLeft':
+            case 'KeyA': this.moveLeft = false; break;
+            case 'ArrowDown':
+            case 'KeyS': this.moveBackward = false; break;
+            case 'ArrowRight':
+            case 'KeyD': this.moveRight = false; break;
+            case 'Space': this.moveUp = false; break;
+            case 'ControlLeft': this.moveDown = false; break;
+            case 'ShiftLeft': this.isRunning = false; break;
+        }
+    }
+
+    onMouseMove(event) {
+        if (!this.isLocked) return;
+
+        const movementX = event.movementX || 0;
+        const movementY = event.movementY || 0;
+
+        if (this.isFlying) {
+            const camLocalUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+            this.player.rotateOnAxis(camLocalUp, -movementX * 0.002);
+            this.camera.rotateX(-movementY * 0.002);
+        } else {
+            this.player.rotateY(-movementX * 0.002);
+            this.camera.rotateX(-movementY * 0.002);
+            this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
+        }
+    }
+
+    toggleFlight() {
+        this.isFlying = !this.isFlying;
+        this.verticalVelocity = 0;
+        if (!this.isFlying) {
+            // Re-align to gravity
+            const planetNormal = this.player.position.clone().normalize();
+            const dummyUp = new THREE.Vector3(0, 1, 0);
+            const alignQuat = new THREE.Quaternion().setFromUnitVectors(dummyUp, planetNormal);
+            this.player.quaternion.copy(alignQuat);
+            this.player.up.copy(planetNormal);
+            this.camera.rotation.x = 0;
+            this.velocity.set(0,0,0);
+        }
+    }
+
+    update(delta) {
+        if (!this.enabled) return;
+
+        // Friction
+        this.velocity.x -= this.velocity.x * 10.0 * delta;
+        this.velocity.z -= this.velocity.z * 10.0 * delta;
+
+        const speed = this.isFlying ? this.flySpeed : (this.isRunning ? this.runSpeed : this.walkSpeed);
+
+        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+        this.direction.normalize();
+
+        if (this.moveForward || this.moveBackward) this.velocity.z += this.direction.z * speed * delta;
+        if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * speed * delta;
+
+        if (this.isFlying) {
+             const moveVec = new THREE.Vector3();
+             if (this.moveForward) moveVec.z -= 1;
+             if (this.moveBackward) moveVec.z += 1;
+             if (this.moveLeft) moveVec.x -= 1;
+             if (this.moveRight) moveVec.x += 1;
+             if (this.moveUp) moveVec.y += 1;
+             if (this.moveDown) moveVec.y -= 1;
+             moveVec.normalize().multiplyScalar(speed * delta);
+             
+             // Transform Camera Local -> World
+             // camera.quaternion is Local to Player.
+             // player.quaternion is Local to World (since player is in Scene).
+             moveVec.applyQuaternion(this.camera.quaternion);
+             moveVec.applyQuaternion(this.player.quaternion); 
+             
+             this.player.position.add(moveVec);
+             
+        } else {
+            // Walking
+            this.player.translateX(-this.velocity.x * delta);
+            this.player.translateZ(-this.velocity.z * delta);
+
+            this.verticalVelocity -= this.gravity * delta;
+            
+            // Terrain Following
+            // Use heightmap sampling for O(1) performance
+            let targetHeight = 0;
+            
+            const forge = this.planetMesh.userData.forge;
+            const settings = this.planetMesh.userData.settings;
+
+            if (forge && settings) {
+                // Dir from Center (0,0,0) to Player
+                const dir = this.player.position.clone().normalize();
+                
+                // Get 0-1 height from heightmap
+                const rawHeight = forge.getHeightAt(dir);
+                
+                // Target Height in GEOMETRY Units
+                const targetHeightLocal = settings.radius + (rawHeight - settings.seaLevel) * settings.heightScale;
+                
+                // Convert to WORLD Units
+                targetHeight = targetHeightLocal * this.worldScale;
+            } else {
+                // Fallback
+                targetHeight = this.planetRadius * this.worldScale;
+            }
+
+            const distFromCenter = this.player.position.length();
+            
+            // Player height on top of terrain
+            const floorHeight = targetHeight + this.playerHeight;
+            
+            let currentHeight = distFromCenter + this.verticalVelocity * delta;
+            
+            if (currentHeight < floorHeight) {
+                currentHeight = floorHeight;
+                this.verticalVelocity = 0;
+                this.canJump = true;
+            } else {
+                this.canJump = false;
+            }
+            
+            // Apply height (World Space)
+            this.player.position.setLength(currentHeight);
+            
+            // Re-align to gravity (World Space)
+            const newUp = this.player.position.clone().normalize();
+            const alignQuaternion = new THREE.Quaternion();
+            alignQuaternion.setFromUnitVectors(this.player.up, newUp);
+            this.player.quaternion.premultiply(alignQuaternion);
+            this.player.up.copy(newUp);
+        }
+    }
+}

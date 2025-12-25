@@ -105,3 +105,21 @@ investigate slowdowns in cyberborea when loading chunks. maybe we can run that c
 universes: galaxies don't load when first approaching them from the universe. improve the gravitional lensing effect for black holes. make it really extreme. 
 
 the planetgen demo is pretty broken when it comes to how the ocean and winds work.  clean up how the code is organized so we don't just have a bunch of files sitting at the root. maybe put them in src at least.  we should actually model the ocean currents correctly and generate waves on the water from the wind.  
+
+## New Tasks (2025-12-25)
+
+### PlanetGen (holistic weather/ocean reset)
+- Draft and maintain `demos/planetgen/plan/hollistic-weather-plan.md` for a scalable, physics-based, concurrent weather + ocean model using PeerCompute and WebGPU.
+- Add a new Weather sim mode: `Holistic (PeerCompute, planned)` in the water-cycle dropdown; wire it to use the 3D volume path until the new solver lands.
+- Rebuild wind + ocean dynamics around coupled atmosphere/ocean physics (asymmetric heating, land/ocean contrast, albedo feedback).
+- Fix volumetric cloud glitches (avoid periodic rebuild flicker; keep volume textures stable).
+- Re-organize planetgen ocean/weather code into `src/` modules (no root-level clutter).
+- Add runtime tests for weather/ocean changes (headless where possible).
+
+### Universes (black holes)
+- Remove the visible black sphere; render black holes via lensing-only distortion.
+- Make lensing extreme (photon ring + shadow) with optional ray-traced path for high/ultra settings.
+
+### WebGPUPhys (PPF demo)
+- Add a new demo implementing the cubic barrier contact algorithm from `plan/refs/cubic-barrier.pdf`, based on https://github.com/st-tech/ppf-contact-solver.
+- Add runtime test coverage for the new PPF demo.

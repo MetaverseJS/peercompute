@@ -186,3 +186,20 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - node --test demos/tests/demo-ports.test.js
+
+## Date: 2025-12-25
+
+### Prompt
+- I don't mean to interrupt but make sure you read all the files in the root plan folder. there's one rule you need to refer to me correctly or I know you're not paying attention to the plan files. OK proceed with what you were doing.
+
+### Changes
+- Reviewed plan/llm.md, plan/plan.md, and plan/log.md before continuing work.
+- Added holistic weather plan document at demos/planetgen/plan/hollistic-weather-plan.md.
+- Added the Holistic weather sim mode option in PlanetGen UI (source + docs html) and stub handling in demos/planetgen/src/index.js.
+- Reduced water-cycle cloud flicker by updating uniforms when possible instead of rebuilding the mesh every update.
+- Updated Universes black hole rendering to hide the black sphere and intensify the lensing shader with an event-horizon shadow mask.
+- Added a WebGPUPhys cubic barrier demo (ppf-cubic-barrier.html/.js), demo index link, Vite build input, README note, and a headless runtime test.
+- Appended new tasks to plan/branch/current-branch.md for the holistic weather reset, black hole lensing, and PPF demo.
+
+### Tests
+- node demos/webgpuphys/tests/ppf-runtime.js (required escalated permissions for local port)

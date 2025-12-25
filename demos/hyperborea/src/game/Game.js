@@ -88,6 +88,8 @@ export class Game {
         this.mainTempleApex = null;
         this.foundationInfo = null;
         this.globeMaterial = null;
+        this.chunkQueue = [];
+        this.chunkBuildBudgetMs = 6;
         this.structureShadowCount = 0;
         this.lastSnowUpdate = 0;
         this.lastSnowSeason = null;
@@ -2425,6 +2427,35 @@ export class Game {
             this.applySeasonToChunk(chunk, factors);
         }
     }
+
+    rebuildChunkQueue(px, pz) {
+        const queue = [];
+        for (let dx = -CONFIG.RENDER_DISTANCE; dx <= CONFIG.RENDER_DISTANCE; dx++) {
+            for (let dz = -CONFIG.RENDER_DISTANCE; dz <= CONFIG.RENDER_DISTANCE; dz++) {
+                const dist = Math.max(Math.abs(dx), Math.abs(dz));
+                const cx = px + dx;
+                const cz = pz + dz;
+                const key = `${cx},${cz}`;
+                if (this.chunks.has(key)) {
+                    this.updateChunkLOD(key, dist);
+                    continue;
+                }
+                queue.push({ key, cx, cz, dist });
+            }
+        }
+        queue.sort((a, b) => a.dist - b.dist);
+        this.chunkQueue = queue;
+    }
+
+    processChunkQueue() {
+        if (!this.chunkQueue.length) return;
+        const start = performance.now();
+        while (this.chunkQueue.length) {
+            if ((performance.now() - start) > this.chunkBuildBudgetMs) break;
+            const next = this.chunkQueue.shift();
+            this.generateChunk(next.cx, next.cz, next.dist);
+        }
+    }
     
     updateChunks() {
         const px = Math.floor(this.position.x / CONFIG.CHUNK_SIZE);
@@ -2433,13 +2464,8 @@ export class Game {
         this.prevChunkX = px;
         this.prevChunkZ = pz;
         
-        // Generate chunks within render distance with LOD
-        for (let dx = -CONFIG.RENDER_DISTANCE; dx <= CONFIG.RENDER_DISTANCE; dx++) {
-            for (let dz = -CONFIG.RENDER_DISTANCE; dz <= CONFIG.RENDER_DISTANCE; dz++) {
-                const dist = Math.max(Math.abs(dx), Math.abs(dz));
-                this.generateChunk(px + dx, pz + dz, dist);
-            }
-        }
+        // Queue chunk generation so we spread work across frames.
+        this.rebuildChunkQueue(px, pz);
         
         // Remove far chunks AND their trees AND structures
         for (const [key, chunk] of this.chunks.entries()) {
@@ -3033,6 +3059,7 @@ export class Game {
         if (!hidden) {
             this.updatePlayer(delta);
             this.updateChunks();
+            this.processChunkQueue();
             this.updateSky();
             this.updateSnow();
             this.updateUI();
