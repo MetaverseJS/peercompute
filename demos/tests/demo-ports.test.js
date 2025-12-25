@@ -18,6 +18,16 @@ const demoSpecs = [
     entryCandidates: ['index.html']
   },
   {
+    name: 'sneakywoods',
+    requiresRelayConfig: true,
+    entryCandidates: ['index.html']
+  },
+  {
+    name: 'daddygo',
+    requiresRelayConfig: true,
+    entryCandidates: ['index.html', 'daddyGo.html']
+  },
+  {
     name: 'planetgen',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']

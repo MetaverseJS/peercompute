@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import { P2PNetwork } from './p2p/network.js';
+import { RoomDirectory, buildRoomId, normalizeRoomName } from './p2p/roomDirectory.js';
 import { TronScene } from './renderer/scene.js';
 import { PlayerController } from './controls/input.js';
 import { PhysicsWorld } from './physics/world.js';
@@ -18,6 +19,8 @@ class CubeChat {
     this.screenStream = null;
     this.screenBillboard = null;
     this.screenBillboardBody = null;
+    this.roomDirectory = null;
+    this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
   }
 
   async init() {
@@ -38,32 +41,70 @@ class CubeChat {
       <div id="settings-menu" style="display: none;">
         <div id="settings-close-x">✕</div>
         <h3>Settings</h3>
-        <label>
-          Name:
-          <input type="text" id="player-name" maxlength="20" placeholder="Anonymous">
-        </label>
-        <label>
-          Color:
-          <input type="color" id="player-color">
-        </label>
-        <label>
-          Mass:
-          <input type="number" id="player-mass" min="0.1" max="100" step="0.1" value="5">
-        </label>
-        <label>
-          Screen Height:
-          <input type="number" id="screen-height" min="10" max="1000" step="10" value="100">
-        </label>
-        <label style="display: flex; align-items: center; cursor: pointer;">
-          <input type="checkbox" id="invert-mouse" style="margin-right: 8px;">
-          Invert Mouse Y-Axis
-        </label>
-        <div style="margin-top: 10px;">
-          <button id="screen-share-toggle" style="width: 100%; margin-bottom: 5px;">Share Screen</button>
-          <div id="screen-share-status" style="font-size: 0.8em; color: #00ffff; text-align: center;"></div>
+        <div class="settings-section">
+          <h4>Player</h4>
+          <label>
+            Name:
+            <input type="text" id="player-name" maxlength="20" placeholder="Anonymous">
+          </label>
+          <label>
+            Color:
+            <input type="color" id="player-color">
+          </label>
+          <label>
+            Mass:
+            <input type="number" id="player-mass" min="0.1" max="100" step="0.1" value="5">
+          </label>
+          <label>
+            Screen Height:
+            <input type="number" id="screen-height" min="10" max="1000" step="10" value="100">
+          </label>
+          <label style="display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="invert-mouse" style="margin-right: 8px;">
+            Invert Mouse Y-Axis
+          </label>
+        </div>
+        <div class="settings-section">
+          <h4>Room</h4>
+          <label>
+            Room Name:
+            <input type="text" id="room-name" placeholder="global">
+          </label>
+          <label>
+            Privacy:
+            <select id="room-privacy">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </label>
+          <label>
+            Password (private rooms):
+            <input type="password" id="room-password" placeholder="Required for private rooms">
+          </label>
+          <div class="room-actions">
+            <button id="room-create">Create</button>
+            <button id="room-join">Join</button>
+            <button id="room-list-open">Room List</button>
+          </div>
+          <div id="room-status"></div>
+        </div>
+        <div class="settings-section">
+          <h4>Screen Share</h4>
+          <div style="margin-top: 10px;">
+            <button id="screen-share-toggle" style="width: 100%; margin-bottom: 5px;">Share Screen</button>
+            <div id="screen-share-status" style="font-size: 0.8em; color: #00ffff; text-align: center;"></div>
+          </div>
         </div>
         <button id="save-settings">Save</button>
         <button id="close-settings">Close</button>
+      </div>
+      <div id="room-list" style="display: none;">
+        <div class="room-list-actions">
+          <h3>Available Rooms</h3>
+          <button id="room-list-close">Close</button>
+        </div>
+        <button id="room-list-refresh">Refresh</button>
+        <div id="room-list-items"></div>
       </div>
     `;
 
@@ -73,7 +114,8 @@ class CubeChat {
     try {
       // Initialize P2P network
       this.network = new P2PNetwork();
-      const localPlayer = await this.network.init();
+      const localPlayer = await this.network.init({ roomId: this.currentRoom.roomId });
+      await this.initRoomDirectory();
 
       // Initialize physics world
       this.physics = new PhysicsWorld();
@@ -734,6 +776,17 @@ class CubeChat {
     const massInput = document.getElementById('player-mass');
     const screenHeightInput = document.getElementById('screen-height');
     const invertMouseInput = document.getElementById('invert-mouse');
+    const roomNameInput = document.getElementById('room-name');
+    const roomPrivacyInput = document.getElementById('room-privacy');
+    const roomPasswordInput = document.getElementById('room-password');
+    const roomCreateButton = document.getElementById('room-create');
+    const roomJoinButton = document.getElementById('room-join');
+    const roomListOpen = document.getElementById('room-list-open');
+    const roomStatus = document.getElementById('room-status');
+    const roomList = document.getElementById('room-list');
+    const roomListClose = document.getElementById('room-list-close');
+    const roomListRefresh = document.getElementById('room-list-refresh');
+    const roomListItems = document.getElementById('room-list-items');
 
     // Load saved settings
     const savedName = localStorage.getItem('playerName') || '';
@@ -747,6 +800,17 @@ class CubeChat {
     massInput.value = savedMass;
     screenHeightInput.value = savedScreenHeight;
     invertMouseInput.checked = savedInvertMouse;
+    const savedRoomName = localStorage.getItem('cubechatRoomName') || this.currentRoom.name;
+    const savedRoomPrivacy = localStorage.getItem('cubechatRoomPrivacy') || this.currentRoom.visibility;
+    if (roomNameInput) {
+      roomNameInput.value = savedRoomName;
+    }
+    if (roomPrivacyInput) {
+      roomPrivacyInput.value = savedRoomPrivacy;
+    }
+    if (roomStatus) {
+      roomStatus.textContent = `Current room: ${this.currentRoom.name} (${this.currentRoom.visibility})`;
+    }
     
     // Apply saved settings
     if (savedName) {
@@ -830,6 +894,60 @@ class CubeChat {
       console.log('Settings saved:', newName, newColor, 'Mass:', newMass);
     });
 
+    const updateRoomStatus = (message) => {
+      if (roomStatus) {
+        roomStatus.textContent = message;
+      }
+    };
+
+    const applyRoomChange = async () => {
+      const name = roomNameInput?.value?.trim() || 'global';
+      const visibility = roomPrivacyInput?.value || 'public';
+      const password = roomPasswordInput?.value || '';
+      if (visibility === 'private' && !password) {
+        updateRoomStatus('Password required for private rooms.');
+        return;
+      }
+      const normalizedName = normalizeRoomName(name);
+      const roomId = buildRoomId({ name: normalizedName, visibility, password });
+      updateRoomStatus('Switching rooms...');
+      await this.switchRoom({ name, visibility, roomId });
+      localStorage.setItem('cubechatRoomName', name);
+      localStorage.setItem('cubechatRoomPrivacy', visibility);
+      updateRoomStatus(`Current room: ${name} (${visibility})`);
+    };
+
+    if (roomCreateButton) {
+      roomCreateButton.addEventListener('click', () => {
+        applyRoomChange();
+      });
+    }
+
+    if (roomJoinButton) {
+      roomJoinButton.addEventListener('click', () => {
+        applyRoomChange();
+      });
+    }
+
+    if (roomListOpen && roomList) {
+      roomListOpen.addEventListener('click', () => {
+        roomList.style.display = 'block';
+        this.renderRoomList();
+      });
+    }
+
+    if (roomListClose && roomList) {
+      roomListClose.addEventListener('click', () => {
+        roomList.style.display = 'none';
+      });
+    }
+
+    if (roomListRefresh) {
+      roomListRefresh.addEventListener('click', () => {
+        this.renderRoomList();
+      });
+    }
+
     // Screen share toggle
     const screenShareToggle = document.getElementById('screen-share-toggle');
     const screenShareStatus = document.getElementById('screen-share-status');
@@ -852,6 +970,117 @@ class CubeChat {
           screenShareStatus.style.color = '#ff6600';
         }
       }
+    });
+  }
+
+  async initRoomDirectory() {
+    if (this.roomDirectory) return;
+    this.roomDirectory = new RoomDirectory({
+      gameId: 'cubechat',
+      bootstrapPeers: this.network.bootstrapPeers
+    });
+    try {
+      await this.roomDirectory.init();
+      this.roomDirectory.announceRoom(this.currentRoom);
+    } catch (error) {
+      console.warn('Room directory init failed:', error);
+    }
+  }
+
+  clearRemoteState() {
+    this.remotePlayers.forEach((peerId) => {
+      this.scene.removePlayer(peerId);
+      this.physics.removePlayerBody(peerId);
+    });
+    this.remotePlayers.clear();
+    Array.from(this.remoteBillboards.keys()).forEach((peerId) => {
+      this.removeRemoteBillboard(peerId);
+    });
+  }
+
+  setRoomStatus(message) {
+    const roomStatus = document.getElementById('room-status');
+    if (roomStatus) {
+      roomStatus.textContent = message;
+    }
+  }
+
+  async switchRoom({ name, visibility, roomId }) {
+    if (!roomId || roomId === this.currentRoom.roomId) return;
+    this.setRoomStatus('Switching rooms...');
+    this.stopScreenShare();
+    this.clearRemoteState();
+    const previousLocalId = this.network.peerId;
+    const localPlayer = await this.network.switchRoom({ roomId });
+    if (previousLocalId && previousLocalId !== localPlayer.id) {
+      this.scene.removePlayer(previousLocalId);
+      this.physics.removePlayerBody(previousLocalId);
+    }
+    this.scene.createPlayer(localPlayer.id, localPlayer.color, localPlayer.position);
+    this.scene.setLocalPlayer(localPlayer.id);
+    this.scene.setPlayerName(localPlayer.id, localPlayer.name || '');
+    this.physics.createPlayerBody(localPlayer.id, localPlayer.position);
+    if (this.network.getLocalStream()) {
+      this.scene.setPlayerVideoStream(localPlayer.id, this.network.getLocalStream());
+    }
+    this.network.broadcastPlayerState();
+    this.currentRoom = { name, visibility, roomId };
+    this.roomDirectory?.announceRoom(this.currentRoom);
+    this.setRoomStatus(`Current room: ${name} (${visibility})`);
+  }
+
+  renderRoomList() {
+    const listEl = document.getElementById('room-list-items');
+    if (!listEl) return;
+    const rooms = this.roomDirectory?.getRooms() || [];
+    listEl.innerHTML = '';
+    if (rooms.length === 0) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No rooms announced yet.';
+      listEl.appendChild(empty);
+      return;
+    }
+    rooms.forEach((room) => {
+      const entry = document.createElement('div');
+      entry.className = 'room-entry';
+      const title = document.createElement('h4');
+      title.textContent = room.name || room.slug || 'Unnamed room';
+      const meta = document.createElement('p');
+      meta.textContent = room.visibility === 'private' ? 'Private room' : 'Public room';
+      const joinBtn = document.createElement('button');
+      joinBtn.textContent = room.visibility === 'private' ? 'Join (password)' : 'Join';
+      joinBtn.addEventListener('click', async () => {
+        const name = room.name || room.slug || 'global';
+        const visibility = room.visibility === 'private' ? 'private' : 'public';
+        let password = '';
+        if (visibility === 'private') {
+          const roomPasswordInput = document.getElementById('room-password');
+          password = roomPasswordInput?.value || '';
+          if (!password) {
+            password = window.prompt('Password for this room?') || '';
+          }
+          if (!password) {
+            this.setRoomStatus('Password required for private rooms.');
+            return;
+          }
+        }
+        const roomId = visibility === 'private'
+          ? buildRoomId({ name: normalizeRoomName(name), visibility, password })
+          : (room.roomId || buildRoomId({ name: normalizeRoomName(name), visibility }));
+        await this.switchRoom({ name, visibility, roomId });
+        const roomList = document.getElementById('room-list');
+        if (roomList) roomList.style.display = 'none';
+        const roomNameInput = document.getElementById('room-name');
+        const roomPrivacyInput = document.getElementById('room-privacy');
+        if (roomNameInput) roomNameInput.value = name;
+        if (roomPrivacyInput) roomPrivacyInput.value = visibility;
+        localStorage.setItem('cubechatRoomName', name);
+        localStorage.setItem('cubechatRoomPrivacy', visibility);
+      });
+      entry.appendChild(title);
+      entry.appendChild(meta);
+      entry.appendChild(joinBtn);
+      listEl.appendChild(entry);
     });
   }
 

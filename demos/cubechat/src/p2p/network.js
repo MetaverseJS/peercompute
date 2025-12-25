@@ -40,6 +40,9 @@ export class P2PNetwork {
     this.networkManager = null;
     this.stateManager = null;
     this.peerId = null;
+    this.bootstrapPeers = [];
+    this.roomId = 'global';
+    this.localMediaReady = false;
     this.peers = new Map();
     this.messageHandlers = [];
     this.localStream = null;
@@ -59,16 +62,34 @@ export class P2PNetwork {
     this.peerCleanupInterval = null;
   }
 
-  async init() {
-    await this._initLocalMedia();
+  async init({ roomId = 'global' } = {}) {
+    if (!this.localMediaReady) {
+      await this._initLocalMedia();
+      this.localMediaReady = true;
+    }
+    await this._startNode(roomId);
+    return this.localPlayer;
+  }
+
+  async switchRoom({ roomId = 'global' } = {}) {
+    const nextRoomId = roomId || 'global';
+    if (nextRoomId === this.roomId) return this.localPlayer;
+    await this._shutdownNode();
+    this._resetPeerState();
+    await this._startNode(nextRoomId);
+    return this.localPlayer;
+  }
+
+  async _startNode(roomId) {
     const cfg = await loadRelayConfig();
-    const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+    this.bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+    this.roomId = roomId || 'global';
 
     this.node = new NodeKernel({
-      bootstrapPeers,
+      bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: 'cubechat',
-      roomId: 'global'
+      roomId: this.roomId
     });
     await this.node.initialize();
     await this.node.start();
@@ -77,16 +98,17 @@ export class P2PNetwork {
     this.stateManager = this.node.getStateManager();
     this.peerId = this.node.getStatus().network.peerId;
 
+    const prev = this.localPlayer || {};
     this.localPlayer = {
       id: this.peerId,
-      position: this.generateRandomPosition(),
-      color: this.getDeterministicColor(this.peerId),
-      velocity: { x: 0, y: 0, z: 0 },
-      rotation: 0,
+      position: prev.position || this.generateRandomPosition(),
+      color: prev.color || this.getDeterministicColor(this.peerId),
+      velocity: prev.velocity || { x: 0, y: 0, z: 0 },
+      rotation: prev.rotation || 0,
       hasMedia: !!this.localStream,
-      screenSharing: false,
-      billboardData: null,
-      name: null
+      screenSharing: !!prev.screenSharing,
+      billboardData: prev.billboardData || null,
+      name: prev.name || null
     };
 
     this.networkManager.configureScheduler(DEFAULT_PROFILE);
@@ -104,8 +126,6 @@ export class P2PNetwork {
     });
 
     this._startPeerCleanup();
-
-    return this.localPlayer;
   }
 
   async _initLocalMedia() {
@@ -208,6 +228,45 @@ export class P2PNetwork {
         }
       }
     }, PEER_CLEANUP_MS);
+  }
+
+  _stopPeerCleanup() {
+    if (this.peerCleanupInterval) {
+      clearInterval(this.peerCleanupInterval);
+      this.peerCleanupInterval = null;
+    }
+  }
+
+  _resetPeerState() {
+    this.peers.clear();
+    this.remoteStreams.clear();
+    this.remoteScreenStreams.clear();
+    this.remoteCameraTracks.clear();
+    this.remoteScreenTracks.clear();
+    this.remoteAudioTracks.clear();
+    this.remoteTrackIds.clear();
+    this.remoteScreenTrackIds.clear();
+    this.pendingIceCandidates.clear();
+    this.dataChannels.clear();
+    for (const peerId of Array.from(this.peerConnections.keys())) {
+      this.closePeerConnection(peerId);
+    }
+    this.peerConnections.clear();
+  }
+
+  async _shutdownNode() {
+    if (this.networkManager) {
+      this.networkManager.queueEvent?.({ type: 'player_leave' }, { reliable: true });
+    }
+    this._stopPeerCleanup();
+    if (this.node) {
+      await this.node.stop();
+    }
+    this.node = null;
+    this.networkManager = null;
+    this.stateManager = null;
+    this.peerId = null;
+    this.snapshotProviderId = null;
   }
 
   _dropPeer(peerId) {
@@ -328,19 +387,9 @@ export class P2PNetwork {
   }
 
   stop() {
-    if (this.peerCleanupInterval) {
-      clearInterval(this.peerCleanupInterval);
-      this.peerCleanupInterval = null;
-    }
-    if (this.networkManager) {
-      this.networkManager.queueEvent?.({ type: 'player_leave' }, { reliable: true });
-    }
+    this._shutdownNode();
     if (this.peerConnections.size) {
       Array.from(this.peerConnections.keys()).forEach((peerId) => this.closePeerConnection(peerId));
-    }
-    if (this.node) {
-      this.node.stop();
-      this.node = null;
     }
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());

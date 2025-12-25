@@ -8,6 +8,10 @@ Instructions: This file contains short term goals for the current branch.
 - `demos/universes-ref` -> `/home/cos/projects/universes`
 - `demos/webgpuphys-ref` -> `/home/cos/projects/webgpuphys`
 
+### Additional Demos
+- `demos/sneakywoods` (formerly sw2) -> in-repo port
+- `demos/daddygo` -> pose runner demo, needs PeerCompute high score sync
+
 ### Global Porting Standards
 - Each demo is a standalone Vite project under `demos/<name>`.
 - Vite server must allow the local PeerCompute source tree and set `@peercompute` alias to `peercompute/src/peercompute/index.js`.
@@ -73,3 +77,21 @@ Instructions: This file contains short term goals for the current branch.
 - [x] PlanetGen port + ComputeManager integration
 - [x] Universes port + ComputeManager integration
 - [x] WebGPUPhys port + ComputeManager integration
+
+### Release Follow-ups
+- Add room selection + room list settings to multiplayer demos (CubeChat, SneakyWoods, Hyperborea).
+- Add DaddyGo global high score sync via PeerCompute state.
+- Fix Universes init crash + PlanetGen debug defaults.
+- Refresh docs index + README(s) with demo screenshots and run instructions.
+
+## Release Tasks (Demo Cleanup)
+- Add global high score sync to DaddyGo with a shared HUD element.
+- Add room selection + settings windows for multiplayer demos (CubeChat, SneakyWoods, Hyperborea):
+  - Public/private rooms, room names, optional passwords.
+  - Room list window (open from settings) with join/create flows.
+  - Move player config (name/color/etc.) into settings.
+- Fix Universes init crash (universeGenerationToken TDZ) and verify startup.
+- Turn PlanetGen debug view off by default.
+- Add relay domain config file and wire relay server to read it.
+- Update docs index to include all demos + screenshots; update main README + demo READMEs with PeerCompute integration samples.
+- Refresh plan files to reflect the release scope and new room system.

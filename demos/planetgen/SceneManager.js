@@ -31,7 +31,7 @@ export class SceneManager {
         this.scene.add(this.userGroup);
 
         // Camera
-        this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.0000000000000001, 2000);
         this.userGroup.add(this.camera);
         this.camera.position.set(0, 10, 28);
 

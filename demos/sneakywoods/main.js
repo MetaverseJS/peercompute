@@ -154,8 +154,30 @@ import { NodeKernel } from '@peercompute';
         const gameNamespace = 'sneakywoods';
         let node = null;
         let stateManager = null;
+        let bootstrapPeers = [];
         let playerLabel = null;
         const log = (...args) => console.log('[sneakywoods]', ...args);
+        let backgroundHeartbeat = null;
+        let peerCleanupInterval = null;
+        let beforeUnloadHandler = null;
+        let currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
+        let roomDirectoryNode = null;
+        let roomDirectoryState = null;
+        let roomDirectoryRooms = new Map();
+        let roomAnnounceTimer = null;
+        let roomPruneTimer = null;
+        try {
+            const savedName = localStorage.getItem('sneakywoodsPlayerName');
+            if (savedName) {
+                myName = savedName;
+            }
+            const savedColor = localStorage.getItem('sneakywoodsPlayerColor');
+            if (savedColor) {
+                myColor = parseInt(savedColor.replace('#', '0x'), 16);
+            }
+        } catch (_) {
+            // ignore localStorage errors
+        }
         const loadRelayConfig = async () => {
             const tryFetch = async (path) => {
                 try {
@@ -180,8 +202,160 @@ import { NodeKernel } from '@peercompute';
             return peers.filter(Boolean);
         };
 
-        let backgroundHeartbeat = null;
-        
+        const ROOM_DIRECTORY_ID = '__rooms__';
+        const ROOM_DIRECTORY_NAMESPACE = 'rooms';
+        const ROOM_ENTRY_PREFIX = 'room-';
+        const ROOM_HEARTBEAT_MS = 10000;
+        const ROOM_TTL_MS = 45000;
+
+        const slugifyRoomName = (value) => {
+            const slug = String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            return slug || 'global';
+        };
+
+        const hashSecret = (value) => {
+            const str = String(value || '');
+            let hash = 2166136261;
+            for (let i = 0; i < str.length; i += 1) {
+                hash ^= str.charCodeAt(i);
+                hash = Math.imul(hash, 16777619);
+            }
+            return (hash >>> 0).toString(16);
+        };
+
+        const buildRoomId = ({ name, visibility, password }) => {
+            const slug = slugifyRoomName(name);
+            if (visibility === 'private') {
+                return `priv-${slug}-${hashSecret(password)}`;
+            }
+            return slug;
+        };
+
+        const setRoomStatus = (message) => {
+            const statusEl = document.getElementById('roomStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+        };
+
+        const pruneRoomList = () => {
+            const now = Date.now();
+            for (const [key, room] of roomDirectoryRooms.entries()) {
+                if (!room || !room.updatedAt || (now - room.updatedAt) > ROOM_TTL_MS) {
+                    roomDirectoryRooms.delete(key);
+                }
+            }
+        };
+
+        async function initRoomDirectory(bootstrapPeers) {
+            if (roomDirectoryNode) return;
+            roomDirectoryNode = new NodeKernel({
+                bootstrapPeers,
+                enablePersistence: false,
+                gameId: 'sneakywoods',
+                roomId: ROOM_DIRECTORY_ID
+            });
+            await roomDirectoryNode.initialize();
+            await roomDirectoryNode.start();
+            roomDirectoryState = roomDirectoryNode.getStateManager();
+            roomDirectoryState.observeNamespace(ROOM_DIRECTORY_NAMESPACE, (value, key) => {
+                if (!key || !key.startsWith(ROOM_ENTRY_PREFIX)) return;
+                if (!value) {
+                    roomDirectoryRooms.delete(key);
+                    return;
+                }
+                roomDirectoryRooms.set(key, value);
+            });
+            roomPruneTimer = setInterval(pruneRoomList, ROOM_HEARTBEAT_MS);
+        }
+
+        const announceRoom = () => {
+            if (!roomDirectoryState || !currentRoom) return;
+            const slug = slugifyRoomName(currentRoom.name);
+            const payload = {
+                name: currentRoom.name,
+                slug,
+                visibility: currentRoom.visibility,
+                updatedAt: Date.now(),
+                roomId: currentRoom.visibility === 'public' ? currentRoom.roomId : null
+            };
+            roomDirectoryState.writeScoped(ROOM_DIRECTORY_NAMESPACE, `${ROOM_ENTRY_PREFIX}${slug}`, payload);
+        };
+
+        const startRoomAnnouncements = () => {
+            announceRoom();
+            if (roomAnnounceTimer) return;
+            roomAnnounceTimer = setInterval(announceRoom, ROOM_HEARTBEAT_MS);
+        };
+
+        const stopRoomAnnouncements = () => {
+            if (roomAnnounceTimer) {
+                clearInterval(roomAnnounceTimer);
+                roomAnnounceTimer = null;
+            }
+        };
+
+        const renderRoomList = () => {
+            const listEl = document.getElementById('roomListItems');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            const rooms = Array.from(roomDirectoryRooms.values())
+                .filter((room) => room && (!room.updatedAt || (Date.now() - room.updatedAt) <= ROOM_TTL_MS))
+                .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            if (!rooms.length) {
+                const empty = document.createElement('p');
+                empty.textContent = 'No rooms announced yet.';
+                listEl.appendChild(empty);
+                return;
+            }
+            rooms.forEach((room) => {
+                const entry = document.createElement('div');
+                entry.className = 'room-entry';
+                const title = document.createElement('h4');
+                title.textContent = room.name || room.slug || 'Unnamed room';
+                const meta = document.createElement('p');
+                meta.textContent = room.visibility === 'private' ? 'Private room' : 'Public room';
+                const joinBtn = document.createElement('button');
+                joinBtn.textContent = room.visibility === 'private' ? 'Join (password)' : 'Join';
+                joinBtn.addEventListener('click', async () => {
+                    const name = room.name || room.slug || 'global';
+                    const visibility = room.visibility === 'private' ? 'private' : 'public';
+                    let password = '';
+                    if (visibility === 'private') {
+                        const passwordInput = document.getElementById('roomPassword');
+                        password = passwordInput?.value || '';
+                        if (!password) {
+                            password = window.prompt('Password for this room?') || '';
+                        }
+                        if (!password) {
+                            setRoomStatus('Password required for private rooms.');
+                            return;
+                        }
+                    }
+                    const roomId = visibility === 'private'
+                        ? buildRoomId({ name: slugifyRoomName(name), visibility, password })
+                        : (room.roomId || buildRoomId({ name: slugifyRoomName(name), visibility }));
+                    await switchRoom({ name, visibility, roomId });
+                    const roomList = document.getElementById('room-list');
+                    if (roomList) roomList.style.display = 'none';
+                    const nameInput = document.getElementById('roomName');
+                    const privacyInput = document.getElementById('roomPrivacy');
+                    if (nameInput) nameInput.value = name;
+                    if (privacyInput) privacyInput.value = visibility;
+                    localStorage.setItem('sneakywoodsRoomName', name);
+                    localStorage.setItem('sneakywoodsRoomPrivacy', visibility);
+                });
+                entry.appendChild(title);
+                entry.appendChild(meta);
+                entry.appendChild(joinBtn);
+                listEl.appendChild(entry);
+            });
+        };
+
         // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
@@ -619,23 +793,56 @@ import { NodeKernel } from '@peercompute';
             attack();
         });
 
-        // Name entry / updates
+        // Settings + player config
+        const settingsButton = document.getElementById('settings-button');
+        const settingsMenu = document.getElementById('settings-menu');
+        const settingsClose = document.getElementById('settings-close');
         const nameInput = document.getElementById('nameInput');
         const nameBtn = document.getElementById('nameBtn');
         const colorPicker = document.getElementById('colorPicker');
+        const roomNameInput = document.getElementById('roomName');
+        const roomPrivacyInput = document.getElementById('roomPrivacy');
+        const roomPasswordInput = document.getElementById('roomPassword');
+        const roomCreateButton = document.getElementById('roomCreate');
+        const roomJoinButton = document.getElementById('roomJoin');
+        const roomListOpen = document.getElementById('roomListOpen');
+        const roomList = document.getElementById('room-list');
+        const roomListClose = document.getElementById('roomListClose');
+        const roomListRefresh = document.getElementById('roomListRefresh');
+
+        if (settingsButton && settingsMenu) {
+            settingsButton.addEventListener('click', () => {
+                const isOpen = settingsMenu.style.display !== 'none';
+                settingsMenu.style.display = isOpen ? 'none' : 'block';
+                if (!isOpen && document.pointerLockElement) {
+                    document.exitPointerLock();
+                }
+            });
+        }
+
+        if (settingsClose && settingsMenu) {
+            settingsClose.addEventListener('click', () => {
+                settingsMenu.style.display = 'none';
+            });
+        }
+
         if (nameInput) {
             nameInput.value = myName;
         }
         if (colorPicker) {
-            // Initialize from picker default
-            const hex = colorPicker.value || '#00ff00';
-            myColor = parseInt(hex.replace('#','0x'), 16);
+            const colorHex = `#${Math.floor(myColor).toString(16).padStart(6, '0')}`;
+            colorPicker.value = colorHex;
             applyMeshColor(playerMesh, myColor);
         }
         function commitNameUpdate() {
             const next = nameInput?.value?.trim();
             if (!next) return;
             myName = next;
+            try {
+                localStorage.setItem('sneakywoodsPlayerName', myName);
+            } catch (_) {
+                // ignore localStorage errors
+            }
             publishPlayerState();
             updateHUD();
         }
@@ -654,7 +861,69 @@ import { NodeKernel } from '@peercompute';
                 const hex = e.target.value || '#00ff00';
                 myColor = parseInt(hex.replace('#','0x'), 16);
                 applyMeshColor(playerMesh, myColor);
+                try {
+                    localStorage.setItem('sneakywoodsPlayerColor', hex);
+                } catch (_) {
+                    // ignore localStorage errors
+                }
                 publishPlayerState();
+            });
+        }
+
+        const savedRoomName = localStorage.getItem('sneakywoodsRoomName') || currentRoom.name;
+        const savedRoomPrivacy = localStorage.getItem('sneakywoodsRoomPrivacy') || currentRoom.visibility;
+        if (roomNameInput) {
+            roomNameInput.value = savedRoomName;
+        }
+        if (roomPrivacyInput) {
+            roomPrivacyInput.value = savedRoomPrivacy;
+        }
+        setRoomStatus(`Current room: ${currentRoom.name} (${currentRoom.visibility})`);
+
+        const applyRoomChange = async () => {
+            const name = roomNameInput?.value?.trim() || 'global';
+            const visibility = roomPrivacyInput?.value || 'public';
+            const password = roomPasswordInput?.value || '';
+            if (visibility === 'private' && !password) {
+                setRoomStatus('Password required for private rooms.');
+                return;
+            }
+            const normalizedName = slugifyRoomName(name);
+            const roomId = buildRoomId({ name: normalizedName, visibility, password });
+            setRoomStatus('Switching rooms...');
+            await switchRoom({ name, visibility, roomId });
+            try {
+                localStorage.setItem('sneakywoodsRoomName', name);
+                localStorage.setItem('sneakywoodsRoomPrivacy', visibility);
+            } catch (_) {
+                // ignore localStorage errors
+            }
+        };
+
+        if (roomCreateButton) {
+            roomCreateButton.addEventListener('click', () => {
+                applyRoomChange();
+            });
+        }
+        if (roomJoinButton) {
+            roomJoinButton.addEventListener('click', () => {
+                applyRoomChange();
+            });
+        }
+        if (roomListOpen && roomList) {
+            roomListOpen.addEventListener('click', () => {
+                roomList.style.display = 'block';
+                renderRoomList();
+            });
+        }
+        if (roomListClose && roomList) {
+            roomListClose.addEventListener('click', () => {
+                roomList.style.display = 'none';
+            });
+        }
+        if (roomListRefresh) {
+            roomListRefresh.addEventListener('click', () => {
+                renderRoomList();
             });
         }
         document.addEventListener('visibilitychange', () => {
@@ -896,6 +1165,14 @@ import { NodeKernel } from '@peercompute';
             peers.delete(peerId);
             updateHUD();
         }
+
+        function clearPeers() {
+            for (const peerId of Array.from(peerMeshes.keys())) {
+                removePeer(peerId);
+            }
+            peerMeshes.clear();
+            peers.clear();
+        }
         
         // Simulate peer movement (disabled; real peers only)
         function startPeerSimulation() {}
@@ -959,15 +1236,15 @@ import { NodeKernel } from '@peercompute';
         
         // Send message to a specific peer
         // P2P Communication Setup (PeerCompute)
-        async function setupP2P() {
+        async function setupP2P(roomId = currentRoom.roomId) {
             try {
                 const cfg = await loadRelayConfig();
-                const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+                bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'sneakywoods',
-                    roomId: 'global'
+                    roomId: roomId || 'global'
                 });
                 await node.initialize();
                 await node.start();
@@ -991,7 +1268,10 @@ import { NodeKernel } from '@peercompute';
                 });
 
                 // Prune stale peers if their state stops updating
-                setInterval(() => {
+                if (peerCleanupInterval) {
+                    clearInterval(peerCleanupInterval);
+                }
+                peerCleanupInterval = setInterval(() => {
                     const now = Date.now();
                     for (const [id, data] of peers.entries()) {
                         if ((now - (data.lastSeen || 0)) > 10000) {
@@ -1003,14 +1283,52 @@ import { NodeKernel } from '@peercompute';
                 // Publish our initial state and kick off heartbeats
                 publishPlayerState();
                 broadcastPosition(); // will repeat via requestAnimationFrame below
-                window.addEventListener('beforeunload', () => {
-                    if (stateManager) {
-                        stateManager.deleteScoped(gameNamespace, `player-${myPeerId}`);
-                    }
-                });
+                if (!beforeUnloadHandler) {
+                    beforeUnloadHandler = () => {
+                        if (stateManager && myPeerId) {
+                            stateManager.deleteScoped(gameNamespace, `player-${myPeerId}`);
+                        }
+                    };
+                    window.addEventListener('beforeunload', beforeUnloadHandler);
+                }
+                await initRoomDirectory(bootstrapPeers);
+                startRoomAnnouncements();
             } catch (err) {
                 console.error('P2P setup error:', err);
             }
+        }
+
+        async function stopP2P() {
+            stopRoomAnnouncements();
+            stopBackgroundHeartbeat();
+            if (peerCleanupInterval) {
+                clearInterval(peerCleanupInterval);
+                peerCleanupInterval = null;
+            }
+            if (stateManager && myPeerId) {
+                stateManager.deleteScoped(gameNamespace, `player-${myPeerId}`);
+            }
+            if (node) {
+                try {
+                    await node.stop();
+                } catch (err) {
+                    console.warn('P2P shutdown error:', err);
+                }
+            }
+            node = null;
+            stateManager = null;
+            myPeerId = null;
+            clearPeers();
+            seenAttacks.clear();
+        }
+
+        async function switchRoom({ name, visibility, roomId }) {
+            if (!roomId || roomId === currentRoom.roomId) return;
+            setRoomStatus('Switching rooms...');
+            await stopP2P();
+            currentRoom = { name, visibility, roomId };
+            await setupP2P(roomId);
+            setRoomStatus(`Current room: ${name} (${visibility})`);
         }
 
         // No-op placeholders for legacy peer messaging hooks

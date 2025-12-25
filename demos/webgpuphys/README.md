@@ -7,11 +7,35 @@ Original Repository: [https://github.com/schteppe/gpu-physics.js/](https://githu
 
 We heap massive praise upon Schteppe for his pioneering work in GPU-accelerated physics simulation on the web. His original WebGL 2 implementation paved the way for high-performance rigid body simulations in the browser, demonstrating ingenious techniques for mapping physics concepts to graphics hardware. This project stands on the shoulders of that giant, leveraging the modern compute capabilities of WebGPU to push the boundaries even further.
 ![screenshot](image.png)
+
+## Run
+```bash
+cd demos/webgpuphys
+npm install
+npm run dev
+```
+
+Open `https://localhost:5179/`.
+
 ## Overview
 https://ubernaut.github.io/webGPUphysics/demos/toychest.html 
 WebGPU Physics is a high-performance, GPU-accelerated 3D rigid body physics engine. It runs the entire physics simulation loop on the GPU using WebGPU Compute Shaders (WGSL), allowing for the simulation of tens of thousands of interacting bodies in real-time.
 
 The core idea is to represent rigid bodies as clouds of spherical particles. Collision detection and response are performed at the particle level, and the resulting forces are aggregated to drive the motion of the rigid bodies.
+
+## PeerCompute Integration
+The headless and visual MLS-MPM demos can run via PeerCompute `ComputeManager`.
+
+```js
+const manager = new ComputeManager({ maxWorkers: 1 });
+await manager.initialize();
+
+await manager.submitTask({
+  module: '/demos/shared/mpmComputeTasks.js',
+  exportName: 'stepMpm',
+  data: { dt }
+});
+```
 
 ## MLS-MPM (Materials) Progress
 - New WebGPU MLS-MPM scaffolding (water-first) lives under `src/domains/mpm/` with:

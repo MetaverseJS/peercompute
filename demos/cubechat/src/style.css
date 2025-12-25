@@ -121,6 +121,8 @@ body {
   z-index: 3000;
   min-width: 300px;
   box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 #settings-close-x {
@@ -199,6 +201,111 @@ body {
 #settings-menu button:hover {
   background: rgba(0, 255, 255, 0.4);
   transform: scale(1.05);
+}
+
+#settings-menu select {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid #00ffff;
+  border-radius: 5px;
+  color: #00ffff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+}
+
+.settings-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.settings-section h4 {
+  margin-bottom: 0.75rem;
+  color: #00ffff;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.9rem;
+}
+
+.room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+#room-status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #00cccc;
+}
+
+#room-list {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 4, 40, 0.97);
+  border: 2px solid #00ffff;
+  border-radius: 10px;
+  padding: 1.5rem;
+  z-index: 3500;
+  min-width: 320px;
+  max-width: 520px;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
+}
+
+#room-list h3 {
+  margin: 0 0 1rem 0;
+  color: #00ffff;
+  font-size: 1.2rem;
+}
+
+.room-entry {
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 255, 255, 0.25);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  background: rgba(0, 255, 255, 0.05);
+}
+
+.room-entry h4 {
+  margin-bottom: 0.35rem;
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+.room-entry p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #00cccc;
+}
+
+.room-entry button {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(0, 255, 255, 0.2);
+  border: 1px solid #00ffff;
+  border-radius: 5px;
+  color: #00ffff;
+  cursor: pointer;
+}
+
+.room-list-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
 }
 
 /* VR Button */

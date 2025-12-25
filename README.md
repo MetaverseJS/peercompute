@@ -51,25 +51,48 @@ PeerCompute supports multiple timing models:
 ## Quick Start
 
 ```bash
-cd peercompute
 npm install
 
-# Start relay + dev server
-sh ./start-dev.sh
+# Start relay + all demos over HTTPS
+npm run dev
 ```
 
-Open:
-- `http://localhost:5173/test-p2p.html` (connectivity)
-- `games/sw2.html` or `games/cb.html` (examples)
+Dev servers:
+- `https://localhost:5175/` (Hyperborea)
+- `https://localhost:5176/` (CubeChat)
+- `https://localhost:5177/` (PlanetGen)
+- `https://localhost:5178/` (Universes)
+- `https://localhost:5179/` (WebGPUPhys)
+- `https://localhost:5180/` (SneakyWoods)
+- `https://localhost:5181/` (Daddy Go!)
 
-### LAN / Mobile
-Start relay with a public host so other devices can dial it:
-
+### Docs Build / Preview
 ```bash
-RELAY_PUBLIC_HOST=192.168.1.174 ./start-dev.sh
+npm run build
+npm run docs:preview
 ```
 
-Clients will read `relay-config.json` and rewrite loopback addresses to the page host when needed.
+### Relay Host Config
+Set the public relay domain in `config/relay.json` (used by `npm run dev` and the relay server):
+
+```json
+{
+  "publicHost": "relay.example.com",
+  "publicPort": "443"
+}
+```
+
+Environment variables (`RELAY_PUBLIC_HOST`, `RELAY_PUBLIC_PORT`, `RELAY_LISTEN_HOST`, `RELAY_LISTEN_PORT`) still override the config file.
+Clients read `relay-config.json` and rewrite loopback addresses to the page host when needed.
+
+## Demo Gallery
+See `docs/index.html` for the full demo index.
+
+![Hyperborea](docs/assets/hyperborea.png)
+![CubeChat](docs/assets/cubechat.png)
+![SneakyWoods](docs/assets/sneakywoods.png)
+![PlanetGen](docs/assets/planetgen.png)
+![WebGPUPhys](docs/assets/webgpuphys.png)
 
 ## Integration: Minimal Game Setup
 

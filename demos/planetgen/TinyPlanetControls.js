@@ -14,13 +14,13 @@ export class TinyPlanetControls {
 
         // Configuration
         this.planetRadius = BASE_RADIUS_UNITS;
-        this.walkSpeed = 3.5;
-        this.runSpeed = 6.5;
-        this.flySpeed = 8.0;
-        this.swimSpeed = 2.5;
-        this.jumpForce = 6.0;
+        this.walkSpeed = 0.5;
+        this.runSpeed = 1.0;
+        this.flySpeed = 4.0;
+        this.swimSpeed = 0.25;
+        this.jumpForce = 3.0;
         this.gravity = 30.0;
-        this.playerHeight = 0.04;
+        this.playerHeight = 0.02;
         this.accelGround = 32;
         this.accelAir = 10;
         this.accelFly = 14;

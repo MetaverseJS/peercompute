@@ -16,6 +16,17 @@ An interactive WebGL planet generator that simulates plate tectonics, hydraulic 
 - **Polar ice**: Water shader blends to ice based on the iceCap setting; ice cap size is adjustable. Frozen water is solid and walkable.
 - **Shared GPU hub**: Ocean + weather compute use the PeerCompute GPU hub device when available (fallbacks to local WebGPU).
 
+## PeerCompute Integration
+PlanetGen tries to reuse the PeerCompute GPU hub device so compute buffers can be shared with the renderer.
+
+```js
+import { getSharedDevice } from './peercomputeDevice.js';
+import { OceanComputeSystem } from './OceanComputeSystem.js';
+
+const device = await getSharedDevice();
+const ocean = new OceanComputeSystem({ device });
+```
+
 ## Controls
 - **Orbit view**: Drag to rotate, scroll/pinch to zoom, middle-click the planet to enter Tiny mode, Surface button snaps to visible point.
 - **Tiny mode (desktop)**: WASD/arrows to move, Space jump, Shift run, Ctrl down, F fly toggle, Q/E roll, Esc exit.

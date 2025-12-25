@@ -367,6 +367,32 @@ export class TronScene {
     }
   }
 
+  removePlayer(id) {
+    const player = this.players.get(id);
+    if (!player) return;
+    if (player.userData.nameLabel) {
+      player.remove(player.userData.nameLabel);
+      player.userData.nameLabel = null;
+    }
+    if (player.userData.glow) {
+      player.remove(player.userData.glow);
+      player.userData.glow = null;
+    }
+    if (Array.isArray(player.material)) {
+      player.material.forEach((mat) => mat.dispose());
+    } else if (player.material) {
+      player.material.dispose();
+    }
+    if (player.geometry) {
+      player.geometry.dispose();
+    }
+    this.scene.remove(player);
+    this.players.delete(id);
+    if (this.localPlayerId === id) {
+      this.localPlayerId = null;
+    }
+  }
+
   setPlayerName(id, name) {
     const player = this.players.get(id);
     if (!player) return;

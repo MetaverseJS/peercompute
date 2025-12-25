@@ -76,6 +76,14 @@
       border-color: var(--accent);
     }
 
+    .card img {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
     .card h2 {
       margin: 0;
       font-size: 1.25rem;
@@ -117,18 +125,26 @@
   <main>
     <section class="grid">
       <a class="card" href="./hyperborea/">
+        <img src="./assets/hyperborea.png" alt="Hyperborea screenshot" loading="lazy">
         <h2>Hyperborea</h2>
         <span>WebXR-ready multiplayer scene with shared GPU hub.</span>
       </a>
       <a class="card" href="./cubechat/">
+        <img src="./assets/cubechat.png" alt="CubeChat screenshot" loading="lazy">
         <h2>CubeChat</h2>
         <span>PeerCompute relay + WebRTC proximity video chat.</span>
       </a>
       <a class="card" href="./sneakywoods/">
+        <img src="./assets/sneakywoods.png" alt="SneakyWoods screenshot" loading="lazy">
         <h2>SneakyWoods</h2>
         <span>Lightweight multiplayer arena with shared state sync.</span>
       </a>
+      <a class="card" href="./daddygo/">
+        <h2>Daddy Go!</h2>
+        <span>Pose-controlled runner with shared global high score.</span>
+      </a>
       <a class="card" href="./planetgen/">
+        <img src="./assets/planetgen.png" alt="PlanetGen screenshot" loading="lazy">
         <h2>PlanetGen</h2>
         <span>Procedural planet generator with GPU-driven oceans and weather.</span>
       </a>
@@ -137,6 +153,7 @@
         <span>Universe + galaxy generator with ComputeManager offload.</span>
       </a>
       <div class="card">
+        <img src="./assets/webgpuphys.png" alt="WebGPUPhys screenshot" loading="lazy">
         <h2>WebGPUPhys</h2>
         <span>GPU physics demos, MLS-MPM experiments, headless runner.</span>
         <div class="links">
