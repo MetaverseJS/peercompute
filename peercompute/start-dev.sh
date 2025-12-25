@@ -15,11 +15,31 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEFAULT_CERT="$ROOT_DIR/certs/dev.crt"
 DEFAULT_KEY="$ROOT_DIR/certs/dev.key"
 EXPORT_CERT_DIR="$ROOT_DIR/public/certs"
+REPO_ROOT="$(cd "$ROOT_DIR/.." && pwd)"
+RELAY_CONFIG_JSON="$REPO_ROOT/config/relay.json"
 SKIP_RELAY="${SKIP_RELAY:-0}"
 STARTED_RELAY=0
 
 # Auto-detect LAN IP if RELAY_PUBLIC_HOST is not set
 if [ -z "${RELAY_PUBLIC_HOST:-}" ]; then
+  if [ -f "$RELAY_CONFIG_JSON" ]; then
+    CFG_PUBLIC_HOST="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$RELAY_CONFIG_JSON','utf8'));if(cfg.publicHost)process.stdout.write(String(cfg.publicHost));")"
+    CFG_PUBLIC_PORT="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$RELAY_CONFIG_JSON','utf8'));if(cfg.publicPort)process.stdout.write(String(cfg.publicPort));")"
+    CFG_LISTEN_HOST="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$RELAY_CONFIG_JSON','utf8'));if(cfg.listenHost)process.stdout.write(String(cfg.listenHost));")"
+    CFG_LISTEN_PORT="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$RELAY_CONFIG_JSON','utf8'));if(cfg.listenPort)process.stdout.write(String(cfg.listenPort));")"
+    if [ -n "$CFG_PUBLIC_HOST" ]; then
+      export RELAY_PUBLIC_HOST="$CFG_PUBLIC_HOST"
+    fi
+    if [ -n "$CFG_PUBLIC_PORT" ] && [ -z "${RELAY_PUBLIC_PORT:-}" ]; then
+      export RELAY_PUBLIC_PORT="$CFG_PUBLIC_PORT"
+    fi
+    if [ -n "$CFG_LISTEN_HOST" ] && [ -z "${RELAY_LISTEN_HOST:-}" ]; then
+      export RELAY_LISTEN_HOST="$CFG_LISTEN_HOST"
+    fi
+    if [ -n "$CFG_LISTEN_PORT" ] && [ -z "${RELAY_LISTEN_PORT:-}" ]; then
+      export RELAY_LISTEN_PORT="$CFG_LISTEN_PORT"
+    fi
+  fi
   LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}') || true
   if [ -n "$LOCAL_IP" ]; then
     export RELAY_PUBLIC_HOST="$LOCAL_IP"

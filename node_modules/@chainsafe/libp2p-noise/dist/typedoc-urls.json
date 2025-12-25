@@ -1,0 +1,17 @@
+{
+  "asCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.asCrypto.html",
+  "./crypto:asCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.asCrypto.html",
+  "defaultCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.defaultCrypto.html",
+  "./crypto:defaultCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.defaultCrypto.html",
+  "nodeCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.nodeCrypto.html",
+  "./crypto:nodeCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/crypto.nodeCrypto.html",
+  "ICryptoInterface": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.ICryptoInterface.html",
+  "KeyPair": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.KeyPair.html",
+  "NoiseComponents": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.NoiseComponents.html",
+  ".:NoiseComponents": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.NoiseComponents.html",
+  "NoiseExtensions": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.NoiseExtensions.html",
+  "NoiseInit": "https://ChainSafe.github.io/js-libp2p-noise/interfaces/index.NoiseInit.html",
+  "pureJsCrypto": "https://ChainSafe.github.io/js-libp2p-noise/variables/index.pureJsCrypto.html",
+  "noise": "https://ChainSafe.github.io/js-libp2p-noise/functions/index.noise.html",
+  ".:noise": "https://ChainSafe.github.io/js-libp2p-noise/functions/index.noise.html"
+}

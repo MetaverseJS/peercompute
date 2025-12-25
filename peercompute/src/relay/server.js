@@ -34,17 +34,37 @@ import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 
 const relayPublicHost = process.env.RELAY_PUBLIC_HOST || '';
+const relayPublicPort = process.env.RELAY_PUBLIC_PORT || '';
 const relayListenHost = process.env.RELAY_LISTEN_HOST || (relayPublicHost ? '0.0.0.0' : '127.0.0.1');
+const relayListenPort = process.env.RELAY_LISTEN_PORT || '0';
 const relaySslCert = process.env.RELAY_SSL_CERT || process.env.SSL_CERT || '';
 const relaySslKey = process.env.RELAY_SSL_KEY || process.env.SSL_KEY || '';
 const useWss = Boolean(relaySslCert && relaySslKey);
+const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+const relayConfigFile = (process.env.RELAY_CONFIG_FILE || '').trim();
+
+const toMultiaddrHostSegment = (host) => {
+  if (!host) return '';
+  const isIpv6 = host.includes(':');
+  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  if (isIpv6) return `/ip6/${host}`;
+  if (isIpv4) return `/ip4/${host}`;
+  return `/dns4/${host}`;
+};
 
 async function startServer() {
   try {
     console.log('Starting PeerCompute Relay & Signaling Server...');
     console.log(`Relay listen host: ${relayListenHost}`);
+    console.log(`Relay listen port: ${relayListenPort}`);
     if (relayPublicHost) {
       console.log(`Relay public host: ${relayPublicHost}`);
+    }
+    if (relayPublicPort) {
+      console.log(`Relay public port: ${relayPublicPort}`);
     }
     if (useWss) {
       console.log(`Relay using WSS with SSL_CERT=${relaySslCert}`);
@@ -62,7 +82,7 @@ async function startServer() {
     const server = await createLibp2p({
       addresses: {
         listen: [
-          `/ip4/${relayListenHost}/tcp/0/${useWss ? 'wss' : 'ws'}`
+          `/ip4/${relayListenHost}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`
         ]
       },
       transports: [
@@ -183,18 +203,47 @@ async function startServer() {
       }
     });
 
-    // Write config to file for tests to pick up
+    // Write config to file for demos/tests to pick up
     // We prefer the WebSocket address for browser clients
     const wsAddr = addrs.find(a => a.includes('/wss')) || addrs.find(a => a.includes('/ws'));
     if (wsAddr) {
         const relayAddr = wsAddr.includes('/p2p/')
           ? wsAddr
           : `${wsAddr}/p2p/${server.peerId.toString()}`;
-        const announceAddr = relayPublicHost
-          ? relayAddr.replace(/\/ip4\/[^/]+/, `/ip4/${relayPublicHost}`)
-          : relayAddr;
+        const hostSegment = relayPublicHost ? toMultiaddrHostSegment(relayPublicHost) : '';
+        let announceAddr = relayAddr;
+        if (hostSegment) {
+          announceAddr = announceAddr
+            .replace(/\/ip4\/[^/]+/, hostSegment)
+            .replace(/\/ip6\/[^/]+/, hostSegment)
+            .replace(/\/dns4\/[^/]+/, hostSegment);
+        }
+        if (relayPublicPort) {
+          announceAddr = announceAddr.replace(/\/tcp\/\d+/, `/tcp/${relayPublicPort}`);
+        }
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);
+        const relayConfig = JSON.stringify({ bootstrapPeers: [announceAddr] }, null, 2);
+        const writeConfig = (filePath) => {
+          if (!filePath) return;
+          try {
+            const dir = path.dirname(filePath);
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, `${relayConfig}\n`, 'utf8');
+            console.log(`[Relay] Wrote relay-config.json -> ${filePath}`);
+          } catch (err) {
+            console.warn(`[Relay] Failed to write relay-config.json to ${filePath}:`, err?.message || err);
+          }
+        };
+        if (relayConfigFile) {
+          writeConfig(path.resolve(relayConfigFile));
+        }
+        if (relayConfigDirs.length) {
+          relayConfigDirs.forEach((dirPath) => {
+            const filePath = path.resolve(dirPath, 'relay-config.json');
+            writeConfig(filePath);
+          });
+        }
     } else {
         console.log('No WebSocket address found!');
     }

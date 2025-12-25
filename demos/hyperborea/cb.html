@@ -27,6 +27,55 @@
             Left Stick - Move | Right Stick - Turn<br>
             Left Trigger - Jump | Right Trigger - Torch
         </div>
+        <div id="settings-button">Settings</div>
+        <div id="settings-menu" style="display: none;">
+            <div id="settings-close">X</div>
+            <h3>Settings</h3>
+            <div class="settings-section">
+                <h4>Player</h4>
+                <label>
+                    Name
+                    <input id="player-name" type="text" maxlength="24" placeholder="Explorer">
+                </label>
+                <label>
+                    Color
+                    <input id="player-color" type="color" value="#00ffff">
+                </label>
+                <button id="player-save">Save</button>
+            </div>
+            <div class="settings-section">
+                <h4>Room</h4>
+                <label>
+                    Room Name
+                    <input id="room-name" type="text" placeholder="global">
+                </label>
+                <label>
+                    Privacy
+                    <select id="room-privacy">
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                    </select>
+                </label>
+                <label>
+                    Password (private rooms)
+                    <input id="room-password" type="password" placeholder="Required for private rooms">
+                </label>
+                <div class="room-actions">
+                    <button id="room-create">Create</button>
+                    <button id="room-join">Join</button>
+                    <button id="room-list-open">Room List</button>
+                </div>
+                <div id="room-status"></div>
+            </div>
+        </div>
+        <div id="room-list" style="display: none;">
+            <div class="room-list-actions">
+                <h3>Available Rooms</h3>
+                <button id="room-list-close">Close</button>
+            </div>
+            <button id="room-list-refresh">Refresh</button>
+            <div id="room-list-items"></div>
+        </div>
         <button id="attackButton">ATTACK</button>
     </div>
 

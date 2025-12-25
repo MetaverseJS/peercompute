@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU MLS-MPM (Headless)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.5;
+    }
+    h1 { margin: 0 0 8px 0; font-size: 18px; }
+    #panel {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+      max-width: 640px;
+    }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    button {
+      background: #22d3ee;
+      color: #0f172a;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .metric { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    #error { color: #f97316; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h1>MLS-MPM Headless Monitor</h1>
+    <div class="row">
+      <button id="toggleBtn">Pause</button>
+      <button id="resetBtn">Reset baseline</button>
+      <span id="status">init…</span>
+    </div>
+    <div id="metrics">
+      <div>Particles: <span class="metric" id="particleCount">0</span></div>
+      <div>Grid size: <span class="metric" id="gridSize">0</span></div>
+      <div>Mass: <span class="metric" id="mass">0</span></div>
+      <div>Mass Δ: <span class="metric" id="massDelta">0</span></div>
+      <div>Momentum: <span class="metric" id="momentum">0, 0, 0</span></div>
+      <div>Momentum Δ: <span class="metric" id="momentumDelta">0, 0, 0</span></div>
+      <div>Checks/s: <span class="metric" id="checks">0</span></div>
+    </div>
+    <div id="error"></div>
+  </div>
+
+  <script type="module" src="./mpm-headless.js"></script>
+</body>
+</html>

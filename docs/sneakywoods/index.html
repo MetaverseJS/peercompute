@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SneakyWoods</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+            text-shadow: 1px 1px 1px black;
+            pointer-events: none;
+            z-index: 10;
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #score {
+            margin-bottom: 10px;
+        }
+        #players {
+            margin-top: 10px;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px;
+            text-align: right;
+            text-shadow: 1px 1px 1px black;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            pointer-events: none;
+        }
+
+        #settings-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            z-index: 30;
+            pointer-events: auto;
+        }
+
+        #settings-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 16px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
+            z-index: 40;
+            pointer-events: auto;
+            color: #fff;
+        }
+
+        #settings-close {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #settings-menu h3 {
+            margin-bottom: 12px;
+        }
+
+        .settings-section {
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .settings-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        #settings-menu label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        #settings-menu input,
+        #settings-menu select {
+            width: 100%;
+            margin-top: 6px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #111;
+            color: #fff;
+            outline: none;
+        }
+
+        #settings-menu button {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #2563eb;
+            background: #2563eb;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .room-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        #roomStatus {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #93c5fd;
+        }
+
+        #room-list {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 16px;
+            width: 320px;
+            max-height: 70vh;
+            overflow-y: auto;
+            z-index: 45;
+            pointer-events: auto;
+            color: #fff;
+        }
+
+        .room-list-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .room-entry {
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .room-entry h4 {
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .room-entry p {
+            margin: 0;
+            font-size: 12px;
+            color: #d1d5db;
+        }
+        
+        /* Mobile joystick styles */
+        .joystick-container {
+            position: absolute;
+            bottom: 20px;
+            width: 120px;
+            height: 120px;
+            z-index: 20;
+            pointer-events: none;
+            display: none;
+        }
+
+        @media (max-width: 768px) and (pointer: coarse) {
+            .joystick-container {
+                display: block;
+            }
+            #attack-button {
+                display: block;
+            }
+        }
+
+        #left-joystick {
+            left: calc(25% - 60px);
+        }
+
+        #right-joystick {
+            right: calc(25% - 60px);
+        }
+
+        .joystick {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(128, 128, 128, 0.3);
+            border-radius: 50%;
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        .joystick-knob {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            transition: left 0.1s ease-out, top 0.1s ease-out;
+        }
+        
+        /* Attack button styles */
+        #attack-button {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            display: none;
+            z-index: 20;
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            text-align: center;
+            pointer-events: auto;
+            touch-action: manipulation;
+        }
+    </style>
+  <script type="module" crossorigin src="./assets/index-CBZaBgEp.js"></script>
+</head>
+<body>
+        <div id="hud">
+        <div id="score">Score: 0</div>
+        <div id="highscore">High Score: 0</div>
+        <div id="position">Position: 0, 0, 0</div>
+        <div id="players">Players: 1</div>
+    </div>
+    
+    <div id="controls">
+        <div>WASD: Move</div>
+        <div>Mouse/Arrows: Look</div>
+        <div>Space/Click: Attack</div>
+        <div>Movement has momentum</div>
+    </div>
+    <div id="settings-button">Settings</div>
+    <div id="settings-menu" style="display:none;">
+      <div id="settings-close">X</div>
+      <h3>Settings</h3>
+      <div class="settings-section">
+        <h4>Player</h4>
+        <label>
+          Name
+          <input id="nameInput" placeholder="Name">
+        </label>
+        <label>
+          Color
+          <input id="colorPicker" type="color" value="#00ff00">
+        </label>
+        <button id="nameBtn">Update Name</button>
+      </div>
+      <div class="settings-section">
+        <h4>Room</h4>
+        <label>
+          Room Name
+          <input id="roomName" placeholder="global">
+        </label>
+        <label>
+          Privacy
+          <select id="roomPrivacy">
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+        </label>
+        <label>
+          Password (private rooms)
+          <input id="roomPassword" type="password" placeholder="Required for private rooms">
+        </label>
+        <div class="room-actions">
+          <button id="roomCreate">Create</button>
+          <button id="roomJoin">Join</button>
+          <button id="roomListOpen">Room List</button>
+        </div>
+        <div id="roomStatus"></div>
+      </div>
+    </div>
+    <div id="room-list" style="display:none;">
+      <div class="room-list-actions">
+        <h3>Available Rooms</h3>
+        <button id="roomListClose">Close</button>
+      </div>
+      <button id="roomListRefresh">Refresh</button>
+      <div id="roomListItems"></div>
+    </div>
+    
+    <!-- Mobile joystick controls -->
+    <div id="left-joystick" class="joystick-container">
+        <div class="joystick">
+            <div class="joystick-knob"></div>
+        </div>
+    </div>
+    <div id="right-joystick" class="joystick-container">
+        <div class="joystick">
+            <div class="joystick-knob"></div>
+        </div>
+    </div>
+    
+    <!-- Attack button for mobile -->
+    <button id="attack-button">ATTACK</button>
+</body>
+</html>

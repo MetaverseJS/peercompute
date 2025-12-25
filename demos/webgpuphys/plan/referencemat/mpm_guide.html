@@ -1,0 +1,545 @@
+mpm guide - niall t.l.  
+
+[articles](/index.html) > notes and examples for the material point method
+==========================================================================
+
+* * *
+
+![a real-time MPM fluid simulation made in Unity using the techniques outlined in this page](img/mpm_guide/mls-mpm_37k.gif "a real-time MPM fluid simulation made in Unity using the techniques outlined in this page")
+
+_a real-time 40,000 particle MPM fluid simulation made in Unity using techniques outlined in this page_
+
+**source code for this article:** [incremental\_mpm on GitHub](https://github.com/nialltl/incremental_mpm)
+
+* * *
+
+intro
+=====
+
+i’ve been playing around with particle-based simulations for a while now, and found that some approaches feel a little more esoteric than others. one i had a hard time getting started with is the material point method (MPM).
+
+i’m going to give a very broad outline of the family of methods MPM comes from, just to contextualise it a bit. i’ll then give some bare-bones example implementations, and pointers towards where i’ve found most helpful to learn more.
+
+compared to a few years ago, there’s really great literature on the theory behind MPM, but i always found actual implementation references hard to come by, or webbed up in massive simulation libraries.
+
+my open-source MIT licensed implementations are all single-file (almost-)self contained examples. hopefully this’ll help bridge the gap a little: **source code for this article:** [incremental\_mpm on GitHub](https://github.com/nialltl/incremental_mpm)
+
+**note:** deformable simulation is a huge field. my interest is mostly motivated by real-time interactive applications and my mode of understanding is more gestural than mathematically rigorous. i’m going to be very hand-wavey and essentialist. buuuut, hopefully this can act as a little nudge in a less confusing direction if you’d like to play around with these ideas.
+
+* * *
+
+references and useful links
+===========================
+
+throughout this page i’ll be referencing existing papers and building an implementation out of them. i won’t really delve too deeply into the theoretical "why"s of how MPM works, but more why i make certain choices. for a more solid backing in what makes MPM tick, here’s a list of papers and resources i’ve found the most helpful to learn from:
+
+*   MPM Course (SIGGRAPH 2016 notes):
+    
+    *   [http://mpm.graphics](http://mpm.graphics)
+    *   absolute behemoth of a walkthrough. probably the best bottom-up explanation of MPM i’ve found! i’ll reference this throughout my examples.
+*   APIC original paper:
+    
+    *   [https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf](https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf)
+    *   a useful reference for the actual implementation of grid-particle transfers that are used in MLS-MPM.
+*   Taichi MPM implementation, slides & notes
+    
+    *   [https://github.com/yuanming-hu/taichi\_mpm/](https://github.com/yuanming-hu/taichi_mpm/)
+    *   the PDF slides and slides with notes are _really_ helpful and give a great side-by-side comparison of MPM and MLS-MPM.
+*   MLS-MPM original paper:
+    
+    *   [https://www.yzhu.io/projects/siggraph18\_mlsmpm\_cpic/index.html](https://www.yzhu.io/projects/siggraph18_mlsmpm_cpic/index.html)
+    *   this might be a bit overwhelming to launch straight into without implementing standard MPM first, but i’d recommend the section “from MPM to MLS-MPM”.
+*   MLS-MPM implemented in 88 lines of c++
+    
+    *   [https://github.com/yuanming-hu/taichi\_mpm/blob/master/mls-mpm88-explained.cpp](https://github.com/yuanming-hu/taichi_mpm/blob/master/mls-mpm88-explained.cpp)
+    *   this is the comments-expanded version of Yuanming Hu’s original 88-line implementation.
+    *   similar in structure to our Part 2 implementation, but with a Disney-style constitutive model for snow. useful to see how they differ!
+*   a maintained curated list of current MPM research
+    
+    *   [https://www.seas.upenn.edu/~cffjiang/mpm.html](https://www.seas.upenn.edu/~cffjiang/mpm.html)
+    *   nice to see a lineage of MPM papers, and might give you some ideas on how to extend what you see on this page.
+
+**note:** this page contains [an appendix](#appendix__simulation_methods_and_their_general_vibes_450) with a guide to the acronym soup that permeates the physics-simulation world. you can consult it to get a quick overview of what various techniques are all about.
+
+* * *
+
+what is MPM?
+============
+
+MPM is a hybrid Lagrangian-Eulerian method that’s really good at simulating a wide range of physical phenomena. you might have first come across MPM through [this viral sensation](https://www.youtube.com/watch?v=9H1gRQ6S7gg) from Disney Research. in it, they showcase an implementation of a material model for snow, simulated using MPM. i think it’s a good introduction to the kind of versatility MPM affords.
+
+MPM was originally introduced as an extension of FLIP, to tackle problems in computational solid dynamics. it takes the simulation framework of PIC / FLIP and generalises it to basically anything you can describe with a constitutive equation. solids, liquids, gases, squishy things, you name it.
+
+**note:** _constitutive equations_ describe relationships between quantities that characterise the material you want to model. they often include terms like stress, strain, pressure, density, elasticity, etc.
+
+so. as of writing this, a lot of existing MPM literature builds its examples out from a simple material model, like an isotropic elastic material using something like a Neo-Hookean constitutive model.
+
+if you’re anything like me, you have / had no idea what any of them were talking about. i don’t know how common a path it is to come to MPM via other simulation mentalities, but my experience beforehand was mostly other fully particle based methods and i’d never had to confront much continuum mechanics.
+
+i’m going to build out an MPM simulation incrementally, with the end goal of a simple little fluid simulation, assuming some prior knowledge of particle-based methods. specifically i’m going to be implementing a variation of _MLS-MPM_, and hack around with it a little to try and get something working real-time.
+
+* * *
+
+overview of the playing field
+-----------------------------
+
+to simulate any sort of matter, you need to discretise it in some way. this basically just means deciding on a concrete way to describe what the matter is made up of in terms that can be worked on numerically. this could be like a point cloud (think: particles), a discrete grid of values (think: voxels), or a mesh that describes an area/volume of the surface you’re modeling (think: wireframe vaporwave album covers).
+
+broadly speaking, if you’re wanting to simulate something squishy / fluid-like / deformable, there are usually 3 viewpoints that different simulation models take.
+
+*   on one end of the spectrum, if the underlying spatial representation of your matter deforms along with its motion, you're using a _Lagrangian_ representation. examples of this would be SPH and PBF, where the spatial representation is the makeup of the particles themselves, or Lagrangian FEM, where the grid / mesh itself deforms under motion.
+    
+*   on the other end, if you choose a completely fixed reference frame, like a regular grid, you're using an Eulerian representation. you divide the domain into fixed chunks, and evaluate continuous field quantities like velocity and density at fixed points on the grid (usually edges or faces). examples of this would be are the Marker-and-Cell method and Lattice-Boltzmann methods.
+    
+*   then there’s the ~space betwixt~. _Hybrid_ methods basically pick and choose between those ^ two ways of looking at the domain. whatever perspective a particular model takes at any given time is basically just whatever works best for the problem it’s trying to solve.
+    
+
+you can find a more thorough exposition of the differences of these reference frames [here.](https://en.wikipedia.org/wiki/Lagrangian_and_Eulerian_specification_of_the_flow_field)
+
+the reason Hybrid methods are even a thing is that some aspects of physical simulation are just generally more straightforward or efficient to compute from a certain reference frame.
+
+for example, particles are good for mass conservation and handling advection. grids are great for forcing incompressibility for fluids using pressure projection, and it’s significantly easier to evaluate gradients on grids with interpolation methods and finite differences.
+
+* * *
+
+a little context for MLS-MPM
+============================
+
+with that in mind, let’s say we want to simulate a fluid. to start with, we’ll use PIC, as it’s one of the first Hybrid approaches to appear on the scene.
+
+PIC works out the box, but its major problem is that it’s really dissipative. in order to evaluate velocity it has to interpolate data back and forth between the particles and the underlying grid a bunch. because this is never perfect, a little bit of information is lost every time. the result is that a lot of sharp high-res detail of the simulation gets smoothed out, and everything’s very mushy. stable, but mushy:
+
+![Particle In Cell advection showing high dissipation](img/mpm_guide/pic.gif "Particle In Cell advection showing high dissipation")
+
+_Particle In Cell advection showing high dissipation_
+
+yeuch! look at all that artificial viscosity. what if we want something more turbulent, and less viscous?
+
+some time later, FLIP is developed. FLIP is just an extension to PIC that uses a slightly different method of advecting particles. it basically feeds a little bit of a particle’s raw individual velocity into the advection routine. most FLIP simulations use a blending value to control how much of this velocity to feed back in, tuning it to keep things stable. here’s that same simulation above using a blending value of 0.95 — 95% FLIP velocity, 5% PIC.
+
+![FLIP fluid simulation showing more turbulent motion](img/mpm_guide/flip.gif "FLIP fluid simulation showing more turbulent motion")
+
+_FLIP fluid simulation showing more turbulent motion_
+
+**sidenote:** if you’re familiar with Smoothed Particle Hydrodynamics, think of this PIC-FLIP mixing as being a little like XSPH. it’s pretty much artificial viscosity made from a smooth-average / “blur” of the velocity field. here the blurred contribution comes from PIC, and the higher resolution per-particle contribution comes from FLIP.
+
+FLIP is a very straightforward extension to PIC that lets you get a much wider range of fluid motion. HOWEVER, it’s still plagued by some big issues. FLIP simulations tend to be a bit less stable than standard PIC, and prone to weird noise. as an example, look at the jittery surface of the above gif. the free surface here is particularly noisy because there’s fewer particles to scatter data to the grid. as a result, the errors are more pronounced.
+
+good news: the problems with FLIP have recently been pretty much solved! see the Affine Particle In Cell method (APIC), or a high-order generalisation of it, PolyPIC. these approaches one-up FLIP’s approach of mixing more info back into the grid, by storing a little affine matrix at each particle that holds a little extra context for use in our particle-grid scattering.
+
+the reason this is relevant to MPM is that one recent development, Moving Least Squares MPM (MLS-MPM) makes use of APIC-style transfers at its core. i’ll be implementing MLS-MPM in my incremental simulations, because it’s both more efficient and actually _simpler_ than standard MPM! wow!
+
+**why skip straight to MLS-MPM, rather than standard MPM first?**
+
+because it’s simpler! standard MPM requires you to calculate both grid interpolation functions and their gradients, for each particle. MLS-MPM allows you to do away with gradients completely. for me, the gradient stuff feels a bit like conceptual baggage, and is more computationally intensive. the MPM course i linked to above is a good reference for further info.
+
+at this point, i’m going to pivot over to MLS-MPM from an implementation perspective. as we get further in, we’ll see how all that we’ve covered in this section links in.
+
+* * *
+
+incremental MPM — setting the scene
+===================================
+
+so, off we pop. our goal is to start by trying to make what i guess could be MPM’s “hello world”, a little elastic shape.
+
+**more specifically:** i’m going to be building a 2D simulation of an elastic material, using MLS-MPM with quadratic b-spline weights under an explicit time integration scheme. i’ll be building it out as single-file examples in Unity, using Unity’s data-oriented language _High-Performance C#_.
+
+i think the most readable intro to the structure of MPM i know of is the SIGGRAPH 2016 MPM course. however, it doesn’t cover MLS-MPM. i find the original MLS-MPM paper a bit overwhelming to just drop into, so instead i’m going to reference the structure of the course pdf and then specify wherever i switch over to MLS-MPM.
+
+* * *
+
+simulation structure
+--------------------
+
+to set the scene a little, here’s an overview of the structure of our data. we need particles and a grid. here is the minimum required for a basic MLS-MPM sim:
+
+struct Particle {
+    float2 x; // position
+    float2 v; // velocity
+    float mass;
+};
+
+our particles’ mass will stay constant throughout the simulation. it becomes more relevant if you’re doing multi-phase simulation, but in all my examples it’ll just be set to `1`.
+
+struct Cell {
+    float2 v; // velocity
+    float mass;
+}
+
+our grid is made up of individual cells. it’s literally just a big array of them. in the implementation below, i use a 1D grid for efficiency reasons, and remap to 2D indices when required. you can easily do this with a 2D/3D array of cells instead if you like.
+
+the size of our grid determines the resolution of our simulation. if we choose a grid size of, say, 32 by 32, then our particles’ coordinates will range from `(0, 0)` to `(31, 31)`. it’s common to use a power of 2 for the grid size, for performance reasons when parallelising. i’m usually using a grid size of 64 in the gifs on this page.
+
+**conceptual clearup**: the grid in MPM is cleared at the start of every frame. it’s just a scratch-pad for calculating certain quantities, and you chuck it away at the end of each simulation step. so, none of the values in our Cell struct are constant throughout the simulation.
+
+**note:** the above is the near-minimum for a getting a classical MPM simulation moving. if we want more sophisticated behaviour (we do), we’ll likely need to keep track of a deformation gradient matrix at each particle, and some notion of their volume. when we move on to using MLS-MPM, we’ll add a little bit more info still. namely, each particle needs to store an affine momentum matrix we talked about above for APIC.
+
+in traditional MPM, you would also store a force vector at each cell. with MLS-MPM, you can get rid of explicitly it entirely, and instead fuse it together with the velocity update!
+
+* * *
+
+simulation loop
+---------------
+
+below is an outline of the MLS-MPM algorithm.
+
+at each step, i’ve included a brief note on what the algorithm’s trying to do, with inline references to our [fave papers](#references_and_useful_links_18). i find it helpful to look at the broad strokes of how MPM actually runs around the data, before diving into the specifics of how each step specifically transforms it. hopefully it’ll clear up what happens where.
+
+for a more detailed step-by-step walkthrough, i recommend looking at chapter 10.5, “MPM Scheme: Full Algorithm” in the MPM course. that outlines the procedure of standard MPM. from there, look at section 4, “From MPM to MLS-MPM” in the [original MLS-MPM paper](#references_and_useful_links_18).
+
+Particle\[\] particles;
+Cell\[\] grid;
+
+void initialise() {
+    // 1.  initialise your grid - fill your grid array with (grid\_res \* grid\_res) cells.
+    
+    // 2. create a bunch of particles. set their positions somewhere in your simulation domain.
+    // initialise their deformation gradients to the identity matrix, as they're in their undeformed state.
+
+    // 3. optionally precompute state variables e.g. particle initial volume, if your model calls for it
+}
+
+void each\_simulation\_step() {
+    // 1. reset our scratch-pad grid completely
+    foreach (var cell in grid) {
+        // zero out mass and velocity for this cell
+    }
+
+    // 2. particle-to-grid (P2G). 
+    // goal: transfers data from particles to our grid
+    foreach (var p in particles) {
+        // 2.1: calculate weights for the 3x3 neighbouring cells surrounding the particle's position 
+        // on the grid using an interpolation function
+
+        // 2.2: calculate quantities like e.g. stress based on constitutive equation
+
+        // 2.3:
+        foreach (var cell in particle\_neighbourhood) {
+            // scatter our particle's momentum to the grid, using the cell's interpolation weight calculated in 2.1
+        }
+    }
+
+    // 3. calculate grid velocities
+    foreach (var cell in grid) {
+        // 3.1: calculate grid velocity based on momentum found in the P2G stage
+
+        // 3.2: enforce boundary conditions
+    }
+
+    // 4. grid-to-particle (G2P). 
+    // goal: report our grid's findings back to our particles, and integrate their position + velocity forward
+    foreach (var p in particles) {
+        // 4.1: update particle's deformation gradient using MLS-MPM's velocity gradient estimate
+        // Reference: MLS-MPM paper, Eq. 17
+
+        // 4.2: calculate neighbouring cell weights as in step 2.1.
+        // note: our particle's haven't moved on the grid at all by this point, so the weights will be identical
+
+        // 4.3: calculate our new particle velocities
+        foreach (var cell in particle\_neighbourhood) {
+            // 4.3.1: 
+            // get this cell's weighted contribution to our particle's new velocity
+        }
+
+        // 4.4: advect particle positions by their velocity
+    }
+}
+
+* * *
+
+MPM by example, part 1 - getting things moving
+==============================================
+
+ok, so at this point, a lot of the actual details are pretty occluded. i think the above-mentioned papers do a pretty good job of filling in the conceptual details. so let’s look at fleshing it out a little.
+
+i’ve annotated the source code with references to the papers that give more detail, so i think learning from a combination of these references and the source itself will be the best way to work your way through it.
+
+the first version of our MPM implementation just creates some particles initialised with random velocities, and the MPM takes over the rest and moves them around a wee bit.
+
+![MPM simulation with no deformation model](img/mpm_guide/mpm_first_pass.gif "MPM simulation with no deformation model")
+
+_MPM with no deformation model, just randomised initial velocities_
+
+**source code:** [incremental\_mpm on GitHub](https://github.com/nialltl/incremental_mpm)
+
+this is a first blush with how things generally move in MLS-MPM, using APIC-style grid transfers. it completely omits anything to do with modeling deformations, but we’ll build from here.
+
+i use quadratic interpolation for calculating the cell weights, which evalates the 3x3 cell-neighbourhood of each particle. it’s a good balance between performance and stability. you’ll get more physically accurate and stable simulations if you use higher order interpolation over bigger stencil sizes. but quadratic interpolation strikes a nice balance of being cheap to compute and a improving significantly on linear interpolation behaviour-wise.
+
+i’m using a neat trick for calculating the weights that i first came across in Yuangmin Hu’s [88-line MLS-MPM example](#references_and_useful_links_18). it just stores 3 float2’s and cross-multiplies them when iterating over the 9 cells surrounding a given particle. depending on how you end up arranging your cell memory accesses, you may want to lay things out differently.
+
+* * *
+
+MPM by example, part 2 - hyper-elastic deformation
+==================================================
+
+![MPM simulation with isotropic elasticity using a Neo-Hookean model](img/mpm_guide/mpm_neohookean.gif "MPM simulation with isotropic elasticity using a Neo-Hookean model")
+
+_MPM simulation with isotropic elasticity using a Neo-Hookean model_
+
+**source code:** [incremental\_mpm on GitHub](https://github.com/nialltl/incremental_mpm)
+
+we’re now actually making use of the deformation gradient and affine momentum matrix we’d set up for part 1. as in part 1, references to derivations are included inline in the source. just to get your bearings, here’s a stripped back focus on where the majority of the actual material modelling is implemented:
+
+foreach (Particle p in particles) {
+    var F \= p.F; // deformation gradient
+
+    // MPM course page 13, "Kinematics Theory"
+    var J \= math.determinant(F);
+    var volume \= p.volume\_0 \* J;
+
+    // required terms for Neo-Hookean model (eq. 48, MPM course)
+    var F\_T \= math.transpose(F);
+    var F\_inv\_T \= math.inverse(F\_T);
+    var F\_minus\_F\_inv\_T \= F \- F\_inv\_T;
+    
+    // eq. 48, MPM course
+    var P\_term\_0 \= elastic\_mu \* (F\_minus\_F\_inv\_T);
+    var P\_term\_1 \= elastic\_lambda \* math.log(J) \* F\_inv\_T;
+    var P \= P\_term\_0 + P\_term\_1;
+
+    // Cauchy stress = (1 / det(F)) \* P \* F\_T
+    // equation 38, MPM course
+    stress \= (1.0f / J) \* math.mul(P, F\_T);
+
+    // (M\_p)^-1 = 4, see APIC paper and MPM course page 42
+    // this term is used in MLS-MPM paper eq. 16. with quadratic weights, Mp = (1/4) \* (delta\_x)^2.
+    // in this simulation, delta\_x = 1, because i scale the rendering of the domain rather than the domain itself.
+    // we multiply by dt as part of the process of fusing the momentum and force update for MLS-MPM
+    var eq\_16\_term\_0 \= \-volume \* 4 \* dt \* stress;
+
+    // we calculate the rest of the force term inside the loop
+    foreach (Cell cell in p.neighbourhood) {
+        float2 cell\_dist \= (cell.x \- p.x) + 0.5f;
+        float2 Q \= math.mul(p.C, cell\_dist);
+
+        // MPM course equation (172)
+        float weighted\_mass \= weight \* p.mass;
+        
+        cell.mass += weighted\_mass;
+        cell.v += weighted\_mass \* (p.v + Q);
+        
+        // fused force/momentum update from MLS-MPM
+        // see MLS-MPM paper, equation listed after eqn. 28
+        float2 momentum \= math.mul(eq\_16\_term\_0, cell\_dist) \* cell.weight;
+        cell.v += momentum;
+        
+        // total update on cell.v is now: weight \* (dt \* M^-1 \* p.volume \* p.stress + p.mass \* p.C)
+        // this is the fused momentum + force from MLS-MPM. however, instead of our stress 
+        // being derived from the energy density, i use the weak form with cauchy stress. converted:
+        // p.volume\_0 \* (dΨ/dF)(Fp)\*(Fp\_transposed)
+        // is equal to p.volume \* σ
+    }
+}
+
+for part 2, i’ve parallelised some of the steps of the MPM algorithm. this is easy to do with HPC# in Unity, and hopefully doesn’t confuse you too much. it’s mostly for performance in the demos.
+
+i’ve only parallelised the parts that can be done ‘naively’, namely steps 1, 3 & 4 of the pseudocode outline above. i just split the workload of each loop evenly into several blocks, without rearranging the structure of our data. we can do this for these steps of the algorithm as they only do concurrent reads to shared areas of memory, and there’s no risk of a data race when writing here as each thread is effectively dedicated to either 1 cell or 1 particle independently.
+
+* * *
+
+MPM by example, part 3 - fluids with MPM
+========================================
+
+you can get an absolutely wild range of motion just from part 2. you can even kinda approximate fluid just by changing the [Lamé parameters](https://en.wikipedia.org/wiki/Lam%C3%A9_parameters) (try e.g. `lambda = 100, mu = 0.1`). but the fact is, we’ve chosen a constitutive model most suited to elastic deformation. for fluids, we want a different approach.
+
+!["Fake" fluid with a non-linear isotropic elasticity model"](img/mpm_guide/mpm_fake_fluid.gif ""Fake" fluid with a non-linear isotropic elasticity model") ![MPM with a constitutive model for isotropic fluids](img/mpm_guide/mpm_fluid_constitutive_model.gif "MPM with a constitutive model for isotropic fluids")
+
+_left: “fake” fluids with Neo-Hookean elasticity — right: using a constitutive model for isotropic fluids_
+
+**source code:** [incremental\_mpm on GitHub](https://github.com/nialltl/incremental_mpm)
+
+i was first drawn to MPM by its real-time fluid simulation potential (particularly the work of [Grant Kot](https://www.grantkot.com/)). i generally found that MPM out of the box isn’t actually that great for this, compared to something like Position Based Fluids. the reason being mostly that for a fluid, the deformation that happens at an individual particle can be massive relative to its initial configuration, extremely quickly, e.g. when a liquid splashes. this means you typically would need to use a prohibitively low timestep. MPM is also kind of tricky to fully parallelise (it’s do-able, but a bit of a pain).
+
+to get to the real-time fluid sims you see on this page, i tweak a few things from standard MPM. credits to Grant Kot for the altered volume calculations and boundary conditions tricks.
+
+* * *
+
+constitutive model switchup
+---------------------------
+
+to start with, we need a constitutive model better suited to fluids. i trawled the web and found [the stress-strain relationship of Newtonian fluids](https://en.wikipedia.org/wiki/Newtonian_fluid), and from there it’s just a matter of swapping out the stress-strain model we used in part 2 for something appropriate for fluids. in code it looks roughly like this:
+
+// end goal, constitutive equation for isotropic fluid: 
+// stress = -pressure \* I + viscosity \* (velocity\_gradient + velocity\_gradient\_transposed)
+
+float2x2 stress \= math.float2x2(
+    \-pressure, 0, 
+    0, \-pressure
+);
+
+// velocity gradient - MLS-MPM eq. 17, where derivative of quadratic polynomial is linear
+float2x2 dudv \= p.C;
+
+// build strain from the velocity gradient
+float2x2 strain \= dudv;
+strain\[0\]\[1\] \= strain\[1\]\[0\] \= trace(dudv);
+
+float2x2 viscosity\_term \= dynamic\_viscosity \* strain;
+stress += viscosity\_term;
+
+the pressure term here is given by an [equation of state](https://en.wikipedia.org/wiki/Equation_of_state), which you might recognise from SPH simulations. in the attached example, i use the Tait equation of state, which is a pretty typical choice for weakly compressible fluids (look up _WCSPH_ as an example of this in an SPH context).
+
+* * *
+
+evolving volume
+---------------
+
+in part 2, we used the “classic MPM” way of determining volume. you start with an initial value for each particle’s volume at the start of your simulation. you then update your understanding of the volume a particle occupies by looking at its deformation gradient as it undergoes change. the issue with this is that volume is susceptible to inaccuracies that snowball over time. the accuracy of your volume estimate is determined heavily by the accuracy of your numerical integration scheme and the timestep that you choose. for a fluid, where the surrounding area of an individual particle can rapidly change and is basically undergoing constant plastic deformation, it can blow up very easily.
+
+a way of tackling this is to re-do that initial calculation of each particle’s volume that you did at the start of the simulation, and go through that process every simulation step. this means your volume is no longer a quantity integrated over time and thus susceptible to that kind of numerical error. the downside: it’s significantly less computationally efficient per-frame. the upside: you can get away with a significantly higher timestep! in practice, i found that this tradeoff was definitely worth it.
+
+the way i calculate a particle’s volume is reminiscent of the way SPH/PBF does it: by looking at neighbourhoods to get a density estimate. first, we scatter every particle’s mass to the grid. then, we gather them back up, weighting each grid cell’s contribution by the interpolation weights (or “shape function”, in MPM-speak). scattering mass is already a step in the P2G phase of MPM, so it comes down to injecting another subroutine to loop over particles and sum up density. skipping over the boilerplate cell/weight calculations, it’s roughly like this:
+
+foreach (Particle p in particles) {
+    float density \= 0.0f;
+    // sum up mass contribution of each of the 9 cells surrounding tthe particle
+    foreach (Cell cell in p.neighbourhood) {
+            density += cell.mass \* cell.weight;
+        }
+    }
+    float volume \= 1.0f / density;
+
+    // ...
+}
+
+this is the exact same procedure i used in part 2’s initialisation phase, to determine particles’ initial volumes. if you exchanged part 2’s existing volume calculation based on `p.volume_0`, it’d yield very similar results. this of course comes at the cost of significantly more scattered memory reads at each particle. but it’s worth it for those sweet soupy vortices. i promise you.
+
+* * *
+
+softened boundary conditions
+----------------------------
+
+i’ve been using a very simple boundary condition up until now: a ‘slip’ condition that zeroes out the tangent component of the grid’s velocity field at the edges.
+
+for improved stability in our real-time simulation, we can alter the boundary conditions a bit to operate on particles _directly_, as well as on cells. in addition to zeroing out particle velocities, we can do a bit of a predictive leap in deciding when to enforce our boundary conditions. this generally helps with particles ‘tunneling’ through to the boundary at high speed.
+
+here’s an isolated view of where and how boundary conditions are actually enforced this way:
+
+// standard cell boundary conditions
+for (int i \= 0; i < num\_cells; ++i) {
+    var cell \= cells\[i\];
+
+    // convert 1D index to 2D
+    int x \= i / grid\_res;
+    int y \= i % grid\_res;
+
+    // zero out velocities around the perimeter
+    if (x < 2 || x \> grid\_res \- 3) { cell.v.x \= 0; }
+    if (y < 2 || y \> grid\_res \- 3) { cell.v.y \= 0; }
+}
+
+const int wall\_min \= 3;
+const int wall\_max \= (grid\_res \- 1) \- wall\_min;
+
+foreach (Particle p in particles) {
+    // safely clamp particle positions to be inside the grid
+    p.x \= math.clamp(p.x, 1, grid\_res \- 2);
+
+    // NEW: predictive boundary conditions that soften velocities near the domain's edges 
+    float2 x\_n \= p.x + p.v;
+    if (x\_n.x < wall\_min) p.v.x += wall\_min \- x\_n.x;
+    if (x\_n.x \> wall\_max) p.v.x += wall\_max \- x\_n.x;
+    if (x\_n.y < wall\_min) p.v.y += wall\_min \- x\_n.y;
+    if (x\_n.y \> wall\_max) p.v.y += wall\_max \- x\_n.y;
+}
+
+* * *
+
+conclusion
+----------
+
+with the above-mentioned 3 tweaks, i’ve managed to get some really nice interactive and stable fluid simulations running in real-time. the main trade-off being made is that of continuously reevaluating the volume, as it does create another memread bottleneck (and MPM already has quite a few of these).
+
+i don’t imagine MPM being a go-to solution for real-time simulations like this in general as it has such high computational overhead. nonetheless, i think shooting for real-time has been really nice when experimenting with new material models. and it makes for some fun squishy toys.
+
+**a note on multi-phase simulation**:
+
+getting multiple phases running in your simulations is literally as easy as storing material properties with your particles rather than globally. you can then instantiate particles with the desired individual characteristics and everything will be nicely coupled together.
+
+**a note about surface tension**:
+
+i haven’t actually directly implemented any solution for this. however, a combination of 1) the equation of state giving negative pressures (that i clamp a little), and 2) the quadratic kernels themselves, yield really nice filaments already.
+
+if you do want to explicitly mix in more tweakable surface tension, i’d maybe start by looking at the paper [“On the Modeling of Surface Tension and its Applications by the Generalized Interpolation Material Point Method”](https://web.archive.org/web/20190426162509/http://www.techscience.com/doi/10.3970/cmes.2012.086.199.pdf).  
+however, that approach requires evaluating weight gradients for determining surface curvature, which MLS-MPM manages to otherwise avoid. finding a way to integrate surface tension models into a gradient-free MLS-MPM implementation would be a cool direction for further research!
+
+* * *
+
+where should we go from here?
+=============================
+
+hip-hip hooray, this is just the beginning!!
+
+there are so many avenues left unexplored right now. i’ve written up a small list below.
+
+if you have any questions feel free to reach out to me. i’m easiest to reach by email, which is listed on my homepage.
+
+*   implicit time integration
+    *   my MLS-MPM implementation uses a explicit integration. implicit approaches are way more computationally intensive per-simulation-step. but, in some cases, they make up for this by allowing you to take wayyyy bigger timesteps, and can end up faster overall as a result. this _isn't a guarantee_, though. [Yuanming Hu](#acknowledgements_489) alerted me to the fact that since we don't have a good preconditioner for MPM, unlike e.g. Lagrangian cloth or SPH-style incompressible fluids, an implicit solver for MPM is generally not likely to be worth its weight. might be worth exploring anyway though.
+    *   the reason i’ve not delved into this is because it’s just harder! implicit MPM iteratively solves a system of equations to determine force updates on cells. existing implementations i could find tend to rely on big number-crunching libraries like Eigen to do the bulk of this work. if you dive into this please let me know, i’d love to see how you get on!
+*   extended boundary conditions
+    *   currently we only have a slip condition at the edges of the simulation domain. would be nice to have more extensive collision handling with static objects (and dynamic, if you’re willing to go absolutely nuts)
+*   parallelisation
+    *   huge topic that i’ve lost a lot of hours in! there are a bunch of ways you can go about improving MPM’s multithreading potential. being able to perform the expensive P2G step in parallel is a huge performance win.
+*   adaptive / asynchronous time stepping
+    *   asynchronous MPM is a cool optimisation area. basically, you don’t have to simulate all of your simulation domain at the same rate. if some of your scene is barely moving or under little pressure, there’s no need to waste cycles there. you could start with ["A Temporally Adaptive Material Point Method with Regional Time Stepping"](https://web.archive.org/web/20190427141455/http://squarefk.com/static/files/fang2018async.pdf).
+*   more complex deformation models and material behaviour
+    *   a never-ending realm of possibility. you could look at [simulating thin shells for e.g. fabrics](https://web.archive.org/web/20190426233329/https://www.math.ucla.edu/~jteran/papers/GHFGTT18.pdf), [viscoelastic foams & sponges](https://web.archive.org/web/20170105121042/https://www.math.ucla.edu/~jteran/papers/RGJSSTK15.pdf), or [anything listed here](https://www.seas.upenn.edu/~cffjiang/mpm.html).
+
+* * *
+
+appendix – simulation methods and their general vibes
+=====================================================
+
+there are heaps of techniques for simulating deformable objects. i found it easy to get overwhelmed with the amount of criss-crossing references to different approaches and histories when trying to pick up MPM. here’s a quick overview of some stuff that you might come across:
+
+### Lagrangian
+
+*   SPH: Smoothed Particle Hydrodynamics
+    *   particle-based fluid simulation method. computes field quantities by looking at surrounding particle neighbourhoods.
+    *   has a hilarious amount of variations differing mostly in acronym length (ISPH, IISPH, PCISPH, DCSPH, … generally trying to improve incompressibility).
+*   PBD: Position Based Dynamics
+    *   general simulation methodology, handles constraints geometrically using direct positional corrections.
+    *   not that physically motivated but generally fast and great for real-time applications. super stable.
+    *   often suffers from damping, but higher order PBD integrators help with this.
+*   PBD: Position Based Fluids
+    *   like SPH, but using a PBD integrator. enforces incompressibility by putting a constraint on particles’ densities.
+
+### Hybrid Lagrangian-Eulerian
+
+*   PIC: Particle-In-Cell
+    *   general family of methods using a mixture of grids and particles for simulation. an absolute classic, been around a long time.
+    *   used for astronomical simulations and liquids / gases generally.
+*   FLIP: Fluid Implicit Particle
+    *   like PIC, but with an improved way of advecting particles.
+    *   typically used for fluids. common in a lot of 3D simulation packages, e.g. Blender, Houdini.
+*   MPM: Material Point Method
+    *   another PIC method, more versatile than something like FLIP.
+    *   good for deformable soft matter and fluids.
+    *   supports multiple phases (different materials interacting with each other) fairly effortlessly.
+    *   typically requires a very small timestep, comparatively high memory requirements.
+    *   easily exhibits numerical fracture (stuff splitting apart), which you might not always want.
+*   GIMP: Generalised Interpolation Material Point Method
+    *   a particular flavour of MPM that emerged early on that solved early issues with linearly weighted MPM, to stop particles oscillating erroneously at cell boundaries.
+*   APIC: Affine Particle-In-Cell
+    *   very recent significant improvement on PIC, one-upping a fix for PIC’s dissipation problems that FLIP tried to solve.
+*   PolyPIC: Polynomial Particle-In-Cell
+    *   the wider family of methods that APIC belongs to. basically a higher-order generalisation.
+*   MLS-MPM: Moving Least Squares Material Point Method
+    *   like MPM, but taking ideas from APIC and bringing them in
+    *   state o’ the art. a straight up improvement on MPM. simplifies the whole algorithm and is more computationally efficient too.
+    *   this algorithm is what we just implemented! :o)
+
+* * *
+
+acknowledgements
+================
+
+*   [Benedikt Bitterli](https://benedikt-bitterli.me/)'s project [Incremental Fluids](https://github.com/tunabrain/incremental-fluids) inspired the format of my built-out examples. it’s a really great resource on Eulerian fluid simulation.
+    
+*   [Grant Kot](https://www.grantkot.com/)'s work on MPM and real-time sims in general has been really inspiring and useful! he also helped me out a bunch with MPM back in the day.
+    
+*   [Yuanming Hu](http://taichi.graphics/me/) very kindly looked over this page to ensure i wasn’t spreading any cursedly off-piste information about MPM, thanks Yuanming!
+    
+*   [Sebastian Aaltonen](https://twitter.com/sebaaltonen)'s various twitter threads on simulations and parallel architecture for real-time work have been a great reference and source of motivation.

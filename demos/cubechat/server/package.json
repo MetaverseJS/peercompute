@@ -1,0 +1,26 @@
+{
+  "name": "tron-overworld-server",
+  "version": "1.0.0",
+  "description": "libp2p signaling and bootstrap server for Tron Overworld",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "ws": "node ws-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.0.0",
+    "libp2p": "^1.0.0",
+    "@libp2p/tcp": "^9.0.0",
+    "@libp2p/websockets": "^8.0.0",
+    "@libp2p/webrtc": "^4.0.0",
+    "@chainsafe/libp2p-noise": "^15.0.0",
+    "@chainsafe/libp2p-yamux": "^6.0.0",
+    "@libp2p/mplex": "^10.0.0",
+    "@chainsafe/libp2p-gossipsub": "^13.0.0",
+    "@libp2p/identify": "^2.0.0",
+    "@libp2p/bootstrap": "^10.0.0",
+    "@libp2p/circuit-relay-v2": "^1.0.0",
+    "@libp2p/kad-dht": "^12.0.0"
+  }
+}

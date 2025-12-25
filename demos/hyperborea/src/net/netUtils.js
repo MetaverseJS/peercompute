@@ -1,4 +1,4 @@
-export const logNet = (...args) => console.log('[cb-net]', ...args);
+export const logNet = (...args) => console.log('[hyperborea-net]', ...args);
 
 export const isIpv4Host = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 export const isIpv6Host = (host) => host.includes(':');

@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Tooling caches
+**/.vite/
+**/.cache/
+**/.parcel-cache/
+
+# Logs and pids
+*.log
+*.pid

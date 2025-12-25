@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Planet Gen Demo</title>
+  <link rel="icon" type="image/png" href="./assets/favicon-C5JQPe8v.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #04060d;
+      --panel: rgba(6, 10, 20, 0.8);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #7dd3fc;
+      --accent-strong: #38bdf8;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+    }
+    #hud select option {
+      background: #0a0c12;
+      color: var(--text);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at 20% 20%, #0b1225, #03040a 60%), radial-gradient(circle at 80% 10%, #0b1f3b, #03040a 55%);
+      color: var(--text);
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      padding: 14px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      max-width: 320px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+    #hud.collapsed {
+      overflow: visible;
+      max-height: none;
+      padding: 12px 14px;
+    }
+    .hud-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .hud-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    #hudContent { margin-top: 10px; }
+    #hud.collapsed #hudContent { display: none; }
+    #hud h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; }
+    #hud .subtitle { margin: 0 0 10px; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; }
+    #hud .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    #hud .section:first-of-type { border-top: none; padding-top: 0; margin-top: 10px; }
+    #hud .section-title { font-size: 11px; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; }
+    #hud label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--muted); }
+    #hud select, #hud input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .field { margin-bottom: 10px; }
+    .range-row { display: flex; align-items: center; gap: 10px; }
+    .range-row input[type="range"] { flex: 1; accent-color: var(--accent-strong); }
+    .range-row .value { min-width: 42px; text-align: right; color: var(--text); font-size: 12px; }
+    #hud button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 11px 12px;
+      background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+      color: #0a0c12;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+    }
+    #hud .hud-toggle {
+      width: auto;
+      margin: 0;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      letter-spacing: 0.02em;
+      transition: background 0.12s ease;
+      box-shadow: none;
+    }
+    .collapser, details > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      cursor: pointer;
+      list-style: none;
+      color: var(--muted);
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    details > summary {
+      margin: 6px 0;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .collapser:hover, details > summary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.18);
+      color: var(--text);
+    }
+    details > summary::after {
+      content: '›';
+      display: inline-block;
+      transform: rotate(0deg);
+      transition: transform 0.12s ease;
+      color: var(--text);
+      font-size: 14px;
+    }
+    details[open] > summary::after {
+      transform: rotate(90deg);
+    }
+    #hud .hud-toggle:hover { background: rgba(255, 255, 255, 0.12); transform: none; box-shadow: none; filter: none; }
+    #hud.collapsed h1 { margin-bottom: 2px; }
+    #hud.collapsed .subtitle { margin-bottom: 0; }
+    #hud button:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(34, 211, 238, 0.25); filter: saturate(1.1); }
+    #hud button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; transform: none; }
+    #mobileControls, #mobileControls * {
+      touch-action: none;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: 0.01em;
+      min-height: 18px;
+    }
+    #hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    details summary { color: var(--muted); }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    /* Config */
+    #configToggle {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 20;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+    }
+    #helpToggle {
+      position: fixed;
+      top: 16px;
+      right: 60px;
+      z-index: 20;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+    }
+    #configPanel {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      z-index: 19;
+      width: 240px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      display: none;
+    }
+    #helpPanel {
+      position: fixed;
+      top: 60px;
+      right: 60px;
+      z-index: 19;
+      width: 280px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      display: none;
+    }
+    #helpPanel h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.05em; }
+    #helpPanel h4 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
+    #helpPanel ul { margin: 0 0 8px 16px; padding: 0; }
+    #helpPanel li { font-size: 12px; color: var(--text); line-height: 1.45; }
+    #configPanel h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.05em; }
+    #configPanel .field { margin-bottom: 10px; }
+    #configPanel label { color: var(--muted); font-size: 12px; display: block; margin-bottom: 6px; }
+    #configPanel input[type="range"] { width: 100%; accent-color: var(--accent-strong); box-sizing: border-box; }
+    #configPanel .value { font-size: 12px; color: var(--text); float: right; }
+    #configPanel button {
+      width: 100%;
+      margin: 6px 0 10px 0;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      display: block;
+      box-sizing: border-box;
+    }
+    #configPanel .field::after {
+      content: '';
+      display: block;
+      clear: both;
+    }
+    /* Mobile controls */
+    #mobileControls {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+    @media (max-width: 768px) {
+      #mobileControls { display: block; }
+    }
+    .stick {
+      position: absolute;
+      bottom: 16px;
+      width: 140px;
+      height: 140px;
+      pointer-events: auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 6px;
+      padding: 10px;
+      border-radius: 999px;
+      background: rgba(7, 12, 24, 0.5);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+    }
+    .stick button, .action-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background 0.12s ease, transform 0.08s ease;
+    }
+    .stick button:active, .action-btn:active { transform: scale(0.96); background: rgba(255,255,255,0.16); }
+    .stick.left { left: 16px; }
+    .stick.right { right: 16px; }
+    .action-column {
+      position: absolute;
+      right: 18px;
+      bottom: 170px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(72px, 1fr));
+      gap: 8px;
+      pointer-events: auto;
+      max-width: 220px;
+    }
+    #surfaceOnly {
+      position: absolute;
+      right: 18px;
+      bottom: 140px;
+      pointer-events: auto;
+      display: none;
+    }
+    #reticle {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 14px;
+      height: 14px;
+      margin: -7px 0 0 -7px;
+      border: 2px solid rgba(255,255,255,0.6);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(255,255,255,0.35);
+      pointer-events: none;
+      z-index: 5;
+      display: none;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-CvJJQGxa.js"></script>
+</head>
+<body>
+  <div id="reticle" aria-hidden="true"></div>
+  <button id="helpToggle" aria-expanded="false" aria-controls="helpPanel">?</button>
+  <button id="configToggle" aria-expanded="false" aria-controls="configPanel">⚙</button>
+  <div id="helpPanel" role="region" aria-label="Controls help">
+    <h3>Controls</h3>
+    <div id="helpContent"></div>
+  </div>
+  <div id="configPanel" role="region" aria-label="Controls config">
+    <h3>Controls</h3>
+    <div class="field">
+      <label for="leftStickSensitivity">Left stick sensitivity <span class="value" id="leftStickSensitivityValue">1.0</span></label>
+      <input id="leftStickSensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
+    </div>
+    <div class="field">
+      <label for="lookSensitivityX">Horizontal look sensitivity <span class="value" id="lookSensitivityXValue">0.4</span></label>
+      <input id="lookSensitivityX" type="range" min="0.1" max="1.5" step="0.05" value="0.4">
+    </div>
+    <div class="field">
+      <label for="lookSensitivityY">Vertical look sensitivity <span class="value" id="lookSensitivityYValue">0.4</span></label>
+      <input id="lookSensitivityY" type="range" min="0.1" max="1.5" step="0.05" value="0.4">
+    </div>
+    <div class="field">
+      <label><input id="invertLook" type="checkbox"> Invert vertical look</label>
+    </div>
+    <div class="field">
+      <button id="vrToggle" type="button">Enter VR</button>
+    </div>
+  </div>
+  <canvas id="viewport"></canvas>
+  <div id="mobileControls" aria-hidden="true">
+    <div class="stick left" id="movePad"></div>
+    <div class="stick right" id="lookPad"></div>
+    <button class="action-btn" id="surfaceOnly" data-trigger="surface">Surface</button>
+    <div class="action-column">
+      <button class="action-btn" data-trigger="jump">Jump</button>
+      <button class="action-btn" data-trigger="flyToggle">Fly</button>
+      <button class="action-btn" data-trigger="surface">Surface</button>
+      <button class="action-btn" data-trigger="exit">Exit</button>
+      <button class="action-btn" data-action="run">Run</button>
+    </div>
+  </div>
+  <div id="hud">
+    <div class="hud-header">
+      <div class="hud-title">
+        <h1>Planet Gen</h1>
+        <p class="subtitle">Procedural tectonics + erosion</p>
+      </div>
+      <button id="hudToggle" class="hud-toggle collapser" type="button" aria-expanded="true" aria-controls="hudContent">Hide</button>
+    </div>
+    <div id="hudContent">
+      <label for="preset">Preset</label>
+      <select id="preset" title="Apply a bundle of generation and weather settings.">
+        <option value="fast">Fast preview</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="high">High fidelity</option>
+      </select>
+      <!--<details class="section" open>
+        <summary class="section-title collapser" style="cursor:pointer;">Scale</summary>
+        <div class="field">
+          <label for="planetDiameter">Planet diameter (km)</label>
+          <div class="range-row">
+            <input id="planetDiameter" type="range" min="1" max="1000" step="1" value="1000">
+            <span class="value" id="planetDiameterValue">1000</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="waterShader">Water shader</label>
+          <select id="waterShader" title="Choose water rendering model.">
+            <option value="compute" selected>Compute (WebGPU waves)</option>
+            <option value="balanced">Balanced (GPGPU water-like)</option>
+            <option value="fast">Fast (simple ocean)</option>
+          </select>
+        </div>
+      </details>-->
+      <details class="section">
+        <summary class="section-title collapser" style="cursor:pointer;">Tectonics</summary>
+        <div class="field">
+          <label for="subdivisions">Mesh subdivisions</label>
+          <div class="range-row">
+            <input id="subdivisions" type="range" min="0" max="512" step="1" value="60" title="Mesh detail for the planet surface; higher is smoother but slower.">
+            <span class="value" id="subdivisionsValue">60</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="resolution">Heightmap resolution</label>
+          <select id="resolution" title="Resolution of the heightmap used for tectonics and erosion.">
+            <option value="256">256</option>
+            <option value="384">384</option>
+            <option value="512">512</option>
+            <option value="768">768</option>
+            <option value="1024">1024</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="plates">Plates</label>
+          <input id="plates" type="number" min="4" max="200" step="1" value="9" title="Number of tectonic plates; more plates add complexity.">
+        </div>
+        <div class="field">
+          <label for="plateSizeVariance">Plate size variance</label>
+          <div class="range-row">
+            <input id="plateSizeVariance" type="range" min="0" max="2" step="0.05" value="0.35" title="Randomize plate sizes; higher means more variation.">
+            <span class="value" id="plateSizeVarianceValue">0.35</span>
+          </div>
+        </div>
+        <div class="field">
+          <label><input id="desymmetrizeTiling" type="checkbox" checked title="Skew plates to avoid repeating tiling patterns."> Break tiling symmetry</label>
+        </div>
+        <div class="field">
+          <label for="jitter">Jitter</label>
+          <div class="range-row">
+            <input id="jitter" type="range" min="0" max="1" step="0.01" value="0.60" title="Adds noise to plate boundaries; higher is rougher.">
+            <span class="value" id="jitterValue">0.60</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="heightScale">Height scale</label>
+          <div class="range-row">
+            <input id="heightScale" type="range" min="0.2" max="40" step="0.1" value="18.2" title="Vertical exaggeration of terrain.">
+            <span class="value" id="heightScaleValue">18.20</span>
+          </div>
+        </div>
+      </details>
+      <details class="section">
+        <summary class="section-title collapser" style="cursor:pointer;">Erosion</summary>
+        <div class="field">
+          <label for="iterations">Iterations</label>
+          <input id="iterations" type="number" min="10000" max="2000000" step="5000" value="80000" title="Number of erosion simulation steps; higher is slower.">
+        </div>
+        <div class="field">
+          <label for="erosionRate">Erosion rate</label>
+          <div class="range-row">
+            <input id="erosionRate" type="range" min="0.01" max="1" step="0.01" value="0.36" title="Strength of erosion per step.">
+            <span class="value" id="erosionRateValue">0.36</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="evaporation">Evaporation</label>
+          <div class="range-row">
+            <input id="evaporation" type="range" min="0" max="1" step="0.005" value="0.5" title="How quickly water evaporates during erosion.">
+            <span class="value" id="evaporationValue">0.500</span>
+          </div>
+        </div>
+      </details>
+      <details class="section">
+        <summary class="section-title collapser" style="cursor:pointer;">Shaping</summary>
+        <div class="field">
+          <label for="seaLevel">Sea level</label>
+          <div class="range-row">
+            <input id="seaLevel" type="range" min="0" max="1" step="0.01" value="0.53" title="Baseline sea cutoff; higher floods more land.">
+            <span class="value" id="seaLevelValue">0.53</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="atmosphereHeight">Atmosphere height</label>
+          <div class="range-row">
+            <input id="atmosphereHeight" type="range" min="0" max="5" step="0.05" value="0.5" title="Scale of the atmosphere shell height.">
+            <span class="value" id="atmosphereHeightValue">0.50</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="plateDelta">Plate height delta</label>
+          <div class="range-row">
+            <input id="plateDelta" type="range" min="0" max="2" step="0.05" value="1.25" title="Height difference between plates at boundaries.">
+            <span class="value" id="plateDeltaValue">1.25</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="faultType">Fault style</label>
+          <select id="faultType" title="Type of plate boundary interaction.">
+            <option value="ridge" selected>Ridge (uplift)</option>
+            <option value="trench">Trench (subduction)</option>
+            <option value="shear">Shear (minimal)</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="smoothPasses">Smoothing passes</label>
+          <div class="range-row">
+            <input id="smoothPasses" type="range" min="0" max="20" step="1" value="20" title="Post-process smoothing iterations over terrain.">
+            <span class="value" id="smoothPassesValue">20</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="iceCap">Ice cap size</label>
+          <div class="range-row">
+            <input id="iceCap" type="range" min="0" max="1" step="0.01" value="0.15" title="Extent of polar ice coverage.">
+            <span class="value" id="iceCapValue">0.15</span>
+          </div>
+        </div>
+      </details>
+      <details id="atmoClouds" class="section">
+        <summary class="section-title collapser" style="cursor:pointer;">Atmosphere & Clouds</summary>
+        <div class="field">
+          <label><input type="checkbox" id="atmosphereToggle" checked title="Toggle atmosphere rendering."> Atmosphere enabled</label>
+        </div>
+        <div class="field">
+          <label for="atmosphere">Atmosphere thickness</label>
+          <div class="range-row">
+            <input id="atmosphere" type="range" min="0.05" max="1.5" step="0.05" value="0.35" title="Thickness of scattering; larger feels denser.">
+            <span class="value" id="atmosphereValue">0.35</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="atmosphereAlpha">Atmosphere alpha</label>
+          <div class="range-row">
+            <input id="atmosphereAlpha" type="range" min="0" max="1" step="0.01" value="1" title="Opacity of the atmosphere.">
+            <span class="value" id="atmosphereAlphaValue">1.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="atmosphereColor">Atmosphere color</label>
+          <input id="atmosphereColor" type="color" value="#4da8ff" title="Tint of atmospheric scattering.">
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="cloudToggle" title="Toggle the procedural cloud layer."> Cloud layer enabled</label>
+        </div>
+        <div class="field">
+          <label for="cloudAlpha">Cloud alpha</label>
+          <div class="range-row">
+            <input id="cloudAlpha" type="range" min="0" max="1" step="0.01" value="0.74" title="Opacity of the procedural clouds.">
+            <span class="value" id="cloudAlphaValue">0.74</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cloudSpeed">Cloud speed</label>
+          <div class="range-row">
+            <input id="cloudSpeed" type="range" min="0" max="2" step="0.05" value="0.9" title="Animation speed of the cloud texture.">
+            <span class="value" id="cloudSpeedValue">0.90</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cloudQuantity">Cloud quantity</label>
+          <div class="range-row">
+            <input id="cloudQuantity" type="range" min="0" max="1" step="0.01" value="0.76" title="Coverage and density of procedural clouds.">
+            <span class="value" id="cloudQuantityValue">0.76</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cloudHeight">Cloud height</label>
+          <div class="range-row">
+            <input id="cloudHeight" type="range" min="-5" max="5" step="0.05" value="-2.4" title="Altitude offset for the cloud layer.">
+            <span class="value" id="cloudHeightValue">-2.40</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cloudColor">Cloud color</label>
+          <input id="cloudColor" type="color" value="#ffffff" title="Tint for the procedural clouds.">
+        </div>
+        <div class="field">
+          <label for="cloudResolution">Cloud resolution</label>
+          <div class="range-row">
+            <input id="cloudResolution" type="range" min="1" max="256" step="1" value="256" title="Texture resolution for procedural clouds.">
+            <span class="value" id="cloudResolutionValue">256</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="cloudShader">Cloud shader</label>
+          <select id="cloudShader" title="Noise type used to generate clouds.">
+            <option value="fbm">FBM</option>
+            <option value="billow" selected>Billow</option>
+            <option value="cellular">Cellular</option>
+          </select>
+        </div>
+        <div class="field">
+          <button id="addCloudLayer" type="button" title="Add another procedural cloud layer.">Add cloud layer</button>
+        </div>
+        <div id="cloudLayers"></div>
+      </details>
+      <details id="waterCycle" class="section">
+        <summary class="section-title collapser" style="cursor:pointer;">Water Cycle</summary>
+        <div class="field">
+          <label for="waterShader">Water shader</label>
+          <select id="waterShader" title="Choose water rendering model.">
+            <option value="compute" selected>Compute (WebGPU waves)</option>
+            <option value="balanced">Balanced (GPGPU water-like)</option>
+            <option value="fast">Fast (simple ocean)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="waterCycleToggle" checked title="Enable the WebGPU weather simulation."> Water cycle enabled (WebGPU)</label>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="waterCycleCloudToggle" checked title="Use volumetric clouds from the weather simulation."> Water-cycle clouds (volumetric)</label>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="waterCycleRun" checked title="Advance the weather sim every frame."> Run simulation</label>
+        </div>
+        <div class="field">
+          <button id="waterCycleStep" type="button" title="Advance one simulation step and read back data.">Step simulation</button>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="weatherAutoScale" checked title="Automatically adjust weather quality based on frame time."> Auto scale weather</label>
+        </div>
+        <div class="field">
+          <label for="weatherSimMode">Weather sim</label>
+          <select id="weatherSimMode" title="Choose 3D volume or 2D column weather simulation.">
+            <option value="3d" selected>3D volume (experimental)</option>
+            <option value="2d">2D columns (legacy)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="weatherVolumeRes">Volume resolution (N)</label>
+          <div class="range-row">
+            <input id="weatherVolumeRes" type="range" min="1" max="128" step="1" value="8" title="3D grid resolution; higher is sharper but slower.">
+            <span class="value" id="weatherVolumeResValue">8</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherRayStepsMin">Raymarch steps (min)</label>
+          <div class="range-row">
+            <input id="weatherRayStepsMin" type="range" min="4" max="128" step="1" value="28" title="Minimum raymarch steps for volumetric clouds.">
+            <span class="value" id="weatherRayStepsMinValue">28</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherRayStepsMax">Raymarch steps (max)</label>
+          <div class="range-row">
+            <input id="weatherRayStepsMax" type="range" min="4" max="128" step="1" value="48" title="Maximum raymarch steps for volumetric clouds.">
+            <span class="value" id="weatherRayStepsMaxValue">48</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherRayBundle">Ray bundling (pixels)</label>
+          <div class="range-row">
+            <input id="weatherRayBundle" type="range" min="1" max="100" step="1" value="1" title="Render clouds per pixel block; higher is faster but blurrier.">
+            <span class="value" id="weatherRayBundleValue">1</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherAtmoThickness">Vertical slice thickness (km)</label>
+          <div class="range-row">
+            <input id="weatherAtmoThickness" type="range" min="5" max="60" step="1" value="60" title="Atmosphere height for the volume sim in kilometers.">
+            <span class="value" id="weatherAtmoThicknessValue">60</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="axialTilt">Axial tilt (deg)</label>
+          <div class="range-row">
+            <input id="axialTilt" type="range" min="0" max="45" step="0.1" value="23.4" title="Seasonal axial tilt angle.">
+            <span class="value" id="axialTiltValue">23.4</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="seasonProgress">Season (orbit phase)</label>
+          <div class="range-row">
+            <input id="seasonProgress" type="range" min="0" max="1" step="0.01" value="0" title="Orbit phase for seasonal progression.">
+            <span class="value" id="seasonProgressValue">0.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherDebug">Weather debug view</label>
+          <select id="weatherDebug" title="Diagnostic view for weather maps.">
+            <option value="off" selected>Off</option>
+            <option value="cloud">Cloud</option>
+            <option value="rain">Rain</option>
+            <option value="pressure">Pressure</option>
+            <option value="soil">Soil</option>
+            <option value="temp">Temperature</option>
+            <option value="snow">Snowpack</option>
+            <option value="wind">Wind</option>
+            <option value="volume">Volume atlas (3D)</option>
+            <option value="volume-grid">Volume grid (3D wireframe)</option>
+          </select>
+        </div>
+        <div class="field" id="volumeSliceField" style="display:none;">
+          <label for="volumeSlice">Volume slice (debug)</label>
+          <div class="range-row">
+            <input id="volumeSlice" type="range" min="0" max="63" step="1" value="0" title="Select a slice in the volume atlas for debug.">
+            <span class="value" id="volumeSliceValue">0</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherSpeed">Weather speed (minutes/sec)</label>
+          <div class="range-row">
+            <input id="weatherSpeed" type="range" min="0" max="60" step="1" value="1" title="Simulated minutes per real second.">
+            <span class="value" id="weatherSpeedValue">1</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherUpdateHz">Weather update rate (Hz)</label>
+          <div class="range-row">
+            <input id="weatherUpdateHz" type="range" min="1" max="20" step="1" value="1" title="Readback/update frequency for weather textures.">
+            <span class="value" id="weatherUpdateHzValue">1</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherMoistureLayers">Moisture layers</label>
+          <div class="range-row">
+            <input id="weatherMoistureLayers" type="range" min="1" max="4" step="1" value="2" title="Number of vertical layers in 2D mode.">
+            <span class="value" id="weatherMoistureLayersValue">2</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherEvap">Evaporation strength</label>
+          <div class="range-row">
+            <input id="weatherEvap" type="range" min="0" max="3" step="0.01" value="1" title="Strength of evaporation in the weather sim.">
+            <span class="value" id="weatherEvapValue">1.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherPrecip">Precipitation strength</label>
+          <div class="range-row">
+            <input id="weatherPrecip" type="range" min="0" max="3" step="0.01" value="1" title="Strength of precipitation in the weather sim.">
+            <span class="value" id="weatherPrecipValue">1.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherWind">Wind strength</label>
+          <div class="range-row">
+            <input id="weatherWind" type="range" min="0" max="3" step="0.01" value="1" title="Strength of wind advection.">
+            <span class="value" id="weatherWindValue">1.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherWetness">Surface wetness strength</label>
+          <div class="range-row">
+            <input id="weatherWetness" type="range" min="0" max="2" step="0.01" value="0.75" title="How strongly wetness darkens terrain.">
+            <span class="value" id="weatherWetnessValue">0.75</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherOceanInertia">Ocean thermal inertia</label>
+          <div class="range-row">
+            <input id="weatherOceanInertia" type="range" min="0.05" max="1" step="0.01" value="0.25" title="How quickly oceans heat/cool.">
+            <span class="value" id="weatherOceanInertiaValue">0.25</span>
+          </div>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="weatherRainFxToggle" checked title="Toggle rain particle effect."> Visual rain</label>
+        </div>
+        <div class="field">
+          <label for="weatherRainFx">Rain FX strength</label>
+          <div class="range-row">
+            <input id="weatherRainFx" type="range" min="0" max="2" step="0.01" value="1" title="Intensity of rain particles.">
+            <span class="value" id="weatherRainFxValue">1.00</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="weatherRainHaze">Rain haze</label>
+          <div class="range-row">
+            <input id="weatherRainHaze" type="range" min="0" max="2" step="0.01" value="0.90" title="Atmospheric haze added by rain.">
+            <span class="value" id="weatherRainHazeValue">0.90</span>
+          </div>
+        </div>
+      </details>
+      <button id="regen">Generate world</button>
+      <div id="status">Preparing…</div>
+      <div id="hint">Drag to orbit · Scroll to zoom · Regenerate to see new plates</div>
+    </div>
+  </div>
+</body>
+</html>

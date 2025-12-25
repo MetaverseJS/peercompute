@@ -26,14 +26,17 @@ import {
 } from '../net/netUtils.js';
 import { TimeSystem } from '../systems/timeSystem.js';
 import { TerrainGenerator } from '../systems/terrainGenerator.js';
+import { RoomDirectory, buildRoomId, normalizeRoomName } from './roomDirectory.js';
 
 export class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
-        this.gameNamespace = 'cb';
+        this.gameNamespace = 'hyperborea';
         this.peerMeshes = new Map();
         this.peers = new Map();
         this.bootstrapPeers = [];
+        this.roomDirectory = null;
+        this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
         this.networkManager = null;
         this.libp2p = null;
         this.visibilityHandler = null;
@@ -41,6 +44,7 @@ export class Game {
         this.peerCleanupInterval = null;
         this.reconnectTimer = null;
         this.lastReconnectAttempt = 0;
+        this.beforeUnloadHandler = null;
         this.connectionListenersBound = false;
         this.connectionLogBound = false;
         this.relayPeerIds = [];
@@ -49,6 +53,19 @@ export class Game {
         this.attackEventsSeen = new Map();
         this.attackActiveUntil = 0;
         this.myColor = Math.random() * 0xffffff;
+        this.playerName = '';
+        try {
+            const savedName = localStorage.getItem('hyperboreaPlayerName');
+            if (savedName) {
+                this.playerName = savedName;
+            }
+            const savedColor = localStorage.getItem('hyperboreaPlayerColor');
+            if (savedColor) {
+                this.myColor = parseInt(savedColor.replace('#', '0x'), 16);
+            }
+        } catch (_) {
+            // ignore localStorage errors
+        }
         this.spearThrustProgress = 0;
         this.persistedState = this.loadPersistedState();
         this.lastPersistSave = 0;
@@ -60,6 +77,7 @@ export class Game {
         this.initPlayer();
         this.initSkyDome();
         this.initControls();
+        this.initSettingsUI();
         
         this.chunks = new Map();
         this.structures = new Map();
@@ -260,10 +278,10 @@ export class Game {
                 return null;
             };
             const cfg =
-                (await tryFetch('/relay-config.json')) ||
                 (await tryFetch('relay-config.json')) ||
-                (await tryFetch('/.relay-config.json')) ||
-                (await tryFetch('.relay-config.json'));
+                (await tryFetch('.relay-config.json')) ||
+                (await tryFetch('/relay-config.json')) ||
+                (await tryFetch('/.relay-config.json'));
             if (cfg) return cfg;
         } catch (e) {
             // ignore and use fallback
@@ -349,8 +367,8 @@ export class Game {
             this.node = new NodeKernel({
                 bootstrapPeers: this.bootstrapPeers,
                 enablePersistence: false,
-                gameId: 'cb',
-                roomId: 'global'
+                gameId: 'hyperborea',
+                roomId: this.currentRoom?.roomId || 'global'
             });
             await this.node.initialize();
             await this.node.start();
@@ -395,26 +413,162 @@ export class Game {
             this.setupVisibilityHeartbeat();
             this.startNetworkWatchdog();
             this.ensureRelayConnection(true).catch(() => {});
-            window.addEventListener('beforeunload', () => {
-                this.stopBackgroundHeartbeat();
-                this.stopPeerCleanup();
-                this.stopNetworkWatchdog();
-                this.savePersistedState();
-                if (this.visibilityHandler) {
-                    document.removeEventListener('visibilitychange', this.visibilityHandler);
-                    this.visibilityHandler = null;
-                }
-                this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
-                this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
-            });
+            if (!this.beforeUnloadHandler) {
+                this.beforeUnloadHandler = () => {
+                    this.stopBackgroundHeartbeat();
+                    this.stopPeerCleanup();
+                    this.stopNetworkWatchdog();
+                    this.savePersistedState();
+                    if (this.visibilityHandler) {
+                        document.removeEventListener('visibilitychange', this.visibilityHandler);
+                        this.visibilityHandler = null;
+                    }
+                    this.stateManager?.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
+                    this.stateManager?.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
+                };
+                window.addEventListener('beforeunload', this.beforeUnloadHandler);
+            }
             this.publishPlayerState();
             this.broadcastTimeAnchor();
             if (document.hidden) {
                 this.startBackgroundHeartbeat();
             }
+            await this.initRoomDirectory();
         } catch (err) {
             console.error('Multiplayer init failed', err);
         }
+    }
+
+    async initRoomDirectory() {
+        if (!this.bootstrapPeers.length) return;
+        if (!this.roomDirectory) {
+            this.roomDirectory = new RoomDirectory({
+                gameId: 'hyperborea',
+                bootstrapPeers: this.bootstrapPeers
+            });
+            try {
+                await this.roomDirectory.init();
+            } catch (err) {
+                console.warn('Room directory init failed', err);
+                return;
+            }
+        }
+        this.roomDirectory.announceRoom(this.currentRoom);
+    }
+
+    setRoomStatus(message) {
+        const statusEl = document.getElementById('room-status');
+        if (statusEl) {
+            statusEl.textContent = message;
+        }
+    }
+
+    renderRoomList() {
+        const listEl = document.getElementById('room-list-items');
+        if (!listEl) return;
+        const rooms = this.roomDirectory?.getRooms() || [];
+        listEl.innerHTML = '';
+        if (!rooms.length) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No rooms announced yet.';
+            listEl.appendChild(empty);
+            return;
+        }
+        rooms.forEach((room) => {
+            const entry = document.createElement('div');
+            entry.className = 'room-entry';
+            const title = document.createElement('h4');
+            title.textContent = room.name || room.slug || 'Unnamed room';
+            const meta = document.createElement('p');
+            meta.textContent = room.visibility === 'private' ? 'Private room' : 'Public room';
+            const joinBtn = document.createElement('button');
+            joinBtn.textContent = room.visibility === 'private' ? 'Join (password)' : 'Join';
+            joinBtn.addEventListener('click', async () => {
+                const name = room.name || room.slug || 'global';
+                const visibility = room.visibility === 'private' ? 'private' : 'public';
+                let password = '';
+                if (visibility === 'private') {
+                    const roomPasswordInput = document.getElementById('room-password');
+                    password = roomPasswordInput?.value || '';
+                    if (!password) {
+                        password = window.prompt('Password for this room?') || '';
+                    }
+                    if (!password) {
+                        this.setRoomStatus('Password required for private rooms.');
+                        return;
+                    }
+                }
+                const roomId = visibility === 'private'
+                    ? buildRoomId({ name: normalizeRoomName(name), visibility, password })
+                    : (room.roomId || buildRoomId({ name: normalizeRoomName(name), visibility }));
+                await this.switchRoom({ name, visibility, roomId });
+                const roomList = document.getElementById('room-list');
+                if (roomList) roomList.style.display = 'none';
+                const roomNameInput = document.getElementById('room-name');
+                const roomPrivacyInput = document.getElementById('room-privacy');
+                if (roomNameInput) roomNameInput.value = name;
+                if (roomPrivacyInput) roomPrivacyInput.value = visibility;
+                try {
+                    localStorage.setItem('hyperboreaRoomName', name);
+                    localStorage.setItem('hyperboreaRoomPrivacy', visibility);
+                } catch (_) {
+                    // ignore localStorage errors
+                }
+            });
+            entry.appendChild(title);
+            entry.appendChild(meta);
+            entry.appendChild(joinBtn);
+            listEl.appendChild(entry);
+        });
+    }
+
+    async switchRoom({ name, visibility, roomId }) {
+        if (!roomId || roomId === this.currentRoom.roomId) return;
+        this.setRoomStatus('Switching rooms...');
+        await this.shutdownMultiplayer();
+        this.currentRoom = { name, visibility, roomId };
+        this.joinedAt = Date.now();
+        await this.initMultiplayer();
+        this.roomDirectory?.announceRoom(this.currentRoom);
+        this.setRoomStatus(`Current room: ${name} (${visibility})`);
+    }
+
+    async shutdownMultiplayer() {
+        this.stopBackgroundHeartbeat();
+        this.stopPeerCleanup();
+        this.stopNetworkWatchdog();
+        this.schedulerConfigured = false;
+        this.snapshotProviderId = null;
+        this.connectionLogBound = false;
+        this.connectionListenersBound = false;
+        this.relayConnected = false;
+        this.timeAnchor = null;
+        this.attackEventsSeen.clear();
+        if (this.stateManager && this.myPeerId) {
+            this.stateManager.deleteScoped(this.gameNamespace, `player-${this.myPeerId}`);
+            this.stateManager.deleteScoped(this.gameNamespace, `evt-${this.myPeerId}`);
+        }
+        if (this.node) {
+            try {
+                await this.node.stop();
+            } catch (err) {
+                console.warn('Multiplayer shutdown error', err);
+            }
+        }
+        this.node = null;
+        this.networkManager = null;
+        this.stateManager = null;
+        this.libp2p = null;
+        this.myPeerId = null;
+        this.clearPeers();
+    }
+
+    clearPeers() {
+        for (const peerId of Array.from(this.peerMeshes.keys())) {
+            this.removePeer(peerId);
+        }
+        this.peerMeshes.clear();
+        this.peers.clear();
     }
 
     configureNetworkScheduler() {
@@ -446,6 +600,7 @@ export class Game {
             position: { x: pos.x, y: pos.y, z: pos.z },
             rotation: { y: this.camera.rotation.y },
             color: this.myColor,
+            name: this.playerName || null,
             torch: this.hasTorch,
             spear: {
                 thrust: this.spearThrustProgress,
@@ -990,6 +1145,123 @@ export class Game {
         // VR Controllers
         this.initVRControllers();
         this.initAttackControls();
+    }
+
+    initSettingsUI() {
+        const settingsButton = document.getElementById('settings-button');
+        const settingsMenu = document.getElementById('settings-menu');
+        const settingsClose = document.getElementById('settings-close');
+        const playerNameInput = document.getElementById('player-name');
+        const playerColorInput = document.getElementById('player-color');
+        const playerSaveButton = document.getElementById('player-save');
+        const roomNameInput = document.getElementById('room-name');
+        const roomPrivacyInput = document.getElementById('room-privacy');
+        const roomPasswordInput = document.getElementById('room-password');
+        const roomCreateButton = document.getElementById('room-create');
+        const roomJoinButton = document.getElementById('room-join');
+        const roomListOpen = document.getElementById('room-list-open');
+        const roomList = document.getElementById('room-list');
+        const roomListClose = document.getElementById('room-list-close');
+        const roomListRefresh = document.getElementById('room-list-refresh');
+
+        if (settingsButton && settingsMenu) {
+            settingsButton.addEventListener('click', () => {
+                const isOpen = settingsMenu.style.display !== 'none';
+                settingsMenu.style.display = isOpen ? 'none' : 'block';
+                if (!isOpen && document.pointerLockElement) {
+                    document.exitPointerLock();
+                }
+            });
+        }
+        if (settingsClose && settingsMenu) {
+            settingsClose.addEventListener('click', () => {
+                settingsMenu.style.display = 'none';
+            });
+        }
+
+        if (playerNameInput) {
+            playerNameInput.value = this.playerName || '';
+        }
+        if (playerColorInput) {
+            const colorHex = `#${Math.floor(this.myColor).toString(16).padStart(6, '0')}`;
+            playerColorInput.value = colorHex;
+        }
+
+        const savedRoomName = localStorage.getItem('hyperboreaRoomName') || this.currentRoom.name;
+        const savedRoomPrivacy = localStorage.getItem('hyperboreaRoomPrivacy') || this.currentRoom.visibility;
+        if (roomNameInput) {
+            roomNameInput.value = savedRoomName;
+        }
+        if (roomPrivacyInput) {
+            roomPrivacyInput.value = savedRoomPrivacy;
+        }
+        this.setRoomStatus(`Current room: ${this.currentRoom.name} (${this.currentRoom.visibility})`);
+
+        if (playerSaveButton) {
+            playerSaveButton.addEventListener('click', () => {
+                const nextName = playerNameInput?.value?.trim() || '';
+                const nextColor = playerColorInput?.value || '#00ffff';
+                this.playerName = nextName;
+                this.myColor = parseInt(nextColor.replace('#', '0x'), 16);
+                try {
+                    localStorage.setItem('hyperboreaPlayerName', this.playerName);
+                    localStorage.setItem('hyperboreaPlayerColor', nextColor);
+                } catch (_) {
+                    // ignore localStorage errors
+                }
+                this.publishPlayerState(true);
+                if (settingsMenu) {
+                    settingsMenu.style.display = 'none';
+                }
+            });
+        }
+
+        const applyRoomChange = async () => {
+            const name = roomNameInput?.value?.trim() || 'global';
+            const visibility = roomPrivacyInput?.value || 'public';
+            const password = roomPasswordInput?.value || '';
+            if (visibility === 'private' && !password) {
+                this.setRoomStatus('Password required for private rooms.');
+                return;
+            }
+            const normalizedName = normalizeRoomName(name);
+            const roomId = buildRoomId({ name: normalizedName, visibility, password });
+            this.setRoomStatus('Switching rooms...');
+            await this.switchRoom({ name, visibility, roomId });
+            try {
+                localStorage.setItem('hyperboreaRoomName', name);
+                localStorage.setItem('hyperboreaRoomPrivacy', visibility);
+            } catch (_) {
+                // ignore localStorage errors
+            }
+        };
+
+        if (roomCreateButton) {
+            roomCreateButton.addEventListener('click', () => {
+                applyRoomChange();
+            });
+        }
+        if (roomJoinButton) {
+            roomJoinButton.addEventListener('click', () => {
+                applyRoomChange();
+            });
+        }
+        if (roomListOpen && roomList) {
+            roomListOpen.addEventListener('click', () => {
+                roomList.style.display = 'block';
+                this.renderRoomList();
+            });
+        }
+        if (roomListClose && roomList) {
+            roomListClose.addEventListener('click', () => {
+                roomList.style.display = 'none';
+            });
+        }
+        if (roomListRefresh) {
+            roomListRefresh.addEventListener('click', () => {
+                this.renderRoomList();
+            });
+        }
     }
     
     initVRControllers() {

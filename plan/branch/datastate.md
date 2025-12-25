@@ -42,3 +42,15 @@ Instructions: This file contains short term goals for the current branch.
 - Define warm-layer schemas and network payload shape.
 - Wire GPU hub into a real WebGPU render loop and register hot buffers.
 - Confirm netman publishes warm deltas end-to-end.
+
+## Release Tasks (Demo Cleanup)
+- Add global high score sync to DaddyGo and surface a shared high score HUD.
+- Add room selection + settings windows for multiplayer demos (CubeChat, SneakyWoods, Hyperborea):
+  - Public/private rooms, room names, optional passwords.
+  - Room list window (open from settings) with join/create flows.
+  - Move player config (name/color/etc.) into settings.
+- Fix Universes init crash (universeGenerationToken TDZ) and verify startup.
+- Turn PlanetGen debug view off by default.
+- Add relay domain config file and wire relay server to use it.
+- Update docs index to include all demos + screenshots; update main README + demo READMEs with PeerCompute integration samples.
+- Refresh plan files to reflect the release scope and new room system.

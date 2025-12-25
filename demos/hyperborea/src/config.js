@@ -1,4 +1,4 @@
-export const PERSIST_KEY = 'cb-player-persist';
+export const PERSIST_KEY = 'hyperborea-player-persist';
 
 export const getRenderDistanceFromQuery = () => {
   try {
@@ -29,7 +29,7 @@ export const CONFIG = {
   CHUNK_SIZE: 2048,
   RENDER_DISTANCE: getRenderDistanceFromQuery() ?? 8,
   WORLD_SEED: 12345,
-  PLAYER_SPEED: 200,
+  PLAYER_SPEED: 150,
   JUMP_FORCE: 10,
   GRAVITY: -25
 };

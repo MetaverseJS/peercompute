@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU MLS-MPM Visual Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0b1220;
+      color: #e2e8f0;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      touch-action: none;
+    }
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 12px;
+      backdrop-filter: blur(6px);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    #hud button {
+      background: #22d3ee;
+      border: none;
+      color: #0b1220;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    #hud .row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    #error {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      color: #f97316;
+      font-size: 13px;
+      max-width: 320px;
+      white-space: pre-wrap;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19"></script>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="hud">
+    <div class="row">
+      <button id="toggleBtn">Pause</button>
+      <span id="status">init…</span>
+    </div>
+    <div>Particles: <span id="particleCount">0</span></div>
+    <div>FPS: <span id="fps">0</span></div>
+    <div>Mass: <span id="mass">0</span></div>
+    <div>Momentum: <span id="momentum">0, 0, 0</span></div>
+  </div>
+  <div id="error"></div>
+  <script type="module" src="./mpm-visual.js"></script>
+</body>
+</html>
