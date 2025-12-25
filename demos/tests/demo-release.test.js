@@ -16,6 +16,19 @@ test('config/relay.json exists and is referenced by dev scripts', () => {
   assert.ok(startDev.includes('config/relay.json'), 'start-dev.sh does not load config/relay.json');
 });
 
+test('prod-config.json exists and build writes relay-config.json for demos', () => {
+  assert.ok(exists('prod-config.json'), 'prod-config.json missing');
+  assert.ok(
+    exists('scripts/write-prod-relay-config.mjs'),
+    'write-prod-relay-config.mjs missing'
+  );
+  const buildAll = read('scripts/build-all.sh');
+  assert.ok(
+    buildAll.includes('write-prod-relay-config.mjs'),
+    'build-all.sh does not write production relay-config.json'
+  );
+});
+
 test('docs index includes all demos and screenshots', () => {
   const html = read('docs/index.html');
   const requiredLinks = [

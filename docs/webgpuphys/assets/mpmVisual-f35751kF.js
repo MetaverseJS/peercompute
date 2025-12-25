@@ -1,4 +1,4 @@
-import"./device-CAsdAK37.js";import{g as xe,a as ye,s as _e,M as be,c as ee,u as we}from"./peercomputeDevice-BwGslQDx.js";import{O as Pe,c as he}from"./orbitControls-BGMq5i4v.js";const te=`
+import"./device-CAsdAK37.js";import{g as xe,a as ye,s as _e,M as be,c as ee,u as we}from"./peercomputeDevice-D2SZGD2f.js";import{O as Pe,b as he}from"./orbitControls-7kOmSw7O.js";const te=`
 struct VertexOutput {
   @builtin(position) position : vec4f,
   @location(0) uv : vec2f,

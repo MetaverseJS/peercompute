@@ -85,6 +85,26 @@ Set the public relay domain in `config/relay.json` (used by `npm run dev` and th
 Environment variables (`RELAY_PUBLIC_HOST`, `RELAY_PUBLIC_PORT`, `RELAY_LISTEN_HOST`, `RELAY_LISTEN_PORT`) still override the config file.
 Clients read `relay-config.json` and rewrite loopback addresses to the page host when needed.
 
+### Production Relay Config
+`npm run build` reads `prod-config.json` and writes each demo's `public/relay-config.json`.
+
+```json
+{
+  "relayHost": "secretworkshop.net",
+  "relayPort": "8080",
+  "relayProtocol": "wss",
+  "relayPeerId": "<relay-peer-id>"
+}
+```
+
+If you already have the full multiaddr, set `bootstrapPeers` in `prod-config.json` instead.
+Relay peer IDs are logged on startup as `Relay Server ID` / `Relay Address`.
+To launch the relay with WSS in production, provide certs and run:
+
+```bash
+RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash scripts/start-relay-prod.sh
+```
+
 ## Demo Gallery
 See `docs/index.html` for the full demo index.
 

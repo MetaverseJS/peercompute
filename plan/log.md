@@ -203,3 +203,27 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - node demos/webgpuphys/tests/ppf-runtime.js (required escalated permissions for local port)
+
+## Date: 2025-12-25
+
+### Prompt
+- read all plan files first. then update the current-branch.md file with the tasks neccessary to complete the following:
+- We're on a new branch called server-changes. I'd like to get the relay server ready to run on my server at secretworkshop.net port 8080 using wss. add a prod-config file to the root directory which we can set the relay server URL and port. when running the build for production (npm run build) it should populate the demos with the production-config relay location.
+
+### Changes
+- Added a server-changes branch plan with tasks for production relay config, WSS relay setup, and build-time relay-config injection.
+
+## Date: 2025-12-25
+
+### Prompt
+- do it!
+
+### Changes
+- Added `prod-config.json` for production relay host/port/protocol and optional peerId/ssl settings.
+- Added `scripts/write-prod-relay-config.mjs` to generate demo `public/relay-config.json` for production builds.
+- Added `scripts/start-relay-prod.sh` to launch the relay with prod-config defaults.
+- Wired `scripts/build-all.sh` to run the production relay-config writer before demo builds.
+- Added release test coverage for prod-config/build hook and updated README + branch status.
+
+### Tests
+- node --test demos/tests/demo-release.test.js

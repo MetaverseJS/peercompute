@@ -1,0 +1,11 @@
+{
+  "relayHost": "secretworkshop.net",
+  "relayPort": "8080",
+  "relayProtocol": "wss",
+  "relayPeerId": "",
+  "bootstrapPeers": [],
+  "sslCert": "",
+  "sslKey": "",
+  "listenHost": "",
+  "listenPort": ""
+}
