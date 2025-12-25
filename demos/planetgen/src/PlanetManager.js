@@ -181,6 +181,11 @@ export class PlanetManager {
         }
     }
 
+    setOceanWindField(windField) {
+        if (!this.oceanComputeSystem?.enabled) return;
+        this.oceanComputeSystem.setWindField(windField);
+    }
+
     setOceanWindVector(windWorld) {
         if (!this.oceanComputeSystem?.enabled || !windWorld) return;
         const dir = new THREE.Vector2(windWorld.x, windWorld.z);

@@ -47,6 +47,8 @@ export class OceanComputeSystem {
         this.prevHeightBuffer = null;
         // Output buffer for readback
         this.outputBuffer = null;
+        this.windFieldBuffer = null;
+        this.useWindField = false;
         // Readback staging buffers
         this.readbackBuffers = null;
         this.readbackInFlight = [false, false];
@@ -99,6 +101,22 @@ export class OceanComputeSystem {
             this.windDirection.set(windDirectionX, windDirectionY).normalize();
         }
         if (Number.isFinite(readbackIntervalS)) this.readbackIntervalS = Math.max(0.01, readbackIntervalS);
+    }
+
+    setWindField(field) {
+        if (!this.windFieldBuffer || !this.device) return;
+        if (!field) {
+            this.useWindField = false;
+            return;
+        }
+        const expected = this.cellCount * 2;
+        if (field.length < expected) {
+            console.warn('[OceanComputeSystem] wind field size mismatch', field.length, expected);
+            this.useWindField = false;
+            return;
+        }
+        this.device.queue.writeBuffer(this.windFieldBuffer, 0, field);
+        this.useWindField = true;
     }
 
     getTexture() {
@@ -172,6 +190,11 @@ export class OceanComputeSystem {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         });
 
+        this.windFieldBuffer = device.createBuffer({
+            size: this.cellCount * 8,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+
         // Readback buffers
         this.readbackBuffers = [
             device.createBuffer({
@@ -191,7 +214,8 @@ export class OceanComputeSystem {
                 { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
             ]
         });
 
@@ -212,7 +236,8 @@ export class OceanComputeSystem {
                     { binding: 1, resource: { buffer: this.heightBuffers[0] } },
                     { binding: 2, resource: { buffer: this.heightBuffers[1] } },
                     { binding: 3, resource: { buffer: this.prevHeightBuffer } },
-                    { binding: 4, resource: { buffer: this.outputBuffer } }
+                    { binding: 4, resource: { buffer: this.outputBuffer } },
+                    { binding: 5, resource: { buffer: this.windFieldBuffer } }
                 ]
             }),
             device.createBindGroup({
@@ -222,7 +247,8 @@ export class OceanComputeSystem {
                     { binding: 1, resource: { buffer: this.heightBuffers[1] } },
                     { binding: 2, resource: { buffer: this.heightBuffers[0] } },
                     { binding: 3, resource: { buffer: this.prevHeightBuffer } },
-                    { binding: 4, resource: { buffer: this.outputBuffer } }
+                    { binding: 4, resource: { buffer: this.outputBuffer } },
+                    { binding: 5, resource: { buffer: this.windFieldBuffer } }
                 ]
             })
         ];
@@ -241,6 +267,10 @@ export class OceanComputeSystem {
         this.device.queue.writeBuffer(this.heightBuffers[0], 0, init);
         this.device.queue.writeBuffer(this.heightBuffers[1], 0, init);
         this.device.queue.writeBuffer(this.prevHeightBuffer, 0, init);
+        if (this.windFieldBuffer) {
+            this.device.queue.writeBuffer(this.windFieldBuffer, 0, new Float32Array(this.cellCount * 2));
+        }
+        this.useWindField = false;
         this.ping = 0;
         this.timeS = 0;
     }
@@ -336,7 +366,7 @@ export class OceanComputeSystem {
         u[12] = this.windStrength;
         u[13] = this.windDirection.x;
         u[14] = this.windDirection.y;
-        u[15] = 0;
+        u[15] = this.useWindField ? 1 : 0;
 
         this.device.queue.writeBuffer(this.uniformBuffer, 0, u);
     }
@@ -348,6 +378,7 @@ export class OceanComputeSystem {
 @group(0) @binding(2) var<storage, read_write> heightDst: array<f32>;
 @group(0) @binding(3) var<storage, read_write> prevHeight: array<f32>;
 @group(0) @binding(4) var<storage, read_write> outPixels: array<u32>;
+@group(0) @binding(5) var<storage, read> windField: array<vec2<f32>>;
 
 fn gridW() -> u32 { return u32(params[0].x + 0.5); }
 fn gridH() -> u32 { return u32(params[0].y + 0.5); }
@@ -364,6 +395,7 @@ fn mouseSpd() -> vec2<f32> { return params[2].zw; }
 
 fn windStrength() -> f32 { return params[3].x; }
 fn windDir() -> vec2<f32> { return params[3].yz; }
+fn useWindField() -> f32 { return params[3].w; }
 
 fn idx(x: u32, y: u32) -> u32 {
     return y * gridW() + x;
@@ -456,12 +488,26 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lat = (uv.y - 0.5) * 3.14159265;
     let hemisphere = select(-1.0, 1.0, lat >= 0.0);
     let angle = 0.785398 * hemisphere;
-    let dir = normalize(windDir());
+    var windVec = windDir();
+    var windAmp = windStrength();
+    if (useWindField() > 0.5) {
+        let localWind = windField[i];
+        let speed = length(localWind);
+        if (speed > 1e-5) {
+            windVec = localWind / speed;
+            windAmp = clamp(speed / 60.0, 0.0, 2.0);
+        } else {
+            windVec = normalize(windDir());
+            windAmp = 0.0;
+        }
+    } else {
+        windVec = normalize(windVec);
+    }
     let c = cos(angle);
     let s = sin(angle);
-    let ekmanDir = vec2(dir.x * c - dir.y * s, dir.x * s + dir.y * c);
+    let ekmanDir = vec2(windVec.x * c - windVec.y * s, windVec.x * s + windVec.y * c);
     let windUV = uv * 8.0 + ekmanDir * time() * 0.5;
-    let windWave = (fbm(windUV) - 0.5) * windStrength() * 0.012;
+    let windWave = (fbm(windUV) - 0.5) * windAmp * 0.012;
     hNew += windWave;
 
     // Small random perturbation to keep water "alive"
@@ -500,6 +546,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         this.prevHeightBuffer?.destroy();
         this.outputBuffer?.destroy();
         this.readbackBuffers?.forEach(b => b?.destroy());
+        this.windFieldBuffer?.destroy();
         this.uniformBuffer?.destroy();
         this.device = null;
         this.enabled = false;

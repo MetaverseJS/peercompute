@@ -8,6 +8,7 @@ import { WaterCycleVolumeSystem } from './WaterCycleVolumeSystem.js';
 import { RainSystem } from './RainSystem.js';
 import { WindVisualizationSystem } from './WindVisualizationSystem.js';
 import { clamp, isMobileDevice, sampleDataTextureRGBA } from './utils.js';
+import { decodeWindFieldFromAuxTexture } from './oceanWindField.js';
 import { BASE_RADIUS_UNITS, DEFAULT_DIAMETER_KM, DEFAULT_RADIUS_M, PERSON_HEIGHT_M, MAX_DELTA_TIME, PRESETS } from './constants.js';
 import { UIManager } from './UIManager.js';
 import { WindSystem } from './WindSystem.js';
@@ -487,6 +488,10 @@ const weatherTmpVecB = new THREE.Vector3();
 const weatherTmpVecC = new THREE.Vector3();
 const weatherTmpVecD = new THREE.Vector3();
 const weatherWindWorld = new THREE.Vector3();
+const OCEAN_MAX_WIND = 60;
+let oceanWindField = null;
+let oceanWindReadbackVersion = -1;
+let oceanWindFieldEnabled = false;
 let volumeDebugEnabled = false;
 let volumeDebugGrid = false;
 let volumeDebugSlice = 0;
@@ -768,6 +773,38 @@ function computeWindWorldFromAux(tex, invScale, planetInvRot, out) {
     const len = windWorld.length();
     if (!(len > 1e-6)) windWorld.set(0, 0, 0);
     return windWorld;
+}
+
+function isHolisticWeatherMode() {
+    return getWeatherSimMode() === 'holistic';
+}
+
+function syncOceanWindFieldMode() {
+    const enabled = isHolisticWeatherMode() && (waterCycleToggleEl?.checked ?? false);
+    if (!enabled && oceanWindFieldEnabled) {
+        planetManager?.setOceanWindField?.(null);
+        oceanWindFieldEnabled = false;
+        oceanWindReadbackVersion = -1;
+        return;
+    }
+    if (enabled && !oceanWindFieldEnabled) {
+        oceanWindFieldEnabled = true;
+        oceanWindReadbackVersion = -1;
+    }
+}
+
+function updateOceanWindFieldFromAux() {
+    if (!planetManager?.oceanComputeSystem?.enabled) return;
+    const auxTex = getWeatherAuxTexture();
+    const gridW = planetManager.oceanComputeSystem.gridW;
+    const gridH = planetManager.oceanComputeSystem.gridH;
+    const field = decodeWindFieldFromAuxTexture(auxTex, gridW, gridH, {
+        maxWind: OCEAN_MAX_WIND,
+        out: oceanWindField
+    });
+    if (!field) return;
+    oceanWindField = field;
+    planetManager.setOceanWindField(field);
 }
 
 function setPlanetWeatherTexture(texture) {
@@ -1494,6 +1531,10 @@ function animate() {
     if (runWeather && waterCycleSystem?.enabled) {
         waterCycleSystem.update(delta, weatherSunLocal);
     }
+    if (oceanWindFieldEnabled && waterCycleSystem?.readbackVersion !== oceanWindReadbackVersion) {
+        oceanWindReadbackVersion = waterCycleSystem.readbackVersion;
+        updateOceanWindFieldFromAux();
+    }
 
     // Keep AtmosphereSystem uniforms in sync with moving sun/scale/weather.
     if (planetManager.atmosphereSystem?.uniforms) {
@@ -2097,6 +2138,7 @@ function handleWaterCycleUpdate() {
     void selectWaterCycleSystemIfNeeded();
     syncVolumeSliceRange();
     applyWaterCycleConfig();
+    syncOceanWindFieldMode();
     rebuildWaterCycleClouds(new THREE.Vector3().copy(dirLight.position).normalize());
 }
 

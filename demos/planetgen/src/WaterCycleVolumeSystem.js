@@ -83,6 +83,7 @@ export class WaterCycleVolumeSystem {
         this.readbackBuffers = null;
         this.readbackInFlight = [false, false];
         this.readbackWriteIndex = 0;
+        this.readbackVersion = 0;
 
         this.ping = 0;
         this.hasSurface = false;
@@ -556,6 +557,7 @@ export class WaterCycleVolumeSystem {
             this.volumeAtlasTexture.needsUpdate = true;
             this.weatherTexture.needsUpdate = true;
             this.weatherAuxTexture.needsUpdate = true;
+            this.readbackVersion++;
         }).catch((err) => {
             console.warn('[WaterCycleVolumeSystem] Readback failed', err);
         }).finally(() => {

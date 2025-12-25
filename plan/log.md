@@ -203,3 +203,17 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - node demos/webgpuphys/tests/ppf-runtime.js (required escalated permissions for local port)
+
+## Date: 2025-12-25
+
+### Prompt
+- continue water system implementation and wire up the UI to the dropdown stub entry
+
+### Changes
+- Added readbackVersion tracking to WaterCycleSystem and WaterCycleVolumeSystem to sync downstream consumers.
+- Implemented per-cell wind field support in OceanComputeSystem (new buffer + WGSL path) and PlanetManager hook.
+- Added ocean wind field decoding helper and wired holistic weather mode to drive ocean winds from weather aux data on new readbacks.
+- Added ocean wind field unit test and updated PlanetGen test script.
+
+### Tests
+- npm test (in demos/planetgen)
