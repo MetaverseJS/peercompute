@@ -231,11 +231,57 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-27
 
 ### Prompt
+- ok put these instructions at the end of log.md
+
+### Changes
+- Appended deployment checklist for VM/nginx relay config.
+
+### Deployment Checklist (VM)
+1) Pull latest repo changes on the VM.
+2) Generate the relay config file from the repo root:
+```
+bash scripts/start-relay-prod.sh
+```
+3) Ensure nginx can read the config file (keep identity key private):
+```
+chmod 755 /home/cos /home/cos/projects /home/cos/projects/peercompute /home/cos/projects/peercompute/config
+chmod 644 /home/cos/projects/peercompute/config/relay-config.json
+chmod 600 /home/cos/projects/peercompute/config/relay-peer-id.json
+```
+4) Update the nginx alias to the repo path:
+```
+location = /peercompute/config/relay-config.json {
+    alias /home/cos/projects/peercompute/config/relay-config.json;
+    default_type application/json;
+    add_header Access-Control-Allow-Origin *;
+    add_header Cache-Control "no-store";
+}
+```
+5) Reload nginx:
+```
+sudo nginx -t
+sudo systemctl reload nginx
+```
+6) Verify the config URL loads:
+- `https://secretworkshop.net/peercompute/config/relay-config.json`
+
+## Date: 2025-12-27
+
+### Prompt
 - looks like we weren't able to write to that location for nginx can we reconfigure nginx to serve that file directly from the config directory?
 
 ### Changes
 - Pointed `relayConfigFile` to `config/relay-config.json` and updated nginx alias in `secretworkshop.net` to serve the config file from the repo config directory.
 - Updated README and gitignore to reflect the new relay-config file location.
+
+## Date: 2025-12-27
+
+### Prompt
+- lets host it at secretworkshop.net/peercompute/config/relay-config.json
+
+### Changes
+- Updated nginx config to serve the relay config at `/peercompute/config/relay-config.json`.
+- Updated `config/relay.json` and README defaults to match the new relay config URL.
 
 ## Date: 2025-12-25
 

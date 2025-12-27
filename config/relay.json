@@ -4,7 +4,7 @@
   "relayProtocol": "wss",
   "relayPeerId": "",
   "relayIdentityFile": "config/relay-peer-id.json",
-  "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
+  "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
   "bootstrapPeers": [],
   "publicHost": "",

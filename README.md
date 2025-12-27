@@ -82,7 +82,7 @@ Use `config/relay.json` as the single source of truth for dev + prod relay setti
   "relayProtocol": "wss",
   "relayPeerId": "<relay-peer-id>",
   "relayIdentityFile": "config/relay-peer-id.json",
-  "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
+  "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
   "listenHost": "127.0.0.1",
   "listenPort": "8080",
