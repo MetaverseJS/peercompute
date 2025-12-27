@@ -72,35 +72,38 @@ npm run build
 npm run docs:preview
 ```
 
-### Relay Host Config
-Set the public relay domain in `config/relay.json` (used by `npm run dev` and the relay server):
+### Relay Host Config (Single File)
+Use `config/relay.json` as the single source of truth for dev + prod relay settings:
 
 ```json
 {
-  "publicHost": "relay.example.com",
-  "publicPort": "443"
+  "relayHost": "relay.secretworkshop.net",
+  "relayPort": "443",
+  "relayProtocol": "wss",
+  "relayPeerId": "<relay-peer-id>",
+  "relayIdentityFile": "config/relay-peer-id.json",
+  "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
+  "relayConfigFile": "/var/www/relay/relay-config.json",
+  "listenHost": "127.0.0.1",
+  "listenPort": "8080",
+  "publicHost": "",
+  "publicPort": ""
 }
 ```
 
 Environment variables (`RELAY_PUBLIC_HOST`, `RELAY_PUBLIC_PORT`, `RELAY_LISTEN_HOST`, `RELAY_LISTEN_PORT`) still override the config file.
-Clients read `relay-config.json` and rewrite loopback addresses to the page host when needed.
-
-### Production Relay Config
-`npm run build` reads `prod-config.json` and writes each demo's `public/relay-config.json`.
-
-```json
-{
-  "relayHost": "secretworkshop.net",
-  "relayPort": "8080",
-  "relayProtocol": "wss",
-  "relayPeerId": "<relay-peer-id>",
-  "relayIdentityFile": "config/relay-peer-id.json"
-}
-```
-
-If you already have the full multiaddr, set `bootstrapPeers` in `prod-config.json` instead.
 Relay peer IDs are logged on startup as `Relay Server ID` / `Relay Address`.
 Set `relayIdentityFile` (or `RELAY_IDENTITY_FILE`) so the peerId stays stable across restarts.
+If you already have the full multiaddr, set `bootstrapPeers` in `config/relay.json` instead.
+
+### Runtime Relay Config
+`npm run build` writes each demo's `public/relay-config.json` and `public/relay-config-source.json`.
+Demos resolve the relay config in this order:
+
+1. `?relayConfigUrl=...` query param override.
+2. `relay-config-source.json` (default URL from `config/relay.json`).
+3. Local `relay-config.json` fallback.
+
 To launch the relay with WSS in production, provide certs and run:
 
 ```bash

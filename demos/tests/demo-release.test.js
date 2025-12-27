@@ -16,8 +16,8 @@ test('config/relay.json exists and is referenced by dev scripts', () => {
   assert.ok(startDev.includes('config/relay.json'), 'start-dev.sh does not load config/relay.json');
 });
 
-test('prod-config.json exists and build writes relay-config.json for demos', () => {
-  assert.ok(exists('prod-config.json'), 'prod-config.json missing');
+test('config/relay.json exists and build writes relay-config.json for demos', () => {
+  assert.ok(exists('config/relay.json'), 'config/relay.json missing');
   assert.ok(
     exists('scripts/write-prod-relay-config.mjs'),
     'write-prod-relay-config.mjs missing'

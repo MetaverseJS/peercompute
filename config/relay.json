@@ -1,6 +1,14 @@
 {
+  "relayHost": "relay.secretworkshop.net",
+  "relayPort": "443",
+  "relayProtocol": "wss",
+  "relayPeerId": "",
+  "relayIdentityFile": "config/relay-peer-id.json",
+  "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
+  "relayConfigFile": "/var/www/relay/relay-config.json",
+  "bootstrapPeers": [],
   "publicHost": "",
   "publicPort": "",
-  "listenHost": "",
-  "listenPort": ""
+  "listenHost": "127.0.0.1",
+  "listenPort": "8080"
 }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const prodConfigPath = path.join(repoRoot, 'prod-config.json');
+const relayConfigPath = path.join(repoRoot, 'config', 'relay.json');
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
@@ -57,6 +57,35 @@ const normalizeBootstrapPeers = (peers) => {
     .filter(Boolean);
 };
 
+const resolveRelayConfigUrl = (cfg) => {
+  const explicit = typeof cfg.relayConfigUrl === 'string' ? cfg.relayConfigUrl.trim() : '';
+  if (explicit) return explicit;
+
+  let relayHost = typeof cfg.relayHost === 'string' ? cfg.relayHost.trim() : '';
+  if (!relayHost || relayHost.startsWith('/')) return '';
+
+  let relayPort = cfg.relayPort != null ? String(cfg.relayPort).trim() : '';
+  let relayProtocol = typeof cfg.relayProtocol === 'string'
+    ? cfg.relayProtocol.trim().toLowerCase()
+    : '';
+
+  const parsed = parseHostInput(relayHost);
+  if (parsed.host) relayHost = parsed.host;
+  if (parsed.port && !relayPort) relayPort = parsed.port;
+  if (parsed.protocol && !relayProtocol) relayProtocol = parsed.protocol.toLowerCase();
+
+  relayProtocol = relayProtocol || 'wss';
+  if (!relayPort) {
+    relayPort = relayProtocol === 'ws' ? '80' : '443';
+  }
+
+  const scheme = relayProtocol === 'ws' ? 'http' : 'https';
+  const isDefaultPort = (scheme === 'https' && relayPort === '443')
+    || (scheme === 'http' && relayPort === '80');
+  const portSuffix = relayPort && !isDefaultPort ? `:${relayPort}` : '';
+  return `${scheme}://${relayHost}${portSuffix}/relay-config.json`;
+};
+
 const resolveBootstrapPeers = (cfg) => {
   const directPeers = normalizeBootstrapPeers(cfg.bootstrapPeers);
   if (directPeers.length) {
@@ -88,13 +117,13 @@ const resolveBootstrapPeers = (cfg) => {
     const missing = [];
     if (!relayHost) missing.push('relayHost');
     if (!relayPeerId) missing.push('relayPeerId');
-    console.warn(`[prod-config] Missing ${missing.join(', ')}; writing empty bootstrapPeers.`);
+    console.warn(`[relay-config] Missing ${missing.join(', ')}; writing empty bootstrapPeers.`);
     return { peers: [], source: 'missing' };
   }
 
   const hostSegment = toMultiaddrHostSegment(relayHost);
   if (!hostSegment) {
-    console.warn('[prod-config] Invalid relayHost; writing empty bootstrapPeers.');
+    console.warn('[relay-config] Invalid relayHost; writing empty bootstrapPeers.');
     return { peers: [], source: 'invalidHost' };
   }
   const protocolSegment = relayProtocol === 'ws' ? 'ws' : 'wss';
@@ -102,9 +131,11 @@ const resolveBootstrapPeers = (cfg) => {
   return { peers: [addr], source: 'derived' };
 };
 
-const prodConfig = readJson(prodConfigPath);
-const { peers } = resolveBootstrapPeers(prodConfig);
+const relayConfigBase = readJson(relayConfigPath);
+const { peers } = resolveBootstrapPeers(relayConfigBase);
 const relayConfig = { bootstrapPeers: peers };
+const relayConfigUrl = resolveRelayConfigUrl(relayConfigBase);
+const relayConfigSource = { relayConfigUrl };
 
 const rootPackage = readJson(path.join(repoRoot, 'package.json'));
 const workspaces = Array.isArray(rootPackage.workspaces) ? rootPackage.workspaces : [];
@@ -117,6 +148,9 @@ demoRoots.forEach((demoRoot) => {
   fs.mkdirSync(publicDir, { recursive: true });
   const filePath = path.join(publicDir, 'relay-config.json');
   fs.writeFileSync(filePath, `${JSON.stringify(relayConfig, null, 2)}\n`, 'utf8');
+  const sourcePath = path.join(publicDir, 'relay-config-source.json');
+  fs.writeFileSync(sourcePath, `${JSON.stringify(relayConfigSource, null, 2)}\n`, 'utf8');
 });
 
-console.log(`[prod-config] Wrote relay-config.json to ${demoRoots.length} demo(s).`);
+console.log(`[relay-config] Wrote relay-config.json to ${demoRoots.length} demo(s).`);
+console.log('[relay-config] Wrote relay-config-source.json with relayConfigUrl.');

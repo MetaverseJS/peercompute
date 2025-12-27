@@ -273,3 +273,18 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Changes
 - Added a bash guard to `scripts/start-relay-prod.sh` so it exits with a clear message when run under `/bin/sh`.
+
+## Date: 2025-12-27
+
+### Prompt
+- yes I mean the source of that hardcoded URL should also be located in a config file. 
+
+### Changes
+- Consolidated relay settings into `config/relay.json` as the single config source; removed `prod-config.json`.
+- Updated build and relay scripts to read `config/relay.json` and emit `relay-config-source.json` for runtime URLs.
+- Added runtime relay-config URL resolution (query override + source file + fallback) across demos.
+- Added nginx `relay-config.json` CORS endpoint in `secretworkshop.net`.
+- Updated README, branch plan, and release test expectations for the unified config flow.
+
+### Tests
+- node --test demos/tests/demo-release.test.js
