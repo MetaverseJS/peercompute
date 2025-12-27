@@ -228,6 +228,15 @@ Instructions: This file contains a detailed implementation log describing choice
 ### Tests
 - node --test demos/tests/demo-release.test.js
 
+## Date: 2025-12-27
+
+### Prompt
+- looks like we weren't able to write to that location for nginx can we reconfigure nginx to serve that file directly from the config directory?
+
+### Changes
+- Pointed `relayConfigFile` to `config/relay-config.json` and updated nginx alias in `secretworkshop.net` to serve the config file from the repo config directory.
+- Updated README and gitignore to reflect the new relay-config file location.
+
 ## Date: 2025-12-25
 
 ### Prompt

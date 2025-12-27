@@ -83,7 +83,7 @@ Use `config/relay.json` as the single source of truth for dev + prod relay setti
   "relayPeerId": "<relay-peer-id>",
   "relayIdentityFile": "config/relay-peer-id.json",
   "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
-  "relayConfigFile": "/var/www/relay/relay-config.json",
+  "relayConfigFile": "config/relay-config.json",
   "listenHost": "127.0.0.1",
   "listenPort": "8080",
   "publicHost": "",
@@ -112,6 +112,7 @@ RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash sc
 
 If you terminate TLS in nginx, set `relayHost` to the relay subdomain, keep `relayPort` at `443`,
 and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) with empty cert fields.
+Point nginx at the on-disk `relayConfigFile` location so `/relay-config.json` is served with CORS.
 
 ## Demo Gallery
 See `docs/index.html` for the full demo index.

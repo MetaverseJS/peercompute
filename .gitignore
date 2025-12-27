@@ -13,3 +13,4 @@ node_modules/
 
 # Relay identity keys
 config/relay-peer-id.json
+config/relay-config.json

@@ -5,7 +5,7 @@
   "relayPeerId": "",
   "relayIdentityFile": "config/relay-peer-id.json",
   "relayConfigUrl": "https://relay.secretworkshop.net/relay-config.json",
-  "relayConfigFile": "/var/www/relay/relay-config.json",
+  "relayConfigFile": "config/relay-config.json",
   "bootstrapPeers": [],
   "publicHost": "",
   "publicPort": "",
