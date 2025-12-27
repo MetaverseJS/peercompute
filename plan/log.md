@@ -265,3 +265,11 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Changes
 - Updated `secretworkshop.net` to include the apex `secretworkshop.net` in the wildcard HTTPS server block so it no longer falls back to the relay vhost.
+
+## Date: 2025-12-27
+
+### Prompt
+- got this: start-relay-prod.sh: 2: set: Illegal option -o pipefail
+
+### Changes
+- Added a bash guard to `scripts/start-relay-prod.sh` so it exits with a clear message when run under `/bin/sh`.
