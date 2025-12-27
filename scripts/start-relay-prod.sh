@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prod_config="$repo_root/prod-config.json"
 
+cd "$repo_root"
+
 relay_host=""
 relay_port=""
 listen_host=""
@@ -11,6 +13,7 @@ listen_port=""
 relay_protocol=""
 ssl_cert=""
 ssl_key=""
+identity_file=""
 
 if [[ -f "$prod_config" ]]; then
   relay_host="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayHost)process.stdout.write(String(cfg.relayHost));")"
@@ -20,6 +23,7 @@ if [[ -f "$prod_config" ]]; then
   relay_protocol="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayProtocol)process.stdout.write(String(cfg.relayProtocol));")"
   ssl_cert="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.sslCert)process.stdout.write(String(cfg.sslCert));")"
   ssl_key="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.sslKey)process.stdout.write(String(cfg.sslKey));")"
+  identity_file="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayIdentityFile)process.stdout.write(String(cfg.relayIdentityFile));")"
 fi
 
 if [[ -n "$relay_host" && -z "${RELAY_PUBLIC_HOST:-}" ]]; then
@@ -39,6 +43,9 @@ if [[ -n "$ssl_cert" && -z "${RELAY_SSL_CERT:-}" ]]; then
 fi
 if [[ -n "$ssl_key" && -z "${RELAY_SSL_KEY:-}" ]]; then
   export RELAY_SSL_KEY="$ssl_key"
+fi
+if [[ -n "$identity_file" && -z "${RELAY_IDENTITY_FILE:-}" ]]; then
+  export RELAY_IDENTITY_FILE="$identity_file"
 fi
 
 export RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"

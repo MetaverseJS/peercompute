@@ -30,8 +30,10 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
+import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
+import { peerIdFromPrivateKey } from '@libp2p/peer-id';
 
 const relayPublicHost = process.env.RELAY_PUBLIC_HOST || '';
 const relayPublicPort = process.env.RELAY_PUBLIC_PORT || '';
@@ -40,6 +42,7 @@ const relayListenPort = process.env.RELAY_LISTEN_PORT || '0';
 const relaySslCert = process.env.RELAY_SSL_CERT || process.env.SSL_CERT || '';
 const relaySslKey = process.env.RELAY_SSL_KEY || process.env.SSL_KEY || '';
 const useWss = Boolean(relaySslCert && relaySslKey);
+const relayIdentityFile = (process.env.RELAY_IDENTITY_FILE || '').trim();
 const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
   .split(',')
   .map((entry) => entry.trim())
@@ -53,6 +56,49 @@ const toMultiaddrHostSegment = (host) => {
   if (isIpv6) return `/ip6/${host}`;
   if (isIpv4) return `/ip4/${host}`;
   return `/dns4/${host}`;
+};
+
+const loadRelayPeerId = async () => {
+  if (!relayIdentityFile) return null;
+  const identityPath = path.resolve(relayIdentityFile);
+  if (fs.existsSync(identityPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+      const encodedKey = raw?.privateKey || raw?.privKey || '';
+      if (!encodedKey) {
+        console.warn(`[Relay] Identity file missing privateKey: ${identityPath}`);
+        return null;
+      }
+      const keyBytes = Buffer.from(encodedKey, 'base64');
+      const privateKey = privateKeyFromProtobuf(keyBytes);
+      console.log(`[Relay] Loaded identity key from ${identityPath}`);
+      return peerIdFromPrivateKey(privateKey);
+    } catch (err) {
+      console.warn(`[Relay] Failed to read identity file ${identityPath}:`, err?.message || err);
+      return null;
+    }
+  }
+
+  try {
+    const privateKey = await generateKeyPair('Ed25519');
+    const peerId = peerIdFromPrivateKey(privateKey);
+    const payload = {
+      type: privateKey.type,
+      peerId: peerId.toString(),
+      privateKey: Buffer.from(privateKeyToProtobuf(privateKey)).toString('base64'),
+      createdAt: new Date().toISOString()
+    };
+    fs.mkdirSync(path.dirname(identityPath), { recursive: true });
+    fs.writeFileSync(identityPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    try {
+      fs.chmodSync(identityPath, 0o600);
+    } catch (_) {}
+    console.log(`[Relay] Wrote identity key to ${identityPath}`);
+    return peerId;
+  } catch (err) {
+    console.warn('[Relay] Failed to create identity key:', err?.message || err);
+    return null;
+  }
 };
 
 async function startServer() {
@@ -70,6 +116,7 @@ async function startServer() {
       console.log(`Relay using WSS with SSL_CERT=${relaySslCert}`);
     }
 
+    const relayPeerId = await loadRelayPeerId();
     const wsOptions = useWss
       ? {
           https: {
@@ -80,6 +127,7 @@ async function startServer() {
       : {};
 
     const server = await createLibp2p({
+      ...(relayPeerId ? { peerId: relayPeerId } : {}),
       addresses: {
         listen: [
           `/ip4/${relayListenHost}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`

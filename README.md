@@ -93,17 +93,22 @@ Clients read `relay-config.json` and rewrite loopback addresses to the page host
   "relayHost": "secretworkshop.net",
   "relayPort": "8080",
   "relayProtocol": "wss",
-  "relayPeerId": "<relay-peer-id>"
+  "relayPeerId": "<relay-peer-id>",
+  "relayIdentityFile": "config/relay-peer-id.json"
 }
 ```
 
 If you already have the full multiaddr, set `bootstrapPeers` in `prod-config.json` instead.
 Relay peer IDs are logged on startup as `Relay Server ID` / `Relay Address`.
+Set `relayIdentityFile` (or `RELAY_IDENTITY_FILE`) so the peerId stays stable across restarts.
 To launch the relay with WSS in production, provide certs and run:
 
 ```bash
 RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash scripts/start-relay-prod.sh
 ```
+
+If you terminate TLS in nginx, set `relayHost` to the relay subdomain, keep `relayPort` at `443`,
+and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) with empty cert fields.
 
 ## Demo Gallery
 See `docs/index.html` for the full demo index.

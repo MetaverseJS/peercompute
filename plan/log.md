@@ -227,3 +227,41 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - node --test demos/tests/demo-release.test.js
+
+## Date: 2025-12-25
+
+### Prompt
+- yes we will want to persist the key.
+
+### Changes
+- Added relay identity persistence via `RELAY_IDENTITY_FILE` in `peercompute/src/relay/server.js`.
+- Added `relayIdentityFile` to `prod-config.json` and wired it through `scripts/start-relay-prod.sh`.
+- Updated README and branch plan to document stable relay peer IDs across restarts.
+
+## Date: 2025-12-26
+
+### Prompt
+- alright perform the recommended changes in the secretworkshop file we have here in root and I'll deploy it. then make any necessary local changes to the relay server and peercompute demos and build scripts in general to support these changes.
+
+### Changes
+- Added nginx relay subdomain blocks in `secretworkshop.net` to proxy WSS on 443 to localhost:8080.
+- Updated `prod-config.json` defaults for relay subdomain/443 with local listen on 127.0.0.1:8080.
+- Documented nginx TLS termination guidance in `README.md` and aligned branch requirements.
+- Ignored `config/relay-peer-id.json` to avoid committing relay identity secrets.
+
+## Date: 2025-12-27
+
+### Prompt
+- alright
+- what do you think ?
+
+### Changes
+- Adjusted the relay server block in `secretworkshop.net` to remove `ipv6only=on` and avoid duplicate listen options for `[::]:443`.
+
+## Date: 2025-12-27
+
+### Prompt
+- hmm I'm getting a 502 when I try to browse to secretworkshop.net now
+
+### Changes
+- Updated `secretworkshop.net` to include the apex `secretworkshop.net` in the wildcard HTTPS server block so it no longer falls back to the relay vhost.

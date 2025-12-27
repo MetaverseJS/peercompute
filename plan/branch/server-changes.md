@@ -3,7 +3,7 @@ Instructions: This file contains short term goals for the current branch.
 ## Branch Goal: Production relay + demo config for secretworkshop.net:8080 (WSS)
 
 ### Requirements
-- Relay server runs on secretworkshop.net:8080 over WSS with valid certs.
+- Relay reachable at `wss://relay.secretworkshop.net` (443) with nginx TLS termination -> relay on 8080.
 - Root `prod-config.json` defines the relay host/port used for production builds.
 - `npm run build` writes production relay bootstrap addresses into demo `relay-config.json`.
 
@@ -16,8 +16,8 @@ Instructions: This file contains short term goals for the current branch.
 - Add `scripts/start-relay-prod.sh` to read `prod-config.json` and export:
   - `RELAY_PUBLIC_HOST`, `RELAY_PUBLIC_PORT`, `RELAY_LISTEN_HOST`, `RELAY_LISTEN_PORT`.
   - `RELAY_SSL_CERT` and `RELAY_SSL_KEY` (paths or env overrides).
+- Persist relay identity via `RELAY_IDENTITY_FILE` (from `prod-config.json`).
 - Ensure the relay advertises the public WSS multiaddr for secretworkshop.net:8080.
-- Optional: persist relay identity key so peerId stays stable across restarts.
 
 3) Production build config injection
 - Add `scripts/write-prod-relay-config.mjs` to read `prod-config.json` and write
@@ -36,4 +36,4 @@ Instructions: This file contains short term goals for the current branch.
 - [x] Relay production launcher (WSS, 8080, certs).
 - [x] Build pipeline writes production relay-config.json into demos.
 - [x] Tests/validation updated.
-- [ ] Optional: persist relay identity key so peerId stays stable across restarts.
+- [x] Persist relay identity key so peerId stays stable across restarts.
