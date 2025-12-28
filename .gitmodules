@@ -1,0 +1,3 @@
+[submodule "demos/webgpuphys/temp/ppf-contact-solver"]
+	path = demos/webgpuphys/temp/ppf-contact-solver
+	url = https://github.com/st-tech/ppf-contact-solver
