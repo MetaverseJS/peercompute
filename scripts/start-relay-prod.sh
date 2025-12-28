@@ -32,51 +32,10 @@ if [[ -f "$prod_config" ]]; then
   relay_config_file="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayConfigFile)process.stdout.write(String(cfg.relayConfigFile));")"
 fi
 
-# Ensure nginx can read relay-config.json when it is written by the relay server.
-if [[ -n "$relay_config_file" ]]; then
-  relay_config_path="$relay_config_file"
-  if [[ "$relay_config_path" != /* ]]; then
-    relay_config_path="$repo_root/$relay_config_path"
-  fi
-  relay_config_dir="$(dirname "$relay_config_path")"
-
-  acl_user="${RELAY_ACL_USER:-${NGINX_USER:-}}"
-  if [[ -z "$acl_user" ]] && command -v nginx >/dev/null 2>&1; then
-    acl_user="$(nginx -T 2>/dev/null | awk '$1 == "user" {print $2}' | sed 's/;//' | head -n1)"
-  fi
-  if [[ -z "$acl_user" ]]; then
-    acl_user="www-data"
-  fi
-
-  if command -v setfacl >/dev/null 2>&1; then
-    acl_stop="${RELAY_ACL_ROOT:-}"
-    if [[ -z "$acl_stop" && -n "${HOME:-}" && "$relay_config_dir" == "$HOME"* ]]; then
-      acl_stop="$HOME"
-    fi
-    if [[ -z "$acl_stop" ]]; then
-      acl_stop="/"
-    fi
-
-    acl_dir="$relay_config_dir"
-    while :; do
-      setfacl -m "u:${acl_user}:rx" "$acl_dir" 2>/dev/null || true
-      if [[ "$acl_dir" == "$acl_stop" || "$acl_dir" == "/" ]]; then
-        break
-      fi
-      acl_dir="$(dirname "$acl_dir")"
-    done
-
-    setfacl -d -m "u:${acl_user}:rx" "$relay_config_dir" 2>/dev/null || true
-    if [[ -f "$relay_config_path" ]]; then
-      setfacl -m "u:${acl_user}:r" "$relay_config_path" 2>/dev/null || true
-    fi
-  else
-    echo "Warning: setfacl not found; falling back to chmod for relay-config access." >&2
-    chmod o+rx "$relay_config_dir" 2>/dev/null || true
-    if [[ -f "$relay_config_path" ]]; then
-      chmod o+r "$relay_config_path" 2>/dev/null || true
-    fi
-  fi
+if [[ -x "$repo_root/scripts/ensure-relay-config-perms.sh" ]]; then
+  RELAY_ACL_USER="${RELAY_ACL_USER:-${NGINX_USER:-}}"
+  export RELAY_ACL_USER
+  bash "$repo_root/scripts/ensure-relay-config-perms.sh"
 fi
 
 if [[ -n "$relay_host" && -z "${RELAY_PUBLIC_HOST:-}" ]]; then

@@ -228,6 +228,30 @@ Instructions: This file contains a detailed implementation log describing choice
 ### Tests
 - node --test demos/tests/demo-release.test.js
 
+## Date: 2025-12-28
+
+### Prompt
+- can you split the permissions stuff into it's own script? set the env var in that script.
+
+### Changes
+- Added `scripts/ensure-relay-config-perms.sh` to grant nginx read access to `relay-config.json` and export `RELAY_ACL_USER`.
+- Updated `scripts/start-relay-prod.sh` to delegate permission setup to the new script.
+
+## Date: 2025-12-28
+
+### Prompt
+- alright we're actually on the server now. can you try that stuff yourself?
+
+### Changes
+- Hardened the ACL helper to tolerate missing nginx user output and ran it to grant www-data read/execute ACLs on config/relay-config.json.
+
+## Date: 2025-12-28
+
+### Prompt
+- do 2
+
+### Changes
+- Added websocket upgrade routing for the apex secretworkshop.net server block: proxy upgrade requests on `/` to the relay at 127.0.0.1:8080 while keeping normal HTTP redirect to GitHub Pages.
 ## Date: 2025-12-27
 
 ### Prompt
