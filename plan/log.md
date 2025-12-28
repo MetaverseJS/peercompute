@@ -241,6 +241,14 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-27
 
 ### Prompt
+- yes patch it
+
+### Changes
+- Added CORS headers for `/peercompute/config/relay-config.json` in the apex/wildcard nginx server block so GitHub Pages demos can fetch the relay config.
+
+## Date: 2025-12-27
+
+### Prompt
 - ok put these instructions at the end of log.md
 
 ### Changes
