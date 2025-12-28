@@ -231,6 +231,14 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-27
 
 ### Prompt
+- cos@p2p:~/projects/peercompute$ bash scripts/start-relay-prod.sh
+
+### Changes
+- Fixed the nginx user detection command in `scripts/start-relay-prod.sh` so the ACL setup no longer fails with awk parsing errors.
+
+## Date: 2025-12-27
+
+### Prompt
 - yes please
 
 ### Changes

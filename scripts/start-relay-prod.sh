@@ -42,7 +42,7 @@ if [[ -n "$relay_config_file" ]]; then
 
   acl_user="${RELAY_ACL_USER:-${NGINX_USER:-}}"
   if [[ -z "$acl_user" ]] && command -v nginx >/dev/null 2>&1; then
-    acl_user="$(nginx -T 2>/dev/null | awk '$1 == \"user\" {print $2}' | sed 's/;//' | head -n1)"
+    acl_user="$(nginx -T 2>/dev/null | awk '$1 == "user" {print $2}' | sed 's/;//' | head -n1)"
   fi
   if [[ -z "$acl_user" ]]; then
     acl_user="www-data"
