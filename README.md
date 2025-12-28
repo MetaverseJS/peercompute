@@ -77,8 +77,8 @@ Use `config/relay.json` as the single source of truth for dev + prod relay setti
 
 ```json
 {
-  "relayHost": "relay.secretworkshop.net",
-  "relayPort": "443",
+  "relayHost": "secretworkshop.net",
+  "relayPort": "8080",
   "relayProtocol": "wss",
   "relayPeerId": "<relay-peer-id>",
   "relayIdentityFile": "config/relay-peer-id.json",

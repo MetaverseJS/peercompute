@@ -268,6 +268,14 @@ sudo systemctl reload nginx
 ## Date: 2025-12-27
 
 ### Prompt
+- yes
+
+### Changes
+- Updated `config/relay.json` and README to point relay host/port at `secretworkshop.net:8080` instead of the subdomain.
+
+## Date: 2025-12-27
+
+### Prompt
 - looks like we weren't able to write to that location for nginx can we reconfigure nginx to serve that file directly from the config directory?
 
 ### Changes
