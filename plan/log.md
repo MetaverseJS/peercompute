@@ -249,6 +249,22 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-27
 
 ### Prompt
+- can you add a chmod line to the start server script that makes sure nginx can read the file?
+
+### Changes
+- Ensured the relay startup script relaxes permissions for the relay-config directory/file and sets a `umask 022` so nginx can read newly written relay config files.
+
+## Date: 2025-12-27
+
+### Prompt
+- OK do 1, and add it to the start server script but with a dynamic user based on whoever is running it and wherever the project is.
+
+### Changes
+- Switched relay-config permissions to ACLs in `scripts/start-relay-prod.sh`, detecting the nginx user dynamically and granting traverse/read access down to the repo path without global chmods.
+
+## Date: 2025-12-27
+
+### Prompt
 - ok put these instructions at the end of log.md
 
 ### Changes
