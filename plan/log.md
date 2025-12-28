@@ -276,6 +276,14 @@ sudo systemctl reload nginx
 ## Date: 2025-12-27
 
 ### Prompt
+- can you set the relay cert and key to the same value as the ssl cert from the nginx config file?
+
+### Changes
+- Set `sslCert` and `sslKey` in `config/relay.json` to the Let’s Encrypt paths used by nginx.
+
+## Date: 2025-12-27
+
+### Prompt
 - looks like we weren't able to write to that location for nginx can we reconfigure nginx to serve that file directly from the config directory?
 
 ### Changes
