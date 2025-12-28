@@ -37,6 +37,10 @@ import { peerIdFromPrivateKey } from '@libp2p/peer-id';
 
 const relayPublicHost = process.env.RELAY_PUBLIC_HOST || '';
 const relayPublicPort = process.env.RELAY_PUBLIC_PORT || '';
+const relayPublicProtocolRaw = (process.env.RELAY_PUBLIC_PROTOCOL || '').trim().toLowerCase();
+const relayPublicProtocol = (relayPublicProtocolRaw === 'ws' || relayPublicProtocolRaw === 'wss')
+  ? relayPublicProtocolRaw
+  : '';
 const relayListenHost = process.env.RELAY_LISTEN_HOST || (relayPublicHost ? '0.0.0.0' : '127.0.0.1');
 const relayListenPort = process.env.RELAY_LISTEN_PORT || '0';
 const relaySslCert = process.env.RELAY_SSL_CERT || process.env.SSL_CERT || '';
@@ -111,6 +115,9 @@ async function startServer() {
     }
     if (relayPublicPort) {
       console.log(`Relay public port: ${relayPublicPort}`);
+    }
+    if (relayPublicProtocol) {
+      console.log(`Relay public protocol: ${relayPublicProtocol}`);
     }
     if (useWss) {
       console.log(`Relay using WSS with SSL_CERT=${relaySslCert}`);
@@ -268,6 +275,10 @@ async function startServer() {
         }
         if (relayPublicPort) {
           announceAddr = announceAddr.replace(/\/tcp\/\d+/, `/tcp/${relayPublicPort}`);
+        }
+        const publicProtocol = relayPublicProtocol || (useWss ? 'wss' : 'ws');
+        if (publicProtocol) {
+          announceAddr = announceAddr.replace(/\/wss?/, `/${publicProtocol}`);
         }
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);

@@ -1,6 +1,6 @@
 {
   "relayHost": "secretworkshop.net",
-  "relayPort": "8080",
+  "relayPort": "443",
   "relayProtocol": "wss",
   "relayPeerId": "",
   "relayIdentityFile": "config/relay-peer-id.json",
@@ -9,8 +9,8 @@
   "bootstrapPeers": [],
   "publicHost": "",
   "publicPort": "",
-  "sslCert": "/etc/letsencrypt/live/secretworkshop.net/fullchain.pem",
-  "sslKey": "/etc/letsencrypt/live/secretworkshop.net/privkey.pem",
+  "sslCert": "",
+  "sslKey": "",
   "listenHost": "127.0.0.1",
   "listenPort": "8080"
 }

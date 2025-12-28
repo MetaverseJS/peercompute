@@ -231,6 +231,16 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-27
 
 ### Prompt
+- yes please
+
+### Changes
+- Set `config/relay.json` to advertise the public relay on 443 with `wss`, while clearing `sslCert`/`sslKey` so the relay listens with `ws` behind nginx.
+- Exported `RELAY_PUBLIC_PROTOCOL` from `scripts/start-relay-prod.sh` and clarified the proxy/TLS warning message.
+- Allowed `peercompute/src/relay/server.js` to override the advertised protocol in `relay-config.json` so clients still get `wss` multiaddrs.
+
+## Date: 2025-12-27
+
+### Prompt
 - ok put these instructions at the end of log.md
 
 ### Changes

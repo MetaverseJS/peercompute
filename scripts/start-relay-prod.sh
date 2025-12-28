@@ -38,6 +38,9 @@ fi
 if [[ -n "$relay_port" && -z "${RELAY_PUBLIC_PORT:-}" ]]; then
   export RELAY_PUBLIC_PORT="$relay_port"
 fi
+if [[ -n "$relay_protocol" && -z "${RELAY_PUBLIC_PROTOCOL:-}" ]]; then
+  export RELAY_PUBLIC_PROTOCOL="$relay_protocol"
+fi
 if [[ -n "$listen_host" && -z "${RELAY_LISTEN_HOST:-}" ]]; then
   export RELAY_LISTEN_HOST="$listen_host"
 fi
@@ -67,13 +70,14 @@ fi
 
 if [[ -n "${relay_protocol:-}" ]] && [[ "${relay_protocol,,}" == "wss" ]]; then
   if [[ -z "${RELAY_SSL_CERT:-}" || -z "${RELAY_SSL_KEY:-}" ]]; then
-    echo "Warning: relayProtocol=wss but RELAY_SSL_CERT/RELAY_SSL_KEY not set. Relay will use ws."
+    echo "Warning: relayProtocol=wss but RELAY_SSL_CERT/RELAY_SSL_KEY not set. Relay will listen with ws; ensure TLS is terminated by nginx."
   fi
 fi
 
 echo "Starting PeerCompute relay server (production)..."
 echo "  RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST:-}"
 echo "  RELAY_PUBLIC_PORT=${RELAY_PUBLIC_PORT:-}"
+echo "  RELAY_PUBLIC_PROTOCOL=${RELAY_PUBLIC_PROTOCOL:-}"
 echo "  RELAY_LISTEN_HOST=${RELAY_LISTEN_HOST:-}"
 echo "  RELAY_LISTEN_PORT=${RELAY_LISTEN_PORT:-}"
 
