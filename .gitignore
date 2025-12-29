@@ -10,3 +10,7 @@ node_modules/
 # Logs and pids
 *.log
 *.pid
+
+# Relay identity keys
+config/relay-peer-id.json
+config/relay-config.json

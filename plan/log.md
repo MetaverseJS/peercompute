@@ -217,6 +217,11 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - npm test (in demos/planetgen)
+- read all plan files first. then update the current-branch.md file with the tasks neccessary to complete the following:
+- We're on a new branch called server-changes. I'd like to get the relay server ready to run on my server at secretworkshop.net port 8080 using wss. add a prod-config file to the root directory which we can set the relay server URL and port. when running the build for production (npm run build) it should populate the demos with the production-config relay location.
+
+### Changes
+- Added a server-changes branch plan with tasks for production relay config, WSS relay setup, and build-time relay-config injection.
 
 ## Date: 2025-12-25
 
@@ -261,6 +266,154 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - npm test (demos/planetgen)
+- do it!
+
+### Changes
+- Added `prod-config.json` for production relay host/port/protocol and optional peerId/ssl settings.
+- Added `scripts/write-prod-relay-config.mjs` to generate demo `public/relay-config.json` for production builds.
+- Added `scripts/start-relay-prod.sh` to launch the relay with prod-config defaults.
+- Wired `scripts/build-all.sh` to run the production relay-config writer before demo builds.
+- Added release test coverage for prod-config/build hook and updated README + branch status.
+
+### Tests
+- node --test demos/tests/demo-release.test.js
+
+## Date: 2025-12-28
+
+### Prompt
+- can you split the permissions stuff into it's own script? set the env var in that script.
+
+### Changes
+- Added `scripts/ensure-relay-config-perms.sh` to grant nginx read access to `relay-config.json` and export `RELAY_ACL_USER`.
+- Updated `scripts/start-relay-prod.sh` to delegate permission setup to the new script.
+
+## Date: 2025-12-28
+
+### Prompt
+- alright we're actually on the server now. can you try that stuff yourself?
+
+### Changes
+- Hardened the ACL helper to tolerate missing nginx user output and ran it to grant www-data read/execute ACLs on config/relay-config.json.
+
+## Date: 2025-12-28
+
+### Prompt
+- do 2
+
+### Changes
+- Added websocket upgrade routing for the apex secretworkshop.net server block: proxy upgrade requests on `/` to the relay at 127.0.0.1:8080 while keeping normal HTTP redirect to GitHub Pages.
+## Date: 2025-12-27
+
+### Prompt
+- cos@p2p:~/projects/peercompute$ bash scripts/start-relay-prod.sh
+
+### Changes
+- Fixed the nginx user detection command in `scripts/start-relay-prod.sh` so the ACL setup no longer fails with awk parsing errors.
+
+## Date: 2025-12-27
+
+### Prompt
+- yes please
+
+### Changes
+- Set `config/relay.json` to advertise the public relay on 443 with `wss`, while clearing `sslCert`/`sslKey` so the relay listens with `ws` behind nginx.
+- Exported `RELAY_PUBLIC_PROTOCOL` from `scripts/start-relay-prod.sh` and clarified the proxy/TLS warning message.
+- Allowed `peercompute/src/relay/server.js` to override the advertised protocol in `relay-config.json` so clients still get `wss` multiaddrs.
+
+## Date: 2025-12-27
+
+### Prompt
+- yes patch it
+
+### Changes
+- Added CORS headers for `/peercompute/config/relay-config.json` in the apex/wildcard nginx server block so GitHub Pages demos can fetch the relay config.
+
+## Date: 2025-12-27
+
+### Prompt
+- can you add a chmod line to the start server script that makes sure nginx can read the file?
+
+### Changes
+- Ensured the relay startup script relaxes permissions for the relay-config directory/file and sets a `umask 022` so nginx can read newly written relay config files.
+
+## Date: 2025-12-27
+
+### Prompt
+- OK do 1, and add it to the start server script but with a dynamic user based on whoever is running it and wherever the project is.
+
+### Changes
+- Switched relay-config permissions to ACLs in `scripts/start-relay-prod.sh`, detecting the nginx user dynamically and granting traverse/read access down to the repo path without global chmods.
+
+## Date: 2025-12-27
+
+### Prompt
+- ok put these instructions at the end of log.md
+
+### Changes
+- Appended deployment checklist for VM/nginx relay config.
+
+### Deployment Checklist (VM)
+1) Pull latest repo changes on the VM.
+2) Generate the relay config file from the repo root:
+```
+bash scripts/start-relay-prod.sh
+```
+3) Ensure nginx can read the config file (keep identity key private):
+```
+chmod 755 /home/cos /home/cos/projects /home/cos/projects/peercompute /home/cos/projects/peercompute/config
+chmod 644 /home/cos/projects/peercompute/config/relay-config.json
+chmod 600 /home/cos/projects/peercompute/config/relay-peer-id.json
+```
+4) Update the nginx alias to the repo path:
+```
+location = /peercompute/config/relay-config.json {
+    alias /home/cos/projects/peercompute/config/relay-config.json;
+    default_type application/json;
+    add_header Access-Control-Allow-Origin *;
+    add_header Cache-Control "no-store";
+}
+```
+5) Reload nginx:
+```
+sudo nginx -t
+sudo systemctl reload nginx
+```
+6) Verify the config URL loads:
+- `https://secretworkshop.net/peercompute/config/relay-config.json`
+
+## Date: 2025-12-27
+
+### Prompt
+- yes
+
+### Changes
+- Updated `config/relay.json` and README to point relay host/port at `secretworkshop.net:8080` instead of the subdomain.
+
+## Date: 2025-12-27
+
+### Prompt
+- can you set the relay cert and key to the same value as the ssl cert from the nginx config file?
+
+### Changes
+- Set `sslCert` and `sslKey` in `config/relay.json` to the Let’s Encrypt paths used by nginx.
+
+## Date: 2025-12-27
+
+### Prompt
+- looks like we weren't able to write to that location for nginx can we reconfigure nginx to serve that file directly from the config directory?
+
+### Changes
+- Pointed `relayConfigFile` to `config/relay-config.json` and updated nginx alias in `secretworkshop.net` to serve the config file from the repo config directory.
+- Updated README and gitignore to reflect the new relay-config file location.
+
+## Date: 2025-12-27
+
+### Prompt
+- lets host it at secretworkshop.net/peercompute/config/relay-config.json
+
+### Changes
+- Updated nginx config to serve the relay config at `/peercompute/config/relay-config.json`.
+- Updated `config/relay.json` and README defaults to match the new relay config URL.
 
 ## Date: 2025-12-25
 
@@ -273,3 +426,60 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ### Tests
 - npm test (demos/planetgen)
+- yes we will want to persist the key.
+
+### Changes
+- Added relay identity persistence via `RELAY_IDENTITY_FILE` in `peercompute/src/relay/server.js`.
+- Added `relayIdentityFile` to `prod-config.json` and wired it through `scripts/start-relay-prod.sh`.
+- Updated README and branch plan to document stable relay peer IDs across restarts.
+
+## Date: 2025-12-26
+
+### Prompt
+- alright perform the recommended changes in the secretworkshop file we have here in root and I'll deploy it. then make any necessary local changes to the relay server and peercompute demos and build scripts in general to support these changes.
+
+### Changes
+- Added nginx relay subdomain blocks in `secretworkshop.net` to proxy WSS on 443 to localhost:8080.
+- Updated `prod-config.json` defaults for relay subdomain/443 with local listen on 127.0.0.1:8080.
+- Documented nginx TLS termination guidance in `README.md` and aligned branch requirements.
+- Ignored `config/relay-peer-id.json` to avoid committing relay identity secrets.
+
+## Date: 2025-12-27
+
+### Prompt
+- alright
+- what do you think ?
+
+### Changes
+- Adjusted the relay server block in `secretworkshop.net` to remove `ipv6only=on` and avoid duplicate listen options for `[::]:443`.
+
+## Date: 2025-12-27
+
+### Prompt
+- hmm I'm getting a 502 when I try to browse to secretworkshop.net now
+
+### Changes
+- Updated `secretworkshop.net` to include the apex `secretworkshop.net` in the wildcard HTTPS server block so it no longer falls back to the relay vhost.
+
+## Date: 2025-12-27
+
+### Prompt
+- got this: start-relay-prod.sh: 2: set: Illegal option -o pipefail
+
+### Changes
+- Added a bash guard to `scripts/start-relay-prod.sh` so it exits with a clear message when run under `/bin/sh`.
+
+## Date: 2025-12-27
+
+### Prompt
+- yes I mean the source of that hardcoded URL should also be located in a config file. 
+
+### Changes
+- Consolidated relay settings into `config/relay.json` as the single config source; removed `prod-config.json`.
+- Updated build and relay scripts to read `config/relay.json` and emit `relay-config-source.json` for runtime URLs.
+- Added runtime relay-config URL resolution (query override + source file + fallback) across demos.
+- Added nginx `relay-config.json` CORS endpoint in `secretworkshop.net`.
+- Updated README, branch plan, and release test expectations for the unified config flow.
+
+### Tests
+- node --test demos/tests/demo-release.test.js
