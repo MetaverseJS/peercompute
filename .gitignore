@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 **/node_modules/
+demos/**/node_modules/
 
 # Tooling caches
 **/.vite/

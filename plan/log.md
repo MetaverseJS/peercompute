@@ -278,6 +278,15 @@ Instructions: This file contains a detailed implementation log describing choice
 ### Tests
 - node --test demos/tests/demo-release.test.js
 
+## Date: 2025-12-29
+
+### Prompt
+- it looks like we aren't gitignoring the node_modules folders in the demos directory. can you fix that?
+
+### Changes
+- Added explicit `demos/**/node_modules/` ignore entry.
+- Removed tracked demo `node_modules` entries from the git index so the ignore takes effect.
+
 ## Date: 2025-12-28
 
 ### Prompt
