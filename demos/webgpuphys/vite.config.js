@@ -18,6 +18,7 @@ export default defineConfig(({ command }) => ({
         main: path.resolve(__dirname, 'index.html'),
         demos: path.resolve(__dirname, 'demos/index.html'),
         toychest: path.resolve(__dirname, 'demos/toychest.html'),
+        ppfCubicBarrier: path.resolve(__dirname, 'demos/ppf-cubic-barrier.html'),
         mpmHeadless: path.resolve(__dirname, 'demos/mpm-headless.html'),
         mpmVisual: path.resolve(__dirname, 'demos/mpm-visual.html')
       }

@@ -15,7 +15,7 @@
       --term-bg: #030509;
       --panel: rgba(0, 15, 0, 0.9);
       --panel-soft: rgba(0, 20, 0, 0.8);
-      --line: rgba(0, 255, 106, 0.7);
+      --line: rgba(0, 255, 106, 0.9);
       --grid: #00ff6a;
       --hot: #ff4fb3;
       --shadow: rgba(0, 0, 0, 0.5);
@@ -45,8 +45,8 @@
       z-index: 0;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      opacity: 0.85;
-      filter: saturate(1.25) contrast(1.1);
+      opacity: 0.9;
+      filter: saturate(1.3) contrast(1.15);
     }
 
     .scanlines {
@@ -114,7 +114,7 @@
       position: relative;
       z-index: 2;
       padding: 52px 6vw 64px;
-      filter: saturate(1.1) contrast(1.05);
+      filter: url(#crt-warp) saturate(1.1) contrast(1.05);
       animation: crtShift 6s infinite;
     }
 
@@ -155,10 +155,10 @@
 
     .panel {
       background: linear-gradient(140deg, var(--panel) 0%, var(--panel-soft) 100%);
-      border: 2px solid var(--line);
+      border: 3px solid var(--line);
       border-radius: 0;
       padding: 20px 22px;
-      box-shadow: 0 0 18px rgba(0, 255, 106, 0.3), inset 0 0 20px rgba(0, 50, 0, 0.35);
+      box-shadow: 0 0 22px rgba(0, 255, 106, 0.45), inset 0 0 24px rgba(0, 50, 0, 0.4);
       position: relative;
       overflow: hidden;
     }
@@ -212,7 +212,7 @@
     .hero-links a {
       text-decoration: none;
       color: var(--term-green);
-      border: 1px solid rgba(0, 255, 106, 0.55);
+      border: 2px solid rgba(0, 255, 106, 0.7);
       padding: 6px 12px;
       border-radius: 0;
       font-size: 0.82rem;
@@ -245,9 +245,9 @@
       gap: 10px;
       padding: 18px 18px 20px;
       background: rgba(0, 14, 0, 0.86);
-      border: 2px solid rgba(0, 255, 106, 0.9);
+      border: 3px solid rgba(0, 255, 106, 0.95);
       border-radius: 0;
-      box-shadow: 0 0 18px rgba(0, 255, 106, 0.45), inset 0 0 16px rgba(0, 50, 0, 0.4);
+      box-shadow: 0 0 22px rgba(0, 255, 106, 0.6), inset 0 0 20px rgba(0, 50, 0, 0.5);
       text-decoration: none;
       color: inherit;
       transition: transform 0.2s ease, border-color 0.35s ease, box-shadow 0.35s ease;
@@ -259,14 +259,14 @@
 
     .card:hover {
       transform: translateY(-2px);
-      border-color: var(--hot);
-      box-shadow: 0 0 22px rgba(255, 79, 179, 0.7), 0 0 48px rgba(255, 79, 179, 0.5);
+      border-color: #ff5dd6;
+      box-shadow: 0 0 24px rgba(255, 79, 179, 0.8), 0 0 60px rgba(255, 79, 179, 0.65);
     }
 
     .card::after {
       content: "";
       position: absolute;
-      inset: -2px;
+      inset: -4px;
       border: 2px solid transparent;
       opacity: 0;
       pointer-events: none;
@@ -278,9 +278,9 @@
       border-color: var(--hot);
       animation: neonPulse 1.2s ease-in-out infinite;
       box-shadow:
-        0 0 14px rgba(255, 79, 179, 0.85),
-        0 0 26px rgba(255, 79, 179, 0.65),
-        0 0 48px rgba(255, 79, 179, 0.45);
+        0 0 18px rgba(255, 79, 179, 0.95),
+        0 0 34px rgba(255, 79, 179, 0.75),
+        0 0 62px rgba(255, 79, 179, 0.6);
     }
 
     @keyframes cardIn {
@@ -290,7 +290,7 @@
 
     .thumb {
       border-radius: 0;
-      border: 1px solid rgba(0, 255, 106, 0.35);
+      border: 2px solid rgba(0, 255, 106, 0.45);
       overflow: hidden;
       background: linear-gradient(180deg, rgba(0, 16, 0, 0.85), rgba(0, 8, 0, 0.95));
     }
@@ -328,7 +328,7 @@
       color: var(--term-green);
       padding: 4px 8px;
       border-radius: 0;
-      border: 1px solid rgba(0, 255, 106, 0.4);
+      border: 2px solid rgba(0, 255, 106, 0.55);
     }
 
     footer {
@@ -376,21 +376,21 @@
     @keyframes neonPulse {
       0% {
         box-shadow:
-          0 0 10px rgba(255, 79, 179, 0.7),
-          0 0 20px rgba(255, 79, 179, 0.5),
-          0 0 32px rgba(255, 79, 179, 0.3);
+          0 0 14px rgba(255, 79, 179, 0.75),
+          0 0 26px rgba(255, 79, 179, 0.55),
+          0 0 42px rgba(255, 79, 179, 0.4);
       }
       50% {
         box-shadow:
-          0 0 18px rgba(255, 79, 179, 0.9),
-          0 0 32px rgba(255, 79, 179, 0.7),
-          0 0 52px rgba(255, 79, 179, 0.5);
+          0 0 22px rgba(255, 79, 179, 1),
+          0 0 40px rgba(255, 79, 179, 0.8),
+          0 0 70px rgba(255, 79, 179, 0.65);
       }
       100% {
         box-shadow:
-          0 0 12px rgba(255, 79, 179, 0.8),
-          0 0 26px rgba(255, 79, 179, 0.6),
-          0 0 44px rgba(255, 79, 179, 0.4);
+          0 0 16px rgba(255, 79, 179, 0.85),
+          0 0 30px rgba(255, 79, 179, 0.65),
+          0 0 54px rgba(255, 79, 179, 0.5);
       }
     }
 
@@ -421,6 +421,14 @@
   <div class="scanlines" aria-hidden="true"></div>
   <div id="crt-overlay" class="crt-effects" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
+  <svg class="filters" aria-hidden="true" width="0" height="0" viewBox="0 0 0 0">
+    <filter id="crt-warp">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="1" seed="2" result="noise">
+        <animate attributeName="baseFrequency" dur="6s" values="0.004;0.008;0.006;0.01;0.004" repeatCount="indefinite" />
+      </feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </svg>
 
   <div class="page">
     <header>
@@ -507,7 +515,7 @@
     const state = { offset: 0 };
 
     function resize() {
-      const scale = 0.16;
+      const scale = 0.12;
       const width = Math.max(320, Math.floor(window.innerWidth * scale));
       const height = Math.max(200, Math.floor(window.innerHeight * scale));
       canvas.width = width;

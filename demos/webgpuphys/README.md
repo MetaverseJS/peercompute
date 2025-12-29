@@ -21,6 +21,12 @@ Open `https://localhost:5179/`.
 https://ubernaut.github.io/webGPUphysics/demos/toychest.html 
 WebGPU Physics is a high-performance, GPU-accelerated 3D rigid body physics engine. It runs the entire physics simulation loop on the GPU using WebGPU Compute Shaders (WGSL), allowing for the simulation of tens of thousands of interacting bodies in real-time.
 
+Local demos:
+- `/demos/toychest.html` (rigid bodies)
+- `/demos/ppf-cubic-barrier.html` (cubic barrier contact demo)
+- `/demos/mpm-headless.html` (MLS-MPM headless)
+- `/demos/mpm-visual.html` (MLS-MPM visual)
+
 The core idea is to represent rigid bodies as clouds of spherical particles. Collision detection and response are performed at the particle level, and the resulting forces are aggregated to drive the motion of the rigid bodies.
 
 ## PeerCompute Integration

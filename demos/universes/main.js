@@ -145,6 +145,11 @@ const vrTmpVec3b = new THREE.Vector3();
 const tmpWorldPos = new THREE.Vector3();
 const tmpPickPos = new THREE.Vector3();
 const tmpPickNdc = new THREE.Vector3();
+const tmpBhPos = new THREE.Vector3();
+const tmpBhNdc = new THREE.Vector3();
+const tmpBhOffset = new THREE.Vector3();
+const tmpBhNdcOffset = new THREE.Vector3();
+const tmpBhRight = new THREE.Vector3();
 
 function formatCoord(value) {
     const abs = Math.abs(value);
@@ -201,8 +206,9 @@ let lensingPass, crtPass;
 const MAX_BLACKHOLES = 4;
 const blackHoleUniforms = {
     uBHCount: { value: 0 },
-    uBHPos: { value: new Array(MAX_BLACKHOLES).fill(new THREE.Vector2(0,0)) },
-    uBHMass: { value: new Array(MAX_BLACKHOLES).fill(0) }
+    uBHPos: { value: Array.from({ length: MAX_BLACKHOLES }, () => new THREE.Vector2()) },
+    uBHMass: { value: new Array(MAX_BLACKHOLES).fill(0) },
+    uBHRadius: { value: new Array(MAX_BLACKHOLES).fill(0) }
 };
 let activeBlackHoles = []; 
 
@@ -955,7 +961,8 @@ function buildPostProcessing() {
             "tDiffuse": { value: null },
             "uBHCount": blackHoleUniforms.uBHCount,
             "uBHPos": blackHoleUniforms.uBHPos,
-            "uBHMass": blackHoleUniforms.uBHMass
+            "uBHMass": blackHoleUniforms.uBHMass,
+            "uBHRadius": blackHoleUniforms.uBHRadius
         },
         vertexShader: `
             varying vec2 vUv;
@@ -969,33 +976,46 @@ function buildPostProcessing() {
             uniform int uBHCount;
             uniform vec2 uBHPos[${MAX_BLACKHOLES}];
             uniform float uBHMass[${MAX_BLACKHOLES}];
+            uniform float uBHRadius[${MAX_BLACKHOLES}];
             varying vec2 vUv;
             void main() {
                 vec2 uv = vUv;
                 vec2 totalOffset = vec2(0.0);
                 float halo = 0.0;
+                float shadowMask = 0.0;
                 for(int i = 0; i < ${MAX_BLACKHOLES}; i++) {
                     if (i >= uBHCount) break;
                     vec2 dir = uv - uBHPos[i];
-                    float dist = length(dir);
-                    float influence = smoothstep(0.35, 0.0, dist);
-                    float strength = uBHMass[i] * 0.0035;
-                    float distortion = (strength * influence * influence) / (dist + 0.015);
-                    distortion = min(distortion, 0.12);
-                    if (dist > 0.0) totalOffset -= (dir / dist) * distortion;
+                    float dist = length(dir) + 1e-6;
+                    vec2 dirN = dir / dist;
+                    float bhRad = max(uBHRadius[i], 0.002);
+                    float r = dist / bhRad;
+                    float influence = smoothstep(12.0, 0.0, r);
+                    float strength = uBHMass[i] * 0.12;
+                    float falloff = 1.0 / (r * r + 0.5);
+                    float distortion = strength * influence * falloff;
+                    distortion = min(distortion, 0.85);
+                    totalOffset -= dirN * distortion * bhRad * 4.0;
 
-                    // Simple "photon ring" glow
-                    float ringCenter = 0.04 + uBHMass[i] * 0.004;
-                    float ringWidth = 0.008 + uBHMass[i] * 0.0015;
+                    // Photon ring glow
+                    float ringCenter = bhRad * (2.3 + uBHMass[i] * 0.4);
+                    float ringWidth = max(bhRad * 0.6, 1e-4);
                     float ring = exp(-pow((dist - ringCenter) / ringWidth, 2.0));
-                    halo += ring * influence;
+                    halo += ring * influence * 1.6;
+
+                    // Event horizon shadow (lensing-only blackout)
+                    float shadowRadius = bhRad * 1.05;
+                    float shadowSoft = bhRad * 1.7;
+                    float shadow = 1.0 - smoothstep(shadowRadius, shadowSoft, dist);
+                    shadowMask = max(shadowMask, shadow);
                 }
-                vec2 warped = uv + totalOffset;
+                vec2 warped = clamp(uv + totalOffset, vec2(0.001), vec2(0.999));
                 vec3 col;
-                col.r = texture2D(tDiffuse, warped + totalOffset * 0.15).r;
+                col.r = texture2D(tDiffuse, warped + totalOffset * 0.12).r;
                 col.g = texture2D(tDiffuse, warped).g;
-                col.b = texture2D(tDiffuse, warped - totalOffset * 0.15).b;
-                col += halo * vec3(1.0, 0.65, 0.25) * 0.35;
+                col.b = texture2D(tDiffuse, warped - totalOffset * 0.12).b;
+                col += halo * vec3(1.0, 0.65, 0.3);
+                col = mix(col, vec3(0.0), clamp(shadowMask, 0.0, 1.0));
                 gl_FragColor = vec4(col, 1.0);
             }
         `
@@ -1734,9 +1754,15 @@ function updateTargetPanel(data, readOnly = false) {
 function createBlackHole(radius, x, y, z) {
     const ehGeom = new THREE.SphereGeometry(radius, 64, 64);
     const ehMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    ehMat.colorWrite = false;
+    ehMat.depthWrite = false;
+    ehMat.depthTest = false;
+    ehMat.transparent = true;
+    ehMat.opacity = 0;
     const blackHole = new THREE.Mesh(ehGeom, ehMat);
     blackHole.position.set(x,y,z);
     blackHole.userData.isBlackHole = true;
+    blackHole.userData.ehRadius = radius;
 
     const diskGeom = new THREE.RingGeometry(radius * 1.5, radius * 8.0, 128);
     const diskMat = new THREE.ShaderMaterial({
@@ -1946,7 +1972,10 @@ async function generateDetailedGalaxy(type = 0) {
         `,
         depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, transparent: true
     });
-    localGalaxy = new THREE.Points(geom, mat); localGalaxy.frustumCulled = false; localGalaxy.visible = false; scene.add(localGalaxy);
+    localGalaxy = new THREE.Points(geom, mat);
+    localGalaxy.frustumCulled = false;
+    localGalaxy.visible = simState.viewLevel !== 0;
+    scene.add(localGalaxy);
 
     if (type !== 1) {
         const nebCount = (type === 2) ? 60 : 30;
@@ -1985,10 +2014,13 @@ async function generateDetailedGalaxy(type = 0) {
             `,
             transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
         });
-        nebulaSystem = new THREE.Points(nebGeom, nebMat); nebulaSystem.visible = false; scene.add(nebulaSystem);
+        nebulaSystem = new THREE.Points(nebGeom, nebMat);
+        nebulaSystem.visible = simState.viewLevel === 1;
+        scene.add(nebulaSystem);
     }
     const bh = createBlackHole(radius * 0.005, 0, 0, 0);
-    smbhGroup.add(bh); smbhGroup.visible = false;
+    smbhGroup.add(bh);
+    smbhGroup.visible = simState.viewLevel === 1;
 }
 
 function generateStarSystem(seedPos) {
@@ -2222,13 +2254,27 @@ function animate() {
             }
         });
 
-        const pos = bh.getWorldPosition(new THREE.Vector3()); pos.project(camera);
-        if (pos.z < 1.0 && Math.abs(pos.x) < 1.5 && Math.abs(pos.y) < 1.5) {
-            blackHoleUniforms.uBHPos.value[bhCount].set(pos.x * 0.5 + 0.5, pos.y * 0.5 + 0.5);
-            blackHoleUniforms.uBHMass.value[bhCount] = 2.0; bhCount++;
+        const pos = bh.getWorldPosition(tmpBhPos);
+        tmpBhNdc.copy(pos).project(camera);
+        if (tmpBhNdc.z > -1.0 && tmpBhNdc.z < 1.0 && Math.abs(tmpBhNdc.x) < 1.5 && Math.abs(tmpBhNdc.y) < 1.5) {
+            blackHoleUniforms.uBHPos.value[bhCount].set(tmpBhNdc.x * 0.5 + 0.5, tmpBhNdc.y * 0.5 + 0.5);
+            let screenRadius = 0.01;
+            const ehRadius = bh.userData?.ehRadius ?? 0;
+            if (ehRadius > 0) {
+                tmpBhRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+                tmpBhOffset.copy(pos).addScaledVector(tmpBhRight, ehRadius);
+                tmpBhNdcOffset.copy(tmpBhOffset).project(camera);
+                const dx = tmpBhNdcOffset.x - tmpBhNdc.x;
+                const dy = tmpBhNdcOffset.y - tmpBhNdc.y;
+                screenRadius = Math.max(Math.sqrt(dx * dx + dy * dy) * 0.5, 0.002);
+            }
+            blackHoleUniforms.uBHRadius.value[bhCount] = screenRadius;
+            blackHoleUniforms.uBHMass.value[bhCount] = Math.min(6.0, 2.5 + screenRadius * 90.0);
+            bhCount++;
         }
     });
     blackHoleUniforms.uBHCount.value = bhCount;
+    if (lensingPass?.material) lensingPass.material.uniformsNeedUpdate = true;
 
     if (simState.isAutopilot && !simState.isTransitioning) {
         simState.autopilotTimer += delta;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildSurfaceFields, sampleBilinear, sampleTriplanarHeight } from '../WaterCycleUtils.js';
+import { buildSurfaceFields, sampleBilinear, sampleTriplanarHeight } from '../src/WaterCycleUtils.js';
 
 function makeRampHeightmap(size) {
     const buf = new Float32Array(size * size);
@@ -52,4 +52,3 @@ function approxEqual(a, b, eps = 1e-5) {
 }
 
 console.log('watercycle-utils: ok');
-
