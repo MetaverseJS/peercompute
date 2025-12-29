@@ -630,7 +630,7 @@ class CubeChat {
       
       // Vertical look (pitch) with sensitivity
       if (Math.abs(lookJoy.y) > 0.1) {
-        this.controller.pitch -= lookJoy.y * this.controller.mobileLookSensitivityV;
+        this.controller.pitch += lookJoy.y * this.controller.mobileLookSensitivityV;
         this.controller.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.controller.pitch));
       }
     } else {

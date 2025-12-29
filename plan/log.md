@@ -590,3 +590,11 @@ sudo systemctl reload nginx
 
 ### Changes
 - Set Toychest particle resolution default to 2 and collapse the lil-gui controls on coarse pointer/touch devices.
+
+## Date: 2025-12-29
+
+### Prompt
+- the vertical look is inverted by default on the right mobile stick in cubechat. please change that.
+
+### Changes
+- Flipped the mobile look joystick vertical direction so pushing up looks up by default.
