@@ -15,15 +15,34 @@ class OrbitCamera {
     this._dragging = false;
     this._dragButton = 0; // 0: left, 1: middle, 2: right
     this._last = [0, 0];
+    this._pointers = new Map();
+    this._pinching = false;
+    this._pinchStartDist = 0;
+    this._pinchStartRadius = this.radius;
+    this._lastMid = null;
 
     this._initEvents();
   }
 
   _initEvents() {
+    this.canvas.style.touchAction = "none";
     this.canvas.addEventListener("pointerdown", (e) => {
-      this._dragging = true;
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
       this._dragButton = e.button;
       this._last = [e.clientX, e.clientY];
+      this._dragging = this._pointers.size === 1;
+      if (this._pointers.size === 2) {
+        const points = Array.from(this._pointers.values());
+        const dx = points[0].x - points[1].x;
+        const dy = points[0].y - points[1].y;
+        this._pinching = true;
+        this._pinchStartDist = Math.hypot(dx, dy);
+        this._pinchStartRadius = this.radius;
+        this._lastMid = {
+          x: (points[0].x + points[1].x) * 0.5,
+          y: (points[0].y + points[1].y) * 0.5,
+        };
+      }
       this.canvas.setPointerCapture(e.pointerId);
       e.preventDefault(); // Prevent context menu? No, need contextmenu event
     });
@@ -31,19 +50,66 @@ class OrbitCamera {
       e.preventDefault(); // Prevent context menu on right click
     });
     this.canvas.addEventListener("pointerup", (e) => {
-      this._dragging = false;
+      this._pointers.delete(e.pointerId);
+      if (this._pointers.size < 2) {
+        this._pinching = false;
+        this._pinchStartDist = 0;
+        this._lastMid = null;
+      }
+      if (this._pointers.size === 1) {
+        const remaining = Array.from(this._pointers.values())[0];
+        this._last = [remaining.x, remaining.y];
+        this._dragging = true;
+      } else {
+        this._dragging = false;
+      }
       this.canvas.releasePointerCapture(e.pointerId);
     });
+    this.canvas.addEventListener("pointercancel", (e) => {
+      this._pointers.delete(e.pointerId);
+      this._pinching = false;
+      this._dragging = false;
+      this._pinchStartDist = 0;
+      this._lastMid = null;
+    });
     this.canvas.addEventListener("pointermove", (e) => {
+      const pointer = this._pointers.get(e.pointerId);
+      if (!pointer) return;
+      pointer.x = e.clientX;
+      pointer.y = e.clientY;
+
+      if (this._pinching && this._pointers.size >= 2) {
+        const points = Array.from(this._pointers.values());
+        const dx = points[0].x - points[1].x;
+        const dy = points[0].y - points[1].y;
+        const dist = Math.hypot(dx, dy);
+        if (this._pinchStartDist > 0.0001) {
+          const scale = this._pinchStartDist / dist;
+          this.setRadius(this._pinchStartRadius * scale);
+        }
+        const mid = {
+          x: (points[0].x + points[1].x) * 0.5,
+          y: (points[0].y + points[1].y) * 0.5,
+        };
+        if (this._lastMid) {
+          const mdx = mid.x - this._lastMid.x;
+          const mdy = mid.y - this._lastMid.y;
+          this.pan(-mdx, mdy);
+        }
+        this._lastMid = mid;
+        return;
+      }
+
       if (!this._dragging) return;
       const dx = e.clientX - this._last[0];
       const dy = e.clientY - this._last[1];
       this._last = [e.clientX, e.clientY];
 
       if (this._dragButton === 0) {
+        const speed = pointer.type === "touch" ? this.rotateSpeed * 2.5 : this.rotateSpeed;
         // Orbit (Left click)
-        this.theta -= dx * this.rotateSpeed;
-        this.phi -= dy * this.rotateSpeed;
+        this.theta -= dx * speed;
+        this.phi -= dy * speed;
         const eps = 0.001;
         this.phi = Math.max(eps, Math.min(Math.PI - eps, this.phi));
       } else if (this._dragButton === 1 || this._dragButton === 2) {

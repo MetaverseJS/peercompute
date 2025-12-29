@@ -2,15 +2,312 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WebGPU Physics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Physics Demos</title>
+  <style>
+    :root {
+      --bg-0: #070a08;
+      --bg-1: #0d1511;
+      --bg-2: #122019;
+      --grid: rgba(120, 255, 190, 0.06);
+      --grid-strong: rgba(120, 255, 190, 0.12);
+      --text: #d2ffe1;
+      --muted: rgba(210, 255, 225, 0.6);
+      --accent: #8dffba;
+      --accent-strong: #d1ff89;
+      --border: rgba(120, 255, 190, 0.25);
+      --panel: rgba(6, 12, 9, 0.82);
+      --shadow: rgba(5, 10, 8, 0.45);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Courier New", "Lucida Console", monospace;
+      color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 10% 20%, rgba(20, 60, 45, 0.45), transparent 55%),
+        radial-gradient(circle at 85% 15%, rgba(120, 255, 190, 0.12), transparent 45%),
+        linear-gradient(135deg, var(--bg-0), var(--bg-2));
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(90deg, transparent 0 44px, var(--grid) 44px 45px),
+        repeating-linear-gradient(0deg, transparent 0 44px, var(--grid) 44px 45px),
+        repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.2) 3px 4px);
+      pointer-events: none;
+      opacity: 0.9;
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+
+    header {
+      margin-bottom: 32px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.25em;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    h1 {
+      font-size: clamp(28px, 4vw, 44px);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .lead {
+      max-width: 740px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+    }
+
+    .tile {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      text-decoration: none;
+      color: inherit;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 14px 30px var(--shadow);
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      animation: tileIn 0.6s ease both;
+      animation-delay: var(--delay, 0s);
+    }
+
+    .tile:hover {
+      transform: translateY(-6px);
+      border-color: var(--accent);
+      box-shadow: 0 18px 40px rgba(8, 20, 14, 0.6);
+    }
+
+    .tile-media {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: linear-gradient(140deg, rgba(10, 20, 15, 0.9), rgba(16, 40, 28, 0.7));
+      border-bottom: 1px solid rgba(120, 255, 190, 0.2);
+      overflow: hidden;
+    }
+
+    .tile-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(1.1) contrast(1.05);
+    }
+
+    .tile-media--grid {
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(120, 255, 190, 0.2), transparent 45%),
+        repeating-linear-gradient(90deg, rgba(120, 255, 190, 0.18) 0 1px, transparent 1px 22px),
+        repeating-linear-gradient(0deg, rgba(120, 255, 190, 0.12) 0 1px, transparent 1px 18px);
+      color: var(--accent-strong);
+      font-size: 12px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+    }
+
+    .tile-body {
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .tile h2 {
+      font-size: 16px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .tile p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .tile-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(120, 255, 190, 0.3);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--accent);
+      background: rgba(8, 16, 12, 0.65);
+    }
+
+    .pill--new {
+      border-color: rgba(209, 255, 137, 0.6);
+      color: var(--accent-strong);
+    }
+
+    .tile-footer {
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(210, 255, 225, 0.7);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    @keyframes tileIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 720px) {
+      main {
+        padding: 36px 16px 48px;
+      }
+
+      header {
+        margin-bottom: 24px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>WebGPU Physics Demos</h1>
-  <ul>
-    <li><a href="./toychest.html">Toychest (rigid bodies)</a></li>
-    <li><a href="./ppf-cubic-barrier.html">Cubic Barrier Contact (PPF)</a></li>
-    <li><a href="./mpm-headless.html">MLS-MPM Headless (metrics only)</a></li>
-    <li><a href="./mpm-visual.html">MLS-MPM Visual (rendered particles)</a></li>
-  </ul>
+  <main>
+    <header>
+      <div class="eyebrow">WebGPU Physics Demos</div>
+      <h1>Simulation Tiles</h1>
+      <p class="lead">GPU-native physics experiments built on PeerCompute. Jump into rigid bodies, barrier contacts, and MLS-MPM materials with a retro terminal command deck.</p>
+    </header>
+
+    <section class="tile-grid">
+      <a class="tile" href="./toychest.html" style="--delay: 0s;">
+        <div class="tile-media">
+          <img src="../dynamics-screenshot.png" alt="Toychest rigid body dynamics">
+        </div>
+        <div class="tile-body">
+          <h2>Toychest</h2>
+          <p>Rigid body stacks and colliders driven entirely in WebGPU compute passes.</p>
+          <div class="tile-meta">
+            <span class="pill">Rigid Bodies</span>
+            <span class="pill">WebGPU</span>
+          </div>
+          <div class="tile-footer">Open Demo</div>
+        </div>
+      </a>
+
+      <a class="tile" href="./ppf-cubic-barrier.html" style="--delay: 0.05s;">
+        <div class="tile-media tile-media--grid">CUBIC BARRIER</div>
+        <div class="tile-body">
+          <h2>PPF Cubic Barrier</h2>
+          <p>Single-pass cubic barrier contact forces. Fast, minimal, and good for baseline tuning.</p>
+          <div class="tile-meta">
+            <span class="pill">Penalty</span>
+            <span class="pill">Baseline</span>
+          </div>
+          <div class="tile-footer">Open Demo</div>
+        </div>
+      </a>
+
+      <a class="tile" href="./ppf-contact-solver.html" style="--delay: 0.1s;">
+        <div class="tile-media">
+          <img src="../ppf-demo.png" alt="PPF contact solver with friction">
+        </div>
+        <div class="tile-body">
+          <h2>PPF Contact Solver</h2>
+          <p>Iterative cubic barrier contacts with friction and uniform-grid acceleration.</p>
+          <div class="tile-meta">
+            <span class="pill pill--new">New</span>
+            <span class="pill">Friction</span>
+            <span class="pill">Spatial Grid</span>
+          </div>
+          <div class="tile-footer">Open Demo</div>
+        </div>
+      </a>
+
+      <a class="tile" href="./mpm-headless.html" style="--delay: 0.15s;">
+        <div class="tile-media tile-media--grid">MLS-MPM</div>
+        <div class="tile-body">
+          <h2>MPM Headless</h2>
+          <p>Diagnostics-only MLS-MPM pipeline with mass and momentum drift metrics.</p>
+          <div class="tile-meta">
+            <span class="pill">Headless</span>
+            <span class="pill">Metrics</span>
+          </div>
+          <div class="tile-footer">Open Demo</div>
+        </div>
+      </a>
+
+      <a class="tile" href="./mpm-visual.html" style="--delay: 0.2s;">
+        <div class="tile-media">
+          <img src="../material-physics-screenshot.png" alt="MLS-MPM visual material simulation">
+        </div>
+        <div class="tile-body">
+          <h2>MPM Visual</h2>
+          <p>Rendered MLS-MPM particles with orbit controls, materials, and thermal effects.</p>
+          <div class="tile-meta">
+            <span class="pill">Visual</span>
+            <span class="pill">Materials</span>
+          </div>
+          <div class="tile-footer">Open Demo</div>
+        </div>
+      </a>
+
+      <a class="tile" href="https://github.com/MetaverseJS/peercompute" target="_blank" rel="noreferrer" style="--delay: 0.25s;">
+        <div class="tile-media">
+          <img src="../peercompute-block-diagram.png" alt="PeerCompute block diagram">
+        </div>
+        <div class="tile-body">
+          <h2>PeerCompute</h2>
+          <p>PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.</p>
+          <div class="tile-meta">
+            <span class="pill">GitHub</span>
+            <span class="pill">Architecture</span>
+          </div>
+          <div class="tile-footer">View Repository</div>
+        </div>
+      </a>
+    </section>
+  </main>
 </body>
 </html>

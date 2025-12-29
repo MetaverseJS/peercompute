@@ -281,11 +281,83 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-29
 
 ### Prompt
+- can you implement a more complete ppf demo with friction iterative constraint solving and spatial acceleration?
+
+### Changes
+- Added a new PPF contact solver demo with uniform-grid neighbor lookup, iterative solver passes, and friction forces (`demos/webgpuphys/demos/ppf-contact-solver.html`, `demos/webgpuphys/demos/ppf-contact-solver.js`).
+- Wired the new demo into the WebGPUPhys demo index, Vite build inputs, and README.
+- Added a Playwright runtime smoke test for the new demo.
+
+### Tests
+- node demos/webgpuphys/tests/ppf-contact-runtime.js (required escalated permissions to bind a local port)
+
+## Date: 2025-12-29
+
+### Prompt
+- I'm sorry I'm not seeing your changes when I run docs:preview
+
+### Changes
+- Rebuilt the WebGPUPhys docs bundle so `docs:preview` reflects the updated demo tiles.
+
+### Tests
+- npm run build:webgpuphys
+
+## Date: 2025-12-29
+
+### Prompt
+- add tiles to the WebGPUPhys demos overview; move MPM visual and PPF solver into tiles with screenshots; add a PeerCompute GitHub tile with block diagram + README summary.
+
+### Changes
+- Rebuilt the WebGPUPhys demos overview into a tile grid with retro styling and staggered card reveals.
+- Added dedicated tiles for MPM Visual and the new PPF contact solver with screenshots, plus a PeerCompute GitHub tile using the block diagram image and README summary.
+- Copied the PeerCompute block diagram into WebGPUPhys assets for the demo index page.
+
+## Date: 2025-12-29
+
+### Prompt
+- make the box that contains the ppf demo much larger like 10x bigger.
+
+### Changes
+- Increased the PPF contact solver box size (boxHalf = 42) and adjusted grid sizing heuristics to avoid oversized spatial buffers.
+
+### Tests
+- node demos/webgpuphys/tests/ppf-contact-runtime.js (required escalated permissions to bind a local port)
+
+## Date: 2025-12-29
+
+### Prompt
+- ppf-contact-solver.html WGSL error: unresolved value 'prevPos'
+
+### Changes
+- Fixed the grid build shader to use the particle position rather than an undefined `prevPos` value.
+
+### Tests
+- node demos/webgpuphys/tests/ppf-contact-runtime.js (required escalated permissions to bind a local port)
+
+## Date: 2025-12-29
+
+### Prompt
 - it looks like we aren't gitignoring the node_modules folders in the demos directory. can you fix that?
 
 ### Changes
 - Added explicit `demos/**/node_modules/` ignore entry.
 - Removed tracked demo `node_modules` entries from the git index so the ignore takes effect.
+
+## Date: 2025-12-29
+
+### Prompt
+- can you explain what the ppf cubic barrier simulation is doing?
+
+### Changes
+- No code changes; provided a walkthrough of the PPF cubic barrier demo behavior and shader mechanics.
+
+## Date: 2025-12-29
+
+### Prompt
+- can the ppf cubic barrier model be used to improve our buggy mpm simulation?
+
+### Changes
+- No code changes; explained where the cubic barrier fits (contact handling) vs core MPM stability issues.
 
 ## Date: 2025-12-28
 
@@ -492,3 +564,29 @@ sudo systemctl reload nginx
 
 ### Tests
 - node --test demos/tests/demo-release.test.js
+
+## Date: 2025-12-29
+
+### Prompt
+- ya that was your mistake. I wanted those tiles added to the root docs index.
+
+### Changes
+- Added root docs tiles for MPM Visual, the PPF contact solver, and the PeerCompute GitHub page, plus updated the WebGPUPhys tile links.
+- Added root docs assets for the new tiles (MPM visual, PPF solver, PeerCompute block diagram).
+
+## Date: 2025-12-29
+
+### Prompt
+- the orbit controls and input are broken on mobile for the toychest and ppf solver. it only moves a fraction of an inch. on load you should be zoomed out twice as far on the dynamics and ppf solver demos.
+
+### Changes
+- Improved OrbitCamera touch handling with multi-touch pinch zoom + pan, disabled default touch gestures on the canvas, and boosted touch rotate speed.
+- Doubled initial camera radius for Toychest and the PPF contact solver demos.
+
+## Date: 2025-12-29
+
+### Prompt
+- on mobile make sure the shapes demo UI controls are collapsed on the toychest demo, also particles per side should default to 2 for mobile or desktop.
+
+### Changes
+- Set Toychest particle resolution default to 2 and collapse the lil-gui controls on coarse pointer/touch devices.
