@@ -618,15 +618,15 @@ export class WaterCycleVolumeSystem {
         u[23] = 1 / 259200; // slower cloud evaporation
 
         // [6]: windRelax, windDrag, coriolisMin, maxWind
-        u[24] = (1 / 7200) * this.windStrength;
-        u[25] = 1 / 14400;
+        u[24] = (1 / 2400) * this.windStrength;
+        u[25] = 1 / 7200;
         u[26] = 2e-5;
         u[27] = 60 * this.windStrength;
 
         // [7]: pressureTempCoeff, pressureVaporCoeff, pressureSmooth, fallSpeed
         u[28] = 120;
         u[29] = 45000;
-        u[30] = 1 / 7200;
+        u[30] = 1 / 1800;
         // Reduce fall speed so precipitation doesn't clear the column too quickly.
         u[31] = 0.05 / resScaleExp;
 
@@ -1039,11 +1039,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let altPenalty = altEff * 0.01;        // Reduced: Higher = lower pressure
   let pPhysics = -tempAnomaly * 10.0 - moistAnomaly - altPenalty;
   
-  // Turbulent noise for weather systems - REDUCED strength to stay in range
-  let turbStrength = 2500.0;  // Reduced from 5000
-  let noisePos = dir * 4.0;   // Higher spatial frequency for more distinct cells
-  let noiseTime = timeS() * 0.001;  // Faster evolution  
+  // Turbulent noise for weather systems - keep it lively but bounded.
+  let turbStrength = 3600.0;
+  let noiseDrift = vec3<f32>(sin(timeS() * 0.002), cos(timeS() * 0.0015), sin(timeS() * 0.001)) * 0.6;
+  let noisePos = dir * 4.5 + noiseDrift;
+  let noiseTime = timeS() * 0.01;
   let pTurb = turbulentNoise(noisePos, noiseTime) * turbStrength;
+
+  // Planetary wave pattern to avoid static bands.
+  let lonWave = atan2(dir.z, dir.x);
+  let latWave = asin(clamp(dir.y, -1.0, 1.0));
+  let wave = sin(lonWave * 2.0 + timeS() * 0.004) * cos(latWave * 1.4 - timeS() * 0.003);
+  let pWave = wave * 600.0;
   
   // Hadley cell structure - latitude-dependent pressure bands
   // Subtropical highs at ~30°, polar highs at poles, ITCZ low at equator
@@ -1056,7 +1063,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let polarHigh = smoothstep(0.7, 0.95, latAbs) * 800.0;
   let hadleyP = subtropicalHigh + itczLow + polarHigh;
   
-  let pEq = pPhysics + pTurb + hadleyP;
+  let pEq = pPhysics + pTurb + hadleyP + pWave;
   
   // Faster relaxation so pressure systems develop quickly
   p = mix(p, pEq, clamp(dt() * pSmooth() * 3.0, 0.0, 1.0));
@@ -1367,8 +1374,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   
   // Blend sampled pressure with analytical Hadley pattern
   // If pMid is near zero (no valid voxel data), use pure Hadley
-  let pMidValid = select(0.0, 1.0, abs(pMid) > 10.0);
-  let pFinal = mix(hadleyP, pMid, pMidValid * 0.7);
+  let pMidWeight = smoothstep(1.0, 80.0, abs(pMid));
+  let pFinal = mix(hadleyP, pMid + hadleyP * 0.3, pMidWeight);
 
   // Update surface rain/soil/snow (simple persistence).
   let liquid = smoothstep(271.15, 275.15, Tsurf);
@@ -1398,7 +1405,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var cloud01 = clamp(maxQc * 600.0, 0.0, 1.0);
   let rain01 = clamp(rain * 800.0, 0.0, 1.0);
   // Use pFinal (blended with analytical Hadley pattern) for stable pressure visualization
-  let p01 = clamp(0.5 + pFinal * (1.0 / 6000.0), 0.0, 1.0);
+  let p01 = clamp(0.5 + pFinal * (1.0 / 4500.0), 0.0, 1.0);
   outPixels[weatherOffset() + i2] = packRGBA8(cloud01, rain01, p01, clamp(soil, 0.0, 1.0));
 
   // Aux map (temp, snow, windU, windV) where wind is (east,north).

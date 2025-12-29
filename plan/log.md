@@ -235,3 +235,41 @@ Instructions: This file contains a detailed implementation log describing choice
 ### Tests
 - npm test (demos/planetgen)
 - node demos/webgpuphys/tests/ppf-runtime.js (initial EPERM on listen; reran with escalated permissions)
+
+## Date: 2025-12-25
+
+### Prompt
+- not seeing the tell tales change; are they wired up?
+- add more debug vectors to the ocean to show currents and waves
+
+### Changes
+- Added ocean current and wave vector overlays (new OceanVectorVisualizationSystem) and UI toggles to enable them.
+- Wired ocean vectors to the ocean wind field + ocean wave normal texture for visualizing coupling impact.
+- Added a unit test for ocean vector visualization and updated PlanetGen test script.
+
+### Tests
+- npm test (demos/planetgen)
+
+## Date: 2025-12-25
+
+### Prompt
+- ocean current vectors should show both wind direction and pressure
+
+### Changes
+- Added pressure sampling to ocean vector debug overlays and wired weather texture into the ocean vector visualization.
+- Updated ocean vector viz test to cover weather texture inputs.
+
+### Tests
+- npm test (demos/planetgen)
+
+## Date: 2025-12-25
+
+### Prompt
+- wind vectors shouldn't be static and pressure shouldn't be uniform
+
+### Changes
+- Increased pressure relaxation + wind response rates and added time-varying turbulence/planetary-wave forcing so wind vectors evolve.
+- Reduced reliance on the Hadley-only fallback by blending in dynamic pressure and widened pressure color range for clearer variation.
+
+### Tests
+- npm test (demos/planetgen)

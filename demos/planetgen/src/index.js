@@ -7,6 +7,7 @@ import { WaterCycleSystem } from './WaterCycleSystem.js';
 import { WaterCycleVolumeSystem } from './WaterCycleVolumeSystem.js';
 import { RainSystem } from './RainSystem.js';
 import { WindVisualizationSystem } from './WindVisualizationSystem.js';
+import { OceanVectorVisualizationSystem } from './OceanVectorVisualizationSystem.js';
 import { clamp, isMobileDevice, sampleDataTextureRGBA } from './utils.js';
 import { decodeWindFieldFromAuxTexture } from './oceanWindField.js';
 import { createOceanCurrentState } from './holistic/oceanCurrents.js';
@@ -121,6 +122,8 @@ const weatherOceanWindCouplingEl = document.getElementById('weatherOceanWindCoup
 const weatherOceanWindCouplingValueEl = document.getElementById('weatherOceanWindCouplingValue');
 const weatherOceanWindUpdateHzEl = document.getElementById('weatherOceanWindUpdateHz');
 const weatherOceanWindUpdateHzValueEl = document.getElementById('weatherOceanWindUpdateHzValue');
+const oceanCurrentVizToggleEl = document.getElementById('oceanCurrentVizToggle');
+const oceanWaveVizToggleEl = document.getElementById('oceanWaveVizToggle');
 const weatherRainFxToggleEl = document.getElementById('weatherRainFxToggle');
 const weatherRainFxEl = document.getElementById('weatherRainFx');
 const weatherRainFxValueEl = document.getElementById('weatherRainFxValue');
@@ -545,6 +548,7 @@ const weatherAutoState = {
 const rainSystem = new RainSystem(scene, { maxDrops: 12000 });
 const windSystem = new WindSystem(scene, { maxSprites: 950 });
 const windVizSystem = new WindVisualizationSystem(planetGroup);
+const oceanVizSystem = new OceanVectorVisualizationSystem(planetGroup);
 
 fpsDiv = document.createElement('div');
 fpsDiv.style.position = 'fixed';
@@ -812,6 +816,17 @@ function syncOceanWindFieldMode() {
         oceanWindPendingReadback = null;
         oceanWindUpdateTimerS = oceanWindUpdateIntervalS;
     }
+}
+
+function syncOceanVizState() {
+    if (!oceanVizSystem) return;
+    const showCurrents = oceanCurrentVizToggleEl?.checked ?? false;
+    const showWaves = oceanWaveVizToggleEl?.checked ?? false;
+    oceanVizSystem.setConfig({
+        showCurrents,
+        showWaves,
+        visible: showCurrents || showWaves
+    });
 }
 
 function updateOceanWindFieldFromAux() {
@@ -1639,6 +1654,20 @@ function animate() {
             windVizSystem.update();
         }
     }
+    const oceanSystem = planetManager?.oceanComputeSystem;
+    if (oceanVizSystem && oceanSystem?.enabled && oceanSystem.ready && lastPlanetSettings) {
+        const showCurrents = oceanCurrentVizToggleEl?.checked ?? false;
+        const showWaves = oceanWaveVizToggleEl?.checked ?? false;
+        const showOceanViz = showCurrents || showWaves;
+        oceanVizSystem.setVisible(showOceanViz);
+        if (showOceanViz) {
+            oceanVizSystem.setPlanetRadius(lastPlanetSettings.radius + (lastPlanetSettings.heightScale * 0.12));
+            oceanVizSystem.setOceanTexture(oceanSystem.getTexture());
+            oceanVizSystem.setWeatherTexture(getWeatherTexture());
+            oceanVizSystem.setWindField(oceanWindField, oceanSystem.gridW, oceanSystem.gridH);
+            oceanVizSystem.update();
+        }
+    }
     
     setPlanetWeatherTexture(getWeatherTexture());
     setPlanetWeatherAuxTexture(getWeatherAuxTexture());
@@ -1806,6 +1835,8 @@ const waterCycleUiControls = [
     weatherOceanInertiaEl,
     weatherOceanWindCouplingEl,
     weatherOceanWindUpdateHzEl,
+    oceanCurrentVizToggleEl,
+    oceanWaveVizToggleEl,
     weatherRainFxToggleEl,
     weatherRainFxEl,
     weatherRainHazeEl
@@ -2108,6 +2139,7 @@ function applyWaterCycleConfig() {
     planetManager.setAtmosphereWeather(getWeatherTexture(), rainHaze);
     syncVolumeSliceRange();
     syncVolumeSliceRange();
+    syncOceanVizState();
 
     if (rainSystem) {
         const showRain = (waterCycleToggleEl?.checked ?? false) && rainFxEnabled;
@@ -2189,6 +2221,7 @@ function handleWaterCycleUpdate() {
     syncVolumeSliceRange();
     applyWaterCycleConfig();
     syncOceanWindFieldMode();
+    syncOceanVizState();
     rebuildWaterCycleClouds(new THREE.Vector3().copy(dirLight.position).normalize());
 }
 
@@ -2208,7 +2241,7 @@ function handleWeatherAutoToggle() {
     el.addEventListener(el.type === 'color' ? 'input' : 'change', handleCloudUpdate);
     if (el.type === 'range') el.addEventListener('input', handleCloudUpdate);
 });
-[waterCycleToggleEl, waterCycleCloudToggleEl, waterCycleRunEl, weatherSimModeEl, weatherVolumeResEl, weatherRayStepsMinEl, weatherRayStepsMaxEl, weatherRayBundleEl, weatherAtmoThicknessEl, weatherDebugEl, weatherSpeedEl, weatherUpdateHzEl, weatherMoistureLayersEl, weatherEvapEl, weatherPrecipEl, weatherWindEl, weatherWetnessEl, weatherOceanInertiaEl, weatherOceanWindCouplingEl, weatherOceanWindUpdateHzEl, weatherRainFxToggleEl, weatherRainFxEl, weatherRainHazeEl].forEach((el) => {
+[waterCycleToggleEl, waterCycleCloudToggleEl, waterCycleRunEl, weatherSimModeEl, weatherVolumeResEl, weatherRayStepsMinEl, weatherRayStepsMaxEl, weatherRayBundleEl, weatherAtmoThicknessEl, weatherDebugEl, weatherSpeedEl, weatherUpdateHzEl, weatherMoistureLayersEl, weatherEvapEl, weatherPrecipEl, weatherWindEl, weatherWetnessEl, weatherOceanInertiaEl, weatherOceanWindCouplingEl, weatherOceanWindUpdateHzEl, oceanCurrentVizToggleEl, oceanWaveVizToggleEl, weatherRainFxToggleEl, weatherRainFxEl, weatherRainHazeEl].forEach((el) => {
     if (!el) return;
     el.addEventListener(el.type === 'checkbox' ? 'change' : (el.type === 'color' ? 'input' : 'change'), handleWaterCycleUpdate);
     if (el.type === 'range') el.addEventListener('input', handleWaterCycleUpdate);
