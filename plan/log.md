@@ -207,6 +207,16 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-25
 
 ### Prompt
+- continue water system implementation and wire up the UI to the dropdown stub entry
+
+### Changes
+- Added readbackVersion tracking to WaterCycleSystem and WaterCycleVolumeSystem to sync downstream consumers.
+- Implemented per-cell wind field support in OceanComputeSystem (new buffer + WGSL path) and PlanetManager hook.
+- Added ocean wind field decoding helper and wired holistic weather mode to drive ocean winds from weather aux data on new readbacks.
+- Added ocean wind field unit test and updated PlanetGen test script.
+
+### Tests
+- npm test (in demos/planetgen)
 - read all plan files first. then update the current-branch.md file with the tasks neccessary to complete the following:
 - We're on a new branch called server-changes. I'd like to get the relay server ready to run on my server at secretworkshop.net port 8080 using wss. add a prod-config file to the root directory which we can set the relay server URL and port. when running the build for production (npm run build) it should populate the demos with the production-config relay location.
 
@@ -216,6 +226,46 @@ Instructions: This file contains a detailed implementation log describing choice
 ## Date: 2025-12-25
 
 ### Prompt
+- make the ppf-cubic particle count configurable from 128 to 200000
+- finish the three water system enhancements and update the holistic plan
+- investigate Universes black hole lensing (no visible lensing)
+
+### Changes
+- Added holistic ocean wind coupling/update controls (UI + docs), scaled ocean wind field decode, and gated updates on a configurable cadence.
+- Scaffolded cubed-sphere grid + ocean current state modules for the holistic solver and added a round-trip mapping test.
+- Extended ocean wind field tests for scale handling.
+- Tuned Universes lensing shader with screen-space radius scaling, stronger distortion, and added uBHRadius uniforms for more visible lensing.
+- Updated holistic weather plan status notes.
+
+### Tests
+- npm test (demos/planetgen)
+- node demos/webgpuphys/tests/ppf-runtime.js (initial EPERM on listen; reran with escalated permissions)
+
+## Date: 2025-12-25
+
+### Prompt
+- not seeing the tell tales change; are they wired up?
+- add more debug vectors to the ocean to show currents and waves
+
+### Changes
+- Added ocean current and wave vector overlays (new OceanVectorVisualizationSystem) and UI toggles to enable them.
+- Wired ocean vectors to the ocean wind field + ocean wave normal texture for visualizing coupling impact.
+- Added a unit test for ocean vector visualization and updated PlanetGen test script.
+
+### Tests
+- npm test (demos/planetgen)
+
+## Date: 2025-12-25
+
+### Prompt
+- ocean current vectors should show both wind direction and pressure
+
+### Changes
+- Added pressure sampling to ocean vector debug overlays and wired weather texture into the ocean vector visualization.
+- Updated ocean vector viz test to cover weather texture inputs.
+
+### Tests
+- npm test (demos/planetgen)
 - do it!
 
 ### Changes
@@ -368,6 +418,14 @@ sudo systemctl reload nginx
 ## Date: 2025-12-25
 
 ### Prompt
+- wind vectors shouldn't be static and pressure shouldn't be uniform
+
+### Changes
+- Increased pressure relaxation + wind response rates and added time-varying turbulence/planetary-wave forcing so wind vectors evolve.
+- Reduced reliance on the Hadley-only fallback by blending in dynamic pressure and widened pressure color range for clearer variation.
+
+### Tests
+- npm test (demos/planetgen)
 - yes we will want to persist the key.
 
 ### Changes

@@ -58,6 +58,8 @@ export const DEFAULT_WEATHER_WIND_STRENGTH = 1.0;
 export const DEFAULT_WEATHER_WETNESS_STRENGTH = 0.75;
 export const DEFAULT_WEATHER_OCEAN_INERTIA = 0.25;
 export const DEFAULT_WEATHER_RAIN_HAZE = 0.9;
+export const DEFAULT_WEATHER_OCEAN_WIND_COUPLING = 1.0;
+export const DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ = 6;
 export const DEFAULT_ATMO_THICKNESS_KM = 20;
 
 // Axial tilt and seasons
@@ -120,6 +122,8 @@ export const PRESETS = {
         weatherWind: DEFAULT_WEATHER_WIND_STRENGTH,
         weatherWetness: DEFAULT_WEATHER_WETNESS_STRENGTH,
         weatherOceanInertia: DEFAULT_WEATHER_OCEAN_INERTIA,
+        weatherOceanWindCoupling: DEFAULT_WEATHER_OCEAN_WIND_COUPLING,
+        weatherOceanWindUpdateHz: DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ,
         weatherRainFxEnabled: true,
         weatherRainFx: 1,
         weatherRainHaze: DEFAULT_WEATHER_RAIN_HAZE

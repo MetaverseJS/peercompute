@@ -6,9 +6,15 @@ const canvas = document.getElementById("canvas");
 const errorEl = document.getElementById("error");
 const particleCountEl = document.getElementById("particleCount");
 const fpsEl = document.getElementById("fps");
+const particleInputEl = document.getElementById("particleInput");
+const particleApplyEl = document.getElementById("particleApply");
+
+const MIN_PARTICLES = 128;
+const MAX_PARTICLES = 200000;
+const DEFAULT_PARTICLES = 128;
 
 const settings = {
-  particleCount: 128,
+  particleCount: DEFAULT_PARTICLES,
   radius: 0.2,
   ghat: 0.08,
   mass: 1.0,
@@ -18,6 +24,35 @@ const settings = {
   forceLimit: 180.0,
   stiffnessScale: 0.75,
 };
+
+settings.particleCount = readParticleCountFromUrl();
+
+if (particleInputEl) {
+  particleInputEl.value = String(settings.particleCount);
+}
+
+function clampParticleCount(value) {
+  const v = Math.round(Number(value));
+  if (!Number.isFinite(v)) return DEFAULT_PARTICLES;
+  return Math.min(MAX_PARTICLES, Math.max(MIN_PARTICLES, v));
+}
+
+function readParticleCountFromUrl() {
+  if (typeof window === "undefined") return DEFAULT_PARTICLES;
+  const params = new URLSearchParams(window.location.search || "");
+  const raw = params.get("particles");
+  if (!raw) return DEFAULT_PARTICLES;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_PARTICLES;
+  return clampParticleCount(parsed);
+}
+
+function setParticleCountParam(count) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("particles", String(count));
+  window.history.replaceState({}, "", url);
+}
 
 function createInitialParticles(count, radius) {
   const positions = new Float32Array(count * 4);
@@ -62,6 +97,22 @@ function updateCanvasSize() {
 function setError(message) {
   if (!errorEl) return;
   errorEl.textContent = message;
+}
+
+function applyParticleCountFromUi() {
+  const next = clampParticleCount(particleInputEl?.value);
+  if (particleInputEl) particleInputEl.value = String(next);
+  setParticleCountParam(next);
+  window.location.reload();
+}
+
+if (particleApplyEl) {
+  particleApplyEl.addEventListener("click", () => applyParticleCountFromUi());
+}
+if (particleInputEl) {
+  particleInputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyParticleCountFromUi();
+  });
 }
 
 async function main() {

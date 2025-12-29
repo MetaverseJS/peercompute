@@ -39,6 +39,7 @@ export class WaterCycleSystem {
         this.readbackBuffers = null;
         this.readbackInFlight = [false, false];
         this.readbackWriteIndex = 0;
+        this.readbackVersion = 0;
 
         this.ping = 0;
         this.hasSurface = false;
@@ -350,6 +351,7 @@ export class WaterCycleSystem {
             buf.unmap();
             this.weatherTexture.needsUpdate = true;
             this.weatherAuxTexture.needsUpdate = true;
+            this.readbackVersion++;
         }).catch((err) => {
             console.warn('[WaterCycleSystem] Readback failed', err);
         }).finally(() => {

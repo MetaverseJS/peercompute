@@ -124,3 +124,4 @@ Land (per cell):
 
 ## Status / Changes
 - 2025-12-25: Drafted holistic plan document and added Holistic mode entry in UI; mode currently falls back to 3D volume sim until the new solver is implemented.
+- 2025-12-25: Added ocean wind coupling/update controls, wired holistic ocean wind field updates, and scaffolded cubed-sphere ocean current state for the new solver baseline.

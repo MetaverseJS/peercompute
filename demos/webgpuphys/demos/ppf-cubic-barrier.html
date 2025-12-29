@@ -38,6 +38,52 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
+    #controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 10px 12px;
+      border-radius: 4px;
+      border: 1px solid rgba(120, 255, 170, 0.35);
+      background: rgba(0, 0, 0, 0.65);
+      color: #b6f7ae;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+    #controls .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #controls label {
+      font-size: 12px;
+    }
+    #controls input,
+    #controls button {
+      font-family: inherit;
+      color: #b6f7ae;
+      background: rgba(5, 12, 8, 0.9);
+      border: 1px solid rgba(120, 255, 170, 0.35);
+      padding: 4px 6px;
+      font-size: 12px;
+    }
+    #controls input {
+      width: 110px;
+    }
+    #controls button {
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    #controls button:hover {
+      border-color: rgba(170, 255, 210, 0.6);
+    }
+    #controls .control-note {
+      margin-top: 6px;
+      font-size: 10px;
+      color: rgba(170, 255, 210, 0.6);
+    }
     #error {
       position: absolute;
       top: 50%;
@@ -59,6 +105,14 @@
 </head>
 <body>
   <canvas id="canvas"></canvas>
+  <div id="controls">
+    <div class="control-row">
+      <label for="particleInput">Particles</label>
+      <input id="particleInput" type="number" min="128" max="200000" step="128" value="128">
+      <button id="particleApply" type="button">Apply</button>
+    </div>
+    <div class="control-note">128-200000 (O(n^2) cost)</div>
+  </div>
   <div id="info">PPF Cubic Barrier | Particles: <span id="particleCount">0</span> | FPS: <span id="fps">0</span></div>
   <div id="error"></div>
   <script type="module" src="./ppf-cubic-barrier.js"></script>
