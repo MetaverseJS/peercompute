@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebGPU Physics - Cubic Barrier Contact</title>
+  <title>WebGPU Physics - PPF Contact Solver</title>
   <style>
     :root {
       color-scheme: dark;
@@ -27,7 +27,7 @@
       position: absolute;
       bottom: 20px;
       left: 20px;
-      font-size: 13px;
+      font-size: 12px;
       color: #b6f7ae;
       background: rgba(0, 0, 0, 0.65);
       border: 1px solid rgba(120, 255, 170, 0.35);
@@ -42,22 +42,27 @@
       position: absolute;
       top: 20px;
       left: 20px;
-      padding: 10px 12px;
+      padding: 12px 14px;
       border-radius: 4px;
       border: 1px solid rgba(120, 255, 170, 0.35);
       background: rgba(0, 0, 0, 0.65);
       color: #b6f7ae;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 12px;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 240px;
     }
     #controls .control-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
     #controls label {
-      font-size: 12px;
+      font-size: 11px;
+      min-width: 90px;
     }
     #controls input,
     #controls button {
@@ -66,10 +71,13 @@
       background: rgba(5, 12, 8, 0.9);
       border: 1px solid rgba(120, 255, 170, 0.35);
       padding: 4px 6px;
-      font-size: 12px;
+      font-size: 11px;
     }
-    #controls input {
+    #controls input[type="number"] {
       width: 110px;
+    }
+    #controls input[type="range"] {
+      flex: 1;
     }
     #controls button {
       cursor: pointer;
@@ -79,8 +87,13 @@
     #controls button:hover {
       border-color: rgba(170, 255, 210, 0.6);
     }
+    #controls .value-tag {
+      min-width: 46px;
+      text-align: right;
+      font-size: 10px;
+      color: rgba(170, 255, 210, 0.8);
+    }
     #controls .control-note {
-      margin-top: 6px;
       font-size: 10px;
       color: rgba(170, 255, 210, 0.6);
     }
@@ -102,22 +115,29 @@
       display: block;
     }
   </style>
-  <script type="module" crossorigin src="../assets/ppfCubicBarrier-wQVc05vO.js"></script>
-  <link rel="modulepreload" crossorigin href="../assets/device-CAsdAK37.js">
-  <link rel="modulepreload" crossorigin href="../assets/orbitControls-DxPB4Vr4.js">
-  <link rel="modulepreload" crossorigin href="../assets/particleRenderer-5MAhjokF.js">
 </head>
 <body>
   <canvas id="canvas"></canvas>
   <div id="controls">
     <div class="control-row">
       <label for="particleInput">Particles</label>
-      <input id="particleInput" type="number" min="128" max="200000" step="128" value="128">
+      <input id="particleInput" type="number" min="128" max="200000" step="128" value="1024">
       <button id="particleApply" type="button">Apply</button>
     </div>
-    <div class="control-note">128-200000 (O(n^2) cost)</div>
+    <div class="control-row">
+      <label for="iterInput">Solver Iters</label>
+      <input id="iterInput" type="range" min="1" max="32" step="1" value="8">
+      <div class="value-tag" id="iterValue">8</div>
+    </div>
+    <div class="control-row">
+      <label for="frictionInput">Friction</label>
+      <input id="frictionInput" type="range" min="0" max="1" step="0.01" value="0.35">
+      <div class="value-tag" id="frictionValue">0.35</div>
+    </div>
+    <div class="control-note">Cubic barrier + friction, uniform grid neighbors.</div>
   </div>
-  <div id="info">PPF Cubic Barrier | Particles: <span id="particleCount">0</span> | FPS: <span id="fps">0</span></div>
+  <div id="info">PPF Contact Solver | Particles: <span id="particleCount">0</span> | FPS: <span id="fps">0</span></div>
   <div id="error"></div>
+  <script type="module" src="./ppf-contact-solver.js"></script>
 </body>
 </html>

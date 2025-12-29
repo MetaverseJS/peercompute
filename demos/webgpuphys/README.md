@@ -24,6 +24,7 @@ WebGPU Physics is a high-performance, GPU-accelerated 3D rigid body physics engi
 Local demos:
 - `/demos/toychest.html` (rigid bodies)
 - `/demos/ppf-cubic-barrier.html` (cubic barrier contact demo)
+- `/demos/ppf-contact-solver.html` (PPF solver with friction + grid)
 - `/demos/mpm-headless.html` (MLS-MPM headless)
 - `/demos/mpm-visual.html` (MLS-MPM visual)
 

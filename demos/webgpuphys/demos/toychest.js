@@ -34,7 +34,7 @@ async function main() {
     
     // Generator params
     objectCount: 1024, // Increased default
-    resolution: 1, // Default 1
+    resolution: 2, // Default 2
     spawnShape: 'Mix', // Box, Cylinder, Sphere, Tetris, Mix
 
     // Container params
@@ -131,7 +131,7 @@ async function main() {
     newSphereRenderer.updateBindGroup(newSpherePosBuffer, newSphereQuatBuffer);
 
     if (!orbit) {
-       orbit = new OrbitCamera(canvas, { radius: 20, target: [0, 0.5, 0] });
+       orbit = new OrbitCamera(canvas, { radius: 60, target: [0, 0.5, 0] });
     }
 
     // Setup new ranges map
@@ -365,6 +365,15 @@ async function main() {
   gui.add(params, "objectCount", 1, 50000, 1024).name("Object Count").onFinishChange(initWorld);
   gui.add(params, "resolution", 1, 4, 1).name("Particles/Side").onFinishChange(initWorld);
   gui.add(params, "spawnShape", ['Box', 'Cylinder', 'Sphere', 'Tetris', 'Mix']).name("Shape").onFinishChange(initWorld);
+
+  const isMobile =
+    (typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(pointer: coarse)").matches) ||
+    (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0);
+  if (isMobile) {
+    gui.close();
+  }
   
   const folderPhys = gui.addFolder("Physics");
   folderPhys.add(world, "stiffness", 0, 5000, 10);

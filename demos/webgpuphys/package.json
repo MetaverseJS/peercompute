@@ -15,7 +15,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:headless": "node tests/headless-runtime.js",
-    "test:ppf": "node tests/ppf-runtime.js"
+    "test:ppf": "node tests/ppf-runtime.js",
+    "test:ppf-contact": "node tests/ppf-contact-runtime.js"
   },
   "keywords": [
     "webgpu",
