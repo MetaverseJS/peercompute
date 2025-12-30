@@ -49,6 +49,7 @@ Goal: build shared systems that multiple demos reuse, and unblock the larger com
 - WASM compute support in ComputeManager (task type, worker instantiation, DataState commitDelta hooks).
 - Network telemetry + metrics feed (peer graph, RTT/throughput, message counts), exposed via warm deltas.
 - 3d network visualizer core (tron grid, nodes/edges, nurbs links) built on the telemetry feed.
+- WebRTC direct-connection upgrade (relay only for bootstrap/fallback): prefer `/webrtc` addrs over `/p2p-circuit`, allow STUN/TURN config, and optionally drop relayed connections once direct links are established. Difficulty: medium (2-4 days, mostly config + dialing/connection policy + validation).
 - Shared procedural generation library that links universes + planetgen with a common data model and task API.
 
 ### Branch B: demo-experiences (showcase demos)
@@ -63,9 +64,9 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 
 ## Suggested order (what to do first)
 1) Network telemetry + minimal visualizer: gives visibility into peers/topology and de-risks later demos.
-2) Input abstraction + PPF rollouts: foundation for the motorcycle game and the integrated engine demo.
-3) WASM compute support: needed for portable distributed compute tasks beyond WebGPU.
-4) Shared procedural generation API: unlocks planetgen/universes cross-demo reuse.
+2) WASM compute support: needed for portable distributed compute tasks beyond WebGPU.
+3) Shared procedural generation API: unlocks planetgen/universes cross-demo reuse.
+4) Input abstraction + PPF rollouts: foundation for the motorcycle game and the integrated engine demo.
 5) Distributed compute examples + topology demos: validate scheduler profiles and topology roles.
 6) Keystone demo as a flagship integration once the foundations above are stable.
 7) Collaboration-heavy demos (3d editor, VR world), then the fully integrated engine demo last.
@@ -74,3 +75,7 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 - Each demo uses PeerCompute APIs directly (NodeKernel + NetworkScheduler + DataState).
 - Every demo includes a minimal README update and a short "what this validates" section.
 - The network visualizer and topology demos become the debugging tools for future work.
+
+## Progress
+- Done (baseline): NetViz (network telemetry + minimal visualizer demo scaffolded).
+- Done: NetViz upgrades (RTT/throughput telemetry, NURBS edges, node/edge inspection).

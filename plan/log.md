@@ -624,3 +624,106 @@ sudo systemctl reload nginx
 - Added a dedicated Keystone demo plan at plan/branch/keystone-demo.md and linked it from the demo-fixes branch plan.
 - Updated plan/plan.md, plan/arch/arch.md, and plan/branch/distributed-compute.md to reflect the Keystone demo as a validation surface for topology + placement.
 - Updated README.md, peercompute/README.md, and demos/README.md to mention the Keystone demo in the docs and demo backlog.
+
+## Date: 2025-12-29
+
+### Prompt
+- OK I redid the ordering a little bit. go ahead and dig in with #1.
+
+### Changes
+- Added telemetry counters to NetworkManager, exposed getTelemetrySnapshot, and documented it in the API/arch notes.
+- Scaffolded the NetViz demo with a retro terminal HUD, warm-delta telemetry publishing, and a minimal 3D node/edge view.
+- Wired NetViz into workspaces/dev scripts, updated docs index + demo README list, and added a telemetry unit test.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.telemetry.test.js
+
+## Date: 2025-12-29
+
+### Prompt
+- you should be able to see the connections between the other peers as well.
+
+### Changes
+- NetViz now derives peer-to-peer edges from telemetry snapshots and renders non-local connections; HUD marks inferred nodes as GHOST.
+
+## Date: 2025-12-29
+
+### Prompt
+- Add RTT/throughput sampling (ping + byte rate) into the telemetry snapshot. Upgrade NetViz visuals to the full tron grid + NURBS edge paths. add the ability to click a node to show an info window about that node. same goes for an edge.
+
+### Changes
+- Added telemetry sampling in NetworkManager (byte-rate tracking + RTT ping sampling) and extended telemetry snapshots with rates/RTT fields.
+- Upgraded NetViz visuals with a layered tron grid and NURBS tube edges, and added node/edge inspectors via raycast picking.
+- Updated NetViz docs and API/arch notes to reflect the new telemetry fields.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.telemetry.test.js
+
+## Date: 2025-12-29
+
+### Prompt
+- continue with the netvis updates. one thing that seems odd. we're seeing more nodes than actually exist how are you uniquely identifying them? also have the netvis demo automatically connect to the telemetry room.
+
+### Changes
+- NetViz now auto-connects to the telemetry room on load and documentation notes the behavior.
+
+## Date: 2025-12-29
+
+### Prompt
+- add a checkbox to hide ghosts. set it by default.
+
+### Changes
+- Added a "Hide ghosts" toggle to NetViz (default on) and filtered inferred nodes/edges when enabled.
+
+## Date: 2025-12-29
+
+### Prompt
+- add a checkbox to enable auto rotate. disable it by default. add orbit controls so the user can pan and zoom.
+
+### Changes
+- Added orbit controls to NetViz for pan/zoom and an auto-rotate toggle (default off).
+- Updated NetViz UI and README to reflect the new controls.
+
+## Date: 2025-12-29
+
+### Prompt
+- add a visual indication to the nurbs link when mesages are sent or received from your direct peers. maybe something that travels along the nurbs line. higher bandwidth should be shown as a thicker line.
+
+### Changes
+- Added animated tx/rx pulses that travel along NetViz NURBS edges based on recent telemetry activity.
+- Scaled edge tube thickness using throughput and preferred local peer metrics for directional edge data.
+- Updated NetViz README to mention pulse activity and bandwidth-based thickness.
+
+## Date: 2025-12-29
+
+### Prompt
+- watching my server log now. is that what the peercompute-stat pc-snapshot info is showing?
+
+### Changes
+- Clarified that relay logs summarize pubsub snapshot traffic (`pc-snapshot`) on the state topics, which can include NetViz telemetry warm deltas; no code changes.
+
+## Date: 2025-12-29
+
+### Prompt
+- I see. so why does the relay have to handle all of that. shouldn't this be passed directly through the libp2p network via webRTC or websockets or something?
+
+### Changes
+- Explained that browsers currently connect via WSS to the relay and pubsub forwarding requires the relay to subscribe, so snapshots flow through it unless direct peer transports (e.g., WebRTC) are added; no code changes.
+
+## Date: 2025-12-29
+
+### Prompt
+- right OK but the browser based js-libp2p example we based our relay server on shows the connection like the attached screenshot... how difficult would it be to implement that? Don't actually implement it just gauge difficulty and add it to the current-branch.md plan.
+
+### Changes
+- Reviewed the js-libp2p browser pubsub example and added a WebRTC direct-connection upgrade item with difficulty notes to plan/branch/current-branch.md; no code changes.
+
+## Date: 2025-12-29
+
+### Prompt
+- alright we definitely want to do that soon. but first I want you to decrease the total ammount of messages being sent in the netviz maybe just reduce the update freq. Then add a ? button with an explanation for what the netviz is. and what they are seeing. then I want you to add it to the demos page as a tile in the demo overview page.
+
+### Changes
+- Reduced NetViz telemetry publish/snapshot cadence to cut message volume.
+- Added a help toggle with an explanatory panel in the NetViz HUD.
+- Verified the NetViz tile is present in the docs demo overview.

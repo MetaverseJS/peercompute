@@ -77,6 +77,7 @@ new NetworkManager(config)
 - `async optimizeTopology()` - Optimize topology based on network conditions
 - `getConnectedPeers()` - Get list of connected peers
 - `getNetworkStats()` - Get network statistics
+- `getTelemetrySnapshot()` - Get per-peer telemetry snapshot (rx/tx counts, byte rates, RTT)
 
 ---
 

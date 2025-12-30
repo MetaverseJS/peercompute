@@ -23,10 +23,11 @@ npm run dev
 - `planetgen` - Procedural planet generator + weather compute
 - `universes` - Galaxy/universe generator with ComputeManager
 - `webgpuphys` - WebGPU physics + MLS-MPM demos
+- `netviz` - Network telemetry + topology visualizer (minimal)
 
 ## TODO Demos
 - keystone demo to visualize self-organizing topology + workload placement
-- network visualizer to view the p2p network graph and data flows live
+- network visualizer (NetViz) - expand to tron grid + data-flow overlays
 - shared 3d editing environment based on https://threejs.org/editor/ where users can make 3d models together 
 - motorcycle game similar to road rash and the tron lightcycle game
 - shared "VR CHAT" style world that uses your webcam to pose your 3d model. 

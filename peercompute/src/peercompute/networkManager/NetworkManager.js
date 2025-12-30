@@ -34,6 +34,13 @@ const debugWarn = (...args) => {
   if (DEBUG_P2P) console.warn(...args);
 };
 
+const getByteLength = (data) => {
+  if (!data) return 0;
+  if (typeof data.byteLength === 'number') return data.byteLength;
+  if (typeof data.length === 'number') return data.length;
+  return 0;
+};
+
 const isLocalDialAddr = (addr) => {
   if (typeof addr !== 'string') return false;
   if (addr.includes('/dns4/localhost') || addr.includes('/dns/localhost')) return true;
@@ -94,6 +101,13 @@ const ensurePeerIdSuffix = (addr, peerId) => {
 
 export class NetworkManager {
   constructor(config = {}) {
+    const telemetrySampleMs = Number.isFinite(config.telemetrySampleMs)
+      ? Math.max(250, config.telemetrySampleMs)
+      : 1000;
+    const telemetryPingMs = Number.isFinite(config.telemetryPingMs)
+      ? Math.max(500, config.telemetryPingMs)
+      : 5000;
+
     const defaults = {
       topology: config.topology || 'distributed',
       pubsubTopic: config.pubsubTopic || DEFAULT_PUBSUB_TOPIC,
@@ -103,7 +117,10 @@ export class NetworkManager {
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
       roomId: config.roomId || 'default-room',
-      enforceRoomIsolation: config.enforceRoomIsolation !== false
+      enforceRoomIsolation: config.enforceRoomIsolation !== false,
+      enableTelemetry: config.enableTelemetry !== false,
+      telemetrySampleMs,
+      telemetryPingMs
     };
 
     const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
@@ -128,6 +145,20 @@ export class NetworkManager {
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
+    this.telemetry = {
+      rxCount: 0,
+      txCount: 0,
+      rxBytes: 0,
+      txBytes: 0,
+      rxBps: 0,
+      txBps: 0
+    };
+    this.telemetrySample = {
+      rxBytes: 0,
+      txBytes: 0,
+      at: 0
+    };
+    this.telemetryTimer = null;
     this.onMessage = config.onMessage || (() => {});
     this.onPeerConnect = config.onPeerConnect || (() => {});
     this.onPeerDisconnect = config.onPeerDisconnect || (() => {});
@@ -354,6 +385,8 @@ export class NetworkManager {
     this._startPresence();
     this._logPubsubStatus('connected');
     this.isConnected = true;
+    this._sampleTelemetry(Date.now());
+    this._startTelemetrySampler();
     if (this.schedulerEnabled) {
       this._ensureScheduler();
       this._startScheduler();
@@ -369,6 +402,7 @@ export class NetworkManager {
     this.isConnected = false;
     this._stopScheduler();
     this._clearPresenceTimer();
+    this._stopTelemetrySampler();
 
     if (this.libp2p) {
       await this.libp2p.stop();
@@ -418,6 +452,55 @@ export class NetworkManager {
     };
   }
 
+  getTelemetrySnapshot() {
+    const now = Date.now();
+    const networkStats = this.getNetworkStats();
+    const health = this.getHealth();
+    const peers = this.getConnectedPeers().map((peer) => ({
+      peerId: peer.peerId,
+      connectedAt: peer.connectedAt || null,
+      lastSeen: peer.lastSeen || null,
+      lastMessageTime: peer.lastMessageTime || null,
+      lastRxAt: peer.lastRxAt || null,
+      lastTxAt: peer.lastTxAt || null,
+      lastRttAt: peer.lastRttAt || null,
+      rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null,
+      via: peer.via || null,
+      rxCount: peer.rxCount || 0,
+      txCount: peer.txCount || 0,
+      rxBytes: peer.rxBytes || 0,
+      txBytes: peer.txBytes || 0,
+      rxBps: peer.rxBps || 0,
+      txBps: peer.txBps || 0
+    }));
+
+    return {
+      ts: now,
+      peerId: this.peerId,
+      gameId: this.config.gameId,
+      roomId: this.config.roomId,
+      topology: this.config.topology,
+      isConnected: this.isConnected,
+      peerCount: networkStats.peerCount,
+      connections: networkStats.connections,
+      lastRxAt: health.lastRxAt,
+      lastTxAt: health.lastTxAt,
+      counts: {
+        rx: this.telemetry.rxCount,
+        tx: this.telemetry.txCount,
+        rxBytes: this.telemetry.rxBytes,
+        txBytes: this.telemetry.txBytes
+      },
+      rates: {
+        rxBps: this.telemetry.rxBps,
+        txBps: this.telemetry.txBps
+      },
+      reliability: health.reliability,
+      pubsubPeerCount: Array.isArray(health.pubsubPeers) ? health.pubsubPeers.length : 0,
+      peers
+    };
+  }
+
   getLibp2pNode() {
     return this.libp2p;
   }
@@ -462,10 +545,14 @@ export class NetworkManager {
         return;
       }
       const now = Date.now();
+      const byteLength = getByteLength(data);
       this.lastRxAt = now;
       this.scheduler?.recordRx(now);
 
-      const sender = parsed?.header?.peerId || parsed?.from || 'unknown';
+      const sender = parsed?.header?.peerId || parsed?.from || null;
+      if (sender && sender !== this.peerId) {
+        this._recordRx(sender, byteLength);
+      }
       if (this.scheduler?.handleMessage(parsed, sender)) {
         return;
       }
@@ -580,6 +667,32 @@ export class NetworkManager {
     this.peers.set(peerId, { ...existing, ...updates });
   }
 
+  _recordRx(peerId, byteLength) {
+    this.telemetry.rxCount += 1;
+    this.telemetry.rxBytes += byteLength || 0;
+    if (!peerId) return;
+    const existing = this.peers.get(peerId) || {};
+    this.peers.set(peerId, {
+      ...existing,
+      rxCount: (existing.rxCount || 0) + 1,
+      rxBytes: (existing.rxBytes || 0) + (byteLength || 0),
+      lastRxAt: Date.now()
+    });
+  }
+
+  _recordTx(peerId, byteLength) {
+    this.telemetry.txCount += 1;
+    this.telemetry.txBytes += byteLength || 0;
+    if (!peerId) return;
+    const existing = this.peers.get(peerId) || {};
+    this.peers.set(peerId, {
+      ...existing,
+      txCount: (existing.txCount || 0) + 1,
+      txBytes: (existing.txBytes || 0) + (byteLength || 0),
+      lastTxAt: Date.now()
+    });
+  }
+
   _startPresence() {
     this._clearPresenceTimer();
     const publishPresence = async () => {
@@ -605,6 +718,103 @@ export class NetworkManager {
       clearInterval(this.presenceInterval);
       this.presenceInterval = null;
     }
+  }
+
+  _startTelemetrySampler() {
+    if (!this.config.enableTelemetry) return;
+    if (this.telemetryTimer) return;
+    const interval = this.config.telemetrySampleMs || 1000;
+    const tick = () => {
+      this._sampleTelemetry(Date.now());
+      this.telemetryTimer = setTimeout(tick, interval);
+    };
+    this.telemetryTimer = setTimeout(tick, interval);
+  }
+
+  _stopTelemetrySampler() {
+    if (this.telemetryTimer) {
+      clearTimeout(this.telemetryTimer);
+      this.telemetryTimer = null;
+    }
+  }
+
+  _sampleTelemetry(now) {
+    const sampleAt = this.telemetrySample.at || now;
+    const elapsed = now - sampleAt;
+    if (elapsed > 0) {
+      const rxDelta = this.telemetry.rxBytes - this.telemetrySample.rxBytes;
+      const txDelta = this.telemetry.txBytes - this.telemetrySample.txBytes;
+      this.telemetry.rxBps = Math.max(0, (rxDelta * 1000) / elapsed);
+      this.telemetry.txBps = Math.max(0, (txDelta * 1000) / elapsed);
+    }
+    this.telemetrySample = {
+      rxBytes: this.telemetry.rxBytes,
+      txBytes: this.telemetry.txBytes,
+      at: now
+    };
+
+    const peers = this._getConnectionPeers();
+    peers.forEach((peer) => {
+      const peerId = peer.peerId;
+      if (!peerId) return;
+      const existing = this.peers.get(peerId) || {};
+      const sample = existing.telemetrySample || {
+        rxBytes: existing.rxBytes || 0,
+        txBytes: existing.txBytes || 0,
+        at: now
+      };
+      const peerElapsed = now - sample.at;
+      if (peerElapsed > 0) {
+        const rxDelta = (existing.rxBytes || 0) - sample.rxBytes;
+        const txDelta = (existing.txBytes || 0) - sample.txBytes;
+        existing.rxBps = Math.max(0, (rxDelta * 1000) / peerElapsed);
+        existing.txBps = Math.max(0, (txDelta * 1000) / peerElapsed);
+      }
+      existing.telemetrySample = {
+        rxBytes: existing.rxBytes || 0,
+        txBytes: existing.txBytes || 0,
+        at: now
+      };
+      this.peers.set(peerId, existing);
+    });
+
+    this._sampleRtt(now, peers);
+  }
+
+  _sampleRtt(now, peers) {
+    const ping = this.libp2p?.services?.ping?.ping;
+    if (!ping || !this.config.enableTelemetry) return;
+    const pingInterval = this.config.telemetryPingMs || 5000;
+
+    peers.forEach((peer) => {
+      const peerId = peer.peerId;
+      if (!peerId) return;
+      const existing = this.peers.get(peerId) || {};
+      if (existing.pingInFlight) return;
+      if (existing.lastRttAt && now - existing.lastRttAt < pingInterval) return;
+
+      let peerTarget = null;
+      try {
+        peerTarget = peerIdFromString(peerId);
+      } catch (_) {
+        return;
+      }
+
+      existing.pingInFlight = true;
+      this.peers.set(peerId, existing);
+      ping(peerTarget)
+        .then((rtt) => {
+          this._touchPeer(peerId, { rttMs: Math.round(rtt), lastRttAt: Date.now() });
+        })
+        .catch(() => {
+          this._touchPeer(peerId, { rttMs: null, lastRttAt: Date.now() });
+        })
+        .finally(() => {
+          const current = this.peers.get(peerId) || {};
+          current.pingInFlight = false;
+          this.peers.set(peerId, current);
+        });
+    });
   }
 
   _ensureScheduler() {
@@ -693,6 +903,7 @@ export class NetworkManager {
       const now = Date.now();
       this.lastTxAt = now;
       this.scheduler?.recordTx(now);
+      this._recordTx(payload?.target || null, getByteLength(data));
     } catch (err) {
       const now = Date.now();
       const last = this.publishErrorAt.get(topic) || 0;

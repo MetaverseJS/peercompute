@@ -66,6 +66,7 @@ Dev servers:
 - `https://localhost:5179/` (WebGPUPhys)
 - `https://localhost:5180/` (SneakyWoods)
 - `https://localhost:5181/` (Daddy Go!)
+- `https://localhost:5182/` (NetViz)
 
 ### Docs Build / Preview
 ```bash
@@ -124,6 +125,7 @@ See `docs/index.html` for the full demo index.
 ![Daddy Go](docs/assets/daddygo.png)
 ![PlanetGen](docs/assets/planetgen.png)
 ![Universes](docs/assets/universes.png)
+![NetViz](docs/assets/netviz.png)
 ![WebGPUPhys](docs/assets/webgpuphys.png)
 
 ## Integration: Minimal Game Setup

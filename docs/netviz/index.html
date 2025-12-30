@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PeerCompute NetViz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #04070b;
+      --grid: rgba(0, 255, 106, 0.18);
+      --glow: #00ff6a;
+      --hot: #ff4fb3;
+      --panel: rgba(0, 15, 0, 0.9);
+      --panel-soft: rgba(0, 20, 0, 0.75);
+      --text-dim: rgba(0, 255, 106, 0.7);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Silkscreen", "Cascadia Mono", "Consolas", monospace;
+      background: radial-gradient(circle at top, #0b1a12, var(--bg) 45%, #010203 100%);
+      color: var(--glow);
+      min-height: 100vh;
+      overflow: hidden;
+      text-shadow: 0 0 2px rgba(0, 255, 106, 0.5);
+      -webkit-font-smoothing: none;
+    }
+
+    #netviz-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0) 0,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.18) 4px,
+        rgba(0, 0, 0, 0.18) 6px
+      );
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: min(360px, 92vw);
+      display: grid;
+      gap: 12px;
+      z-index: 2;
+    }
+
+    .panel {
+      background: linear-gradient(140deg, var(--panel) 0%, var(--panel-soft) 100%);
+      border: 2px solid var(--glow);
+      padding: 14px 16px;
+      box-shadow: 0 0 18px rgba(0, 255, 106, 0.35);
+    }
+
+    .panel-title {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .panel-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .help-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      font-size: 0.8rem;
+      line-height: 1;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    input {
+      flex: 1;
+      min-width: 120px;
+      background: transparent;
+      border: 1px solid var(--glow);
+      color: var(--glow);
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--glow);
+    }
+
+    button {
+      background: transparent;
+      border: 1px solid var(--glow);
+      color: var(--glow);
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    button:hover {
+      background: var(--glow);
+      color: #001b0a;
+    }
+
+    .status {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+
+    .peer-list {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    .legend {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      display: grid;
+      gap: 6px;
+    }
+
+    .legend span {
+      color: var(--glow);
+    }
+
+    #inspect-panel {
+      display: none;
+    }
+
+    #inspect-panel.active {
+      display: block;
+    }
+
+    #help-panel {
+      display: none;
+    }
+
+    #help-panel.active {
+      display: block;
+    }
+
+    #help-body {
+      white-space: pre-line;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    #inspect-body {
+      white-space: pre-line;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    .hot {
+      color: var(--hot);
+    }
+
+    @media (max-width: 640px) {
+      .hud {
+        left: 12px;
+        right: 12px;
+        width: auto;
+      }
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-Doykwpd2.js"></script>
+</head>
+<body>
+  <canvas id="netviz-canvas"></canvas>
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="hud">
+    <section class="panel">
+      <div class="panel-title-row">
+        <div class="panel-title">NetViz Console</div>
+        <button id="help-toggle" class="help-btn" type="button" aria-label="About NetViz" aria-expanded="false" aria-controls="help-panel">?</button>
+      </div>
+      <div class="row">
+        <label for="room-input">Room</label>
+        <input id="room-input" value="telemetry" spellcheck="false" />
+        <button id="connect-btn">Connect</button>
+      </div>
+      <div class="row">
+        <label for="hide-ghosts">Hide ghosts</label>
+        <input id="hide-ghosts" type="checkbox" checked />
+      </div>
+      <div class="row">
+        <label for="auto-rotate">Auto rotate</label>
+        <input id="auto-rotate" type="checkbox" />
+      </div>
+      <div id="status" class="status">Status: idle</div>
+    </section>
+    <section id="help-panel" class="panel">
+      <div class="panel-title">What is NetViz?</div>
+      <div id="help-body">
+        NetViz is a live topology + telemetry view of the PeerCompute network.
+        The center cube is your local node. Green cubes are connected peers.
+        Ghost nodes are inferred from neighbor lists without direct telemetry.
+        Curved links show connections; pulses indicate recent rx/tx activity and line thickness reflects bandwidth.
+        Click any node or edge to inspect detailed stats.
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-title">Peers</div>
+      <div id="peer-list" class="peer-list">No peers yet.</div>
+    </section>
+    <section class="panel">
+      <div class="panel-title">Legend</div>
+      <div class="legend">
+        <div><span class="hot">LOCAL</span> root view</div>
+        <div><span>REMOTE</span> peer nodes</div>
+        <div><span>GHOST</span> inferred nodes (no telemetry yet)</div>
+      </div>
+    </section>
+    <section id="inspect-panel" class="panel">
+      <div id="inspect-title" class="panel-title">Inspect</div>
+      <div id="inspect-body">Click a node or edge.</div>
+    </section>
+  </div>
+</body>
+</html>

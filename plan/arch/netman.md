@@ -59,6 +59,7 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - onSnapshot(cb)
 - onEvent(cb)
 - getHealth()
+- getTelemetrySnapshot() (rx/tx counts, byte rates, per-peer RTT)
 
 ## Open Questions
 - Per-entity authority vs single authority.
