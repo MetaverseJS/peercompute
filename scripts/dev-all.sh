@@ -35,7 +35,7 @@ fi
 
 export RELAY_SSL_CERT="$repo_root/certs/dev-cert.pem"
 export RELAY_SSL_KEY="$repo_root/certs/dev-key.pem"
-export RELAY_CONFIG_DIRS="$repo_root/demos/hyperborea/public,$repo_root/demos/cubechat/public,$repo_root/demos/sneakywoods/public,$repo_root/demos/daddygo/public,$repo_root/docs/hyperborea,$repo_root/docs/cubechat,$repo_root/docs/sneakywoods,$repo_root/docs/daddygo"
+export RELAY_CONFIG_DIRS="$repo_root/demos/hyperborea/public,$repo_root/demos/cubechat/public,$repo_root/demos/sneakywoods/public,$repo_root/demos/daddygo/public,$repo_root/demos/netviz/public,$repo_root/docs/hyperborea,$repo_root/docs/cubechat,$repo_root/docs/sneakywoods,$repo_root/docs/daddygo,$repo_root/docs/netviz"
 
 echo "Dev servers (HTTPS):"
 echo "  relay: dynamic WSS (check relay logs for address)"
@@ -46,8 +46,9 @@ echo "  universes:  https://localhost:5178/"
 echo "  webgpuphys: https://localhost:5179/"
 echo "  sneakywoods: https://localhost:5180/"
 echo "  daddygo:    https://localhost:5181/"
+echo "  netviz:     https://localhost:5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,netviz \
   "npm run dev:relay" \
   "npm run dev:hyperborea" \
   "npm run dev:cubechat" \
@@ -55,4 +56,5 @@ echo "  daddygo:    https://localhost:5181/"
   "npm run dev:universes" \
   "npm run dev:webgpuphys" \
   "npm run dev:sneakywoods" \
-  "npm run dev:daddygo"
+  "npm run dev:daddygo" \
+  "npm run dev:netviz"

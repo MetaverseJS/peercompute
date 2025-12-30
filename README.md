@@ -4,6 +4,7 @@ PeerCompute is a browser-based P2P networking and distributed compute library bu
 
 ## Key Innovation
 Given a network of compute nodes with varying mutual bandwidth and compute power it's possible to use cellular automata rules (where each node attempts to maximize it's own compute throughput) to form optimal compute networks for arbitrary workloads. 
+The Keystone demo (planned) will visualize this reconfiguration live with selectable workloads and topology modes.
 
 
 ## What You Can Use Today
@@ -65,6 +66,7 @@ Dev servers:
 - `https://localhost:5179/` (WebGPUPhys)
 - `https://localhost:5180/` (SneakyWoods)
 - `https://localhost:5181/` (Daddy Go!)
+- `https://localhost:5182/` (NetViz)
 
 ### Docs Build / Preview
 ```bash
@@ -123,6 +125,7 @@ See `docs/index.html` for the full demo index.
 ![Daddy Go](docs/assets/daddygo.png)
 ![PlanetGen](docs/assets/planetgen.png)
 ![Universes](docs/assets/universes.png)
+![NetViz](docs/assets/netviz.png)
 ![WebGPUPhys](docs/assets/webgpuphys.png)
 
 ## Integration: Minimal Game Setup

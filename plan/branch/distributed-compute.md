@@ -79,6 +79,7 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Cluster formation + leader election.
 - Scheduler placement hints + best-fit routing.
 - Debug UI / log output for topology + placement.
+- Keystone demo surface that visualizes topology changes + placement outcomes.
 
 ## Open Questions
 - How to weight latency vs. throughput for different task profiles?
