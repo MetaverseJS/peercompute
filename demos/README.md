@@ -25,6 +25,7 @@ npm run dev
 - `webgpuphys` - WebGPU physics + MLS-MPM demos
 
 ## TODO Demos
+- keystone demo to visualize self-organizing topology + workload placement
 - network visualizer to view the p2p network graph and data flows live
 - shared 3d editing environment based on https://threejs.org/editor/ where users can make 3d models together 
 - motorcycle game similar to road rash and the tron lightcycle game

@@ -598,3 +598,29 @@ sudo systemctl reload nginx
 
 ### Changes
 - Flipped the mobile look joystick vertical direction so pushing up looks up by default.
+
+## Date: 2025-12-29
+
+### Prompt
+- we're in a new chat. please review all plan files. take a careful look at the current-branch.md file which links to "demo-fixes.md" consider the list of items and come up with a plan to implement them. suggest how we break up these tasks into a couple branches and which ones we should do first. think really deeply about all of this and how it ties into the larger plan for peercompute. once you have this plan typed out in current-branch. we can go  over it together and you can dig in and start working.
+
+### Changes
+- Reviewed plan files and expanded plan/branch/demo-fixes.md with a branch breakdown, dependencies, and a prioritized implementation plan aligned with the PeerCompute roadmap.
+
+## Date: 2025-12-29
+
+### Prompt
+- I added a new demo called keystone demo. factor that into your plans
+
+### Changes
+- Added the Keystone demo to the demo-experiences branch list and updated the suggested ordering in plan/branch/demo-fixes.md.
+
+## Date: 2025-12-29
+
+### Prompt
+- do 2. also thie whole plan looks good. I'd like you to update the rest of the plan files and readme's architecture etc to match.
+
+### Changes
+- Added a dedicated Keystone demo plan at plan/branch/keystone-demo.md and linked it from the demo-fixes branch plan.
+- Updated plan/plan.md, plan/arch/arch.md, and plan/branch/distributed-compute.md to reflect the Keystone demo as a validation surface for topology + placement.
+- Updated README.md, peercompute/README.md, and demos/README.md to mention the Keystone demo in the docs and demo backlog.

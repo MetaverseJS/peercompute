@@ -29,6 +29,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Wire warm DataState deltas into netman publishing end-to-end.
 - Keep plan/ and log aligned with ongoing changes.
 - Demo release polish: room system for multiplayer demos, DaddyGo high score sync, and docs/README refresh.
+- Keystone demo: flagship visualization of self-organizing topology + workload placement.
 
 ### TODONT:
 - Reintroduce PeerJS or legacy CRDT experiments.

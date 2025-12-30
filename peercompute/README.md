@@ -4,6 +4,7 @@ PeerCompute is a browser-based P2P networking and distributed compute library bu
 
 ## Key Innovation
 Given a network of compute nodes with varying mutual bandwidth and compute power it's possible to use cellular automata rules (where each node attempts to maximize it's own compute throughput) to form optimal compute networks for arbitrary workloads. 
+The Keystone demo (planned) will visualize this reconfiguration live with selectable workloads and topology modes.
 
 
 ## What You Can Use Today

@@ -21,6 +21,7 @@ This file and the arch folder contain a description of the current and future ar
 ###Future arch
 - Expand topology modes (authority-hosted, mesh snapshots, hybrid) with clear authority election rules.
 - Add interest management, backpressure, and optional binary encoding (CBOR).
+- Expose metrics/telemetry feeds for topology visualization and debugging (Keystone demo).
 - Move heavy managers (network/compute) into workers or service workers.
 - Support self-organizing compute topologies based on bandwidth/compute affinity.
 - Security: HTTPS/WSS deployment with signed code and data-only replication.
