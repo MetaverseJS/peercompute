@@ -61,6 +61,21 @@ const normalizeBootstrapPeers = (peers) => {
   return peers.filter(Boolean);
 };
 
+const normalizeWebRTCConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+  const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+  const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+  const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+  const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+  const next = { ...raw };
+  if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+  if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+  if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+  if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+  return Object.keys(next).length ? next : null;
+};
+
 export class P2PNetwork {
   constructor() {
     this.node = null;
@@ -68,6 +83,7 @@ export class P2PNetwork {
     this.stateManager = null;
     this.peerId = null;
     this.bootstrapPeers = [];
+    this.webrtc = null;
     this.roomId = 'global';
     this.localMediaReady = false;
     this.peers = new Map();
@@ -110,13 +126,15 @@ export class P2PNetwork {
   async _startNode(roomId) {
     const cfg = await loadRelayConfig();
     this.bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+    this.webrtc = normalizeWebRTCConfig(cfg);
     this.roomId = roomId || 'global';
 
     this.node = new NodeKernel({
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: 'cubechat',
-      roomId: this.roomId
+      roomId: this.roomId,
+      ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();
     await this.node.start();

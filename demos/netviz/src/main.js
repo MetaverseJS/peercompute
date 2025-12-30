@@ -10,6 +10,8 @@ const connectBtn = document.getElementById('connect-btn');
 const roomInput = document.getElementById('room-input');
 const hideGhostsToggle = document.getElementById('hide-ghosts');
 const autoRotateToggle = document.getElementById('auto-rotate');
+const consoleToggle = document.getElementById('console-toggle');
+const consoleWindow = document.getElementById('console-window');
 const inspectPanel = document.getElementById('inspect-panel');
 const inspectTitle = document.getElementById('inspect-title');
 const inspectBody = document.getElementById('inspect-body');
@@ -18,8 +20,9 @@ const helpPanel = document.getElementById('help-panel');
 
 const TELEMETRY_PUBLISH_MS = 2000;
 const HUD_UPDATE_MS = 500;
-const SNAPSHOT_HZ = 2;
-const SNAPSHOT_KEEPALIVE_MS = 2500;
+const SNAPSHOT_HZ = 1;
+const SNAPSHOT_KEEPALIVE_MS = 5000;
+const PUBSUB_ACTIVE_MS = 12000;
 
 const visualizer = new NetworkVisualizer({ canvas });
 const telemetryStore = new TelemetryStore();
@@ -30,6 +33,7 @@ let stateManager = null;
 let localPeerId = null;
 let telemetryTimer = null;
 let uiTimer = null;
+let relayPeerIds = new Set();
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -51,6 +55,58 @@ const formatRate = (value) => {
 const formatMs = (value) => {
   if (!Number.isFinite(value)) return '--';
   return `${Math.round(value)}ms`;
+};
+
+const extractPeerId = (value) => {
+  if (!value) return null;
+  const text = String(value);
+  const p2pIndex = text.lastIndexOf('/p2p/');
+  if (p2pIndex >= 0) {
+    const id = text.slice(p2pIndex + 5).split('/')[0];
+    return id || null;
+  }
+  if (!text.includes('/')) return text;
+  return null;
+};
+
+const buildRelayState = (entries, relayIds) => {
+  const relaySet = relayIds instanceof Set ? relayIds : new Set(relayIds || []);
+  const activeRelayIds = new Set();
+  const peerRelayMap = new Map();
+  if (!Array.isArray(entries) || relaySet.size === 0) {
+    return { relayIds: Array.from(relaySet), activeRelayIds: [], peerRelayMap };
+  }
+  entries.forEach((peer) => {
+    const peerId = peer?.peerId;
+    if (!peerId) return;
+    const neighbors = Array.isArray(peer.peers) ? peer.peers : [];
+    let relayId = null;
+    neighbors.forEach((neighbor) => {
+      const id = neighbor?.peerId || neighbor?.id || null;
+      if (!id || !relaySet.has(id)) return;
+      activeRelayIds.add(id);
+      if (!relayId) relayId = id;
+    });
+    if (relayId) {
+      peerRelayMap.set(peerId, relayId);
+    }
+  });
+  return { relayIds: Array.from(relaySet), activeRelayIds: Array.from(activeRelayIds), peerRelayMap };
+};
+
+const normalizeWebRTCConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+  const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+  const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+  const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+  const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+  const next = { ...raw };
+  if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+  if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+  if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+  if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+  return Object.keys(next).length ? next : null;
 };
 
 const setStatus = (lines) => {
@@ -75,12 +131,21 @@ const setHelpVisible = (visible) => {
   }
 };
 
+const setConsoleVisible = (visible) => {
+  if (!consoleWindow) return;
+  consoleWindow.classList.toggle('collapsed', !visible);
+  if (consoleToggle) {
+    consoleToggle.setAttribute('aria-expanded', String(visible));
+  }
+};
+
 const shouldHideGhosts = () => hideGhostsToggle?.checked ?? true;
 const shouldAutoRotate = () => autoRotateToggle?.checked ?? false;
 
 visualizer.setAutoRotate(shouldAutoRotate());
+setConsoleVisible(true);
 
-const buildPeerView = ({ includeGhosts = true } = {}) => {
+const buildPeerView = ({ includeGhosts = true, relayState = null } = {}) => {
   const peers = telemetryStore.list();
   const byId = new Map();
   peers.forEach((peer) => {
@@ -100,25 +165,67 @@ const buildPeerView = ({ includeGhosts = true } = {}) => {
     });
   }
 
+  const activeRelayIds = relayState?.activeRelayIds || [];
+  activeRelayIds.forEach((relayId) => {
+    const existing = byId.get(relayId);
+    if (existing) {
+      byId.set(relayId, { ...existing, isRelay: true, inferred: false });
+    } else {
+      byId.set(relayId, { peerId: relayId, isRelay: true });
+    }
+  });
+
   return Array.from(byId.values());
 };
 
-const buildEdges = (peers, localId) => {
+const buildEdges = (peers, localId, relayState = null) => {
   const edgeMap = new Map();
   const knownIds = new Set(peers.map((peer) => peer?.peerId).filter(Boolean));
+  const relayIds = new Set(relayState?.activeRelayIds || []);
   const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
+  const resolveRelayForEdge = (from, to, via) => {
+    if (via !== 'relay') return null;
+    const peerRelayMap = relayState?.peerRelayMap;
+    const fromRelay = peerRelayMap?.get(from) || null;
+    const toRelay = peerRelayMap?.get(to) || null;
+    if (fromRelay && toRelay && fromRelay === toRelay) return fromRelay;
+    if (fromRelay) return fromRelay;
+    if (toRelay) return toRelay;
+    const localRelay = localId ? peerRelayMap?.get(localId) || null : null;
+    if (localRelay) return localRelay;
+    const fallback = relayState?.activeRelayIds?.[0];
+    return fallback || null;
+  };
   const addEdge = (from, to, metrics) => {
+    if (relayIds.has(from) || relayIds.has(to)) return;
     const key = buildEdgeKey(from, to);
-    if (edgeMap.has(key)) return;
     const lastRxAt = Number(metrics?.lastRxAt);
     const lastTxAt = Number(metrics?.lastTxAt);
+    const via = metrics?.via || null;
+    const relayPeerId = resolveRelayForEdge(from, to, via);
+    const existing = edgeMap.get(key);
+    if (existing) {
+      if (existing.via !== 'webrtc') {
+        if (via === 'webrtc') {
+          existing.via = 'webrtc';
+        } else if (!existing.via && via) {
+          existing.via = via;
+        }
+      }
+      if (!existing.relayPeerId && relayPeerId) {
+        existing.relayPeerId = relayPeerId;
+      }
+      return;
+    }
     edgeMap.set(key, {
       from,
       to,
       rxBps: Number(metrics?.rxBps) || 0,
       txBps: Number(metrics?.txBps) || 0,
       lastRxAt: Number.isFinite(lastRxAt) ? lastRxAt : null,
-      lastTxAt: Number.isFinite(lastTxAt) ? lastTxAt : null
+      lastTxAt: Number.isFinite(lastTxAt) ? lastTxAt : null,
+      via,
+      relayPeerId
     });
   };
 
@@ -146,6 +253,38 @@ const buildEdges = (peers, localId) => {
   return Array.from(edgeMap.values());
 };
 
+const buildPubsubEdges = (peers, relayState = null) => {
+  const edges = [];
+  const now = Date.now();
+  const relayFallback = relayState?.activeRelayIds?.[0] || relayState?.relayIds?.[0] || null;
+  const peerRelayMap = relayState?.peerRelayMap;
+
+  peers.forEach((peer) => {
+    if (!peer?.peerId || peer.isRelay) return;
+    const pubsub = peer.pubsub || {};
+    const txCount = Number(pubsub.txCount) || 0;
+    const rxCount = Number(pubsub.rxCount) || 0;
+    const hasPubsub = txCount > 0 || rxCount > 0 || pubsub.lastTxAt || pubsub.lastRxAt;
+    if (!hasPubsub) return;
+    const relayPeerId = peerRelayMap?.get(peer.peerId) || relayFallback;
+    if (!relayPeerId) return;
+    const lastTxAt = Number(pubsub.lastTxAt);
+    const lastRxAt = Number(pubsub.lastRxAt);
+    const txActive = Number.isFinite(lastTxAt) && now - lastTxAt < PUBSUB_ACTIVE_MS;
+    const rxActive = Number.isFinite(lastRxAt) && now - lastRxAt < PUBSUB_ACTIVE_MS;
+    edges.push({
+      from: peer.peerId,
+      to: relayPeerId,
+      lastTxAt: txActive ? lastTxAt : null,
+      lastRxAt: rxActive ? lastRxAt : null,
+      txCount,
+      rxCount
+    });
+  });
+
+  return edges;
+};
+
 const findNeighborMetrics = (fromPeer, toPeerId) => {
   const neighbors = Array.isArray(fromPeer?.peers) ? fromPeer.peers : [];
   return neighbors.find((neighbor) => neighbor?.peerId === toPeerId) || null;
@@ -154,11 +293,13 @@ const findNeighborMetrics = (fromPeer, toPeerId) => {
 const buildNodeInfo = (peerId) => {
   const data = telemetryStore.get(peerId);
   if (!data) {
+    const isRelay = relayPeerIds.has(peerId);
     return {
       title: `Node ${formatPeerId(peerId)}`,
-      lines: ['No telemetry for this node yet.']
+      lines: isRelay ? ['Role: Relay server', 'No telemetry for this node yet.'] : ['No telemetry for this node yet.']
     };
   }
+  const isRelay = relayPeerIds.has(peerId);
   const counts = data.counts || {};
   const rates = data.rates || {};
   const peers = Array.isArray(data.peers) ? data.peers : [];
@@ -166,19 +307,23 @@ const buildNodeInfo = (peerId) => {
   const avgRtt = rttValues.length
     ? rttValues.reduce((sum, value) => sum + value, 0) / rttValues.length
     : null;
+  const lines = [
+    `Peer ID: ${peerId}`,
+    `Connections: ${data.connections ?? peers.length}`,
+    `Peers: ${data.peerCount ?? peers.length}`,
+    `Rx: ${counts.rx ?? 0} (${formatBytes(counts.rxBytes)}) @ ${formatRate(rates.rxBps)}`,
+    `Tx: ${counts.tx ?? 0} (${formatBytes(counts.txBytes)}) @ ${formatRate(rates.txBps)}`,
+    `Avg RTT: ${formatMs(avgRtt)}`,
+    `Last Rx: ${data.lastRxAt ? new Date(data.lastRxAt).toLocaleTimeString() : '--'}`,
+    `Last Tx: ${data.lastTxAt ? new Date(data.lastTxAt).toLocaleTimeString() : '--'}`
+  ];
+  if (isRelay) {
+    lines.splice(1, 0, 'Role: Relay server');
+  }
 
   return {
     title: `Node ${formatPeerId(peerId)}`,
-    lines: [
-      `Peer ID: ${peerId}`,
-      `Connections: ${data.connections ?? peers.length}`,
-      `Peers: ${data.peerCount ?? peers.length}`,
-      `Rx: ${counts.rx ?? 0} (${formatBytes(counts.rxBytes)}) @ ${formatRate(rates.rxBps)}`,
-      `Tx: ${counts.tx ?? 0} (${formatBytes(counts.txBytes)}) @ ${formatRate(rates.txBps)}`,
-      `Avg RTT: ${formatMs(avgRtt)}`,
-      `Last Rx: ${data.lastRxAt ? new Date(data.lastRxAt).toLocaleTimeString() : '--'}`,
-      `Last Tx: ${data.lastTxAt ? new Date(data.lastTxAt).toLocaleTimeString() : '--'}`
-    ]
+    lines
   };
 };
 
@@ -206,9 +351,11 @@ const buildEdgeInfo = (fromId, toId) => {
 
 const updateHud = () => {
   telemetryStore.prune(15000);
-  const peers = buildPeerView({ includeGhosts: !shouldHideGhosts() });
-  const edges = buildEdges(peers, localPeerId);
-  visualizer.updatePeers(peers, localPeerId, edges);
+  const relayState = buildRelayState(telemetryStore.list(), relayPeerIds);
+  const peers = buildPeerView({ includeGhosts: !shouldHideGhosts(), relayState });
+  const edges = buildEdges(peers, localPeerId, relayState);
+  const pubsubEdges = buildPubsubEdges(peers, relayState);
+  visualizer.updatePeers(peers, localPeerId, edges, pubsubEdges);
 
   const local = localPeerId ? telemetryStore.get(localPeerId) : null;
   if (local) {
@@ -234,7 +381,13 @@ const updateHud = () => {
     .slice()
     .sort((a, b) => (a.peerId || '').localeCompare(b.peerId || ''))
     .map((peer) => {
-      const tag = peer.peerId === localPeerId ? 'LOCAL' : peer.inferred ? 'GHOST' : 'PEER ';
+      const tag = peer.isRelay
+        ? 'RELAY'
+        : peer.peerId === localPeerId
+          ? 'LOCAL'
+          : peer.inferred
+            ? 'GHOST'
+            : 'PEER ';
       const rx = peer.counts?.rx ?? peer.rxCount ?? 0;
       const tx = peer.counts?.tx ?? peer.txCount ?? 0;
       const rtt = Number.isFinite(peer.rttMs) ? ` | rtt ${Math.round(peer.rttMs)}ms` : '';
@@ -279,6 +432,13 @@ const connect = async () => {
   try {
     const cfg = await loadRelayConfig();
     const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+    relayPeerIds = new Set(
+      bootstrapPeers
+        .map((peer) => extractPeerId(peer))
+        .concat(extractPeerId(cfg.relayPeerId))
+        .filter(Boolean)
+    );
+    const webrtc = normalizeWebRTCConfig(cfg);
     const roomId = roomInput.value.trim() || 'telemetry';
 
     node = new NodeKernel({
@@ -287,7 +447,9 @@ const connect = async () => {
       enableWarmDeltaProvider: true,
       deltaNamespace: 'telemetry',
       gameId: 'netviz',
-      roomId
+      roomId,
+      presenceIntervalMs: 15000,
+      ...(webrtc ? { webrtc } : {})
     });
 
     await node.initialize();
@@ -335,6 +497,12 @@ helpToggle?.addEventListener('click', () => {
   if (!helpPanel) return;
   const next = !helpPanel.classList.contains('active');
   setHelpVisible(next);
+});
+
+consoleToggle?.addEventListener('click', () => {
+  if (!consoleWindow) return;
+  const next = consoleWindow.classList.contains('collapsed');
+  setConsoleVisible(next);
 });
 
 hideGhostsToggle?.addEventListener('change', () => {

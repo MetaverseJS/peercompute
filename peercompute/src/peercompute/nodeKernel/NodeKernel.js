@@ -23,6 +23,7 @@ export class NodeKernel {
    * @param {boolean} config.enablePersistence - Enable IndexedDB persistence
    * @param {Array<string>} config.bootstrapPeers - Bootstrap peer multiaddrs
    * @param {string} config.stateTopic - P2P state sync topic
+   * @param {number} config.presenceIntervalMs - Presence heartbeat interval in ms
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
@@ -83,6 +84,13 @@ export class NodeKernel {
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
+        allowLocalDial: this.config.allowLocalDial,
+        webrtc: this.config.webrtc,
+        iceServers: this.config.iceServers,
+        rtcConfiguration: this.config.rtcConfiguration,
+        preferDirect: this.config.preferDirect,
+        dropRelayOnDirect: this.config.dropRelayOnDirect,
+        presenceIntervalMs: this.config.presenceIntervalMs,
         schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
         schedulerProfile: this.config.clockPolicy.networkProfile,
         onMessage: this._handleNetworkMessage.bind(this),

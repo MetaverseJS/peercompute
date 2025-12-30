@@ -3,10 +3,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 
 const COLORS = {
-  local: 0xff4fb3,
-  remote: 0x00ff6a,
-  ghost: 0x008a4f,
-  edge: 0x00ff6a,
+  local: 0xffb13b,
+  remote: 0xffb13b,
+  ghost: 0x8a5f1f,
+  relay: 0xcaf6ff,
+  edge: 0xffb13b,
+  edgeRelay: 0x00ff6a,
+  pubsub: 0xcaf6ff,
   grid: 0x00ff6a
 };
 
@@ -24,6 +27,8 @@ const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}
 const EDGE_BASE_RADIUS = 0.035;
 const EDGE_MAX_RADIUS = 0.18;
 const PULSE_WINDOW_MS = 4000;
+const PUBSUB_RADIUS = 0.028;
+const PUBSUB_PULSE_WINDOW_MS = 8000;
 const PULSE_COLORS = {
   tx: COLORS.local,
   rx: 0x00ffd4
@@ -37,13 +42,21 @@ export class NetworkVisualizer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.nodeMeshes = new Map();
     this.edgeMeshes = new Map();
+    this.pubsubMeshes = new Map();
     this.nodeGroup = new THREE.Group();
     this.edgeGroup = new THREE.Group();
     this.nodeGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+    this.relayGeometry = new THREE.IcosahedronGeometry(0.65, 0);
     this.edgeMaterial = new THREE.MeshBasicMaterial({
       color: COLORS.edge,
       transparent: true,
       opacity: 0.65,
+      blending: THREE.AdditiveBlending
+    });
+    this.pubsubMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.pubsub,
+      transparent: true,
+      opacity: 0.55,
       blending: THREE.AdditiveBlending
     });
     this.pulseGeometry = new THREE.SphereGeometry(0.12, 12, 12);
@@ -61,8 +74,24 @@ export class NetworkVisualizer {
         blending: THREE.AdditiveBlending
       })
     };
+    this.pubsubPulseMaterials = {
+      tx: new THREE.MeshBasicMaterial({
+        color: COLORS.pubsub,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending
+      }),
+      rx: new THREE.MeshBasicMaterial({
+        color: COLORS.pubsub,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending
+      })
+    };
     this.pulseWindowMs = PULSE_WINDOW_MS;
+    this.pubsubPulseWindowMs = PUBSUB_PULSE_WINDOW_MS;
     this.pulseVector = new THREE.Vector3();
+    this.midpointVector = new THREE.Vector3();
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line.threshold = 0.2;
 
@@ -166,12 +195,17 @@ export class NetworkVisualizer {
     peers.forEach((peer) => {
       const peerId = peer.peerId;
       if (!peerId) return;
+      const seed = hashString(peerId);
+      const angle = (seed % 360) * (Math.PI / 180);
+      if (peer.isRelay) {
+        const radius = 3.5 + (seed % 5) * 0.4;
+        positions.set(peerId, new THREE.Vector3(Math.cos(angle) * radius, 4.2, Math.sin(angle) * radius));
+        return;
+      }
       if (peerId === localPeerId) {
         positions.set(peerId, new THREE.Vector3(0, 0.5, 0));
         return;
       }
-      const seed = hashString(peerId);
-      const angle = (seed % 360) * (Math.PI / 180);
       const radius = 5 + (seed % 7) * 0.7;
       positions.set(peerId, new THREE.Vector3(Math.cos(angle) * radius, 0.5, Math.sin(angle) * radius));
     });
@@ -212,8 +246,8 @@ export class NetworkVisualizer {
     return THREE.MathUtils.clamp(scale, 0.6, 1.8);
   }
 
-  _createPulse(type) {
-    const material = type === 'tx' ? this.pulseMaterials.tx : this.pulseMaterials.rx;
+  _createPulse(type, materialOverride = null) {
+    const material = materialOverride || (type === 'tx' ? this.pulseMaterials.tx : this.pulseMaterials.rx);
     const mesh = new THREE.Mesh(this.pulseGeometry, material);
     mesh.visible = false;
     mesh.renderOrder = 2;
@@ -221,30 +255,40 @@ export class NetworkVisualizer {
     return { mesh, progress: Math.random() };
   }
 
-  updatePeers(peers, localPeerId, edges = null) {
+  updatePeers(peers, localPeerId, edges = null, pubsubEdges = null) {
     const positions = this._layoutPeers(peers, localPeerId);
 
     for (const peer of peers) {
       if (!peer.peerId) continue;
       const position = positions.get(peer.peerId);
       if (!position) continue;
+      const isRelay = Boolean(peer.isRelay);
       let mesh = this.nodeMeshes.get(peer.peerId);
+      if (mesh && mesh.userData.isRelay !== isRelay) {
+        this.nodeGroup.remove(mesh);
+        mesh.material.dispose();
+        this.nodeMeshes.delete(peer.peerId);
+        mesh = null;
+      }
       if (!mesh) {
         const material = new THREE.MeshStandardMaterial({
-          color: COLORS.remote,
-          emissive: 0x002a12,
-          emissiveIntensity: 0.7
+          color: isRelay ? COLORS.relay : COLORS.remote,
+          emissive: isRelay ? 0x1a3240 : 0x2a1a00,
+          emissiveIntensity: isRelay ? 0.85 : 0.65
         });
-        mesh = new THREE.Mesh(this.nodeGeometry, material);
-        mesh.userData = { type: 'node', peerId: peer.peerId };
+        const geometry = isRelay ? this.relayGeometry : this.nodeGeometry;
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.userData = { type: 'node', peerId: peer.peerId, isRelay };
         this.nodeGroup.add(mesh);
         this.nodeMeshes.set(peer.peerId, mesh);
       }
-      const color = peer.peerId === localPeerId
-        ? COLORS.local
-        : peer.inferred
-          ? COLORS.ghost
-          : COLORS.remote;
+      const color = isRelay
+        ? COLORS.relay
+        : peer.peerId === localPeerId
+          ? COLORS.local
+          : peer.inferred
+            ? COLORS.ghost
+            : COLORS.remote;
       mesh.material.color.set(color);
       mesh.position.copy(position);
     }
@@ -283,9 +327,12 @@ export class NetworkVisualizer {
       const txBps = Number(entry?.txBps) || 0;
       const lastRxAt = Number(entry?.lastRxAt) || null;
       const lastTxAt = Number(entry?.lastTxAt) || null;
+      const via = entry?.via || null;
+      const relayPeerId = entry?.relayPeerId || null;
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
+      const edgeColor = via === 'relay' ? COLORS.edgeRelay : COLORS.edge;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {
@@ -298,6 +345,8 @@ export class NetworkVisualizer {
           from,
           to,
           radius,
+          via,
+          relayPeerId,
           rxBps,
           txBps,
           lastRxAt,
@@ -316,16 +365,125 @@ export class NetworkVisualizer {
         edgeData.from = from;
         edgeData.to = to;
         edgeData.radius = radius;
+        edgeData.via = via;
+        edgeData.relayPeerId = relayPeerId;
         edgeData.rxBps = rxBps;
         edgeData.txBps = txBps;
         edgeData.lastRxAt = lastRxAt;
         edgeData.lastTxAt = lastTxAt;
+      }
+      edgeData.mesh.material.color.set(edgeColor);
+
+      const relayPos = relayPeerId ? positions.get(relayPeerId) : null;
+      const isRelayed = via === 'relay' && relayPos;
+      if (isRelayed) {
+        curve.getPointAt(0.5, this.midpointVector);
+        const relayCurve = this._buildCurve(this.midpointVector, relayPos);
+        const relayRadius = Math.max(EDGE_BASE_RADIUS * 0.8, radius * 0.6);
+        const relayGeometry = new THREE.TubeGeometry(relayCurve, 32, relayRadius, 6, false);
+        if (!edgeData.relay) {
+          const relayMesh = new THREE.Mesh(relayGeometry, this.edgeMaterial.clone());
+          relayMesh.material.color.set(COLORS.edgeRelay);
+          this.edgeGroup.add(relayMesh);
+          edgeData.relay = {
+            mesh: relayMesh,
+            curve: relayCurve,
+            relayPeerId
+          };
+        } else {
+          edgeData.relay.mesh.geometry.dispose();
+          edgeData.relay.mesh.geometry = relayGeometry;
+          edgeData.relay.mesh.material.color.set(COLORS.edgeRelay);
+          edgeData.relay.curve = relayCurve;
+          edgeData.relay.relayPeerId = relayPeerId;
+        }
+      } else if (edgeData.relay) {
+        this.edgeGroup.remove(edgeData.relay.mesh);
+        edgeData.relay.mesh.geometry.dispose();
+        edgeData.relay.mesh.material.dispose();
+        edgeData.relay = null;
       }
     }
 
     for (const edgeKey of Array.from(this.edgeMeshes.keys())) {
       if (!nextEdges.has(edgeKey)) {
         const edgeData = this.edgeMeshes.get(edgeKey);
+        if (edgeData) {
+          this.edgeGroup.remove(edgeData.mesh);
+          edgeData.mesh.geometry.dispose();
+          edgeData.mesh.material.dispose();
+          if (edgeData.relay?.mesh) {
+            this.edgeGroup.remove(edgeData.relay.mesh);
+            edgeData.relay.mesh.geometry.dispose();
+            edgeData.relay.mesh.material.dispose();
+          }
+          if (edgeData.pulses?.tx?.mesh) {
+            this.edgeGroup.remove(edgeData.pulses.tx.mesh);
+          }
+          if (edgeData.pulses?.rx?.mesh) {
+            this.edgeGroup.remove(edgeData.pulses.rx.mesh);
+          }
+        }
+        this.edgeMeshes.delete(edgeKey);
+      }
+    }
+
+    this._syncPubsubEdges(pubsubEdges, positions);
+  }
+
+  _syncPubsubEdges(pubsubEdges, positions) {
+    const edgeList = Array.isArray(pubsubEdges) ? pubsubEdges : [];
+    const nextEdges = new Set();
+
+    for (const entry of edgeList) {
+      const from = entry?.from;
+      const to = entry?.to;
+      if (!from || !to || from === to) continue;
+      const fromPos = positions.get(from);
+      const toPos = positions.get(to);
+      if (!fromPos || !toPos) continue;
+      const edgeKey = buildEdgeKey(from, to);
+      nextEdges.add(edgeKey);
+
+      const lastTxAt = Number(entry?.lastTxAt) || null;
+      const lastRxAt = Number(entry?.lastRxAt) || null;
+      const curve = this._buildCurve(fromPos, toPos);
+      const geometry = new THREE.TubeGeometry(curve, 36, PUBSUB_RADIUS, 6, false);
+
+      let edgeData = this.pubsubMeshes.get(edgeKey);
+      if (!edgeData) {
+        const mesh = new THREE.Mesh(geometry, this.pubsubMaterial.clone());
+        mesh.userData = { type: 'pubsub', from, to };
+        this.edgeGroup.add(mesh);
+        edgeData = {
+          mesh,
+          curve,
+          from,
+          to,
+          lastTxAt,
+          lastRxAt,
+          pulses: {
+            tx: this._createPulse('tx', this.pubsubPulseMaterials.tx),
+            rx: this._createPulse('rx', this.pubsubPulseMaterials.rx)
+          }
+        };
+        this.pubsubMeshes.set(edgeKey, edgeData);
+      } else {
+        edgeData.mesh.geometry.dispose();
+        edgeData.mesh.geometry = geometry;
+        edgeData.mesh.userData = { type: 'pubsub', from, to };
+        edgeData.curve = curve;
+        edgeData.from = from;
+        edgeData.to = to;
+        edgeData.lastTxAt = lastTxAt;
+        edgeData.lastRxAt = lastRxAt;
+      }
+      edgeData.mesh.material.color.set(COLORS.pubsub);
+    }
+
+    for (const edgeKey of Array.from(this.pubsubMeshes.keys())) {
+      if (!nextEdges.has(edgeKey)) {
+        const edgeData = this.pubsubMeshes.get(edgeKey);
         if (edgeData) {
           this.edgeGroup.remove(edgeData.mesh);
           edgeData.mesh.geometry.dispose();
@@ -337,7 +495,7 @@ export class NetworkVisualizer {
             this.edgeGroup.remove(edgeData.pulses.rx.mesh);
           }
         }
-        this.edgeMeshes.delete(edgeKey);
+        this.pubsubMeshes.delete(edgeKey);
       }
     }
   }
@@ -367,6 +525,7 @@ export class NetworkVisualizer {
       const delta = Math.min(0.05, (now - lastFrame) / 1000);
       lastFrame = now;
       this._updateEdgePulses(delta);
+      this._updatePubsubPulses(delta);
       this.controls?.update();
       this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(tick);
@@ -384,9 +543,20 @@ export class NetworkVisualizer {
     }
   }
 
-  _updatePulse(pulse, curve, delta, direction, now, lastAt, rate) {
+  _updatePubsubPulses(delta) {
+    const now = Date.now();
+    for (const edgeData of this.pubsubMeshes.values()) {
+      const curve = edgeData.curve;
+      if (!curve) continue;
+      this._updatePulse(edgeData.pulses?.tx, curve, delta, 1, now, edgeData.lastTxAt, 0, this.pubsubPulseWindowMs);
+      this._updatePulse(edgeData.pulses?.rx, curve, delta, -1, now, edgeData.lastRxAt, 0, this.pubsubPulseWindowMs);
+    }
+  }
+
+  _updatePulse(pulse, curve, delta, direction, now, lastAt, rate, windowOverride = null) {
     if (!pulse?.mesh) return;
-    const active = Number.isFinite(lastAt) && now - lastAt < this.pulseWindowMs;
+    const windowMs = Number.isFinite(windowOverride) ? windowOverride : this.pulseWindowMs;
+    const active = Number.isFinite(lastAt) && now - lastAt < windowMs;
     if (!active) {
       pulse.mesh.visible = false;
       return;

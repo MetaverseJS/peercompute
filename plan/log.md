@@ -727,3 +727,74 @@ sudo systemctl reload nginx
 - Reduced NetViz telemetry publish/snapshot cadence to cut message volume.
 - Added a help toggle with an explanatory panel in the NetViz HUD.
 - Verified the NetViz tile is present in the docs demo overview.
+
+## Date: 2025-12-29
+
+### Prompt
+- alright we're on a new branch dedicated to implementing the webrtc functionality. knock yourself out. write your own tests runtime and unit you can run to validate functionality. port all demos over. go as long as you can without my input.
+
+### Changes
+- Added WebRTC config normalization, direct-first dialing, and relay pruning when direct connections are available in `NetworkManager`, with NodeKernel passing through WebRTC settings.
+- Extended relay config generation + relay server output to include WebRTC config, and wired `scripts/start-relay-prod.sh` to export it.
+- Ported demo NodeKernel usage to pass WebRTC settings from relay-config (NetViz, DaddyGo, CubeChat, Hyperborea, SneakyWoods + room directory nodes).
+- Regenerated demo `public/relay-config.json` files to include WebRTC config defaults.
+- Added unit tests for WebRTC config/relay pruning + a runtime smoke script.
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js
+- node peercompute/tests/runtime/webrtc-config.smoke.js
+
+## Date: 2025-12-29
+
+### Prompt
+- alright in the netviz change the color of the nurbs line to amber when it's a direct connection with webRTC
+
+### Changes
+- Added telemetry edge `via` propagation in NetViz so edges can track WebRTC connections.
+- Updated NetViz edge rendering to tint NURBS tubes amber when the edge is marked as WebRTC-direct.
+
+## Date: 2025-12-29
+
+### Prompt
+- interesting. they turn amber in both windows then revert back to green.
+
+### Changes
+- Kept preferred connection type on `peer:connect` so WebRTC links don't get downgraded to a generic `connection` via flag.
+
+## Date: 2025-12-29
+
+### Prompt
+- you should add any active relay servers to the netviz. you should render those above the plane where the peer nodes are. identify them with a green icosahedron. peers should be rendered in amber. a connection to a peer that passes through the relay server should be rendered as green with a green nurbs that connects the midpoint of the peer nurbs connection to the relay server.
+
+### Changes
+- Added relay peer detection from bootstrap config/telemetry, included active relays in NetViz, and tagged them in the HUD list.
+- Updated NetViz node styling to render peers in amber and relays as green icosahedrons above the plane.
+- Rendered relayed peer connections in green with a relay spur NURBS linking the edge midpoint to the relay node.
+
+## Date: 2025-12-29
+
+### Prompt
+- make all the netvis console info divs render inside a single collapsible window that can be expanded or collapsed via a [console] button in the top left of the screen. when viewing the visualization from a mobile device make sure the console window doesn't take up more than half of the screen vertically. I'd like you to show the relay pub-sub messages in the visualization. render pub-sub lines as blueish white... also the peer cubes should be rendered as amber as well. and the relay icosahedron should appear as blueish white. clicking the icosahedron should show something in the node info window telling you it is a relay server.
+
+### Changes
+- Collapsed NetViz HUD into a single console window with a [console] toggle button and added mobile max-height constraints.
+- Added pubsub telemetry tracking in NetworkManager and visualized relay pubsub arcs with directional pulses.
+- Updated NetViz styling to render peers in amber, relays in blue-white icosahedrons, and annotate relay nodes in the inspector.
+
+## Date: 2025-12-29
+
+### Prompt
+- style the scrollbars to match the aesthetic and wordwrap the peerID so it doesn't cause horizontal scrolling like in the screenshot. for the netviz: throttle the presence heatbeats to every 15 seconds. lets dial the PC snapshot back to once every 5 seconds.
+
+### Changes
+- Styled the NetViz console scrollbar to match the neon theme and enabled word wrapping in console text to avoid horizontal scrolling.
+- Added configurable presence heartbeat interval support and set NetViz to 15s.
+- Reduced NetViz snapshot cadence to one every 5 seconds.
+
+## Date: 2025-12-29
+
+### Prompt
+- I updated the netviz screenshot to be a gif in the demo/netviz folder can you make the overview tile for netviz use this gif instead of the current diagram?
+
+### Changes
+- Pointed the NetViz demo tile on the docs overview page to the new `demos/netviz/netviz-screenshot.gif`.

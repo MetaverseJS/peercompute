@@ -52,6 +52,31 @@ const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
   .map((entry) => entry.trim())
   .filter(Boolean);
 const relayConfigFile = (process.env.RELAY_CONFIG_FILE || '').trim();
+const relayWebrtcConfig = (() => {
+  const raw = (process.env.RELAY_WEBRTC_CONFIG || '').trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('[Relay] Failed to parse RELAY_WEBRTC_CONFIG:', err?.message || err);
+    }
+  }
+  const iceRaw = (process.env.RELAY_ICE_SERVERS || '').trim();
+  if (iceRaw) {
+    try {
+      const parsed = JSON.parse(iceRaw);
+      if (Array.isArray(parsed) || typeof parsed === 'object') {
+        return { iceServers: parsed };
+      }
+    } catch (err) {
+      console.warn('[Relay] Failed to parse RELAY_ICE_SERVERS:', err?.message || err);
+    }
+  }
+  return null;
+})();
 
 const toMultiaddrHostSegment = (host) => {
   if (!host) return '';
@@ -282,7 +307,11 @@ async function startServer() {
         }
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);
-        const relayConfig = JSON.stringify({ bootstrapPeers: [announceAddr] }, null, 2);
+        const relayConfigPayload = { bootstrapPeers: [announceAddr] };
+        if (relayWebrtcConfig) {
+          relayConfigPayload.webrtc = relayWebrtcConfig;
+        }
+        const relayConfig = JSON.stringify(relayConfigPayload, null, 2);
         const writeConfig = (filePath) => {
           if (!filePath) return;
           try {

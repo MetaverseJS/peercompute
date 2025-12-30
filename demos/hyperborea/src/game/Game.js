@@ -28,6 +28,21 @@ import { TimeSystem } from '../systems/timeSystem.js';
 import { TerrainGenerator } from '../systems/terrainGenerator.js';
 import { RoomDirectory, buildRoomId, normalizeRoomName } from './roomDirectory.js';
 
+const normalizeWebRTCConfig = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+    const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+    const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+    const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+    const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+    const next = { ...raw };
+    if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+    if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+    if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+    if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+    return Object.keys(next).length ? next : null;
+};
+
 export class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
@@ -35,6 +50,7 @@ export class Game {
         this.peerMeshes = new Map();
         this.peers = new Map();
         this.bootstrapPeers = [];
+        this.webrtc = null;
         this.roomDirectory = null;
         this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
         this.networkManager = null;
@@ -387,6 +403,7 @@ export class Game {
         try {
             const cfg = await this.loadRelayConfig();
             this.bootstrapPeers = this.normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+            this.webrtc = normalizeWebRTCConfig(cfg);
             this.relayPeerIds = this.bootstrapPeers.map(getPeerIdFromAddr).filter(Boolean);
             if (this.bootstrapPeers.length === 0) {
                 logNet('No bootstrap peers; relay config missing');
@@ -397,7 +414,8 @@ export class Game {
                 bootstrapPeers: this.bootstrapPeers,
                 enablePersistence: false,
                 gameId: 'hyperborea',
-                roomId: this.currentRoom?.roomId || 'global'
+                roomId: this.currentRoom?.roomId || 'global',
+                ...(this.webrtc ? { webrtc: this.webrtc } : {})
             });
             await this.node.initialize();
             await this.node.start();
@@ -473,7 +491,8 @@ export class Game {
         if (!this.roomDirectory) {
             this.roomDirectory = new RoomDirectory({
                 gameId: 'hyperborea',
-                bootstrapPeers: this.bootstrapPeers
+                bootstrapPeers: this.bootstrapPeers,
+                webrtc: this.webrtc
             });
             try {
                 await this.roomDirectory.init();

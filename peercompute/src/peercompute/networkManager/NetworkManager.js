@@ -41,6 +41,80 @@ const getByteLength = (data) => {
   return 0;
 };
 
+const toAddrString = (addr) => {
+  if (!addr) return '';
+  if (typeof addr === 'string') return addr;
+  if (typeof addr.toString === 'function') return addr.toString();
+  return String(addr);
+};
+
+const isRelayAddr = (addr) => toAddrString(addr).includes('/p2p-circuit');
+const isWebRTCAddr = (addr) => toAddrString(addr).includes('/webrtc');
+
+const scoreDialTarget = (addr) => {
+  const value = toAddrString(addr);
+  const hasRelay = value.includes('/p2p-circuit');
+  const hasWebRTC = value.includes('/webrtc');
+  if (hasWebRTC && !hasRelay) return 3;
+  if (hasWebRTC) return 2;
+  if (!hasRelay) return 1;
+  return 0;
+};
+
+const orderDialTargets = (targets) => {
+  const scored = targets.map((addr, index) => ({
+    addr,
+    score: scoreDialTarget(addr),
+    index
+  }));
+  scored.sort((a, b) => (b.score - a.score) || (a.index - b.index));
+  return scored.map((entry) => entry.addr);
+};
+
+const normalizeIceServers = (input) => {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [input];
+  const servers = [];
+  list.forEach((entry) => {
+    if (!entry) return;
+    if (typeof entry === 'string') {
+      servers.push({ urls: entry });
+      return;
+    }
+    if (typeof entry !== 'object') return;
+    const rawUrls = entry.urls ?? entry.url;
+    if (!rawUrls) return;
+    const urls = Array.isArray(rawUrls)
+      ? rawUrls.map((value) => String(value)).filter(Boolean)
+      : [String(rawUrls)];
+    if (urls.length === 0) return;
+    const payload = { ...entry, urls: Array.isArray(rawUrls) ? urls : urls[0] };
+    servers.push(payload);
+  });
+  return servers;
+};
+
+const normalizeWebRTCConfig = (config = {}) => {
+  const raw = config && typeof config.webrtc === 'object' && config.webrtc ? config.webrtc : {};
+  const preferDirect = raw.preferDirect ?? config.preferDirect ?? true;
+  const dropRelayOnDirect = raw.dropRelayOnDirect ?? config.dropRelayOnDirect ?? true;
+  const iceServers = normalizeIceServers(
+    raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
+  );
+  const baseRtc = raw.rtcConfiguration ?? config.rtcConfiguration ?? {};
+  const rtcConfiguration = (baseRtc && typeof baseRtc === 'object') ? { ...baseRtc } : {};
+  if (iceServers.length > 0) {
+    rtcConfiguration.iceServers = iceServers;
+  }
+  return {
+    ...raw,
+    preferDirect,
+    dropRelayOnDirect,
+    iceServers,
+    rtcConfiguration
+  };
+};
+
 const isLocalDialAddr = (addr) => {
   if (typeof addr !== 'string') return false;
   if (addr.includes('/dns4/localhost') || addr.includes('/dns/localhost')) return true;
@@ -101,12 +175,16 @@ const ensurePeerIdSuffix = (addr, peerId) => {
 
 export class NetworkManager {
   constructor(config = {}) {
+    const webrtcConfig = normalizeWebRTCConfig(config);
     const telemetrySampleMs = Number.isFinite(config.telemetrySampleMs)
       ? Math.max(250, config.telemetrySampleMs)
       : 1000;
     const telemetryPingMs = Number.isFinite(config.telemetryPingMs)
       ? Math.max(500, config.telemetryPingMs)
       : 5000;
+    const presenceIntervalMs = Number.isFinite(config.presenceIntervalMs)
+      ? Math.max(1000, config.presenceIntervalMs)
+      : 3000;
 
     const defaults = {
       topology: config.topology || 'distributed',
@@ -119,8 +197,10 @@ export class NetworkManager {
       roomId: config.roomId || 'default-room',
       enforceRoomIsolation: config.enforceRoomIsolation !== false,
       enableTelemetry: config.enableTelemetry !== false,
+      webrtc: webrtcConfig,
       telemetrySampleMs,
-      telemetryPingMs
+      telemetryPingMs,
+      presenceIntervalMs
     };
 
     const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
@@ -131,7 +211,8 @@ export class NetworkManager {
       ...defaults,
       ...config,
       bootstrapPeers: normalizedBootstrapPeers,
-      allowLocalDial
+      allowLocalDial,
+      webrtc: webrtcConfig
     };
     this.bootstrapPeerIds = new Set(
       normalizedBootstrapPeers.map(getPeerIdFromAddr).filter(Boolean)
@@ -151,7 +232,13 @@ export class NetworkManager {
       rxBytes: 0,
       txBytes: 0,
       rxBps: 0,
-      txBps: 0
+      txBps: 0,
+      pubsubRxCount: 0,
+      pubsubTxCount: 0,
+      pubsubRxBytes: 0,
+      pubsubTxBytes: 0,
+      pubsubLastRxAt: 0,
+      pubsubLastTxAt: 0
     };
     this.telemetrySample = {
       rxBytes: 0,
@@ -327,10 +414,15 @@ export class NetworkManager {
       peerDiscovery.unshift(bootstrap({ list: this.config.bootstrapPeers }));
     }
 
+    const rtcConfiguration = this.config.webrtc?.rtcConfiguration || {};
+    const webRtcTransport = Object.keys(rtcConfiguration).length > 0
+      ? webRTC({ rtcConfiguration })
+      : webRTC();
+
     this.libp2p = await createLibp2p({
       transports: [
         webSockets(),
-        webRTC(),
+        webRtcTransport,
         circuitRelayTransport()
       ],
       connectionEncrypters: [noise(), plaintext()],
@@ -379,6 +471,7 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    this._recordPubsubTx(0);
 
     await this._dialBootstrapPeers();
 
@@ -495,6 +588,14 @@ export class NetworkManager {
         rxBps: this.telemetry.rxBps,
         txBps: this.telemetry.txBps
       },
+      pubsub: {
+        rxCount: this.telemetry.pubsubRxCount,
+        txCount: this.telemetry.pubsubTxCount,
+        rxBytes: this.telemetry.pubsubRxBytes,
+        txBytes: this.telemetry.pubsubTxBytes,
+        lastRxAt: this.telemetry.pubsubLastRxAt || null,
+        lastTxAt: this.telemetry.pubsubLastTxAt || null
+      },
       reliability: health.reliability,
       pubsubPeerCount: Array.isArray(health.pubsubPeers) ? health.pubsubPeers.length : 0,
       peers
@@ -508,6 +609,27 @@ export class NetworkManager {
   _wireLibp2pEvents() {
     if (!this.libp2p) return;
 
+    this.libp2p.addEventListener('connection:open', (evt) => {
+      const conn = evt.detail;
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId) return;
+      const via = this._getPreferredConnectionType(peerId);
+      if (via) {
+        this._touchPeer(peerId, { via });
+      }
+      this._maybePruneRelayConnections(peerId);
+    });
+
+    this.libp2p.addEventListener('connection:close', (evt) => {
+      const conn = evt.detail;
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId) return;
+      const via = this._getPreferredConnectionType(peerId);
+      if (via) {
+        this._touchPeer(peerId, { via });
+      }
+    });
+
     this.libp2p.addEventListener('peer:discovery', (evt) => {
       const peerId = evt.detail?.id?.toString?.() || evt.detail?.id?.toString?.();
       if (!peerId || peerId === this.peerId) return;
@@ -519,7 +641,12 @@ export class NetworkManager {
       const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
       if (!peerId) return;
       const isNewPeer = !this.peers.has(peerId);
-      this._touchPeer(peerId, { connectedAt: Date.now(), via: 'connection' });
+      const preferredVia = this._getPreferredConnectionType(peerId);
+      const existingVia = this.peers.get(peerId)?.via || null;
+      this._touchPeer(peerId, {
+        connectedAt: Date.now(),
+        via: preferredVia || existingVia || 'connection'
+      });
       if (isNewPeer) {
         this.onPeerConnect(peerId);
       }
@@ -548,6 +675,7 @@ export class NetworkManager {
       const byteLength = getByteLength(data);
       this.lastRxAt = now;
       this.scheduler?.recordRx(now);
+      this._recordPubsubRx(byteLength);
 
       const sender = parsed?.header?.peerId || parsed?.from || null;
       if (sender && sender !== this.peerId) {
@@ -680,6 +808,12 @@ export class NetworkManager {
     });
   }
 
+  _recordPubsubRx(byteLength) {
+    this.telemetry.pubsubRxCount += 1;
+    this.telemetry.pubsubRxBytes += byteLength || 0;
+    this.telemetry.pubsubLastRxAt = Date.now();
+  }
+
   _recordTx(peerId, byteLength) {
     this.telemetry.txCount += 1;
     this.telemetry.txBytes += byteLength || 0;
@@ -691,6 +825,12 @@ export class NetworkManager {
       txBytes: (existing.txBytes || 0) + (byteLength || 0),
       lastTxAt: Date.now()
     });
+  }
+
+  _recordPubsubTx(byteLength) {
+    this.telemetry.pubsubTxCount += 1;
+    this.telemetry.pubsubTxBytes += byteLength || 0;
+    this.telemetry.pubsubLastTxAt = Date.now();
   }
 
   _startPresence() {
@@ -710,7 +850,7 @@ export class NetworkManager {
     publishPresence().catch(() => {});
     this.presenceInterval = setInterval(() => {
       publishPresence().catch(() => {});
-    }, 3000);
+    }, this.config.presenceIntervalMs || 3000);
   }
 
   _clearPresenceTimer() {
@@ -893,6 +1033,7 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    this._recordPubsubTx(0);
   }
 
   async _publish(topic, payload) {
@@ -904,6 +1045,7 @@ export class NetworkManager {
       this.lastTxAt = now;
       this.scheduler?.recordTx(now);
       this._recordTx(payload?.target || null, getByteLength(data));
+      this._recordPubsubTx(getByteLength(data));
     } catch (err) {
       const now = Date.now();
       const last = this.publishErrorAt.get(topic) || 0;
@@ -946,8 +1088,12 @@ export class NetworkManager {
   async _maybeDialPeer(peerId, source, addrs = null) {
     if (!this.libp2p || !peerId || peerId === this.peerId) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
-    const active = this.libp2p.getConnections?.(peerId) || [];
-    if (active.length > 0) return;
+    const active = this._getConnectionsForPeer(peerId);
+    const hasDirect = active.some((conn) => !isRelayAddr(conn?.remoteAddr));
+    const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
+    const preferDirect = this.config.webrtc?.preferDirect !== false;
+    if (hasDirect) return;
+    if (!preferDirect && active.length > 0) return;
     const now = Date.now();
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
     if (now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
@@ -955,8 +1101,9 @@ export class NetworkManager {
     const maybeDialTargets = Array.isArray(addrs) && addrs.length > 0
       ? addrs.map(toPeerMultiaddr).filter(Boolean)
       : [];
-    if (maybeDialTargets.length > 0) {
-      for (const addr of maybeDialTargets) {
+    const orderedTargets = preferDirect ? orderDialTargets(maybeDialTargets) : maybeDialTargets;
+    if (orderedTargets.length > 0) {
+      for (const addr of orderedTargets) {
         try {
           await this.libp2p.dial(addr);
           debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
@@ -966,6 +1113,7 @@ export class NetworkManager {
         }
       }
     }
+    if (preferDirect && hasRelay) return;
     let target = peerId;
     try {
       target = peerIdFromString(peerId);
@@ -985,9 +1133,50 @@ export class NetworkManager {
     const addrs = this.libp2p.getMultiaddrs().map((addr) => addr.toString());
     const scoped = addrs.filter((addr) => addr.includes('/p2p-circuit') || addr.includes('/webrtc'));
     const candidates = scoped.length > 0 ? scoped : addrs;
+    const preferDirect = this.config.webrtc?.preferDirect !== false;
+    const ordered = preferDirect ? orderDialTargets(candidates) : candidates;
     const peerId = this.peerId;
-    const normalized = candidates.map((addr) => ensurePeerIdSuffix(addr, peerId));
+    const normalized = ordered.map((addr) => ensurePeerIdSuffix(addr, peerId));
     return Array.from(new Set(normalized));
+  }
+
+  _getConnectionsForPeer(peerId) {
+    if (!this.libp2p?.getConnections) return [];
+    const connections = this.libp2p.getConnections(peerId);
+    if (Array.isArray(connections)) return connections;
+    if (connections && typeof connections.values === 'function') {
+      return Array.from(connections.values()).flat();
+    }
+    return [];
+  }
+
+  _getPreferredConnectionType(peerId) {
+    const connections = this._getConnectionsForPeer(peerId);
+    if (connections.some((conn) => isWebRTCAddr(conn?.remoteAddr) && !isRelayAddr(conn?.remoteAddr))) {
+      return 'webrtc';
+    }
+    if (connections.some((conn) => !isRelayAddr(conn?.remoteAddr))) {
+      return 'direct';
+    }
+    if (connections.some((conn) => isRelayAddr(conn?.remoteAddr))) {
+      return 'relay';
+    }
+    return null;
+  }
+
+  _maybePruneRelayConnections(peerId) {
+    if (!this.libp2p) return;
+    if (this.bootstrapPeerIds.has(peerId)) return;
+    if (this.config.webrtc?.dropRelayOnDirect === false) return;
+    const connections = this._getConnectionsForPeer(peerId);
+    if (connections.length === 0) return;
+    const hasDirect = connections.some((conn) => !isRelayAddr(conn?.remoteAddr));
+    if (!hasDirect) return;
+    const relayed = connections.filter((conn) => isRelayAddr(conn?.remoteAddr));
+    relayed.forEach((conn) => {
+      if (conn?.status && conn.status !== 'open') return;
+      conn.close?.().catch?.(() => {});
+    });
   }
 
   _logPubsubStatus(label) {

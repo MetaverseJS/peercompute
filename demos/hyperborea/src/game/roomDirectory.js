@@ -36,9 +36,10 @@ export const buildRoomId = ({ name, visibility, password }) => {
 export const normalizeRoomName = (value) => slugify(value);
 
 export class RoomDirectory {
-  constructor({ gameId, bootstrapPeers }) {
+  constructor({ gameId, bootstrapPeers, webrtc }) {
     this.gameId = gameId;
     this.bootstrapPeers = bootstrapPeers || [];
+    this.webrtc = webrtc || null;
     this.node = null;
     this.stateManager = null;
     this.rooms = new Map();
@@ -53,7 +54,8 @@ export class RoomDirectory {
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: this.gameId,
-      roomId: DIRECTORY_ROOM_ID
+      roomId: DIRECTORY_ROOM_ID,
+      ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();
     await this.node.start();
