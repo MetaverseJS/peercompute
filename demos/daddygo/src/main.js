@@ -85,6 +85,20 @@ import { NodeKernel } from '@peercompute';
             return Object.keys(next).length ? next : null;
         };
 
+        const normalizePubsubType = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.pubsubType ?? cfg.pubsub;
+            if (!raw) return null;
+            return String(raw).trim().toLowerCase();
+        };
+
+        const normalizeGossipsubConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.gossipsub;
+            if (!raw || typeof raw !== 'object') return null;
+            return { ...raw };
+        };
+
         const updateGlobalHighScore = () => {
             let best = localHighScore;
             for (const data of peerScores.values()) {
@@ -108,11 +122,15 @@ import { NodeKernel } from '@peercompute';
                 const cfg = await loadRelayConfig();
                 const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
                 const webrtc = normalizeWebRTCConfig(cfg);
+                const pubsubType = normalizePubsubType(cfg);
+                const gossipsub = normalizeGossipsubConfig(cfg);
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'daddygo',
                     roomId: 'global',
+                    ...(pubsubType ? { pubsubType } : {}),
+                    ...(gossipsub ? { gossipsub } : {}),
                     ...(webrtc ? { webrtc } : {})
                 });
                 await node.initialize();

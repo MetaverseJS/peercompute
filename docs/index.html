@@ -500,7 +500,7 @@
         </a>
         <a class="card" href="./netviz/" style="--i: 6;">
           <div class="thumb">
-            <img src="../demos/netviz/netviz-screenshot.gif" alt="NetViz screenshot" loading="lazy">
+            <img src="./assets/netviz-screenshot.gif" alt="NetViz screenshot" loading="lazy">
           </div>
           <h2>NetViz</h2>
           <span>Live topology + telemetry view powered by warm deltas.</span>
@@ -621,6 +621,40 @@
     } else {
       requestAnimationFrame(draw);
     }
+  </script>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has('dev')) {
+        return;
+      }
+
+      const devLinks = [
+        { prefix: './hyperborea/', base: 'https://localhost:5175/' },
+        { prefix: './cubechat/', base: 'https://localhost:5176/' },
+        { prefix: './planetgen/', base: 'https://localhost:5177/' },
+        { prefix: './universes/', base: 'https://localhost:5178/' },
+        { prefix: './webgpuphys/', base: 'https://localhost:5179/' },
+        { prefix: './sneakywoods/', base: 'https://localhost:5180/' },
+        { prefix: './daddygo/', base: 'https://localhost:5181/' },
+        { prefix: './netviz/', base: 'https://localhost:5182/' }
+      ];
+
+      document.querySelectorAll('a.card[href]').forEach((card) => {
+        const href = card.getAttribute('href');
+        if (!href || href.startsWith('http')) {
+          return;
+        }
+
+        for (const { prefix, base } of devLinks) {
+          if (href.startsWith(prefix)) {
+            const suffix = href.slice(prefix.length);
+            card.setAttribute('href', `${base}${suffix}`);
+            break;
+          }
+        }
+      });
+    })();
   </script>
 </body>
 </html>

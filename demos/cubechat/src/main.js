@@ -978,7 +978,9 @@ class CubeChat {
     this.roomDirectory = new RoomDirectory({
       gameId: 'cubechat',
       bootstrapPeers: this.network.bootstrapPeers,
-      webrtc: this.network.webrtc
+      webrtc: this.network.webrtc,
+      pubsubType: this.network.pubsubType,
+      gossipsub: this.network.gossipsub
     });
     try {
       await this.roomDirectory.init();

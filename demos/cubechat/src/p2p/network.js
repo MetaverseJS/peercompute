@@ -76,6 +76,20 @@ const normalizeWebRTCConfig = (cfg) => {
   return Object.keys(next).length ? next : null;
 };
 
+const normalizePubsubType = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.pubsubType ?? cfg.pubsub;
+  if (!raw) return null;
+  return String(raw).trim().toLowerCase();
+};
+
+const normalizeGossipsubConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.gossipsub;
+  if (!raw || typeof raw !== 'object') return null;
+  return { ...raw };
+};
+
 export class P2PNetwork {
   constructor() {
     this.node = null;
@@ -84,6 +98,8 @@ export class P2PNetwork {
     this.peerId = null;
     this.bootstrapPeers = [];
     this.webrtc = null;
+    this.pubsubType = null;
+    this.gossipsub = null;
     this.roomId = 'global';
     this.localMediaReady = false;
     this.peers = new Map();
@@ -127,6 +143,8 @@ export class P2PNetwork {
     const cfg = await loadRelayConfig();
     this.bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
     this.webrtc = normalizeWebRTCConfig(cfg);
+    this.pubsubType = normalizePubsubType(cfg);
+    this.gossipsub = normalizeGossipsubConfig(cfg);
     this.roomId = roomId || 'global';
 
     this.node = new NodeKernel({
@@ -134,6 +152,8 @@ export class P2PNetwork {
       enablePersistence: false,
       gameId: 'cubechat',
       roomId: this.roomId,
+      ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+      ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();

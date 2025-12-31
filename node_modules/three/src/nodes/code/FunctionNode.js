@@ -1,29 +1,100 @@
 import CodeNode from './CodeNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { nodeObject } from '../shadernode/ShaderNode.js';
+import { nodeObject } from '../tsl/TSLBase.js';
 
+/**
+ * This class represents a native shader function. It can be used to implement
+ * certain aspects of a node material with native shader code. There are two predefined
+ * TSL functions for easier usage.
+ *
+ * - `wgslFn`: Creates a WGSL function node.
+ * - `glslFn`: Creates a GLSL function node.
+ *
+ * A basic example with one include looks like so:
+ *
+ * ```js
+ * const desaturateWGSLFn = wgslFn( `
+ *	fn desaturate( color:vec3<f32> ) -> vec3<f32> {
+ *		let lum = vec3<f32>( 0.299, 0.587, 0.114 );
+ *		return vec3<f32>( dot( lum, color ) );
+ *	}`
+ *);
+ * const someWGSLFn = wgslFn( `
+ *	fn someFn( color:vec3<f32> ) -> vec3<f32> {
+ * 		return desaturate( color );
+ * 	}
+ * `, [ desaturateWGSLFn ] );
+ * material.colorNode = someWGSLFn( { color: texture( map ) } );
+ *```
+ * @augments CodeNode
+ */
 class FunctionNode extends CodeNode {
 
+	static get type() {
+
+		return 'FunctionNode';
+
+	}
+
+	/**
+	 * Constructs a new function node.
+	 *
+	 * @param {string} [code=''] - The native code.
+	 * @param {Array<Node>} [includes=[]] - An array of includes.
+	 * @param {('js'|'wgsl'|'glsl')} [language=''] - The used language.
+	 */
 	constructor( code = '', includes = [], language = '' ) {
 
 		super( code, includes, language );
 
-		this.keywords = {};
-
 	}
 
+	/**
+	 * Returns the type of this function node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The type.
+	 */
 	getNodeType( builder ) {
 
 		return this.getNodeFunction( builder ).type;
 
 	}
 
+	/**
+	 * Returns the type of a member of this function node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {string} name - The name of the member.
+	 * @return {string} The type of the member.
+	 */
+	getMemberType( builder, name ) {
+
+		const type = this.getNodeType( builder );
+
+		const structType = builder.getStructTypeNode( type );
+
+		return structType.getMemberType( builder, name );
+
+	}
+
+	/**
+	 * Returns the inputs of this function node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Array<NodeFunctionInput>} The inputs.
+	 */
 	getInputs( builder ) {
 
 		return this.getNodeFunction( builder ).inputs;
 
 	}
 
+	/**
+	 * Returns the node function for this function node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {NodeFunction} The node function.
+	 */
 	getNodeFunction( builder ) {
 
 		const nodeData = builder.getDataFromNode( this );
@@ -63,23 +134,7 @@ class FunctionNode extends CodeNode {
 
 		const propertyName = builder.getPropertyName( nodeCode );
 
-		let code = this.getNodeFunction( builder ).getCode( propertyName );
-
-		const keywords = this.keywords;
-		const keywordsProperties = Object.keys( keywords );
-
-		if ( keywordsProperties.length > 0 ) {
-
-			for ( const property of keywordsProperties ) {
-
-				const propertyRegExp = new RegExp( `\\b${property}\\b`, 'g' );
-				const nodeProperty = keywords[ property ].build( builder, 'property' );
-
-				code = code.replace( propertyRegExp, nodeProperty );
-
-			}
-
-		}
+		const code = this.getNodeFunction( builder ).getCode( propertyName );
 
 		nodeCode.code = code + '\n';
 
@@ -126,5 +181,3 @@ const nativeFn = ( code, includes = [], language = '' ) => {
 
 export const glslFn = ( code, includes ) => nativeFn( code, includes, 'glsl' );
 export const wgslFn = ( code, includes ) => nativeFn( code, includes, 'wgsl' );
-
-addNodeClass( 'FunctionNode', FunctionNode );

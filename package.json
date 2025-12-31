@@ -23,6 +23,7 @@
     "dev:daddygo": "npm --prefix demos/daddygo run dev -- --host",
     "dev:netviz": "npm --prefix demos/netviz run dev -- --host",
     "dev": "bash scripts/dev-all.sh",
+    "dev:local-relay": "bash scripts/dev-local-relay.sh",
     "docs:dev": "vite --config vite.docs.config.mjs",
     "docs:preview": "vite preview --config vite.docs.config.mjs",
     "test:runtime": "node demos/tests/runtime-smoke.mjs",
@@ -42,5 +43,11 @@
   "devDependencies": {
     "concurrently": "^9.2.1",
     "vite": "^6.4.1"
+  },
+  "dependencies": {
+    "@libp2p/utils": "^7.0.9"
+  },
+  "overrides": {
+    "@libp2p/utils": "^7.0.9"
   }
 }

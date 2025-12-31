@@ -208,6 +208,15 @@
       word-break: break-word;
     }
 
+    .event-log {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      white-space: pre-line;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     .legend {
       font-size: 0.65rem;
       color: var(--text-dim);
@@ -317,6 +326,10 @@
           Pulses indicate message direction along each link.
           Click any node or edge to inspect detailed stats.
         </div>
+      </div>
+      <div class="console-section">
+        <div class="panel-title">Log</div>
+        <div id="event-log" class="event-log">Waiting for events...</div>
       </div>
       <div class="console-section">
         <div class="panel-title">Peers</div>

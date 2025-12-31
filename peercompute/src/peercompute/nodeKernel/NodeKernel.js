@@ -24,6 +24,8 @@ export class NodeKernel {
    * @param {Array<string>} config.bootstrapPeers - Bootstrap peer multiaddrs
    * @param {string} config.stateTopic - P2P state sync topic
    * @param {number} config.presenceIntervalMs - Presence heartbeat interval in ms
+   * @param {string} config.pubsubType - Pubsub router to use ('floodsub' or 'gossipsub')
+   * @param {Object} config.gossipsub - Optional gossipsub configuration overrides
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
@@ -91,6 +93,8 @@ export class NodeKernel {
         preferDirect: this.config.preferDirect,
         dropRelayOnDirect: this.config.dropRelayOnDirect,
         presenceIntervalMs: this.config.presenceIntervalMs,
+        pubsubType: this.config.pubsubType,
+        gossipsub: this.config.gossipsub,
         schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
         schedulerProfile: this.config.clockPolicy.networkProfile,
         onMessage: this._handleNetworkMessage.bind(this),

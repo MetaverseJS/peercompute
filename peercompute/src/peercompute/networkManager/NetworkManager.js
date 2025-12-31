@@ -11,11 +11,13 @@ import { noise } from '@libp2p/noise';
 import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
+import { gossipsub } from '@libp2p/gossipsub';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 import { bootstrap } from '@libp2p/bootstrap';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
 import { peerIdFromString } from '@libp2p/peer-id';
+import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 
@@ -185,6 +187,17 @@ export class NetworkManager {
     const presenceIntervalMs = Number.isFinite(config.presenceIntervalMs)
       ? Math.max(1000, config.presenceIntervalMs)
       : 3000;
+    const rawPubsubType = typeof config.pubsubType === 'string'
+      ? config.pubsubType
+      : typeof config.pubsub === 'string'
+        ? config.pubsub
+        : '';
+    const pubsubType = String(rawPubsubType || 'floodsub').trim().toLowerCase() === 'gossipsub'
+      ? 'gossipsub'
+      : 'floodsub';
+    const gossipsubOptions = config.gossipsub && typeof config.gossipsub === 'object'
+      ? { ...config.gossipsub }
+      : null;
 
     const defaults = {
       topology: config.topology || 'distributed',
@@ -200,7 +213,9 @@ export class NetworkManager {
       webrtc: webrtcConfig,
       telemetrySampleMs,
       telemetryPingMs,
-      presenceIntervalMs
+      presenceIntervalMs,
+      pubsubType,
+      gossipsub: gossipsubOptions
     };
 
     const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
@@ -403,23 +418,28 @@ export class NetworkManager {
   async initialize() {
     const isBrowser = typeof window !== 'undefined';
     const listenAddrs = isBrowser ? ['/p2p-circuit', '/webrtc'] : ['/ip4/0.0.0.0/tcp/0'];
-    const peerDiscovery = [
-      pubsubPeerDiscovery({
-        interval: 1000,
-        topics: [this.config.discoveryTopic]
-      })
-    ];
+    const useGossipsub = this.config.pubsubType === 'gossipsub';
+    const peerDiscovery = [];
 
     if (this.config.bootstrapPeers?.length) {
-      peerDiscovery.unshift(bootstrap({ list: this.config.bootstrapPeers }));
+      peerDiscovery.push(bootstrap({ list: this.config.bootstrapPeers }));
+    }
+
+    if (!useGossipsub) {
+      peerDiscovery.push(pubsubPeerDiscovery({
+        interval: 1000,
+        topics: [this.config.discoveryTopic]
+      }));
     }
 
     const rtcConfiguration = this.config.webrtc?.rtcConfiguration || {};
     const webRtcTransport = Object.keys(rtcConfiguration).length > 0
       ? webRTC({ rtcConfiguration })
       : webRTC();
+    const privateKey = useGossipsub ? await generateKeyPair('Ed25519') : null;
 
     this.libp2p = await createLibp2p({
+      ...(privateKey ? { privateKey } : {}),
       transports: [
         webSockets(),
         webRtcTransport,
@@ -431,7 +451,7 @@ export class NetworkManager {
       services: {
         identify: identify(),
         ping: ping({ interval: 10000 }),
-        pubsub: floodsub()
+        pubsub: this._buildPubsubService()
       },
       connectionManager: {
         minConnections: 0,
@@ -445,6 +465,7 @@ export class NetworkManager {
       addresses: {
         listen: listenAddrs
       },
+      start: false,
       ...(this.config.allowLocalDial
         ? {
             connectionGater: {
@@ -453,6 +474,10 @@ export class NetworkManager {
           }
         : {})
     });
+    if (privateKey && this.libp2p?.peerId) {
+      this.libp2p.peerId.privateKey = privateKeyToProtobuf(privateKey);
+      this.libp2p.peerId.publicKey = publicKeyToProtobuf(privateKey.publicKey);
+    }
 
     this._wireLibp2pEvents();
     return this.libp2p;
@@ -704,6 +729,49 @@ export class NetworkManager {
 
       this._dispatchMessage(from || 'unknown', payload);
     });
+  }
+
+  _buildPubsubService() {
+    if (this.config.pubsubType === 'gossipsub') {
+      const directPeers = this._buildGossipsubDirectPeers();
+      const configured = this.config.gossipsub || {};
+      const options = {
+        emitSelf: false,
+        allowPublishToZeroPeers: true,
+        ...configured
+      };
+      if (configured.allowPublishToZeroTopicPeers !== undefined && options.allowPublishToZeroPeers === undefined) {
+        options.allowPublishToZeroPeers = configured.allowPublishToZeroTopicPeers;
+      }
+      if (directPeers.length > 0 && !options.directPeers) {
+        options.directPeers = directPeers;
+      }
+      return gossipsub(options);
+    }
+    return floodsub();
+  }
+
+  _buildGossipsubDirectPeers() {
+    const peers = new Map();
+    (this.config.bootstrapPeers || []).forEach((addr) => {
+      const addrStr = toAddrString(addr);
+      const peerIdStr = getPeerIdFromAddr(addrStr);
+      if (!peerIdStr) return;
+      let peerId = null;
+      try {
+        peerId = peerIdFromString(peerIdStr);
+      } catch (_) {
+        return;
+      }
+      const ma = toPeerMultiaddr(addrStr);
+      if (!ma) return;
+      const entry = peers.get(peerIdStr) || { id: peerId, addrs: [] };
+      if (!entry.addrs.some((existing) => existing.toString() === ma.toString())) {
+        entry.addrs.push(ma);
+      }
+      peers.set(peerIdStr, entry);
+    });
+    return Array.from(peers.values());
   }
 
   _dispatchMessage(peerId, message) {

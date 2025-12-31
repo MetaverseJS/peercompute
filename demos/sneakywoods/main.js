@@ -156,6 +156,8 @@ import { NodeKernel } from '@peercompute';
         let stateManager = null;
         let bootstrapPeers = [];
         let webrtcConfig = null;
+        let pubsubType = null;
+        let gossipsubConfig = null;
         let playerLabel = null;
         const log = (...args) => console.log('[sneakywoods]', ...args);
         let backgroundHeartbeat = null;
@@ -245,6 +247,20 @@ import { NodeKernel } from '@peercompute';
             return Object.keys(next).length ? next : null;
         };
 
+        const normalizePubsubType = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.pubsubType ?? cfg.pubsub;
+            if (!raw) return null;
+            return String(raw).trim().toLowerCase();
+        };
+
+        const normalizeGossipsubConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.gossipsub;
+            if (!raw || typeof raw !== 'object') return null;
+            return { ...raw };
+        };
+
         const ROOM_DIRECTORY_ID = '__rooms__';
         const ROOM_DIRECTORY_NAMESPACE = 'rooms';
         const ROOM_ENTRY_PREFIX = 'room-';
@@ -294,13 +310,15 @@ import { NodeKernel } from '@peercompute';
             }
         };
 
-        async function initRoomDirectory(bootstrapPeers, webrtc) {
+        async function initRoomDirectory(bootstrapPeers, webrtc, pubsubType, gossipsub) {
             if (roomDirectoryNode) return;
             roomDirectoryNode = new NodeKernel({
                 bootstrapPeers,
                 enablePersistence: false,
                 gameId: 'sneakywoods',
                 roomId: ROOM_DIRECTORY_ID,
+                ...(pubsubType ? { pubsubType } : {}),
+                ...(gossipsub ? { gossipsub } : {}),
                 ...(webrtc ? { webrtc } : {})
             });
             await roomDirectoryNode.initialize();
@@ -1285,11 +1303,15 @@ import { NodeKernel } from '@peercompute';
                 const cfg = await loadRelayConfig();
                 bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
                 webrtcConfig = normalizeWebRTCConfig(cfg);
+                pubsubType = normalizePubsubType(cfg);
+                gossipsubConfig = normalizeGossipsubConfig(cfg);
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'sneakywoods',
                     roomId: roomId || 'global',
+                    ...(pubsubType ? { pubsubType } : {}),
+                    ...(gossipsubConfig ? { gossipsub: gossipsubConfig } : {}),
                     ...(webrtcConfig ? { webrtc: webrtcConfig } : {})
                 });
                 await node.initialize();
@@ -1337,7 +1359,7 @@ import { NodeKernel } from '@peercompute';
                     };
                     window.addEventListener('beforeunload', beforeUnloadHandler);
                 }
-                await initRoomDirectory(bootstrapPeers, webrtcConfig);
+                await initRoomDirectory(bootstrapPeers, webrtcConfig, pubsubType, gossipsubConfig);
                 startRoomAnnouncements();
             } catch (err) {
                 console.error('P2P setup error:', err);

@@ -43,6 +43,20 @@ const normalizeWebRTCConfig = (cfg) => {
     return Object.keys(next).length ? next : null;
 };
 
+const normalizePubsubType = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.pubsubType ?? cfg.pubsub;
+    if (!raw) return null;
+    return String(raw).trim().toLowerCase();
+};
+
+const normalizeGossipsubConfig = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.gossipsub;
+    if (!raw || typeof raw !== 'object') return null;
+    return { ...raw };
+};
+
 export class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
@@ -51,6 +65,8 @@ export class Game {
         this.peers = new Map();
         this.bootstrapPeers = [];
         this.webrtc = null;
+        this.pubsubType = null;
+        this.gossipsub = null;
         this.roomDirectory = null;
         this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
         this.networkManager = null;
@@ -404,6 +420,8 @@ export class Game {
             const cfg = await this.loadRelayConfig();
             this.bootstrapPeers = this.normalizeBootstrapPeers(cfg.bootstrapPeers || []);
             this.webrtc = normalizeWebRTCConfig(cfg);
+            this.pubsubType = normalizePubsubType(cfg);
+            this.gossipsub = normalizeGossipsubConfig(cfg);
             this.relayPeerIds = this.bootstrapPeers.map(getPeerIdFromAddr).filter(Boolean);
             if (this.bootstrapPeers.length === 0) {
                 logNet('No bootstrap peers; relay config missing');
@@ -415,6 +433,8 @@ export class Game {
                 enablePersistence: false,
                 gameId: 'hyperborea',
                 roomId: this.currentRoom?.roomId || 'global',
+                ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+                ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
                 ...(this.webrtc ? { webrtc: this.webrtc } : {})
             });
             await this.node.initialize();
@@ -492,7 +512,9 @@ export class Game {
             this.roomDirectory = new RoomDirectory({
                 gameId: 'hyperborea',
                 bootstrapPeers: this.bootstrapPeers,
-                webrtc: this.webrtc
+                webrtc: this.webrtc,
+                pubsubType: this.pubsubType,
+                gossipsub: this.gossipsub
             });
             try {
                 await this.roomDirectory.init();

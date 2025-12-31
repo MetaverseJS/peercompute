@@ -20,6 +20,8 @@ ssl_key=""
 identity_file=""
 relay_config_file=""
 webrtc_config=""
+pubsub_type=""
+gossipsub_config=""
 
 if [[ -f "$prod_config" ]]; then
   relay_host="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayHost)process.stdout.write(String(cfg.relayHost));")"
@@ -32,6 +34,8 @@ if [[ -f "$prod_config" ]]; then
   identity_file="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayIdentityFile)process.stdout.write(String(cfg.relayIdentityFile));")"
   relay_config_file="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.relayConfigFile)process.stdout.write(String(cfg.relayConfigFile));")"
   webrtc_config="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.webrtc)process.stdout.write(JSON.stringify(cfg.webrtc));")"
+  pubsub_type="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.pubsubType)process.stdout.write(String(cfg.pubsubType));")"
+  gossipsub_config="$(node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$prod_config','utf8'));if(cfg.gossipsub)process.stdout.write(JSON.stringify(cfg.gossipsub));")"
 fi
 
 if [[ -x "$repo_root/scripts/ensure-relay-config-perms.sh" ]]; then
@@ -69,6 +73,12 @@ if [[ -n "$relay_config_file" && -z "${RELAY_CONFIG_FILE:-}" ]]; then
 fi
 if [[ -n "$webrtc_config" && -z "${RELAY_WEBRTC_CONFIG:-}" ]]; then
   export RELAY_WEBRTC_CONFIG="$webrtc_config"
+fi
+if [[ -n "$pubsub_type" && -z "${RELAY_PUBSUB_TYPE:-}" ]]; then
+  export RELAY_PUBSUB_TYPE="$pubsub_type"
+fi
+if [[ -n "$gossipsub_config" && -z "${RELAY_GOSSIPSUB_CONFIG:-}" ]]; then
+  export RELAY_GOSSIPSUB_CONFIG="$gossipsub_config"
 fi
 
 export RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"

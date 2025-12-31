@@ -17,12 +17,14 @@ const inspectTitle = document.getElementById('inspect-title');
 const inspectBody = document.getElementById('inspect-body');
 const helpToggle = document.getElementById('help-toggle');
 const helpPanel = document.getElementById('help-panel');
+const eventLogEl = document.getElementById('event-log');
 
 const TELEMETRY_PUBLISH_MS = 2000;
 const HUD_UPDATE_MS = 500;
 const SNAPSHOT_HZ = 1;
 const SNAPSHOT_KEEPALIVE_MS = 5000;
 const PUBSUB_ACTIVE_MS = 12000;
+const MAX_LOG_ENTRIES = 120;
 
 const visualizer = new NetworkVisualizer({ canvas });
 const telemetryStore = new TelemetryStore();
@@ -34,6 +36,11 @@ let localPeerId = null;
 let telemetryTimer = null;
 let uiTimer = null;
 let relayPeerIds = new Set();
+let relayReachable = null;
+let lastRelayPeerId = null;
+let connectStartedAt = 0;
+let libp2pLogAttached = false;
+const logEntries = [];
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -57,6 +64,18 @@ const formatMs = (value) => {
   return `${Math.round(value)}ms`;
 };
 
+const formatLogTime = (value) => new Date(value).toLocaleTimeString();
+
+const logEvent = (message) => {
+  if (!eventLogEl) return;
+  const line = `[${formatLogTime(Date.now())}] ${message}`;
+  logEntries.push(line);
+  if (logEntries.length > MAX_LOG_ENTRIES) {
+    logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
+  }
+  eventLogEl.textContent = logEntries.join('\n');
+};
+
 const extractPeerId = (value) => {
   if (!value) return null;
   const text = String(value);
@@ -66,6 +85,17 @@ const extractPeerId = (value) => {
     return id || null;
   }
   if (!text.includes('/')) return text;
+  return null;
+};
+
+const getLocalRelayPeerId = () => {
+  if (!localPeerId || relayPeerIds.size === 0) return null;
+  const local = telemetryStore.get(localPeerId);
+  const neighbors = Array.isArray(local?.peers) ? local.peers : [];
+  for (const neighbor of neighbors) {
+    const id = neighbor?.peerId || neighbor?.id || null;
+    if (id && relayPeerIds.has(id)) return id;
+  }
   return null;
 };
 
@@ -107,6 +137,20 @@ const normalizeWebRTCConfig = (cfg) => {
   if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
   if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
   return Object.keys(next).length ? next : null;
+};
+
+const normalizePubsubType = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.pubsubType ?? cfg.pubsub;
+  if (!raw) return null;
+  return String(raw).trim().toLowerCase();
+};
+
+const normalizeGossipsubConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.gossipsub;
+  if (!raw || typeof raw !== 'object') return null;
+  return { ...raw };
 };
 
 const setStatus = (lines) => {
@@ -349,8 +393,59 @@ const buildEdgeInfo = (fromId, toId) => {
   };
 };
 
+const attachLibp2pLogging = () => {
+  if (libp2pLogAttached || !networkManager?.getLibp2pNode) return;
+  const libp2p = networkManager.getLibp2pNode();
+  if (!libp2p?.addEventListener) return;
+  libp2pLogAttached = true;
+
+  const readPeerId = (evt) =>
+    evt?.detail?.remotePeer?.toString?.() ||
+    evt?.detail?.id?.toString?.() ||
+    evt?.detail?.toString?.() ||
+    null;
+
+  libp2p.addEventListener('peer:connect', (evt) => {
+    const peerId = readPeerId(evt);
+    if (!peerId) return;
+    const label = relayPeerIds.has(peerId) ? 'Relay' : 'Peer';
+    logEvent(`${label} connected (${formatPeerId(peerId)})`);
+  });
+
+  libp2p.addEventListener('peer:disconnect', (evt) => {
+    const peerId = readPeerId(evt);
+    if (!peerId) return;
+    const label = relayPeerIds.has(peerId) ? 'Relay' : 'Peer';
+    logEvent(`${label} disconnected (${formatPeerId(peerId)})`);
+  });
+};
+
+const updateRelayStatus = () => {
+  if (!connectStartedAt || relayPeerIds.size === 0) return;
+  const relayPeerId = getLocalRelayPeerId();
+  if (relayPeerId) {
+    if (relayReachable !== true || relayPeerId !== lastRelayPeerId) {
+      logEvent(`Relay reachable (${formatPeerId(relayPeerId)})`);
+    }
+    relayReachable = true;
+    lastRelayPeerId = relayPeerId;
+    return;
+  }
+  const elapsed = Date.now() - connectStartedAt;
+  if (relayReachable === true) {
+    relayReachable = false;
+    logEvent('Relay disconnected');
+    return;
+  }
+  if (relayReachable !== false && elapsed > 6000) {
+    relayReachable = false;
+    logEvent('Relay unreachable');
+  }
+};
+
 const updateHud = () => {
   telemetryStore.prune(15000);
+  updateRelayStatus();
   const relayState = buildRelayState(telemetryStore.list(), relayPeerIds);
   const peers = buildPeerView({ includeGhosts: !shouldHideGhosts(), relayState });
   const edges = buildEdges(peers, localPeerId, relayState);
@@ -428,6 +523,10 @@ const connect = async () => {
   if (node) return;
   setStatus('Status: connecting...');
   connectBtn.disabled = true;
+  logEvent('Connecting to relay...');
+  connectStartedAt = Date.now();
+  relayReachable = null;
+  lastRelayPeerId = null;
 
   try {
     const cfg = await loadRelayConfig();
@@ -438,7 +537,14 @@ const connect = async () => {
         .concat(extractPeerId(cfg.relayPeerId))
         .filter(Boolean)
     );
+    if (bootstrapPeers.length === 0) {
+      logEvent('Relay config missing bootstrap peers.');
+    } else {
+      logEvent(`Relay config loaded (${bootstrapPeers.length} bootstrap peer(s)).`);
+    }
     const webrtc = normalizeWebRTCConfig(cfg);
+    const pubsubType = normalizePubsubType(cfg);
+    const gossipsub = normalizeGossipsubConfig(cfg);
     const roomId = roomInput.value.trim() || 'telemetry';
 
     node = new NodeKernel({
@@ -449,6 +555,8 @@ const connect = async () => {
       gameId: 'netviz',
       roomId,
       presenceIntervalMs: 15000,
+      ...(pubsubType ? { pubsubType } : {}),
+      ...(gossipsub ? { gossipsub } : {}),
       ...(webrtc ? { webrtc } : {})
     });
 
@@ -457,15 +565,18 @@ const connect = async () => {
 
     networkManager = node.getNetworkManager();
     stateManager = node.getStateManager();
+    attachLibp2pLogging();
     networkManager.configureScheduler({ snapshotHz: SNAPSHOT_HZ, keepaliveMs: SNAPSHOT_KEEPALIVE_MS });
     networkManager.addSnapshotHandler(handleSnapshot);
 
     localPeerId = node.getStatus().network.peerId;
+    logEvent(`Local peer ready (${formatPeerId(localPeerId)})`);
     startTelemetryLoop();
     updateHud();
   } catch (err) {
     console.error('NetViz connect failed', err);
     setStatus(`Status: error (${err?.message || err})`);
+    logEvent(`Connect failed: ${err?.message || err}`);
     connectBtn.disabled = false;
   }
 };

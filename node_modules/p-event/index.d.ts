@@ -14,8 +14,8 @@ export type Emitter<EventName extends string | symbol, EmittedType extends unkno
 
 // Helper to detect EventEmitter-like objects
 type NodeEventEmitter<EventMap extends Record<string | symbol, unknown[]> = Record<string | symbol, unknown[]>> = {
-	on(event: string | symbol, listener: (...args: unknown[]) => void): unknown;
-	off?(event: string | symbol, listener: (...args: unknown[]) => void): unknown;
+	on(event: string | symbol, listener: (...arguments_: unknown[]) => void): unknown;
+	off?(event: string | symbol, listener: (...arguments_: unknown[]) => void): unknown;
 };
 
 export type FilterFunction<ElementType extends unknown | unknown[]> = (
@@ -178,6 +178,45 @@ export type IteratorMultiArgumentsOptions<EmittedType extends unknown[]> = {
 } & IteratorOptions<EmittedType>;
 
 /**
+Generic event emitter type for users to cast their emitters to get type inference.
+
+@example
+```
+import {pEvent, type TypedEventEmitter} from 'p-event';
+
+type MyEvents = {
+	data: [buffer: Uint8Array];
+	error: [error: Error];
+};
+
+const emitter = getEmitter() as TypedEventEmitter<MyEvents>;
+const buffer = await pEvent(emitter, 'data'); // Inferred as Uint8Array
+```
+*/
+export type TypedEventEmitter<EventMap extends Record<string | symbol, unknown[]>> = {
+	on<K extends keyof EventMap>(
+		event: K,
+		listener: (...arguments_: EventMap[K]) => void,
+	): unknown;
+	off?<K extends keyof EventMap>(
+		event: K,
+		listener: (...arguments_: EventMap[K]) => void,
+	): unknown;
+};
+
+// Structural type for Node.js readline.Interface - automatically matches without casting
+type ReadlineLike = {
+	on(event: 'line', listener: (input: string) => void): unknown;
+	on(event: 'history', listener: (history: string[]) => void): unknown;
+	on(event: string, listener: (...arguments_: unknown[]) => void): unknown;
+};
+
+type ReadlineEvents = {
+	line: [string];
+	history: [string[]];
+};
+
+/**
 Promisify an event by waiting for it to be emitted.
 
 @param emitter - Event emitter object. Should have either a `.on()`/`.addListener()`/`.addEventListener()` and `.off()`/`.removeListener()`/`.removeEventListener()` method, like the [Node.js `EventEmitter`](https://nodejs.org/api/events.html) and [DOM events](https://developer.mozilla.org/en-US/docs/Web/Events).
@@ -205,6 +244,39 @@ await pEvent(document, 'DOMContentLoaded');
 console.log('😎');
 ```
 */
+// Readline overloads (automatic type inference)
+export function pEvent<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options: MultiArgumentsOptions<ReadlineEvents[K]>,
+): CancelablePromise<ReadlineEvents[K]>;
+export function pEvent<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	filter: FilterFunction<ReadlineEvents[K][0]>,
+): CancelablePromise<ReadlineEvents[K][0]>;
+export function pEvent<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options?: Options<ReadlineEvents[K][0]>,
+): CancelablePromise<ReadlineEvents[K][0]>;
+
+// TypedEventEmitter overloads
+export function pEvent<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options: MultiArgumentsOptions<EventMap[K]>,
+): CancelablePromise<EventMap[K]>;
+export function pEvent<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	filter: FilterFunction<EventMap[K][0]>,
+): CancelablePromise<EventMap[K][0]>;
+export function pEvent<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options?: Options<EventMap[K][0]>,
+): CancelablePromise<EventMap[K][0]>;
 export function pEvent<EventName extends string | symbol, EmittedType extends unknown[]>(
 	emitter: Emitter<EventName, EmittedType>,
 	event: string | symbol | ReadonlyArray<string | symbol>,
@@ -221,6 +293,7 @@ export function pEvent<EventName extends string | symbol, EmittedType>(
 	options?: Options<EmittedType>
 ): CancelablePromise<EmittedType>;
 
+/* eslint-disable @typescript-eslint/unified-signatures */
 // Node.js EventEmitter overloads for @types/node v22 compatibility
 export function pEvent<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
 	emitter: NodeEventEmitter<EventMap>,
@@ -237,6 +310,7 @@ export function pEvent<EventMap extends Record<string | symbol, unknown[]>, K ex
 	event: K,
 	options?: Options<EventMap[K][0]>
 ): CancelablePromise<EventMap[K][0]>;
+/* eslint-enable @typescript-eslint/unified-signatures */
 export function pEvent(
 	emitter: NodeEventEmitter,
 	event: string | symbol | ReadonlyArray<string | symbol>,
@@ -256,6 +330,29 @@ export function pEvent(
 /**
 Wait for multiple event emissions.
 */
+// Readline overloads
+export function pEventMultiple<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options: MultipleMultiArgumentsOptions<ReadlineEvents[K]>,
+): CancelablePromise<Array<ReadlineEvents[K]>>;
+export function pEventMultiple<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options: MultipleOptions<ReadlineEvents[K][0]>,
+): CancelablePromise<Array<ReadlineEvents[K][0]>>;
+
+// TypedEventEmitter overloads
+export function pEventMultiple<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options: MultipleMultiArgumentsOptions<EventMap[K]>,
+): CancelablePromise<Array<EventMap[K]>>;
+export function pEventMultiple<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options: MultipleOptions<EventMap[K][0]>,
+): CancelablePromise<Array<EventMap[K][0]>>;
 export function pEventMultiple<EventName extends string | symbol, EmittedType extends unknown[]>(
 	emitter: Emitter<EventName, EmittedType>,
 	event: string | symbol | ReadonlyArray<string | symbol>,
@@ -267,6 +364,7 @@ export function pEventMultiple<EventName extends string | symbol, EmittedType>(
 	options: MultipleOptions<EmittedType>
 ): CancelablePromise<EmittedType[]>;
 
+/* eslint-disable @typescript-eslint/unified-signatures */
 // Node.js EventEmitter overloads for @types/node v22 compatibility
 export function pEventMultiple<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
 	emitter: NodeEventEmitter<EventMap>,
@@ -278,6 +376,7 @@ export function pEventMultiple<EventMap extends Record<string | symbol, unknown[
 	event: K,
 	options: MultipleOptions<EventMap[K][0]>
 ): CancelablePromise<Array<EventMap[K][0]>>;
+/* eslint-enable @typescript-eslint/unified-signatures */
 export function pEventMultiple(
 	emitter: NodeEventEmitter,
 	event: string | symbol | ReadonlyArray<string | symbol>,
@@ -306,6 +405,39 @@ for await (const event of asyncIterator) {
 }
 ```
 */
+// Readline overloads
+export function pEventIterator<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options: IteratorMultiArgumentsOptions<ReadlineEvents[K]>,
+): AsyncIterableIterator<ReadlineEvents[K]>;
+export function pEventIterator<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	filter: FilterFunction<ReadlineEvents[K][0]>,
+): AsyncIterableIterator<ReadlineEvents[K][0]>;
+export function pEventIterator<K extends keyof ReadlineEvents>(
+	emitter: ReadlineLike,
+	event: K,
+	options?: IteratorOptions<ReadlineEvents[K][0]>,
+): AsyncIterableIterator<ReadlineEvents[K][0]>;
+
+// TypedEventEmitter overloads
+export function pEventIterator<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options: IteratorMultiArgumentsOptions<EventMap[K]>,
+): AsyncIterableIterator<EventMap[K]>;
+export function pEventIterator<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	filter: FilterFunction<EventMap[K][0]>,
+): AsyncIterableIterator<EventMap[K][0]>;
+export function pEventIterator<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
+	emitter: TypedEventEmitter<EventMap>,
+	event: K,
+	options?: IteratorOptions<EventMap[K][0]>,
+): AsyncIterableIterator<EventMap[K][0]>;
 export function pEventIterator<EventName extends string | symbol, EmittedType extends unknown[]>(
 	emitter: Emitter<EventName, EmittedType>,
 	event: string | symbol | ReadonlyArray<string | symbol>,
@@ -322,6 +454,7 @@ export function pEventIterator<EventName extends string | symbol, EmittedType>(
 	options?: IteratorOptions<EmittedType>
 ): AsyncIterableIterator<EmittedType>;
 
+/* eslint-disable @typescript-eslint/unified-signatures */
 // Node.js EventEmitter overloads for @types/node v22 compatibility
 export function pEventIterator<EventMap extends Record<string | symbol, unknown[]>, K extends keyof EventMap>(
 	emitter: NodeEventEmitter<EventMap>,
@@ -338,6 +471,7 @@ export function pEventIterator<EventMap extends Record<string | symbol, unknown[
 	event: K,
 	options?: IteratorOptions<EventMap[K][0]>
 ): AsyncIterableIterator<EventMap[K][0]>;
+/* eslint-enable @typescript-eslint/unified-signatures */
 export function pEventIterator(
 	emitter: NodeEventEmitter,
 	event: string | symbol | ReadonlyArray<string | symbol>,

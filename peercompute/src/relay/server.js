@@ -29,8 +29,9 @@ import { noise } from '@libp2p/noise';
 import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
+import { gossipsub } from '@libp2p/gossipsub';
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
-import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys';
+import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 import { peerIdFromPrivateKey } from '@libp2p/peer-id';
@@ -77,6 +78,20 @@ const relayWebrtcConfig = (() => {
   }
   return null;
 })();
+const relayPubsubType = (process.env.RELAY_PUBSUB_TYPE || process.env.RELAY_PUBSUB || '').trim().toLowerCase();
+const relayGossipsubConfig = (() => {
+  const raw = (process.env.RELAY_GOSSIPSUB_CONFIG || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch (err) {
+    console.warn('[Relay] Failed to parse RELAY_GOSSIPSUB_CONFIG:', err?.message || err);
+  }
+  return null;
+})();
 
 const toMultiaddrHostSegment = (host) => {
   if (!host) return '';
@@ -87,7 +102,7 @@ const toMultiaddrHostSegment = (host) => {
   return `/dns4/${host}`;
 };
 
-const loadRelayPeerId = async () => {
+const loadRelayIdentity = async () => {
   if (!relayIdentityFile) return null;
   const identityPath = path.resolve(relayIdentityFile);
   if (fs.existsSync(identityPath)) {
@@ -101,7 +116,7 @@ const loadRelayPeerId = async () => {
       const keyBytes = Buffer.from(encodedKey, 'base64');
       const privateKey = privateKeyFromProtobuf(keyBytes);
       console.log(`[Relay] Loaded identity key from ${identityPath}`);
-      return peerIdFromPrivateKey(privateKey);
+      return { peerId: peerIdFromPrivateKey(privateKey), privateKey };
     } catch (err) {
       console.warn(`[Relay] Failed to read identity file ${identityPath}:`, err?.message || err);
       return null;
@@ -123,7 +138,7 @@ const loadRelayPeerId = async () => {
       fs.chmodSync(identityPath, 0o600);
     } catch (_) {}
     console.log(`[Relay] Wrote identity key to ${identityPath}`);
-    return peerId;
+    return { peerId, privateKey };
   } catch (err) {
     console.warn('[Relay] Failed to create identity key:', err?.message || err);
     return null;
@@ -147,8 +162,12 @@ async function startServer() {
     if (useWss) {
       console.log(`Relay using WSS with SSL_CERT=${relaySslCert}`);
     }
+    const useGossipsub = relayPubsubType === 'gossipsub';
+    console.log(`Relay pubsub: ${useGossipsub ? 'gossipsub' : 'floodsub'}`);
 
-    const relayPeerId = await loadRelayPeerId();
+    const relayIdentity = await loadRelayIdentity();
+    const relayPeerId = relayIdentity?.peerId || null;
+    const relayPrivateKey = relayIdentity?.privateKey || null;
     const wsOptions = useWss
       ? {
           https: {
@@ -158,8 +177,17 @@ async function startServer() {
         }
       : {};
 
+    const pubsubService = useGossipsub
+      ? gossipsub({
+          emitSelf: false,
+          allowPublishToZeroPeers: true,
+          canRelayMessage: true,
+          ...(relayGossipsubConfig || {})
+        })
+      : floodsub();
+
     const server = await createLibp2p({
-      ...(relayPeerId ? { peerId: relayPeerId } : {}),
+      ...(relayPrivateKey ? { privateKey: relayPrivateKey } : {}),
       addresses: {
         listen: [
           `/ip4/${relayListenHost}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`
@@ -172,7 +200,7 @@ async function startServer() {
       connectionEncrypters: [noise(), plaintext()],
       streamMuxers: [yamux()],
       services: {
-        pubsub: floodsub(),
+        pubsub: pubsubService,
         relay: circuitRelayServer({
             reservations: {
                 maxReservations: 1000,
@@ -192,8 +220,14 @@ async function startServer() {
       },
       connectionMonitor: {
         abortConnectionOnPingFailure: false
-      }
+      },
+      start: false
     });
+    if (relayPrivateKey && server?.peerId) {
+      server.peerId.privateKey = privateKeyToProtobuf(relayPrivateKey);
+      server.peerId.publicKey = publicKeyToProtobuf(relayPrivateKey.publicKey);
+    }
+    await server.start();
 
     console.log('Relay Server ID:', server.peerId.toString());
     console.log('Circuit Relay v2 enabled - browsers can connect through this relay');
@@ -305,11 +339,18 @@ async function startServer() {
         if (publicProtocol) {
           announceAddr = announceAddr.replace(/\/wss?/, `/${publicProtocol}`);
         }
+        announceAddr = announceAddr.replace(/\/tls(\/wss?)/, '$1');
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);
-        const relayConfigPayload = { bootstrapPeers: [announceAddr] };
+        const relayConfigPayload = {
+          bootstrapPeers: [announceAddr],
+          pubsubType: useGossipsub ? 'gossipsub' : 'floodsub'
+        };
         if (relayWebrtcConfig) {
           relayConfigPayload.webrtc = relayWebrtcConfig;
+        }
+        if (relayGossipsubConfig) {
+          relayConfigPayload.gossipsub = relayGossipsubConfig;
         }
         const relayConfig = JSON.stringify(relayConfigPayload, null, 2);
         const writeConfig = (filePath) => {

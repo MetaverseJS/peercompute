@@ -798,3 +798,169 @@ sudo systemctl reload nginx
 
 ### Changes
 - Pointed the NetViz demo tile on the docs overview page to the new `demos/netviz/netviz-screenshot.gif`.
+
+## Date: 2025-12-29
+
+### Prompt
+- it's not really the messyness of the logs that concerns me. it's how the network will scale and the load that's going to get placed on the relay server. what's the point of it being p2p if I still have to scale the relay linearly with the number of clients you know?
+
+### Changes
+- No code changes; explained why relay load is currently high (relay-centric pubsub + floodsub), and how direct WebRTC + gossipsub/interest management reduce relay scaling pressure.
+
+## Date: 2025-12-29
+
+### Prompt
+- OK lets do that next. outline the plan in the current-branch.md and get to it. WebRTC direct links... Gossipsub + interest management... Topic scoping / throttling... Multi-relay + fallback... for this if we need to make relay server changes we should probably switch to one we run locally huh?
+
+### Changes
+- Added a scale/offload plan section to `plan/branch/current-branch.md`.
+- Added gossipsub support toggles in NetworkManager and relay server with config/env wiring and relay-config propagation.
+- Wired pubsubType/gossipsub relay-config passthrough to all demos.
+
+## Date: 2025-12-29
+
+### Prompt
+- alright I want an npm script to lauch the relay server locally and run all the demos in dev mode against it. like npm run dev:local-relay
+
+### Changes
+- Added `dev:local-relay` as an alias to the existing multi-demo local relay dev script.
+
+## Date: 2025-12-29
+
+### Prompt
+- does this also launch the overview page somewhere I can use to open the local demos?
+
+### Changes
+- No code changes; clarified that `dev:local-relay` does not start the docs overview and pointed to `npm run docs:dev` for the overview server.
+
+## Date: 2025-12-30
+
+### Prompt
+- I want that "npm run dev:local-relay" to launch everything including the ovierview page with the dev instances pointing at the local relay. right now it's not pointing them at the local relay.
+
+### Changes
+- Added a `?dev=1` mode to the docs overview that rewrites demo tile links to the local dev server URLs so the overview opens the dev instances.
+
+## Date: 2025-12-30
+
+### Prompt
+- not seeing any relay action in netviz. also the gif is broken on the overview page. we want the relay to be able to run as a service on linux using systemd write the script to enable that.
+
+### Changes
+- Ensured NetViz always renders relay nodes from relay config so relay arcs can show even without telemetry entries.
+- Pointed the NetViz overview tile at a local GIF in docs assets and added the gif file.
+- Added a systemd install script to register and enable the relay server as a service.
+
+## Date: 2025-12-30
+
+### Prompt
+- add instructions for installing the relay as a service to the readme. I'm not seeing any peers in netviz.
+
+### Changes
+- Added systemd relay install instructions to the root README.
+
+## Date: 2025-12-30
+
+### Prompt
+- ya I'm running two windows of course. nothing
+
+### Changes
+- Adjusted the local relay dev script to avoid mismatched listen/public hosts when the relay binds to loopback, keeping local NetViz connections reachable.
+
+## Date: 2025-12-30
+
+### Prompt
+- I'm still not seeing anything. when launching "npm run dev:local-relay" can you make sure the relay output is being sent to the console, and the overview page is launched by default. and please check all env vars and configs are correct for local development testing of the relay. in netviz if the user node cannot communicate with the relay no relay should be rendered in the viz. add log messages to the netviz console to scroll through important events: peer connects, peer dropped, relay unreachable etc.
+
+### Changes
+- Normalized relay-config multiaddrs to drop the `/tls` segment for browser-compatible WSS dialing.
+- Expanded the local relay dev script to honor relay config envs, print relay envs, and auto-open the overview page while keeping relay logs visible.
+- Updated NetViz to hide relay nodes when unreachable and added an in-console event log for peer/relay connect and disconnect events.
+
+## Date: 2025-12-30
+
+### Prompt
+- looks like the relay is crashing now
+
+### Changes
+- Ensured relay PeerId includes private/public key protobuf bytes so gossipsub can sign messages during relay startup.
+
+## Date: 2025-12-30
+
+### Prompt
+- no dice [relay] Starting PeerCompute Relay & Signaling Server... looks like the relay is crashing now
+
+### Changes
+- Passed relay private keys into libp2p before start and attached key bytes to the peerId so gossipsub can sign during startup.
+
+## Date: 2025-12-30
+
+### Prompt
+- progress! but we're getting some errors in the client console and it's not connected: [relay logs + NetViz console errors showing "Pubsub is not started"]
+
+### Changes
+- Updated NetworkManager to generate an explicit keypair for gossipsub, start libp2p manually, and patch peerId keys to protobuf bytes before start.
+- Disabled pubsubPeerDiscovery when gossipsub is enabled to avoid publicKey type conflicts; bootstrap discovery remains.
+
+## Date: 2025-12-30
+
+### Prompt
+- no errors but also no peers. did you look online to see if anyone else was having issues with gossipsub? https://github.com/ChainSafe/js-libp2p-gossipsub/issues maybe we should be using the latest version from there.
+
+### Changes
+- Reviewed NetViz telemetry/scheduler flow and noted the likely need to confirm pubsub peer count/logs before changing gossipsub versions.
+
+## Date: 2025-12-30
+
+### Prompt
+- Pubsub: 1 in both windows ... no relay logs ... you have permission to connect to the web to help diagnose the issue.
+
+### Changes
+- Pulled issue #533 details; noted guidance to move from @chainsafe/libp2p-gossipsub to @libp2p/gossipsub for newer releases.
+- Switched gossipsub imports to @libp2p/gossipsub and updated peercompute dependency to ^15.0.11.
+- Ran npm install to update the root lockfile and node_modules after dependency changes.
+- Refreshed peercompute/package-lock.json to include @libp2p/gossipsub.
+
+## Date: 2025-12-30
+
+### Prompt
+- I'm getting build errors in all the demos. can you patch those too? [errors about missing exports pipe/getNetConfig/isNetworkAddress from @libp2p/utils]
+
+### Changes
+- Added a libp2p utils shim that re-exports pipe/getNetConfig/isNetworkAddress.
+- Aliased @libp2p/utils to the shim in all demo Vite configs to unblock builds.
+
+## Date: 2025-12-30
+
+### Prompt
+- we still have some errors I don't think patching viteconfig with an alias and a shim is the right thing to do. can you look online to see if this is fixed anywhere? I think we might have a version issue or we are pinned to a broken point release from the previous gossipsub implementation
+
+### Changes
+- Investigated the gossipsub/utils mismatch; noted @libp2p/gossipsub resolves @libp2p/utils 6.7.2 via @libp2p/pubsub, but the 6.7.2 index has no exports, causing the pipe/getNetConfig errors.
+
+## Date: 2025-12-30
+
+### Prompt
+- I figured out how to fix it.
+
+### Changes
+- No code changes; awaited details on the proposed fix.
+
+## Date: 2025-12-30
+
+### Prompt
+- we just need to npm install @libp2p/utils
+
+### Changes
+- Planned to add @libp2p/utils as a direct dependency and remove the shim once overrides were in place.
+
+## Date: 2025-12-30
+
+### Prompt
+- remove all reminants of chainsafe. replace them with libp2p/gossipsub and make sure we're using the latest version of libp2p everywhere with the latest version of utils from npm.
+
+### Changes
+- Added @libp2p/utils to peercompute dependencies and pinned it via npm overrides at the workspace root.
+- Removed the libp2p utils shim and stripped the Vite alias from all demo configs.
+- Updated the CubeChat server to use @libp2p/noise/yamux/gossipsub and bumped all libp2p packages to current versions.
+- Ran npm install at the workspace root, peercompute, and demos/cubechat/server to refresh lockfiles.
