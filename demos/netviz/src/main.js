@@ -182,11 +182,20 @@ const normalizeWebRTCConfig = (cfg) => {
   const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
   const preferDirect = raw.preferDirect ?? cfg.preferDirect;
   const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+  const dropRelayBootstrapOnDirect =
+    raw.dropRelayBootstrapOnDirect ?? cfg.dropRelayBootstrapOnDirect;
+  const relayRetention = raw.relayRetention ?? cfg.relayRetention;
   const next = { ...raw };
   if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
   if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
   if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
   if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+  if (dropRelayBootstrapOnDirect !== undefined && next.dropRelayBootstrapOnDirect === undefined) {
+    next.dropRelayBootstrapOnDirect = dropRelayBootstrapOnDirect;
+  }
+  if (relayRetention !== undefined && next.relayRetention === undefined) {
+    next.relayRetention = relayRetention;
+  }
   return Object.keys(next).length ? next : null;
 };
 

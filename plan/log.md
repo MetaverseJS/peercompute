@@ -1169,3 +1169,109 @@ sudo systemctl reload nginx
 ### Tests
 - node --test peercompute/tests/runtime/gossipsub-mesh.test.js
 - node peercompute/tests/runtime/webrtc-config.smoke.js
+
+## Date: 2025-12-31
+
+### Prompt
+- this is looking much better peer connections are lighter and not fully connected. but the relay is still connected to every peer. is that necessary?
+
+### Changes
+- No code changes; explained that the relay stays connected as a bootstrap/fallback path unless explicitly dropped after direct WebRTC links are established.
+
+## Date: 2025-12-31
+
+### Prompt
+- OK but how can new peers get added to the network if all nodes drop their connection to the relay?
+
+### Changes
+- No code changes; explained the need for at least one rendezvous/bootstrap path (relay or other seed peers) so new peers can join, and that relay dropping should be conditional or probabilistic.
+
+## Date: 2025-12-31
+
+### Prompt
+- enable the drop connection option except do "keep Log(N)" connections to the relay per room... log(n) nodes that have been connected the longest should maintain the relay connections... a new relay connection should be made by a node when they have not connected to any peers.
+
+### Changes
+- Added relay-retention selection (logN, oldest peers) using shared `joinedAt` in presence messages and only keeping relay bootstrap connections for the selected nodes.
+- Ensured nodes redial relay when they have no direct peers and updated NetViz relay config handling to pass through the new WebRTC retention settings.
+- Enabled relay retention in `config/relay.json` and added unit coverage for logN retention selection.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.webrtc.test.js
+
+## Date: 2025-12-31
+
+### Prompt
+- does not appear to be working.
+
+### Changes
+- No code changes; explained that relay retention only drops relay after direct peers exist, so if direct links churn or are pruned (low maxConnections) all nodes will still keep relay, and advised checking relay-config propagation.
+
+## Date: 2025-12-31
+
+### Prompt
+- interestingly the socket errors are gone now . also we still have N relay connections
+
+### Changes
+- No code changes; explained that relay retention depends on stable direct peers and consistent roster views, so mixed origins or low maxConnections can keep relay connections across many nodes.
+
+## Date: 2025-12-31
+
+### Prompt
+- interestingly the socket errors are gone now . also we still have N relay connections
+
+### Changes
+- No code changes; suggested verifying the live relay-config values and adding relay-specific connection gating/logging if relay connections keep reappearing after direct links stabilize.
+
+## Date: 2025-12-31
+
+### Prompt
+- we're ending up with disconnected graphs. I thought gossipsub is supposed to optimize topology.
+
+### Changes
+- No code changes; explained that gossipsub only manages the pubsub mesh on top of existing connections, so if connection limits + relay dropping leave sparse/disconnected physical links, partitions are expected; suggested loosening maxConnections or relay retention to validate.
+
+## Date: 2025-12-31
+
+### Prompt
+- this is running very slow. it's not a rendering problem it's an architecture problem. is the network manager running in the main thread or in it's own worker like the architecture diagrams describe?
+
+### Changes
+- No code changes; noted that NetworkManager currently runs on the main thread in the demos (worker-ready but not offloaded yet), so its timers/pubsub handlers can steal time; suggested workerizing NodeKernel/NetworkManager or reducing timer/parse workload as immediate mitigations.
+
+## Date: 2025-12-31
+
+### Prompt
+- no don't do that
+
+### Changes
+- No action taken; acknowledged the request to skip the proposed hybrid worker offload.
+
+## Date: 2025-12-31
+
+### Prompt
+- We need a hollistic strategy that will keep nodes connected to a complete graph and minimize ALL relay work. we need to leverage the peer network as much as possible otherwise there is no point to this entire endeavor.
+
+### Changes
+- No code changes; outlined a relay-minimizing strategy: keep dense local/direct connectivity while limiting relay to rendezvous/fallback, use gossipsub mesh tuning (D/Dlo/Dhi), controlled connection caps, mesh-aware peer discovery, and periodic seed/relay sampling only when needed.
+
+## Date: 2025-12-31
+
+### Prompt
+- no that's not good enough at all we actually need an algorithm running at the node level to ensure a continuous graph. I"m watching the network blink in and out because even with only three connections the fact they're all running in the main thread is causing it to overload, slow down and drop connections.
+
+### Changes
+- No code changes; acknowledged the need for a node-level connectivity maintenance algorithm and noted main-thread overload is causing connection churn.
+
+## Date: 2025-12-31
+
+### Prompt
+- go ahead but make sure that test only passes if there are an absolute maximum of  sqrt(N) relay connections. active at any time.
+
+### Changes
+- Added `sqrt` relay-retention support and keep-count logic in NetworkManager.
+- Set relay retention default to `sqrt` in config/relay.json.
+- Added a unit test asserting relay keepers are capped at sqrt(N) and validated the unit suite.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.webrtc.test.js

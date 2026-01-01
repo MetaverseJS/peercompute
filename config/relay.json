@@ -18,7 +18,12 @@
       }
     ],
     "preferDirect": true,
-    "dropRelayOnDirect": true
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "relayRetention": {
+      "mode": "sqrt",
+      "min": 1
+    }
   },
   "publicHost": "",
   "publicPort": "",

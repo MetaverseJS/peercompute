@@ -97,12 +97,33 @@ const normalizeIceServers = (input) => {
   return servers;
 };
 
+const normalizeRelayRetention = (input) => {
+  if (!input) return null;
+  if (input === true) {
+    return { mode: 'logn', min: 1, max: null, base: 2 };
+  }
+  if (input === false) return null;
+  if (typeof input !== 'object') return null;
+  const rawMode = input.mode ?? input.strategy ?? 'logn';
+  const mode = String(rawMode).trim().toLowerCase();
+  if (mode === 'none' || mode === 'off' || mode === 'disabled') return null;
+  if (mode !== 'logn' && mode !== 'log(n)' && mode !== 'sqrt') return null;
+  const min = Number.isFinite(input.min) ? Math.max(0, input.min) : 1;
+  const max = Number.isFinite(input.max) ? Math.max(min, input.max) : null;
+  const base = Number.isFinite(input.base) ? Math.max(2, input.base) : 2;
+  const normalizedMode = mode === 'log(n)' ? 'logn' : mode;
+  return { mode: normalizedMode, min, max, base };
+};
+
 const normalizeWebRTCConfig = (config = {}) => {
   const raw = config && typeof config.webrtc === 'object' && config.webrtc ? config.webrtc : {};
   const preferDirect = raw.preferDirect ?? config.preferDirect ?? true;
   const dropRelayOnDirect = raw.dropRelayOnDirect ?? config.dropRelayOnDirect ?? true;
   const dropRelayBootstrapOnDirect =
     raw.dropRelayBootstrapOnDirect ?? config.dropRelayBootstrapOnDirect ?? false;
+  const relayRetention = normalizeRelayRetention(
+    raw.relayRetention ?? config.relayRetention
+  );
   const iceServers = normalizeIceServers(
     raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
   );
@@ -116,6 +137,7 @@ const normalizeWebRTCConfig = (config = {}) => {
     preferDirect,
     dropRelayOnDirect,
     dropRelayBootstrapOnDirect,
+    relayRetention,
     iceServers,
     rtcConfiguration
   };
@@ -266,6 +288,7 @@ export class NetworkManager {
     this.libp2p = null;
     this.peerId = null;
     this.isConnected = false;
+    this.joinedAt = null;
     this.presenceInterval = null;
     this.publishErrorAt = new Map();
     this.lastBootstrapDialAt = 0;
@@ -522,6 +545,9 @@ export class NetworkManager {
 
     await this.libp2p.start();
     this.peerId = this.libp2p.peerId.toString();
+    if (!this.joinedAt) {
+      this.joinedAt = Date.now();
+    }
 
     // Subscribe to topics used by PeerCompute
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
@@ -701,8 +727,10 @@ export class NetworkManager {
       const isNewPeer = !this.peers.has(peerId);
       const preferredVia = this._getPreferredConnectionType(peerId);
       const existingVia = this.peers.get(peerId)?.via || null;
+      const existingJoinedAt = this.peers.get(peerId)?.joinedAt;
       this._touchPeer(peerId, {
         connectedAt: Date.now(),
+        joinedAt: Number.isFinite(existingJoinedAt) ? existingJoinedAt : Date.now(),
         via: preferredVia || existingVia || 'connection'
       });
       if (isNewPeer) {
@@ -815,10 +843,17 @@ export class NetworkManager {
     if (!message || !this._matchesScope(message)) return;
     if (!message.from || message.from === this.peerId) return;
     const isNewPeer = !this.peers.has(message.from);
+    const joinedAtValue = Number(message.joinedAt);
+    const existing = this.peers.get(message.from) || {};
+    let joinedAt = existing.joinedAt ?? null;
+    if (Number.isFinite(joinedAtValue)) {
+      joinedAt = Number.isFinite(joinedAt) ? Math.min(joinedAt, joinedAtValue) : joinedAtValue;
+    }
     this._touchPeer(message.from, {
       gameId: message.gameId,
       roomId: message.roomId,
       lastSeen: Date.now(),
+      joinedAt,
       via: 'presence'
     });
     if (isNewPeer) {
@@ -829,6 +864,7 @@ export class NetworkManager {
     }
     if (!this._shouldDialDiscoveredPeer(message.from)) return;
     this._maybeDialPeer(message.from, 'presence', message.multiaddrs).catch(() => {});
+    this._maybeUpdateBootstrapRelayConnections();
   }
 
   _getScopedPeers() {
@@ -917,15 +953,14 @@ export class NetworkManager {
   _maybeUpdateBootstrapRelayConnections() {
     if (!this.libp2p) return;
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return;
-    const hasDirectPeers = this._hasDirectPeerConnections();
-    if (hasDirectPeers) {
-      if (this._hasBootstrapRelayConnections()) {
-        this._closeBootstrapRelayConnections();
+    if (this._shouldKeepRelayBootstrapConnection()) {
+      if (!this._hasBootstrapRelayConnections()) {
+        this._maybeRedialBootstrapPeers();
       }
       return;
     }
-    if (!this._hasBootstrapRelayConnections()) {
-      this._maybeRedialBootstrapPeers();
+    if (this._hasBootstrapRelayConnections()) {
+      this._closeBootstrapRelayConnections();
     }
   }
 
@@ -994,6 +1029,74 @@ export class NetworkManager {
     this.telemetry.pubsubLastTxAt = Date.now();
   }
 
+  _getRelayRetentionConfig() {
+    return this.config.webrtc?.relayRetention || null;
+  }
+
+  _getRetentionCandidates() {
+    const candidates = new Map();
+    const scopedPeers = this._getScopedPeers();
+    scopedPeers.forEach((peer) => {
+      const peerId = peer?.peerId;
+      if (!peerId) return;
+      const joinedAt = Number(peer.joinedAt ?? peer.connectedAt ?? peer.lastSeen);
+      const existing = candidates.get(peerId);
+      if (!existing || (Number.isFinite(joinedAt) && joinedAt < existing)) {
+        candidates.set(peerId, Number.isFinite(joinedAt) ? joinedAt : Infinity);
+      }
+    });
+    if (this.peerId) {
+      const joinedAt = Number(this.joinedAt ?? Date.now());
+      const existing = candidates.get(this.peerId);
+      if (!existing || joinedAt < existing) {
+        candidates.set(this.peerId, joinedAt);
+      }
+    }
+    return Array.from(candidates.entries()).map(([peerId, joinedAt]) => ({
+      peerId,
+      joinedAt
+    }));
+  }
+
+  _getRelayRetentionKeepCount(peerCount, retention) {
+    if (!peerCount || peerCount <= 0) return 0;
+    const mode = retention?.mode || 'logn';
+    let keep = 0;
+    if (mode === 'sqrt') {
+      keep = Math.ceil(Math.sqrt(peerCount));
+    } else {
+      const base = retention?.base || 2;
+      const raw = Math.log(peerCount) / Math.log(base);
+      keep = Math.ceil(raw);
+    }
+    keep = Math.max(retention.min ?? 1, keep);
+    if (Number.isFinite(retention.max)) {
+      keep = Math.min(keep, retention.max);
+    }
+    return keep;
+  }
+
+  _shouldKeepRelayBootstrapConnection() {
+    if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return true;
+    if (!this._hasDirectPeerConnections()) return true;
+    const retention = this._getRelayRetentionConfig();
+    if (!retention) return false;
+    if (retention.mode !== 'logn' && retention.mode !== 'sqrt') return false;
+    const candidates = this._getRetentionCandidates();
+    const keepCount = this._getRelayRetentionKeepCount(candidates.length, retention);
+    if (keepCount <= 0) return false;
+    const ordered = candidates
+      .slice()
+      .sort((a, b) => {
+        const aJoined = Number.isFinite(a.joinedAt) ? a.joinedAt : Infinity;
+        const bJoined = Number.isFinite(b.joinedAt) ? b.joinedAt : Infinity;
+        if (aJoined !== bJoined) return aJoined - bJoined;
+        return String(a.peerId).localeCompare(String(b.peerId));
+      });
+    const keepSet = new Set(ordered.slice(0, keepCount).map((entry) => entry.peerId));
+    return keepSet.has(this.peerId);
+  }
+
   _startPresence() {
     this._clearPresenceTimer();
     const publishPresence = async () => {
@@ -1003,6 +1106,7 @@ export class NetworkManager {
         from: this.peerId,
         gameId: this.config.gameId,
         roomId: this.config.roomId,
+        joinedAt: this.joinedAt,
         multiaddrs: this._getAnnounceAddrs()
       };
       await this._publish(this.config.presenceTopic, payload);

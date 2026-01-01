@@ -1,5 +1,8 @@
 {
-  "bootstrapPeers": [],
+  "bootstrapPeers": [
+    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
+  ],
+  "pubsubType": "gossipsub",
   "webrtc": {
     "iceServers": [
       {
@@ -10,7 +13,11 @@
       }
     ],
     "preferDirect": true,
-    "dropRelayOnDirect": true
-  },
-  "pubsubType": "gossipsub"
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "relayRetention": {
+      "mode": "sqrt",
+      "min": 1
+    }
+  }
 }
