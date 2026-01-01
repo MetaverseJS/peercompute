@@ -58,6 +58,80 @@ Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the mai
 - Support multiple relay bootstrap peers with health checks and dial rotation.
 - Prefer closest relay; keep relay as fallback when WebRTC fails.
 
+## Topology + Sharded State Plan (current focus)
+Goal: move to explicit topologies (fully distributed, three-layer hierarchical, dynamic hierarchical depth) and shard global state so nodes only exchange full data with nearby peers. Stabilize relay behavior and reduce publish churn.
+
+### Problems observed (from plan/logs)
+- Relay stops relaying after long runs; nodes isolate even though relay logs show connects.
+- Relay crashes on publish to a closed stream.
+- NetViz shows high traffic because global state is broadcast to every peer.
+
+### Deliverables
+- Topology abstraction above rooms (topologyId + topologyType); roomId is scoped under topologyId.
+- Node-resident topology controller with deterministic neighbor selection and connection caps.
+- Sharded state topics (vicinity shards) + aggregation in hierarchical rooms.
+- NetViz topology selector + topology-specific views (global + per-room).
+
+### Node-resident topology controller (shared)
+- New TopologyController loop (1-2s tick) owned by NodeKernel/NetworkManager.
+- Inputs: topologyType, topologyId, roomId, metric position, targetConnections, maxConnections.
+- Maintains activePeers, candidatePeers, desiredPeers, and a dial queue with backoff.
+- Handshake: CONNECT_REQUEST includes metric position, score, and capacity; CONNECT_ACCEPT only when under max; CONNECT_REFERRAL returns under-target peers.
+- Invariants: degree <= maxConnections; prefer peers under targetConnections; never drop the last relay/seed when isolated; only swap when the new peer is closer or higher score.
+
+### Fully distributed topology (metric-based, capacity-aware b-matching)
+- Each workload provides metric(position) and distance(a,b) (3D player position or problem-space coords).
+- Algorithm: capacitated stable matching (b-matching) with preferences by distance and capacity, plus long-range edges for connectivity.
+- Steps:
+  1) Gather candidates via discovery + neighbor gossip (T-Man/Cyclon style).
+  2) Rank candidates by distance; compute k_local = targetConnections - k_long.
+  3) Propose connections to the nearest peers under targetConnections first; accept until maxConnections.
+  4) If a closer proposal arrives, replace the farthest accepted peer (deterministic tie-break by peerId).
+  5) Maintain k_long random long-range links (Kleinberg-style) and refresh them periodically.
+  6) If isolated, redial relay/seed; if above target, prune farthest edges with cooldown to avoid churn.
+- Guarantees: degree <= maxConnections by construction; no blocking pairs under stable positions; k_long >= 1 yields connected graph with high probability when peer sampling is healthy.
+
+### New node placement (NetViz fully distributed)
+- Default positions are placed in an outward spiral on a square grid; new nodes spawn near the edge (largest radius).
+- Moving the cube updates the metric coordinate and triggers neighbor recomputation with hysteresis.
+- New nodes prefer connecting to under-target peers on the edge before dialing higher-degree interior nodes.
+
+### Hierarchical topology (three-layer)
+- Topology: Root -> Hosts -> Clients (rooms).
+- Host selection score = f(bandwidth, compute, stability, RTT); hosts announce capacity and room state.
+- Join flow: node selects highest-score host with capacity; if none, becomes host and announces a new room.
+- Failover: primary host keeps a warm standby (next highest score). Hosts send heartbeats with term/lease; on timeout, standby starts an election (Raft-style term + deterministic tie-breaker). Clients follow highest term/score to avoid split-brain.
+- Room capacity: hosts reject joins when full and return referrals.
+
+### Dynamic hierarchical depth (emergent topology)
+- Stub for now: build on distributed-compute CA rules with promote/demote based on bandwidth/compute thresholds.
+- Implement after fully distributed + three-layer are stable; focus first on metrics and telemetry.
+
+### Sharded global state / interest management
+- Introduce shard keys derived from the metric (grid cell or region id). Each node subscribes to local shard + neighbor shards within radius.
+- Full state only within shard; summarize/aggregate to parent or higher-level topics for global views.
+- Presence messages include metric position, shard id, and joinedAt for relay retention and host election.
+- NetViz uses aggregate summaries rather than full per-node state in the hierarchical overview.
+
+### Relay stability + publish-on-closed-stream fixes
+- Add a publish guard: per-peer queue with stream state checks; drop or retry on StreamStateError without crashing.
+- Track stream lifetimes and error counts; backoff on repeated failures; expose relay health metrics (uptime, pubsub peers, stream errors).
+- Add a relay soak test to verify stability over long runs with publish churn.
+
+### NetViz updates
+- Topology selector is separate from room selection; topologyId is shared across multiple rooms.
+- Fully distributed view: movable cube, edges only to active connections, spiral spawn placement.
+- Hierarchical view: global host overview (host nodes + client counts), click host to join; per-room detail view on demand.
+- Emergent view: placeholder visualization with collected metrics only.
+
+### Tests (unit + runtime)
+- Unit: neighbor selection invariants (<= maxConnections, prefers under-target peers), swap logic correctness, shard topic computation.
+- Unit: host election (term monotonicity, single leader), standby promotion, room capacity/referral handling.
+- Runtime: topology convergence simulation (N nodes, random positions) asserts connected graph and degree bounds.
+- Runtime: shard traffic test verifies messages only within AOI radius.
+- Runtime: relay soak test with publish churn to confirm no crashes on closed streams.
+- NetViz manual checks: topology selector, drag-to-move triggers connection changes, host join flow.
+
 ## How this ties to the larger PeerCompute plan
 - Roadmap alignment: the demo work validates "Scheduler adoption" and "Compute" phases in plan/plan.md while stress-testing network hardening (relay, rooms, warm deltas).
 - Architecture alignment: new demos should use layered DataState, hot/warm deltas, and shared-GPU hub where render-coupled buffers are needed (plan/arch/*).
