@@ -177,13 +177,18 @@ async function startServer() {
         }
       : {};
 
+    const gossipsubOptions = {
+      emitSelf: false,
+      allowPublishToZeroTopicPeers: true,
+      canRelayMessage: true,
+      ...(relayGossipsubConfig || {})
+    };
+    if (relayGossipsubConfig?.allowPublishToZeroPeers !== undefined
+      && gossipsubOptions.allowPublishToZeroTopicPeers === undefined) {
+      gossipsubOptions.allowPublishToZeroTopicPeers = relayGossipsubConfig.allowPublishToZeroPeers;
+    }
     const pubsubService = useGossipsub
-      ? gossipsub({
-          emitSelf: false,
-          allowPublishToZeroPeers: true,
-          canRelayMessage: true,
-          ...(relayGossipsubConfig || {})
-        })
+      ? gossipsub(gossipsubOptions)
       : floodsub();
 
     const server = await createLibp2p({

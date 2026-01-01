@@ -76,6 +76,48 @@ const logEvent = (message) => {
   eventLogEl.textContent = logEntries.join('\n');
 };
 
+const connectionErrors = new Map();
+const BROADCAST_ERROR_KEY = '__broadcast__';
+
+const markConnectionError = (peerId) => {
+  if (!peerId) return;
+  connectionErrors.set(peerId, Date.now());
+};
+
+const clearConnectionError = (peerId) => {
+  if (!peerId) return;
+  connectionErrors.delete(peerId);
+};
+
+const markBroadcastError = () => {
+  connectionErrors.set(BROADCAST_ERROR_KEY, Date.now());
+};
+
+const clearBroadcastError = () => {
+  connectionErrors.delete(BROADCAST_ERROR_KEY);
+};
+
+const handlePublishError = (_topic, payload, err) => {
+  const target = payload?.target || null;
+  if (target) {
+    markConnectionError(target);
+  } else {
+    markBroadcastError();
+  }
+  if (err) {
+    logEvent(`Publish error: ${err?.message || err}`);
+  }
+};
+
+const handlePublishSuccess = (_topic, payload) => {
+  const target = payload?.target || null;
+  if (target) {
+    clearConnectionError(target);
+  } else {
+    clearBroadcastError();
+  }
+};
+
 const extractPeerId = (value) => {
   if (!value) return null;
   const text = String(value);
@@ -88,11 +130,19 @@ const extractPeerId = (value) => {
   return null;
 };
 
+const isActiveNeighbor = (neighbor) => {
+  if (!neighbor) return false;
+  if (Number.isFinite(neighbor.connectedAt)) return true;
+  const via = neighbor.via;
+  return Boolean(via && via !== 'presence');
+};
+
 const getLocalRelayPeerId = () => {
   if (!localPeerId || relayPeerIds.size === 0) return null;
   const local = telemetryStore.get(localPeerId);
   const neighbors = Array.isArray(local?.peers) ? local.peers : [];
   for (const neighbor of neighbors) {
+    if (!isActiveNeighbor(neighbor)) continue;
     const id = neighbor?.peerId || neighbor?.id || null;
     if (id && relayPeerIds.has(id)) return id;
   }
@@ -112,6 +162,7 @@ const buildRelayState = (entries, relayIds) => {
     const neighbors = Array.isArray(peer.peers) ? peer.peers : [];
     let relayId = null;
     neighbors.forEach((neighbor) => {
+      if (!isActiveNeighbor(neighbor)) return;
       const id = neighbor?.peerId || neighbor?.id || null;
       if (!id || !relaySet.has(id)) return;
       activeRelayIds.add(id);
@@ -245,6 +296,23 @@ const buildEdges = (peers, localId, relayState = null) => {
     const key = buildEdgeKey(from, to);
     const lastRxAt = Number(metrics?.lastRxAt);
     const lastTxAt = Number(metrics?.lastTxAt);
+    const errorAtFromMetrics = Number(metrics?.errorAt);
+    const localErrorPeer = from === localId ? to : to === localId ? from : null;
+    const broadcastErrorAt = connectionErrors.get(BROADCAST_ERROR_KEY);
+    const errorAtLocal = localErrorPeer ? (connectionErrors.get(localErrorPeer) ?? broadcastErrorAt) : null;
+    const errorAt = Number.isFinite(errorAtFromMetrics) ? errorAtFromMetrics : errorAtLocal;
+    const lastSuccess = Math.max(
+      Number.isFinite(lastRxAt) ? lastRxAt : 0,
+      Number.isFinite(lastTxAt) ? lastTxAt : 0
+    );
+    const errorActive = Number.isFinite(errorAt) && (!lastSuccess || lastSuccess <= errorAt);
+    if (localErrorPeer && Number.isFinite(errorAt) && lastSuccess > errorAt) {
+      clearConnectionError(localErrorPeer);
+    }
+    const nextRxBps = Number(metrics?.rxBps) || 0;
+    const nextTxBps = Number(metrics?.txBps) || 0;
+    const nextRxCount = Number(metrics?.rxCount) || 0;
+    const nextTxCount = Number(metrics?.txCount) || 0;
     const via = metrics?.via || null;
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
@@ -259,13 +327,34 @@ const buildEdges = (peers, localId, relayState = null) => {
       if (!existing.relayPeerId && relayPeerId) {
         existing.relayPeerId = relayPeerId;
       }
+      if (errorActive) {
+        existing.errorActive = true;
+        existing.errorAt = errorAt;
+      } else if (Number.isFinite(errorAt) && !errorActive) {
+        existing.errorActive = false;
+        existing.errorAt = errorAt;
+      }
+      existing.rxBps = Math.max(existing.rxBps || 0, nextRxBps);
+      existing.txBps = Math.max(existing.txBps || 0, nextTxBps);
+      existing.rxCount = Math.max(existing.rxCount || 0, nextRxCount);
+      existing.txCount = Math.max(existing.txCount || 0, nextTxCount);
+      if (Number.isFinite(lastRxAt)) {
+        existing.lastRxAt = Math.max(existing.lastRxAt || 0, lastRxAt);
+      }
+      if (Number.isFinite(lastTxAt)) {
+        existing.lastTxAt = Math.max(existing.lastTxAt || 0, lastTxAt);
+      }
       return;
     }
     edgeMap.set(key, {
       from,
       to,
-      rxBps: Number(metrics?.rxBps) || 0,
-      txBps: Number(metrics?.txBps) || 0,
+      rxBps: nextRxBps,
+      txBps: nextTxBps,
+      rxCount: nextRxCount,
+      txCount: nextTxCount,
+      errorActive,
+      errorAt: Number.isFinite(errorAt) ? errorAt : null,
       lastRxAt: Number.isFinite(lastRxAt) ? lastRxAt : null,
       lastTxAt: Number.isFinite(lastTxAt) ? lastTxAt : null,
       via,
@@ -277,6 +366,7 @@ const buildEdges = (peers, localId, relayState = null) => {
     const localData = telemetryStore.get(localId);
     const neighbors = Array.isArray(localData?.peers) ? localData.peers : [];
     neighbors.forEach((neighbor) => {
+      if (!isActiveNeighbor(neighbor)) return;
       const to = neighbor?.peerId || neighbor?.id || null;
       if (!to || to === localId || !knownIds.has(to)) return;
       addEdge(localId, to, neighbor);
@@ -288,6 +378,7 @@ const buildEdges = (peers, localId, relayState = null) => {
     if (!from) return;
     const neighbors = Array.isArray(peer.peers) ? peer.peers : [];
     neighbors.forEach((neighbor) => {
+      if (!isActiveNeighbor(neighbor)) return;
       const to = neighbor?.peerId || neighbor?.id || null;
       if (!to || to === from || !knownIds.has(to)) return;
       addEdge(from, to, neighbor);
@@ -300,7 +391,7 @@ const buildEdges = (peers, localId, relayState = null) => {
 const buildPubsubEdges = (peers, relayState = null) => {
   const edges = [];
   const now = Date.now();
-  const relayFallback = relayState?.activeRelayIds?.[0] || relayState?.relayIds?.[0] || null;
+  const relayFallback = relayState?.activeRelayIds?.[0] || null;
   const peerRelayMap = relayState?.peerRelayMap;
 
   peers.forEach((peer) => {
@@ -408,6 +499,7 @@ const attachLibp2pLogging = () => {
   libp2p.addEventListener('peer:connect', (evt) => {
     const peerId = readPeerId(evt);
     if (!peerId) return;
+    clearConnectionError(peerId);
     const label = relayPeerIds.has(peerId) ? 'Relay' : 'Peer';
     logEvent(`${label} connected (${formatPeerId(peerId)})`);
   });
@@ -415,6 +507,7 @@ const attachLibp2pLogging = () => {
   libp2p.addEventListener('peer:disconnect', (evt) => {
     const peerId = readPeerId(evt);
     if (!peerId) return;
+    markConnectionError(peerId);
     const label = relayPeerIds.has(peerId) ? 'Relay' : 'Peer';
     logEvent(`${label} disconnected (${formatPeerId(peerId)})`);
   });
@@ -546,6 +639,10 @@ const connect = async () => {
     const pubsubType = normalizePubsubType(cfg);
     const gossipsub = normalizeGossipsubConfig(cfg);
     const roomId = roomInput.value.trim() || 'telemetry';
+    const maxConnections = Number.isFinite(cfg.maxConnections) ? cfg.maxConnections : 3;
+    const maxDialPeers = Number.isFinite(cfg.maxDialPeers)
+      ? cfg.maxDialPeers
+      : maxConnections;
 
     node = new NodeKernel({
       bootstrapPeers,
@@ -555,6 +652,10 @@ const connect = async () => {
       gameId: 'netviz',
       roomId,
       presenceIntervalMs: 15000,
+      maxConnections,
+      maxDialPeers,
+      onPublishError: handlePublishError,
+      onPublishSuccess: handlePublishSuccess,
       ...(pubsubType ? { pubsubType } : {}),
       ...(gossipsub ? { gossipsub } : {}),
       ...(webrtc ? { webrtc } : {})

@@ -26,6 +26,11 @@ export class NodeKernel {
    * @param {number} config.presenceIntervalMs - Presence heartbeat interval in ms
    * @param {string} config.pubsubType - Pubsub router to use ('floodsub' or 'gossipsub')
    * @param {Object} config.gossipsub - Optional gossipsub configuration overrides
+   * @param {number|null} config.maxDialPeers - Limit outbound dials to discovered peers (null disables)
+   * @param {number} config.bootstrapDialThrottleMs - Throttle for bootstrap redial attempts
+   * @param {boolean} config.dropRelayBootstrapOnDirect - Drop relay bootstrap when direct peers exist
+   * @param {number} config.maxConnections - Max libp2p connections per node
+   * @param {number} config.maxIncomingPendingConnections - Max pending inbound connections
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
@@ -92,11 +97,18 @@ export class NodeKernel {
         rtcConfiguration: this.config.rtcConfiguration,
         preferDirect: this.config.preferDirect,
         dropRelayOnDirect: this.config.dropRelayOnDirect,
+        dropRelayBootstrapOnDirect: this.config.dropRelayBootstrapOnDirect,
         presenceIntervalMs: this.config.presenceIntervalMs,
+        maxDialPeers: this.config.maxDialPeers,
+        bootstrapDialThrottleMs: this.config.bootstrapDialThrottleMs,
+        maxConnections: this.config.maxConnections,
+        maxIncomingPendingConnections: this.config.maxIncomingPendingConnections,
         pubsubType: this.config.pubsubType,
         gossipsub: this.config.gossipsub,
         schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
         schedulerProfile: this.config.clockPolicy.networkProfile,
+        onPublishError: this.config.onPublishError,
+        onPublishSuccess: this.config.onPublishSuccess,
         onMessage: this._handleNetworkMessage.bind(this),
         onPeerConnect: this._handlePeerConnect.bind(this),
         onPeerDisconnect: this._handlePeerDisconnect.bind(this)

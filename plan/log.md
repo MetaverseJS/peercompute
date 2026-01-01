@@ -964,3 +964,208 @@ sudo systemctl reload nginx
 - Removed the libp2p utils shim and stripped the Vite alias from all demo configs.
 - Updated the CubeChat server to use @libp2p/noise/yamux/gossipsub and bumped all libp2p packages to current versions.
 - Ran npm install at the workspace root, peercompute, and demos/cubechat/server to refresh lockfiles.
+
+## Date: 2025-12-30
+
+### Prompt
+- alright we made huge progress... I'm not sure why you are seeing warnings about node 18... we are seeing these console errors can you diagnose?
+
+### Changes
+- Diagnosed the StreamStateError as a publish-on-closed-stream issue during gossipsub sends, with the browser stack still referencing @chainsafe/libp2p-gossipsub (likely stale Vite deps or remaining dependency).
+- Noted that Node 18 warnings came from the npm install environment, not the user's runtime.
+
+## Date: 2025-12-30
+
+### Prompt
+- will deleting all /node_modules folders do the same?
+
+### Changes
+- Advised that removing node_modules clears Vite's prebundle cache but is heavy; suggested deleting node_modules/.vite or using Vite --force instead.
+
+## Date: 2025-12-30
+
+### Prompt
+- alright well I purged all node modules and re ran npm run dev:local relay ... we started getting those errors again as soon as the peers connected directly. any suggestions?
+
+### Changes
+- Identified the StreamStateError as a likely gossipsub race when a stream closes during publish; suggested adding a publish cooldown/guard or swallowing StreamStateError to avoid noisy unhandled rejections.
+
+## Date: 2025-12-30
+
+### Prompt
+- well the two windows are just sitting there nobody is quitting or joining is it repetedly openening and closing streams and failing to write to them?
+
+### Changes
+- Explained that pubsub streams can still churn during relay→direct upgrades or connection manager pruning even without visible joins, so publish can race a closed stream.
+
+## Date: 2025-12-30
+
+### Prompt
+- there are still lots of references to chainsafe in package-lock files... what would it take to purge the remaining chainsafe deps?
+
+### Changes
+- Explained that remaining ChainSafe entries are transitive (notably via @libp2p/noise and @libp2p/webrtc), and fully purging would require dropping WebRTC/noise or forking upstream to replace crypto primitives.
+
+## Date: 2025-12-30
+
+### Prompt
+- earlier you mentioned there were steps we could take to further reduce dependency on the relay server. will that reduce these errors?
+
+### Changes
+- Explained that reducing relay dependence can reduce churn/traffic but StreamStateError can still occur on direct links; suggested guarding publishes during connection transitions.
+
+## Date: 2025-12-30
+
+### Prompt
+- I want us to reduce our reliance on the relay server to only join events or when webRTC fails. are the peers attempting to keep the webRTC streams open?
+
+### Changes
+- Explained that libp2p keeps WebRTC connections open once established, and relay can be limited to rendezvous/fallback by pruning relay connections after direct links come up.
+
+## Date: 2025-12-30
+
+### Prompt
+- are all pubsub snapshots still being sent to the relay?
+
+### Changes
+- Clarified that pubsub publishes go over all active connections; if relay links remain open, snapshots will still traverse the relay mesh.
+
+## Date: 2025-12-30
+
+### Prompt
+- is the local chubechat on 4173 actually using the local relay server?
+
+### Changes
+- Checked relay-config outputs; noted that docs/cubechat and demos/cubechat relay-config.json currently have empty bootstrapPeers, so the 4173 docs build is not pointed at the local relay unless the relay server rewrites those files.
+
+## Date: 2025-12-30
+
+### Prompt
+- can peer discovery also happen over the mesh?
+
+### Changes
+- Explained that pubsub peer discovery can propagate peer records over the pubsub mesh, but it still needs an initial bootstrap/relay connection and is currently disabled when gossipsub is enabled in this codebase.
+
+## Date: 2025-12-30
+
+### Prompt
+- what port does the overview page live on?
+
+### Changes
+- Checked docs Vite config; overview/dev docs server uses port 4173.
+
+## Date: 2025-12-30
+
+### Prompt
+- why didn't the write to closed stream errors happen in floodsub?
+
+### Changes
+- Explained that floodsub’s simpler fanout and steadier relay-only connections reduce stream churn; gossipsub’s mesh/control traffic plus relay→direct transitions make publish races on closing streams more likely.
+
+## Date: 2025-12-30
+
+### Prompt
+- lets try enabling peer discovery without the relay
+
+### Changes
+- Re-enabled pubsub peer discovery even when gossipsub is active by default, with a config flag to disable (`pubsubPeerDiscovery: false`).
+
+## Date: 2025-12-30
+
+### Prompt
+- can you animate the balls on the nurbs to reflect the actual frequency of messages being sent along each nurb.
+
+### Changes
+- Added per-edge message rate sampling from tx/rx counts and used message frequency to drive pulse speed/scale for both direct and pubsub NURBS in NetViz.
+
+## Date: 2025-12-30
+
+### Prompt
+- yes do that. is networkmanager running in its own thread?
+
+### Changes
+- Added publish success/error callbacks from NetworkManager and wired NetViz to flag edges red on publish errors until the next successful publish.
+
+## Date: 2025-12-30
+
+### Prompt
+- when an error happens on a connection turn the nurbs red until it succeeds.
+
+### Changes
+- Tracked peer disconnects in NetViz and flagged affected edges as error-active (red) until a reconnect or new traffic clears the error state.
+
+## Date: 2025-12-31
+
+### Prompt
+- I'd like you to create some tests you can run yourself to verify functionality. Gossipsub should be forming a intelligent mesh but as far as I can tell it's still just fully connected and overloading the relay server. double check your implementation of this... I'd like you to verify your arch is correct against canonical gossipsub examples
+
+### Changes
+- Removed gossipsub direct peer auto-wiring from bootstrap peers so the relay is not forced into the mesh by default.
+- Aligned gossipsub option naming to `allowPublishToZeroTopicPeers` in NetworkManager and the relay server, while keeping compatibility with the old `allowPublishToZeroPeers` config.
+- Added a runtime gossipsub mesh test that builds a full connection graph, waits for mesh formation, and asserts mesh size stays under `Dhi` (includes Node polyfills for Event/CustomEvent and Promise.withResolvers).
+
+### Tests
+- node --test peercompute/tests/runtime/gossipsub-mesh.test.js
+
+## Date: 2025-12-31
+
+### Prompt
+- have you propagated these changes down to netviz yet?
+
+### Changes
+- No code changes; confirmed NetViz pulls `@peercompute` from `peercompute/src/peercompute/index.js`, so NetworkManager gossipsub changes apply automatically in dev and after a rebuild for docs/preview.
+
+## Date: 2025-12-31
+
+### Prompt
+- alright I'd like you to perform both of these: Add connection‑gating/limits so we don’t dial every discovered peer. Add a config to drop the bootstrap relay connection once a direct WebRTC link is established (with fallback when direct fails).
+
+### Changes
+- Added discovery dial gating with `maxDialPeers` and throttle control for bootstrap redials, and applied the dial gate to presence-driven dials.
+- Added WebRTC config `dropRelayBootstrapOnDirect` to drop relay bootstrap connections when direct peers exist, with fallback redial when no direct peers remain.
+- Updated NetworkManager helpers to track connections and bootstrap relay state, plus NodeKernel config passthrough and new unit coverage.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.webrtc.test.js
+
+## Date: 2025-12-31
+
+### Prompt
+- ahh I had to switch from localhost to https://127.0.0.1:5182/ ... what are our next steps for troubleshooting this? we're also still getting fully connected graphs ... maybe set maximum peer connections to 2 or three and we'll see how that looks
+
+### Changes
+- Added configurable `maxConnections` and `maxIncomingPendingConnections` to NetworkManager and passed through NodeKernel.
+- Set NetViz defaults to `maxConnections=3` and `maxDialPeers=3` unless overridden by relay-config to reduce fully connected graphs.
+
+### Tests
+- node --test peercompute/tests/unit/networkManager.webrtc.test.js
+
+## Date: 2025-12-31
+
+### Prompt
+- whatever you did certainly fixed the errors we were seeing in the console. looks like we're still seeing a fully connected graph though. what do you think is going on?
+
+### Changes
+- No code changes; explained that NetViz edges are built from telemetry peers (presence + connections), so presence-driven discovery can make the graph look fully connected even when the gossipsub mesh is not.
+
+## Date: 2025-12-31
+
+### Prompt
+- the nurbs lines should only show if there's an active libp2p connection to that peer/relay. presence can be inferred by just seeing the peer cubes as well.
+
+### Changes
+- Filtered NetViz edge construction to only include active libp2p connections (exclude presence-only neighbors).
+- Restricted relay detection and pubsub edge fallback to active relay connections only.
+
+## Date: 2025-12-31
+
+### Prompt
+- netviz can't seem to connect to the relay anymore. can you double check the dev:local-relay script and re run your runtime tests to make sure things are working correctly?
+
+### Changes
+- Reviewed `scripts/dev-local-relay.sh` and current `demos/netviz/public/relay-config.json` contents; no code changes.
+- Re-ran runtime tests for gossipsub mesh formation and WebRTC config sanity.
+
+### Tests
+- node --test peercompute/tests/runtime/gossipsub-mesh.test.js
+- node peercompute/tests/runtime/webrtc-config.smoke.js

@@ -9,6 +9,7 @@ const COLORS = {
   relay: 0xcaf6ff,
   edge: 0xffb13b,
   edgeRelay: 0x00ff6a,
+  edgeError: 0xff2d2d,
   pubsub: 0xcaf6ff,
   grid: 0x00ff6a
 };
@@ -246,6 +247,40 @@ export class NetworkVisualizer {
     return THREE.MathUtils.clamp(scale, 0.6, 1.8);
   }
 
+  _getPulseSpeedFromMsgRate(rate) {
+    const messages = Math.max(0, rate);
+    const speed = 0.2 + Math.log10(messages + 1) * 0.4;
+    return THREE.MathUtils.clamp(speed, 0.2, 1.6);
+  }
+
+  _getPulseScaleFromMsgRate(rate) {
+    const messages = Math.max(0, rate);
+    const scale = 0.7 + Math.log10(messages + 1) * 0.35;
+    return THREE.MathUtils.clamp(scale, 0.7, 2.0);
+  }
+
+  _updateEdgeMessageRates(edgeData, txCount, rxCount, now) {
+    const sample = edgeData.countSample || {
+      at: now,
+      txCount: Number(txCount) || 0,
+      rxCount: Number(rxCount) || 0
+    };
+    const elapsed = now - sample.at;
+    if (elapsed > 0) {
+      const nextTx = Number(txCount) || 0;
+      const nextRx = Number(rxCount) || 0;
+      const deltaTx = Math.max(0, nextTx - sample.txCount);
+      const deltaRx = Math.max(0, nextRx - sample.rxCount);
+      edgeData.txMsgRate = (deltaTx * 1000) / elapsed;
+      edgeData.rxMsgRate = (deltaRx * 1000) / elapsed;
+    }
+    edgeData.countSample = {
+      at: now,
+      txCount: Number(txCount) || 0,
+      rxCount: Number(rxCount) || 0
+    };
+  }
+
   _createPulse(type, materialOverride = null) {
     const material = materialOverride || (type === 'tx' ? this.pulseMaterials.tx : this.pulseMaterials.rx);
     const mesh = new THREE.Mesh(this.pulseGeometry, material);
@@ -257,6 +292,7 @@ export class NetworkVisualizer {
 
   updatePeers(peers, localPeerId, edges = null, pubsubEdges = null) {
     const positions = this._layoutPeers(peers, localPeerId);
+    const now = Date.now();
 
     for (const peer of peers) {
       if (!peer.peerId) continue;
@@ -325,14 +361,21 @@ export class NetworkVisualizer {
 
       const rxBps = Number(entry?.rxBps) || 0;
       const txBps = Number(entry?.txBps) || 0;
+      const rxCount = Number(entry?.rxCount) || 0;
+      const txCount = Number(entry?.txCount) || 0;
       const lastRxAt = Number(entry?.lastRxAt) || null;
       const lastTxAt = Number(entry?.lastTxAt) || null;
       const via = entry?.via || null;
       const relayPeerId = entry?.relayPeerId || null;
+      const errorActive = Boolean(entry?.errorActive);
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
-      const edgeColor = via === 'relay' ? COLORS.edgeRelay : COLORS.edge;
+      const edgeColor = errorActive
+        ? COLORS.edgeError
+        : via === 'relay'
+          ? COLORS.edgeRelay
+          : COLORS.edge;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {
@@ -349,6 +392,9 @@ export class NetworkVisualizer {
           relayPeerId,
           rxBps,
           txBps,
+          rxCount,
+          txCount,
+          errorActive,
           lastRxAt,
           lastTxAt,
           pulses: {
@@ -369,9 +415,13 @@ export class NetworkVisualizer {
         edgeData.relayPeerId = relayPeerId;
         edgeData.rxBps = rxBps;
         edgeData.txBps = txBps;
+        edgeData.rxCount = rxCount;
+        edgeData.txCount = txCount;
+        edgeData.errorActive = errorActive;
         edgeData.lastRxAt = lastRxAt;
         edgeData.lastTxAt = lastTxAt;
       }
+      this._updateEdgeMessageRates(edgeData, txCount, rxCount, now);
       edgeData.mesh.material.color.set(edgeColor);
 
       const relayPos = relayPeerId ? positions.get(relayPeerId) : null;
@@ -447,6 +497,8 @@ export class NetworkVisualizer {
 
       const lastTxAt = Number(entry?.lastTxAt) || null;
       const lastRxAt = Number(entry?.lastRxAt) || null;
+      const txCount = Number(entry?.txCount) || 0;
+      const rxCount = Number(entry?.rxCount) || 0;
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 36, PUBSUB_RADIUS, 6, false);
 
@@ -462,6 +514,8 @@ export class NetworkVisualizer {
           to,
           lastTxAt,
           lastRxAt,
+          txCount,
+          rxCount,
           pulses: {
             tx: this._createPulse('tx', this.pubsubPulseMaterials.tx),
             rx: this._createPulse('rx', this.pubsubPulseMaterials.rx)
@@ -477,7 +531,10 @@ export class NetworkVisualizer {
         edgeData.to = to;
         edgeData.lastTxAt = lastTxAt;
         edgeData.lastRxAt = lastRxAt;
+        edgeData.txCount = txCount;
+        edgeData.rxCount = rxCount;
       }
+      this._updateEdgeMessageRates(edgeData, txCount, rxCount, Date.now());
       edgeData.mesh.material.color.set(COLORS.pubsub);
     }
 
@@ -538,8 +595,12 @@ export class NetworkVisualizer {
     for (const edgeData of this.edgeMeshes.values()) {
       const curve = edgeData.curve;
       if (!curve) continue;
-      this._updatePulse(edgeData.pulses?.tx, curve, delta, 1, now, edgeData.lastTxAt, edgeData.txBps);
-      this._updatePulse(edgeData.pulses?.rx, curve, delta, -1, now, edgeData.lastRxAt, edgeData.rxBps);
+      const txRate = Number.isFinite(edgeData.txMsgRate) ? edgeData.txMsgRate : edgeData.txBps;
+      const rxRate = Number.isFinite(edgeData.rxMsgRate) ? edgeData.rxMsgRate : edgeData.rxBps;
+      const txMode = Number.isFinite(edgeData.txMsgRate) ? 'messages' : 'bytes';
+      const rxMode = Number.isFinite(edgeData.rxMsgRate) ? 'messages' : 'bytes';
+      this._updatePulse(edgeData.pulses?.tx, curve, delta, 1, now, edgeData.lastTxAt, txRate, null, txMode);
+      this._updatePulse(edgeData.pulses?.rx, curve, delta, -1, now, edgeData.lastRxAt, rxRate, null, rxMode);
     }
   }
 
@@ -548,12 +609,14 @@ export class NetworkVisualizer {
     for (const edgeData of this.pubsubMeshes.values()) {
       const curve = edgeData.curve;
       if (!curve) continue;
-      this._updatePulse(edgeData.pulses?.tx, curve, delta, 1, now, edgeData.lastTxAt, 0, this.pubsubPulseWindowMs);
-      this._updatePulse(edgeData.pulses?.rx, curve, delta, -1, now, edgeData.lastRxAt, 0, this.pubsubPulseWindowMs);
+      const txRate = Number.isFinite(edgeData.txMsgRate) ? edgeData.txMsgRate : 0;
+      const rxRate = Number.isFinite(edgeData.rxMsgRate) ? edgeData.rxMsgRate : 0;
+      this._updatePulse(edgeData.pulses?.tx, curve, delta, 1, now, edgeData.lastTxAt, txRate, this.pubsubPulseWindowMs, 'messages');
+      this._updatePulse(edgeData.pulses?.rx, curve, delta, -1, now, edgeData.lastRxAt, rxRate, this.pubsubPulseWindowMs, 'messages');
     }
   }
 
-  _updatePulse(pulse, curve, delta, direction, now, lastAt, rate, windowOverride = null) {
+  _updatePulse(pulse, curve, delta, direction, now, lastAt, rate, windowOverride = null, rateMode = 'bytes') {
     if (!pulse?.mesh) return;
     const windowMs = Number.isFinite(windowOverride) ? windowOverride : this.pulseWindowMs;
     const active = Number.isFinite(lastAt) && now - lastAt < windowMs;
@@ -562,14 +625,18 @@ export class NetworkVisualizer {
       return;
     }
     pulse.mesh.visible = true;
-    const speed = this._getPulseSpeed(rate);
+    const speed = rateMode === 'messages'
+      ? this._getPulseSpeedFromMsgRate(rate)
+      : this._getPulseSpeed(rate);
     pulse.progress = (pulse.progress + delta * speed * direction) % 1;
     if (pulse.progress < 0) {
       pulse.progress += 1;
     }
     curve.getPointAt(pulse.progress, this.pulseVector);
     pulse.mesh.position.copy(this.pulseVector);
-    const scale = this._getPulseScale(rate);
+    const scale = rateMode === 'messages'
+      ? this._getPulseScaleFromMsgRate(rate)
+      : this._getPulseScale(rate);
     pulse.mesh.scale.setScalar(scale);
   }
 }

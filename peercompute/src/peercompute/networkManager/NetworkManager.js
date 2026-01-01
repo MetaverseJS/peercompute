@@ -25,6 +25,7 @@ const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
 const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
 const DEFAULT_PRESENCE_TOPIC = 'peercompute-presence';
 const PEER_DIAL_THROTTLE_MS = 5000;
+const DEFAULT_MAX_DIAL_PEERS = 16;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -100,6 +101,8 @@ const normalizeWebRTCConfig = (config = {}) => {
   const raw = config && typeof config.webrtc === 'object' && config.webrtc ? config.webrtc : {};
   const preferDirect = raw.preferDirect ?? config.preferDirect ?? true;
   const dropRelayOnDirect = raw.dropRelayOnDirect ?? config.dropRelayOnDirect ?? true;
+  const dropRelayBootstrapOnDirect =
+    raw.dropRelayBootstrapOnDirect ?? config.dropRelayBootstrapOnDirect ?? false;
   const iceServers = normalizeIceServers(
     raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
   );
@@ -112,6 +115,7 @@ const normalizeWebRTCConfig = (config = {}) => {
     ...raw,
     preferDirect,
     dropRelayOnDirect,
+    dropRelayBootstrapOnDirect,
     iceServers,
     rtcConfiguration
   };
@@ -187,6 +191,21 @@ export class NetworkManager {
     const presenceIntervalMs = Number.isFinite(config.presenceIntervalMs)
       ? Math.max(1000, config.presenceIntervalMs)
       : 3000;
+    const maxConnections = Number.isFinite(config.maxConnections)
+      ? Math.max(1, config.maxConnections)
+      : 200;
+    const maxIncomingPendingConnections = Number.isFinite(config.maxIncomingPendingConnections)
+      ? Math.max(1, config.maxIncomingPendingConnections)
+      : 100;
+    const maxDialPeers = (() => {
+      const value = config.maxDialPeers;
+      if (value === null || value === Infinity) return null;
+      if (Number.isFinite(value)) return Math.max(0, value);
+      return DEFAULT_MAX_DIAL_PEERS;
+    })();
+    const bootstrapDialThrottleMs = Number.isFinite(config.bootstrapDialThrottleMs)
+      ? Math.max(0, config.bootstrapDialThrottleMs)
+      : PEER_DIAL_THROTTLE_MS;
     const rawPubsubType = typeof config.pubsubType === 'string'
       ? config.pubsubType
       : typeof config.pubsub === 'string'
@@ -198,6 +217,10 @@ export class NetworkManager {
     const gossipsubOptions = config.gossipsub && typeof config.gossipsub === 'object'
       ? { ...config.gossipsub }
       : null;
+    const pubsubPeerDiscovery =
+      config.pubsubPeerDiscovery ??
+      config.enablePubsubPeerDiscovery ??
+      undefined;
 
     const defaults = {
       topology: config.topology || 'distributed',
@@ -214,8 +237,15 @@ export class NetworkManager {
       telemetrySampleMs,
       telemetryPingMs,
       presenceIntervalMs,
+      maxConnections,
+      maxIncomingPendingConnections,
+      maxDialPeers,
+      bootstrapDialThrottleMs,
       pubsubType,
-      gossipsub: gossipsubOptions
+      gossipsub: gossipsubOptions,
+      pubsubPeerDiscovery,
+      onPublishError: typeof config.onPublishError === 'function' ? config.onPublishError : null,
+      onPublishSuccess: typeof config.onPublishSuccess === 'function' ? config.onPublishSuccess : null
     };
 
     const normalizedBootstrapPeers = defaults.bootstrapPeers.map((addr) =>
@@ -238,6 +268,7 @@ export class NetworkManager {
     this.isConnected = false;
     this.presenceInterval = null;
     this.publishErrorAt = new Map();
+    this.lastBootstrapDialAt = 0;
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -425,7 +456,7 @@ export class NetworkManager {
       peerDiscovery.push(bootstrap({ list: this.config.bootstrapPeers }));
     }
 
-    if (!useGossipsub) {
+    if (this.config.pubsubPeerDiscovery !== false) {
       peerDiscovery.push(pubsubPeerDiscovery({
         interval: 1000,
         topics: [this.config.discoveryTopic]
@@ -455,9 +486,9 @@ export class NetworkManager {
       },
       connectionManager: {
         minConnections: 0,
-        maxConnections: 200,
+        maxConnections: this.config.maxConnections ?? 200,
         inboundConnectionThreshold: Infinity,
-        maxIncomingPendingConnections: 100
+        maxIncomingPendingConnections: this.config.maxIncomingPendingConnections ?? 100
       },
       connectionMonitor: {
         abortConnectionOnPingFailure: false
@@ -643,6 +674,7 @@ export class NetworkManager {
         this._touchPeer(peerId, { via });
       }
       this._maybePruneRelayConnections(peerId);
+      this._maybeUpdateBootstrapRelayConnections();
     });
 
     this.libp2p.addEventListener('connection:close', (evt) => {
@@ -653,6 +685,7 @@ export class NetworkManager {
       if (via) {
         this._touchPeer(peerId, { via });
       }
+      this._maybeUpdateBootstrapRelayConnections();
     });
 
     this.libp2p.addEventListener('peer:discovery', (evt) => {
@@ -682,6 +715,7 @@ export class NetworkManager {
       if (!peerId) return;
       this.peers.delete(peerId);
       this.onPeerDisconnect(peerId);
+      this._maybeUpdateBootstrapRelayConnections();
     });
 
     this.libp2p.services.pubsub.addEventListener('message', (evt) => {
@@ -733,45 +767,18 @@ export class NetworkManager {
 
   _buildPubsubService() {
     if (this.config.pubsubType === 'gossipsub') {
-      const directPeers = this._buildGossipsubDirectPeers();
       const configured = this.config.gossipsub || {};
       const options = {
         emitSelf: false,
-        allowPublishToZeroPeers: true,
+        allowPublishToZeroTopicPeers: true,
         ...configured
       };
-      if (configured.allowPublishToZeroTopicPeers !== undefined && options.allowPublishToZeroPeers === undefined) {
-        options.allowPublishToZeroPeers = configured.allowPublishToZeroTopicPeers;
-      }
-      if (directPeers.length > 0 && !options.directPeers) {
-        options.directPeers = directPeers;
+      if (configured.allowPublishToZeroPeers !== undefined && options.allowPublishToZeroTopicPeers === undefined) {
+        options.allowPublishToZeroTopicPeers = configured.allowPublishToZeroPeers;
       }
       return gossipsub(options);
     }
     return floodsub();
-  }
-
-  _buildGossipsubDirectPeers() {
-    const peers = new Map();
-    (this.config.bootstrapPeers || []).forEach((addr) => {
-      const addrStr = toAddrString(addr);
-      const peerIdStr = getPeerIdFromAddr(addrStr);
-      if (!peerIdStr) return;
-      let peerId = null;
-      try {
-        peerId = peerIdFromString(peerIdStr);
-      } catch (_) {
-        return;
-      }
-      const ma = toPeerMultiaddr(addrStr);
-      if (!ma) return;
-      const entry = peers.get(peerIdStr) || { id: peerId, addrs: [] };
-      if (!entry.addrs.some((existing) => existing.toString() === ma.toString())) {
-        entry.addrs.push(ma);
-      }
-      peers.set(peerIdStr, entry);
-    });
-    return Array.from(peers.values());
   }
 
   _dispatchMessage(peerId, message) {
@@ -820,6 +827,7 @@ export class NetworkManager {
     if (Array.isArray(message.multiaddrs) && message.multiaddrs.length > 0) {
       this._rememberPeerAddresses(message.from, message.multiaddrs);
     }
+    if (!this._shouldDialDiscoveredPeer(message.from)) return;
     this._maybeDialPeer(message.from, 'presence', message.multiaddrs).catch(() => {});
   }
 
@@ -829,15 +837,19 @@ export class NetworkManager {
       .map(([peerId, meta]) => ({ peerId, ...meta }));
   }
 
-  _getConnectionPeers() {
+  _getConnections() {
     if (!this.libp2p?.getConnections) return [];
-    const byId = new Map();
     const connections = this.libp2p.getConnections();
-    const connectionList = Array.isArray(connections)
-      ? connections
-      : typeof connections?.values === 'function'
-        ? Array.from(connections.values()).reduce((acc, value) => acc.concat(value), [])
-        : [];
+    if (Array.isArray(connections)) return connections;
+    if (typeof connections?.values === 'function') {
+      return Array.from(connections.values()).reduce((acc, value) => acc.concat(value), []);
+    }
+    return [];
+  }
+
+  _getConnectionPeers() {
+    const byId = new Map();
+    const connectionList = this._getConnections();
     for (const conn of connectionList) {
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) continue;
@@ -851,11 +863,92 @@ export class NetworkManager {
     return Array.from(byId.values());
   }
 
+  _countDialedPeers() {
+    const dialed = new Set();
+    const connectionList = this._getConnections();
+    for (const conn of connectionList) {
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId) continue;
+      if (this.bootstrapPeerIds.has(peerId)) continue;
+      dialed.add(peerId);
+    }
+    return dialed.size;
+  }
+
+  _hasDirectPeerConnections() {
+    const connectionList = this._getConnections();
+    return connectionList.some((conn) => {
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
+      return !isRelayAddr(conn?.remoteAddr);
+    });
+  }
+
+  _hasBootstrapRelayConnections() {
+    if (!this.libp2p || this.bootstrapPeerIds.size === 0) return false;
+    for (const peerId of this.bootstrapPeerIds) {
+      const connections = this._getConnectionsForPeer(peerId);
+      if (connections.some((conn) => conn?.status !== 'closed')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _closeBootstrapRelayConnections() {
+    if (!this.libp2p || this.bootstrapPeerIds.size === 0) return;
+    for (const peerId of this.bootstrapPeerIds) {
+      const connections = this._getConnectionsForPeer(peerId);
+      connections.forEach((conn) => {
+        if (conn?.status && conn.status !== 'open') return;
+        conn.close?.().catch?.(() => {});
+      });
+    }
+  }
+
+  _maybeRedialBootstrapPeers() {
+    const now = Date.now();
+    const throttleMs = this.config.bootstrapDialThrottleMs ?? PEER_DIAL_THROTTLE_MS;
+    if (throttleMs > 0 && now - this.lastBootstrapDialAt < throttleMs) return;
+    this.lastBootstrapDialAt = now;
+    this._dialBootstrapPeers().catch(() => {});
+  }
+
+  _maybeUpdateBootstrapRelayConnections() {
+    if (!this.libp2p) return;
+    if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return;
+    const hasDirectPeers = this._hasDirectPeerConnections();
+    if (hasDirectPeers) {
+      if (this._hasBootstrapRelayConnections()) {
+        this._closeBootstrapRelayConnections();
+      }
+      return;
+    }
+    if (!this._hasBootstrapRelayConnections()) {
+      this._maybeRedialBootstrapPeers();
+    }
+  }
+
   _shouldDialDiscoveredPeer(peerId) {
     if (!peerId) return false;
-    if (!this.config.enforceRoomIsolation) return true;
-    if (this.bootstrapPeerIds.has(peerId)) return true;
-    return this.peers.has(peerId);
+    const allowByRoom = !this.config.enforceRoomIsolation
+      || this.bootstrapPeerIds.has(peerId)
+      || this.peers.has(peerId);
+    if (!allowByRoom) return false;
+    if (this.bootstrapPeerIds.has(peerId)) {
+      if (this.config.webrtc?.dropRelayBootstrapOnDirect && this._hasDirectPeerConnections()) {
+        return false;
+      }
+      return true;
+    }
+    const maxDialPeers = this.config.maxDialPeers;
+    if (Number.isFinite(maxDialPeers)) {
+      if (maxDialPeers <= 0) return false;
+      if (this._countDialedPeers() >= maxDialPeers) {
+        return false;
+      }
+    }
+    return true;
   }
 
   _touchPeer(peerId, updates) {
@@ -1109,12 +1202,18 @@ export class NetworkManager {
     const data = encoder.encode(JSON.stringify(payload));
     try {
       await this.libp2p.services.pubsub.publish(topic, data);
+      if (this.config.onPublishSuccess) {
+        this.config.onPublishSuccess(topic, payload);
+      }
       const now = Date.now();
       this.lastTxAt = now;
       this.scheduler?.recordTx(now);
       this._recordTx(payload?.target || null, getByteLength(data));
       this._recordPubsubTx(getByteLength(data));
     } catch (err) {
+      if (this.config.onPublishError) {
+        this.config.onPublishError(topic, payload, err);
+      }
       const now = Date.now();
       const last = this.publishErrorAt.get(topic) || 0;
       if (now - last > 5000) {

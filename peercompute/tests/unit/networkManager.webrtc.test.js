@@ -12,12 +12,14 @@ test('NetworkManager normalizes WebRTC config and ice servers', () => {
     webrtc: {
       iceServers: ['stun:example.com:3478'],
       preferDirect: false,
-      dropRelayOnDirect: true
+      dropRelayOnDirect: true,
+      dropRelayBootstrapOnDirect: true
     }
   });
 
   assert.equal(manager.config.webrtc.preferDirect, false);
   assert.equal(manager.config.webrtc.dropRelayOnDirect, true);
+  assert.equal(manager.config.webrtc.dropRelayBootstrapOnDirect, true);
   assert.deepEqual(manager.config.webrtc.iceServers, [{ urls: 'stun:example.com:3478' }]);
   assert.deepEqual(manager.config.webrtc.rtcConfiguration.iceServers, [{ urls: 'stun:example.com:3478' }]);
 });
@@ -68,4 +70,46 @@ test('NetworkManager prefers WebRTC addresses when dialing', async () => {
   await manager._maybeDialPeer('invalid-peer', 'presence', [relayAddr, webrtcAddr]);
 
   assert.equal(dialed[0], webrtcAddr.toString());
+});
+
+test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
+  const manager = new NetworkManager({ maxDialPeers: 1, enforceRoomIsolation: false });
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  manager.libp2p = {
+    getConnections: () => [
+      { remotePeer: { toString: () => 'peer-a' } }
+    ]
+  };
+
+  assert.equal(manager._shouldDialDiscoveredPeer('peer-b'), false);
+  assert.equal(manager._shouldDialDiscoveredPeer('relay-peer'), true);
+});
+
+test('NetworkManager drops bootstrap relay connections when direct peers exist', () => {
+  const manager = new NetworkManager({ webrtc: { dropRelayBootstrapOnDirect: true } });
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  let relayClosed = false;
+  const relayConn = {
+    remotePeer: { toString: () => 'relay-peer' },
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss'),
+    status: 'open',
+    close: async () => {
+      relayClosed = true;
+    }
+  };
+  const directConn = {
+    remotePeer: { toString: () => 'peer-a' },
+    remoteAddr: buildAddr('/webrtc/ip4/1.2.3.4'),
+    status: 'open',
+    close: async () => {}
+  };
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'relay-peer') return [relayConn];
+      return [relayConn, directConn];
+    }
+  };
+
+  manager._maybeUpdateBootstrapRelayConnections();
+  assert.equal(relayClosed, true);
 });
