@@ -135,6 +135,8 @@ echo "  sneakywoods: https://localhost:5180/"
 echo "  daddygo:    https://localhost:5181/"
 echo "  netviz:     https://localhost:5182/"
 
+export PEERCOMPUTE_NO_OPEN=1
+
 "$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,netviz,docs \
   "npm run dev:relay" \
   "npm run dev:hyperborea" \

@@ -6,6 +6,7 @@ import { ensureDevHttpsCert } from '../../scripts/https.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
 const docsRoot = path.resolve(__dirname, '../../docs');
+const disableOpen = process.env.PEERCOMPUTE_NO_OPEN === '1';
 
 export default defineConfig(({ command }) => ({
   root: __dirname,
@@ -34,7 +35,7 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5179,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,
-    open: '/demos/index.html',
+    open: disableOpen ? false : '/demos/index.html',
     fs: {
       allow: [__dirname, peercomputeRoot]
     }

@@ -211,10 +211,11 @@ async function startServer() {
       services: {
         pubsub: pubsubService,
         relay: circuitRelayServer({
-            reservations: {
-                maxReservations: 1000,
-                applyDefaultLimit: false
-            }
+          reservations: {
+            maxReservations: 1000,
+            applyDefaultLimit: false,
+            reservationTtl: 60000
+          }
         }),
         identify: identify(),
         ping: ping({

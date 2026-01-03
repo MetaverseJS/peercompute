@@ -141,6 +141,10 @@ export class NodeKernel {
         bootstrapDialThrottleMs: this.config.bootstrapDialThrottleMs,
         maxConnections: this.config.maxConnections,
         maxIncomingPendingConnections: this.config.maxIncomingPendingConnections,
+        maxParallelDials: this.config.maxParallelDials,
+        maxDialQueueLength: this.config.maxDialQueueLength,
+        maxPeerAddrsToDial: this.config.maxPeerAddrsToDial,
+        dialTimeoutMs: this.config.dialTimeoutMs ?? this.config.dialTimeout,
         pubsubType: this.config.pubsubType,
         gossipsub: this.config.gossipsub,
         schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
@@ -386,7 +390,10 @@ export class NodeKernel {
         peerId: networkStats.peerId,
         peerCount: networkStats.peerCount,
         isConnected: networkStats.isConnected,
-        connections: networkStats.connections
+        connections: networkStats.connections,
+        targetConnections: networkStats.targetConnections,
+        maxConnections: networkStats.maxConnections,
+        connectionManager: networkStats.connectionManager || null
       },
       
       // State status

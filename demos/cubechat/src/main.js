@@ -208,6 +208,38 @@ class CubeChat {
       this.startGameLoop();
 
       console.log('Tron Overworld initialized successfully!');
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('e2e')) {
+          const app = this;
+          window.__cubechat = app;
+          window.__cubechatTest = {
+            get peerCount() {
+              return app.network?.peers?.size || 0;
+            },
+            get peerConnectionCount() {
+              return app.network?.peerConnections?.size || 0;
+            },
+            get bootstrapPeerCount() {
+              return app.network?.bootstrapPeers?.length || 0;
+            },
+            get networkPeerCount() {
+              return app.network?.node?.getStatus?.().network?.peerCount || 0;
+            },
+            get remoteStreamCount() {
+              return app.network?.remoteStreams?.size || 0;
+            },
+            get remoteScreenStreamCount() {
+              return app.network?.remoteScreenStreams?.size || 0;
+            },
+            get localStreamReady() {
+              return Boolean(app.network?.localStream);
+            }
+          };
+        }
+      } catch (_) {
+        // ignore test exposure failures
+      }
     } catch (error) {
       console.error('Failed to initialize:', error);
       app.innerHTML = `

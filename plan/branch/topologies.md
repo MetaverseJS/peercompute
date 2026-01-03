@@ -93,6 +93,7 @@ Goal: move to explicit topologies (fully distributed, three-layer hierarchical, 
 - Runtime: topology convergence simulation (N nodes, random positions) asserts connected graph and degree bounds.
 - Runtime: shard traffic test verifies messages only within AOI radius.
 - Runtime: relay soak test with publish churn to confirm no crashes on closed streams.
+- Runtime: headless demo P2P suite (`demos/tests/runtime-p2p.mjs`) exercises cubechat video/screen share plus demo peer connectivity.
 - NetViz manual checks: topology selector, drag-to-move triggers connection changes, host join flow.
 
 ### Progress (2025-01-01)

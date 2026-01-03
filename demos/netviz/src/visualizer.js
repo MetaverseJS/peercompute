@@ -45,13 +45,30 @@ const RADIUS_RING_SEGMENTS = 64;
 const RADIUS_RING_ELEVATION = 0.02;
 const RADIUS_SCALE = 1;
 const HIERARCHICAL_RELAY_HEIGHT = 8.5;
+const normalizeRenderMode = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'off' || raw === 'none' || raw === 'false' || raw === '0') return 'off';
+  if (raw === 'low' || raw === 'lite' || raw === 'minimal') return 'low';
+  return 'full';
+};
 
 export class NetworkVisualizer {
-  constructor({ canvas }) {
+  constructor({ canvas, renderMode } = {}) {
     this.canvas = canvas;
+    this.renderMode = normalizeRenderMode(renderMode);
+    const lowPower = this.renderMode === 'low';
+    const shouldRender = this.renderMode !== 'off';
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer = shouldRender
+      ? new THREE.WebGLRenderer({
+        canvas,
+        antialias: !lowPower,
+        alpha: true,
+        powerPreference: lowPower ? 'low-power' : 'high-performance',
+        precision: lowPower ? 'mediump' : 'highp'
+      })
+      : null;
     this.nodeMeshes = new Map();
     this.edgeMeshes = new Map();
     this.pubsubMeshes = new Map();
@@ -142,29 +159,40 @@ export class NetworkVisualizer {
     this.nodeGroup.add(this.edgeGroup);
 
     this._initScene();
-    this._initControls();
-    this._handleResize();
-    window.addEventListener('resize', () => this._handleResize());
-    this._animate();
+    if (shouldRender) {
+      this._initControls();
+      this._handleResize();
+      window.addEventListener('resize', () => this._handleResize());
+      this._animate();
+    }
   }
 
   _initScene() {
+    if (this.renderMode === 'off') {
+      this.camera.position.set(0, 10, 16);
+      this.camera.lookAt(0, 0, 0);
+      return;
+    }
+    const gridSize = this.renderMode === 'low' ? 40 : 60;
+    const baseDetail = this.renderMode === 'low' ? 40 : 60;
+    const fineDetail = this.renderMode === 'low' ? 80 : 120;
+    const horizonDetail = this.renderMode === 'low' ? 14 : 20;
     const gridGroup = new THREE.Group();
-    const baseGrid = new THREE.GridHelper(60, 60, COLORS.grid, COLORS.grid);
+    const baseGrid = new THREE.GridHelper(gridSize, baseDetail, COLORS.grid, COLORS.grid);
     baseGrid.material.opacity = 0.22;
     baseGrid.material.transparent = true;
 
-    const fineGrid = new THREE.GridHelper(60, 120, COLORS.grid, COLORS.grid);
+    const fineGrid = new THREE.GridHelper(gridSize, fineDetail, COLORS.grid, COLORS.grid);
     fineGrid.material.opacity = 0.06;
     fineGrid.material.transparent = true;
 
-    const horizonGrid = new THREE.GridHelper(60, 20, COLORS.grid, COLORS.grid);
+    const horizonGrid = new THREE.GridHelper(gridSize, horizonDetail, COLORS.grid, COLORS.grid);
     horizonGrid.material.opacity = 0.04;
     horizonGrid.material.transparent = true;
     horizonGrid.position.y = 6;
 
     const glowPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(60, 60),
+      new THREE.PlaneGeometry(gridSize, gridSize),
       new THREE.MeshBasicMaterial({
         color: COLORS.grid,
         transparent: true,
@@ -176,8 +204,9 @@ export class NetworkVisualizer {
 
     const pillarGeometry = new THREE.BufferGeometry();
     const pillarPoints = [];
-    for (let x = -20; x <= 20; x += 10) {
-      for (let z = -20; z <= 20; z += 10) {
+    const pillarRange = this.renderMode === 'low' ? 10 : 20;
+    for (let x = -pillarRange; x <= pillarRange; x += 10) {
+      for (let z = -pillarRange; z <= pillarRange; z += 10) {
         if ((Math.abs(x) + Math.abs(z)) % 20 !== 0) continue;
         pillarPoints.push(x, 0, z, x, 6, z);
       }
@@ -206,6 +235,7 @@ export class NetworkVisualizer {
   }
 
   _initControls() {
+    if (!this.renderer) return;
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
@@ -301,10 +331,12 @@ export class NetworkVisualizer {
   }
 
   _handleResize() {
+    if (!this.renderer) return;
     const { innerWidth, innerHeight, devicePixelRatio } = window;
+    const ratioCap = this.renderMode === 'low' ? 1 : 2;
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, ratioCap));
     this.renderer.setSize(innerWidth, innerHeight);
   }
 
@@ -636,6 +668,7 @@ export class NetworkVisualizer {
   }
 
   updatePeers(peers, localPeerId, edges = null, pubsubEdges = null) {
+    if (!this.renderer) return;
     const positions = this._layoutPeers(peers, localPeerId);
     const now = Date.now();
     const showRadius = this.layoutMode === 'distributed' || this.layoutMode === 'emergent';
@@ -972,6 +1005,7 @@ export class NetworkVisualizer {
   }
 
   pick(clientX, clientY) {
+    if (!this.renderer) return null;
     if (!this.canvas) return null;
     const rect = this.canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -990,6 +1024,7 @@ export class NetworkVisualizer {
   }
 
   _animate() {
+    if (!this.renderer) return;
     let lastFrame = performance.now();
     const tick = () => {
       const now = performance.now();

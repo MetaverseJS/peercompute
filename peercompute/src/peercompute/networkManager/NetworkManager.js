@@ -226,6 +226,20 @@ export class NetworkManager {
     const maxIncomingPendingConnections = Number.isFinite(config.maxIncomingPendingConnections)
       ? Math.max(1, config.maxIncomingPendingConnections)
       : 100;
+    const maxParallelDials = Number.isFinite(config.maxParallelDials)
+      ? Math.max(1, config.maxParallelDials)
+      : undefined;
+    const maxDialQueueLength = Number.isFinite(config.maxDialQueueLength)
+      ? Math.max(1, config.maxDialQueueLength)
+      : undefined;
+    const maxPeerAddrsToDial = Number.isFinite(config.maxPeerAddrsToDial)
+      ? Math.max(1, config.maxPeerAddrsToDial)
+      : undefined;
+    const dialTimeoutMs = Number.isFinite(config.dialTimeoutMs)
+      ? Math.max(1000, config.dialTimeoutMs)
+      : Number.isFinite(config.dialTimeout)
+        ? Math.max(1000, config.dialTimeout)
+        : undefined;
     const maxDialPeers = (() => {
       const value = config.maxDialPeers;
       if (value === null || value === Infinity) return null;
@@ -300,6 +314,10 @@ export class NetworkManager {
       presenceIntervalMs,
       maxConnections,
       maxIncomingPendingConnections,
+      maxParallelDials,
+      maxDialQueueLength,
+      maxPeerAddrsToDial,
+      dialTimeoutMs,
       maxDialPeers,
       bootstrapDialThrottleMs,
       pubsubType,
@@ -313,9 +331,12 @@ export class NetworkManager {
       typeof addr === 'string' ? normalizeBootstrapAddr(addr) : addr
     );
     const allowLocalDial = config.allowLocalDial ?? normalizedBootstrapPeers.some(isLocalDialAddr);
+    const definedConfig = Object.fromEntries(
+      Object.entries(config).filter(([, value]) => value !== undefined)
+    );
     this.config = {
       ...defaults,
-      ...config,
+      ...definedConfig,
       bootstrapPeers: normalizedBootstrapPeers,
       allowLocalDial,
       webrtc: webrtcConfig
@@ -563,42 +584,71 @@ export class NetworkManager {
       : webRTC();
     const privateKey = useGossipsub ? await generateKeyPair('Ed25519') : null;
 
-    this.libp2p = await createLibp2p({
-      ...(privateKey ? { privateKey } : {}),
-      transports: [
-        webSockets(),
-        webRtcTransport,
-        circuitRelayTransport()
-      ],
-      connectionEncrypters: [noise(), plaintext()],
-      streamMuxers: [yamux()],
-      peerDiscovery,
-      services: {
-        identify: identify(),
-        ping: ping({ interval: 10000 }),
-        pubsub: this._buildPubsubService()
-      },
-      connectionManager: {
-        minConnections: 0,
-        maxConnections: this.config.maxConnections ?? 200,
-        inboundConnectionThreshold: Infinity,
-        maxIncomingPendingConnections: this.config.maxIncomingPendingConnections ?? 100
-      },
-      connectionMonitor: {
-        abortConnectionOnPingFailure: false
-      },
-      addresses: {
-        listen: listenAddrs
-      },
-      start: false,
-      ...(this.config.allowLocalDial
-        ? {
-            connectionGater: {
-              denyDialMultiaddr: () => false
+    const connectionManagerConfig = {
+      minConnections: 0,
+      maxConnections: this.config.maxConnections ?? 200,
+      inboundConnectionThreshold: Infinity,
+      maxIncomingPendingConnections: this.config.maxIncomingPendingConnections ?? 100
+    };
+    if (Number.isFinite(this.config.maxParallelDials)) {
+      connectionManagerConfig.maxParallelDials = Math.max(1, this.config.maxParallelDials);
+    }
+    if (Number.isFinite(this.config.maxDialQueueLength)) {
+      connectionManagerConfig.maxDialQueueLength = Math.max(1, this.config.maxDialQueueLength);
+    }
+    if (Number.isFinite(this.config.maxPeerAddrsToDial)) {
+      connectionManagerConfig.maxPeerAddrsToDial = Math.max(1, this.config.maxPeerAddrsToDial);
+    }
+    const dialTimeoutMs = Number.isFinite(this.config.dialTimeoutMs)
+      ? Math.max(1000, this.config.dialTimeoutMs)
+      : Number.isFinite(this.config.dialTimeout)
+        ? Math.max(1000, this.config.dialTimeout)
+        : null;
+    if (dialTimeoutMs) {
+      connectionManagerConfig.dialTimeout = dialTimeoutMs;
+    }
+
+    try {
+      this.libp2p = await createLibp2p({
+        ...(privateKey ? { privateKey } : {}),
+        transports: [
+          webSockets(),
+          webRtcTransport,
+          circuitRelayTransport()
+        ],
+        connectionEncrypters: [noise(), plaintext()],
+        streamMuxers: [yamux()],
+        peerDiscovery,
+        services: {
+          identify: identify(),
+          ping: ping({ interval: 10000 }),
+          pubsub: this._buildPubsubService()
+        },
+        connectionManager: connectionManagerConfig,
+        connectionMonitor: {
+          abortConnectionOnPingFailure: false
+        },
+        addresses: {
+          listen: listenAddrs
+        },
+        start: false,
+        ...(this.config.allowLocalDial
+          ? {
+              connectionGater: {
+                denyDialMultiaddr: () => false
+              }
             }
-          }
-        : {})
-    });
+          : {})
+      });
+    } catch (err) {
+      this._emitConnectionFailure({
+        source: 'libp2p',
+        stage: 'init',
+        error: err
+      });
+      debugWarn('[NetworkManager] Libp2p init failed', err?.message || err);
+      throw err;
+    }
     if (privateKey && this.libp2p?.peerId) {
       this.libp2p.peerId.privateKey = privateKeyToProtobuf(privateKey);
       this.libp2p.peerId.publicKey = publicKeyToProtobuf(privateKey.publicKey);
@@ -615,7 +665,17 @@ export class NetworkManager {
       throw new Error('NetworkManager not initialized');
     }
 
-    await this.libp2p.start();
+    try {
+      await this.libp2p.start();
+    } catch (err) {
+      this._emitConnectionFailure({
+        source: 'libp2p',
+        stage: 'start',
+        error: err
+      });
+      debugWarn('[NetworkManager] Libp2p start failed', err?.message || err);
+      throw err;
+    }
     this.peerId = this.libp2p.peerId.toString();
     if (!this.joinedAt) {
       this.joinedAt = Date.now();
@@ -626,9 +686,22 @@ export class NetworkManager {
     this._updateShardState(true);
 
     // Subscribe to topics used by PeerCompute
-    this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
-    this.libp2p.services.pubsub.subscribe(this.config.directTopic);
-    this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    const subscribeTopic = (topic) => {
+      try {
+        this.libp2p.services.pubsub.subscribe(topic);
+      } catch (err) {
+        this._emitConnectionFailure({
+          source: 'pubsub',
+          stage: 'subscribe',
+          address: topic,
+          error: err
+        });
+        debugWarn('[NetworkManager] Pubsub subscribe failed', topic, err?.message || err);
+      }
+    };
+    subscribeTopic(this.config.pubsubTopic);
+    subscribeTopic(this.config.directTopic);
+    subscribeTopic(this.config.presenceTopic);
     this._syncShardSubscriptions(this.topologyController?.getNeighborShardIds?.() || []);
     this._recordPubsubTx(0);
 
@@ -766,6 +839,45 @@ export class NetworkManager {
     return Array.from(merged.values());
   }
 
+  _getConnectionManager() {
+    return this.libp2p?.services?.connectionManager
+      || this.libp2p?.components?.connectionManager
+      || this.libp2p?.connectionManager
+      || null;
+  }
+
+  _getConnectionManagerStats() {
+    const connectionManager = this._getConnectionManager();
+    if (!connectionManager) return null;
+    const dialQueue = connectionManager?.dialQueue?.queue || null;
+    const maxConnections = typeof connectionManager.getMaxConnections === 'function'
+      ? connectionManager.getMaxConnections()
+      : Number.isFinite(connectionManager.maxConnections)
+        ? connectionManager.maxConnections
+        : null;
+    return {
+      maxConnections,
+      maxIncomingPendingConnections: Number.isFinite(connectionManager.maxIncomingPendingConnections)
+        ? connectionManager.maxIncomingPendingConnections
+        : null,
+      incomingPendingConnections: Number.isFinite(connectionManager.incomingPendingConnections)
+        ? connectionManager.incomingPendingConnections
+        : null,
+      outboundPendingConnections: Number.isFinite(connectionManager.outboundPendingConnections)
+        ? connectionManager.outboundPendingConnections
+        : null,
+      dialQueue: dialQueue
+        ? {
+            size: Number.isFinite(dialQueue.size) ? dialQueue.size : null,
+            running: Number.isFinite(dialQueue.running) ? dialQueue.running : null,
+            queued: Number.isFinite(dialQueue.queued) ? dialQueue.queued : null,
+            concurrency: Number.isFinite(dialQueue.concurrency) ? dialQueue.concurrency : null,
+            maxSize: Number.isFinite(dialQueue.maxSize) ? dialQueue.maxSize : null
+          }
+        : null
+    };
+  }
+
   getNetworkStats() {
     const connectionPeers = this._getConnectionPeers();
     const connections = this.libp2p?.getConnections?.() || [];
@@ -782,7 +894,10 @@ export class NetworkManager {
       topologyId: this.config.topologyId,
       shardId: this.topologyShardId,
       metric: { ...this.topologyMetric },
-      connections: connectionCount
+      connections: connectionCount,
+      targetConnections: this.config.targetConnections,
+      maxConnections: this.config.maxConnections,
+      connectionManager: this._getConnectionManagerStats()
     };
   }
 
@@ -957,6 +1072,17 @@ export class NetworkManager {
 
   _wireLibp2pEvents() {
     if (!this.libp2p) return;
+
+    this.libp2p.addEventListener('error', (evt) => {
+      const err = evt?.detail?.error || evt?.detail || evt?.error || evt;
+      if (!err) return;
+      this._emitConnectionFailure({
+        source: 'libp2p',
+        stage: 'runtime',
+        error: err
+      });
+      debugWarn('[NetworkManager] Libp2p runtime error', err?.message || err);
+    });
 
     this.libp2p.addEventListener('connection:open', (evt) => {
       const conn = evt.detail;

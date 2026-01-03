@@ -33,8 +33,23 @@ const METRIC_COLLISION_COOLDOWN_MS = 1500;
 const QUERY_PARAM_ROOM = 'room';
 const QUERY_PARAM_TOPOLOGY = 'topology';
 const QUERY_PARAM_TOPOLOGY_TYPE = 'topologyType';
+const QUERY_PARAM_RENDER = 'render';
+const QUERY_PARAM_RENDER_MODE = 'renderMode';
 
-const visualizer = new NetworkVisualizer({ canvas });
+const resolveRenderMode = () => {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get(QUERY_PARAM_RENDER)
+    || params.get(QUERY_PARAM_RENDER_MODE)
+    || params.get('viz')
+    || '';
+  const value = String(raw || '').trim().toLowerCase();
+  if (['off', 'none', 'false', '0'].includes(value)) return 'off';
+  if (['low', 'lite', 'minimal'].includes(value)) return 'low';
+  return 'full';
+};
+
+const renderMode = resolveRenderMode();
+const visualizer = new NetworkVisualizer({ canvas, renderMode });
 const telemetryStore = new TelemetryStore();
 
 let node = null;
@@ -248,6 +263,10 @@ const logEvent = (message) => {
   }
   eventLogEl.textContent = logEntries.join('\n');
 };
+
+if (renderMode !== 'full') {
+  logEvent(`Render mode: ${renderMode === 'off' ? 'off (no draw)' : 'low-power'}.`);
+}
 
 const connectionErrors = new Map();
 const BROADCAST_ERROR_KEY = '__broadcast__';

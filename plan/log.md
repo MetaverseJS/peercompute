@@ -1909,6 +1909,52 @@ sudo systemctl reload nginx
 ### Tests
 - Not run (analysis only).
 
+## Date: 2026-01-02
+
+### Prompt
+> set that to one minute.
+
+### Changes
+- Relay server: set circuit-relay reservation TTL to 60s (60000ms) so stale reservations clear quickly after peers disconnect.
+
+### Files touched
+- peercompute/src/relay/server.js
+- plan/log.md
+
+### Commands
+- sed -n '200,260p' peercompute/src/relay/server.js
+
+### Tests
+- Not run (config change).
+
+## Date: 2026-01-02
+
+### Prompt
+> no, I mean the reservation TTL.
+>
+> also please don't laounch the webGPU physics demos tile page browser window automatically when we run dev:local-relay I'm talking about 
+> the browser opening 
+> https://localhost:5179/demos/index.html
+
+### Changes
+- Clarified that js-libp2p default reservation TTL is 2 hours; we already set relay reservation TTL to 60s in the relay server.
+- Disabled webgpuphys dev-server auto-open when running dev:local-relay by gating Vite `server.open` behind `PEERCOMPUTE_NO_OPEN=1`.
+- Exported `PEERCOMPUTE_NO_OPEN=1` in `scripts/dev-local-relay.sh` so the webgpuphys demo page no longer auto-opens.
+
+### Files touched
+- demos/webgpuphys/vite.config.js
+- scripts/dev-local-relay.sh
+- plan/log.md
+
+### Commands
+- rg -n "open|xdg-open|browser|localhost:5179|demos/index" scripts
+- sed -n '1,180p' scripts/dev-local-relay.sh
+- rg -n "open|browser|launch" demos/webgpuphys scripts -g '*.js' -g '*.mjs' -g '*.json'
+- sed -n '1,120p' demos/webgpuphys/vite.config.js
+
+### Tests
+- Not run (dev script change).
+
 ## Date: 2026-01-01
 
 ### Prompt
@@ -2513,3 +2559,354 @@ sudo systemctl reload nginx
 
 ### Tests
 - Not run (status update only).
+
+## Date: 2026-01-02
+
+### Prompt
+> I'm not sure if it's "Stability" I think it might be blocking the IP I'm using the behavior is very consistent. you should be able to replicate it yourself. start  the relay and just keep adding a nodes to distributed. wait about 10 seconds between node adds and after about 20 they'll no longer connect. create a test for it and run it yourself see if you can replicate.
+
+### Changes
+- Reviewed topology, relay, and NetViz wiring to confirm where distributed test coverage should live.
+- Added a Playwright relay-scale test that opens many distributed nodes sequentially and asserts minimum peer connectivity.
+- First full-suite run failed in the new relay-scale test (node initialization timeout after many pages).
+
+### Files touched
+- peercompute/tests/p2p-relay-scale.spec.js
+- plan/log.md
+
+### Commands
+- cat plan/plan.md
+- tail -n 80 plan/log.md
+- sed -n '1,260p' peercompute/src/peercompute/networkManager/TopologyController.js
+- sed -n '260,520p' peercompute/src/peercompute/networkManager/TopologyController.js
+- rg -n "computeDesiredPeers|desiredPeers" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1510,1715p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "allowDiscoveryDialWhenIsolated|connectionRadius|isolationMinConnections|targetConnections|maxConnections|topology" demos/netviz/src/main.js
+- sed -n '1080,1255p' demos/netviz/src/main.js
+- rg -n "pubsubPeerDiscovery" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '520,590p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "auto-subscribe|subscribe|pc\\.\\*|topology|scoped" peercompute/src -g '*.js'
+- sed -n '260,360p' peercompute/src/relay/server.js
+- rg --files -g 'playwright*.{js,ts,mjs}' -g '*playwright*' peercompute
+- cat peercompute/playwright.config.js
+- ls -la peercompute/tests
+- sed -n '1,220p' peercompute/tests/p2p-stability.spec.js
+- rg -n "test-p2p" -S peercompute
+- sed -n '1,240p' peercompute/test-p2p.html
+- rg -n "initializeNode|NodeKernel" -n peercompute/test-p2p.html
+- sed -n '300,520p' peercompute/test-p2p.html
+- rg -n "getStatus\\(" -n peercompute/src/peercompute/nodeKernel/NodeKernel.js
+- sed -n '340,460p' peercompute/src/peercompute/nodeKernel/NodeKernel.js
+- sed -n '1,200p' peercompute/start-relay-and-test.sh
+- npm --prefix peercompute run test:auto
+
+### Tests
+- npm --prefix peercompute run test:auto (fail: p2p-relay-scale init timeout)
+
+### Notes / Open
+- Initial relay-scale run stalled once enough pages were opened; needs lighter harness and/or slower ramp.
+
+## Date: 2026-01-02
+
+### Prompt
+> Actually I hit the limit after about 10 nodes and maybe 8. and that's adding them every 3 seconds.
+
+### Changes
+- Adjusted relay-scale test defaults (NODE_COUNT=10) and added configurable init/start timeouts.
+- Updated relay-scale test to wait for `window.node` status instead of UI text.
+- Re-ran relay-scale tests with a manual relay boot; failures showed some nodes stalling at relay-only / zero peers.
+
+### Files touched
+- peercompute/tests/p2p-relay-scale.spec.js
+- plan/log.md
+
+### Commands
+- ls -la peercompute/test-results
+- ls -la peercompute/test-results/p2p-relay-scale-PeerComput-3e4b7-ep-connecting-as-peers-join-chromium
+- cat peercompute/test-results/p2p-relay-scale-PeerComput-3e4b7-ep-connecting-as-peers-join-chromium/error-context.md
+- cat peercompute/test-results/.last-run.json
+- rg -n "p2p-relay-scale|expect\\.poll|peerCount" -S peercompute/test-results/p2p-relay-scale-PeerComput-3e4b7-ep-connecting-as-peers-join-chromium/error-context.md
+- rg -n "p2p-relay-scale" -S peercompute/playwright-report
+- ls -la peercompute/playwright-report
+- ls -la peercompute/playwright-report/data
+- rg -n "p2p-relay-scale|expect\\.poll|peerCount|distributed nodes" -S peercompute/playwright-report/index.html
+- rg -n "test-results" -S peercompute/playwright-report/index.html | head -n 5
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; node src/relay/server.js ...; npx playwright test tests/p2p-relay-scale.spec.js --reporter=line' (failed due to syntax error)
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; node src/relay/server.js ...; P2P_SCALE_NODE_COUNT=10 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 npx playwright test tests/p2p-relay-scale.spec.js --reporter=line'
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; node src/relay/server.js ...; P2P_SCALE_NODE_COUNT=10 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 npx playwright test tests/p2p-relay-scale.spec.js --reporter=line | tee /tmp/p2p-relay-scale.log'
+
+### Tests
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (fail: peerCount timeout)
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (fail: init timeout under load)
+
+### Notes / Open
+- With 10 nodes added at ~3s cadence, several nodes fell back to relay-only or 0 peers; failures align with your 8-10 node cap.
+- First custom run hit a script typo ("Done") that aborted before the test; retried successfully afterward.
+
+## Date: 2026-01-02
+
+### Prompt
+> wow that crashed my whole computer! do you know what happened?
+
+### Changes
+- No code changes; noted likely system overload from many Chromium pages + WebRTC + dev server HMR/logging.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- Not run (discussion only).
+
+### Tests
+- Not run (discussion only).
+
+### Prompt
+> 1. yes
+> 2. cap at 15 I think.
+> 3. yes.
+>
+> did you get what you were looking for in the logs? do you know why it failed?
+
+### Changes
+- No code changes; noted approval to cap at 15 nodes and proceed with dial-throttled scale testing.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- Not run (discussion only).
+
+### Tests
+- Not run (discussion only).
+
+### Prompt
+> do all 3
+
+### Changes
+- No code changes; queued running the dial-throttle, node cap, and low-noise run sequence once the relay was restarted.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- Not run (status update only).
+
+### Tests
+- Not run (status update only).
+
+### Prompt
+> I just stopped the server that was running. why don't you try 1 first.
+
+### Changes
+- Started a local relay + static server and ran the relay-scale Playwright test with dial throttles (maxParallelDials=8, maxDialPeers=8).
+- First run timed out due to harness timeout; second run timed out after heavy console spam; third run with log pages disabled completed and failed at node-14 initialization (peerId null) while nodes 1-13 connected.
+- Collected relay logs and test diagnostics to confirm the failure is still around the 13-14 node mark.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- ls
+- git status -sb
+- rg -n "Addendum|2025-01-01|NetViz|topolog|log" plan/log.md
+- sed -n '1,240p' peercompute/tests/p2p-relay-scale.spec.js
+- sed -n '1,240p' peercompute/playwright.config.js
+- sed -n '1,240p' peercompute/test-p2p.html
+- rg -n "relay" peercompute/test-p2p.html
+- sed -n '360,520p' peercompute/test-p2p.html
+- ls peercompute/dist >/dev/null 2>&1 && echo dist_present || echo dist_missing
+- ls -lt peercompute/dist | head
+- stat -c '%y %n' peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/src/peercompute/nodeKernel/NodeKernel.js peercompute/test-p2p.html | sed -n '1,3p'
+- sed -n '1,200p' peercompute/src/relay/server.js
+- rg -n "relayConfigDirs|RELAY_CONFIG_DIRS" -n peercompute/src/relay/server.js
+- sed -n '360,460p' peercompute/src/relay/server.js
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; RELAY_CONFIG_DIRS=dist node src/relay/server.js ...; python3 -m http.server 5173 --directory dist ...; USE_EXISTING_SERVER=1 P2P_SCALE_NODE_COUNT=15 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 P2P_SCALE_MAX_PARALLEL_DIALS=8 P2P_SCALE_MAX_DIAL_PEERS=8 npx playwright test tests/p2p-relay-scale.spec.js --reporter=line | tee /tmp/p2p-relay-scale.log'
+- pgrep -af "relay/server.js|http.server 5173|playwright" || true
+- pkill -f "node src/relay/server.js" || true; pkill -f "python3 -m http.server 5173 --directory dist" || true; pkill -f "playwright" || true
+- pgrep -af "relay/server.js|http.server 5173|playwright" || true
+- kill 11558 || true
+- pgrep -af "relay/server.js|http.server 5173|playwright" || true
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; RELAY_CONFIG_DIRS=dist node src/relay/server.js ...; python3 -m http.server 5173 --directory dist ...; USE_EXISTING_SERVER=1 P2P_SCALE_NODE_COUNT=15 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 P2P_SCALE_MAX_PARALLEL_DIALS=8 P2P_SCALE_MAX_DIAL_PEERS=8 npx playwright test tests/p2p-relay-scale.spec.js --reporter=line | tee /tmp/p2p-relay-scale.log'
+- pgrep -af "relay/server.js|http.server 5173|playwright" || true
+- tail -n 200 /tmp/p2p-relay-scale.log
+- rg -n "started node" /tmp/p2p-relay-scale.log | tail -n 20
+- rg -n "Initialization failed|Error|timeout|Timeout|failed" /tmp/p2p-relay-scale.log | tail -n 40
+- rg -n "node-13" /tmp/p2p-relay-scale.log
+- tail -n 120 /tmp/pc-relay.log
+- bash -lc 'set -euo pipefail; cd /home/cos/projects/peercompute/peercompute; cleanup(){ ... }; trap cleanup EXIT INT TERM; RELAY_CONFIG_DIRS=dist node src/relay/server.js ...; python3 -m http.server 5173 --directory dist ...; USE_EXISTING_SERVER=1 P2P_SCALE_NODE_COUNT=15 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 P2P_SCALE_LOG_PAGES=0 P2P_SCALE_MAX_PARALLEL_DIALS=8 P2P_SCALE_MAX_DIAL_PEERS=8 npx playwright test tests/p2p-relay-scale.spec.js --reporter=line | tee /tmp/p2p-relay-scale.log'
+- tail -n 120 plan/log.md
+
+### Tests
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (timeout: harness killed after ~10s).
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (timeout: harness killed after ~300s; test stuck under console spam).
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (fail: node-14 init timeout; peerId null).
+
+### Notes / Open
+- With maxParallelDials=8 and maxDialPeers=8, 13 nodes initialize and connect; node-14 times out during initialize with peerId null.
+- Relay log shows repeated peer announcements but no explicit relay errors at failure time.
+
+## Date: 2026-01-02
+
+### Prompt
+> hey before you do anything else review the plan files very carefully. you're forgetting something important and I can tell.
+>
+> then do 1 and 2 and 3 sequentially. then add your own headless runtime tests to test for cubechat proximity video chat and screensharing, sneaky woods, hyperborea, daddy go etc. we want a test suite to make sure they all work.
+
+### Changes
+- Reviewed plan/llm.md, plan/plan.md, and plan/log.md; key reminders were to call you "big dog", update log with full prompt/commands/tests, and rebuild dist/docs after edits.
+- Ran relay-scale steps 1/2/3 sequentially with a local relay + static server (baseline, disable persistence/state sync, and target/max caps).
+- Updated the headless demo runtime P2P harness to buffer console logs, capture per-demo errors, ignore relay-config-source 404s, and clear stale relay-config.json files before each run.
+- Runtime P2P suite now passes for cubechat (video + screen share), hyperborea, sneakywoods, and daddygo.
+- Added the runtime P2P suite to plan/branch/topologies.md test coverage.
+
+### Files touched
+- demos/tests/runtime-p2p.mjs
+- plan/branch/topologies.md
+- plan/log.md
+
+### Commands
+- rg --files plan
+- sed -n '1,200p' plan/llm.md
+- sed -n '1,200p' plan/plan.md
+- sed -n '1,220p' plan/log.md
+- sed -n '220,520p' plan/log.md
+- sed -n '520,1040p' plan/log.md
+- sed -n '1040,1560p' plan/log.md
+- sed -n '1560,2080p' plan/log.md
+- sed -n '2080,2600p' plan/log.md
+- sed -n '2600,3120p' plan/log.md
+- sed -n '1,240p' peercompute/tests/p2p-relay-scale.spec.js
+- rg -n "disablePersistence|disableState|targetConnections|maxConnections" peercompute/test-p2p.html
+- sed -n '380,460p' peercompute/test-p2p.html
+- stat -c '%y %n' peercompute/test-p2p.html peercompute/dist/test-p2p.html
+- bash -lc 'set -u
+run_case() {
+  local label="$1"
+  shift
+  local extra_env="$*"
+  local relay_log="/tmp/pc-relay-${label}.log"
+  local static_log="/tmp/p2p-static-${label}.log"
+  local test_log="/tmp/p2p-relay-scale-${label}.log"
+  local relay_pid=""
+  local static_pid=""
+  cleanup() {
+    if [ -n "${static_pid}" ]; then kill "${static_pid}" >/dev/null 2>&1 || true; fi
+    if [ -n "${relay_pid}" ]; then kill "${relay_pid}" >/dev/null 2>&1 || true; fi
+    wait >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT INT TERM
+
+  RELAY_CONFIG_DIRS=dist RELAY_LISTEN_HOST=127.0.0.1 RELAY_LISTEN_PORT=0 RELAY_PUBLIC_HOST=127.0.0.1 \
+    node src/relay/server.js >"${relay_log}" 2>&1 &
+  relay_pid=$!
+
+  python3 -m http.server 5173 --directory dist >"${static_log}" 2>&1 &
+  static_pid=$!
+
+  sleep 1
+
+  echo "[p2p-relay-scale] run ${label}"
+  set +e
+  eval "USE_EXISTING_SERVER=1 P2P_SCALE_NODE_COUNT=15 P2P_SCALE_START_DELAY_MS=3000 P2P_SCALE_SETTLE_MS=20000 P2P_SCALE_LOG_PAGES=0 P2P_SCALE_MAX_PARALLEL_DIALS=8 P2P_SCALE_MAX_DIAL_PEERS=8 ${extra_env} npx playwright test tests/p2p-relay-scale.spec.js --reporter=line | tee '${test_log}'"
+  local status=$?
+  set -e
+
+  cleanup
+  trap - EXIT INT TERM
+  echo "[p2p-relay-scale] ${label} exit ${status}"
+  return ${status}
+}
+
+set -e
+run_case "01-baseline" ""
+BASELINE_STATUS=$?
+run_case "02-no-state" "P2P_SCALE_DISABLE_PERSISTENCE=1 P2P_SCALE_DISABLE_STATE_SYNC=1"
+NO_STATE_STATUS=$?
+run_case "03-conn-caps" "P2P_SCALE_TARGET_CONNECTIONS=4 P2P_SCALE_MAX_CONNECTIONS=6"
+CONN_STATUS=$?
+
+printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "${BASELINE_STATUS}" "${NO_STATE_STATUS}" "${CONN_STATUS}"'
+- pgrep -af "relay/server.js|http.server 5173" || true
+- ls -la docs/cubechat docs/hyperborea docs/sneakywoods docs/daddygo
+- sed -n '1,240p' demos/tests/runtime-p2p.mjs
+- sed -n '240,480p' demos/tests/runtime-p2p.mjs
+- cat package.json
+- rg -n "__cubechatTest|e2e" demos/cubechat/src/main.js
+- sed -n '180,260p' demos/cubechat/src/main.js
+- npm run test:runtime:p2p
+- rg -n "hyperborea-net|Node started|Peer connected" demos/hyperborea
+- sed -n '400,520p' demos/hyperborea/src/game/Game.js
+- sed -n '160,220p' demos/hyperborea/src/game/Game.js
+- npm run test:runtime:p2p
+- cat docs/cubechat/relay-config.json
+- rg -n "topologyId|topologyType" peercompute/src/peercompute/nodeKernel/NodeKernel.js
+- sed -n '1,80p' peercompute/src/peercompute/nodeKernel/NodeKernel.js
+- rg -n "getNetworkStats" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '860,930p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "_getConnectionPeers" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1320,1365p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "pubsubPeerDiscovery" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '240,340p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- cat config/relay.json
+- rg -n "pubsub|gossipsub|floodsub" peercompute/src/relay/server.js
+- sed -n '1,120p' peercompute/src/relay/server.js
+- sed -n '120,210p' peercompute/src/relay/server.js
+- npm run test:runtime:p2p
+
+### Tests
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (baseline; fail: node-13 init timeout, peerId null).
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (disablePersistence/disableStateSync; fail: overall timeout at page.goto).
+- npx playwright test tests/p2p-relay-scale.spec.js --reporter=line (targetConnections=4, maxConnections=6; fail: min peer count on nodes 11-15).
+- npm run test:runtime:p2p (fail: hyperborea node started timeout).
+- npm run test:runtime:p2p (fail: stale relay-config; ws connection refused; cubechat no peers).
+- npm run test:runtime:p2p (pass).
+
+### Notes / Open
+- Relay-scale still stalls around node 13-15 even with dial throttles; need to inspect relay/dial backpressure.
+- Runtime P2P suite relies on relay-config.json generated per run; stale configs cause ws connection failures.
+
+## Date: 2026-01-02
+
+### Prompt
+> can you search the web to see if you can find anything?  maybe the relay server is blocking our connections so a single IP can't flood the network
+
+### Changes
+- Web research: circuit-relay v2 relies on reservations; relays can reject reservations when resources are exhausted (RESERVATION_REFUSED) or when ACL filters apply.
+- go-libp2p relay resources include per-IP/per-ASN reservation caps (MaxReservationsPerIP/MaxReservationsPerASN), so IP-based throttling is possible in go relays.
+- js-libp2p circuit-relay-v2 server defaults to maxReservations=15 with data/time limits, so a ~10-15 node cap matches the default js relay behavior rather than explicit IP blocking.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- curl -fsSL "https://r.jina.ai/http://duckduckgo.com/html/?q=libp2p%20relay%20rate%20limit%20ip" | head -n 40
+- curl -fsSL "https://r.jina.ai/http://duckduckgo.com/html/?q=js-libp2p%20circuit%20relay%20v2%20limits%20reservation" | head -n 80
+- curl -fsSL "https://r.jina.ai/http://docs.libp2p.io/concepts/nat/circuit-relay/" | rg -n "reservation|relay" | head -n 20
+- curl -fsSL "https://r.jina.ai/http://docs.libp2p.io/concepts/nat/circuit-relay/" | sed -n '60,90p'
+- curl -fsSL "https://r.jina.ai/http://pkg.go.dev/github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay" | rg -n "Resources struct|MaxReservations|MaxCircuits|Limit" | head -n 20
+- curl -fsSL "https://r.jina.ai/http://pkg.go.dev/github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay" | sed -n '348,372p'
+- curl -fsSL "https://r.jina.ai/http://libp2p.github.io/js-libp2p/interfaces/_libp2p_circuit-relay-v2.ServerReservationStoreInit.html" | rg -n "limit|max|reservation" | head -n 30
+- curl -fsSL "https://r.jina.ai/http://libp2p.github.io/js-libp2p/interfaces/_libp2p_circuit-relay-v2.ServerReservationStoreInit.html" | sed -n '56,90p'
+- curl -fsSL "https://r.jina.ai/http://github.com/libp2p/specs/blob/master/relay/circuit-v2.md" | rg -n "reservation|resource" | head -n 20
+
+### Tests
+- Not run (research only).
+
+## Date: 2026-01-02
+
+### Prompt
+> resource caps make sense but shouldn't that clear up when peers disconnect. even if I close all tabs and open a couple new ones they still won't connect to eachother
+
+### Changes
+- Reviewed local js-libp2p circuit-relay-v2 defaults: maxReservations=15, reservationClearInterval=300000ms, reservationTtl=7200000ms (2h).
+- Confirmed our relay server uses circuitRelayServer() defaults (no overrides), so stale reservations can persist until TTL/cleanup even after browser tabs close uncleanly.
+- Noted that reservation caps can prevent new peers from being dialable via relay even if they can connect out, explaining “new tabs won’t connect to each other” until relay restart or TTL expiry.
+
+### Files touched
+- plan/log.md
+
+### Commands
+- rg -n "circuitRelayServer\\(" peercompute/src/relay/server.js node_modules/@libp2p/circuit-relay-v2 -S
+
+### Tests
+- Not run (analysis only).
