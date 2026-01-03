@@ -30,6 +30,9 @@ export * as Utils from './utils/Utils.js';
  * 
  * @param {Object} config - Node configuration
  * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent'
+ * @param {string} config.topologyId - Topology identifier shared across rooms
+ * @param {string} config.topicPrefix - Base prefix for scoped topics
+ * @param {boolean} config.useScopedTopics - Enable topology + room topic scoping
  * @param {string} config.storageMode - Data storage mode: 'local' | 'propagate'
  * @param {boolean} config.enableWebGPU - Enable WebGPU compute capabilities
  * @param {boolean} config.enablePhysics - Enable physics engine
@@ -82,6 +85,9 @@ export const VERSION = '0.0.1';
  */
 export const DEFAULT_CONFIG = {
   topology: 'distributed',
+  topologyId: 'default-topology',
+  topicPrefix: 'pc',
+  useScopedTopics: true,
   storageMode: 'local',
   enableWebGPU: false,
   enablePhysics: false,

@@ -20,10 +20,12 @@ import { peerIdFromString } from '@libp2p/peer-id';
 import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
+import { TopologyController } from './TopologyController.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
 const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
 const DEFAULT_PRESENCE_TOPIC = 'peercompute-presence';
+const DEFAULT_TOPIC_PREFIX = 'pc';
 const PEER_DIAL_THROTTLE_MS = 5000;
 const DEFAULT_MAX_DIAL_PEERS = 16;
 
@@ -200,6 +202,11 @@ const ensurePeerIdSuffix = (addr, peerId) => {
   return `${addr}${suffix}`;
 };
 
+const buildScopedTopic = (prefix, topologyId, roomId, suffix) => {
+  const scope = [prefix, topologyId, roomId].filter(Boolean).join('.');
+  return `${scope}.${suffix}`;
+};
+
 
 export class NetworkManager {
   constructor(config = {}) {
@@ -244,17 +251,49 @@ export class NetworkManager {
       config.enablePubsubPeerDiscovery ??
       undefined;
 
+    const topologyType = config.topologyType || config.topology || 'distributed';
+    const topologyId = config.topologyId || config.topologyKey || config.topologyName || config.gameId || 'default-topology';
+    const roomId = config.roomId || 'default-room';
+    const topicPrefix = config.topicPrefix || config.topicBase || DEFAULT_TOPIC_PREFIX;
+    const useScopedTopics = config.useScopedTopics !== false;
+    const scopedPubsubTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'state');
+    const scopedDirectTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'direct');
+    const scopedPresenceTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'presence');
+
     const defaults = {
-      topology: config.topology || 'distributed',
-      pubsubTopic: config.pubsubTopic || DEFAULT_PUBSUB_TOPIC,
-      directTopic: config.directTopic || DEFAULT_DIRECT_TOPIC,
-      presenceTopic: config.presenceTopic || DEFAULT_PRESENCE_TOPIC,
+      topology: topologyType,
+      topologyId,
+      topicPrefix,
+      useScopedTopics,
+      pubsubTopic: config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
+      directTopic: config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
+      presenceTopic: config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
       discoveryTopic: config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub',
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
-      roomId: config.roomId || 'default-room',
+      roomId,
       enforceRoomIsolation: config.enforceRoomIsolation !== false,
+      allowDiscoveryDialWhenIsolated: config.allowDiscoveryDialWhenIsolated === true,
+      enforceTopologyScope: config.enforceTopologyScope !== false,
       enableTelemetry: config.enableTelemetry !== false,
+      enableTopologyController: config.enableTopologyController !== false,
+      topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
+      targetConnections: Number.isFinite(config.targetConnections)
+        ? Math.max(1, config.targetConnections)
+        : Math.min(maxConnections, 4),
+      connectionRadius: Number.isFinite(config.connectionRadius)
+        ? Math.max(0, config.connectionRadius)
+        : 6,
+      isolationMinConnections: Number.isFinite(config.isolationMinConnections)
+        ? Math.max(1, config.isolationMinConnections)
+        : 2,
+      longRangeCount: Number.isFinite(config.longRangeCount) ? Math.max(0, config.longRangeCount) : 1,
+      longRangeRefreshMs: Number.isFinite(config.longRangeRefreshMs)
+        ? Math.max(1000, config.longRangeRefreshMs)
+        : 15000,
+      enableSharding: config.enableSharding === true,
+      shardSize: Number.isFinite(config.shardSize) ? Math.max(1, config.shardSize) : 8,
+      shardRadius: Number.isFinite(config.shardRadius) ? Math.max(0, config.shardRadius) : 1,
       webrtc: webrtcConfig,
       telemetrySampleMs,
       telemetryPingMs,
@@ -291,6 +330,7 @@ export class NetworkManager {
     this.joinedAt = null;
     this.presenceInterval = null;
     this.publishErrorAt = new Map();
+    this.pubsubStreamErrorAt = new Map();
     this.lastBootstrapDialAt = 0;
 
     this.peers = new Map();
@@ -318,6 +358,9 @@ export class NetworkManager {
     this.onMessage = config.onMessage || (() => {});
     this.onPeerConnect = config.onPeerConnect || (() => {});
     this.onPeerDisconnect = config.onPeerDisconnect || (() => {});
+    this.onConnectionFailure = typeof config.onConnectionFailure === 'function'
+      ? config.onConnectionFailure
+      : null;
     this.messageHandlers = [];
     this.scheduler = null;
     this.schedulerTimer = null;
@@ -338,6 +381,34 @@ export class NetworkManager {
     [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
       .filter(Boolean)
       .forEach((topic) => this.allowedTopics.add(topic));
+
+    const metricConfigured = config.topologyMetric !== undefined || config.metric !== undefined;
+    const initialMetric = config.topologyMetric || config.metric || null;
+    this.topologyMetric = initialMetric && typeof initialMetric === 'object'
+      ? { x: initialMetric.x || 0, y: initialMetric.y || 0, z: initialMetric.z || 0 }
+      : { x: 0, y: 0, z: 0 };
+    this.metricInitialized = config.topologyMetricInitialized ?? config.metricInitialized ?? metricConfigured;
+    this.topologyShardId = null;
+    this.shardTopics = new Set();
+    this.pendingTopologyRequests = new Map();
+    this.publishBlockedUntil = new Map();
+    this.topologyController = this.config.enableTopologyController
+      ? new TopologyController({
+        topologyId: this.config.topologyId,
+        topologyType: this.config.topology,
+        targetConnections: this.config.targetConnections,
+        maxConnections: this.config.maxConnections,
+        connectionRadius: this.config.connectionRadius,
+        isolationMinConnections: this.config.isolationMinConnections,
+        longRangeCount: this.config.longRangeCount,
+        longRangeRefreshMs: this.config.longRangeRefreshMs,
+        shardSize: this.config.shardSize,
+        shardRadius: this.config.shardRadius,
+        enforceTopologyScope: this.config.enforceTopologyScope,
+        metric: this.topologyMetric
+      })
+      : null;
+    this.topologyTimer = null;
   }
 
   addMessageHandler(handler) {
@@ -534,6 +605,7 @@ export class NetworkManager {
     }
 
     this._wireLibp2pEvents();
+    this._patchGossipsubOutboundStreams();
     return this.libp2p;
   }
 
@@ -548,11 +620,16 @@ export class NetworkManager {
     if (!this.joinedAt) {
       this.joinedAt = Date.now();
     }
+    if (this.topologyController) {
+      this.topologyController.setPeerId(this.peerId);
+    }
+    this._updateShardState(true);
 
     // Subscribe to topics used by PeerCompute
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    this._syncShardSubscriptions(this.topologyController?.getNeighborShardIds?.() || []);
     this._recordPubsubTx(0);
 
     await this._dialBootstrapPeers();
@@ -566,6 +643,7 @@ export class NetworkManager {
       this._ensureScheduler();
       this._startScheduler();
     }
+    this._startTopologyController();
   }
 
   async redialBootstrapPeers() {
@@ -578,6 +656,7 @@ export class NetworkManager {
     this._stopScheduler();
     this._clearPresenceTimer();
     this._stopTelemetrySampler();
+    this._stopTopologyController();
 
     if (this.libp2p) {
       await this.libp2p.stop();
@@ -596,6 +675,83 @@ export class NetworkManager {
     const topic = options.topic || this.config.pubsubTopic;
     const payload = this._wrapPayload(message);
     await this._publish(topic, payload);
+  }
+
+  setTopologyMetric(metric) {
+    if (!metric || typeof metric !== 'object') return;
+    const next = {
+      x: Number.isFinite(metric.x) ? metric.x : 0,
+      y: Number.isFinite(metric.y) ? metric.y : 0,
+      z: Number.isFinite(metric.z) ? metric.z : 0
+    };
+    this.topologyMetric = next;
+    this.metricInitialized = true;
+    if (this.topologyController) {
+      this.topologyController.setLocalMetric(next);
+    }
+    this._updateShardState(true);
+    this._publishPresenceNow().catch(() => {});
+  }
+
+  setConnectionLimits({ targetConnections, maxConnections } = {}) {
+    const nextTarget = Number.isFinite(targetConnections)
+      ? Math.max(1, targetConnections)
+      : this.config.targetConnections;
+    const nextMax = Number.isFinite(maxConnections)
+      ? Math.max(1, maxConnections)
+      : this.config.maxConnections;
+    const changed = nextTarget !== this.config.targetConnections || nextMax !== this.config.maxConnections;
+    this.config.targetConnections = nextTarget;
+    this.config.maxConnections = nextMax;
+    const connectionManager =
+      this.libp2p?.services?.connectionManager || this.libp2p?.connectionManager;
+    if (connectionManager) {
+      try {
+        if (typeof connectionManager.setMaxConnections === 'function') {
+          connectionManager.setMaxConnections(nextMax);
+        } else if (typeof connectionManager.maxConnections === 'number') {
+          connectionManager.maxConnections = nextMax;
+        }
+      } catch (err) {
+        debugWarn('[NetworkManager] Failed to update connection manager limits', err?.message || err);
+      }
+    }
+    if (this.topologyController?.setConnectionLimits) {
+      this.topologyController.setConnectionLimits({
+        targetConnections: nextTarget,
+        maxConnections: nextMax
+      });
+    }
+    if (changed) {
+      this._publishPresenceNow().catch(() => {});
+    }
+  }
+
+  setPriorityPeers(peerIds = []) {
+    if (this.topologyController?.setPriorityPeers) {
+      this.topologyController.setPriorityPeers(peerIds);
+    }
+  }
+
+  setRelayBootstrapBehavior({ keepRelay } = {}) {
+    if (typeof keepRelay !== 'boolean') return;
+    if (!this.config.webrtc || typeof this.config.webrtc !== 'object') {
+      this.config.webrtc = {};
+    }
+    const dropRelayBootstrapOnDirect = !keepRelay;
+    this.config.webrtc.dropRelayBootstrapOnDirect = dropRelayBootstrapOnDirect;
+    this._maybeUpdateBootstrapRelayConnections();
+  }
+
+  getTopologyStatus() {
+    return {
+      topologyId: this.config.topologyId,
+      topologyType: this.config.topology,
+      shardId: this.topologyShardId,
+      metric: { ...this.topologyMetric },
+      targetConnections: this.config.targetConnections,
+      maxConnections: this.config.maxConnections
+    };
   }
 
   getConnectedPeers() {
@@ -623,6 +779,9 @@ export class NetworkManager {
       peerCount: connectionPeers.length,
       isConnected: this.isConnected,
       topology: this.config.topology,
+      topologyId: this.config.topologyId,
+      shardId: this.topologyShardId,
+      metric: { ...this.topologyMetric },
       connections: connectionCount
     };
   }
@@ -631,9 +790,10 @@ export class NetworkManager {
     const now = Date.now();
     const networkStats = this.getNetworkStats();
     const health = this.getHealth();
-    const peers = this.getConnectedPeers().map((peer) => ({
+      const peers = this.getConnectedPeers().map((peer) => ({
       peerId: peer.peerId,
       connectedAt: peer.connectedAt || null,
+      joinedAt: peer.joinedAt || null,
       lastSeen: peer.lastSeen || null,
       lastMessageTime: peer.lastMessageTime || null,
       lastRxAt: peer.lastRxAt || null,
@@ -641,6 +801,13 @@ export class NetworkManager {
       lastRttAt: peer.lastRttAt || null,
       rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null,
       via: peer.via || null,
+      topologyId: peer.topologyId || null,
+      shardId: peer.shardId || null,
+      metric: peer.metric || null,
+      metricInitialized: peer.metricInitialized ?? null,
+      targetConnections: peer.targetConnections || null,
+      maxConnections: peer.maxConnections || null,
+      activeConnections: peer.activeConnections || null,
       rxCount: peer.rxCount || 0,
       txCount: peer.txCount || 0,
       rxBytes: peer.rxBytes || 0,
@@ -655,6 +822,10 @@ export class NetworkManager {
       gameId: this.config.gameId,
       roomId: this.config.roomId,
       topology: this.config.topology,
+      topologyId: this.config.topologyId,
+      shardId: this.topologyShardId,
+      metric: { ...this.topologyMetric },
+      metricInitialized: this.metricInitialized,
       isConnected: this.isConnected,
       peerCount: networkStats.peerCount,
       connections: networkStats.connections,
@@ -676,16 +847,112 @@ export class NetworkManager {
         rxBytes: this.telemetry.pubsubRxBytes,
         txBytes: this.telemetry.pubsubTxBytes,
         lastRxAt: this.telemetry.pubsubLastRxAt || null,
-        lastTxAt: this.telemetry.pubsubLastTxAt || null
+      lastTxAt: this.telemetry.pubsubLastTxAt || null
       },
       reliability: health.reliability,
       pubsubPeerCount: Array.isArray(health.pubsubPeers) ? health.pubsubPeers.length : 0,
+      joinedAt: this.joinedAt,
       peers
     };
   }
 
   getLibp2pNode() {
     return this.libp2p;
+  }
+
+  _dropPubsubPeer(peerId) {
+    if (!peerId) return;
+    const pubsub = this.libp2p?.services?.pubsub;
+    if (!pubsub || typeof pubsub.removePeer !== 'function') return;
+    let peer;
+    try {
+      peer = peerIdFromString(peerId);
+    } catch (_) {
+      return;
+    }
+    try {
+      pubsub.removePeer(peer);
+    } catch (err) {
+      debugWarn('[NetworkManager] Failed to remove pubsub peer', peerId, err?.message || err);
+    }
+  }
+
+  _handlePubsubStreamError(peerId, err) {
+    if (!peerId || !err) return;
+    const message = err?.message || '';
+    if (err?.name !== 'StreamStateError' && !String(message).includes('stream')) return;
+    const now = Date.now();
+    const last = this.pubsubStreamErrorAt.get(peerId) || 0;
+    if (now - last > 5000) {
+      this.pubsubStreamErrorAt.set(peerId, now);
+      debugWarn('[NetworkManager] Pubsub stream error', peerId, message);
+    }
+    this._dropPubsubPeer(peerId);
+    if (typeof this.libp2p?.hangUp === 'function') {
+      try {
+        const target = peerIdFromString(peerId);
+        this.libp2p.hangUp(target).catch(() => {});
+      } catch (_) {
+        // ignore invalid peer ids
+      }
+    }
+  }
+
+  _emitConnectionFailure(details = {}) {
+    if (typeof this.onConnectionFailure !== 'function') return;
+    const payload = {
+      peerId: details.peerId ?? null,
+      address: details.address ?? null,
+      source: details.source ?? null,
+      stage: details.stage ?? null,
+      error: details.error ?? null,
+      at: details.at ?? Date.now()
+    };
+    try {
+      this.onConnectionFailure(payload);
+    } catch (err) {
+      debugWarn('[NetworkManager] onConnectionFailure failed', err?.message || err);
+    }
+  }
+
+  _patchGossipsubOutboundStream(peerId, outboundStream) {
+    if (!peerId || !outboundStream) return;
+    const rawStream = outboundStream.rawStream || outboundStream.stream || outboundStream._rawStream;
+    if (!rawStream || typeof rawStream.send !== 'function') return;
+    if (rawStream.__pcSendPatched) return;
+    const originalSend = rawStream.send.bind(rawStream);
+    rawStream.send = (data) => {
+      try {
+        const result = originalSend(data);
+        if (result && typeof result.catch === 'function') {
+          result.catch((err) => this._handlePubsubStreamError(peerId, err));
+        }
+        return result;
+      } catch (err) {
+        this._handlePubsubStreamError(peerId, err);
+        return undefined;
+      }
+    };
+    rawStream.__pcSendPatched = true;
+  }
+
+  _patchGossipsubOutboundStreams() {
+    if (this.config.pubsubType !== 'gossipsub') return;
+    const pubsub = this.libp2p?.services?.pubsub;
+    const outbound = pubsub?.streamsOutbound;
+    if (!outbound || typeof outbound.forEach !== 'function') return;
+    outbound.forEach((stream, id) => {
+      this._patchGossipsubOutboundStream(id, stream);
+    });
+    if (!outbound.__pcWrapped) {
+      const originalSet = outbound.set.bind(outbound);
+      outbound.set = (id, stream) => {
+        const result = originalSet(id, stream);
+        this._patchGossipsubOutboundStream(id, stream);
+        return result;
+      };
+      outbound.__pcWrapped = true;
+    }
   }
 
   _wireLibp2pEvents() {
@@ -710,6 +977,25 @@ export class NetworkManager {
       const via = this._getPreferredConnectionType(peerId);
       if (via) {
         this._touchPeer(peerId, { via });
+      }
+      const closeError = conn?.stat?.timeline?.close?.error
+        || conn?.stat?.timeline?.close?.cause
+        || conn?.timeline?.close?.error
+        || conn?.timeline?.close?.cause
+        || conn?.error
+        || evt?.detail?.error;
+      if (closeError) {
+        this._emitConnectionFailure({
+          peerId,
+          address: conn?.remoteAddr?.toString?.(),
+          source: 'connection',
+          stage: 'close',
+          error: closeError
+        });
+      }
+      const active = this._getConnectionsForPeer(peerId).filter((entry) => entry?.status === 'open');
+      if (active.length === 0) {
+        this._dropPubsubPeer(peerId);
       }
       this._maybeUpdateBootstrapRelayConnections();
     });
@@ -741,6 +1027,7 @@ export class NetworkManager {
     this.libp2p.addEventListener('peer:disconnect', (evt) => {
       const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
       if (!peerId) return;
+      this._dropPubsubPeer(peerId);
       this.peers.delete(peerId);
       this.onPeerDisconnect(peerId);
       this._maybeUpdateBootstrapRelayConnections();
@@ -784,6 +1071,9 @@ export class NetworkManager {
       if (!this._matchesScope(parsed)) return;
 
       const payload = parsed?.payload ?? parsed;
+      if (this._handleTopologyMessage(payload, parsed)) {
+        return;
+      }
       const from = parsed?.from;
       if (from && from !== this.peerId) {
         this._touchPeer(from, { lastMessageTime: Date.now() });
@@ -827,6 +1117,9 @@ export class NetworkManager {
       from: this.peerId,
       gameId: this.config.gameId,
       roomId: this.config.roomId,
+      topologyId: this.config.topologyId,
+      topologyType: this.config.topology,
+      shardId: this.topologyShardId,
       payload,
       ...extra
     };
@@ -836,6 +1129,11 @@ export class NetworkManager {
     if (!message) return true;
     if (message.gameId && message.gameId !== this.config.gameId) return false;
     if (message.roomId && message.roomId !== this.config.roomId) return false;
+    if (this.config.enforceTopologyScope) {
+      const msgTopology = message.topologyId || message.header?.topologyId || null;
+      if (!msgTopology) return false;
+      if (msgTopology !== this.config.topologyId) return false;
+    }
     return true;
   }
 
@@ -852,6 +1150,14 @@ export class NetworkManager {
     this._touchPeer(message.from, {
       gameId: message.gameId,
       roomId: message.roomId,
+      topologyId: message.topologyId,
+      topologyType: message.topologyType,
+      shardId: message.shardId,
+      metric: message.metric || null,
+      metricInitialized: message.metricInitialized ?? null,
+      targetConnections: message.targetConnections,
+      maxConnections: message.maxConnections,
+      activeConnections: message.activeConnections,
       lastSeen: Date.now(),
       joinedAt,
       via: 'presence'
@@ -870,6 +1176,11 @@ export class NetworkManager {
   _getScopedPeers() {
     return Array.from(this.peers.entries())
       .filter(([, meta]) => meta?.gameId === this.config.gameId && meta?.roomId === this.config.roomId)
+      .filter(([, meta]) => {
+        if (!this.config.enforceTopologyScope) return true;
+        if (!meta?.topologyId) return false;
+        return meta.topologyId === this.config.topologyId;
+      })
       .map(([peerId, meta]) => ({ peerId, ...meta }));
   }
 
@@ -897,6 +1208,17 @@ export class NetworkManager {
       });
     }
     return Array.from(byId.values());
+  }
+
+  _getActiveConnectionCount() {
+    const connectionList = this._getConnections();
+    let count = 0;
+    for (const conn of connectionList) {
+      if (!conn) continue;
+      if (conn.status && conn.status === 'closed') continue;
+      count += 1;
+    }
+    return count;
   }
 
   _countDialedPeers() {
@@ -952,7 +1274,12 @@ export class NetworkManager {
 
   _maybeUpdateBootstrapRelayConnections() {
     if (!this.libp2p) return;
-    if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return;
+    if (!this.config.webrtc?.dropRelayBootstrapOnDirect) {
+      if (!this._hasBootstrapRelayConnections()) {
+        this._maybeRedialBootstrapPeers();
+      }
+      return;
+    }
     if (this._shouldKeepRelayBootstrapConnection()) {
       if (!this._hasBootstrapRelayConnections()) {
         this._maybeRedialBootstrapPeers();
@@ -966,9 +1293,13 @@ export class NetworkManager {
 
   _shouldDialDiscoveredPeer(peerId) {
     if (!peerId) return false;
+    const nonBootstrapConnections = this._countDialedPeers();
+    const allowIsolationDial = this.config.allowDiscoveryDialWhenIsolated
+      && nonBootstrapConnections === 0;
     const allowByRoom = !this.config.enforceRoomIsolation
       || this.bootstrapPeerIds.has(peerId)
-      || this.peers.has(peerId);
+      || this.peers.has(peerId)
+      || allowIsolationDial;
     if (!allowByRoom) return false;
     if (this.bootstrapPeerIds.has(peerId)) {
       if (this.config.webrtc?.dropRelayBootstrapOnDirect && this._hasDirectPeerConnections()) {
@@ -983,7 +1314,39 @@ export class NetworkManager {
         return false;
       }
     }
+    const targetConnections = Number.isFinite(this.config.targetConnections)
+      ? this.config.targetConnections
+      : null;
+    const activeConnections = this._getActiveConnectionCount();
+    const underTarget = Number.isFinite(targetConnections) && activeConnections < targetConnections;
+    if (this.topologyController && !underTarget && !this.topologyController.shouldDialPeer(peerId)) {
+      return false;
+    }
     return true;
+  }
+
+  _pruneStalePeers(now = Date.now()) {
+    const configured = this.config.peerStaleMs;
+    const presenceInterval = Number.isFinite(this.config.presenceIntervalMs)
+      ? this.config.presenceIntervalMs
+      : 3000;
+    const maxAgeMs = Number.isFinite(configured)
+      ? configured
+      : Math.max(30000, presenceInterval * 3);
+    if (maxAgeMs <= 0) return;
+    for (const [peerId, meta] of this.peers.entries()) {
+      if (!peerId) continue;
+      const lastSeen = Number(meta?.lastSeen ?? meta?.lastMessageTime ?? meta?.connectedAt ?? meta?.joinedAt ?? 0);
+      if (!lastSeen) continue;
+      if (now - lastSeen <= maxAgeMs) continue;
+      const connections = this._getConnectionsForPeer(peerId);
+      const hasConnection = connections.some((conn) => conn?.status !== 'closed');
+      if (hasConnection) continue;
+      this.peers.delete(peerId);
+      this._dropPubsubPeer(peerId);
+      this.recentDialAttempts.delete(peerId);
+      this.pendingTopologyRequests.delete(peerId);
+    }
   }
 
   _touchPeer(peerId, updates) {
@@ -1079,6 +1442,13 @@ export class NetworkManager {
   _shouldKeepRelayBootstrapConnection() {
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return true;
     if (!this._hasDirectPeerConnections()) return true;
+    const targetConnections = Number.isFinite(this.config.targetConnections)
+      ? this.config.targetConnections
+      : null;
+    if (Number.isFinite(targetConnections)) {
+      const activeConnections = this._getActiveConnectionCount();
+      if (activeConnections < targetConnections) return true;
+    }
     const retention = this._getRelayRetentionConfig();
     if (!retention) return false;
     if (retention.mode !== 'logn' && retention.mode !== 'sqrt') return false;
@@ -1099,29 +1469,401 @@ export class NetworkManager {
 
   _startPresence() {
     this._clearPresenceTimer();
-    const publishPresence = async () => {
-      if (!this.peerId) return;
-      const payload = {
-        type: 'presence',
-        from: this.peerId,
-        gameId: this.config.gameId,
-        roomId: this.config.roomId,
-        joinedAt: this.joinedAt,
-        multiaddrs: this._getAnnounceAddrs()
-      };
-      await this._publish(this.config.presenceTopic, payload);
-    };
-
+    const publishPresence = () => this._publishPresenceNow();
     publishPresence().catch(() => {});
     this.presenceInterval = setInterval(() => {
       publishPresence().catch(() => {});
     }, this.config.presenceIntervalMs || 3000);
   }
 
+  _buildPresencePayload() {
+    if (!this.peerId) return null;
+    const activeConnections = this._getActiveConnectionCount();
+    return {
+      type: 'presence',
+      from: this.peerId,
+      gameId: this.config.gameId,
+      roomId: this.config.roomId,
+      topologyId: this.config.topologyId,
+      topologyType: this.config.topology,
+      shardId: this.topologyShardId,
+      metric: { ...this.topologyMetric },
+      metricInitialized: this.metricInitialized,
+      joinedAt: this.joinedAt,
+      targetConnections: this.config.targetConnections,
+      maxConnections: this.config.maxConnections,
+      activeConnections,
+      multiaddrs: this._getAnnounceAddrs()
+    };
+  }
+
+  async _publishPresenceNow() {
+    const payload = this._buildPresencePayload();
+    if (!payload) return;
+    await this._publish(this.config.presenceTopic, payload);
+  }
+
   _clearPresenceTimer() {
     if (this.presenceInterval) {
       clearInterval(this.presenceInterval);
       this.presenceInterval = null;
+    }
+  }
+
+  _updateShardState(force = false) {
+    if (!this.topologyController || !this.config.enableSharding) return;
+    const shardId = this.topologyController.getShardId(this.topologyMetric);
+    if (!force && shardId === this.topologyShardId) return;
+    this.topologyShardId = shardId;
+    const neighborIds = this.topologyController.getNeighborShardIds(this.topologyMetric);
+    this._syncShardSubscriptions(neighborIds);
+  }
+
+  _getShardTopics(ids = []) {
+    if (!this.config.useScopedTopics) return [];
+    return ids.map((id) =>
+      buildScopedTopic(this.config.topicPrefix, this.config.topologyId, this.config.roomId, `shard.${id}`)
+    );
+  }
+
+  _syncShardSubscriptions(ids = []) {
+    if (!this.config.enableSharding || !this.libp2p?.services?.pubsub) return;
+    const topics = new Set(this._getShardTopics(ids));
+    for (const topic of topics) {
+      if (!this.shardTopics.has(topic)) {
+        this.libp2p.services.pubsub.subscribe(topic);
+      }
+      this.allowedTopics.add(topic);
+    }
+    for (const topic of Array.from(this.shardTopics)) {
+      if (!topics.has(topic)) {
+        this.libp2p.services.pubsub.unsubscribe?.(topic);
+        this.allowedTopics.delete(topic);
+      }
+    }
+    this.shardTopics = topics;
+  }
+
+  _startTopologyController() {
+    if (!this.topologyController) return;
+    if (this.topologyTimer) return;
+    const tick = () => {
+      this._tickTopology();
+      this.topologyTimer = setTimeout(tick, this.config.topologyTickMs || 1500);
+    };
+    this._tickTopology(true);
+    this.topologyTimer = setTimeout(tick, this.config.topologyTickMs || 1500);
+  }
+
+  _stopTopologyController() {
+    if (this.topologyTimer) {
+      clearTimeout(this.topologyTimer);
+      this.topologyTimer = null;
+    }
+  }
+
+  _tickTopology(force = false) {
+    if (!this.topologyController || !this.isConnected) return;
+    const now = Date.now();
+    this._pruneStalePeers(now);
+    if (this.config.enableSharding) {
+      this._updateShardState(force);
+    }
+    const peers = this._getScopedPeers();
+    const connections = this._getConnectionPeers();
+    const desiredPeers = this.topologyController.computeDesiredPeers({
+      peers,
+      connections,
+      now
+    });
+    this._maybeSwapTopologyConnections(desiredPeers, peers, connections);
+    this._ensureTopologyConnections(desiredPeers);
+  }
+
+  _maybeSwapTopologyConnections(desiredPeers, peers, connections) {
+    if (!this.topologyController) return;
+    if (this.config.topology !== 'distributed') return;
+    const maxConnections = this.config.maxConnections;
+    if (!Number.isFinite(maxConnections) || maxConnections <= 0) return;
+    if (this._getActiveConnectionCount() < maxConnections) return;
+    if (!desiredPeers || desiredPeers.size === 0) return;
+
+    const peerById = new Map();
+    peers.forEach((peer) => {
+      if (peer?.peerId) peerById.set(peer.peerId, peer);
+    });
+
+    const connected = connections.filter((peer) => peer?.peerId && !this.bootstrapPeerIds.has(peer.peerId));
+    if (connected.length === 0) return;
+    const connectedIds = new Set(connected.map((peer) => peer.peerId));
+    const allowRelayWhenIsolated = this.config.allowRelayWhenIsolated !== false;
+    const hasNonRelay = connected.some((peer) => peer.via && peer.via !== 'relay');
+    if (allowRelayWhenIsolated && !hasNonRelay) return;
+
+    const toPriority = (peerId, peer) => {
+      const activeConnections = peer?.activeConnections;
+      const distanceRaw = this.topologyController.getPeerDistance(peer || { peerId });
+      const distance = Number.isFinite(distanceRaw) ? distanceRaw : Number.POSITIVE_INFINITY;
+      return {
+        peerId,
+        distance,
+        noConnections: activeConnections === 0
+      };
+    };
+    const comparePriority = (a, b) => {
+      if (a.noConnections !== b.noConnections) return a.noConnections ? -1 : 1;
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return String(a.peerId).localeCompare(String(b.peerId));
+    };
+    const normalizeMetric = (metric) => ({
+      x: Number.isFinite(metric?.x) ? metric.x : 0,
+      y: Number.isFinite(metric?.y) ? metric.y : 0,
+      z: Number.isFinite(metric?.z) ? metric.z : 0
+    });
+    const isMetricReady = (peer) => {
+      if (!peer?.metric || typeof peer.metric !== 'object') return false;
+      const initialized = peer.metricInitialized === true;
+      const metric = normalizeMetric(peer.metric);
+      const isZero = metric.x === 0 && metric.y === 0 && metric.z === 0;
+      return initialized || !isZero;
+    };
+    const getMetricDistance = (a, b) => {
+      if (!isMetricReady(a) || !isMetricReady(b)) return Number.POSITIVE_INFINITY;
+      const aMetric = normalizeMetric(a.metric);
+      const bMetric = normalizeMetric(b.metric);
+      const dx = aMetric.x - bMetric.x;
+      const dy = aMetric.y - bMetric.y;
+      const dz = aMetric.z - bMetric.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    const pendingDesired = Array.from(desiredPeers)
+      .filter((peerId) => !connectedIds.has(peerId))
+      .map((peerId) => toPriority(peerId, peerById.get(peerId)))
+      .filter((entry) => Number.isFinite(entry.distance));
+    if (pendingDesired.length === 0) return;
+
+    pendingDesired.sort(comparePriority);
+    const bestCandidate = pendingDesired[0];
+    if (!bestCandidate) return;
+
+    const protectedIds = new Set(this.bootstrapPeerIds);
+    if (this.topologyController.longRangePeers) {
+      for (const peerId of this.topologyController.longRangePeers) {
+        protectedIds.add(peerId);
+      }
+    }
+
+    const dropCandidates = connected
+      .filter((peer) => peer?.peerId)
+      .filter((peer) => !desiredPeers.has(peer.peerId))
+      .filter((peer) => !protectedIds.has(peer.peerId))
+      .filter((peer) => !(allowRelayWhenIsolated && peer.via === 'relay' && !hasNonRelay))
+      .map((peer) => toPriority(peer.peerId, peer));
+
+    if (dropCandidates.length === 0) return;
+
+    dropCandidates.sort(comparePriority);
+    const worstCandidate = dropCandidates[dropCandidates.length - 1];
+    if (!worstCandidate) return;
+    if (comparePriority(bestCandidate, worstCandidate) >= 0) return;
+
+    const worstPeer = peerById.get(worstCandidate.peerId);
+    const otherConnections = Number.isFinite(worstPeer?.activeConnections)
+      ? worstPeer.activeConnections - 1
+      : null;
+    if (!Number.isFinite(otherConnections) || otherConnections < 2) return;
+    if (!Number.isFinite(worstCandidate.distance)) return;
+    let closerCount = 0;
+    for (const peer of peers) {
+      if (!peer?.peerId) continue;
+      if (peer.peerId === worstCandidate.peerId) continue;
+      if (peer.peerId === this.peerId) continue;
+      const dist = getMetricDistance(worstPeer, peer);
+      if (!Number.isFinite(dist)) continue;
+      if (dist < worstCandidate.distance) {
+        closerCount += 1;
+        if (closerCount >= 2) break;
+      }
+    }
+    if (closerCount < 2) return;
+
+    this._closeConnectionsToPeer(worstCandidate.peerId);
+  }
+
+  _ensureTopologyConnections(desiredPeers) {
+    if (!desiredPeers || desiredPeers.size === 0) return;
+    const now = Date.now();
+    for (const [peerId, entry] of Array.from(this.pendingTopologyRequests.entries())) {
+      if (now - (entry?.sentAt || 0) > 10000) {
+        this.pendingTopologyRequests.delete(peerId);
+      }
+    }
+    for (const peerId of desiredPeers) {
+      if (!peerId) continue;
+      if (this.peers.get(peerId)?.connectedAt) continue;
+      if (this.pendingTopologyRequests.has(peerId)) continue;
+      this.pendingTopologyRequests.set(peerId, { sentAt: now });
+      this.sendToPeer(peerId, {
+        type: 'topology-connect-request',
+        metric: this.topologyMetric,
+        targetConnections: this.config.targetConnections,
+        maxConnections: this.config.maxConnections
+      }).catch(() => {
+        this.pendingTopologyRequests.delete(peerId);
+      });
+    }
+  }
+
+  _closeConnectionsToPeer(peerId) {
+    if (!this.libp2p?.getConnections || !peerId) return;
+    const connections = this._getConnectionsForPeer(peerId);
+    connections.forEach((conn) => {
+      if (conn?.status && conn.status !== 'open') return;
+      conn.close?.().catch?.(() => {});
+    });
+  }
+
+  _handleTopologyMessage(payload, envelope) {
+    if (!payload || typeof payload.type !== 'string') return false;
+    if (!payload.type.startsWith('topology-')) return false;
+    const from = envelope?.from || payload.from;
+    if (!from || from === this.peerId) return true;
+
+    if (payload.type === 'topology-connect-request') {
+      this._handleTopologyConnectRequest(from, payload);
+      return true;
+    }
+    if (payload.type === 'topology-connect-accept') {
+      this._handleTopologyConnectAccept(from);
+      return true;
+    }
+    if (payload.type === 'topology-connect-referral') {
+      this._handleTopologyConnectReferral(from, payload);
+      return true;
+    }
+    return true;
+  }
+
+  _handleTopologyConnectRequest(peerId, payload = {}) {
+    if (!peerId) return;
+    const activeConnections = this._getActiveConnectionCount();
+    const capacity = this.config.maxConnections || 0;
+    if (capacity > 0 && activeConnections >= capacity) {
+      if (this.topologyController) {
+        const incomingMetric = payload?.metric || this.peers.get(peerId)?.metric || null;
+        const incomingInitialized = payload?.metric
+          ? true
+          : this.peers.get(peerId)?.metricInitialized === true;
+        const incomingDistance = this.topologyController.getPeerDistance({
+          peerId,
+          metric: incomingMetric,
+          metricInitialized: incomingInitialized
+        });
+        if (Number.isFinite(incomingDistance)) {
+          const connected = this._getConnectionPeers()
+            .filter((peer) => peer?.peerId && !this.bootstrapPeerIds.has(peer.peerId));
+          const allowRelayWhenIsolated = this.config.allowRelayWhenIsolated !== false;
+          const hasNonRelay = connected.some((peer) => peer.via && peer.via !== 'relay');
+          if (!(allowRelayWhenIsolated && !hasNonRelay) && connected.length > 0) {
+            const protectedIds = new Set(this.bootstrapPeerIds);
+            if (this.topologyController.longRangePeers) {
+              for (const id of this.topologyController.longRangePeers) {
+                protectedIds.add(id);
+              }
+            }
+            const normalizeMetric = (metric) => ({
+              x: Number.isFinite(metric?.x) ? metric.x : 0,
+              y: Number.isFinite(metric?.y) ? metric.y : 0,
+              z: Number.isFinite(metric?.z) ? metric.z : 0
+            });
+            const isMetricReady = (peer) => {
+              if (!peer?.metric || typeof peer.metric !== 'object') return false;
+              const initialized = peer.metricInitialized === true;
+              const metric = normalizeMetric(peer.metric);
+              const isZero = metric.x === 0 && metric.y === 0 && metric.z === 0;
+              return initialized || !isZero;
+            };
+            const getMetricDistance = (a, b) => {
+              if (!isMetricReady(a) || !isMetricReady(b)) return Number.POSITIVE_INFINITY;
+              const aMetric = normalizeMetric(a.metric);
+              const bMetric = normalizeMetric(b.metric);
+              const dx = aMetric.x - bMetric.x;
+              const dy = aMetric.y - bMetric.y;
+              const dz = aMetric.z - bMetric.z;
+              return Math.sqrt(dx * dx + dy * dy + dz * dz);
+            };
+            const dropCandidates = connected
+              .filter((peer) => peer?.peerId)
+              .filter((peer) => !protectedIds.has(peer.peerId))
+              .filter((peer) => !(allowRelayWhenIsolated && peer.via === 'relay' && !hasNonRelay))
+              .map((peer) => ({
+                peer,
+                distance: this.topologyController.getPeerDistance(peer)
+              }))
+              .filter((entry) => Number.isFinite(entry.distance));
+            if (dropCandidates.length > 0) {
+              dropCandidates.sort((a, b) => b.distance - a.distance);
+              const farthest = dropCandidates[0];
+              if (incomingDistance < farthest.distance) {
+                const farthestPeer = farthest.peer;
+                const otherConnections = Number.isFinite(farthestPeer?.activeConnections)
+                  ? farthestPeer.activeConnections - 1
+                  : null;
+                if (Number.isFinite(otherConnections) && otherConnections >= 2) {
+                  let closerCount = 0;
+                  const peers = this._getScopedPeers();
+                  for (const peer of peers) {
+                    if (!peer?.peerId) continue;
+                    if (peer.peerId === farthestPeer.peerId) continue;
+                    if (peer.peerId === this.peerId) continue;
+                    const dist = getMetricDistance(farthestPeer, peer);
+                    if (!Number.isFinite(dist)) continue;
+                    if (dist < farthest.distance) {
+                      closerCount += 1;
+                      if (closerCount >= 2) break;
+                    }
+                  }
+                  if (closerCount >= 2) {
+                    this._closeConnectionsToPeer(farthestPeer.peerId);
+                    this.sendToPeer(peerId, { type: 'topology-connect-accept' }).catch(() => {});
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      const candidates = this._getScopedPeers()
+        .filter((peer) => peer.peerId && peer.peerId !== this.peerId)
+        .filter((peer) => {
+          if (!Number.isFinite(peer.targetConnections)) return true;
+          if (!Number.isFinite(peer.activeConnections)) return true;
+          return peer.activeConnections < peer.targetConnections;
+        })
+        .slice(0, 5)
+        .map((peer) => peer.peerId);
+      this.sendToPeer(peerId, {
+        type: 'topology-connect-referral',
+        peers: candidates
+      }).catch(() => {});
+      return;
+    }
+    this.sendToPeer(peerId, { type: 'topology-connect-accept' }).catch(() => {});
+  }
+
+  _handleTopologyConnectAccept(peerId) {
+    if (!peerId) return;
+    this.pendingTopologyRequests.delete(peerId);
+    this._maybeDialPeer(peerId, 'topology-accept').catch(() => {});
+  }
+
+  _handleTopologyConnectReferral(peerId, payload) {
+    this.pendingTopologyRequests.delete(peerId);
+    const peers = Array.isArray(payload?.peers) ? payload.peers : [];
+    if (this.topologyController) {
+      this.topologyController.addReferralPeers(peers);
     }
   }
 
@@ -1260,6 +2002,8 @@ export class NetworkManager {
       getAuthority: () => this.authorityId,
       getGameId: () => this.config.gameId,
       getRoomId: () => this.config.roomId,
+      getTopologyId: () => this.config.topologyId,
+      getTopologyType: () => this.config.topology,
       isInScope: (message) => this._matchesScope(message)
     };
   }
@@ -1298,27 +2042,49 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    if (this.config.enableSharding && this.topologyController) {
+      this._syncShardSubscriptions(this.topologyController.getNeighborShardIds(this.topologyMetric));
+    }
     this._recordPubsubTx(0);
   }
 
   async _publish(topic, payload) {
-    if (!this.libp2p?.services?.pubsub) return;
-    const data = encoder.encode(JSON.stringify(payload));
     try {
+      if (!this.libp2p?.services?.pubsub || !this.isConnected) return;
+      const now = Date.now();
+      const blockedUntil = this.publishBlockedUntil.get(topic) || 0;
+      if (now < blockedUntil) return;
+      let data;
+      try {
+        data = encoder.encode(JSON.stringify(payload));
+      } catch (err) {
+        debugWarn('[NetworkManager] Publish encode failed', topic, err?.message || err);
+        return;
+      }
       await this.libp2p.services.pubsub.publish(topic, data);
       if (this.config.onPublishSuccess) {
-        this.config.onPublishSuccess(topic, payload);
+        try {
+          this.config.onPublishSuccess(topic, payload);
+        } catch (err) {
+          debugWarn('[NetworkManager] onPublishSuccess failed', err?.message || err);
+        }
       }
-      const now = Date.now();
       this.lastTxAt = now;
       this.scheduler?.recordTx(now);
       this._recordTx(payload?.target || null, getByteLength(data));
       this._recordPubsubTx(getByteLength(data));
     } catch (err) {
-      if (this.config.onPublishError) {
-        this.config.onPublishError(topic, payload, err);
-      }
       const now = Date.now();
+      if (this.config.onPublishError) {
+        try {
+          this.config.onPublishError(topic, payload, err);
+        } catch (errInner) {
+          debugWarn('[NetworkManager] onPublishError failed', errInner?.message || errInner);
+        }
+      }
+      if (err?.name === 'StreamStateError' || String(err?.message || '').includes('stream')) {
+        this.publishBlockedUntil.set(topic, now + 2000);
+      }
       const last = this.publishErrorAt.get(topic) || 0;
       if (now - last > 5000) {
         this.publishErrorAt.set(topic, now);
@@ -1333,9 +2099,9 @@ export class NetworkManager {
       .filter(Boolean);
     await Promise.all(
       dialAddrs.map(async (addr) => {
+        const addrStr = addr.toString();
+        const peerIdStr = getPeerIdFromAddr(addrStr);
         try {
-          const addrStr = addr.toString();
-          const peerIdStr = getPeerIdFromAddr(addrStr);
           if (peerIdStr) {
             try {
               const peerId = peerIdFromString(peerIdStr);
@@ -1348,9 +2114,16 @@ export class NetworkManager {
             }
           }
           await this.libp2p.dial(addr);
-          debugLog('[NetworkManager] Dialed bootstrap peer', addr.toString());
+          debugLog('[NetworkManager] Dialed bootstrap peer', addrStr);
         } catch (err) {
-          debugWarn('[NetworkManager] Failed to dial bootstrap peer', addr.toString(), err?.message || err);
+          debugWarn('[NetworkManager] Failed to dial bootstrap peer', addrStr, err?.message || err);
+          this._emitConnectionFailure({
+            peerId: peerIdStr,
+            address: addrStr,
+            source: 'bootstrap',
+            stage: 'dial',
+            error: err
+          });
         }
       })
     );
@@ -1381,6 +2154,13 @@ export class NetworkManager {
           return;
         } catch (err) {
           debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
+          this._emitConnectionFailure({
+            peerId,
+            address: addr.toString(),
+            source,
+            stage: 'dial',
+            error: err
+          });
         }
       }
     }
@@ -1396,6 +2176,12 @@ export class NetworkManager {
       debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
     } catch (err) {
       debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, err?.message || err);
+      this._emitConnectionFailure({
+        peerId,
+        source,
+        stage: 'dial',
+        error: err
+      });
     }
   }
 
@@ -1407,7 +2193,16 @@ export class NetworkManager {
     const preferDirect = this.config.webrtc?.preferDirect !== false;
     const ordered = preferDirect ? orderDialTargets(candidates) : candidates;
     const peerId = this.peerId;
-    const normalized = ordered.map((addr) => ensurePeerIdSuffix(addr, peerId));
+    const relayAddrs = [];
+    if (peerId && Array.isArray(this.config.bootstrapPeers)) {
+      this.config.bootstrapPeers
+        .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
+        .map((addr) => normalizeBootstrapAddr(addr))
+        .forEach((addr) => {
+          relayAddrs.push(`${addr}/p2p-circuit/p2p/${peerId}`);
+        });
+    }
+    const normalized = [...ordered, ...relayAddrs].map((addr) => ensurePeerIdSuffix(addr, peerId));
     return Array.from(new Set(normalized));
   }
 

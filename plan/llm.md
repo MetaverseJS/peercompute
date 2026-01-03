@@ -3,16 +3,18 @@ llm instructions for this file: always keep this file in your context.This file 
 make sure to update all relevant files in the plan folder as you work as well as the readme when relevant.
 
 review plan/plan.md and plan/log.md before starting a task; update them after changes.
+log.md is the implementation log (formerly imp-log); this file is the general instructions (formerly general).
 
 a more detailed narrative of our implementation in log.md. log should describe the approaches we've tried problems and solutions. this should help us avoid retreading ground we have already covered.
+log entries must include the exact prompt, concrete actions attempted, files touched, commands run, test results, and any failures or open questions.
 
 the branch file contains the goal for the current branch. as instructions change append them to this branch. 
 
-the test.md file contains a unit and integration testing strategy. 
+testing strategy should live in plan/branch/* and per-demo plan files; add or update tests and record results in plan/log.md. 
 
 Make things in a modular composable way using ES6 modules. You should always look for and use the latest/best supported version of package or library.
 
-use webpack 5 for the current toolchain; vanilla js, three.js, webGPU compute pipelines. use three.js extensions or built in options where available. 
+use vite for the current toolchain; vanilla js, three.js, webGPU compute pipelines. use three.js extensions or built in options where available. 
 
 do not use typescript or react. 
 

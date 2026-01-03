@@ -3,15 +3,18 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 
 const COLORS = {
-  local: 0xffb13b,
+  local: 0xfff2a6,
   remote: 0xffb13b,
   ghost: 0x8a5f1f,
   relay: 0xcaf6ff,
+  host: 0x00ffd4,
+  root: 0xff4fb3,
   edge: 0xffb13b,
   edgeRelay: 0x00ff6a,
   edgeError: 0xff2d2d,
   pubsub: 0xcaf6ff,
-  grid: 0x00ff6a
+  grid: 0x00ff6a,
+  radiusLocal: 0xffb347
 };
 
 const hashString = (value) => {
@@ -34,6 +37,14 @@ const PULSE_COLORS = {
   tx: COLORS.local,
   rx: 0x00ffd4
 };
+const GRID_SPACING = 6.4;
+const GRID_HEIGHT = 0.5;
+const CONNECTION_RADIUS = 6;
+const RADIUS_RING_THICKNESS = 0.18;
+const RADIUS_RING_SEGMENTS = 64;
+const RADIUS_RING_ELEVATION = 0.02;
+const RADIUS_SCALE = 1;
+const HIERARCHICAL_RELAY_HEIGHT = 8.5;
 
 export class NetworkVisualizer {
   constructor({ canvas }) {
@@ -44,10 +55,14 @@ export class NetworkVisualizer {
     this.nodeMeshes = new Map();
     this.edgeMeshes = new Map();
     this.pubsubMeshes = new Map();
+    this.radiusMeshes = new Map();
     this.nodeGroup = new THREE.Group();
     this.edgeGroup = new THREE.Group();
+    this.radiusGroup = new THREE.Group();
     this.nodeGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
     this.relayGeometry = new THREE.IcosahedronGeometry(0.65, 0);
+    this.connectionRadius = CONNECTION_RADIUS;
+    this.radiusScale = RADIUS_SCALE;
     this.edgeMaterial = new THREE.MeshBasicMaterial({
       color: COLORS.edge,
       transparent: true,
@@ -95,8 +110,35 @@ export class NetworkVisualizer {
     this.midpointVector = new THREE.Vector3();
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line.threshold = 0.2;
+    this.layoutMode = 'distributed';
+    this.gridSpacing = GRID_SPACING;
+    this.gridHeight = GRID_HEIGHT;
+    this.radiusMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.grid,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.radiusLocalMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.radiusLocal,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.radiusGeometry = this._buildRadiusGeometry();
+    this.localMetric = null;
+    this.spiralAssignments = new Map();
+    this.spiralCoords = [{ x: 0, z: 0 }];
+    this.spiralCursor = { x: 0, z: 0, dirIndex: 0, legLength: 1, legProgress: 0, legRepeats: 0 };
+    this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this.groundPoint = new THREE.Vector3();
 
     this.scene.add(this.nodeGroup);
+    this.nodeGroup.add(this.radiusGroup);
     this.nodeGroup.add(this.edgeGroup);
 
     this._initScene();
@@ -107,8 +149,6 @@ export class NetworkVisualizer {
   }
 
   _initScene() {
-    this.scene.fog = new THREE.Fog(0x020605, 12, 50);
-
     const gridGroup = new THREE.Group();
     const baseGrid = new THREE.GridHelper(60, 60, COLORS.grid, COLORS.grid);
     baseGrid.material.opacity = 0.22;
@@ -183,6 +223,83 @@ export class NetworkVisualizer {
     this.controls.autoRotate = Boolean(enabled);
   }
 
+  setTopologyMode(mode) {
+    const next = String(mode || '').toLowerCase();
+    if (next === 'hierarchy') {
+      this.layoutMode = 'hierarchical';
+      return;
+    }
+    if (next === 'hierarchical' || next === 'distributed' || next === 'emergent') {
+      this.layoutMode = next;
+      return;
+    }
+    this.layoutMode = 'distributed';
+  }
+
+  setLocalMetric(metric) {
+    if (!metric || typeof metric !== 'object') return;
+    this.localMetric = {
+      x: Number.isFinite(metric.x) ? metric.x : 0,
+      y: Number.isFinite(metric.y) ? metric.y : 0,
+      z: Number.isFinite(metric.z) ? metric.z : 0
+    };
+  }
+
+  setConnectionRadius(radius) {
+    if (!Number.isFinite(radius) || radius <= 0) return;
+    if (this.connectionRadius === radius) return;
+    this.connectionRadius = radius;
+    const nextGeometry = this._buildRadiusGeometry();
+    if (this.radiusGeometry) {
+      this.radiusGeometry.dispose();
+    }
+    this.radiusGeometry = nextGeometry;
+    for (const mesh of this.radiusMeshes.values()) {
+      mesh.geometry = nextGeometry;
+    }
+  }
+
+  _buildRadiusGeometry() {
+    const spacing = this.gridSpacing || GRID_SPACING;
+    const radius = Math.max(0.01, this.connectionRadius * spacing * this.radiusScale);
+    const inner = Math.max(0.01, radius - RADIUS_RING_THICKNESS * 0.5);
+    const outer = radius + RADIUS_RING_THICKNESS * 0.5;
+    return new THREE.RingGeometry(inner, outer, RADIUS_RING_SEGMENTS);
+  }
+
+  setControlsEnabled(enabled) {
+    if (!this.controls) return;
+    this.controls.enabled = Boolean(enabled);
+  }
+
+  projectToGround(clientX, clientY, planeY = 0) {
+    if (!this.canvas) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    this.groundPlane.constant = -planeY;
+    const hit = this.raycaster.ray.intersectPlane(this.groundPlane, this.groundPoint);
+    return hit ? this.groundPoint.clone() : null;
+  }
+
+  worldToMetric(position) {
+    if (!position) return null;
+    const spacing = this.gridSpacing || GRID_SPACING;
+    return {
+      x: position.x / spacing,
+      y: (position.y - this.gridHeight) / spacing,
+      z: position.z / spacing
+    };
+  }
+
+  getSpiralMetric(peerId) {
+    if (!peerId) return { x: 0, y: 0, z: 0 };
+    const index = this._assignSpiralIndex(peerId);
+    const coord = this._getSpiralCoord(index);
+    return { x: coord.x, y: 0, z: coord.z };
+  }
+
   _handleResize() {
     const { innerWidth, innerHeight, devicePixelRatio } = window;
     this.camera.aspect = innerWidth / innerHeight;
@@ -192,6 +309,19 @@ export class NetworkVisualizer {
   }
 
   _layoutPeers(peers, localPeerId) {
+    if (this.layoutMode === 'hierarchical') {
+      return this._layoutHierarchical(peers, localPeerId);
+    }
+    if (this.layoutMode === 'emergent') {
+      return this._layoutEmergent(peers, localPeerId);
+    }
+    if (this.layoutMode === 'distributed') {
+      return this._layoutDistributed(peers, localPeerId);
+    }
+    return this._layoutClassic(peers, localPeerId);
+  }
+
+  _layoutClassic(peers, localPeerId) {
     const positions = new Map();
     peers.forEach((peer) => {
       const peerId = peer.peerId;
@@ -204,13 +334,228 @@ export class NetworkVisualizer {
         return;
       }
       if (peerId === localPeerId) {
-        positions.set(peerId, new THREE.Vector3(0, 0.5, 0));
+        positions.set(peerId, new THREE.Vector3(0, this.gridHeight, 0));
         return;
       }
       const radius = 5 + (seed % 7) * 0.7;
-      positions.set(peerId, new THREE.Vector3(Math.cos(angle) * radius, 0.5, Math.sin(angle) * radius));
+      positions.set(peerId, new THREE.Vector3(Math.cos(angle) * radius, this.gridHeight, Math.sin(angle) * radius));
     });
     return positions;
+  }
+
+  _layoutEmergent(peers, localPeerId) {
+    return this._layoutClassic(peers, localPeerId);
+  }
+
+  _layoutDistributed(peers, localPeerId) {
+    const positions = new Map();
+    const activeIds = new Set(peers.map((peer) => peer?.peerId).filter(Boolean));
+    for (const peerId of Array.from(this.spiralAssignments.keys())) {
+      if (!activeIds.has(peerId)) {
+        this.spiralAssignments.delete(peerId);
+      }
+    }
+
+    peers.forEach((peer) => {
+      const peerId = peer.peerId;
+      if (!peerId) return;
+      if (peer.isRelay) {
+        const seed = hashString(peerId);
+        const angle = (seed % 360) * (Math.PI / 180);
+        const radius = 3.5 + (seed % 5) * 0.4;
+        positions.set(peerId, new THREE.Vector3(Math.cos(angle) * radius, 4.2, Math.sin(angle) * radius));
+        return;
+      }
+      const metric = this._readMetric(peer, localPeerId);
+      if (metric) {
+        positions.set(peerId, this._metricToPosition(metric));
+        this.spiralAssignments.delete(peerId);
+        return;
+      }
+      const index = this._assignSpiralIndex(peerId);
+      const coord = this._getSpiralCoord(index);
+      positions.set(peerId, this._gridCoordToPosition(coord.x, coord.z));
+    });
+
+    return positions;
+  }
+
+  _layoutHierarchical(peers, localPeerId) {
+    const positions = new Map();
+    const root = peers.find((peer) => peer?.isRoot);
+    const hosts = peers.filter((peer) => peer?.isHost);
+    const clients = peers.filter((peer) => peer?.isClient);
+    if (!root && hosts.length === 0) {
+      return this._layoutClassic(peers, localPeerId);
+    }
+    const relayHeight = HIERARCHICAL_RELAY_HEIGHT;
+    const hostHeight = (relayHeight + this.gridHeight) * 0.5;
+
+    if (root?.peerId) {
+      positions.set(root.peerId, new THREE.Vector3(0, hostHeight, 0));
+    }
+
+    const hostRadius = Math.max(5, hosts.length * 2.4);
+    const hostPositions = new Map();
+    hosts.forEach((host, index) => {
+      const angle = (index / Math.max(1, hosts.length)) * Math.PI * 2;
+      const pos = new THREE.Vector3(Math.cos(angle) * hostRadius, hostHeight, Math.sin(angle) * hostRadius);
+      positions.set(host.peerId, pos);
+      hostPositions.set(host.peerId, pos);
+    });
+
+    const hostIds = hosts.map((host) => host.peerId).filter(Boolean);
+    const hostCount = hostIds.length;
+    if (hostCount === 0) {
+      const rootPos = root?.peerId ? positions.get(root.peerId) : new THREE.Vector3(0, hostHeight, 0);
+      const ringPeers = peers.filter((peer) => peer?.peerId && peer.peerId !== root?.peerId && !peer.isRelay);
+      ringPeers.forEach((peer, index) => {
+        const angle = (index / Math.max(1, ringPeers.length)) * Math.PI * 2;
+        const radius = 5 + (index % 4) * 0.6;
+        const pos = new THREE.Vector3(
+          rootPos.x + Math.cos(angle) * radius,
+          this.gridHeight,
+          rootPos.z + Math.sin(angle) * radius
+        );
+        positions.set(peer.peerId, pos);
+      });
+      return positions;
+    }
+    const hostGroups = new Map(hostIds.map((id) => [id, []]));
+    clients.forEach((client) => {
+      if (!client?.peerId) return;
+      const hostId = client.hostId || hostIds[hashString(client.peerId) % Math.max(1, hostCount)];
+      if (!hostId) return;
+      if (!hostGroups.has(hostId)) {
+        hostGroups.set(hostId, []);
+      }
+      hostGroups.get(hostId).push(client);
+    });
+
+    hostGroups.forEach((group, hostId) => {
+      const hostPos = hostPositions.get(hostId);
+      if (!hostPos) return;
+      const radius = 2.2 + Math.min(2, Math.floor(group.length / 4)) * 0.6;
+      group.forEach((client, index) => {
+        const angle = (index / Math.max(1, group.length)) * Math.PI * 2;
+        const offset = new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        positions.set(client.peerId, new THREE.Vector3().addVectors(hostPos, offset).setY(this.gridHeight));
+      });
+    });
+
+    peers.forEach((peer) => {
+      if (!peer?.peerId || positions.has(peer.peerId)) return;
+      if (peer.isRelay) {
+        const seed = hashString(peer.peerId);
+        const angle = (seed % 360) * (Math.PI / 180);
+        const radius = 3.5 + (seed % 5) * 0.4;
+        positions.set(peer.peerId, new THREE.Vector3(Math.cos(angle) * radius, relayHeight, Math.sin(angle) * radius));
+        return;
+      }
+      const seed = hashString(peer.peerId);
+      const angle = (seed % 360) * (Math.PI / 180);
+      const radius = 6 + (seed % 5) * 0.6;
+      positions.set(peer.peerId, new THREE.Vector3(Math.cos(angle) * radius, this.gridHeight, Math.sin(angle) * radius));
+    });
+
+    peers.forEach((peer) => {
+      if (!peer?.peerId || !peer.isRelay) return;
+      const existing = positions.get(peer.peerId);
+      if (existing) {
+        positions.set(peer.peerId, new THREE.Vector3(existing.x, relayHeight, existing.z));
+        return;
+      }
+      const seed = hashString(peer.peerId);
+      const angle = (seed % 360) * (Math.PI / 180);
+      const radius = 3.5 + (seed % 5) * 0.4;
+      positions.set(peer.peerId, new THREE.Vector3(Math.cos(angle) * radius, relayHeight, Math.sin(angle) * radius));
+    });
+
+    return positions;
+  }
+
+  _readMetric(peer, localPeerId) {
+    if (!peer) return null;
+    if (peer.peerId === localPeerId && this.localMetric) {
+      return this.localMetric;
+    }
+    const metric = peer.metric;
+    if (!metric || typeof metric !== 'object') return null;
+    const metricInitialized = peer.metricInitialized === true;
+    const x = Number.isFinite(metric.x) ? metric.x : null;
+    const y = Number.isFinite(metric.y) ? metric.y : null;
+    const z = Number.isFinite(metric.z) ? metric.z : null;
+    if (x === null && y === null && z === null) return null;
+    const normalized = { x: x ?? 0, y: y ?? 0, z: z ?? 0 };
+    const isZero = normalized.x === 0 && normalized.y === 0 && normalized.z === 0;
+    if (!metricInitialized && isZero) return null;
+    return normalized;
+  }
+
+  _metricToPosition(metric) {
+    const spacing = this.gridSpacing || GRID_SPACING;
+    return new THREE.Vector3(
+      (metric?.x || 0) * spacing,
+      (metric?.y || 0) * spacing + this.gridHeight,
+      (metric?.z || 0) * spacing
+    );
+  }
+
+  _gridCoordToPosition(x, z) {
+    const spacing = this.gridSpacing || GRID_SPACING;
+    return new THREE.Vector3(x * spacing, this.gridHeight, z * spacing);
+  }
+
+  _assignSpiralIndex(peerId) {
+    if (this.spiralAssignments.has(peerId)) {
+      return this.spiralAssignments.get(peerId);
+    }
+    const index = this.spiralCoords.length;
+    this.spiralAssignments.set(peerId, index);
+    this._getSpiralCoord(index);
+    return index;
+  }
+
+  _getSpiralCoord(index) {
+    while (this.spiralCoords.length <= index) {
+      this._advanceSpiral();
+    }
+    return this.spiralCoords[index];
+  }
+
+  _advanceSpiral() {
+    const directions = [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1]
+    ];
+    const { dirIndex, legLength, legProgress, legRepeats } = this.spiralCursor;
+    const [dx, dz] = directions[dirIndex];
+    const nextX = this.spiralCursor.x + dx;
+    const nextZ = this.spiralCursor.z + dz;
+    let nextProgress = legProgress + 1;
+    let nextDir = dirIndex;
+    let nextRepeats = legRepeats;
+    let nextLeg = legLength;
+    if (nextProgress >= legLength) {
+      nextProgress = 0;
+      nextDir = (dirIndex + 1) % directions.length;
+      nextRepeats += 1;
+      if (nextRepeats >= 2) {
+        nextRepeats = 0;
+        nextLeg += 1;
+      }
+    }
+    this.spiralCursor = {
+      x: nextX,
+      z: nextZ,
+      dirIndex: nextDir,
+      legLength: nextLeg,
+      legProgress: nextProgress,
+      legRepeats: nextRepeats
+    };
+    this.spiralCoords.push({ x: nextX, z: nextZ });
   }
 
   _buildCurve(fromPos, toPos) {
@@ -293,12 +638,17 @@ export class NetworkVisualizer {
   updatePeers(peers, localPeerId, edges = null, pubsubEdges = null) {
     const positions = this._layoutPeers(peers, localPeerId);
     const now = Date.now();
+    const showRadius = this.layoutMode === 'distributed' || this.layoutMode === 'emergent';
 
     for (const peer of peers) {
       if (!peer.peerId) continue;
       const position = positions.get(peer.peerId);
       if (!position) continue;
       const isRelay = Boolean(peer.isRelay);
+      const isRoot = Boolean(peer.isRoot);
+      const isHost = Boolean(peer.isHost);
+      const isLocal = peer.peerId === localPeerId;
+      const isGhost = Boolean(peer.inferred);
       let mesh = this.nodeMeshes.get(peer.peerId);
       if (mesh && mesh.userData.isRelay !== isRelay) {
         this.nodeGroup.remove(mesh);
@@ -314,19 +664,66 @@ export class NetworkVisualizer {
         });
         const geometry = isRelay ? this.relayGeometry : this.nodeGeometry;
         mesh = new THREE.Mesh(geometry, material);
-        mesh.userData = { type: 'node', peerId: peer.peerId, isRelay };
+        mesh.userData = { type: 'node', peerId: peer.peerId, isRelay, role: peer.role || null };
         this.nodeGroup.add(mesh);
         this.nodeMeshes.set(peer.peerId, mesh);
       }
       const color = isRelay
         ? COLORS.relay
-        : peer.peerId === localPeerId
-          ? COLORS.local
-          : peer.inferred
-            ? COLORS.ghost
-            : COLORS.remote;
+        : isRoot
+          ? COLORS.root
+          : isHost
+            ? COLORS.host
+            : isGhost
+              ? COLORS.ghost
+              : isLocal
+                ? COLORS.local
+                : COLORS.remote;
+      let emissive = isRelay
+        ? 0x1a3240
+        : isRoot
+          ? 0x341627
+          : isHost
+            ? 0x163038
+            : 0x2a1a00;
+      let emissiveIntensity = isRelay ? 0.85 : isRoot ? 1.0 : isHost ? 0.8 : 0.65;
+      let scale = isRoot ? 1.35 : isHost ? 1.15 : 1;
+      if (isLocal && !isRelay) {
+        emissive = 0xffd98a;
+        emissiveIntensity = Math.max(emissiveIntensity, 1.45);
+        scale *= 1.08;
+      }
       mesh.material.color.set(color);
+      mesh.material.emissive.set(emissive);
+      mesh.material.emissiveIntensity = emissiveIntensity;
+      mesh.scale.setScalar(scale);
+      mesh.userData.isRelay = isRelay;
+      mesh.userData.role = peer.role || null;
       mesh.position.copy(position);
+
+      const shouldShowRadius = showRadius && !isRelay;
+      const radiusMesh = this.radiusMeshes.get(peer.peerId);
+      if (shouldShowRadius) {
+        if (!radiusMesh) {
+          const ringMaterial = isLocal ? this.radiusLocalMaterial : this.radiusMaterial;
+          const ring = new THREE.Mesh(this.radiusGeometry, ringMaterial);
+          ring.rotation.x = -Math.PI / 2;
+          ring.renderOrder = -1;
+          ring.userData = { type: 'radius', peerId: peer.peerId };
+          this.radiusGroup.add(ring);
+          this.radiusMeshes.set(peer.peerId, ring);
+          ring.position.set(position.x, RADIUS_RING_ELEVATION, position.z);
+        } else {
+          radiusMesh.position.set(position.x, RADIUS_RING_ELEVATION, position.z);
+          const ringMaterial = isLocal ? this.radiusLocalMaterial : this.radiusMaterial;
+          if (radiusMesh.material !== ringMaterial) {
+            radiusMesh.material = ringMaterial;
+          }
+        }
+      } else if (radiusMesh) {
+        this.radiusGroup.remove(radiusMesh);
+        this.radiusMeshes.delete(peer.peerId);
+      }
     }
 
     for (const peerId of Array.from(this.nodeMeshes.keys())) {
@@ -337,6 +734,23 @@ export class NetworkVisualizer {
           mesh.material.dispose();
         }
         this.nodeMeshes.delete(peerId);
+      }
+    }
+
+    if (!showRadius) {
+      for (const mesh of this.radiusMeshes.values()) {
+        this.radiusGroup.remove(mesh);
+      }
+      this.radiusMeshes.clear();
+    } else {
+      for (const peerId of Array.from(this.radiusMeshes.keys())) {
+        if (!positions.has(peerId)) {
+          const mesh = this.radiusMeshes.get(peerId);
+          if (mesh) {
+            this.radiusGroup.remove(mesh);
+          }
+          this.radiusMeshes.delete(peerId);
+        }
       }
     }
 

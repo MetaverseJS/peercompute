@@ -3,7 +3,7 @@ This file and the arch folder contain a description of the current and future ar
 ###Current arch
 - Compute Node (CN) includes NodeKernel, StateManager, NetworkManager, ComputeManager, and Local IO Manager.
 - NodeKernel orchestrates managers and policies; managers should be worker-ready.
-- NetworkManager uses libp2p v3 (WebRTC + WebSockets + circuit relay v2) with relay bootstrap, floodsub, pubsubPeerDiscovery.
+- NetworkManager uses libp2p v3 (WebRTC + WebSockets + circuit relay v2) with relay bootstrap, gossipsub (floodsub fallback), pubsubPeerDiscovery.
 - Relay is Node.js with optional WSS (SSL certs + RELAY_PUBLIC_HOST); browser clients dial via WebRTC or WSS + circuit relay.
 - State sync uses Yjs + PeerComputeProvider; DataState persists in IndexedDB; no y-libp2p in the runtime path.
 - NetworkScheduler enforces snapshot/command/event cadence; clock policy supports internal or kernel-driven ticks.

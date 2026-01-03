@@ -35,6 +35,10 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - Mesh snapshots: each peer publishes its own entity state.
 - Hybrid: pubsub discovery with optional direct streams.
 
+## Pubsub
+- Gossipsub is the default mesh; floodsub remains as a fallback.
+- Topics are scoped by topologyId/roomId and shard id when sharding is enabled.
+
 ## Interest Management
 - Scope by gameId/roomId topics.
 - Optional spatial buckets and per-entity throttles.

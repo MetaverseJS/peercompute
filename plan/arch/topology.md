@@ -22,6 +22,7 @@ Status: draft; sourced from topology diagram.
 ## Implications
 - Authority election and state sharding depend on topology.
 - NetworkManager must adapt topic scopes per level.
+- TopologyId/roomId scope pubsub topics; gossipsub mesh tuning and sharded state are topology-aware.
 
 ## Open Questions
 - What metrics trigger topology reshaping?

@@ -18,8 +18,8 @@
       }
     ],
     "preferDirect": true,
-    "dropRelayOnDirect": true,
-    "dropRelayBootstrapOnDirect": true,
+    "dropRelayOnDirect": false,
+    "dropRelayBootstrapOnDirect": false,
     "relayRetention": {
       "mode": "sqrt",
       "min": 1

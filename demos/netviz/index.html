@@ -166,6 +166,18 @@
       text-transform: uppercase;
     }
 
+    select {
+      flex: 1;
+      min-width: 140px;
+      background: transparent;
+      border: 1px solid var(--glow);
+      color: var(--glow);
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
     input[type="checkbox"] {
       width: 16px;
       height: 16px;
@@ -303,6 +315,18 @@
       </div>
       <div class="console-section">
         <div class="row">
+          <label for="topology-select">Topology</label>
+          <select id="topology-select">
+            <option value="distributed" selected>Distributed</option>
+            <option value="hierarchical">Hierarchical</option>
+            <option value="emergent">Emergent</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="topology-id">Topology ID</label>
+          <input id="topology-id" value="netviz-topology" spellcheck="false" />
+        </div>
+        <div class="row">
           <label for="room-input">Room</label>
           <input id="room-input" value="telemetry" spellcheck="false" />
           <button id="connect-btn">Connect</button>
@@ -324,6 +348,7 @@
           The center cube is your local node; amber cubes are peers and blue-white icosahedrons are relays.
           Amber links show direct peer connections, green spurs show relayed hops, and blue-white arcs show pubsub traffic.
           Pulses indicate message direction along each link.
+          Select a topology + topology ID before connecting; in distributed mode you can drag your cube to change its metric position.
           Click any node or edge to inspect detailed stats.
         </div>
       </div>

@@ -85,8 +85,9 @@ test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
   assert.equal(manager._shouldDialDiscoveredPeer('relay-peer'), true);
 });
 
-test('NetworkManager drops bootstrap relay connections when direct peers exist', () => {
+test('NetworkManager drops bootstrap relay connections when direct peers exist at target', () => {
   const manager = new NetworkManager({
+    targetConnections: 2,
     webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
   });
   manager.bootstrapPeerIds = new Set(['relay-peer']);
@@ -129,11 +130,13 @@ test('NetworkManager keeps relay for longest-connected logN peers', () => {
   manager.peers.set('peer-old', {
     gameId: 'default-game',
     roomId: 'default-room',
+    topologyId: manager.config.topologyId,
     joinedAt: 500
   });
   manager.peers.set('peer-new', {
     gameId: 'default-game',
     roomId: 'default-room',
+    topologyId: manager.config.topologyId,
     joinedAt: 1500
   });
   manager.libp2p = {
@@ -148,6 +151,7 @@ test('NetworkManager keeps relay for longest-connected logN peers', () => {
 
 test('NetworkManager caps relay keepers at sqrt(N)', () => {
   const manager = new NetworkManager({
+    targetConnections: 2,
     webrtc: {
       dropRelayBootstrapOnDirect: true,
       relayRetention: { mode: 'sqrt', min: 1 }
@@ -171,6 +175,7 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
     manager.peers.set(peer.peerId, {
       gameId: 'default-game',
       roomId: 'default-room',
+      topologyId: manager.config.topologyId,
       joinedAt: peer.joinedAt
     });
   });

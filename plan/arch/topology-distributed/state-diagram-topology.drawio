@@ -1,0 +1,70 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" version="29.2.9">
+  <diagram id="distributed-state" name="Page-1">
+    <mxGraphModel dx="920" dy="736" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="start" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Start" vertex="1">
+          <mxGeometry height="60" width="60" x="20" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="no_conn" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="No&#xa;Connections" vertex="1">
+          <mxGeometry height="80" width="140" x="130" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="relay_conn" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Relay&#xa;Connected" vertex="1">
+          <mxGeometry height="80" width="140" x="340" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="direct_peers" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Direct&#xa;Peers" vertex="1">
+          <mxGeometry height="80" width="140" x="670" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="isolated" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Isolated" vertex="1">
+          <mxGeometry height="80" width="140" x="340" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="rebalance" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Rebalance" vertex="1">
+          <mxGeometry height="80" width="140" x="560" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" target="no_conn" value="boot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="no_conn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" target="relay_conn" value="connect to relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="relay_conn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" target="direct_peers" value="dial closest/priority peers">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="direct_peers" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" target="rebalance" value="metric change or capacity">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="750" y="300" />
+              <mxPoint x="610" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="rebalance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;entryX=1.014;entryY=0.55;entryDx=0;entryDy=0;entryPerimeter=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="direct_peers" value="swap/dial">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="830" y="490" />
+              <mxPoint x="830" y="164" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="direct_peers" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.537;exitY=1.014;exitDx=0;exitDy=0;exitPerimeter=0;" target="isolated" value="peers lost">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="750" y="201" />
+              <mxPoint x="750" y="270" />
+              <mxPoint x="410" y="270" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="isolated" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" target="relay_conn" value="redial relay">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="270" y="480" />
+              <mxPoint x="270" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

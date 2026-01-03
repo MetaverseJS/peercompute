@@ -6,5 +6,5 @@ Sneaky Woods integration notes:
 - Testing: Playwright room isolation already passes; main connectivity tests cover base layer.
 
 Hyperborea (cb.html) integration notes:
-- Pubsub runs on libp2p floodsub (client + relay) for reliable relay-based discovery.
+- Pubsub defaults to libp2p gossipsub with floodsub fallback for relay-only environments.
 - Time sync is anchored to the first peer to join (TIME_ANCHOR_KEY); late joiners adopt the anchor.

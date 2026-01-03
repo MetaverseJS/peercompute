@@ -34,7 +34,7 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5179,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,
-    open: '/demos/toychest.html',
+    open: '/demos/index.html',
     fs: {
       allow: [__dirname, peercomputeRoot]
     }

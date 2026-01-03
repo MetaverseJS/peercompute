@@ -18,6 +18,9 @@ export class NodeKernel {
   /**
    * @param {Object} config - Configuration options for the node
    * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent'
+   * @param {string} config.topologyId - Topology identifier shared across rooms
+   * @param {string} config.topicPrefix - Base prefix for scoped topics
+   * @param {boolean} config.useScopedTopics - Enable topology + room topic scoping
    * @param {string} config.storageMode - Data storage mode: 'local' | 'propagate'
    * @param {boolean} config.enableWebGPU - Enable WebGPU compute capabilities
    * @param {boolean} config.enablePersistence - Enable IndexedDB persistence
@@ -34,8 +37,17 @@ export class NodeKernel {
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
+    const topologyType = config.topologyType || config.topology || 'distributed';
+    const topologyId = config.topologyId || config.topologyKey || config.gameId || 'default-topology';
+    const roomId = config.roomId || 'default-room';
+    const topicPrefix = config.topicPrefix || config.topicBase || 'pc';
+    const useScopedTopics = config.useScopedTopics !== false;
+    const scopedStateTopic = `${topicPrefix}.${topologyId}.${roomId}.state`;
     this.config = {
-      topology: config.topology || 'distributed',
+      topology: topologyType,
+      topologyId,
+      topicPrefix,
+      useScopedTopics,
       storageMode: config.storageMode || 'local',
       enableWebGPU: config.enableWebGPU || false,
       enableGPUHub: config.enableGPUHub !== false,
@@ -45,11 +57,21 @@ export class NodeKernel {
       disableStateBroadcast: config.disableStateBroadcast || false,
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
-      roomId: config.roomId || 'default-room',
-      stateTopic: config.stateTopic || 'peercompute-state',
+      roomId,
+      stateTopic: config.stateTopic || (useScopedTopics ? scopedStateTopic : 'peercompute-state'),
       docName: config.docName,
       stateBroadcastNamespaces: config.stateBroadcastNamespaces,
       deltaNamespace: config.deltaNamespace || 'deltas',
+      topologyMetric: config.topologyMetric || config.metric || null,
+      targetConnections: config.targetConnections,
+      longRangeCount: config.longRangeCount,
+      longRangeRefreshMs: config.longRangeRefreshMs,
+      enableSharding: config.enableSharding,
+      shardSize: config.shardSize,
+      shardRadius: config.shardRadius,
+      enableTopologyController: config.enableTopologyController,
+      enforceTopologyScope: config.enforceTopologyScope,
+      topologyTickMs: config.topologyTickMs,
       gpuHubFrameBudgetMs: config.gpuHubFrameBudgetMs,
       clockPolicy,
       ...config
@@ -87,10 +109,26 @@ export class NodeKernel {
       // 1. Initialize NetworkManager first
       this.networkManager = new NetworkManager({
         topology: this.config.topology,
+        topologyId: this.config.topologyId,
+        topicPrefix: this.config.topicPrefix,
+        useScopedTopics: this.config.useScopedTopics,
+        enforceTopologyScope: this.config.enforceTopologyScope,
+        enableTopologyController: this.config.enableTopologyController,
+        topologyTickMs: this.config.topologyTickMs,
+        topologyMetric: this.config.topologyMetric,
+        targetConnections: this.config.targetConnections,
+        connectionRadius: this.config.connectionRadius,
+        isolationMinConnections: this.config.isolationMinConnections,
+        longRangeCount: this.config.longRangeCount,
+        longRangeRefreshMs: this.config.longRangeRefreshMs,
+        enableSharding: this.config.enableSharding,
+        shardSize: this.config.shardSize,
+        shardRadius: this.config.shardRadius,
         bootstrapPeers: this.config.bootstrapPeers,
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
+        allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
         allowLocalDial: this.config.allowLocalDial,
         webrtc: this.config.webrtc,
         iceServers: this.config.iceServers,
@@ -109,6 +147,7 @@ export class NodeKernel {
         schedulerProfile: this.config.clockPolicy.networkProfile,
         onPublishError: this.config.onPublishError,
         onPublishSuccess: this.config.onPublishSuccess,
+        onConnectionFailure: this.config.onConnectionFailure,
         onMessage: this._handleNetworkMessage.bind(this),
         onPeerConnect: this._handlePeerConnect.bind(this),
         onPeerDisconnect: this._handlePeerDisconnect.bind(this)
@@ -335,6 +374,7 @@ export class NodeKernel {
       isInitialized: this.isInitialized,
       isStarted: this.isStarted,
       topology: this.config.topology,
+      topologyId: this.config.topologyId,
       clock: {
         mode: this.config.clockPolicy.mode,
         tickHz: this.config.clockPolicy.tickHz,

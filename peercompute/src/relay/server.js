@@ -53,6 +53,10 @@ const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
   .map((entry) => entry.trim())
   .filter(Boolean);
 const relayConfigFile = (process.env.RELAY_CONFIG_FILE || '').trim();
+const relayTopicPrefixes = (process.env.RELAY_TOPIC_PREFIXES || 'pc.,peercompute-')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
 const relayWebrtcConfig = (() => {
   const raw = (process.env.RELAY_WEBRTC_CONFIG || '').trim();
   if (raw) {
@@ -299,10 +303,26 @@ async function startServer() {
       'peercompute-state',
       'peercompute-state-sync'
     ];
+    const relayTopicSet = new Set(relayTopics);
     relayTopics.forEach((topic) => {
       server.services.pubsub.subscribe(topic);
     });
     console.log(`Relay subscribed to topics: ${relayTopics.join(', ')}`);
+
+    const shouldRelayTopic = (topic) => relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
+
+    server.services.pubsub.addEventListener('subscription-change', (evt) => {
+      const subscriptions = evt?.detail?.subscriptions || [];
+      subscriptions.forEach((sub) => {
+        if (!sub?.subscribe) return;
+        const topic = sub?.topic;
+        if (!topic || relayTopicSet.has(topic)) return;
+        if (!shouldRelayTopic(topic)) return;
+        relayTopicSet.add(topic);
+        server.services.pubsub.subscribe(topic);
+        console.log(`[Relay] Auto-subscribed to topic: ${topic}`);
+      });
+    });
     
     // Log peer discovery events
     const decoder = new TextDecoder();

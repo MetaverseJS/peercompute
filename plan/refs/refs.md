@@ -3,7 +3,7 @@ This file and folder contain references to other projects libraries or websites 
 
 ## References
 ### Current stack
-- libp2p (browser stack: WebRTC, WebSockets, circuit relay v2, floodsub, pubsubPeerDiscovery).
+- libp2p (browser stack: WebRTC, WebSockets, circuit relay v2, gossipsub with floodsub fallback, pubsubPeerDiscovery).
 - Yjs (state sync; PeerComputeProvider integration).
 
 
