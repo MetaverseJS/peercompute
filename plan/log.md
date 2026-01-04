@@ -3599,3 +3599,44 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (planning update).
+
+## Date: 2026-01-04
+
+### Prompt
+- does the service installation script install the node or the go version?
+
+### Changes
+- Reviewed the systemd install script and the production relay start script to confirm which relay implementation is used.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- sed -n '1,40p' plan/plan.md
+- sed -n '1,20p' plan/log.md
+- sed -n '1,200p' scripts/install-relay-systemd.sh
+- sed -n '1,200p' scripts/start-relay-prod.sh
+
+### Tests
+- Not run (info-only request).
+
+## Date: 2026-01-04
+
+### Prompt
+- ok lets update both of those scripts to honor RELAY_IMPL
+
+### Changes
+- Updated systemd unit installation to bake in RELAY_IMPL (default node) so the service honors the requested relay implementation.
+- Switched the production relay launcher to exec `scripts/run-relay.sh`, which respects RELAY_IMPL (default node).
+
+### Files Touched
+- scripts/install-relay-systemd.sh
+- scripts/start-relay-prod.sh
+- plan/log.md
+
+### Commands
+- sed -n '1,40p' plan/plan.md
+- sed -n '1,20p' plan/log.md
+
+### Tests
+- Not run (script update only).

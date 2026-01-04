@@ -102,4 +102,5 @@ echo "  RELAY_PUBLIC_PROTOCOL=${RELAY_PUBLIC_PROTOCOL:-}"
 echo "  RELAY_LISTEN_HOST=${RELAY_LISTEN_HOST:-}"
 echo "  RELAY_LISTEN_PORT=${RELAY_LISTEN_PORT:-}"
 
-node "$repo_root/peercompute/src/relay/server.js"
+export RELAY_IMPL="${RELAY_IMPL:-node}"
+exec bash "$repo_root/scripts/run-relay.sh"
