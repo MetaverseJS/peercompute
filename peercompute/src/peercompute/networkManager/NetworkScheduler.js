@@ -211,7 +211,9 @@ export class NetworkScheduler {
       seq: this.seq[type]++,
       ts: now,
       peerId: this.adapter?.getPeerId?.() || null,
-      authorityId: this.authorityId || this.adapter?.getAuthority?.() || null
+      authorityId: this.authorityId || this.adapter?.getAuthority?.() || null,
+      topologyId: this.adapter?.getTopologyId?.() || null,
+      topologyType: this.adapter?.getTopologyType?.() || null
     };
   }
 
@@ -261,6 +263,7 @@ export class NetworkScheduler {
       header: this._buildHeader('snapshot', now),
       gameId: this.adapter?.getGameId?.() || null,
       roomId: this.adapter?.getRoomId?.() || null,
+      topologyId: this.adapter?.getTopologyId?.() || null,
       payload,
       keepalive
     };
@@ -283,6 +286,7 @@ export class NetworkScheduler {
       header: this._buildHeader('command', now),
       gameId: this.adapter?.getGameId?.() || null,
       roomId: this.adapter?.getRoomId?.() || null,
+      topologyId: this.adapter?.getTopologyId?.() || null,
       payload
     };
 
@@ -348,6 +352,7 @@ export class NetworkScheduler {
       header: this._buildHeader('event', now),
       gameId: this.adapter?.getGameId?.() || null,
       roomId: this.adapter?.getRoomId?.() || null,
+      topologyId: this.adapter?.getTopologyId?.() || null,
       payload: batch
     };
 
@@ -390,6 +395,7 @@ export class NetworkScheduler {
       header: this._buildHeader('event', now),
       gameId: this.adapter?.getGameId?.() || null,
       roomId: this.adapter?.getRoomId?.() || null,
+      topologyId: this.adapter?.getTopologyId?.() || null,
       target: peerId || null,
       payload: { eventIds: ids }
     };

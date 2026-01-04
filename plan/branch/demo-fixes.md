@@ -30,6 +30,34 @@
 ## Branch Goal
 Use the demo suite to prove the PeerCompute architecture end-to-end: layered DataState, NetworkScheduler profiles/topologies, ComputeManager (CPU/GPU/WASM), and GPU hub interop. The demos should double as validation tools for the distributed compute roadmap.
 
+## Scale Plan (current focus)
+Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.
+
+### Phase 1: Local relay sandbox + config wiring (now)
+- Stand up a local relay target for iterative changes (avoid breaking prod).
+- Add `pubsubType` + gossipsub options to relay-config outputs and demo bootstraps.
+- Ensure relay server can toggle floodsub/gossipsub via config/env.
+
+### Phase 2: WebRTC direct-first + relay pruning (in progress)
+- Prefer direct `/webrtc` dialing and drop relayed connections once direct is established.
+- Confirm pubsub traffic flows peer-to-peer over direct links.
+
+### Phase 3: Gossipsub rollout (next)
+- Switch browsers + relay to gossipsub; keep floodsub as fallback until stable.
+- Tune gossipsub mesh (directPeers = relay, allowPublishToZeroPeers).
+
+### Phase 4: Topic scoping + throttles (next)
+- Add optional room-scoped topics (per game/room) to reduce cross-room fanout.
+- Lower snapshot/presence defaults where safe and expose per-demo overrides.
+
+### Phase 5: Interest management (next)
+- Add simple topic filters (only subscribe to required namespaces).
+- Gate heavy event topics behind explicit opt-in in demos.
+
+### Phase 6: Multi-relay fallback (later)
+- Support multiple relay bootstrap peers with health checks and dial rotation.
+- Prefer closest relay; keep relay as fallback when WebRTC fails.
+
 ## How this ties to the larger PeerCompute plan
 - Roadmap alignment: the demo work validates "Scheduler adoption" and "Compute" phases in plan/plan.md while stress-testing network hardening (relay, rooms, warm deltas).
 - Architecture alignment: new demos should use layered DataState, hot/warm deltas, and shared-GPU hub where render-coupled buffers are needed (plan/arch/*).

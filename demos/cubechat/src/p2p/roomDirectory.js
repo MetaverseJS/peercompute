@@ -38,9 +38,12 @@ export const normalizeRoomName = (value) => {
 };
 
 export class RoomDirectory {
-  constructor({ gameId, bootstrapPeers }) {
+  constructor({ gameId, bootstrapPeers, webrtc, pubsubType, gossipsub }) {
     this.gameId = gameId;
     this.bootstrapPeers = bootstrapPeers || [];
+    this.webrtc = webrtc || null;
+    this.pubsubType = pubsubType || null;
+    this.gossipsub = gossipsub || null;
     this.node = null;
     this.stateManager = null;
     this.rooms = new Map();
@@ -55,7 +58,10 @@ export class RoomDirectory {
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: this.gameId,
-      roomId: DIRECTORY_ROOM_ID
+      roomId: DIRECTORY_ROOM_ID,
+      ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+      ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
+      ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();
     await this.node.start();

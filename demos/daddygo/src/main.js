@@ -70,6 +70,35 @@ import { NodeKernel } from '@peercompute';
             return peers.filter(Boolean);
         };
 
+        const normalizeWebRTCConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+            const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+            const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+            const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+            const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+            const next = { ...raw };
+            if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+            if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+            if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+            if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+            return Object.keys(next).length ? next : null;
+        };
+
+        const normalizePubsubType = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.pubsubType ?? cfg.pubsub;
+            if (!raw) return null;
+            return String(raw).trim().toLowerCase();
+        };
+
+        const normalizeGossipsubConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.gossipsub;
+            if (!raw || typeof raw !== 'object') return null;
+            return { ...raw };
+        };
+
         const updateGlobalHighScore = () => {
             let best = localHighScore;
             for (const data of peerScores.values()) {
@@ -92,11 +121,17 @@ import { NodeKernel } from '@peercompute';
             try {
                 const cfg = await loadRelayConfig();
                 const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+                const webrtc = normalizeWebRTCConfig(cfg);
+                const pubsubType = normalizePubsubType(cfg);
+                const gossipsub = normalizeGossipsubConfig(cfg);
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'daddygo',
-                    roomId: 'global'
+                    roomId: 'global',
+                    ...(pubsubType ? { pubsubType } : {}),
+                    ...(gossipsub ? { gossipsub } : {}),
+                    ...(webrtc ? { webrtc } : {})
                 });
                 await node.initialize();
                 await node.start();

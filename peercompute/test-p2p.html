@@ -366,6 +366,65 @@
       });
     }
     
+    const readQueryParams = () => new URLSearchParams(window.location.search);
+
+    const readDialConfig = () => {
+      const params = readQueryParams();
+      const readNumber = (key) => {
+        const raw = params.get(key);
+        if (raw === null) return undefined;
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : undefined;
+      };
+      const config = {};
+      const maxParallelDials = readNumber('maxParallelDials');
+      if (Number.isFinite(maxParallelDials)) config.maxParallelDials = maxParallelDials;
+      const maxDialPeers = readNumber('maxDialPeers');
+      if (Number.isFinite(maxDialPeers)) config.maxDialPeers = maxDialPeers;
+      const maxDialQueueLength = readNumber('maxDialQueueLength');
+      if (Number.isFinite(maxDialQueueLength)) config.maxDialQueueLength = maxDialQueueLength;
+      const maxPeerAddrsToDial = readNumber('maxPeerAddrsToDial');
+      if (Number.isFinite(maxPeerAddrsToDial)) config.maxPeerAddrsToDial = maxPeerAddrsToDial;
+      const dialTimeoutMs = readNumber('dialTimeoutMs');
+      if (Number.isFinite(dialTimeoutMs)) config.dialTimeoutMs = dialTimeoutMs;
+      return config;
+    };
+
+    const readNodeConfig = () => {
+      const params = readQueryParams();
+      const readNumber = (key) => {
+        const raw = params.get(key);
+        if (raw === null) return undefined;
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : undefined;
+      };
+      const readBool = (key) => {
+        const raw = params.get(key);
+        if (raw === null) return undefined;
+        if (raw === '') return true;
+        const normalized = raw.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+        return undefined;
+      };
+      const config = {};
+      const enablePersistence = readBool('enablePersistence');
+      if (enablePersistence !== undefined) config.enablePersistence = enablePersistence;
+      const disablePersistence = readBool('disablePersistence');
+      if (disablePersistence === true) config.enablePersistence = false;
+      const disableStateNetworkProvider = readBool('disableStateNetworkProvider');
+      if (disableStateNetworkProvider !== undefined) {
+        config.disableStateNetworkProvider = disableStateNetworkProvider;
+      }
+      const disableStateBroadcast = readBool('disableStateBroadcast');
+      if (disableStateBroadcast !== undefined) config.disableStateBroadcast = disableStateBroadcast;
+      const targetConnections = readNumber('targetConnections');
+      if (Number.isFinite(targetConnections)) config.targetConnections = targetConnections;
+      const maxConnections = readNumber('maxConnections');
+      if (Number.isFinite(maxConnections)) config.maxConnections = maxConnections;
+      return config;
+    };
+
     async function initializeNode() {
       try {
         log('Initializing NodeKernel...', 'info');
@@ -415,10 +474,21 @@
           log(`Error loading relay config: ${e.message}`, 'warning');
         }
         
+        const dialConfig = readDialConfig();
+        if (Object.keys(dialConfig).length > 0) {
+          log(`Dial config: ${JSON.stringify(dialConfig)}`, 'info');
+        }
+        const nodeConfig = readNodeConfig();
+        if (Object.keys(nodeConfig).length > 0) {
+          log(`Node config: ${JSON.stringify(nodeConfig)}`, 'info');
+        }
+
         node = new NodeKernel({
           topology: 'distributed',
           enablePersistence: true,
-          bootstrapPeers
+          bootstrapPeers,
+          ...dialConfig,
+          ...nodeConfig
         });
         
         // Expose to window for testing

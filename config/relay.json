@@ -7,6 +7,24 @@
   "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
   "bootstrapPeers": [],
+  "pubsubType": "gossipsub",
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": [
+          "stun:stun.l.google.com:19302",
+          "stun:stun.cloudflare.com:3478"
+        ]
+      }
+    ],
+    "preferDirect": true,
+    "dropRelayOnDirect": false,
+    "dropRelayBootstrapOnDirect": false,
+    "relayRetention": {
+      "mode": "sqrt",
+      "min": 1
+    }
+  },
   "publicHost": "",
   "publicPort": "",
   "sslCert": "",

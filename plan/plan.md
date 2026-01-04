@@ -15,7 +15,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 ## Project Goals:
 
 ### Completed:
-- libp2p-first browser stack (relay bootstrap + floodsub + pubsubPeerDiscovery).
+- libp2p-first browser stack (relay bootstrap + gossipsub, floodsub fallback, pubsubPeerDiscovery).
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
 - NetworkScheduler core with clock policy scaffolding.
 - cb time sync anchored to the first joiner.
@@ -24,9 +24,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ### TODO:
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
+- Improve relay scaling: drop relay connection after hitting target peers, rejoin relay only to assist new WebRTC dials, then drop again.
+- Add scoped + sharded Yjs update modes so state sync can be workload-specific instead of global.
 - Validate time sync anchor behavior after reconnects.
 - Finish ComputeManager scheduling + GPU hub runtime integration.
 - Wire warm DataState deltas into netman publishing end-to-end.
+- Implement explicit topology selection (topologyId + topologyType) and sharded state/interest management.
 - Keep plan/ and log aligned with ongoing changes.
 - Demo release polish: room system for multiplayer demos, DaddyGo high score sync, and docs/README refresh.
 - Keystone demo: flagship visualization of self-organizing topology + workload placement.
@@ -34,12 +37,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 ### TODONT:
 - Reintroduce PeerJS or legacy CRDT experiments.
 - Redesign NodeKernel/StateManager public APIs mid-branch.
-- Add new topology modes before scheduler/tests are stable.
+- Add emergent/ad hoc topology until fully distributed + hierarchical modes are stable.
 
 ## RoadMap:
 1. Hardening: relay config, WSS/HTTP parity, test automation in a real env.
 2. Scheduler adoption: migrate demos to snapshots/events; tune profiles.
-3. Scale: interest management, health metrics, reliability tiers.
+3. Scale: interest management, topology selection, sharded state, health metrics, reliability tiers.
 4. Compute: resume WebGPU workloads and worker/service-worker isolation.
 
 ## Known Issues / Blockers:

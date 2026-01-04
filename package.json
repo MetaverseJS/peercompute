@@ -23,9 +23,11 @@
     "dev:daddygo": "npm --prefix demos/daddygo run dev -- --host",
     "dev:netviz": "npm --prefix demos/netviz run dev -- --host",
     "dev": "bash scripts/dev-all.sh",
+    "dev:local-relay": "bash scripts/dev-local-relay.sh",
     "docs:dev": "vite --config vite.docs.config.mjs",
     "docs:preview": "vite preview --config vite.docs.config.mjs",
-    "test:runtime": "node demos/tests/runtime-smoke.mjs",
+    "test:runtime": "node demos/tests/runtime-smoke.mjs && node demos/tests/runtime-p2p.mjs",
+    "test:runtime:p2p": "node demos/tests/runtime-p2p.mjs",
     "build:hyperborea": "npm --prefix demos/hyperborea run build",
     "build:cubechat": "npm --prefix demos/cubechat run build",
     "build:planetgen": "npm --prefix demos/planetgen run build",
@@ -42,5 +44,11 @@
   "devDependencies": {
     "concurrently": "^9.2.1",
     "vite": "^6.4.1"
+  },
+  "dependencies": {
+    "@libp2p/utils": "^7.0.9"
+  },
+  "overrides": {
+    "@libp2p/utils": "^7.0.9"
   }
 }

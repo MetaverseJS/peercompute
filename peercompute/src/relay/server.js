@@ -29,8 +29,9 @@ import { noise } from '@libp2p/noise';
 import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
+import { gossipsub } from '@libp2p/gossipsub';
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
-import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys';
+import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 import { peerIdFromPrivateKey } from '@libp2p/peer-id';
@@ -52,6 +53,49 @@ const relayConfigDirs = (process.env.RELAY_CONFIG_DIRS || '')
   .map((entry) => entry.trim())
   .filter(Boolean);
 const relayConfigFile = (process.env.RELAY_CONFIG_FILE || '').trim();
+const relayTopicPrefixes = (process.env.RELAY_TOPIC_PREFIXES || 'pc.,peercompute-')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+const relayWebrtcConfig = (() => {
+  const raw = (process.env.RELAY_WEBRTC_CONFIG || '').trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('[Relay] Failed to parse RELAY_WEBRTC_CONFIG:', err?.message || err);
+    }
+  }
+  const iceRaw = (process.env.RELAY_ICE_SERVERS || '').trim();
+  if (iceRaw) {
+    try {
+      const parsed = JSON.parse(iceRaw);
+      if (Array.isArray(parsed) || typeof parsed === 'object') {
+        return { iceServers: parsed };
+      }
+    } catch (err) {
+      console.warn('[Relay] Failed to parse RELAY_ICE_SERVERS:', err?.message || err);
+    }
+  }
+  return null;
+})();
+const relayPubsubType = (process.env.RELAY_PUBSUB_TYPE || process.env.RELAY_PUBSUB || '').trim().toLowerCase();
+const relayGossipsubConfig = (() => {
+  const raw = (process.env.RELAY_GOSSIPSUB_CONFIG || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch (err) {
+    console.warn('[Relay] Failed to parse RELAY_GOSSIPSUB_CONFIG:', err?.message || err);
+  }
+  return null;
+})();
 
 const toMultiaddrHostSegment = (host) => {
   if (!host) return '';
@@ -62,7 +106,7 @@ const toMultiaddrHostSegment = (host) => {
   return `/dns4/${host}`;
 };
 
-const loadRelayPeerId = async () => {
+const loadRelayIdentity = async () => {
   if (!relayIdentityFile) return null;
   const identityPath = path.resolve(relayIdentityFile);
   if (fs.existsSync(identityPath)) {
@@ -76,7 +120,7 @@ const loadRelayPeerId = async () => {
       const keyBytes = Buffer.from(encodedKey, 'base64');
       const privateKey = privateKeyFromProtobuf(keyBytes);
       console.log(`[Relay] Loaded identity key from ${identityPath}`);
-      return peerIdFromPrivateKey(privateKey);
+      return { peerId: peerIdFromPrivateKey(privateKey), privateKey };
     } catch (err) {
       console.warn(`[Relay] Failed to read identity file ${identityPath}:`, err?.message || err);
       return null;
@@ -98,7 +142,7 @@ const loadRelayPeerId = async () => {
       fs.chmodSync(identityPath, 0o600);
     } catch (_) {}
     console.log(`[Relay] Wrote identity key to ${identityPath}`);
-    return peerId;
+    return { peerId, privateKey };
   } catch (err) {
     console.warn('[Relay] Failed to create identity key:', err?.message || err);
     return null;
@@ -122,8 +166,12 @@ async function startServer() {
     if (useWss) {
       console.log(`Relay using WSS with SSL_CERT=${relaySslCert}`);
     }
+    const useGossipsub = relayPubsubType === 'gossipsub';
+    console.log(`Relay pubsub: ${useGossipsub ? 'gossipsub' : 'floodsub'}`);
 
-    const relayPeerId = await loadRelayPeerId();
+    const relayIdentity = await loadRelayIdentity();
+    const relayPeerId = relayIdentity?.peerId || null;
+    const relayPrivateKey = relayIdentity?.privateKey || null;
     const wsOptions = useWss
       ? {
           https: {
@@ -133,8 +181,22 @@ async function startServer() {
         }
       : {};
 
+    const gossipsubOptions = {
+      emitSelf: false,
+      allowPublishToZeroTopicPeers: true,
+      canRelayMessage: true,
+      ...(relayGossipsubConfig || {})
+    };
+    if (relayGossipsubConfig?.allowPublishToZeroPeers !== undefined
+      && gossipsubOptions.allowPublishToZeroTopicPeers === undefined) {
+      gossipsubOptions.allowPublishToZeroTopicPeers = relayGossipsubConfig.allowPublishToZeroPeers;
+    }
+    const pubsubService = useGossipsub
+      ? gossipsub(gossipsubOptions)
+      : floodsub();
+
     const server = await createLibp2p({
-      ...(relayPeerId ? { peerId: relayPeerId } : {}),
+      ...(relayPrivateKey ? { privateKey: relayPrivateKey } : {}),
       addresses: {
         listen: [
           `/ip4/${relayListenHost}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`
@@ -147,12 +209,13 @@ async function startServer() {
       connectionEncrypters: [noise(), plaintext()],
       streamMuxers: [yamux()],
       services: {
-        pubsub: floodsub(),
+        pubsub: pubsubService,
         relay: circuitRelayServer({
-            reservations: {
-                maxReservations: 1000,
-                applyDefaultLimit: false
-            }
+          reservations: {
+            maxReservations: 1000,
+            applyDefaultLimit: false,
+            reservationTtl: 60000
+          }
         }),
         identify: identify(),
         ping: ping({
@@ -167,8 +230,14 @@ async function startServer() {
       },
       connectionMonitor: {
         abortConnectionOnPingFailure: false
-      }
+      },
+      start: false
     });
+    if (relayPrivateKey && server?.peerId) {
+      server.peerId.privateKey = privateKeyToProtobuf(relayPrivateKey);
+      server.peerId.publicKey = publicKeyToProtobuf(relayPrivateKey.publicKey);
+    }
+    await server.start();
 
     console.log('Relay Server ID:', server.peerId.toString());
     console.log('Circuit Relay v2 enabled - browsers can connect through this relay');
@@ -235,10 +304,26 @@ async function startServer() {
       'peercompute-state',
       'peercompute-state-sync'
     ];
+    const relayTopicSet = new Set(relayTopics);
     relayTopics.forEach((topic) => {
       server.services.pubsub.subscribe(topic);
     });
     console.log(`Relay subscribed to topics: ${relayTopics.join(', ')}`);
+
+    const shouldRelayTopic = (topic) => relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
+
+    server.services.pubsub.addEventListener('subscription-change', (evt) => {
+      const subscriptions = evt?.detail?.subscriptions || [];
+      subscriptions.forEach((sub) => {
+        if (!sub?.subscribe) return;
+        const topic = sub?.topic;
+        if (!topic || relayTopicSet.has(topic)) return;
+        if (!shouldRelayTopic(topic)) return;
+        relayTopicSet.add(topic);
+        server.services.pubsub.subscribe(topic);
+        console.log(`[Relay] Auto-subscribed to topic: ${topic}`);
+      });
+    });
     
     // Log peer discovery events
     const decoder = new TextDecoder();
@@ -280,9 +365,20 @@ async function startServer() {
         if (publicProtocol) {
           announceAddr = announceAddr.replace(/\/wss?/, `/${publicProtocol}`);
         }
+        announceAddr = announceAddr.replace(/\/tls(\/wss?)/, '$1');
         // Output in the format expected by start-relay-and-test.sh (grep)
         console.log(`Relay Address: ${announceAddr}`);
-        const relayConfig = JSON.stringify({ bootstrapPeers: [announceAddr] }, null, 2);
+        const relayConfigPayload = {
+          bootstrapPeers: [announceAddr],
+          pubsubType: useGossipsub ? 'gossipsub' : 'floodsub'
+        };
+        if (relayWebrtcConfig) {
+          relayConfigPayload.webrtc = relayWebrtcConfig;
+        }
+        if (relayGossipsubConfig) {
+          relayConfigPayload.gossipsub = relayGossipsubConfig;
+        }
+        const relayConfig = JSON.stringify(relayConfigPayload, null, 2);
         const writeConfig = (filePath) => {
           if (!filePath) return;
           try {

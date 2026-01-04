@@ -3,7 +3,7 @@ Instructions: This file contains short term goals for the current branch.
 ## Branch Goals
 
 ### Completed:
-- libp2p-only networking with relay bootstrap + floodsub.
+- libp2p-only networking with relay bootstrap + gossipsub (floodsub fallback).
 - Relay config flow for dev/test; WSS support.
 - NetworkScheduler core + unit tests; clock policy scaffolding.
 - Room isolation and time sync anchor in cb.
@@ -16,11 +16,12 @@ Instructions: This file contains short term goals for the current branch.
 - Confirm dev/test scripts work in a clean env and update docs if needed.
 - Resume ComputeManager work once P2P stack is stable.
 - Wire warm DataState deltas into netman publish path end-to-end.
+- Add topology-aware topic scoping (topologyId + roomId) and sharded-state publish hooks.
 
 ### TODONT:
 - Compute/physics feature work.
 - CRDT format redesign or y-libp2p reintroduction.
-- New topology modes beyond relay + pubsub.
+- Transport pivots away from libp2p or a scheduler rewrite.
 
 ## Scope:
 - NetworkManager scheduler, relay keepalive/config, dev/test scripts, docs/log alignment.

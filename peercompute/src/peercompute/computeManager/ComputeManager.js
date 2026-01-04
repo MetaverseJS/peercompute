@@ -235,6 +235,7 @@ export class ComputeManager {
           /* webpackChunkName: "compute-task" */
           /* webpackMode: "lazy" */
           /* webpackInclude: /\.js$/ */
+          /* @vite-ignore */
           `${task.payload.module}`
         );
         fn = mod[task.payload.exportName || 'default'];

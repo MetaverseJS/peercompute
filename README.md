@@ -74,6 +74,20 @@ npm run build
 npm run docs:preview
 ```
 
+### Go Relay (Optional)
+By default `npm run dev` and `npm run dev:local-relay` launch the Node relay. To use the Go relay, install Go 1.24+ and set `RELAY_IMPL=go`:
+
+```bash
+go version
+RELAY_IMPL=go npm run dev:relay
+```
+
+To run the relay directly without the npm wrapper:
+
+```bash
+bash scripts/run-go-relay.sh
+```
+
 ### Relay Host Config (Single File)
 Use `config/relay.json` as the single source of truth for dev + prod relay settings:
 
@@ -115,6 +129,25 @@ RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash sc
 If you terminate TLS in nginx, set `relayHost` to the relay subdomain, keep `relayPort` at `443`,
 and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) with empty cert fields.
 Point nginx at the on-disk `relayConfigFile` location so `/relay-config.json` is served with CORS.
+
+### Relay as a systemd Service
+The repo includes a helper that installs and enables a systemd unit for the relay:
+
+```bash
+sudo -E bash scripts/install-relay-systemd.sh
+```
+
+Optional overrides:
+
+```bash
+RELAY_SERVICE_NAME=peercompute-relay \
+RELAY_SERVICE_USER=$USER \
+RELAY_SERVICE_GROUP=$USER \
+sudo -E bash scripts/install-relay-systemd.sh
+```
+
+The service runs `scripts/start-relay-prod.sh`, so it reads `config/relay.json` and the same env overrides.
+Use `systemctl status peercompute-relay` (or your custom name) to verify it is running.
 
 ## Demo Gallery
 See `docs/index.html` for the full demo index.

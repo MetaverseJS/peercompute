@@ -155,6 +155,9 @@ import { NodeKernel } from '@peercompute';
         let node = null;
         let stateManager = null;
         let bootstrapPeers = [];
+        let webrtcConfig = null;
+        let pubsubType = null;
+        let gossipsubConfig = null;
         let playerLabel = null;
         const log = (...args) => console.log('[sneakywoods]', ...args);
         let backgroundHeartbeat = null;
@@ -229,6 +232,35 @@ import { NodeKernel } from '@peercompute';
             return peers.filter(Boolean);
         };
 
+        const normalizeWebRTCConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+            const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+            const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+            const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+            const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+            const next = { ...raw };
+            if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+            if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+            if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+            if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+            return Object.keys(next).length ? next : null;
+        };
+
+        const normalizePubsubType = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.pubsubType ?? cfg.pubsub;
+            if (!raw) return null;
+            return String(raw).trim().toLowerCase();
+        };
+
+        const normalizeGossipsubConfig = (cfg) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const raw = cfg.gossipsub;
+            if (!raw || typeof raw !== 'object') return null;
+            return { ...raw };
+        };
+
         const ROOM_DIRECTORY_ID = '__rooms__';
         const ROOM_DIRECTORY_NAMESPACE = 'rooms';
         const ROOM_ENTRY_PREFIX = 'room-';
@@ -278,13 +310,16 @@ import { NodeKernel } from '@peercompute';
             }
         };
 
-        async function initRoomDirectory(bootstrapPeers) {
+        async function initRoomDirectory(bootstrapPeers, webrtc, pubsubType, gossipsub) {
             if (roomDirectoryNode) return;
             roomDirectoryNode = new NodeKernel({
                 bootstrapPeers,
                 enablePersistence: false,
                 gameId: 'sneakywoods',
-                roomId: ROOM_DIRECTORY_ID
+                roomId: ROOM_DIRECTORY_ID,
+                ...(pubsubType ? { pubsubType } : {}),
+                ...(gossipsub ? { gossipsub } : {}),
+                ...(webrtc ? { webrtc } : {})
             });
             await roomDirectoryNode.initialize();
             await roomDirectoryNode.start();
@@ -1267,11 +1302,17 @@ import { NodeKernel } from '@peercompute';
             try {
                 const cfg = await loadRelayConfig();
                 bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+                webrtcConfig = normalizeWebRTCConfig(cfg);
+                pubsubType = normalizePubsubType(cfg);
+                gossipsubConfig = normalizeGossipsubConfig(cfg);
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
                     gameId: 'sneakywoods',
-                    roomId: roomId || 'global'
+                    roomId: roomId || 'global',
+                    ...(pubsubType ? { pubsubType } : {}),
+                    ...(gossipsubConfig ? { gossipsub: gossipsubConfig } : {}),
+                    ...(webrtcConfig ? { webrtc: webrtcConfig } : {})
                 });
                 await node.initialize();
                 await node.start();
@@ -1318,7 +1359,7 @@ import { NodeKernel } from '@peercompute';
                     };
                     window.addEventListener('beforeunload', beforeUnloadHandler);
                 }
-                await initRoomDirectory(bootstrapPeers);
+                await initRoomDirectory(bootstrapPeers, webrtcConfig, pubsubType, gossipsubConfig);
                 startRoomAnnouncements();
             } catch (err) {
                 console.error('P2P setup error:', err);
