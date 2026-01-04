@@ -30,6 +30,24 @@
 ## Branch Goal
 Use the demo suite to prove the PeerCompute architecture end-to-end: layered DataState, NetworkScheduler profiles/topologies, ComputeManager (CPU/GPU/WASM), and GPU hub interop. The demos should double as validation tools for the distributed compute roadmap.
 
+## Status Snapshot (2026-01-04)
+
+### In Progress
+- Phase 2: WebRTC direct-first + relay pruning (partial; still relying on relay in some flows).
+
+### Recently Updated
+- Node relay remains the default in dev scripts; prod/systemd now respects `RELAY_IMPL`.
+- Go relay now joins pubsub topics with relay participation to forward traffic.
+- Dev gossipsub defaults tuned for testing (neutral scoring + wider mesh bounds).
+
+### Next Up
+- Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
+- Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
+- Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
+
+### Blocked / Risks
+- Node relay can still crash on StreamStateError when gossipsub writes to closed streams.
+
 ## Scale Plan (current focus)
 Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.
 

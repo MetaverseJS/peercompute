@@ -96,21 +96,20 @@ Goal: move to explicit topologies (fully distributed, three-layer hierarchical, 
 - Runtime: headless demo P2P suite (`demos/tests/runtime-p2p.mjs`) exercises cubechat video/screen share plus demo peer connectivity.
 - NetViz manual checks: topology selector, drag-to-move triggers connection changes, host join flow.
 
-### Progress (2025-01-01)
-- TopologyController + topology handshake integrated into NetworkManager/NodeKernel.
-- Topology scoping added to messages/presence + shard subscription helpers.
-- NetViz topology selector + distributed drag controls + hierarchical layout stub wired.
-- TopologyController unit tests + updated network tests for topology scope.
+### Progress (through 2026-01-04)
+- TopologyController + handshake integrated into NetworkManager/NodeKernel with deterministic neighbor selection and connection caps.
+- Topology scoping added to messages/presence plus shard subscription helpers.
+- NetViz: topology selector + topologyId input, distributed spiral placement + drag-to-move controls, hierarchical layout stub with host/client grouping.
+- NetViz startup defers metric initialization until after spiral seeding to prevent overlapping nodes.
+- Distributed topology enforces radius-limited neighbor selection with isolation fallback and always-include-closest behavior.
+- Swap logic drops the farthest connected peer when a higher-priority closer peer appears at max connections (with safeguards).
+- NetworkManager prunes pubsub peers on disconnect and catches gossipsub outbound send failures to reduce StreamStateError cascades.
 
-### Progress (2025-01-01)
-- Implemented TopologyController + topology handshake messages and wiring in NetworkManager/NodeKernel.
-- Added topologyId scoping, presence fields, and shard subscription helpers.
-- NetViz: topology selector + topologyId input, distributed layout with spiral fallback + drag-to-move, hierarchical layout stub with host/client grouping.
-- Added unit tests for TopologyController and updated network tests for topology scoping.
-
-### Progress (2026-01-01)
-- NetViz startup now defers metric initialization until after spiral seeding to prevent overlapping nodes.
-- NetworkManager prunes pubsub peers on connection close/peer disconnect to reduce StreamStateError from closed streams.
-- NetworkManager patches gossipsub outbound streams to catch async send failures and hang up the peer.
-- Distributed topology now swaps out the farthest connected peer when a closer desired peer appears at max connections.
-- Distributed topology distance scoring now uses adjacency (Manhattan) to prioritize grid neighbors.
+### Remaining Work
+- Fix Node relay StreamStateError crashes (catch closed-stream writes or add supervised restart).
+- Implement relay scaling: drop relay after reaching target peers, rejoin to facilitate new WebRTC dials, then drop again.
+- Add scoped + sharded Yjs update modes so state sync can be workload-specific instead of global.
+- Finish hierarchical host scoring, room join/referral flow, standby promotion/election, and NetViz host overview UI.
+- Implement shard topic subscriptions + AOI-scoped state publishing and runtime shard traffic tests.
+- Add runtime topology convergence + relay soak tests to validate stability at scale.
+- Stub emergent topology strategy after fully distributed + hierarchical are stable.
