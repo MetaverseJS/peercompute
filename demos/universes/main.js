@@ -962,7 +962,8 @@ function buildPostProcessing() {
             "uBHCount": blackHoleUniforms.uBHCount,
             "uBHPos": blackHoleUniforms.uBHPos,
             "uBHMass": blackHoleUniforms.uBHMass,
-            "uBHRadius": blackHoleUniforms.uBHRadius
+            "uBHRadius": blackHoleUniforms.uBHRadius,
+            "uAspect": { value: window.innerWidth / Math.max(1, window.innerHeight) }
         },
         vertexShader: `
             varying vec2 vUv;
@@ -977,50 +978,47 @@ function buildPostProcessing() {
             uniform vec2 uBHPos[${MAX_BLACKHOLES}];
             uniform float uBHMass[${MAX_BLACKHOLES}];
             uniform float uBHRadius[${MAX_BLACKHOLES}];
+            uniform float uAspect;
             varying vec2 vUv;
             void main() {
                 vec2 uv = vUv;
                 vec2 totalOffset = vec2(0.0);
-                float halo = 0.0;
                 float shadowMask = 0.0;
                 for(int i = 0; i < ${MAX_BLACKHOLES}; i++) {
                     if (i >= uBHCount) break;
-                    vec2 dir = uv - uBHPos[i];
-                    float dist = length(dir) + 1e-6;
-                    vec2 dirN = dir / dist;
+                    vec2 o = uBHPos[i] - uv;
+                    o.x *= uAspect;
+                    float dist = length(o);
                     float bhRad = max(uBHRadius[i], 0.002);
-                    float r = dist / bhRad;
-                    float influence = smoothstep(12.0, 0.0, r);
-                    float strength = uBHMass[i] * 0.12;
-                    float falloff = 1.0 / (r * r + 0.5);
-                    float distortion = strength * influence * falloff;
-                    distortion = min(distortion, 0.85);
-                    totalOffset -= dirN * distortion * bhRad * 4.0;
-
-                    // Photon ring glow
-                    float ringCenter = bhRad * (2.3 + uBHMass[i] * 0.4);
-                    float ringWidth = max(bhRad * 0.6, 1e-4);
-                    float ring = exp(-pow((dist - ringCenter) / ringWidth, 2.0));
-                    halo += ring * influence * 1.6;
-
-                    // Event horizon shadow (lensing-only blackout)
-                    float shadowRadius = bhRad * 1.05;
-                    float shadowSoft = bhRad * 1.7;
-                    float shadow = 1.0 - smoothstep(shadowRadius, shadowSoft, dist);
+                    float inner = max(bhRad * 0.6, 0.006);
+                    float outer = max(bhRad * 14.0, 0.14);
+                    float influence = smoothstep(outer, inner, dist);
+                    float safeDist = max(dist, inner);
+                    vec2 dir = o / safeDist;
+                    dir.x /= uAspect;
+                    float strength = (0.1 + uBHMass[i] * 0.02) * influence;
+                    totalOffset += dir * (strength / (safeDist * safeDist + 0.0001));
+                    float shadow = 1.0 - smoothstep(inner * 0.6, inner, dist);
                     shadowMask = max(shadowMask, shadow);
                 }
+                float offsetLen = length(totalOffset);
+                if (offsetLen > 0.25) {
+                    totalOffset *= 0.25 / offsetLen;
+                }
                 vec2 warped = clamp(uv + totalOffset, vec2(0.001), vec2(0.999));
-                vec3 col;
-                col.r = texture2D(tDiffuse, warped + totalOffset * 0.12).r;
-                col.g = texture2D(tDiffuse, warped).g;
-                col.b = texture2D(tDiffuse, warped - totalOffset * 0.12).b;
-                col += halo * vec3(1.0, 0.65, 0.3);
-                col = mix(col, vec3(0.0), clamp(shadowMask, 0.0, 1.0));
-                gl_FragColor = vec4(col, 1.0);
+                vec4 col = texture2D(tDiffuse, warped);
+                col.rgb = mix(col.rgb, vec3(0.0), clamp(shadowMask, 0.0, 1.0));
+                gl_FragColor = col;
             }
         `
     };
     lensingPass = new ShaderPass(LensingShader);
+    if (lensingPass?.material?.uniforms) {
+        lensingPass.material.uniforms.uBHCount = blackHoleUniforms.uBHCount;
+        lensingPass.material.uniforms.uBHPos = blackHoleUniforms.uBHPos;
+        lensingPass.material.uniforms.uBHMass = blackHoleUniforms.uBHMass;
+        lensingPass.material.uniforms.uBHRadius = blackHoleUniforms.uBHRadius;
+    }
     composer.addPass(lensingPass);
 
     const CRTShader = {
@@ -1514,6 +1512,9 @@ function updatePixelation() {
     renderer.domElement.style.width = '100vw'; renderer.domElement.style.height = '100vh';
     if (points) { points.material.uniforms.uPixelRatio.value = renderer.getPixelRatio(); points.material.uniforms.uScreenHeight.value = h; }
     if (localGalaxy) { localGalaxy.material.uniforms.uPixelRatio.value = renderer.getPixelRatio(); localGalaxy.material.uniforms.uScreenHeight.value = h; }
+    if (lensingPass?.material?.uniforms?.uAspect) {
+        lensingPass.material.uniforms.uAspect.value = w / Math.max(1, h);
+    }
 }
 
 function onWindowResize() { updatePixelation(); }
@@ -1588,6 +1589,11 @@ function completeTransition() {
     const shift = new THREE.Vector3().copy(simState.transitionTarget);
     
     activeBlackHoles = []; blackHoleUniforms.uBHCount.value = 0;
+    if (level < prevLevel) {
+        simState.inspectingTarget = null;
+        simState.inspectingTargetPreviousPos = null;
+        simState.trackingTarget = null;
+    }
     
     if (level > prevLevel) {
         if (simState.transitionData) {

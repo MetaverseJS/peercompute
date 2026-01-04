@@ -3715,3 +3715,108 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- alright now fix the gravitational lensing shader for black holes. we're not seeing any distortion. use something simple like this:
+-
+-#GLSL: Black Hole, Distortion,
+-🌀 Gravitational Lens (Shader):
+-
+-#define R iResolution.xy
+-
+-void mainImage(out vec4 c, in vec2 p) 
+-{
+-    vec2 u = p / R, m = iMouse.xy / R,
+-    o = m - u, l, i; o.x *= R.x / R.y;
+-
+-    float d = length(o);
+-
+-    c = mix(vec4(0), 
+-
+-    texture(iChannel0, u + o / d * .1 / (d * d)),
+-    step(.3, d));
+-}
+
+### Changes
+- Replaced the black hole lensing post-process with a simpler distortion model based on screen-space distance and per-hole radius.
+- Added an aspect ratio uniform and updated it during pixelation/resize so the lensing field stays circular.
+
+### Files Touched
+- demos/universes/main.js
+- plan/log.md
+
+### Commands
+- rg -n "black hole|blackHole|lensing|lense|distort|schwarz|gravitational" demos/universes/main.js
+- sed -n '880,1100p' demos/universes/main.js
+- sed -n '1470,1560p' demos/universes/main.js
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- it's not working
+
+### Changes
+- Increased the black hole lensing distortion strength and falloff, and added clamped total offset to make the warp visible while keeping it stable.
+
+### Files Touched
+- demos/universes/main.js
+- plan/log.md
+
+### Commands
+- rg -n "black hole|blackHole|lensing|lense|distort|schwarz|gravitational" demos/universes/main.js
+- sed -n '880,1100p' demos/universes/main.js
+- sed -n '1470,1560p' demos/universes/main.js
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- it's still not showing at all. I think we're missing something more fundimental. could it be conflicting with the pixelation or CRT effect?
+-
+-when going back to a galaxy or the universe  it doesn't return to orbitcontrols.
+
+### Changes
+- Bound the black hole uniforms directly into the lensing ShaderPass so updates are not lost to uniform cloning.
+- Cleared inspection/tracking targets when backing out to a higher-level view to restore orbit controls.
+
+### Files Touched
+- demos/universes/main.js
+- plan/log.md
+
+### Commands
+- rg -n "composer\.render|renderer\.render|render\\(\\)" demos/universes/main.js
+- sed -n '2330,2405p' demos/universes/main.js
+- rg -n "xrForceDirectFrames" demos/universes/main.js
+- sed -n '1160,1205p' demos/universes/main.js
+- rg -n "autoRotate|controls\\.enabled|controls\\.target" demos/universes/main.js
+- sed -n '1340,1420p' demos/universes/main.js
+- sed -n '1500,1635p' demos/universes/main.js
+- sed -n '2100,2335p' demos/universes/main.js
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- you fixed it! and it looks great! does the size change depending on the size of the blackhole?
+
+### Changes
+- Reviewed black hole lensing uniforms and sizing logic to answer how distortion scales with black hole size.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- sed -n '1,40p' plan/plan.md
+- sed -n '1,20p' plan/log.md
+
+### Tests
+- Not run (info-only request).
