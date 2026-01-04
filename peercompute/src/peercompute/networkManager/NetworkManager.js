@@ -76,6 +76,34 @@ const orderDialTargets = (targets) => {
   return scored.map((entry) => entry.addr);
 };
 
+const expandScoreParamTopics = (options, topics) => {
+  if (!options || typeof options !== 'object') return options;
+  const scoreParams = options.scoreParams;
+  if (!scoreParams || typeof scoreParams !== 'object') return options;
+  const scoreTopics = scoreParams.topics;
+  if (!scoreTopics || typeof scoreTopics !== 'object') return options;
+  const defaultTopic = scoreTopics.__default;
+  if (!defaultTopic || typeof defaultTopic !== 'object') return options;
+
+  const expandedTopics = { ...scoreTopics };
+  delete expandedTopics.__default;
+  topics
+    .filter((topic) => typeof topic === 'string' && topic.length > 0)
+    .forEach((topic) => {
+      if (!expandedTopics[topic]) {
+        expandedTopics[topic] = { ...defaultTopic };
+      }
+    });
+
+  return {
+    ...options,
+    scoreParams: {
+      ...scoreParams,
+      topics: expandedTopics
+    }
+  };
+};
+
 const normalizeIceServers = (input) => {
   if (!input) return [];
   const list = Array.isArray(input) ? input : [input];
@@ -273,6 +301,13 @@ export class NetworkManager {
     const scopedPubsubTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'state');
     const scopedDirectTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'direct');
     const scopedPresenceTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'presence');
+    const discoveryTopic = config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub';
+    const expandedGossipsubOptions = expandScoreParamTopics(gossipsubOptions, [
+      config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
+      config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
+      config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
+      discoveryTopic
+    ]);
 
     const defaults = {
       topology: topologyType,
@@ -282,7 +317,7 @@ export class NetworkManager {
       pubsubTopic: config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       directTopic: config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
       presenceTopic: config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
-      discoveryTopic: config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub',
+      discoveryTopic,
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
       roomId,
@@ -321,7 +356,7 @@ export class NetworkManager {
       maxDialPeers,
       bootstrapDialThrottleMs,
       pubsubType,
-      gossipsub: gossipsubOptions,
+      gossipsub: expandedGossipsubOptions,
       pubsubPeerDiscovery,
       onPublishError: typeof config.onPublishError === 'function' ? config.onPublishError : null,
       onPublishSuccess: typeof config.onPublishSuccess === 'function' ? config.onPublishSuccess : null

@@ -66,7 +66,7 @@ if [ ! -f "$RELAY_PID_FILE" ]; then
     
     # Start relay in background and capture output
     mkdir -p logs
-    node src/relay/server.js > logs/relay-server.log 2>&1 &
+    bash ../scripts/run-relay.sh > logs/relay-server.log 2>&1 &
     RELAY_PID=$!
     STARTED_RELAY=1
     echo "$RELAY_PID" > "$RELAY_PID_FILE"

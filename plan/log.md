@@ -2910,3 +2910,578 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (analysis only).
+
+## Date: 2026-01-03
+
+### Prompt
+> lets try switching to the compatible go relay.
+
+### Changes
+- Reviewed all plan files to re-sync instructions and current branch context.
+- Added a Go relay implementation with circuit-relay v2 resources aligned to our JS relay (TTL=60s, high reservation caps) plus pubsub auto-subscribe by topic prefix.
+- Added Go relay wrapper scripts and wired dev scripts to default to RELAY_IMPL=go while keeping a node fallback when Go is missing.
+- Updated peercompute relay scripts to route through the new relay selector so tests and dev can use Go when requested.
+
+### Files touched
+- peercompute/src/relay-go/go.mod
+- peercompute/src/relay-go/main.go
+- scripts/run-go-relay.sh
+- scripts/run-relay.sh
+- scripts/dev-local-relay.sh
+- scripts/dev-all.sh
+- peercompute/package.json
+- peercompute/start-relay-and-test.sh
+- plan/log.md
+
+### Commands
+- rg --files plan
+- rg --files -g 'current-branch.md'
+- rg "current-branch" -n plan
+- ls -la plan/branch
+- rg --files -g '*.md' plan
+- sed -n '1,200p' plan/llm.md
+- sed -n '1,200p' plan/plan.md
+- tail -n 200 plan/log.md
+- sed -n '1,200p' plan/arch/arch.md
+- sed -n '1,200p' plan/arch/compute-node.md
+- sed -n '1,200p' plan/arch/nodekernel.md
+- sed -n '1,220p' plan/arch/datastate.md
+- sed -n '1,200p' plan/arch/ioman.md
+- sed -n '1,240p' plan/arch/netman.md
+- sed -n '1,200p' plan/arch/stateworker.md
+- sed -n '1,200p' plan/arch/stateman.md
+- sed -n '1,200p' plan/arch/gpuhub.md
+- sed -n '1,200p' plan/arch/input-handler.md
+- sed -n '1,200p' plan/arch/main-thread.md
+- sed -n '1,220p' plan/arch/compman.md
+- sed -n '1,200p' plan/arch/wgpuworker.md
+- sed -n '1,200p' plan/arch/cpuworker.md
+- sed -n '1,200p' plan/arch/render-state.md
+- sed -n '1,220p' plan/arch/node-roles.md
+- sed -n '1,240p' plan/arch/topology.md
+- sed -n '1,260p' plan/branch/topologies.md
+- sed -n '260,520p' plan/branch/topologies.md
+- sed -n '1,220p' plan/branch/datastate.md
+- sed -n '1,260p' plan/branch/demo-fixes.md
+- sed -n '1,240p' plan/branch/demo-ports.md
+- sed -n '1,260p' plan/branch/keystone-demo.md
+- sed -n '1,240p' plan/branch/distributed-compute.md
+- sed -n '1,260p' plan/branch/netman.md
+- sed -n '1,240p' plan/branch/server-changes.md
+- sed -n '1,260p' plan/refs/refs.md
+- sed -n '1,260p' plan/discussions/datastate.md
+- sed -n '1,240p' peercompute/src/relay/server.js
+- sed -n '240,520p' peercompute/src/relay/server.js
+- rg -n "dev:relay|start-relay" -S
+- sed -n '1,220p' scripts/dev-local-relay.sh
+- sed -n '1,220p' scripts/dev-all.sh
+- sed -n '1,260p' peercompute/start-relay-and-test.sh
+- cat package.json
+- cat peercompute/package.json
+- rg -n "topic|pubsub" peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "useScopedTopics|scopedTopics|topicPrefix" peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "RELAY_IMPL" scripts peercompute
+- curl -fsSL https://api.github.com/repos/libp2p/go-libp2p-pubsub/contents/ | head -n 40
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/event.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/tracer.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/pb/trace.proto | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/p2p/transport/websocket/websocket.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/p2p/protocol/circuitv2/relay/relay.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/p2p/protocol/circuitv2/relay/resources.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/p2p/protocol/circuitv2/relay/options.go | sed -n '1,200p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/options.go | rg -n "RelayService" -n
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p/master/options.go | sed -n '280,330p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/pubsub.go | rg -n "func \\(p \\*PubSub\\) Join" -n
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/pubsub.go | sed -n '1600,1660p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/floodsub.go | sed -n '1,120p'
+- curl -fsSL https://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/pubsub.go | rg -n "func NewFloodSub" -n
+- mkdir -p peercompute/src/relay-go
+- cat <<'EOF' > peercompute/src/relay-go/go.mod
+- cat <<'EOF' > peercompute/src/relay-go/main.go
+- sed -n '1,80p' peercompute/src/relay-go/main.go
+- rg -n "wsTransport" -n peercompute/src/relay-go/main.go
+- cat <<'EOF' > scripts/run-go-relay.sh
+- cat <<'EOF' > scripts/run-relay.sh
+- date +%Y-%m-%d
+- git status -sb
+
+### Tests
+- Not run (not requested).
+
+### Notes / Open
+- Initial go.mod write failed because peercompute/src/relay-go did not exist; created the directory and re-ran successfully.
+
+## Date: 2026-01-03
+
+### Prompt
+> yep lets test it! run all runtime and unit tests
+
+### Changes
+- Ran runtime test suite and unit tests to validate the Go relay wiring; no code changes.
+
+### Commands
+- npm run test:runtime (timed out after ~10s; reran)
+- npm run test:runtime
+- npm --prefix peercompute run test:unit
+
+### Tests
+- npm run test:runtime (fail: runtime-smoke missing relay-config-source.json for hyperborea/cubechat/sneakywoods/daddygo; 404s from https://127.0.0.1:4179/...)
+- npm --prefix peercompute run test:unit (pass: 33 tests)
+
+## Date: 2026-01-03
+
+### Prompt
+> 1
+
+### Changes
+- Added stub relay-config-source.json files to the docs demo directories so runtime-smoke no longer flags missing relay-config-source fetches.
+- Re-ran runtime and unit test suites.
+
+### Files touched
+- docs/hyperborea/relay-config-source.json
+- docs/cubechat/relay-config-source.json
+- docs/sneakywoods/relay-config-source.json
+- docs/daddygo/relay-config-source.json
+- plan/log.md
+
+### Commands
+- for dir in docs/hyperborea docs/cubechat docs/sneakywoods docs/daddygo; do cat <<'EOF' > "$dir/relay-config-source.json" ...; done
+- npm run test:runtime
+- npm --prefix peercompute run test:unit
+
+### Tests
+- npm run test:runtime (pass)
+- npm --prefix peercompute run test:unit (pass: 33 tests)
+
+### Notes / Open
+- runtime-p2p still spawns `node peercompute/src/relay/server.js` directly, so it does not exercise the Go relay yet.
+
+## Date: 2026-01-03
+
+### Prompt
+> yes do that.  I just RELAY_IMPL=go npm run dev:local-relay and we still topped out after about 8 nodes.   I don't think we ran into this issue until we switched to gossipsub.
+>
+> I think the issue might be related to gossipsub vs floodsub.   can you research that to see if you can identify a cause?  I just checked the prod implementation (still on floodsub on secretworkshop.net) and while I did run into performance problems past 10 nodes, once connections backed off the relay server was still usable and I could connect to it and other nodes without having to restart it.
+
+### Changes
+- Updated runtime-p2p to launch the relay via scripts/run-relay.sh so RELAY_IMPL can be exercised by tests.
+- Recreated stub relay-config-source.json files for docs demos (dev-local-relay removes them) and re-ran runtime + unit tests.
+- Researched gossipsub vs floodsub behavior (mesh bounds, pruning/backoff, peer scoring, IP colocation penalty, default parameters) to explain why gossipsub might choke faster under many peers from the same IP and low traffic.
+
+### Files touched
+- demos/tests/runtime-p2p.mjs
+- docs/hyperborea/relay-config-source.json
+- docs/cubechat/relay-config-source.json
+- docs/sneakywoods/relay-config-source.json
+- docs/daddygo/relay-config-source.json
+- plan/log.md
+
+### Commands
+- sed -n '1,220p' demos/tests/runtime-p2p.mjs
+- rg -n "relay/server.js|run-relay" demos/tests/runtime-p2p.mjs
+- rg -n "relay" demos/tests/runtime-p2p.mjs
+- rg -n "relay-config-source" demos/tests
+- rg -n "relay-config-source" -S docs demos
+- sed -n '1,120p' demos/daddygo/src/main.js
+- rg --files -g 'relay-config.json' docs
+- RELAY_IMPL=go npm run test:runtime
+- ls -la docs/hyperborea/relay-config-source.json docs/cubechat/relay-config-source.json docs/sneakywoods/relay-config-source.json docs/daddygo/relay-config-source.json
+- for dir in docs/hyperborea docs/cubechat docs/sneakywoods docs/daddygo; do cat <<'EOF' > "$dir/relay-config-source.json" ...; done
+- RELAY_IMPL=go npm run test:runtime
+- npm --prefix peercompute run test:unit
+- curl -fsSL "https://r.jina.ai/http://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md" | head -n 200
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/gossipsub.go" | rg -n "DefaultGossipSub|DefaultGossipSubParams|Dlo|Dhi|D" | head -n 60
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/gossipsub.go" | sed -n '40,90p'
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/score.go" | rg -n "IPColocation|Threshold|Weight" | head -n 60
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/score.go" | sed -n '360,420p'
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/score_params.go" | rg -n "IPColocation" | head -n 40
+- curl -fsSL "https://r.jina.ai/http://raw.githubusercontent.com/libp2p/go-libp2p-pubsub/master/score_params.go" | sed -n '1,140p'
+- rg -n "floodPublish" node_modules/@libp2p/gossipsub -S | head -n 20
+- rg -n "scoreParams|scoreThresholds|new PeerScore" node_modules/@libp2p/gossipsub/src/gossipsub.ts
+- sed -n '1,240p' node_modules/@libp2p/gossipsub/src/config.ts
+- rg -n "defaultGossipsubConfig|DEFAULT" node_modules/@libp2p/gossipsub/src -S
+- sed -n '1,240p' node_modules/@libp2p/gossipsub/src/constants.ts
+- sed -n '1,240p' node_modules/@libp2p/gossipsub/src/score/peer-score-params.ts
+
+### Tests
+- RELAY_IMPL=go npm run test:runtime (fail: runtime-smoke missing relay-config-source.json after dev-local-relay removed it; 404s)
+- RELAY_IMPL=go npm run test:runtime (pass; fell back to node relay because Go is not installed)
+- npm --prefix peercompute run test:unit (pass: 33 tests)
+
+### Notes / Open
+- RELAY_IMPL=go fell back to node in runtime tests because Go is not installed in this environment.
+- dev-local-relay deletes relay-config-source.json in docs directories, so runtime-smoke needs those stubs re-created before test runs.
+
+## Date: 2026-01-03
+
+### Prompt
+- hey so. what's going on with go? do you need me to get a later version or use a ppa or something looks like you're having a great deal of trouble
+
+### Changes
+- Reviewed plan files to re-sync instructions (plan/llm.md, plan/plan.md, plan/log.md, plan/branch/*, plan/arch/*).
+- Verified Go toolchain version and tried running runtime tests with RELAY_IMPL=go.
+- Fixed execute bit on scripts/run-go-relay.sh so run-relay can invoke it.
+- Copied relay-config.json stubs from demos/*/public into docs/* to satisfy runtime-smoke lookups.
+- Pinned Go relay dependencies to Go 1.22-compatible libp2p versions and added a core replace to avoid ambiguous imports; regenerated go.sum with GOTOOLCHAIN=local.
+- Investigated relay-config writing in both Node and Go relays; confirmed Go relay should write to RELAY_CONFIG_DIRS.
+
+### Files Touched
+- peercompute/src/relay-go/go.mod
+- peercompute/src/relay-go/go.sum
+- scripts/run-go-relay.sh
+- docs/hyperborea/relay-config.json
+- docs/cubechat/relay-config.json
+- docs/sneakywoods/relay-config.json
+- docs/daddygo/relay-config.json
+- plan/log.md
+
+### Commands
+- rg --files plan
+- rg --files -g '*.md' plan
+- rg --files -g 'current-branch.md' plan
+- rg --files -g '*current-branch*'
+- ls -la plan/branch
+- sed -n '1,200p' plan/llm.md
+- sed -n '1,200p' plan/plan.md
+- sed -n '1,200p' plan/log.md
+- wc -l plan/log.md
+- wc -l plan/arch/topology.md plan/arch/nodekernel.md plan/arch/datastate.md plan/discussions/datastate.md plan/branch/topologies.md plan/branch/datastate.md plan/branch/demo-fixes.md plan/branch/demo-ports.md plan/branch/keystone-demo.md plan/branch/distributed-compute.md plan/branch/netman.md plan/branch/server-changes.md plan/llm.md plan/arch/render-state.md plan/arch/ioman.md plan/arch/netman.md plan/arch/stateworker.md plan/arch/stateman.md plan/arch/main-thread.md plan/arch/gpuhub.md plan/arch/compman.md plan/arch/wgpuworker.md plan/arch/arch.md plan/arch/input-handler.md plan/arch/node-roles.md plan/plan.md plan/arch/cpuworker.md plan/arch/compute-node.md plan/refs/refs.md
+- sed -n '1,200p' plan/branch/topologies.md
+- sed -n '1,200p' plan/branch/netman.md
+- sed -n '1,200p' plan/branch/server-changes.md
+- sed -n '1,200p' plan/branch/demo-fixes.md
+- sed -n '1,200p' plan/branch/demo-ports.md
+- sed -n '1,200p' plan/branch/keystone-demo.md
+- sed -n '1,200p' plan/branch/distributed-compute.md
+- sed -n '1,200p' plan/branch/datastate.md
+- sed -n '1,200p' plan/arch/arch.md
+- sed -n '1,200p' plan/arch/topology.md
+- sed -n '1,200p' plan/arch/nodekernel.md
+- sed -n '1,200p' plan/arch/datastate.md
+- sed -n '1,200p' plan/arch/netman.md
+- sed -n '1,200p' plan/arch/ioman.md
+- sed -n '1,200p' plan/arch/input-handler.md
+- sed -n '1,200p' plan/arch/render-state.md
+- sed -n '1,200p' plan/arch/stateman.md
+- sed -n '1,200p' plan/arch/stateworker.md
+- sed -n '1,200p' plan/arch/main-thread.md
+- sed -n '1,200p' plan/arch/gpuhub.md
+- sed -n '1,200p' plan/arch/compman.md
+- sed -n '1,200p' plan/arch/cpuworker.md
+- sed -n '1,200p' plan/arch/wgpuworker.md
+- sed -n '1,200p' plan/arch/compute-node.md
+- sed -n '1,200p' plan/arch/node-roles.md
+- sed -n '1,200p' plan/discussions/datastate.md
+- sed -n '200,400p' plan/discussions/datastate.md
+- sed -n '400,600p' plan/discussions/datastate.md
+- sed -n '600,810p' plan/discussions/datastate.md
+- sed -n '1,200p' plan/refs/refs.md
+- cat package.json
+- sed -n '1,200p' demos/tests/runtime-p2p.mjs
+- sed -n '200,400p' demos/tests/runtime-p2p.mjs
+- sed -n '1,200p' demos/tests/runtime-smoke.mjs
+- ls -la docs | head -n 20
+- sed -n '1,200p' scripts/run-relay.sh
+- sed -n '1,200p' scripts/run-go-relay.sh
+- go version
+- RELAY_IMPL=go npm run test:runtime
+- chmod +x scripts/run-go-relay.sh
+- RELAY_IMPL=go npm run test:runtime
+- ls -la docs/hyperborea | head -n 20
+- sed -n '1,200p' scripts/build-all.sh
+- sed -n '1,200p' scripts/write-prod-relay-config.mjs
+- ls -la demos/hyperborea/public | head -n 20
+- for demo in cubechat sneakywoods daddygo; do echo "$demo"; ls -la "demos/$demo/public" | head -n 20; done
+- cat demos/cubechat/public/relay-config.json
+- for demo in hyperborea cubechat sneakywoods daddygo; do cp demos/$demo/public/relay-config.json docs/$demo/relay-config.json; done
+- RELAY_IMPL=go npm run test:runtime
+- cat peercompute/src/relay-go/go.mod
+- go mod tidy
+- sed -n '1,240p' peercompute/src/relay-go/main.go
+- go list -m -versions github.com/libp2p/go-libp2p-pubsub
+- GOTOOLCHAIN=local go list -m -versions github.com/libp2p/go-libp2p-pubsub
+- ls -la /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.46.0 | head -n 20
+- ls -la /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.46.0/core | head -n 20
+- cat /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p-pubsub@v0.15.0/go.mod
+- GOTOOLCHAIN=local go mod download github.com/libp2p/go-libp2p@v0.39.1
+- ls -la /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.39.1/core | head -n 5
+- rg -n "go-libp2p/core" /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.46.0/go.mod
+- rg -n "crypto\\." peercompute/src/relay-go/main.go
+- rg -n "network\\." peercompute/src/relay-go/main.go
+- GOTOOLCHAIN=local go list -m -versions github.com/libp2p/go-libp2p/core
+- rg -n "pubsub" peercompute/src/relay-go/main.go
+- sed -n '360,520p' peercompute/src/relay-go/main.go
+- head -n 5 /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.46.0/go.mod
+- head -n 5 /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.39.1/go.mod
+- GOTOOLCHAIN=local go mod download github.com/libp2p/go-libp2p-pubsub@v0.13.0
+- head -n 20 /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p-pubsub@v0.13.0/go.mod
+- GOTOOLCHAIN=local go mod download github.com/libp2p/go-libp2p@v0.36.3
+- head -n 5 /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.36.3/go.mod
+- ls -la /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.36.3/p2p/transport | head -n 20
+- ls -la /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.39.1/p2p/transport | head -n 20
+- GOTOOLCHAIN=local go mod download github.com/libp2p/go-libp2p-pubsub@v0.14.0
+- GOTOOLCHAIN=local go mod download github.com/libp2p/go-libp2p-pubsub@v0.13.1
+- rg -n "func New" /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.36.3/p2p/transport/websocket -S
+- sed -n '70,130p' /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p@v0.36.3/p2p/transport/websocket/websocket.go
+- cat <<'EOF' > peercompute/src/relay-go/go.mod ... EOF
+- GOTOOLCHAIN=local go mod tidy
+- RELAY_IMPL=go npm run test:runtime
+- ls -la docs/hyperborea/relay-config.json docs/cubechat/relay-config.json docs/sneakywoods/relay-config.json docs/daddygo/relay-config.json
+- ls -la docs/hyperborea | head -n 20
+- for demo in hyperborea cubechat sneakywoods daddygo; do cp demos/$demo/public/relay-config.json docs/$demo/relay-config.json; done
+- ls -la docs/hyperborea/relay-config.json docs/cubechat/relay-config.json docs/sneakywoods/relay-config.json docs/daddygo/relay-config.json
+- RELAY_IMPL=go npm run test:runtime
+- rg -n "RELAY_CONFIG_DIRS|relay-config" peercompute/src/relay/server.js
+- sed -n '1,120p' peercompute/src/relay/server.js
+- sed -n '340,430p' peercompute/src/relay/server.js
+- sed -n '520,720p' peercompute/src/relay-go/main.go
+- date '+%Y-%m-%d'
+- git status --short
+- ls -la peercompute/src/relay-go
+
+### Tests
+- RELAY_IMPL=go npm run test:runtime (fail: run-go-relay.sh permission denied; runtime-p2p timed out waiting for relay-config.json)
+- RELAY_IMPL=go npm run test:runtime (fail: runtime-smoke 404s for relay-config.json in docs)
+- RELAY_IMPL=go npm run test:runtime (fail: go relay missing module deps; relay-config.json timeout)
+- RELAY_IMPL=go npm run test:runtime (fail: runtime-smoke net::ERR_NETWORK_CHANGED on planetgen)
+- RELAY_IMPL=go npm run test:runtime (pass runtime-smoke; runtime-p2p timed out waiting for relay-config.json after Go relay build)
+
+### Notes / Open
+- Go 1.22.2 is installed; latest go-libp2p (v0.46+) requires Go >= 1.24 and pulls in split core modules, which caused ambiguous imports when the toolchain auto-upgraded.
+- Pinned Go relay deps to go-libp2p v0.39.1 + go-libp2p-pubsub v0.13.0 (Go 1.22-compatible) with a replace for go-libp2p/core to avoid ambiguity.
+- runtime-p2p deletes docs/*/relay-config.json and waits for the relay to re-write them; go run build time likely exceeds RELAY_CONFIG_TIMEOUT_MS, causing timeouts.
+- runtime-smoke flaked once with net::ERR_NETWORK_CHANGED; retry succeeded.
+
+## Date: 2026-01-03
+
+### Prompt
+- alright we've got 1.24 not sure if it replaced the other version or it sits along side it.
+
+### Changes
+- Re-checked plan/plan.md and plan/log.md per instructions.
+- Verified the active Go toolchain and searched common locations to see if Go 1.24 is on PATH (it is not).
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,80p' plan/log.md
+- go version
+- type -a go
+- ls -la /usr/local | rg -i go
+- ls -la /opt | rg -i go
+- whereis -b go
+- ls -la ~ | rg -i go
+- ls -la /snap/bin | rg -i '^go$|golang|^go[0-9]'
+- find "$HOME" -maxdepth 4 -type f -name go -path '*bin/go'
+
+### Notes / Open
+- PATH currently resolves Go to /usr/bin/go (1.22.2). No other Go binaries found in /usr/local, /opt, /snap, or $HOME. Need the install path for 1.24 to update PATH or use the full binary.
+
+## Date: 2026-01-03
+
+### Prompt
+- I'm just uninstalling 1.22
+
+### Changes
+- Reviewed plan/plan.md and plan/log.md per instructions.
+- Re-checked the active Go binary path/version so we can confirm the uninstall took effect later.
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,40p' plan/log.md
+- go version
+- command -v go && ls -l "$(command -v go)"
+
+### Notes / Open
+- Current Go on PATH is still /bin/go -> /usr/lib/go-1.22/bin/go; need to recheck after uninstall to confirm 1.24 is active.
+
+## Date: 2026-01-03
+
+### Prompt
+- alright well we're on 1.25 I hope that works
+
+### Changes
+- Verified the active Go toolchain and symlink now point to Go 1.25.5.
+
+### Commands
+- go version
+- command -v go && ls -l "$(command -v go)"
+
+### Notes / Open
+- Go 1.25.5 is now active at /bin/go -> /usr/lib/go-1.25/bin/go.
+
+## Date: 2026-01-03
+
+### Prompt
+- yes. and then implement the changes for the dev environment we talked about to fix the peer scoring
+
+### Changes
+- Switched the Go relay back to latest deps (go-libp2p v0.46.0 + go-libp2p-pubsub v0.15.0) and regenerated go.sum with Go 1.25.
+- Added dev-only gossipsub tuning defaults (D=8, Dhi=16, Dout=1 + neutral scoreParams) to dev-local-relay and dev-all scripts.
+- Expanded gossipsub scoreParams `topics.__default` into actual scoped topics inside NetworkManager config.
+- Recreated docs relay-config.json stubs for runtime-smoke before running tests.
+
+### Files Touched
+- peercompute/src/relay-go/go.mod
+- peercompute/src/relay-go/go.sum
+- scripts/dev-local-relay.sh
+- scripts/dev-all.sh
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- docs/hyperborea/relay-config.json
+- docs/cubechat/relay-config.json
+- docs/sneakywoods/relay-config.json
+- docs/daddygo/relay-config.json
+- plan/log.md
+
+### Commands
+- sed -n '1,200p' scripts/dev-local-relay.sh
+- sed -n '1,200p' scripts/dev-all.sh
+- rg -n "gossipsub" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '220,360p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1180,1250p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "gossipsub\\(" peercompute/src/relay/server.js
+- sed -n '150,230p' peercompute/src/relay/server.js
+- sed -n '1,80p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1,220p' node_modules/@libp2p/gossipsub/src/config.ts
+- sed -n '1,220p' node_modules/@libp2p/gossipsub/src/index.ts
+- rg -n "scoreParams" node_modules/@libp2p/gossipsub/src/gossipsub.ts
+- sed -n '280,360p' node_modules/@libp2p/gossipsub/src/gossipsub.ts
+- rg -n "createPeerScoreParams" node_modules/@libp2p/gossipsub/src/score -S
+- sed -n '150,240p' node_modules/@libp2p/gossipsub/src/score/peer-score-params.ts
+- sed -n '1,120p' node_modules/@libp2p/gossipsub/src/score/peer-score-params.ts
+- rg -n "meshMessageDeliveries" node_modules/@libp2p/gossipsub/src/score/peer-score.ts
+- sed -n '260,340p' node_modules/@libp2p/gossipsub/src/score/peer-score.ts
+- cat peercompute/src/relay-go/go.mod
+- cat <<'EOF' > peercompute/src/relay-go/go.mod ... EOF
+- go mod tidy
+- ls -la docs/hyperborea/relay-config.json docs/cubechat/relay-config.json docs/sneakywoods/relay-config.json docs/daddygo/relay-config.json
+- for demo in hyperborea cubechat sneakywoods daddygo; do cp demos/$demo/public/relay-config.json docs/$demo/relay-config.json; done
+- RELAY_IMPL=go npm run test:runtime
+- for demo in hyperborea cubechat sneakywoods daddygo; do cp demos/$demo/public/relay-config.json docs/$demo/relay-config.json; done
+- RELAY_IMPL=go RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime
+- ps -ef | rg -i 'runtime-p2p|peercompute.*relay|run-relay|go run'
+- RELAY_IMPL=go RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+- npm --prefix peercompute run test:unit
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,40p' plan/log.md
+
+### Tests
+- RELAY_IMPL=go npm run test:runtime (fail: runtime-p2p timed out waiting for relay-config.json)
+- RELAY_IMPL=go RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime (timed out at 120s; runtime-p2p still running)
+- RELAY_IMPL=go RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p (fail: peers never connect beyond relay)
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p (fail: peers never connect beyond relay)
+- npm --prefix peercompute run test:unit (pass)
+
+### Notes / Open
+- Go relay now starts and writes relay-config.json, but runtime-p2p fails because peers only connect to the relay (no peer-to-peer connections formed).
+- runtime-smoke passes when relay-config.json exists in docs; runtime-p2p deletes those files and relies on the relay to recreate them.
+
+## Date: 2026-01-03
+
+### Prompt
+- ensure you have done the following changes and then test against the node relay.
+- Disable peer scoring in dev: set scoreParams to neutral values (IPColocationFactorWeight: 0, meshMessageDeliveriesThreshold: 0, meshFailurePenaltyWeight: 0, behaviourPenaltyWeight: 0).
+- Increase mesh bounds (D, Dhi) and lower Dout to reduce pruning pressure.
+
+### Changes
+- Added meshMessageDeliveriesWeight: 0 to the dev gossipsub config so meshMessageDeliveriesThreshold=0 passes libp2p validation.
+- Retested runtime-p2p against the Node relay with gossipsub + neutral score params and adjusted mesh bounds.
+
+### Files Touched
+- scripts/dev-local-relay.sh
+- scripts/dev-all.sh
+- plan/log.md
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,60p' plan/log.md
+- RELAY_IMPL=node RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+- RELAY_IMPL=node RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+
+### Tests
+- RELAY_IMPL=node RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p (pass)
+
+### Notes / Open
+- Node relay rejects meshMessageDeliveriesThreshold=0 unless meshMessageDeliveriesWeight is also 0; added meshMessageDeliveriesWeight: 0 to keep scoring neutral while satisfying validation.
+
+## Date: 2026-01-03
+
+### Prompt
+- yes
+
+### Changes
+- Ran runtime-p2p against the Go relay with gossipsub and neutralized scoring + mesh bounds (D=8, Dhi=16, Dout=1).
+
+### Commands
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+
+### Tests
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p (fail: peers only connected to relay; no peer-to-peer connections formed)
+
+### Notes / Open
+- Go relay still fails runtime-p2p under gossipsub even with neutral scoring + wider mesh; peers see the relay but never connect to each other.
+
+## Date: 2026-01-04
+
+### Prompt
+- alright great. it seems like we at least fixed it for node. look into why go is failing
+
+### Changes
+- Reviewed plan/plan.md, plan/log.md, and plan/llm.md before making changes.
+- Go relay: enable pubsub relay participation by calling Topic.Relay() when joining topics so the relay forwards messages for default and auto-subscribed topics.
+
+### Files Touched
+- peercompute/src/relay-go/main.go
+- plan/log.md
+
+### Commands
+- rg --files plan
+- ls -la plan/branch
+- cat plan/plan.md
+- cat plan/log.md
+- cat plan/llm.md
+- cat plan/branch/topologies.md
+- sed -n '1,240p' peercompute/src/relay-go/main.go
+- rg -n "topicRegistry|autoSubTracer|Join\\(|Relay\\(" peercompute/src/relay-go/main.go
+- sed -n '420,620p' peercompute/src/relay-go/main.go
+- rg -n "func \\(.*\\) Relay\\(" $(go env GOPATH)/pkg/mod/github.com/libp2p/go-libp2p-pubsub@*/ -S
+- sed -n '160,230p' /home/cos/go/pkg/mod/github.com/libp2p/go-libp2p-pubsub@v0.15.0/topic.go
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p
+- ps -ef | rg -i 'runtime-p2p|peercompute.*relay|run-relay|go run'
+- pkill -f peercompute-relay-go
+- ps -ef | rg -i 'peercompute-relay-go|runtime-p2p|run-relay|go run'
+- date '+%Y-%m-%d'
+
+### Tests
+- RELAY_IMPL=go RELAY_PUBSUB_TYPE=gossipsub RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}' RELAY_CONFIG_TIMEOUT_MS=30000 npm run test:runtime:p2p (command timed out at 120s; runtime-p2p output reported "Runtime P2P tests passed", relay processes were still running and were killed)
+
+### Notes / Open
+- Go relay was missing Topic.Relay(), which likely prevented pubsub mesh participation. After enabling relay on joined topics, runtime-p2p reported success but the command did not exit before the 120s timeout.
+
+## Date: 2026-01-04
+
+### Prompt
+- change the default to the node relay.  and add a section to the readme describing how to get the go relay running.
+
+### Changes
+- Switched dev scripts to default `RELAY_IMPL=node` so `dev` and `dev:local-relay` launch the Node relay unless overridden.
+- Added a README section explaining how to run the Go relay and how to opt in via `RELAY_IMPL=go`.
+
+### Files Touched
+- scripts/dev-local-relay.sh
+- scripts/dev-all.sh
+- README.md
+- plan/log.md
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,80p' plan/log.md
+- rg --files -g 'README*'
+- sed -n '1,200p' README.md
+- sed -n '1,200p' scripts/run-relay.sh
+- sed -n '1,200p' scripts/run-go-relay.sh
+- sed -n '1,200p' scripts/dev-local-relay.sh
+- sed -n '1,200p' scripts/dev-all.sh
+
+### Tests
+- Not run (not requested).

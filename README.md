@@ -74,6 +74,20 @@ npm run build
 npm run docs:preview
 ```
 
+### Go Relay (Optional)
+By default `npm run dev` and `npm run dev:local-relay` launch the Node relay. To use the Go relay, install Go 1.24+ and set `RELAY_IMPL=go`:
+
+```bash
+go version
+RELAY_IMPL=go npm run dev:relay
+```
+
+To run the relay directly without the npm wrapper:
+
+```bash
+bash scripts/run-go-relay.sh
+```
+
 ### Relay Host Config (Single File)
 Use `config/relay.json` as the single source of truth for dev + prod relay settings:
 

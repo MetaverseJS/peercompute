@@ -141,7 +141,7 @@ function startRelay() {
     }
   });
 
-  const child = spawn('node', [path.join(repoRoot, 'peercompute', 'src', 'relay', 'server.js')], {
+  const child = spawn('bash', [path.join(repoRoot, 'scripts', 'run-relay.sh')], {
     env: {
       ...process.env,
       RELAY_LISTEN_HOST: host,

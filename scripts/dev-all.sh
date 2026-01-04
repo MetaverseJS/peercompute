@@ -36,6 +36,10 @@ fi
 export RELAY_SSL_CERT="$repo_root/certs/dev-cert.pem"
 export RELAY_SSL_KEY="$repo_root/certs/dev-key.pem"
 export RELAY_CONFIG_DIRS="$repo_root/demos/hyperborea/public,$repo_root/demos/cubechat/public,$repo_root/demos/sneakywoods/public,$repo_root/demos/daddygo/public,$repo_root/demos/netviz/public,$repo_root/docs/hyperborea,$repo_root/docs/cubechat,$repo_root/docs/sneakywoods,$repo_root/docs/daddygo,$repo_root/docs/netviz"
+export RELAY_IMPL="${RELAY_IMPL:-node}"
+if [[ -z "${RELAY_GOSSIPSUB_CONFIG:-}" ]]; then
+  export RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}'
+fi
 
 echo "Dev servers (HTTPS):"
 echo "  relay: dynamic WSS (check relay logs for address)"

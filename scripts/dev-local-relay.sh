@@ -49,6 +49,10 @@ if [[ -f "$relay_config_path" ]]; then
   fi
 fi
 
+if [[ -z "${RELAY_GOSSIPSUB_CONFIG:-}" ]]; then
+  export RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}'
+fi
+
 export RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"
 if [[ -z "${RELAY_PUBLIC_HOST:-}" ]]; then
   if [[ "$RELAY_LISTEN_HOST" == "127.0.0.1" || "$RELAY_LISTEN_HOST" == "localhost" || "$RELAY_LISTEN_HOST" == "::1" ]]; then
@@ -70,6 +74,7 @@ if [[ -z "${RELAY_PUBLIC_PROTOCOL:-}" ]]; then
     export RELAY_PUBLIC_PROTOCOL="ws"
   fi
 fi
+export RELAY_IMPL="${RELAY_IMPL:-node}"
 
 relay_config_dirs=(
   "$repo_root/demos/hyperborea/public"
@@ -114,6 +119,7 @@ if [[ "${DEV_OPEN_OVERVIEW:-1}" != "0" ]]; then
 fi
 
 echo "Relay env:"
+echo "  RELAY_IMPL=${RELAY_IMPL:-}"
 echo "  RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST:-}"
 echo "  RELAY_PUBLIC_PORT=${RELAY_PUBLIC_PORT:-}"
 echo "  RELAY_PUBLIC_PROTOCOL=${RELAY_PUBLIC_PROTOCOL:-}"

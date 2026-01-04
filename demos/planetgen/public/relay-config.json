@@ -1,8 +1,5 @@
 {
-  "bootstrapPeers": [
-    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
-  ],
-  "pubsubType": "gossipsub",
+  "bootstrapPeers": [],
   "webrtc": {
     "iceServers": [
       {
@@ -19,5 +16,6 @@
       "mode": "sqrt",
       "min": 1
     }
-  }
+  },
+  "pubsubType": "gossipsub"
 }
