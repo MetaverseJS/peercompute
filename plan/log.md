@@ -3485,3 +3485,117 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- you forgot to update the log
+
+### Changes
+- Reviewed plan/plan.md and plan/log.md per instructions.
+- Appended this log entry to record the missing update.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- sed -n '1,40p' plan/plan.md
+- sed -n '1,20p' plan/log.md
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- how do I run the lightweight headless load test to check maximum concurrency?
+- is there a way to run it without the massive yjs overhead that syncs all messages globally for every node?
+
+### Changes
+- Reviewed plan/plan.md and plan/log.md per instructions.
+- Inspected the runtime test harness and NodeKernel/StateManager flags to answer how to run headless tests and disable Yjs sync.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,60p' plan/log.md
+- rg -n "load|concurrency|soak|runtime-p2p|runtime" demos/tests peercompute scripts
+- sed -n '1,220p' demos/tests/runtime-p2p.mjs
+- rg -n "e2e|yjs|disable|state" demos/tests/runtime-p2p.mjs
+- rg -n "yjs|Yjs|ydoc|y-doc|persistence|PeerComputeProvider" peercompute/src
+- sed -n '1,240p' peercompute/src/peercompute/nodeKernel/NodeKernel.js
+- rg -n "disableBroadcast|broadcastNamespaces" peercompute/src/peercompute/stateManager/StateManager.js
+- sed -n '300,420p' peercompute/src/peercompute/stateManager/StateManager.js
+- rg -n "disableStateNetworkProvider|disableStateBroadcast|stateBroadcast" demos peercompute/src
+
+### Tests
+- Not run (info-only request).
+
+## Date: 2026-01-04
+
+### Prompt
+- hold up we have a bigger problem. looks like the node relay is crashing sometimes:
+-
+-[relay] file:///home/cos/projects/peercompute/node_modules/@libp2p/utils/dist/src/abstract-message-stream.js:112
+-[relay]             throw new StreamStateError(`Cannot write to a stream that is ${this.writeStatus}`);
+-[relay]                   ^
+-[relay] 
+-[relay] StreamStateError: Cannot write to a stream that is closed
+-[relay]     at YamuxStream.send (file:///home/cos/projects/peercompute/node_modules/@libp2p/utils/dist/src/abstract-message-stream.js:112:19)
+-[relay]     at OutboundStream.pushPrefixed (file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/stream.js:27:24)
+-[relay]     at OutboundStream.push (file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/stream.js:20:21)
+-[relay]     at @chainsafe/libp2p-gossipsub.sendRpc (file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/gossipsub.js:1861:28)
+-[relay]     at file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/gossipsub.js:1639:18
+-[relay]     at Set.forEach (<anonymous>)
+-[relay]     at @chainsafe/libp2p-gossipsub.forwardMessage (file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/gossipsub.js:1637:16)
+-[relay]     at @chainsafe/libp2p-gossipsub.handleReceivedMessage (file:///home/cos/projects/peercompute/node_modules/@libp2p/gossipsub/dist/src/gossipsub.js:854:26)
+-[relay]     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+-[relay] 
+-[relay] Node.js v18.19.1
+-[relay] npm run dev:relay exited with code 1
+--- 
+-
+-is there a way to try catch that or reboot the relay automatically? 
+-
+-also why did my environment revert to node 18?
+
+### Changes
+- Reviewed relay server implementation and gossipsub hooks to answer crash mitigation and restart options.
+- Gathered context on where the relay is started and which Node binary it uses.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- rg -n "gossipsub|StreamStateError|stream" peercompute/src/relay/server.js
+- sed -n '1,240p' peercompute/src/relay/server.js
+- rg -n "catch|StreamStateError|send\\(" peercompute/src/relay/server.js
+
+### Tests
+- Not run (info-only request).
+
+## Date: 2026-01-04
+
+### Prompt
+- looks like the crash is only a problem with the node relay the go relay seems to be able to handle it.
+-
+-I'd like us to add a few TODO items for networking.
+-
+-better relay scaling. once a peer is connected to the target number of peers it should be able to drop the relay connection. then if a peer wants to dial it it can reconnect to the relay to facilitate the webRTC connection and then drop from the relay again. this should enable far more concurrent users.
+-
+-customizable scoped and sharded yjs updates so the global state doesn't have to be shared to everyone.  the scope of the updates will need to be game/workload dependent.  maybe put these in the main plan.md file .
+
+### Changes
+- Added networking TODOs to plan/plan.md for relay drop/rejoin scaling and scoped/sharded Yjs update modes.
+
+### Files Touched
+- plan/plan.md
+- plan/log.md
+
+### Commands
+- sed -n '1,80p' plan/plan.md
+
+### Tests
+- Not run (planning update).

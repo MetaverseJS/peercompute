@@ -24,6 +24,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ### TODO:
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
+- Improve relay scaling: drop relay connection after hitting target peers, rejoin relay only to assist new WebRTC dials, then drop again.
+- Add scoped + sharded Yjs update modes so state sync can be workload-specific instead of global.
 - Validate time sync anchor behavior after reconnects.
 - Finish ComputeManager scheduling + GPU hub runtime integration.
 - Wire warm DataState deltas into netman publishing end-to-end.
