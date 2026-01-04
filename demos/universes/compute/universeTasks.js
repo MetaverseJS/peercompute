@@ -1,6 +1,7 @@
 const COLOR_A = [0x44 / 255, 0x88 / 255, 0xff / 255];
 const COLOR_B = [0xff / 255, 0xaa / 255, 0xee / 255];
 const COLOR_C = [0xff / 255, 0xdd / 255, 0xaa / 255];
+const GALAXY_POINT_SCALE = 0.125;
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerpColor = (c1, c2, t) => [
@@ -196,6 +197,7 @@ export function generateGalaxyData({
     if (sizes[i] === 0) {
       sizes[i] = rand() * 4000.0 + 1000.0;
     }
+    sizes[i] *= GALAXY_POINT_SCALE;
 
     orbitParams[i3] = Math.sqrt(x * x + z * z);
     orbitParams[i3 + 1] = speed;

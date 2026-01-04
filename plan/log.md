@@ -3640,3 +3640,78 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (script update only).
+
+## Date: 2026-01-04
+
+### Prompt
+- update the topologies.md with what we've accomplished and what still needs to be done.
+
+### Changes
+- Consolidated progress notes and added a clear remaining-work checklist in plan/branch/topologies.md.
+
+### Files Touched
+- plan/branch/topologies.md
+- plan/log.md
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,240p' plan/branch/topologies.md
+
+### Tests
+- Not run (planning update).
+
+## Date: 2026-01-04
+
+### Prompt
+- look at the demo-fixes file and tell me where we are.
+
+### Changes
+- Reviewed plan/branch/demo-fixes.md to summarize current status and priorities.
+
+### Files Touched
+- plan/log.md
+
+### Commands
+- sed -n '1,220p' plan/branch/demo-fixes.md
+
+### Tests
+- Not run (info-only request).
+
+## Date: 2026-01-04
+
+### Prompt
+- yes lets do that.
+
+### Changes
+- Added a status snapshot to plan/branch/demo-fixes.md with in-progress, recent updates, next steps, and risks, including the latest relay changes.
+
+### Files Touched
+- plan/branch/demo-fixes.md
+- plan/log.md
+
+### Commands
+- sed -n '1,60p' plan/plan.md
+- sed -n '1,40p' plan/log.md
+
+### Tests
+- Not run (planning update).
+
+## Date: 2026-01-04
+
+### Prompt
+- I'd like you to fix a couple things in the universes demo.  #1 reduce the size of the particles in galaxies by 75%
+
+### Changes
+- Reduced galaxy particle sizes by 75% via a shared scale multiplier in the universe galaxy data generator.
+
+### Files Touched
+- demos/universes/compute/universeTasks.js
+- plan/log.md
+
+### Commands
+- rg -n "particle|point|size|sprite|galaxy" demos/universes/main.js
+- rg -n "generateGalaxyData|sizes" demos/universes
+- sed -n '1,240p' demos/universes/compute/universeTasks.js
+
+### Tests
+- Not run (not requested).
