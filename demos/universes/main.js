@@ -132,6 +132,7 @@ let points, localGalaxy, localSystem, smbhGroup, supernovaSystem, nebulaSystem, 
 const galaxyCache = [];
 let galaxyCacheGroup;
 const nebulaStars = [];
+const coronaMeshes = [];
 let nebulaSpawnTimer = 0;
 let volumeMesh, volumeTexture, volumeMaterial;
 let volumeSupportChecked = false;
@@ -249,6 +250,9 @@ function updateTravelPathLine() {
         if (travelPathLine) travelPathLine.visible = false;
         return;
     }
+    if (travelPathPoints.length === 0) {
+        travelPathPoints.push(simState.worldOffset.clone());
+    }
     if (travelPathPoints.length < 2) {
         if (travelPathLine) travelPathLine.visible = false;
         return;
@@ -278,6 +282,9 @@ function updateTravelPathLine() {
         travelPathLine.geometry = geometry;
         travelPathLine.visible = true;
     }
+    if (travelPathLine) {
+        travelPathLine.position.copy(simState.worldOffset).multiplyScalar(-1);
+    }
 }
 
 function recordTravelPoint(point) {
@@ -286,9 +293,8 @@ function recordTravelPoint(point) {
 }
 
 function shiftTravelPath(offset) {
-    if (!travelPathPoints.length) return;
-    travelPathPoints.forEach((p) => p.sub(offset));
-    updateTravelPathLine();
+    if (!travelPathLine) return;
+    travelPathLine.position.sub(offset);
 }
 
 function clearTravelPath() {
@@ -308,7 +314,8 @@ function captureUiState() {
         timeScale: simState.timeScale,
         crtEnabled: elCrtToggle?.checked ?? true,
         isAutopilot: simState.isAutopilot,
-        showTravelPath: simState.showTravelPath
+        showTravelPath: simState.showTravelPath,
+        schwarzschildLensing: simState.useSchwarzschildLensing
     };
 }
 
@@ -348,6 +355,11 @@ function applyUiState(state) {
         simState.showTravelPath = state.showTravelPath;
         if (elPathToggle) elPathToggle.checked = simState.showTravelPath;
         updateTravelPathLine();
+    }
+    if (typeof state.schwarzschildLensing === 'boolean') {
+        simState.useSchwarzschildLensing = state.schwarzschildLensing;
+        if (elLensToggle) elLensToggle.checked = simState.useSchwarzschildLensing;
+        if (lensingPass) lensingPass.enabled = simState.useSchwarzschildLensing;
     }
 }
 
@@ -477,7 +489,8 @@ let simState = {
     inspectingTarget: null,
     inspectingTargetPreviousPos: null,
     bigBangFlash: 0,
-    showTravelPath: true
+    showTravelPath: true,
+    useSchwarzschildLensing: true
 };
 
 // --- Elements ---
@@ -501,6 +514,7 @@ const elConfigClose = document.getElementById('config-close');
 const elRetroSlider = document.getElementById('retro-slider');
 const elRetroVal = document.getElementById('retro-val');
 const elCrtToggle = document.getElementById('crt-toggle');
+const elLensToggle = document.getElementById('bh-lens-toggle');
 const elAutopilotToggle = document.getElementById('autopilot-toggle');
 const elPathToggle = document.getElementById('path-toggle');
 const elCrtOverlay = document.getElementById('crt-overlay');
@@ -1222,9 +1236,9 @@ function buildPostProcessing() {
                     vec2 o = uBHPos[i] - uv;
                     o.x *= uAspect;
                     float dist = length(o);
-                    float bhRad = max(uBHRadius[i], 0.002);
-                    float inner = max(bhRad * 0.6, 0.006);
-                    float outer = max(bhRad * 14.0, 0.14);
+                    float bhRad = max(uBHRadius[i], 0.00025);
+                    float inner = max(bhRad * 0.6, 0.001);
+                    float outer = max(bhRad * 14.0, 0.02);
                     float influence = smoothstep(outer, inner, dist);
                     float safeDist = max(dist, inner);
                     vec2 dir = o / safeDist;
@@ -1252,6 +1266,7 @@ function buildPostProcessing() {
         lensingPass.material.uniforms.uBHMass = blackHoleUniforms.uBHMass;
         lensingPass.material.uniforms.uBHRadius = blackHoleUniforms.uBHRadius;
     }
+    lensingPass.enabled = simState.useSchwarzschildLensing;
     composer.addPass(lensingPass);
 
     const CRTShader = {
@@ -1754,6 +1769,13 @@ function setupUIEvents() {
     };
     
     elCrtToggle.onchange = (e) => e.target.checked ? elCrtOverlay.classList.add('crt-effects') : elCrtOverlay.classList.remove('crt-effects');
+    if (elLensToggle) {
+        elLensToggle.checked = simState.useSchwarzschildLensing;
+        elLensToggle.onchange = (e) => {
+            simState.useSchwarzschildLensing = e.target.checked;
+            if (lensingPass) lensingPass.enabled = simState.useSchwarzschildLensing;
+        };
+    }
     
     elAutopilotToggle.onchange = (e) => {
         simState.isAutopilot = e.target.checked;
@@ -1824,6 +1846,9 @@ function resetSimulation() {
     if(localSystem) localSystem.visible = false;
     if(smbhGroup) smbhGroup.clear();
     clearTravelPath();
+    if (simState.showTravelPath) {
+        travelPathPoints.push(simState.worldOffset.clone());
+    }
     galaxyCache.forEach((mesh) => {
         if (!mesh) return;
         galaxyCacheGroup?.remove(mesh);
@@ -1888,6 +1913,7 @@ function startTransition(targetPoint, level, isBackingOut = false) {
 function completeTransition() {
     const level = simState.nextLevel;
     const prevLevel = simState.viewLevel;
+    const prevWorldOffset = simState.worldOffset.clone();
     simState.viewLevel = level;
     simState.isTransitioning = false;
     controls.enabled = true;
@@ -1937,12 +1963,7 @@ function completeTransition() {
         if (level === 2 && localGalaxy) localGalaxy.position.sub(shift);
         if (level === 2 && smbhGroup) smbhGroup.position.sub(shift);
         if (level === 2 && nebulaSystem) nebulaSystem.position.sub(shift);
-        shiftTravelPath(shift);
         shiftGalaxyCache(shift);
-    }
-
-    if (level > prevLevel && (level === 1 || level === 2)) {
-        recordTravelPoint(new THREE.Vector3(0, 0, 0));
     }
     
     // Reset Planet Tour
@@ -1991,16 +2012,19 @@ function completeTransition() {
         if (smbhGroup && smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
         disposeNebulaNursery();
         if (simState.activeNebula) {
-            const nurseryRadius = SCALES.SYSTEM * 1.6;
-            const density = createNebulaDensity(40, Math.floor(Math.random() * 100000));
-            nebulaNursery = buildNebulaVolume({
-                density: density.density,
-                resolution: density.resolution,
+            const nurseryRadius = SCALES.SYSTEM * 4.0;
+            const seed = Math.floor(Math.random() * 100000);
+            const tint = new THREE.Color(0.3, 0.75, 0.9);
+            const chunkCount = 14 + Math.floor(Math.random() * 8);
+            nebulaNursery = buildNebulaCluster({
+                seed,
                 radius: nurseryRadius,
-                tint: new THREE.Color(0.35, 0.8, 0.85)
+                tint,
+                chunkCount
             });
             if (nebulaNursery) {
                 nebulaNursery.userData.radius = nurseryRadius;
+                nebulaNursery.userData.velocity = new THREE.Vector3();
                 nebulaNursery.position.set(0, 0, 0);
                 nebulaNursery.visible = true;
                 scene.add(nebulaNursery);
@@ -2020,9 +2044,15 @@ function completeTransition() {
         if (level === 1 && simState.activeGalaxyData) updateTargetPanel(simState.activeGalaxyData, true);
         if (level === 2 && simState.activeSystemData) updateTargetPanel(simState.activeSystemData, true);
     }
+    if (level > prevLevel) simState.worldOffset.add(shift);
+    if (level > prevLevel && (level === 1 || level === 2)) {
+        if (simState.showTravelPath && travelPathPoints.length === 0) {
+            travelPathPoints.push(prevWorldOffset);
+        }
+        recordTravelPoint(simState.worldOffset.clone());
+    }
     if (galaxyCacheGroup) galaxyCacheGroup.visible = level === 0;
     updateSmbhScaleForView();
-    if (level > prevLevel) simState.worldOffset.add(shift);
 }
 
 function evolveStar(initialClass, formationTime, currentTime) {
@@ -2399,7 +2429,7 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
             uDensity: { value: texture },
             uInvModelMatrix: { value: new THREE.Matrix4() },
             uStepSize: { value: (1.0 / resolution) * 2.4 },
-            uDensityScale: { value: 0.9 },
+            uDensityScale: { value: 0.85 },
             uTime: { value: 0.0 },
             uTint: { value: tintColor }
         },
@@ -2453,6 +2483,8 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
                     vec3 texPos = p + vec3(0.5);
                     vec3 local = texPos - vec3(0.5);
                     float edge = smoothstep(0.55, 0.2, max(abs(local.x), max(abs(local.y), abs(local.z))));
+                    float edgeNoise = 0.6 + 0.4 * snoise(local * 4.0 + vec3(uTime * 0.02));
+                    edge *= clamp(edgeNoise, 0.0, 1.0);
                     vec3 drift = vec3(
                         snoise(vec3(texPos.yz * 3.0, uTime * 0.12)),
                         snoise(vec3(texPos.xz * 3.0, uTime * 0.09)),
@@ -2491,11 +2523,67 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
     return mesh;
 }
 
+function buildNebulaCluster({ seed, radius, tint, chunkCount }) {
+    const rand = seededRandom(seed);
+    const group = new THREE.Group();
+    group.userData.isNebula = true;
+    group.userData.radius = radius;
+    group.userData.velocity = randomSphericalLocal(rand, radius * 0.000015);
+    group.userData.data = {
+        designation: `NEBULA-${seed.toString(16).toUpperCase().slice(-4)}`,
+        type: 'STELLAR NURSERY',
+        age: simState.universeSimTime.toFixed(2),
+        mass: `${(50 + rand() * 120).toFixed(1)} Billion`,
+        radius: `${(radius / 1000).toFixed(1)} kly`,
+        lum: 'DIFFUSE',
+        composition: 'H, He, dust, ionized gas',
+        isNebula: true
+    };
+
+    const chunkTotal = chunkCount ?? (10 + Math.floor(rand() * 6));
+    const axis = randomSphericalLocal(rand, 1.0);
+    if (axis.lengthSq() < 0.001) axis.set(1, 0, 0);
+    axis.normalize();
+    const spineSpread = radius * (0.35 + rand() * 0.15);
+    const cloudSpread = radius * (0.22 + rand() * 0.08);
+    for (let i = 0; i < chunkTotal; i++) {
+        const chunkSeed = seed + i * 37;
+        const chunkRand = seededRandom(chunkSeed);
+        const chunkRadius = radius * (0.08 + chunkRand() * 0.18);
+        const spineOffset = axis.clone().multiplyScalar((chunkRand() * 2 - 1) * spineSpread);
+        const jitter = randomSphericalLocal(chunkRand, cloudSpread * (0.5 + chunkRand() * 0.5));
+        const offset = spineOffset.add(jitter);
+        const density = createNebulaDensity(32, chunkSeed);
+        let mesh = buildNebulaVolume({
+            density: density.density,
+            resolution: density.resolution,
+            radius: chunkRadius,
+            tint
+        });
+        if (!mesh) {
+            const fallbackGeom = new THREE.SphereGeometry(chunkRadius, 16, 16);
+            const fallbackMat = new THREE.MeshBasicMaterial({
+                color: tint,
+                transparent: true,
+                opacity: 0.2,
+                depthWrite: false
+            });
+            mesh = new THREE.Mesh(fallbackGeom, fallbackMat);
+        }
+        mesh.position.copy(offset);
+        mesh.userData.nebulaChunk = true;
+        group.add(mesh);
+    }
+    return group;
+}
+
 function disposeNebulaNursery() {
     if (!nebulaNursery) return;
     scene.remove(nebulaNursery);
-    if (nebulaNursery.geometry) nebulaNursery.geometry.dispose();
-    if (nebulaNursery.material) nebulaNursery.material.dispose();
+    nebulaNursery.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+    });
     nebulaNursery = null;
 }
 
@@ -2705,49 +2793,21 @@ async function generateDetailedGalaxy(type = 0) {
     scene.add(localGalaxy);
 
     if (type !== 1) {
-        const nebulaCount = type === 2 ? 5 : 3;
+        const nebulaCount = type === 2 ? 4 : 3;
         nebulaSystem = new THREE.Group();
         nebulaSystem.userData.nebulae = [];
         const baseSeed = Math.floor(Math.random() * 100000);
         for (let i = 0; i < nebulaCount; i++) {
             const seed = baseSeed + i * 97;
             const rand = seededRandom(seed);
-            const nebulaRadius = radius * (0.08 + rand() * 0.12);
+            const nebulaRadius = radius * (0.1 + rand() * 0.18);
             const position = randomSphericalLocal(rand, radius * (0.35 + rand() * 0.45));
-            const density = createNebulaDensity(48, seed);
-            const tint = new THREE.Color(0.25 + rand() * 0.2, 0.55 + rand() * 0.25, 0.8 + rand() * 0.15);
-            let mesh = buildNebulaVolume({
-                density: density.density,
-                resolution: density.resolution,
-                radius: nebulaRadius,
-                tint
-            });
-            if (!mesh) {
-                const fallbackGeom = new THREE.SphereGeometry(nebulaRadius, 16, 16);
-                const fallbackMat = new THREE.MeshBasicMaterial({
-                    color: tint,
-                    transparent: true,
-                    opacity: 0.2,
-                    depthWrite: false
-                });
-                mesh = new THREE.Mesh(fallbackGeom, fallbackMat);
-            }
-            mesh.position.copy(position);
-            mesh.userData.isNebula = true;
-            mesh.userData.radius = nebulaRadius;
-            mesh.userData.velocity = randomSphericalLocal(rand, radius * 0.000015);
-            mesh.userData.data = {
-                designation: `NEBULA-${seed.toString(16).toUpperCase().slice(-4)}`,
-                type: 'STELLAR NURSERY',
-                age: simState.universeSimTime.toFixed(2),
-                mass: `${(50 + rand() * 120).toFixed(1)} Billion`,
-                radius: `${(nebulaRadius / 1000).toFixed(1)} kly`,
-                lum: 'DIFFUSE',
-                composition: 'H, He, dust, ionized gas',
-                isNebula: true
-            };
-            nebulaSystem.add(mesh);
-            nebulaSystem.userData.nebulae.push(mesh);
+            const tint = new THREE.Color(0.2 + rand() * 0.25, 0.5 + rand() * 0.3, 0.7 + rand() * 0.2);
+            const chunkCount = 12 + Math.floor(rand() * 8);
+            const nebula = buildNebulaCluster({ seed, radius: nebulaRadius, tint, chunkCount });
+            nebula.position.copy(position);
+            nebulaSystem.add(nebula);
+            nebulaSystem.userData.nebulae.push(nebula);
         }
         nebulaSystem.visible = simState.viewLevel === 1;
         scene.add(nebulaSystem);
@@ -2760,6 +2820,7 @@ async function generateDetailedGalaxy(type = 0) {
 function generateStarSystem(seedPos) {
     physicsBodies = []; passiveBodies = []; activeCMEs = [];
     while(localSystem.children.length > 0){ const c = localSystem.children[0]; if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose(); localSystem.remove(c); }
+    coronaMeshes.length = 0;
     let seedVal = Math.abs(seedPos.x + seedPos.y + seedPos.z); const rand = () => { const x = Math.sin(seedVal++) * 10000; return x - Math.floor(x); };
     const S = SCALES.SYSTEM; const G = SCALES.G; 
     let baseStarColor = 0xffaa00; let baseStarRad = S * 0.25; let isBH = false;
@@ -2807,11 +2868,20 @@ function generateStarSystem(seedPos) {
             // Corona
             const cGeom = new THREE.SphereGeometry(rad * 1.4, 32, 32);
             const cMat = new THREE.ShaderMaterial({
-                uniforms: { uColor: { value: new THREE.Color(baseStarColor) } }, transparent: true, side: THREE.BackSide, blending: THREE.AdditiveBlending,
+                uniforms: {
+                    uColor: { value: new THREE.Color(baseStarColor) },
+                    uBlend: { value: 1.0 }
+                },
+                transparent: true,
+                side: THREE.BackSide,
+                blending: THREE.AdditiveBlending,
                 vertexShader: `varying vec3 vNorm; void main() { vNorm = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-                fragmentShader: `uniform vec3 uColor; varying vec3 vNorm; void main() { float i = pow(0.6 - dot(vNorm, vec3(0,0,1)), 4.0); gl_FragColor = vec4(uColor, i*0.6); }`
+                fragmentShader: `uniform vec3 uColor; uniform float uBlend; varying vec3 vNorm; void main() { float i = pow(0.6 - dot(vNorm, vec3(0,0,1)), 4.0); gl_FragColor = vec4(uColor, i*0.6*uBlend); }`
             });
-            mesh.add(new THREE.Mesh(cGeom, cMat));
+            const coronaMesh = new THREE.Mesh(cGeom, cMat);
+            coronaMesh.userData.isCorona = true;
+            coronaMeshes.push(coronaMesh);
+            mesh.add(coronaMesh);
             mesh.add(new THREE.PointLight(baseStarColor, 300000, SCALES.SYSTEM * 10, 2));
         }
         localSystem.add(mesh);
@@ -2958,23 +3028,34 @@ function animate() {
                 localGalaxy.material.uniforms.uTime.value = simState.galaxySimTime;
             }
             if (nebulaSystem?.visible) {
-                nebulaSystem.children.forEach((mesh) => {
-                    const vel = mesh?.userData?.velocity;
-                    if (vel && mesh.position) {
-                        const toCenter = mesh.position.clone().multiplyScalar(-1);
+                nebulaSystem.children.forEach((group) => {
+                    const vel = group?.userData?.velocity;
+                    if (vel && group.position) {
+                        const toCenter = group.position.clone().multiplyScalar(-1);
                         const dist = Math.max(1, toCenter.length());
                         toCenter.normalize();
                         vel.add(toCenter.multiplyScalar((SCALES.GALAXY / dist) * 0.0000004 * simDelta));
-                        mesh.position.addScaledVector(vel, simDelta);
+                        group.position.addScaledVector(vel, simDelta);
                     }
-                    if (mesh?.material?.uniforms?.uTime) {
-                        mesh.material.uniforms.uTime.value = simState.galaxySimTime;
-                    }
+                    group?.traverse?.((child) => {
+                        if (child?.material?.uniforms?.uTime) {
+                            child.material.uniforms.uTime.value = simState.galaxySimTime;
+                        }
+                    });
                 });
             }
         }
         else if (simState.viewLevel === 2) {
             updatePhysics(simDelta * 5.0);
+
+            const coronaBlend = nebulaNursery ? 0.35 : 1.0;
+            if (coronaMeshes.length) {
+                coronaMeshes.forEach((mesh) => {
+                    if (mesh?.material?.uniforms?.uBlend) {
+                        mesh.material.uniforms.uBlend.value = coronaBlend;
+                    }
+                });
+            }
             
             if (Math.random() < 0.005) spawnCME(); 
             for (let i = activeCMEs.length - 1; i >= 0; i--) {
@@ -3006,9 +3087,11 @@ function animate() {
             });
 
             if (nebulaNursery) {
-                if (nebulaNursery.material?.uniforms?.uTime) {
-                    nebulaNursery.material.uniforms.uTime.value = simState.universeSimTime;
-                }
+                nebulaNursery.traverse?.((child) => {
+                    if (child?.material?.uniforms?.uTime) {
+                        child.material.uniforms.uTime.value = simState.universeSimTime;
+                    }
+                });
                 nebulaSpawnTimer += simDelta;
                 if (nebulaSpawnTimer > 4.0 + Math.random() * 3.0) {
                     nebulaSpawnTimer = 0;
@@ -3056,7 +3139,7 @@ function animate() {
                 tmpBhNdcOffset.copy(tmpBhOffset).project(camera);
                 const dx = tmpBhNdcOffset.x - tmpBhNdc.x;
                 const dy = tmpBhNdcOffset.y - tmpBhNdc.y;
-                screenRadius = Math.max(Math.sqrt(dx * dx + dy * dy) * 0.5, 0.002);
+                screenRadius = Math.max(Math.sqrt(dx * dx + dy * dy) * 0.5, 0.00025);
             }
             blackHoleUniforms.uBHRadius.value[bhCount] = screenRadius;
             blackHoleUniforms.uBHMass.value[bhCount] = Math.min(6.0, 2.5 + screenRadius * 90.0);

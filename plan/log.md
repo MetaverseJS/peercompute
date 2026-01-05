@@ -3008,6 +3008,25 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 ### Tests
 - Not run (not requested).
 
+## Date: 2026-01-04
+
+### Prompt
+- hey you still need to go back and update the log with ALL the prompts and responses from our chat you forgot. don't forget this in the future.
+- nebulae still need more realistic scale/blending and less boxy shapes; galaxy boundaries too regular.
+- no Schwarzschild lensing toggle; black hole radius scaling feels constant with distance.
+- travel path doesn't connect back to the universe origin.
+
+### Changes
+- Increased nebula clustering cohesion (more, smaller chunks with a spine layout) and expanded system-view nursery scale; added edge noise and tuned density scale to soften box outlines.
+- Added corona blend control and runtime blending when a nebula nursery is present.
+- Added Schwarzschild lensing toggle in the config UI and wired it to the lensing pass; persisted in UI state.
+- Reduced minimum lensing radius clamps so black holes shrink with distance.
+- Anchored travel path at the initial universe position and on first transitions to keep the path connected.
+- Added subtle boundary jitter in `generateGalaxyData` to break overly regular galaxy edges.
+
+### Tests
+- Not run (not requested).
+
 ### Notes / Open
 - Initial go.mod write failed because peercompute/src/relay-go did not exist; created the directory and re-ran successfully.
 

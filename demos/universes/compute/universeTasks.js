@@ -293,6 +293,14 @@ export function generateGalaxyData({
       }
     }
 
+    const radial = Math.sqrt(x * x + z * z) + 0.0001;
+    const edgeFactor = Math.min(1, radial / (radius * 0.9));
+    const boundaryJitter = (rand() - 0.5) * radius * 0.03 * edgeFactor;
+    const jitterAngle = rand() * Math.PI * 2;
+    x += Math.cos(jitterAngle) * boundaryJitter;
+    z += Math.sin(jitterAngle) * boundaryJitter;
+    y += (rand() - 0.5) * radius * 0.01 * edgeFactor;
+
     positions[i3] = x;
     positions[i3 + 1] = y;
     positions[i3 + 2] = z;
