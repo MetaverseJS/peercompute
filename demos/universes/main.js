@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { NURBSCurve } from 'three/addons/curves/NURBSCurve.js';
 import html2canvas from 'html2canvas';
 import { ComputeManager } from '@peercompute';
 import { generateUniverseData, generateGalaxyData } from './compute/universeTasks.js';
@@ -123,7 +124,13 @@ const NOISE_GLSL = `
 
 // --- Global State ---
 let camera, scene, renderer, controls, composer;
-let points, localGalaxy, localSystem, smbhGroup, supernovaSystem, nebulaSystem;
+let points, localGalaxy, localSystem, smbhGroup, supernovaSystem, nebulaSystem, nebulaNursery;
+const galaxyCache = [];
+let galaxyCacheGroup;
+const nebulaStars = [];
+let nebulaSpawnTimer = 0;
+let volumeMesh, volumeTexture, volumeMaterial;
+let volumeSupportChecked = false;
 let raycaster, mouse;
 let clock = new THREE.Clock();
 
@@ -150,12 +157,32 @@ const tmpBhNdc = new THREE.Vector3();
 const tmpBhOffset = new THREE.Vector3();
 const tmpBhNdcOffset = new THREE.Vector3();
 const tmpBhRight = new THREE.Vector3();
+const tmpBhScale = new THREE.Vector3();
 
 function formatCoord(value) {
     const abs = Math.abs(value);
     if (abs >= 1e7) return value.toExponential(2);
     if (abs >= 1e4) return Math.round(value).toLocaleString();
     return value.toFixed(1);
+}
+
+function seededRandom(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0xffffffff;
+    };
+}
+
+function randomSphericalLocal(rand, radius) {
+    const theta = rand() * Math.PI * 2;
+    const phi = Math.acos(2 * rand() - 1);
+    const sinPhi = Math.sin(phi);
+    return new THREE.Vector3(
+        radius * sinPhi * Math.cos(theta),
+        radius * sinPhi * Math.sin(theta),
+        radius * Math.cos(phi)
+    );
 }
 
 function getSmbhInfo() {
@@ -201,6 +228,201 @@ function disableAutopilot() {
     if (elAutopilotToggle) elAutopilotToggle.checked = false;
 }
 
+function buildClampedKnots(pointCount, degree) {
+    const knotCount = pointCount + degree + 1;
+    const knots = [];
+    for (let i = 0; i <= degree; i++) knots.push(0);
+    const interiorCount = knotCount - 2 * (degree + 1);
+    for (let i = 1; i <= interiorCount; i++) {
+        knots.push(i / (interiorCount + 1));
+    }
+    for (let i = 0; i <= degree; i++) knots.push(1);
+    return knots;
+}
+
+function updateTravelPathLine() {
+    if (!simState.showTravelPath) {
+        if (travelPathLine) travelPathLine.visible = false;
+        return;
+    }
+    if (travelPathPoints.length < 2) {
+        if (travelPathLine) travelPathLine.visible = false;
+        return;
+    }
+
+    const degree = Math.min(3, travelPathPoints.length - 1);
+    const controlPoints = travelPathPoints.map((p) => new THREE.Vector4(p.x, p.y, p.z, 1));
+    const knots = buildClampedKnots(controlPoints.length, degree);
+    const curve = new NURBSCurve(degree, knots, controlPoints);
+    const sampleCount = Math.min(1024, 64 + travelPathPoints.length * 32);
+    const curvePoints = curve.getPoints(sampleCount);
+    const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+
+    if (!travelPathLine) {
+        const material = new THREE.LineBasicMaterial({
+            color: 0x00ff88,
+            transparent: true,
+            opacity: 0.6,
+            depthTest: false
+        });
+        travelPathLine = new THREE.Line(geometry, material);
+        travelPathLine.frustumCulled = false;
+        travelPathLine.renderOrder = 3;
+        scene.add(travelPathLine);
+    } else {
+        travelPathLine.geometry.dispose();
+        travelPathLine.geometry = geometry;
+        travelPathLine.visible = true;
+    }
+}
+
+function recordTravelPoint(point) {
+    travelPathPoints.push(point.clone());
+    updateTravelPathLine();
+}
+
+function shiftTravelPath(offset) {
+    if (!travelPathPoints.length) return;
+    travelPathPoints.forEach((p) => p.sub(offset));
+    updateTravelPathLine();
+}
+
+function clearTravelPath() {
+    travelPathPoints.length = 0;
+    if (travelPathLine) {
+        scene.remove(travelPathLine);
+        if (travelPathLine.geometry) travelPathLine.geometry.dispose();
+        if (travelPathLine.material) travelPathLine.material.dispose();
+        travelPathLine = null;
+    }
+}
+
+function captureUiState() {
+    return {
+        qualityLevel: simState.qualityLevel,
+        pixelationFactor: simState.pixelationFactor,
+        timeScale: simState.timeScale,
+        crtEnabled: elCrtToggle?.checked ?? true,
+        isAutopilot: simState.isAutopilot,
+        showTravelPath: simState.showTravelPath
+    };
+}
+
+function applyUiState(state) {
+    if (!state) return;
+    if (state.qualityLevel && QUALITY_PRESETS[state.qualityLevel]) {
+        simState.qualityLevel = state.qualityLevel;
+        const q = QUALITY_PRESETS[state.qualityLevel];
+        CONFIG.starCount = q.starCount;
+        CONFIG.clusterCount = q.clusterCount;
+        CONFIG.densityRes = q.densityRes || CONFIG.densityRes;
+        document.querySelectorAll('.q-btn').forEach((btn) => {
+            const isActive = btn.getAttribute('data-q') === state.qualityLevel;
+            btn.classList.toggle('active', isActive);
+        });
+    }
+    if (Number.isFinite(state.pixelationFactor)) {
+        simState.pixelationFactor = state.pixelationFactor;
+        if (elRetroSlider) elRetroSlider.value = simState.pixelationFactor;
+        if (elRetroVal) elRetroVal.innerText = simState.pixelationFactor;
+        updatePixelation();
+    }
+    if (Number.isFinite(state.timeScale)) {
+        simState.timeScale = state.timeScale;
+        if (elSlider) elSlider.value = simState.timeScale;
+    }
+    if (typeof state.crtEnabled === 'boolean' && elCrtToggle) {
+        elCrtToggle.checked = state.crtEnabled;
+        if (state.crtEnabled) elCrtOverlay.classList.add('crt-effects');
+        else elCrtOverlay.classList.remove('crt-effects');
+    }
+    if (typeof state.isAutopilot === 'boolean') {
+        simState.isAutopilot = state.isAutopilot;
+        if (elAutopilotToggle) elAutopilotToggle.checked = simState.isAutopilot;
+    }
+    if (typeof state.showTravelPath === 'boolean') {
+        simState.showTravelPath = state.showTravelPath;
+        if (elPathToggle) elPathToggle.checked = simState.showTravelPath;
+        updateTravelPathLine();
+    }
+}
+
+function getGalaxyCacheLimit() {
+    switch (simState.qualityLevel) {
+        case 'ULTRA': return 4;
+        case 'HIGH': return 3;
+        case 'MED': return 2;
+        case 'LOW':
+        default: return 1;
+    }
+}
+
+function cacheActiveGalaxy() {
+    if (!localGalaxy) return;
+    localGalaxy.visible = true;
+    localGalaxy.userData.isCachedGalaxy = true;
+    galaxyCacheGroup?.add(localGalaxy);
+    galaxyCache.push(localGalaxy);
+    localGalaxy = null;
+    if (nebulaSystem) {
+        scene.remove(nebulaSystem);
+        nebulaSystem.traverse((obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        });
+        nebulaSystem = null;
+    }
+    smbhGroup?.clear();
+    pruneGalaxyCache();
+}
+
+function pruneGalaxyCache(limit = getGalaxyCacheLimit()) {
+    while (galaxyCache.length > limit) {
+        const old = galaxyCache.shift();
+        if (!old) continue;
+        galaxyCacheGroup?.remove(old);
+        if (old.geometry) old.geometry.dispose();
+        if (old.material) old.material.dispose();
+    }
+}
+
+function shiftGalaxyCache(offset) {
+    if (!galaxyCacheGroup) return;
+    galaxyCacheGroup.position.sub(offset);
+}
+
+function updateSmbhScaleForView() {
+    if (!smbhGroup) return;
+    if (simState.viewLevel === 2) {
+        const scale = Math.min(1, SCALES.SYSTEM / SCALES.GALAXY);
+        smbhGroup.scale.setScalar(scale);
+    } else {
+        smbhGroup.scale.setScalar(1);
+    }
+}
+
+function findNearbyNebula(position) {
+    if (!nebulaSystem || !position) return null;
+    let nearest = null;
+    let nearestDist = Infinity;
+    nebulaSystem.children.forEach((mesh) => {
+        if (!mesh?.userData?.isNebula) return;
+        const radius = mesh.userData.radius || 0;
+        const dist = position.distanceTo(mesh.position);
+        if (dist < radius * 0.8 && dist < nearestDist) {
+            nearest = mesh;
+            nearestDist = dist;
+        }
+    });
+    return nearest;
+}
+
+function getNebulaRoot(obj) {
+    let current = obj;
+    while (current && !current.userData?.isNebula) current = current.parent;
+    return current;
+}
+
 // Lensing Globals
 let lensingPass, crtPass;
 const MAX_BLACKHOLES = 4;
@@ -211,6 +433,8 @@ const blackHoleUniforms = {
     uBHRadius: { value: new Array(MAX_BLACKHOLES).fill(0) }
 };
 let activeBlackHoles = []; 
+const travelPathPoints = [];
+let travelPathLine = null;
 
 // Physics & Events
 let physicsBodies = []; 
@@ -230,10 +454,12 @@ let simState = {
     nextLevel: 0,
     worldOffset: new THREE.Vector3(0,0,0),
     currentGalaxyType: 0,
+    qualityLevel: 'HIGH',
     pixelationFactor: 1,
     selectedTarget: null, 
     activeGalaxyData: null,
     activeSystemData: null,
+    activeNebula: null,
     isAutopilot: true,
     autopilotTimer: 0,
     autopilotNextAction: 2.0, 
@@ -246,7 +472,8 @@ let simState = {
     trackingTarget: null,
     inspectingTarget: null,
     inspectingTargetPreviousPos: null,
-    bigBangFlash: 0
+    bigBangFlash: 0,
+    showTravelPath: true
 };
 
 // --- Elements ---
@@ -271,6 +498,7 @@ const elRetroSlider = document.getElementById('retro-slider');
 const elRetroVal = document.getElementById('retro-val');
 const elCrtToggle = document.getElementById('crt-toggle');
 const elAutopilotToggle = document.getElementById('autopilot-toggle');
+const elPathToggle = document.getElementById('path-toggle');
 const elCrtOverlay = document.getElementById('crt-overlay');
 let elStatusToggle = document.getElementById('status-toggle-btn');
 const elSimToggle = document.getElementById('sim-toggle-btn');
@@ -295,6 +523,7 @@ const elCursor = document.getElementById('mouse-cursor');
 
 let universeGenerationToken = 0;
 let galaxyGenerationToken = 0;
+let pendingUiState = null;
 
 init();
 
@@ -1221,6 +1450,14 @@ function init() {
     if (elRetroSlider) elRetroSlider.value = simState.pixelationFactor;
     if (elRetroVal) elRetroVal.innerText = simState.pixelationFactor;
 
+    if (pendingUiState?.qualityLevel && QUALITY_PRESETS[pendingUiState.qualityLevel]) {
+        const q = QUALITY_PRESETS[pendingUiState.qualityLevel];
+        simState.qualityLevel = pendingUiState.qualityLevel;
+        CONFIG.starCount = q.starCount;
+        CONFIG.clusterCount = q.clusterCount;
+        CONFIG.densityRes = q.densityRes || CONFIG.densityRes;
+    }
+
     // Hard Clean: Remove canvas to ensure a full WebGL context restart
     const container = document.getElementById('canvas-container');
     while (container.firstChild) {
@@ -1280,6 +1517,9 @@ function init() {
     smbhGroup = new THREE.Group();
     scene.add(smbhGroup);
 
+    galaxyCacheGroup = new THREE.Group();
+    scene.add(galaxyCacheGroup);
+
     setupVrUi();
     elSlider.value = simState.timeScale;
 
@@ -1306,6 +1546,10 @@ function init() {
     window.addEventListener('resize', onWindowResize);
     
     setupUIEvents();
+    if (pendingUiState) {
+        applyUiState(pendingUiState);
+        pendingUiState = null;
+    }
 }
 
 function setupUIEvents() {
@@ -1367,6 +1611,7 @@ function setupUIEvents() {
     
     // --- BIG BANG: HARD RESET ---
     bindBtn('bang-btn', () => {
+        pendingUiState = captureUiState();
         init();
     });
     
@@ -1479,9 +1724,14 @@ function setupUIEvents() {
         newBtn.addEventListener('click', (e) => {
             document.querySelectorAll('.q-btn').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
-            const q = QUALITY_PRESETS[e.target.getAttribute('data-q')];
+            const qKey = e.target.getAttribute('data-q');
+            const q = QUALITY_PRESETS[qKey];
             if (q) {
-                CONFIG.starCount = q.starCount; CONFIG.clusterCount = q.clusterCount;
+                simState.qualityLevel = qKey;
+                CONFIG.starCount = q.starCount;
+                CONFIG.clusterCount = q.clusterCount;
+                CONFIG.densityRes = q.densityRes || CONFIG.densityRes;
+                pruneGalaxyCache();
                 if (simState.viewLevel === 0) void generateUniverse(CONFIG.seed);
                 else if (simState.viewLevel === 1) void generateDetailedGalaxy(simState.currentGalaxyType);
             }
@@ -1501,6 +1751,14 @@ function setupUIEvents() {
         if (simState.isAutopilot) { simState.autopilotNextAction = 0; simState.inspectingTarget = null; simState.autopilotPanelHidden = false; }
         if (simState.isAutopilot && simState.viewLevel === 1 && simState.autopilotPriorityTargets.length === 0) queueAutopilotGalaxyPriorityTargets();
     };
+
+    if (elPathToggle) {
+        simState.showTravelPath = elPathToggle.checked;
+        elPathToggle.onchange = (e) => {
+            simState.showTravelPath = e.target.checked;
+            updateTravelPathLine();
+        };
+    }
     
     document.getElementById('timestep-slider').oninput = (e) => simState.timeScale = parseFloat(e.target.value);
 }
@@ -1514,6 +1772,17 @@ function updatePixelation() {
     renderer.domElement.style.width = '100vw'; renderer.domElement.style.height = '100vh';
     if (points) { points.material.uniforms.uPixelRatio.value = renderer.getPixelRatio(); points.material.uniforms.uScreenHeight.value = h; }
     if (localGalaxy) { localGalaxy.material.uniforms.uPixelRatio.value = renderer.getPixelRatio(); localGalaxy.material.uniforms.uScreenHeight.value = h; }
+    if (galaxyCacheGroup?.children?.length) {
+        galaxyCacheGroup.children.forEach((mesh) => {
+            if (mesh?.material?.uniforms?.uPixelRatio) {
+                mesh.material.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+                mesh.material.uniforms.uScreenHeight.value = h;
+            }
+        });
+    }
+    if (lensingPass?.material?.uniforms?.uAspect) {
+        lensingPass.material.uniforms.uAspect.value = w / Math.max(1, h);
+    }
 }
 
 function onWindowResize() { updatePixelation(); }
@@ -1541,8 +1810,33 @@ function resetSimulation() {
     if(localGalaxy) localGalaxy.visible = false;
     if(localSystem) localSystem.visible = false;
     if(smbhGroup) smbhGroup.clear();
+    clearTravelPath();
+    galaxyCache.forEach((mesh) => {
+        if (!mesh) return;
+        galaxyCacheGroup?.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+    });
+    galaxyCache.length = 0;
+    if (galaxyCacheGroup) galaxyCacheGroup.position.set(0, 0, 0);
     if(supernovaSystem) { scene.remove(supernovaSystem); supernovaSystem = null; }
-    if(nebulaSystem) { scene.remove(nebulaSystem); nebulaSystem = null; }
+    if (nebulaSystem) {
+        scene.remove(nebulaSystem);
+        nebulaSystem.traverse((obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        });
+        nebulaSystem = null;
+    }
+    disposeNebulaNursery();
+    nebulaStars.forEach((star) => {
+        if (!star) return;
+        localSystem?.remove(star);
+        if (star.geometry) star.geometry.dispose();
+        if (star.material) star.material.dispose();
+    });
+    nebulaStars.length = 0;
+    nebulaSpawnTimer = 0;
     camera.position.set(0, SCALES.UNIVERSE * 0.1, SCALES.UNIVERSE * 0.2);
     controls.target.set(0,0,0); resetCamera(0); controls.autoRotate = true; controls.enabled = true;
     elPauseBtn.textContent = "PAUSE SIM"; elAlert.style.display = 'none'; elTargetPanel.style.display = 'none';
@@ -1588,6 +1882,15 @@ function completeTransition() {
     const shift = new THREE.Vector3().copy(simState.transitionTarget);
     
     activeBlackHoles = []; blackHoleUniforms.uBHCount.value = 0;
+    if (level < prevLevel && prevLevel === 1 && level === 0) {
+        cacheActiveGalaxy();
+    }
+    if (level < prevLevel) {
+        simState.inspectingTarget = null;
+        simState.inspectingTargetPreviousPos = null;
+        simState.trackingTarget = null;
+    }
+    if (volumeMesh) volumeMesh.visible = level <= 2;
     
     if (level > prevLevel) {
         if (simState.transitionData) {
@@ -1601,15 +1904,32 @@ function completeTransition() {
         if (level === 1) simState.activeSystemData = null;
         if (level === 0) simState.activeGalaxyData = null;
     }
+    if (level === 2 && level > prevLevel) {
+        if (simState.selectedTarget?.data?.isNebula) {
+            simState.activeNebula = simState.selectedTarget.data;
+        } else {
+            const nearby = findNearbyNebula(shift);
+            simState.activeNebula = nearby?.userData?.data || null;
+        }
+    } else if (level !== 2) {
+        simState.activeNebula = null;
+    }
     
     elLocBtn.style.display = 'block';
     
     if (level > prevLevel) {
         camera.position.sub(shift); controls.target.sub(shift);
         if (points) points.position.sub(shift);
+        if (volumeMesh) volumeMesh.position.sub(shift);
         if (level === 2 && localGalaxy) localGalaxy.position.sub(shift);
         if (level === 2 && smbhGroup) smbhGroup.position.sub(shift);
         if (level === 2 && nebulaSystem) nebulaSystem.position.sub(shift);
+        shiftTravelPath(shift);
+        shiftGalaxyCache(shift);
+    }
+
+    if (level > prevLevel && (level === 1 || level === 2)) {
+        recordTravelPoint(new THREE.Vector3(0, 0, 0));
     }
     
     // Reset Planet Tour
@@ -1619,6 +1939,15 @@ function completeTransition() {
         if (localGalaxy) localGalaxy.visible = false; if (localSystem) localSystem.visible = false;
         if (smbhGroup) smbhGroup.visible = false; if (supernovaSystem) supernovaSystem.visible = false;
         if (nebulaSystem) nebulaSystem.visible = false;
+        disposeNebulaNursery();
+        nebulaStars.forEach((star) => {
+            if (!star) return;
+            localSystem?.remove(star);
+            if (star.geometry) star.geometry.dispose();
+            if (star.material) star.material.dispose();
+        });
+        nebulaStars.length = 0;
+        nebulaSpawnTimer = 0;
         resetCamera(0); elAlertMsg.innerText = "INTERGALACTIC SPACE";
     } else if (level === 1) {
         if (localSystem) localSystem.visible = false;
@@ -1642,9 +1971,28 @@ function completeTransition() {
         }
         resetCamera(1); elAlertMsg.innerText = "ARRIVED AT LOCAL GALAXY";
     } else if (level === 2) {
-        if(smbhGroup) smbhGroup.visible = false; if(nebulaSystem) nebulaSystem.visible = false;
+        if (smbhGroup) smbhGroup.visible = true;
+        if (nebulaSystem) nebulaSystem.visible = false;
         generateStarSystem(shift);
         if (localSystem) { localSystem.visible = true; localSystem.position.set(0,0,0); }
+        if (smbhGroup && smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
+        disposeNebulaNursery();
+        if (simState.activeNebula) {
+            const nurseryRadius = SCALES.SYSTEM * 1.6;
+            const density = createNebulaDensity(40, Math.floor(Math.random() * 100000));
+            nebulaNursery = buildNebulaVolume({
+                density: density.density,
+                resolution: density.resolution,
+                radius: nurseryRadius,
+                tint: new THREE.Color(0.35, 0.8, 0.85)
+            });
+            if (nebulaNursery) {
+                nebulaNursery.userData.radius = nurseryRadius;
+                nebulaNursery.position.set(0, 0, 0);
+                nebulaNursery.visible = true;
+                scene.add(nebulaNursery);
+            }
+        }
         if (simState.isAutopilot) {
              const dist = SCALES.SYSTEM * 1.5; const theta = Math.random() * Math.PI * 2; const phi = Math.random() * Math.PI * 0.5 + 0.1;
              camera.position.set(dist * Math.sin(phi) * Math.cos(theta), dist * Math.cos(phi), dist * Math.sin(phi) * Math.sin(theta));
@@ -1659,6 +2007,8 @@ function completeTransition() {
         if (level === 1 && simState.activeGalaxyData) updateTargetPanel(simState.activeGalaxyData, true);
         if (level === 2 && simState.activeSystemData) updateTargetPanel(simState.activeSystemData, true);
     }
+    if (galaxyCacheGroup) galaxyCacheGroup.visible = level === 0;
+    updateSmbhScaleForView();
     if (level > prevLevel) simState.worldOffset.add(shift);
 }
 
@@ -1845,7 +2195,318 @@ function createBlackHole(radius, x, y, z) {
 
 // --- GENERATION FUNCTIONS ---
 
-function buildUniversePoints({ positions, colors, sizes }) {
+function disposeUniverseVolume() {
+    if (!volumeMesh) return;
+    scene.remove(volumeMesh);
+    if (volumeMesh.geometry) volumeMesh.geometry.dispose();
+    if (volumeMaterial) volumeMaterial.dispose();
+    if (volumeTexture) volumeTexture.dispose();
+    volumeMesh = null;
+    volumeTexture = null;
+    volumeMaterial = null;
+}
+
+function supportsVolumeRendering() {
+    if (!renderer) return false;
+    const gl = renderer.getContext?.();
+    return Boolean(renderer.capabilities?.isWebGL2 || (gl && typeof gl.texImage3D === 'function'));
+}
+
+function buildUniverseVolume({ density, resolution, scale }) {
+    if (!supportsVolumeRendering()) return false;
+    if (!density || !resolution) return false;
+
+    disposeUniverseVolume();
+
+    const texture = new THREE.Data3DTexture(density, resolution, resolution, resolution);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.UnsignedByteType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.wrapR = THREE.ClampToEdgeWrapping;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
+    volumeTexture = texture;
+
+    const material = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+            uDensity: { value: texture },
+            uInvModelMatrix: { value: new THREE.Matrix4() },
+            uStepSize: { value: (1.0 / resolution) * 2.2 },
+            uDensityScale: { value: 0.75 },
+            uTime: { value: 0.0 }
+        },
+        vertexShader: `
+            out vec3 vLocalPos;
+            void main() {
+                vLocalPos = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            precision highp float;
+            precision highp sampler3D;
+            uniform sampler3D uDensity;
+            uniform mat4 uInvModelMatrix;
+            uniform float uStepSize;
+            uniform float uDensityScale;
+            uniform float uTime;
+            in vec3 vLocalPos;
+            out vec4 fragColor;
+
+            vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
+                vec3 boundsMin = vec3(-0.5);
+                vec3 boundsMax = vec3(0.5);
+                vec3 invDir = 1.0 / rayDir;
+                vec3 t0 = (boundsMin - rayOrigin) * invDir;
+                vec3 t1 = (boundsMax - rayOrigin) * invDir;
+                vec3 tmin = min(t0, t1);
+                vec3 tmax = max(t0, t1);
+                float tNear = max(max(tmin.x, tmin.y), tmin.z);
+                float tFar = min(min(tmax.x, tmax.y), tmax.z);
+                return vec2(tNear, tFar);
+            }
+
+            void main() {
+                vec3 rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz;
+                vec3 rayDir = normalize(vLocalPos - rayOrigin);
+                vec2 hit = intersectBox(rayOrigin, rayDir);
+                if (hit.y <= hit.x) discard;
+
+                float t = max(hit.x, 0.0);
+                float tEnd = hit.y;
+                vec3 color = vec3(0.0);
+                float alpha = 0.0;
+
+                for (int i = 0; i < 192; i++) {
+                    if (t > tEnd || alpha > 0.97) break;
+                    vec3 p = rayOrigin + rayDir * t;
+                    vec3 texPos = p + vec3(0.5);
+                    float d = texture(uDensity, texPos).r;
+                    d = pow(d, 0.9);
+                    d = clamp(d * 1.15, 0.0, 1.0);
+                    float a = d * uDensityScale;
+                    vec3 tint = mix(vec3(0.45, 0.6, 1.0), vec3(1.0, 0.95, 0.8), d);
+                    color += (1.0 - alpha) * a * tint;
+                    alpha += (1.0 - alpha) * a;
+                    t += uStepSize;
+                }
+
+                if (alpha <= 0.01) discard;
+                fragColor = vec4(color, alpha);
+            }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide
+    });
+
+    volumeMaterial = material;
+    const geom = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geom, material);
+    mesh.frustumCulled = false;
+    mesh.userData.baseScale = scale * 2;
+    mesh.scale.setScalar(mesh.userData.baseScale);
+    mesh.onBeforeRender = () => {
+        mesh.updateMatrixWorld();
+        material.uniforms.uInvModelMatrix.value.copy(mesh.matrixWorld).invert();
+        material.uniforms.uTime.value = simState.universeSimTime;
+    };
+    volumeMesh = mesh;
+    scene.add(mesh);
+    return true;
+}
+
+function createNebulaDensity(size, seed) {
+    const rand = seededRandom(seed);
+    const data = new Uint8Array(size * size * size);
+    const half = size * 0.5;
+    const phase = rand() * Math.PI * 2;
+    const blobCount = 10 + Math.floor(rand() * 8);
+    const blobs = [];
+    for (let i = 0; i < blobCount; i++) {
+        blobs.push({
+            x: (rand() * 2 - 1) * 0.55,
+            y: (rand() * 2 - 1) * 0.55,
+            z: (rand() * 2 - 1) * 0.55,
+            radius: 0.18 + rand() * 0.35,
+            strength: 0.5 + rand() * 0.9
+        });
+    }
+    for (let z = 0; z < size; z++) {
+        const nz = (z - half) / half;
+        for (let y = 0; y < size; y++) {
+            const ny = (y - half) / half;
+            for (let x = 0; x < size; x++) {
+                const nx = (x - half) / half;
+                let density = 0;
+                for (let i = 0; i < blobs.length; i++) {
+                    const b = blobs[i];
+                    const dx = nx - b.x;
+                    const dy = ny - b.y;
+                    const dz = nz - b.z;
+                    const dist2 = dx * dx + dy * dy + dz * dz;
+                    density += b.strength * Math.exp(-dist2 / (b.radius * b.radius));
+                }
+                const turb1 = Math.abs(Math.sin((nx * 3.1 + ny * 4.7 + nz * 2.9 + phase) * 4.2));
+                const turb2 = Math.abs(Math.sin((nx * 7.3 + ny * 5.1 + nz * 6.5 + phase * 0.7) * 2.1));
+                density = density * (0.65 + 0.35 * turb1) + 0.15 * turb2;
+                const edge = Math.max(0, 1.0 - Math.max(Math.abs(nx), Math.abs(ny), Math.abs(nz)) * 1.2);
+                density *= edge;
+                const val = Math.min(1, density);
+                const idx = x + y * size + z * size * size;
+                data[idx] = Math.max(0, Math.min(255, Math.round(Math.pow(val, 0.85) * 255)));
+            }
+        }
+    }
+    return { density: data, resolution: size };
+}
+
+function buildNebulaVolume({ density, resolution, radius, tint }) {
+    if (!supportsVolumeRendering()) return null;
+    const texture = new THREE.Data3DTexture(density, resolution, resolution, resolution);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.UnsignedByteType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.wrapR = THREE.ClampToEdgeWrapping;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
+
+    const tintColor = new THREE.Color(tint);
+    const material = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+            uDensity: { value: texture },
+            uInvModelMatrix: { value: new THREE.Matrix4() },
+            uStepSize: { value: (1.0 / resolution) * 2.4 },
+            uDensityScale: { value: 0.9 },
+            uTime: { value: 0.0 },
+            uTint: { value: tintColor }
+        },
+        vertexShader: `
+            out vec3 vLocalPos;
+            void main() {
+                vLocalPos = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            precision highp float;
+            precision highp sampler3D;
+            uniform sampler3D uDensity;
+            uniform mat4 uInvModelMatrix;
+            uniform float uStepSize;
+            uniform float uDensityScale;
+            uniform float uTime;
+            uniform vec3 uTint;
+            in vec3 vLocalPos;
+            out vec4 fragColor;
+            ${NOISE_GLSL}
+
+            vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
+                vec3 boundsMin = vec3(-0.5);
+                vec3 boundsMax = vec3(0.5);
+                vec3 invDir = 1.0 / rayDir;
+                vec3 t0 = (boundsMin - rayOrigin) * invDir;
+                vec3 t1 = (boundsMax - rayOrigin) * invDir;
+                vec3 tmin = min(t0, t1);
+                vec3 tmax = max(t0, t1);
+                float tNear = max(max(tmin.x, tmin.y), tmin.z);
+                float tFar = min(min(tmax.x, tmax.y), tmax.z);
+                return vec2(tNear, tFar);
+            }
+
+            void main() {
+                vec3 rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz;
+                vec3 rayDir = normalize(vLocalPos - rayOrigin);
+                vec2 hit = intersectBox(rayOrigin, rayDir);
+                if (hit.y <= hit.x) discard;
+
+                float t = max(hit.x, 0.0);
+                float tEnd = hit.y;
+                vec3 color = vec3(0.0);
+                float alpha = 0.0;
+
+                for (int i = 0; i < 128; i++) {
+                    if (t > tEnd || alpha > 0.97) break;
+                    vec3 p = rayOrigin + rayDir * t;
+                    vec3 texPos = p + vec3(0.5);
+                    vec3 local = texPos - vec3(0.5);
+                    float edge = smoothstep(0.55, 0.2, max(abs(local.x), max(abs(local.y), abs(local.z))));
+                    vec3 drift = vec3(
+                        snoise(vec3(texPos.yz * 3.0, uTime * 0.12)),
+                        snoise(vec3(texPos.xz * 3.0, uTime * 0.09)),
+                        snoise(vec3(texPos.xy * 3.0, uTime * 0.11))
+                    ) * 0.035;
+                    float filaments = abs(snoise(vec3(local * 6.0 + uTime * 0.05)));
+                    float d = texture(uDensity, clamp(texPos + drift, 0.0, 1.0)).r;
+                    d = pow(d, 0.7) * edge;
+                    d *= (0.7 + 0.3 * filaments);
+                    float a = d * uDensityScale;
+                    vec3 tint = mix(uTint * 0.35, uTint, d);
+                    color += (1.0 - alpha) * a * tint;
+                    alpha += (1.0 - alpha) * a;
+                    t += uStepSize;
+                }
+
+                if (alpha <= 0.01) discard;
+                fragColor = vec4(color, alpha);
+            }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide
+    });
+
+    const geom = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geom, material);
+    mesh.frustumCulled = false;
+    mesh.scale.setScalar(radius * 2);
+    mesh.onBeforeRender = () => {
+        mesh.updateMatrixWorld();
+        material.uniforms.uInvModelMatrix.value.copy(mesh.matrixWorld).invert();
+        material.uniforms.uTime.value = simState.universeSimTime;
+    };
+    return mesh;
+}
+
+function disposeNebulaNursery() {
+    if (!nebulaNursery) return;
+    scene.remove(nebulaNursery);
+    if (nebulaNursery.geometry) nebulaNursery.geometry.dispose();
+    if (nebulaNursery.material) nebulaNursery.material.dispose();
+    nebulaNursery = null;
+}
+
+function spawnNebulaStar() {
+    if (!nebulaNursery || !localSystem) return;
+    const radius = nebulaNursery.userData?.radius || SCALES.SYSTEM;
+    const pos = randomSphericalLocal(Math.random, radius * 0.5);
+    const geom = new THREE.SphereGeometry(SCALES.SYSTEM * 0.015, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0xffd6aa,
+        emissive: 0xffd6aa,
+        emissiveIntensity: 2.0
+    });
+    const star = new THREE.Mesh(geom, mat);
+    star.position.copy(pos);
+    star.userData.nebulaStar = true;
+    star.userData.age = 0;
+    star.userData.life = 12 + Math.random() * 8;
+    star.userData.velocity = randomSphericalLocal(Math.random, SCALES.SYSTEM * 0.02);
+    localSystem.add(star);
+    nebulaStars.push(star);
+}
+
+function buildUniversePoints({ positions, colors, sizes }, options = {}) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -1923,7 +2584,14 @@ async function generateDetailedGalaxy(type = 0) {
     const token = ++galaxyGenerationToken;
     if(localGalaxy) { scene.remove(localGalaxy); localGalaxy.geometry.dispose(); }
     if(supernovaSystem) { scene.remove(supernovaSystem); supernovaSystem = null; }
-    if(nebulaSystem) { scene.remove(nebulaSystem); nebulaSystem = null; }
+    if(nebulaSystem) {
+        scene.remove(nebulaSystem);
+        nebulaSystem.traverse((obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        });
+        nebulaSystem = null;
+    }
     smbhGroup.clear();
     const pCount = CONFIG.starCount;
     const radius = SCALES.GALAXY;
@@ -1978,49 +2646,56 @@ async function generateDetailedGalaxy(type = 0) {
     scene.add(localGalaxy);
 
     if (type !== 1) {
-        const nebCount = (type === 2) ? 60 : 30;
-        const nebGeom = new THREE.BufferGeometry(); const nebPos = new Float32Array(nebCount * 3); const nebCol = new Float32Array(nebCount * 3); const nebSize = new Float32Array(nebCount);
-        for(let i=0; i<nebCount; i++) {
-             const r = Math.random() * radius * 0.8; const angle = Math.random() * Math.PI * 2;
-             nebPos[i*3] = r * Math.cos(angle); nebPos[i*3+1] = (Math.random()-0.5)*radius*0.2; nebPos[i*3+2] = r * Math.sin(angle);
-             nebCol[i*3]=0.4; nebCol[i*3+1]=0.1; nebCol[i*3+2]=0.6; nebSize[i] = Math.random() * 800000 + 400000;
+        const nebulaCount = type === 2 ? 5 : 3;
+        nebulaSystem = new THREE.Group();
+        nebulaSystem.userData.nebulae = [];
+        const baseSeed = Math.floor(Math.random() * 100000);
+        for (let i = 0; i < nebulaCount; i++) {
+            const seed = baseSeed + i * 97;
+            const rand = seededRandom(seed);
+            const nebulaRadius = radius * (0.08 + rand() * 0.12);
+            const position = randomSphericalLocal(rand, radius * (0.35 + rand() * 0.45));
+            const density = createNebulaDensity(48, seed);
+            const tint = new THREE.Color(0.25 + rand() * 0.2, 0.55 + rand() * 0.25, 0.8 + rand() * 0.15);
+            let mesh = buildNebulaVolume({
+                density: density.density,
+                resolution: density.resolution,
+                radius: nebulaRadius,
+                tint
+            });
+            if (!mesh) {
+                const fallbackGeom = new THREE.SphereGeometry(nebulaRadius, 16, 16);
+                const fallbackMat = new THREE.MeshBasicMaterial({
+                    color: tint,
+                    transparent: true,
+                    opacity: 0.2,
+                    depthWrite: false
+                });
+                mesh = new THREE.Mesh(fallbackGeom, fallbackMat);
+            }
+            mesh.position.copy(position);
+            mesh.userData.isNebula = true;
+            mesh.userData.radius = nebulaRadius;
+            mesh.userData.velocity = randomSphericalLocal(rand, radius * 0.000015);
+            mesh.userData.data = {
+                designation: `NEBULA-${seed.toString(16).toUpperCase().slice(-4)}`,
+                type: 'STELLAR NURSERY',
+                age: simState.universeSimTime.toFixed(2),
+                mass: `${(50 + rand() * 120).toFixed(1)} Billion`,
+                radius: `${(nebulaRadius / 1000).toFixed(1)} kly`,
+                lum: 'DIFFUSE',
+                composition: 'H, He, dust, ionized gas',
+                isNebula: true
+            };
+            nebulaSystem.add(mesh);
+            nebulaSystem.userData.nebulae.push(mesh);
         }
-        nebGeom.setAttribute('position', new THREE.BufferAttribute(nebPos, 3)); nebGeom.setAttribute('color', new THREE.BufferAttribute(nebCol, 3)); nebGeom.setAttribute('size', new THREE.BufferAttribute(nebSize, 1));
-        const nebMat = new THREE.ShaderMaterial({
-            uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uScreenHeight: { value: window.innerHeight }, uTime: { value: 0 } },
-            vertexShader: `
-                uniform float uPixelRatio; uniform float uScreenHeight; attribute float size; varying vec3 vColor;
-                #include <common>
-                #include <logdepthbuf_pars_vertex>
-                void main() {
-                    vColor = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_Position = projectionMatrix * mvPosition;
-                    gl_PointSize = size * uPixelRatio * (uScreenHeight / -mvPosition.z) * 0.05;
-                    #include <logdepthbuf_vertex>
-                }
-            `,
-            fragmentShader: `
-                varying vec3 vColor; uniform float uTime; ${NOISE_GLSL}
-                #include <common>
-                #include <logdepthbuf_pars_fragment>
-                void main() {
-                    #include <logdepthbuf_fragment>
-                    vec2 center = gl_PointCoord - vec2(0.5);
-                    float n = snoise(vec3(center * 4.0, uTime * 0.2));
-                    float alpha = (1.0 - smoothstep(0.0, 0.5, length(center))) * (0.5 + 0.5 * n);
-                    if (alpha < 0.05) discard;
-                    gl_FragColor = vec4(vColor, alpha * 0.3);
-                }
-            `,
-            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
-        });
-        nebulaSystem = new THREE.Points(nebGeom, nebMat);
         nebulaSystem.visible = simState.viewLevel === 1;
         scene.add(nebulaSystem);
     }
     const bh = createBlackHole(radius * 0.005, 0, 0, 0);
     smbhGroup.add(bh);
-    smbhGroup.visible = simState.viewLevel === 1;
+    smbhGroup.visible = simState.viewLevel !== 0;
 }
 
 function generateStarSystem(seedPos) {
@@ -2031,8 +2706,8 @@ function generateStarSystem(seedPos) {
     let baseStarColor = 0xffaa00; let baseStarRad = S * 0.25; let isBH = false;
     if (simState.selectedTarget && simState.selectedTarget.data) {
          const d = simState.selectedTarget.data;
-         if (d.typeObj) baseStarColor = d.typeObj.color;
-         if (d.typeObj.id === 'BH') { baseStarRad = S * 0.1; isBH = true; }
+         if (d.typeObj?.color) baseStarColor = d.typeObj.color;
+         if (d.typeObj?.id === 'BH') { baseStarRad = S * 0.1; isBH = true; }
     }
     const numStars = isBH ? 1 : (rand() > 0.6 ? (rand() > 0.9 ? 3 : 2) : 1);
     for(let i=0; i<numStars; i++) {
@@ -2205,8 +2880,40 @@ function animate() {
             simState.universeSimTime += simDelta;
             // Link Time to Star Shader
             if(points) points.material.uniforms.uTime.value = simState.universeSimTime;
+            if (galaxyCacheGroup?.children?.length) {
+                galaxyCacheGroup.children.forEach((mesh) => {
+                    if (mesh?.material?.uniforms?.uTime) {
+                        mesh.material.uniforms.uTime.value = simState.universeSimTime;
+                    }
+                });
+            }
+            if (volumeMesh) {
+                const expansion = Math.max(0.08, 1.0 - Math.exp(-simState.universeSimTime * 2.0));
+                const baseScale = volumeMesh.userData.baseScale || 1;
+                volumeMesh.scale.setScalar(baseScale * expansion);
+            }
         }
-        else if (simState.viewLevel === 1) simState.galaxySimTime += simDelta;
+        else if (simState.viewLevel === 1) {
+            simState.galaxySimTime += simDelta;
+            if (localGalaxy?.material?.uniforms?.uTime) {
+                localGalaxy.material.uniforms.uTime.value = simState.galaxySimTime;
+            }
+            if (nebulaSystem?.visible) {
+                nebulaSystem.children.forEach((mesh) => {
+                    const vel = mesh?.userData?.velocity;
+                    if (vel && mesh.position) {
+                        const toCenter = mesh.position.clone().multiplyScalar(-1);
+                        const dist = Math.max(1, toCenter.length());
+                        toCenter.normalize();
+                        vel.add(toCenter.multiplyScalar((SCALES.GALAXY / dist) * 0.0000004 * simDelta));
+                        mesh.position.addScaledVector(vel, simDelta);
+                    }
+                    if (mesh?.material?.uniforms?.uTime) {
+                        mesh.material.uniforms.uTime.value = simState.galaxySimTime;
+                    }
+                });
+            }
+        }
         else if (simState.viewLevel === 2) {
             updatePhysics(simDelta * 5.0);
             
@@ -2238,6 +2945,28 @@ function animate() {
                     b.mesh.material.userData.shader.uniforms.uTime.value += delta;
                 }
             });
+
+            if (nebulaNursery) {
+                if (nebulaNursery.material?.uniforms?.uTime) {
+                    nebulaNursery.material.uniforms.uTime.value = simState.universeSimTime;
+                }
+                nebulaSpawnTimer += simDelta;
+                if (nebulaSpawnTimer > 4.0 + Math.random() * 3.0) {
+                    nebulaSpawnTimer = 0;
+                    if (Math.random() < 0.6) spawnNebulaStar();
+                }
+            }
+            for (let i = nebulaStars.length - 1; i >= 0; i--) {
+                const star = nebulaStars[i];
+                star.userData.age += simDelta;
+                star.position.addScaledVector(star.userData.velocity, simDelta);
+                if (star.userData.age > star.userData.life) {
+                    localSystem.remove(star);
+                    if (star.geometry) star.geometry.dispose();
+                    if (star.material) star.material.dispose();
+                    nebulaStars.splice(i, 1);
+                }
+            }
         }
     }
 
@@ -2259,8 +2988,10 @@ function animate() {
         if (tmpBhNdc.z > -1.0 && tmpBhNdc.z < 1.0 && Math.abs(tmpBhNdc.x) < 1.5 && Math.abs(tmpBhNdc.y) < 1.5) {
             blackHoleUniforms.uBHPos.value[bhCount].set(tmpBhNdc.x * 0.5 + 0.5, tmpBhNdc.y * 0.5 + 0.5);
             let screenRadius = 0.01;
-            const ehRadius = bh.userData?.ehRadius ?? 0;
+            let ehRadius = bh.userData?.ehRadius ?? 0;
             if (ehRadius > 0) {
+                bh.getWorldScale(tmpBhScale);
+                ehRadius *= tmpBhScale.x;
                 tmpBhRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
                 tmpBhOffset.copy(pos).addScaledVector(tmpBhRight, ehRadius);
                 tmpBhNdcOffset.copy(tmpBhOffset).project(camera);
@@ -2418,6 +3149,19 @@ function onPointerUp(event) {
             updateTargetPanel(data);
         }
     } else if (simState.viewLevel === 1 && localGalaxy) {
+        if (nebulaSystem && nebulaSystem.visible) {
+            const nebulaHits = raycaster.intersectObjects(nebulaSystem.children, true);
+            if (nebulaHits.length > 0) {
+                const nebula = getNebulaRoot(nebulaHits[0].object);
+                if (nebula) {
+                    disableAutopilot();
+                    const data = nebula.userData?.data || {};
+                    simState.selectedTarget = { level: 1, object: nebula, position: nebula.position.clone(), data };
+                    updateTargetPanel(data);
+                    return;
+                }
+            }
+        }
         const smbh = (smbhGroup && smbhGroup.visible && smbhGroup.children.length > 0) ? smbhGroup.children[0] : null;
         if (smbh) {
             const smbhHits = raycaster.intersectObject(smbh, true);
