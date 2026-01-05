@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import html2canvas from 'html2canvas';
 import { ComputeManager } from '@peercompute';
-import { generateUniverseData, generateGalaxyData } from './compute/universeTasks.js';
+import { generateUniverseData, generateUniverseDensity, generateGalaxyData } from './compute/universeTasks.js';
 
 // --- Configuration ---
 const SCALES = {
@@ -16,18 +16,22 @@ const SCALES = {
 };
 
 // Quality Presets
+const DENSITY_RES_SCALE = Math.pow(10, 1 / 3);
 const QUALITY_PRESETS = {
-    LOW: { starCount: 100_000, clusterCount: 200 },
-    MED: { starCount: 250_000, clusterCount: 300 },
-    HIGH: { starCount: 500_000, clusterCount: 400 },
-    ULTRA: { starCount: 1_000_000, clusterCount: 500 }
+    LOW: { starCount: 100_000, clusterCount: 200, densityRes: 64 },
+    MED: { starCount: 250_000, clusterCount: 300, densityRes: Math.round(80 * DENSITY_RES_SCALE) },
+    HIGH: { starCount: 500_000, clusterCount: 400, densityRes: Math.round(96 * DENSITY_RES_SCALE) },
+    ULTRA: { starCount: 1_000_000, clusterCount: 500, densityRes: Math.round(128 * DENSITY_RES_SCALE) }
 };
+
+const MAX_DENSITY_RES = 320;
 
 const CONFIG = {
     starCount: QUALITY_PRESETS.HIGH.starCount, 
     clusterCount: QUALITY_PRESETS.HIGH.clusterCount,  
     filamentScatter: 0.04, 
-    seed: 1337
+    seed: 1337,
+    densityRes: QUALITY_PRESETS.HIGH.densityRes
 };
 
 const computeModuleUrl = new URL('./compute/universeTasks.js', import.meta.url).href;
@@ -124,6 +128,8 @@ const NOISE_GLSL = `
 // --- Global State ---
 let camera, scene, renderer, controls, composer;
 let points, localGalaxy, localSystem, smbhGroup, supernovaSystem, nebulaSystem;
+let volumeMesh, volumeTexture, volumeMaterial;
+let volumeSupportChecked = false;
 let raycaster, mouse;
 let clock = new THREE.Clock();
 
@@ -1237,9 +1243,16 @@ function init() {
 
     // Re-initialize Renderer
     try {
-        renderer = new THREE.WebGLRenderer({ 
-            antialias: false, powerPreference: "high-performance", logarithmicDepthBuffer: true 
-        });
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2', { antialias: false, powerPreference: "high-performance" });
+        const rendererOptions = { antialias: false, powerPreference: "high-performance", logarithmicDepthBuffer: true };
+        if (gl) {
+            renderer = new THREE.WebGLRenderer({ ...rendererOptions, canvas, context: gl });
+            console.log('[Universes] WebGL2 active (volume renderer enabled).');
+        } else {
+            renderer = new THREE.WebGLRenderer(rendererOptions);
+            console.warn('[Universes] WebGL2 unavailable, falling back to mote renderer.');
+        }
         renderer.xr.enabled = true;
     } catch (e) {
         console.error("Critical: WebGL Renderer could not be initialized.", e);
@@ -1479,7 +1492,7 @@ function setupUIEvents() {
             e.target.classList.add('active');
             const q = QUALITY_PRESETS[e.target.getAttribute('data-q')];
             if (q) {
-                CONFIG.starCount = q.starCount; CONFIG.clusterCount = q.clusterCount;
+                CONFIG.starCount = q.starCount; CONFIG.clusterCount = q.clusterCount; CONFIG.densityRes = q.densityRes || CONFIG.densityRes;
                 if (simState.viewLevel === 0) void generateUniverse(CONFIG.seed);
                 else if (simState.viewLevel === 1) void generateDetailedGalaxy(simState.currentGalaxyType);
             }
@@ -1539,6 +1552,10 @@ function resetSimulation() {
     activeBlackHoles = []; blackHoleUniforms.uBHCount.value = 0;
     elLocBtn.style.display = 'block';
     if(points) points.position.set(0,0,0);
+    if (volumeMesh) {
+        volumeMesh.visible = true;
+        volumeMesh.scale.setScalar(volumeMesh.userData.baseScale || 1);
+    }
     if(localGalaxy) localGalaxy.visible = false;
     if(localSystem) localSystem.visible = false;
     if(smbhGroup) smbhGroup.clear();
@@ -1594,6 +1611,7 @@ function completeTransition() {
         simState.inspectingTargetPreviousPos = null;
         simState.trackingTarget = null;
     }
+    if (volumeMesh) volumeMesh.visible = level === 0;
     
     if (level > prevLevel) {
         if (simState.transitionData) {
@@ -1851,14 +1869,145 @@ function createBlackHole(radius, x, y, z) {
 
 // --- GENERATION FUNCTIONS ---
 
-function buildUniversePoints({ positions, colors, sizes }) {
+function disposeUniverseVolume() {
+    if (!volumeMesh) return;
+    scene.remove(volumeMesh);
+    if (volumeMesh.geometry) volumeMesh.geometry.dispose();
+    if (volumeMaterial) volumeMaterial.dispose();
+    if (volumeTexture) volumeTexture.dispose();
+    volumeMesh = null;
+    volumeTexture = null;
+    volumeMaterial = null;
+}
+
+function supportsVolumeRendering() {
+    if (!renderer) return false;
+    const gl = renderer.getContext?.();
+    return Boolean(renderer.capabilities?.isWebGL2 || (gl && typeof gl.texImage3D === 'function'));
+}
+
+function buildUniverseVolume({ density, resolution, scale }) {
+    if (!supportsVolumeRendering()) return false;
+    if (!density || !resolution) return false;
+
+    disposeUniverseVolume();
+
+    const texture = new THREE.Data3DTexture(density, resolution, resolution, resolution);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.UnsignedByteType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.wrapR = THREE.ClampToEdgeWrapping;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
+    volumeTexture = texture;
+
+    const material = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+            uDensity: { value: texture },
+            uInvModelMatrix: { value: new THREE.Matrix4() },
+            uStepSize: { value: (1.0 / resolution) * 2.2 },
+            uDensityScale: { value: 0.75 },
+            uTime: { value: 0.0 }
+        },
+        vertexShader: `
+            out vec3 vLocalPos;
+            void main() {
+                vLocalPos = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            precision highp float;
+            precision highp sampler3D;
+            uniform sampler3D uDensity;
+            uniform mat4 uInvModelMatrix;
+            uniform float uStepSize;
+            uniform float uDensityScale;
+            uniform float uTime;
+            in vec3 vLocalPos;
+            out vec4 fragColor;
+
+            vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
+                vec3 boundsMin = vec3(-0.5);
+                vec3 boundsMax = vec3(0.5);
+                vec3 invDir = 1.0 / rayDir;
+                vec3 t0 = (boundsMin - rayOrigin) * invDir;
+                vec3 t1 = (boundsMax - rayOrigin) * invDir;
+                vec3 tmin = min(t0, t1);
+                vec3 tmax = max(t0, t1);
+                float tNear = max(max(tmin.x, tmin.y), tmin.z);
+                float tFar = min(min(tmax.x, tmax.y), tmax.z);
+                return vec2(tNear, tFar);
+            }
+
+            void main() {
+                vec3 rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz;
+                vec3 rayDir = normalize(vLocalPos - rayOrigin);
+                vec2 hit = intersectBox(rayOrigin, rayDir);
+                if (hit.y <= hit.x) discard;
+
+                float t = max(hit.x, 0.0);
+                float tEnd = hit.y;
+                vec3 color = vec3(0.0);
+                float alpha = 0.0;
+
+                for (int i = 0; i < 192; i++) {
+                    if (t > tEnd || alpha > 0.97) break;
+                    vec3 p = rayOrigin + rayDir * t;
+                    vec3 texPos = p + vec3(0.5);
+                    float d = texture(uDensity, texPos).r;
+                    d = pow(d, 0.9);
+                    d = clamp(d * 1.15, 0.0, 1.0);
+                    float a = d * uDensityScale;
+                    vec3 tint = mix(vec3(0.45, 0.6, 1.0), vec3(1.0, 0.95, 0.8), d);
+                    color += (1.0 - alpha) * a * tint;
+                    alpha += (1.0 - alpha) * a;
+                    t += uStepSize;
+                }
+
+                if (alpha <= 0.01) discard;
+                fragColor = vec4(color, alpha);
+            }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide
+    });
+
+    volumeMaterial = material;
+    const geom = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geom, material);
+    mesh.frustumCulled = false;
+    mesh.userData.baseScale = scale * 2;
+    mesh.scale.setScalar(mesh.userData.baseScale);
+    mesh.onBeforeRender = () => {
+        mesh.updateMatrixWorld();
+        material.uniforms.uInvModelMatrix.value.copy(mesh.matrixWorld).invert();
+        material.uniforms.uTime.value = simState.universeSimTime;
+    };
+    volumeMesh = mesh;
+    scene.add(mesh);
+    return true;
+}
+
+function buildUniversePoints({ positions, colors, sizes }, options = {}) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
     const material = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0.0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uScreenHeight: { value: window.innerHeight } },
+        uniforms: {
+            uTime: { value: 0.0 },
+            uPixelRatio: { value: renderer.getPixelRatio() },
+            uScreenHeight: { value: window.innerHeight },
+            uOpacity: { value: 1.0 }
+        },
         vertexShader: `
             uniform float uTime; uniform float uPixelRatio; uniform float uScreenHeight;
             attribute float size; varying vec3 vColor;
@@ -1879,6 +2028,7 @@ function buildUniversePoints({ positions, colors, sizes }) {
         `,
         fragmentShader: `
             uniform float uTime;
+            uniform float uOpacity;
             varying vec3 vColor;
             #include <common>
             #include <logdepthbuf_pars_fragment>
@@ -1891,17 +2041,26 @@ function buildUniversePoints({ positions, colors, sizes }) {
                 float heat = exp(-uTime * 0.5); 
                 vec3 finalColor = mix(vColor, vec3(1.0, 1.0, 1.0), heat);
                 
-                gl_FragColor = vec4(finalColor, 1.0);
+                gl_FragColor = vec4(finalColor, uOpacity);
             }
         `,
         depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true
     });
+    const opacity = Number.isFinite(options.opacity)
+        ? Math.max(0, Math.min(1, options.opacity))
+        : 1.0;
+    const pickOnly = Boolean(options.pickOnly);
+    material.uniforms.uOpacity.value = opacity;
+    material.opacity = opacity;
+    material.transparent = opacity < 1;
+    material.colorWrite = !pickOnly;
     points = new THREE.Points(geometry, material); points.frustumCulled = false; scene.add(points);
 }
 
 async function generateUniverse(seed) {
     const token = ++universeGenerationToken;
     if (points) { scene.remove(points); points.geometry.dispose(); points.material.dispose(); points = null; }
+    disposeUniverseVolume();
     if (localGalaxy) { scene.remove(localGalaxy); localGalaxy.geometry.dispose(); if(localGalaxy.material) localGalaxy.material.dispose(); localGalaxy = null; }
     while(localSystem.children.length > 0){ const c = localSystem.children[0]; if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose(); localSystem.remove(c); }
     if (renderer) renderer.renderLists.dispose();
@@ -1919,10 +2078,41 @@ async function generateUniverse(seed) {
         filamentScatter: CONFIG.filamentScatter
     };
 
-    let data = await runComputeTask('generateUniverseData', params);
+    const requestedDensityRes = Math.max(24, Math.floor(CONFIG.densityRes || 96));
+    const densityRes = Math.min(MAX_DENSITY_RES, requestedDensityRes);
+    if (densityRes !== requestedDensityRes) {
+        console.warn(`[Universes] densityRes clamped to ${densityRes} (requested ${requestedDensityRes}).`);
+    }
+    let volumeBuilt = false;
+    if (supportsVolumeRendering()) {
+        const densityParams = { ...params, resolution: densityRes };
+        let density = await runComputeTask('generateUniverseDensity', densityParams);
+        if (token !== universeGenerationToken) return;
+        if (!density) density = generateUniverseDensity(densityParams);
+        if (density?.density) {
+            volumeBuilt = buildUniverseVolume({ ...density, scale: params.scale });
+        }
+    } else if (!volumeSupportChecked) {
+        volumeSupportChecked = true;
+        console.warn('[Universes] Volume rendering unavailable (WebGL2 required).');
+    }
+
+    const pickCount = Math.min(params.starCount, Math.max(50_000, Math.floor(params.starCount * 0.25)));
+    const pickParams = { ...params, starCount: pickCount };
+    let pickData = await runComputeTask('generateUniverseData', pickParams);
     if (token !== universeGenerationToken) return;
-    if (!data) data = generateUniverseData(params);
-    buildUniversePoints(data);
+    if (!pickData) pickData = generateUniverseData(pickParams);
+    buildUniversePoints(pickData, {
+        opacity: volumeBuilt ? 0.0 : 1.0,
+        pickOnly: volumeBuilt
+    });
+
+    if (!volumeBuilt) {
+        points.material.uniforms.uOpacity.value = 1.0;
+        points.material.opacity = 1.0;
+        points.material.transparent = false;
+        points.material.blending = THREE.AdditiveBlending;
+    }
 }
 
 async function generateDetailedGalaxy(type = 0) {
@@ -2211,6 +2401,11 @@ function animate() {
             simState.universeSimTime += simDelta;
             // Link Time to Star Shader
             if(points) points.material.uniforms.uTime.value = simState.universeSimTime;
+            if (volumeMesh) {
+                const expansion = Math.max(0.08, 1.0 - Math.exp(-simState.universeSimTime * 2.0));
+                const baseScale = volumeMesh.userData.baseScale || 1;
+                volumeMesh.scale.setScalar(baseScale * expansion);
+            }
         }
         else if (simState.viewLevel === 1) simState.galaxySimTime += simDelta;
         else if (simState.viewLevel === 2) {
@@ -2292,14 +2487,17 @@ function animate() {
         if (canTour && simState.autopilotTimer > simState.autopilotNextAction) {
             simState.autopilotTimer = 0; simState.autopilotNextAction = 5.0;
             if (simState.viewLevel === 0) {
-                const randIdx = Math.floor(Math.random() * CONFIG.starCount);
                 if (points) {
                     const posAttr = points.geometry.attributes.position;
-                    const pos = new THREE.Vector3(posAttr.getX(randIdx), posAttr.getY(randIdx), posAttr.getZ(randIdx));
-                    const data = getGalaxyInfo(CONFIG.seed + randIdx, simState.universeSimTime);
-                    simState.selectedTarget = { level: 0, index: randIdx, position: pos, data: data };
-                    updateTargetPanel(data, true);
-                    startTransition(pos, 1);
+                    const count = posAttr?.count || 0;
+                    if (count > 0) {
+                        const randIdx = Math.floor(Math.random() * count);
+                        const pos = new THREE.Vector3(posAttr.getX(randIdx), posAttr.getY(randIdx), posAttr.getZ(randIdx));
+                        const data = getGalaxyInfo(CONFIG.seed + randIdx, simState.universeSimTime);
+                        simState.selectedTarget = { level: 0, index: randIdx, position: pos, data: data };
+                        updateTargetPanel(data, true);
+                        startTransition(pos, 1);
+                    }
                 }
             } else if (simState.viewLevel === 1) {
                 if (simState.autopilotPriorityTargets.length > 0) {
@@ -2313,14 +2511,17 @@ function animate() {
                         startTransition(pos, 2);
                     }
                 } else {
-                    const randIdx = Math.floor(Math.random() * CONFIG.starCount);
                     if (localGalaxy) {
                         const posAttr = localGalaxy.geometry.attributes.position;
-                        const pos = new THREE.Vector3(posAttr.getX(randIdx), posAttr.getY(randIdx), posAttr.getZ(randIdx));
-                        const data = getStarSystemInfo(randIdx);
-                        simState.selectedTarget = { level: 1, index: randIdx, position: pos, data: data };
-                        updateTargetPanel(data, true);
-                        startTransition(pos, 2);
+                        const count = posAttr?.count || 0;
+                        if (count > 0) {
+                            const randIdx = Math.floor(Math.random() * count);
+                            const pos = new THREE.Vector3(posAttr.getX(randIdx), posAttr.getY(randIdx), posAttr.getZ(randIdx));
+                            const data = getStarSystemInfo(randIdx);
+                            simState.selectedTarget = { level: 1, index: randIdx, position: pos, data: data };
+                            updateTargetPanel(data, true);
+                            startTransition(pos, 2);
+                        }
                     }
                 }
             } else if (simState.viewLevel === 2) {

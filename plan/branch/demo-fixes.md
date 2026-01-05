@@ -7,6 +7,10 @@
 
 - 3d network visualizer to view the p2p network graph and edges and data flows live (do this in a tron style grid with nodes represented as cubes and connections between nodes ans glowing nurbs curves.)
 
+- Universes: keep galaxy black hole visible when drilling into systems; scale lensing + sprite size by camera distance.
+- Universes: CMEs should inherit the parent star color and begin as a croissant-like arc before detaching into a sphere.
+- Universes: persist configuration settings via StateManager/IndexedDB between reloads.
+- Universes: add querystring params (seed/time/location) to open a shared location link.
 
 - WASM support for compute workloads
 - REAL distributed compute workload examples. 
