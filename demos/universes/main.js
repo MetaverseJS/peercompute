@@ -1647,7 +1647,9 @@ function setupUIEvents() {
     elBackBtn = bindBtn('back-btn', () => {
         if (simState.inspectingTarget) {
             simState.inspectingTarget = null; simState.inspectingTargetPreviousPos = null;
-            controls.target.set(0,0,0); elBackBtn.textContent = "BACK TO GALAXY"; return;
+            controls.target.set(0,0,0);
+            elBackBtn.textContent = simState.viewLevel === 2 ? "BACK TO GALAXY" : "BACK TO UNIVERSE";
+            return;
         }
         ejectView();
     });
@@ -1730,8 +1732,18 @@ function setupUIEvents() {
         if (simState.selectedTarget) {
             elTargetPanel.style.display = 'none';
             if (simState.selectedTarget.level === 0) startTransition(simState.selectedTarget.position, 1);
-            else if (simState.selectedTarget.level === 1) startTransition(simState.selectedTarget.position, 2);
-            else if (simState.selectedTarget.level === 2) {
+            else if (simState.selectedTarget.level === 1) {
+                const data = simState.selectedTarget.data || {};
+                if (data.isNebula && !data.isNursery) {
+                    simState.inspectingTarget = simState.selectedTarget.object;
+                    simState.trackingTarget = null;
+                    simState.inspectingTargetPreviousPos = simState.inspectingTarget.position.clone();
+                    controls.target.copy(simState.inspectingTarget.position);
+                    elBackBtn.textContent = "LEAVE ORBIT";
+                } else {
+                    startTransition(simState.selectedTarget.position, 2);
+                }
+            } else if (simState.selectedTarget.level === 2) {
                 simState.inspectingTarget = simState.selectedTarget.object;
                 simState.trackingTarget = null;
                 simState.inspectingTargetPreviousPos = simState.inspectingTarget.position.clone();
@@ -2011,7 +2023,7 @@ function completeTransition() {
         if (localSystem) { localSystem.visible = true; localSystem.position.set(0,0,0); }
         if (smbhGroup && smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
         disposeNebulaNursery();
-        if (simState.activeNebula) {
+        if (simState.activeNebula?.isNursery) {
             const nurseryRadius = SCALES.SYSTEM * 4.0;
             const seed = Math.floor(Math.random() * 100000);
             const tint = new THREE.Color(0.3, 0.75, 0.9);
@@ -2138,7 +2150,11 @@ function updateTargetPanel(data, readOnly = false) {
     if (readOnly) { document.getElementById('warp-btn').style.display = 'none'; } 
     else { 
         document.getElementById('warp-btn').style.display = 'block'; 
-        document.getElementById('warp-btn').innerText = (simState.viewLevel === 2) ? "INSPECT ORBIT" : "INITIATE HYPERDRIVE";
+        if (data.isNebula && simState.viewLevel === 1) {
+            document.getElementById('warp-btn').innerText = data.isNursery ? "ENTER NURSERY" : "INSPECT NEBULA";
+        } else {
+            document.getElementById('warp-btn').innerText = (simState.viewLevel === 2) ? "INSPECT ORBIT" : "INITIATE HYPERDRIVE";
+        }
     }
     if (simState.isAutopilot && simState.autopilotPanelHidden) elTargetPanel.style.display = 'none';
     else elTargetPanel.style.display = 'flex';
@@ -2529,15 +2545,31 @@ function buildNebulaCluster({ seed, radius, tint, chunkCount }) {
     group.userData.isNebula = true;
     group.userData.radius = radius;
     group.userData.velocity = randomSphericalLocal(rand, radius * 0.000015);
+    const nurseryOptions = [
+        { type: 'STELLAR NURSERY', isNursery: true, composition: 'H, He, dust, ionized gas' },
+        { type: 'MOLECULAR CLOUD', isNursery: true, composition: 'H2, CO, dust, cold gas' }
+    ];
+    const nonNurseryOptions = [
+        { type: 'EMISSION NEBULA', isNursery: false, composition: 'Ionized gas, dust' },
+        { type: 'REFLECTION NEBULA', isNursery: false, composition: 'Dust, neutral gas' },
+        { type: 'PLANETARY NEBULA', isNursery: false, composition: 'Ionized shells, dust' },
+        { type: 'SUPERNOVA REMNANT', isNursery: false, composition: 'Shock-heated gas, metals' },
+        { type: 'DARK NEBULA', isNursery: false, composition: 'Dense dust, cold gas' }
+    ];
+    const isNursery = rand() < 0.35;
+    const nebulaProfile = isNursery
+        ? nurseryOptions[Math.floor(rand() * nurseryOptions.length)]
+        : nonNurseryOptions[Math.floor(rand() * nonNurseryOptions.length)];
     group.userData.data = {
         designation: `NEBULA-${seed.toString(16).toUpperCase().slice(-4)}`,
-        type: 'STELLAR NURSERY',
+        type: nebulaProfile.type,
         age: simState.universeSimTime.toFixed(2),
         mass: `${(50 + rand() * 120).toFixed(1)} Billion`,
         radius: `${(radius / 1000).toFixed(1)} kly`,
         lum: 'DIFFUSE',
-        composition: 'H, He, dust, ionized gas',
-        isNebula: true
+        composition: nebulaProfile.composition,
+        isNebula: true,
+        isNursery: nebulaProfile.isNursery
     };
 
     const chunkTotal = chunkCount ?? (10 + Math.floor(rand() * 6));
@@ -2591,7 +2623,8 @@ function spawnNebulaStar() {
     if (!nebulaNursery || !localSystem) return;
     const radius = nebulaNursery.userData?.radius || SCALES.SYSTEM;
     const pos = randomSphericalLocal(Math.random, radius * 0.5);
-    const geom = new THREE.SphereGeometry(SCALES.SYSTEM * 0.015, 24, 24);
+    const starRadius = Math.max(SCALES.SYSTEM * 0.0004, radius * 0.00015);
+    const geom = new THREE.SphereGeometry(starRadius, 24, 24);
     const mat = new THREE.MeshStandardMaterial({
         color: 0xffd6aa,
         emissive: 0xffd6aa,

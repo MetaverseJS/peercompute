@@ -3011,6 +3011,32 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 ## Date: 2026-01-04
 
 ### Prompt
+- when trying to visit a dark nebula it redirects you to another star system. actually any nebula except stellar nursery; can't just orbit it.
+- stars are still WAY too big in a stellar nursery.
+
+### Changes
+- Allowed non‑nursery nebulae to be inspected directly in galaxy view (no transition to a star system) and updated warp button labels accordingly.
+- Fixed back‑button label when exiting an inspection based on the current view level.
+- Shrunk nursery star size further relative to nebula radius.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- stars in a stellar nursary ought to be much smaller relative to the nebula. not all nebula should be stellar nursaries. what info do you need for scoping the black hole?
+
+### Changes
+- Reduced nursery star size relative to nebula volume and tied it to nursery radius.
+- Added nebula type variety so only a subset are tagged as stellar nurseries; system-view nursery rendering now requires `isNursery`.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
 - hey you still need to go back and update the log with ALL the prompts and responses from our chat you forgot. don't forget this in the future.
 - nebulae still need more realistic scale/blending and less boxy shapes; galaxy boundaries too regular.
 - no Schwarzschild lensing toggle; black hole radius scaling feels constant with distance.
