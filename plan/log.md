@@ -3640,3 +3640,44 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (script update only).
+
+## Date: 2026-01-08
+
+### Prompt
+- please review all plan files and then take a close look at the codebase. especially the changes to netviz and the networking layer.
+- in the past we've had some issues when all peers don't have a connection to the relay. but in order for this to scale we're going to need to do that somehow. can you come up with a theory for why it created issues and also a strategy for how to overcome it.
+- first create a new branch file called relay-scaling.md in plan/branch and put your plan in there.
+
+### Changes
+- Reviewed all plan files including plan/plan.md, plan/llm.md, plan/log.md, plan/branch/*.md, and plan/arch/*.md
+- Deep analysis of netviz implementation (demos/netviz/) - real-time 3D topology visualization with telemetry
+- Deep analysis of networking layer (NetworkManager, NetworkScheduler, libp2p integration, Yjs CRDT)
+- Identified root cause of relay scaling issues: gossipsub mesh fragmentation when peers drop relay connections
+- Created comprehensive relay scaling strategy with 5 implementation phases
+- Documented analysis and implementation plan in plan/branch/relay-scaling.md
+
+### Analysis Summary
+**NetViz**: Real-time 3D network visualizer with cyberpunk aesthetic, comprehensive telemetry (RTT, throughput, tx/rx), three render modes (full/low/off), supports distributed/hierarchical/emergent topologies. Recent optimizations for performance scaling.
+
+**Networking Layer**: Sophisticated libp2p-based architecture with deterministic scheduling, topology-aware peer selection, dual relay implementations (Node.js + Go), circuit relay v2, gossipsub mesh, layered DataState (hot/warm/cold), and Yjs CRDT for conflict-free sync.
+
+**Relay Scaling Problem**: When peers drop relay after establishing direct WebRTC, they fragment the gossipsub mesh. NAT-restricted peers become isolated, new peers can't discover existing peers who dropped relay, creating a "one-way door" effect.
+
+**Solution Strategy**: 5-phase approach prioritizing (1) gossipsub directPeers to keep relay in mesh, (3) relayRetention with deterministic selection to keep subset of peers connected (logn scaling), (2) separate control/data topics, (4) reconnect-on-demand for new peer assistance, (5) enhanced peer directory.
+
+### Files Touched
+- plan/branch/relay-scaling.md (created)
+- plan/log.md (updated)
+
+### Commands
+- Multiple Read operations on plan files, netviz source, NetworkManager.js, TopologyController.js
+- git log --oneline -20
+- git diff main..demo-fixes --stat
+
+### Tests
+- Not run (analysis and planning phase).
+
+### Next Steps
+- Implement Phase 1 (gossipsub directPeers) + Phase 3 (relayRetention logic)
+- Validate with NetViz at 10, 20, 30 peer loads
+- Measure relay bandwidth reduction and mesh connectivity
