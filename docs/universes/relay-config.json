@@ -1,6 +1,6 @@
 {
   "bootstrapPeers": [
-    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
+    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
   ],
   "pubsubType": "gossipsub",
   "webrtc": {

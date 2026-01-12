@@ -326,6 +326,7 @@ export class NetworkManager {
       enforceTopologyScope: config.enforceTopologyScope !== false,
       enableTelemetry: config.enableTelemetry !== false,
       enableTopologyController: config.enableTopologyController !== false,
+      enableRelayDirectPeers: config.enableRelayDirectPeers !== false,
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
       targetConnections: Number.isFinite(config.targetConnections)
         ? Math.max(1, config.targetConnections)
@@ -1255,6 +1256,47 @@ export class NetworkManager {
       if (configured.allowPublishToZeroPeers !== undefined && options.allowPublishToZeroTopicPeers === undefined) {
         options.allowPublishToZeroTopicPeers = configured.allowPublishToZeroPeers;
       }
+
+      // Phase 1 Relay Scaling: Add relay as directPeer to keep it in gossipsub mesh
+      // This ensures relay can forward messages between direct and relayed peers
+      if (this.config.enableRelayDirectPeers !== false && this.bootstrapPeerIds.size > 0) {
+        const directPeers = options.directPeers || [];
+
+        // Add each bootstrap peer (relay) as a directPeer
+        for (const relayPeerIdStr of this.bootstrapPeerIds) {
+          try {
+            // Convert string peer ID to PeerId object (required by gossipsub)
+            const relayPeerId = peerIdFromString(relayPeerIdStr);
+
+            // Find the multiaddr for this relay
+            const relayAddrs = this.config.bootstrapPeers
+              .map((addr) => {
+                try {
+                  const ma = typeof addr === 'string' ? multiaddr(addr) : addr;
+                  return ma;
+                } catch (_) {
+                  return null;
+                }
+              })
+              .filter(Boolean);
+
+            if (relayAddrs.length > 0) {
+              directPeers.push({
+                id: relayPeerId,
+                addrs: relayAddrs
+              });
+              debugLog('[NetworkManager] Added relay as gossipsub directPeer:', relayPeerId.toString());
+            }
+          } catch (err) {
+            debugWarn('[NetworkManager] Failed to add relay as directPeer:', relayPeerIdStr, err?.message || err);
+          }
+        }
+
+        if (directPeers.length > 0) {
+          options.directPeers = directPeers;
+        }
+      }
+
       return gossipsub(options);
     }
     return floodsub();
