@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wxglobe | PeerCompute + Cesium</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="viewer"></div>
+      <div id="overlay" class="panel">
+        <div class="overlay-header">
+          <div>
+            <h1>wxglobe</h1>
+            <p class="sub">Cesium + Terrarium terrain | PeerCompute stubbed</p>
+          </div>
+          <div class="status" id="provider-status">terrain: init</div>
+          <button id="toggle-controls" aria-label="toggle controls">Hide</button>
+        </div>
+
+        <section id="controls">
+          <div class="control-group">
+            <label for="resolution">Terrain source</label>
+            <select id="resolution">
+              <option value="30m" selected>Terrarium ~30m (z≤14)</option>
+              <option value="90m">Terrarium ~90m (z≤11)</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="dataset">Weather dataset</label>
+            <select id="dataset"></select>
+            <div class="notes" id="dataset-notes"></div>
+          </div>
+          <div class="control-group inline">
+            <button id="reload-terrain">Reload terrain</button>
+            <button id="fly-home">Fly home</button>
+          </div>
+          <div class="notes">
+            <p>RTMA/RAP dataset analysis lives in <code>demos/wxglobe/plan.md</code>. This UI focuses on the terrain provider and viewer wiring.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

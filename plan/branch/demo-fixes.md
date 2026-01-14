@@ -15,6 +15,9 @@
 - shared 3d editing environment based on https://threejs.org/editor/ where users can make 3d models together github https://github.com/mrdoob/three.js/tree/master/editor
 - motorcycle game similar to road rash and the tron lightcycle game
 - shared "VR CHAT" style world that uses your webcam to pose your 3d model. based on the input model from daddy go. 
+- streaming platform that routes data through peers like bittorrent to enable better scaling with less architecture
+- 3d rtma data visualization https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtma/v2.10/
+
 
 
 # Physics and engine upgrades

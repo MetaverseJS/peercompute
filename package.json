@@ -10,7 +10,8 @@
     "demos/planetgen",
     "demos/universes",
     "demos/webgpuphys",
-    "demos/sneakywoods"
+    "demos/sneakywoods",
+    "demos/wxglobe"
   ],
   "scripts": {
     "dev:relay": "npm --prefix peercompute run relay",

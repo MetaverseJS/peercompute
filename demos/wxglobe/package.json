@@ -1,0 +1,19 @@
+{
+  "name": "wxglobe-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cesium": "^1.120.0",
+    "netcdfjs": "^3.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1",
+    "vite-plugin-static-copy": "^3.1.4"
+  }
+}

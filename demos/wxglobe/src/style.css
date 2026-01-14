@@ -1,0 +1,139 @@
+:root {
+  --bg: radial-gradient(circle at 20% 20%, #0e1a2b, #050910 60%);
+  --panel: rgba(14, 24, 38, 0.86);
+  --accent: #37ff8b;
+  --muted: #7aa0c0;
+  --border: #1d3048;
+  --text: #e8f1ff;
+  --error: #ff6b6b;
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+#viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #000;
+}
+
+#viewer canvas {
+  outline: none;
+}
+
+#overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  max-width: 380px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+  padding: 12px 14px;
+  background: rgba(10, 18, 32, 0.92);
+  border: 2px solid var(--accent);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(55, 255, 139, 0.25);
+  border-radius: 10px;
+}
+
+#overlay.collapsed #controls {
+  display: none;
+}
+
+.overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1 {
+  margin: 0;
+  letter-spacing: 1px;
+}
+
+.sub {
+  margin: 2px 0 0 0;
+  color: var(--muted);
+}
+
+.status {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0, 255, 135, 0.07);
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.status.error {
+  color: var(--error);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-group.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+label {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+select,
+button {
+  background: #0d1523;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.notes {
+  color: var(--muted);
+  font-size: 13px;
+}
