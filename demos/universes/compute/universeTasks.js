@@ -1,7 +1,9 @@
 const COLOR_A = [0x44 / 255, 0x88 / 255, 0xff / 255];
 const COLOR_B = [0xff / 255, 0xaa / 255, 0xee / 255];
 const COLOR_C = [0xff / 255, 0xdd / 255, 0xaa / 255];
-const GALAXY_POINT_SCALE = 0.125;
+const GALAXY_POINT_SCALE = 1.0;
+const LY_M = 9.4607e15;
+const SOLAR_RADIUS_M = 6.957e8;
 const MAX_DENSITY_RES = 320;
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -34,7 +36,7 @@ export function generateUniverseData({
   seed = 1337,
   starCount = 250000,
   clusterCount = 300,
-  scale = 100000000,
+  scale = 46.5 * 9.4607e24,
   filamentScatter = 0.04
 } = {}) {
   const rand = randFactory(seed);
@@ -49,6 +51,7 @@ export function generateUniverseData({
     clusters.push(p);
   }
 
+  const galaxyRadius = scale * 1e-6;
   for (let i = 0; i < starCount; i++) {
     const i3 = i * 3;
     const idx1 = Math.floor(rand() * clusterCount);
@@ -96,7 +99,7 @@ export function generateUniverseData({
     colors[i3] = c[0];
     colors[i3 + 1] = c[1];
     colors[i3 + 2] = c[2];
-    sizes[i] = rand() * 40000.0 + 10000.0;
+    sizes[i] = galaxyRadius * (0.6 + rand() * 0.8);
   }
 
   return { positions, colors, sizes };
@@ -106,7 +109,7 @@ export function generateUniverseDensity({
   seed = 1337,
   starCount = 250000,
   clusterCount = 300,
-  scale = 100000000,
+  scale = 46.5 * 9.4607e24,
   filamentScatter = 0.04,
   resolution = 96
 } = {}) {
@@ -206,7 +209,7 @@ export function generateUniverseDensity({
 
 export function generateGalaxyData({
   starCount = 250000,
-  radius = 1000000,
+  radius = 52_000 * LY_M,
   type = 0
 } = {}) {
   const rand = Math.random;
@@ -285,7 +288,7 @@ export function generateGalaxyData({
         colors[i3] = 1.0;
         colors[i3 + 1] = 0.2;
         colors[i3 + 2] = 0.1;
-        sizes[i] = rand() * 8000 + 4000;
+        sizes[i] = SOLAR_RADIUS_M * (8 + rand() * 20);
       } else {
         colors[i3] = 0.6;
         colors[i3 + 1] = 0.8;
@@ -306,7 +309,11 @@ export function generateGalaxyData({
     positions[i3 + 2] = z;
 
     if (sizes[i] === 0) {
-      sizes[i] = rand() * 4000.0 + 1000.0;
+      const roll = rand();
+      let radiusM = SOLAR_RADIUS_M * (0.2 + rand() * 0.8);
+      if (roll > 0.95) radiusM = SOLAR_RADIUS_M * (5 + rand() * 15);
+      else if (roll > 0.7) radiusM = SOLAR_RADIUS_M * (1 + rand() * 2);
+      sizes[i] = radiusM;
     }
     sizes[i] *= GALAXY_POINT_SCALE;
 

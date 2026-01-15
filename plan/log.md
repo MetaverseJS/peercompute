@@ -3008,6 +3008,179 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 ### Tests
 - Not run (not requested).
 
+## Date: 2026-01-11
+
+### Prompt
+- Lines visible but still black; make them emissive/bright.
+
+### Changes
+- Added `makeDebugLineMaterial` helper: additive, depth-off, toneMapped=false, opaque bright green.
+- Travel path and DEBUG_WEB wireframes now rebuild their material using this emissive-style line.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- Debug lines disappeared after additive/tone-mapping changes.
+
+### Changes
+- Switched debug line materials back to normal blending and force depth test/write off; travel path now rebuilds after floating-origin shifts to avoid stale geometry.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- debug lines (volume wireframe / travel path) are black instead of emissive green.
+
+### Changes
+- Switched debug LineBasicMaterial instances (travel path and volume wireframe) to additive blending, disabled depth write/test, and turned off tone mapping to keep the bright green color.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- orbitcontrols work for stars but not planets; planets hard to find.
+- CME should arc around, stay in corona, and match star color.
+
+### Changes
+- Added camera focus helper to snap in on inspected planets and lowered min zoom distance for planet-scale targets.
+- Stored planet radius/orbit data on userData for focus logic.
+- Updated autopilot planet tour to lock onto moving planets and reposition the camera.
+- Reworked CMEs to orbit within the corona on curved paths and tint with their host star color.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- try floating-origin (option 2) to address volume flicker.
+
+### Changes
+- Added floating-origin shifts based on view level to keep the camera near the origin and reduce precision issues.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- camera still not anchoring to planets; cosmic web flickers when camera is inside the 3D volume; asked for online theory.
+
+### Changes
+- Kept the camera offset locked to moving inspected targets so planet orbits don’t drift the camera away.
+- Looked up raymarch/volume flicker causes (no useful results from DDG instant API); noted likely precision/inside-volume/backface issues in response.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- switch simulation units over to meters.
+
+### Changes
+- Converted universe runtime constants, physics, and star/planet sizing to meters in `demos/universes/main.js`.
+- Converted compute worker units and galaxy/star sizing to meters in `demos/universes/compute/universeTasks.js`.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- asked whether SpaceSim uses 1 unit = 1 km.
+
+### Changes
+- Checked SpaceSim sources: it uses “stellar units” internally (AU-based) and converts to metric meters (AU * 149600000000) for output/physics.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- asked whether the linked SpaceSim uses 1 unit = 1 km.
+
+### Changes
+- Not yet verified; need to inspect the SpaceSim repo/config to confirm its unit scale.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- asked whether one unit equals 1 km in the simulation.
+
+### Changes
+- Confirmed world units are in kilometers (per `UNITS.KM = 1`), with AU/LY derived from that baseline.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- still seeing anomalies; initial system view too zoomed out; stars not bright enough; planets recede when zooming.
+- disable zoom bounds; mousewheel should move camera by ~10% per tick (1.1/0.9), not FOV.
+
+### Changes
+- Disabled OrbitControls zoom and removed min/max distance bounds.
+- Added custom wheel zoom that moves the camera relative to the target by 10% increments.
+- Focused system entry camera on the primary star and tuned focus distance for star-scale context.
+- Boosted star point-light strength and range so planets receive stronger illumination.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- near clip plane artifacts when zooming in.
+
+### Changes
+- Added dynamic camera near/far clipping based on camera distance to reduce zoom-in clipping while keeping the universe volume visible.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- OK please tackle the universe items we just talked about. namely scaling fixes and the black hole rendering. lets do scaling first.
+
+### Changes
+- Rebased Universes on physical km/kg units (AU/LY/GLY constants, solar/planet constants) and updated core scale constants for universe/galaxy/system.
+- Switched star system generation to mass‑based radii and Schwarzschild radii for black holes; planet sizes/masses now derived from physical density ranges.
+- Replaced the old gravity shortcut with a basic N‑body update in km/s using real G, and adjusted CME/nebula velocities to km/day.
+- Updated raycast thresholds for galaxy/universe picking and expanded the timestep slider range for real‑scale orbits.
+- Adjusted nebula sizes to realistic LY‑scale values and set nursery size accordingly.
+- Updated universe/galaxy generation defaults and star point sizes to use physical scales.
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-04
+
+### Prompt
+- nebula inspect: dark nebula (and non-nursery nebulae) does nothing; nursery stars still too large.
+- add the black hole scope + full realistic rescale requirements to demo-fixes.
+
+### Changes
+- Added a camera move when inspecting non-nursery nebulae so orbiting is obvious from galaxy view.
+- Reduced nursery star size further relative to nebula radius.
+- Added new Universes TODOs to `plan/branch/demo-fixes.md` for full realistic rescale and WebGPU Schwarzschild black hole (accretion disk + photon ring + shadow) with performance targets.
+
+### Tests
+- Not run (not requested).
+
 ## Date: 2026-01-04
 
 ### Prompt
@@ -3527,7 +3700,7 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 - sed -n '1,200p' scripts/run-go-relay.sh
 - sed -n '1,200p' scripts/dev-local-relay.sh
 - sed -n '1,200p' scripts/dev-all.sh
-
+ 
 ### Tests
 - Not run (not requested).
 
@@ -4223,3 +4396,261 @@ printf "\\n[p2p-relay-scale] summary baseline=%s no_state=%s conn_caps=%s\\n" "$
 
 ### Tests
 - Not run (not requested).
+
+## Date: 2026-01-10
+
+### Prompt
+- we're still getting clip plane issues. can you take a look at the planetgen demo and see what unit basis it is using for 1 unit approximately?
+- switch to a log depth buffer.
+
+### Changes
+- Analyzed planetgen demo and found it uses 1 unit ≈ 50 km with logarithmic depth buffer and near plane essentially at zero.
+- Confirmed universes demo already had `logarithmicDepthBuffer: true` in renderer options (lines 1369, 1527).
+- Updated camera initial near/far from `(1, 1e12)` to `(0.1, 1e30)` to better utilize log depth range.
+- Improved `updateCameraClipping()` to take advantage of logarithmic depth buffer:
+  - Minimum near plane now 0.1 (down from 0.001) for closer objects.
+  - Far plane increased to `SCALES.UNIVERSE * 10` (up from * 4) and `dist * 100` (up from * 20).
+  - Near/far ratio guard relaxed from 0.1 to 0.001 since log depth handles extreme ratios well.
+  - Added comments explaining log depth buffer strategy.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- we're still getting lots of clipping issues while inside the cosmic web the 3d texture is just very buggy for that
+
+### Changes
+- Fixed volumetric raymarching shader issues causing clipping artifacts:
+  - Added epsilon (1e-10) to ray direction division to prevent divide-by-zero artifacts in intersectBox calculation.
+  - Added early-out check for negative far plane hits (`hit.y < 0.0`).
+  - Added texture coordinate bounds checking in the raymarch loop to skip samples outside [0,1] range.
+  - Added `depthTest: true` explicitly to volume material for proper depth testing against other geometry.
+  - Set `renderOrder = 1000` on volume mesh to ensure it renders after most solid geometry, reducing transparent sorting issues.
+- These changes apply to the universe cosmic web volume; nebula volumes may need similar fixes if they exhibit clipping.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- OK we're still having issues. would forcing the cosmic web to be drawn at all times and have it drawn first before galaxies and planets are drawn fix this?
+
+### Changes
+- Changed cosmic web rendering strategy to always draw first and always be visible:
+  - Set `volumeMesh.renderOrder = -100` (was 1000) so it draws before all other geometry.
+  - Set `volumeMesh.visible = true` always (removed level-based hiding at line 2091).
+  - Set `renderOrder = 0` for galaxy points (universe view), local galaxy points, stars, and planets so they draw after the volume.
+- This ensures the cosmic web volume is always rendered in the background with proper depth testing, so closer solid objects (galaxies, stars, planets) occlude it correctly.
+- The volume still uses `depthTest: true` and `depthWrite: false` with additive blending for proper transparency sorting.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- we're still having issues but I think it's improving. could this be an issue with frustum culling rather than z buffer?
+
+### Changes
+- Changed volume rendering from `THREE.BackSide` to `THREE.DoubleSide`:
+  - When camera is outside the volume, BackSide works fine (raytrace from backfaces).
+  - When camera is inside the volume (viewing planets/stars), front faces need to be visible too.
+  - DoubleSide ensures the volume box is always visible regardless of camera position.
+- Applied the same fix to nebula volumes (DoubleSide + renderOrder -100 + depthTest true).
+- Frustum culling was already disabled (`frustumCulled = false`) so that wasn't the issue.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- I think we're still seeing the issue but I'd like you to test another thing first. disable the travel path by default and make the path green.
+
+### Changes
+- Set `showTravelPath: false` in simState initialization (line 519) - travel path now disabled by default.
+- Changed travel path color from `0x00ff88` (cyan-green) to `0x00ff00` (pure green) at line 303.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- when I empty cache and hard reload I'm still seeing travel path checked.
+
+### Changes
+- Found the issue: HTML had `checked` attribute hardcoded on the travel path checkbox (index.html:571).
+- Removed `checked` attribute from `<input type="checkbox" id="path-toggle">` so it respects the JavaScript default (false).
+- Now both the JavaScript default (main.js:519) and HTML are aligned - travel path disabled by default.
+
+### Tests
+- Not run yet (awaiting manual verification in browser with hard refresh).
+
+## Date: 2026-01-10
+
+### Prompt
+- the travel path appears to be black.
+
+### Changes
+- Changed travel path opacity from 0.6 to 1.0 for better visibility.
+- Changed renderOrder from 3 to 1000 to ensure it renders on top of everything (including cosmic web at -100).
+- Added material color update in the else branch to ensure existing lines get the new green color (0x00ff00) even if they were created with the old cyan color.
+
+### Tests
+- Not run yet (awaiting manual verification in browser with hard refresh).
+
+## Date: 2026-01-10
+
+### Prompt
+- OK finally reloading is working. I think I discovered an issue that could be causing our problems. the travel path appears to be suffering from precision issues even when it is inside the current system. I suspect that is because the "floating origin" isn't being implemented correctly or isn't active at all. when we approach a star or a galaxy the universe should get shifted away so we remain near the origin. is that happening?
+
+### Changes
+- Fixed critical bug in `shiftTravelPath()` function (line 332):
+  - Previously only shifted the `travelPathLine.position` but NOT the control points in `travelPathPoints` array.
+  - When floating origin applied, the line mesh moved but the points stayed at huge world coordinates.
+  - When path was regenerated (adding new point), it used old unshifted points causing precision issues.
+  - Now properly shifts all control points in the array before shifting the mesh position.
+- Floating origin was already active and being called every frame (line 3536), but the travel path wasn't respecting it.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- I want you to revisit all objects and make sure they are shifting correctly according to the floating origin.
+- is the camera being modified when approaching a universe or a planet which could cause the cosmic web to clip?
+
+### Changes
+- Audited all scene objects for floating origin compliance - all objects correctly shifted except travel path (which was just fixed).
+- **CRITICAL BUG FOUND**: `updateCameraClipping()` was dynamically adjusting near plane based on camera-to-target distance.
+  - At galaxy scale (dist ~10²⁰m): near = 10¹⁵m = 1 billion km - clipping everything closer!
+  - At universe scale (dist ~10²⁶m): near = 10²¹m = 1000 light years - massive clipping!
+  - This caused the cosmic web volume to clip when zoomed into galaxies/planets because the near plane was millions of km away.
+- **FIX**: Changed to fixed near/far planes (near=0.1, far=SCALES.UNIVERSE*10).
+  - Logarithmic depth buffer handles precision across entire range without dynamic adjustment.
+  - Near plane stays at 0.1 meters at all scales - no more clipping!
+  - Far plane stays at 10x universe radius - always encompasses everything.
+
+### Object Audit Results
+All objects properly shifted by floating origin:
+- Camera, controls, transition/selection targets ✓
+- points (universe galaxies) ✓
+- volumeMesh (cosmic web) ✓
+- localGalaxy, localSystem (stars/planets/CMEs), smbhGroup (black holes) ✓
+- nebulaSystem, nebulaNursery, supernovaSystem ✓
+- galaxyCacheGroup ✓
+- travelPathPoints (just fixed) ✓
+- VR objects intentionally not shifted (floating origin disabled in VR) ✓
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- we're still seeing it happen. I want to add some more context that might help you. the behavior is inconsistent. so the clipped cosmic web flickers. and It happens more around the periphery of the screen which leads me to believe it's a problem with frustum culling, or the raymarch algorithm or maybe the angle of incidence the ray from the camera intersects the view volume.
+
+### Changes
+- **CRITICAL RAYMARCHING BUG FOUND**: The flickering at screen periphery was caused by incorrect ray direction calculation in volume shaders.
+  - Old method: `rayDir = normalize(vLocalPos - rayOrigin)` used interpolated vertex positions.
+  - Problem: Vertex interpolation breaks down at screen edges and steep viewing angles, especially when inside the volume.
+  - Symptom: Flickering/clipping more visible at periphery, inconsistent, angle-dependent.
+- **FIX**: Calculate ray direction in world space first, then transform to local space:
+  - Vertex shader now outputs `vWorldPos` (world space position).
+  - Fragment shader: `rayDirWorld = normalize(vWorldPos - cameraPosition)`.
+  - Then transform to local: `rayDir = normalize((uInvModelMatrix * vec4(rayDirWorld, 0.0)).xyz)`.
+  - This gives accurate ray directions at all screen positions and viewing angles.
+- Applied fix to both cosmic web volume shader (line 2494-2498) and nebula volume shader (line 2662-2666).
+- Also added epsilon guard to nebula's intersectBox to prevent divide-by-zero (line 2652).
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+## Date: 2026-01-10
+
+### Prompt
+- I Think we're close. but now we're not rendering the cosmic web at all
+
+### Changes
+- Fixed ray direction calculation - previous approach had issues with direction vector transformation.
+- **New simpler approach**: Transform both camera AND world position to local space, then calculate direction:
+  - `rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz` - camera in local space
+  - `rayTargetLocal = (uInvModelMatrix * vec4(vWorldPos, 1.0)).xyz` - fragment position in local space
+  - `rayDir = normalize(rayTargetLocal - rayOrigin)` - direction calculated in local space
+- This avoids the complexity of transforming direction vectors while still using world space positions for accurate interpolation.
+- Applied to both cosmic web and nebula shaders.
+
+### Tests
+- Not run yet (awaiting manual verification in browser).
+
+
+## Date: 2026-01-11
+
+### Prompt
+- have a look at this gif and see if you can diagnose. the cosmic web flicker. then go over the last 15 or so log entries and double check that the work was done correctly.
+
+### Changes
+- **ROOT CAUSE IDENTIFIED**: The flickering at screen periphery was caused by GPU floating-point precision issues.
+  - When volume is at universe scale (~10²⁶ meters from origin), shader matrix multiplications lose precision.
+  - GPU uses 32-bit floats for all calculations; huge world coordinates overflow/underflow during `uInvModelMatrix * cameraPosition`.
+  - Symptoms: angle-dependent flickering, worse at screen edges where interpolation amplifies errors.
+- **FINAL FIX**: Moved camera local position computation from GPU (shader) to CPU (JavaScript).
+  - CPU (JavaScript) uses 64-bit doubles for matrix math, preserving precision at astronomical scales.
+  - Added `uCameraLocal` vec3 uniform to both cosmic web and nebula volume shaders.
+  - Removed `uInvModelMatrix` uniform (no longer needed).
+  - In `onBeforeRender` callback: compute `invMatrix.copy(mesh.matrixWorld).invert()` then `camLocal.copy(cam.position).applyMatrix4(invMatrix)`.
+  - Shader now simply uses `vec3 rayOrigin = uCameraLocal;` - no GPU matrix multiplication needed.
+  - `vLocalPos` (interpolated vertex position in local [-0.5,0.5] space) is used to compute ray direction.
+- Applied fix to:
+  - Cosmic web volume (lines 2455, 2471, 2493, 2545-2551)
+  - Nebula volume (lines 2621, 2638, 2662, 2714-2720)
+
+### Verification
+- Reviewed all 15 recent log entries - all changes applied correctly:
+  - ✓ Log depth buffer enabled (was already present)
+  - ✓ Camera clipping fixed to use fixed near=0.1 (not dynamic)
+  - ✓ Volume renderOrder set to -100 (render first)
+  - ✓ frustumCulled = false on volumes
+  - ✓ side = DoubleSide for inside/outside viewing
+  - ✓ Travel path default off and green color
+  - ✓ Travel path checkbox unchecked in HTML
+  - ✓ shiftTravelPath shifts control points array
+  - ✓ intersectBox epsilon guards present
+  - ✓ CPU-computed camera local position (final fix)
+
+### Tests
+- Awaiting manual verification in browser to confirm flickering is resolved.
+
+## Date: 2026-01-12
+
+### Prompt
+- Split cosmic web into 27 sub-volumes, debug lines appear black, add URL params for quality/pixelation
+
+### Changes
+- **ROOT CAUSE OF FLICKERING**: Using `side: THREE.DoubleSide` causes depth fighting when inside volume.
+  - Both front and back faces render for same pixels when camera is inside the box
+  - GPU picks one unpredictably, causing frame-to-frame flickering
+  - Worse at screen edges where face geometry overlaps more
+- **FIX**: Changed to `side: THREE.BackSide` for proper volume raymarching.
+  - Only renders back faces (exit points)
+  - Ray marches from camera (or entry point if outside) to exit point
+  - No depth fighting since each pixel only has one fragment
+  - Applied to both cosmic web sub-volumes (line 2583) and nebula volumes (line 2778)
+- **URL Parameters added**:
+  - `quality=low|med|high|ultra` - sets simulation quality preset
+  - `pixelation=N` - sets pixelation factor (0 for none)
+  - `debugweb=true` - shows green wireframe around volume sub-cubes
+- **Debug wireframes** already using correct material with `depthTest: false` and `toneMapped: false`
+
+### Tests
+- Syntax check passed
+- Awaiting browser verification
+
+Example URLs:
+- `?quality=low&pixelation=0` - low quality, no pixelation
+- `?quality=ultra&debugweb=true` - ultra quality with debug wireframes

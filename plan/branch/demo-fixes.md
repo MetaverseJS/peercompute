@@ -11,6 +11,8 @@
 - Universes: CMEs should inherit the parent star color and begin as a croissant-like arc before detaching into a sphere.
 - Universes: persist configuration settings via StateManager/IndexedDB between reloads.
 - Universes: add querystring params (seed/time/location) to open a shared location link.
+- Universes: rescale the entire sim to realistic proportions (km base, mass-based scaling for stars/planets) using floating origin + logarithmic depth; reference https://github.com/ubernaut/spaceSim/tree/master and the three.js log depth example.
+- Universes: implement a WebGPU-only black hole with full accretion disk + photon ring + shadow, using Schwarzschild radius from mass; lens only background (no UI/foreground refraction), default enabled, visible at galaxy/system scale when physically appropriate; target Ultra 120fps on 3090 and Low on Pixel 7.
 
 - WASM support for compute workloads
 - REAL distributed compute workload examples. 

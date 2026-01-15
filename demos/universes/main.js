@@ -8,12 +8,32 @@ import html2canvas from 'html2canvas';
 import { ComputeManager } from '@peercompute';
 import { generateUniverseData, generateUniverseDensity, generateGalaxyData } from './compute/universeTasks.js';
 
+// --- Physical Units (meters, kg, s) ---
+const UNITS = { 
+    M: 1,
+    KM: 1000,
+    AU: 1.495978707e11,
+    LY: 9.4607e15,
+    KLY: 9.4607e18,
+    MLY: 9.4607e21,
+    GLY: 9.4607e24
+};
+const SOLAR_RADIUS_M = 6.957e8;
+const SOLAR_MASS_KG = 1.98847e30;
+const EARTH_RADIUS_M = 6.371e6;
+const EARTH_MASS_KG = 5.972e24;
+const JUPITER_RADIUS_M = 6.9911e7;
+const JUPITER_MASS_KG = 1.898e27;
+const G_M = 6.67430e-11; // m^3 / kg / s^2
+const C_M_S = 299_792_458;
+const PHYSICS_SECONDS_PER_UNIT = 86_400; // 1 sim unit = 1 day
+
 // --- Configuration ---
 const SCALES = {
-    UNIVERSE: 100_000_000,
-    GALAXY: 1_000_000,
-    SYSTEM: 500,
-    G: 50.0 
+    UNIVERSE: 46.5 * UNITS.GLY,
+    GALAXY: 52_000 * UNITS.LY,
+    SYSTEM: 100 * UNITS.AU,
+    G: G_M
 };
 
 // Quality Presets
@@ -27,13 +47,25 @@ const QUALITY_PRESETS = {
 
 const MAX_DENSITY_RES = 320;
 
+// Debug flags and settings from query string
+const urlParams = new URLSearchParams(window.location.search);
+const DEBUG_WEB = urlParams.get('debugweb') === 'true';
+const URL_QUALITY = urlParams.get('quality')?.toUpperCase();
+const URL_PIXELATION = urlParams.get('pixelation');
+
+// Determine quality preset from URL or default to HIGH
+const SELECTED_QUALITY = QUALITY_PRESETS[URL_QUALITY] || QUALITY_PRESETS.HIGH;
+
 const CONFIG = {
-    starCount: QUALITY_PRESETS.HIGH.starCount, 
-    clusterCount: QUALITY_PRESETS.HIGH.clusterCount,  
-    filamentScatter: 0.04, 
+    starCount: SELECTED_QUALITY.starCount,
+    clusterCount: SELECTED_QUALITY.clusterCount,
+    filamentScatter: 0.04,
     seed: 1337,
-    densityRes: QUALITY_PRESETS.HIGH.densityRes
+    densityRes: SELECTED_QUALITY.densityRes
 };
+
+// Pixelation from URL (will be applied after renderer init)
+const INITIAL_PIXELATION = URL_PIXELATION ? parseInt(URL_PIXELATION, 10) : null;
 
 const computeModuleUrl = new URL('./compute/universeTasks.js', import.meta.url).href;
 const computeManager = new ComputeManager({ maxWorkers: 1 });
@@ -134,7 +166,8 @@ let galaxyCacheGroup;
 const nebulaStars = [];
 const coronaMeshes = [];
 let nebulaSpawnTimer = 0;
-let volumeMesh, volumeTexture, volumeMaterial;
+let volumeMeshes = [], volumeTexture, volumeMaterials = [];
+let volumeGroup; // Group containing all 27 sub-volumes
 let volumeSupportChecked = false;
 let raycaster, mouse;
 let clock = new THREE.Clock();
@@ -148,6 +181,7 @@ let hadMultiTouch = false;
 let xrForceDirectFrames = 0;
 let onDocumentMouseMove = null;
 let onBodyMouseOver = null;
+let onWheelZoom = null;
 let preXRCameraState = null;
 let vrUI = null;
 const vrUiRaycaster = new THREE.Raycaster();
@@ -163,6 +197,23 @@ const tmpBhOffset = new THREE.Vector3();
 const tmpBhNdcOffset = new THREE.Vector3();
 const tmpBhRight = new THREE.Vector3();
 const tmpBhScale = new THREE.Vector3();
+const tmpCmeVec = new THREE.Vector3();
+const tmpFocusDir = new THREE.Vector3();
+const tmpZoomVec = new THREE.Vector3();
+const tmpInspectDelta = new THREE.Vector3();
+
+function makeDebugLineMaterial() {
+    const mat = new THREE.LineBasicMaterial({
+        color: 0x00ff00,
+        transparent: false,
+        opacity: 1.0,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+    });
+    return mat;
+}
 
 function formatCoord(value) {
     const abs = Math.abs(value);
@@ -190,12 +241,17 @@ function randomSphericalLocal(rand, radius) {
     );
 }
 
+function schwarzschildRadiusM(massKg) {
+    return (2 * G_M * massKg) / (C_M_S * C_M_S);
+}
+
 function getSmbhInfo() {
     const baseSeed = (simState.activeGalaxyData?.designation || `SEED-${CONFIG.seed}`).split('')
         .reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 0);
     const isQuasar = /QUASAR|AGN/i.test(simState.activeGalaxyData?.type || '');
-    const mass = 1_000_000 + (baseSeed % 9_000_000);
-    const radius = (0.02 + (baseSeed % 400) / 10_000).toFixed(3); // purely cosmetic
+    const massSolar = 1_000_000 + (baseSeed % 900_000_000);
+    const radiusM = schwarzschildRadiusM(massSolar * SOLAR_MASS_KG);
+    const radius = (radiusM / SOLAR_RADIUS_M).toFixed(3);
     return {
         designation: simState.activeGalaxyData?.designation
             ? `${simState.activeGalaxyData.designation} ${isQuasar ? 'QUASAR' : 'CORE'}`
@@ -203,13 +259,15 @@ function getSmbhInfo() {
         typeObj: { id: 'BH', color: 0x00ff00 },
         state: 'REMNANT',
         age: simState.universeSimTime.toFixed(3),
-        mass: mass.toLocaleString(),
+        mass: massSolar.toLocaleString(),
         radius,
         lum: isQuasar ? "ACTIVE" : "0",
         spectrum: [],
+        massSolar,
+        radiusM,
         composition: isQuasar
-            ? `AGN: ACTIVE (QUASAR)\nACCRETION: EXTREME\nMASS: ${mass.toLocaleString()} M☉`
-            : `EVENT HORIZON: STABLE\nACCRETION: ACTIVE\nMASS: ${mass.toLocaleString()} M☉`
+            ? `AGN: ACTIVE (QUASAR)\nACCRETION: EXTREME\nMASS: ${massSolar.toLocaleString()} M☉`
+            : `EVENT HORIZON: STABLE\nACCRETION: ACTIVE\nMASS: ${massSolar.toLocaleString()} M☉`
     };
 }
 
@@ -267,20 +325,20 @@ function updateTravelPathLine() {
     const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
 
     if (!travelPathLine) {
-        const material = new THREE.LineBasicMaterial({
-            color: 0x00ff88,
-            transparent: true,
-            opacity: 0.6,
-            depthTest: false
-        });
+        const material = makeDebugLineMaterial();
         travelPathLine = new THREE.Line(geometry, material);
         travelPathLine.frustumCulled = false;
-        travelPathLine.renderOrder = 3;
+        travelPathLine.renderOrder = 1000;
         scene.add(travelPathLine);
     } else {
         travelPathLine.geometry.dispose();
         travelPathLine.geometry = geometry;
         travelPathLine.visible = true;
+        // Update material color in case it changed
+        if (travelPathLine.material) {
+            travelPathLine.material.dispose?.();
+            travelPathLine.material = makeDebugLineMaterial();
+        }
     }
     if (travelPathLine) {
         travelPathLine.position.copy(simState.worldOffset).multiplyScalar(-1);
@@ -293,8 +351,10 @@ function recordTravelPoint(point) {
 }
 
 function shiftTravelPath(offset) {
-    if (!travelPathLine) return;
-    travelPathLine.position.sub(offset);
+    for (let i = 0; i < travelPathPoints.length; i++) {
+        travelPathPoints[i].sub(offset);
+    }
+    updateTravelPathLine();
 }
 
 function clearTravelPath() {
@@ -409,12 +469,7 @@ function shiftGalaxyCache(offset) {
 
 function updateSmbhScaleForView() {
     if (!smbhGroup) return;
-    if (simState.viewLevel === 2) {
-        const scale = Math.min(1, SCALES.SYSTEM / SCALES.GALAXY);
-        smbhGroup.scale.setScalar(scale);
-    } else {
-        smbhGroup.scale.setScalar(1);
-    }
+    smbhGroup.scale.setScalar(1);
 }
 
 function findNearbyNebula(position) {
@@ -458,11 +513,11 @@ let passiveBodies = [];
 let activeCMEs = []; 
 
 let simState = {
-    universeSimTime: 13.8, 
-    galaxySimTime: 0,   
+    universeSimTime: 13.8,
+    galaxySimTime: 0,
     isPaused: false,
-    timeScale: 0.1, 
-    viewLevel: 0, 
+    timeScale: 0.25,
+    viewLevel: 0,
     isTransitioning: false,
     transitionTarget: new THREE.Vector3(),
     transitionData: null,
@@ -470,7 +525,7 @@ let simState = {
     nextLevel: 0,
     worldOffset: new THREE.Vector3(0,0,0),
     currentGalaxyType: 0,
-    qualityLevel: 'HIGH',
+    qualityLevel: URL_QUALITY || 'HIGH', // Use URL param if provided
     pixelationFactor: 1,
     selectedTarget: null, 
     activeGalaxyData: null,
@@ -489,7 +544,7 @@ let simState = {
     inspectingTarget: null,
     inspectingTargetPreviousPos: null,
     bigBangFlash: 0,
-    showTravelPath: true,
+    showTravelPath: false,
     useSchwarzschildLensing: true
 };
 
@@ -1360,6 +1415,8 @@ function rebuildGraphicsPipeline(reason = "unknown") {
     controls.dampingFactor = 0.05;
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.2;
+    controls.enableZoom = false;
+    controls.enableZoom = false;
     controls.enabled = controlsEnabled;
     controls.target.copy(target);
     camera.position.copy(camPos);
@@ -1459,11 +1516,13 @@ function init() {
     activePointerId = null;
     isDragging = false;
 
-    // Determine pixelation scale based on screen width
-    // 720p (approx 1280w) -> 1
-    // 4k (approx 3840w) -> 5
-    // Formula: floor(width / 750) clamped at 1
-    simState.pixelationFactor = Math.max(1, Math.floor(window.innerWidth / 750));
+    // Determine pixelation scale - URL param overrides auto-detection
+    if (INITIAL_PIXELATION !== null && INITIAL_PIXELATION >= 0) {
+        simState.pixelationFactor = INITIAL_PIXELATION;
+    } else {
+        // Auto-detect based on screen width: 720p->1, 4k->5
+        simState.pixelationFactor = Math.max(1, Math.floor(window.innerWidth / 750));
+    }
     if (elRetroSlider) elRetroSlider.value = simState.pixelationFactor;
     if (elRetroVal) elRetroVal.innerText = simState.pixelationFactor;
 
@@ -1520,7 +1579,7 @@ function init() {
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x000000, 1e-9);
 
-    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 1e12);
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1e30);
     
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -1620,6 +1679,21 @@ function setupUIEvents() {
         }
     });
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    if (onWheelZoom) renderer.domElement.removeEventListener('wheel', onWheelZoom);
+    onWheelZoom = (e) => {
+        if (!camera || !controls) return;
+        if (renderer?.xr?.isPresenting) return;
+        if (e.deltaY === 0) return;
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 1.1 : 0.9;
+        tmpZoomVec.copy(camera.position).sub(controls.target);
+        if (tmpZoomVec.lengthSq() < 1e-12) tmpZoomVec.set(0, 0, 1);
+        tmpZoomVec.multiplyScalar(factor);
+        camera.position.copy(controls.target).add(tmpZoomVec);
+        controls.update();
+        updateCameraClipping();
+    };
+    renderer.domElement.addEventListener('wheel', onWheelZoom, { passive: false });
 
     // General purpose button binder that strips old listeners by cloning
     const bindBtn = (id, fn) => {
@@ -1648,6 +1722,7 @@ function setupUIEvents() {
         if (simState.inspectingTarget) {
             simState.inspectingTarget = null; simState.inspectingTargetPreviousPos = null;
             controls.target.set(0,0,0);
+            resetCamera(simState.viewLevel);
             elBackBtn.textContent = simState.viewLevel === 2 ? "BACK TO GALAXY" : "BACK TO UNIVERSE";
             return;
         }
@@ -1705,7 +1780,7 @@ function setupUIEvents() {
                 type: "COSMIC WEB",
                 age: simState.universeSimTime.toFixed(2),
                 mass: `${CONFIG.starCount.toLocaleString()} OBJECTS`,
-                radius: `${(SCALES.UNIVERSE / 1_000_000).toFixed(1)} MLY`,
+                radius: `${(SCALES.UNIVERSE / UNITS.MLY).toFixed(1)} MLY`,
                 lum: "N/A",
                 composition: `SEED: 0x${CONFIG.seed.toString(16).toUpperCase()}\nOBJECTS: ${CONFIG.starCount.toLocaleString()}`
             };
@@ -1739,6 +1814,15 @@ function setupUIEvents() {
                     simState.trackingTarget = null;
                     simState.inspectingTargetPreviousPos = simState.inspectingTarget.position.clone();
                     controls.target.copy(simState.inspectingTarget.position);
+                    const nebulaRadius = simState.inspectingTarget.userData?.radius || (10 * UNITS.LY);
+                    const dist = nebulaRadius * 1.6;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI * 0.35 + 0.2;
+                    camera.position.set(
+                        simState.inspectingTarget.position.x + dist * Math.sin(phi) * Math.cos(theta),
+                        simState.inspectingTarget.position.y + dist * Math.cos(phi),
+                        simState.inspectingTarget.position.z + dist * Math.sin(phi) * Math.sin(theta)
+                    );
                     elBackBtn.textContent = "LEAVE ORBIT";
                 } else {
                     startTransition(simState.selectedTarget.position, 2);
@@ -1748,7 +1832,7 @@ function setupUIEvents() {
                 simState.trackingTarget = null;
                 simState.inspectingTargetPreviousPos = simState.inspectingTarget.position.clone();
                 // LOCK CAMERA ON TARGET IMMEDIATELY
-                controls.target.copy(simState.inspectingTarget.position);
+                focusCameraOnTarget(simState.inspectingTarget);
                 elBackBtn.textContent = "LEAVE ORBIT";
             }
         }
@@ -1831,10 +1915,98 @@ function updatePixelation() {
 function onWindowResize() { updatePixelation(); }
 
 function resetCamera(level) {
-    if (level === 0) { controls.maxDistance = SCALES.UNIVERSE * 2; controls.minDistance = 1000; controls.zoomSpeed = 1.0; elBackBtn.disabled = true; elBackBtn.textContent = "RETURN TO ORBIT"; }
-    else if (level === 1) { controls.maxDistance = SCALES.GALAXY * 3; controls.minDistance = 100; controls.zoomSpeed = 2.0; elBackBtn.disabled = false; elBackBtn.textContent = "BACK TO UNIVERSE"; }
-    else if (level === 2) { controls.maxDistance = SCALES.SYSTEM * 4; controls.minDistance = 10; controls.zoomSpeed = 3.0; elBackBtn.disabled = false; elBackBtn.textContent = "BACK TO GALAXY"; }
+    if (level === 0) {
+        controls.maxDistance = Infinity;
+        controls.minDistance = 0;
+        controls.zoomSpeed = 1.0;
+        elBackBtn.disabled = true; elBackBtn.textContent = "RETURN TO ORBIT";
+    }
+    else if (level === 1) {
+        controls.maxDistance = Infinity;
+        controls.minDistance = 0;
+        controls.zoomSpeed = 2.0;
+        elBackBtn.disabled = false; elBackBtn.textContent = "BACK TO UNIVERSE";
+    }
+    else if (level === 2) {
+        controls.maxDistance = Infinity;
+        controls.minDistance = 0;
+        controls.zoomSpeed = 3.0;
+        elBackBtn.disabled = false; elBackBtn.textContent = "BACK TO GALAXY";
+    }
     camera.updateProjectionMatrix();
+}
+
+function getTargetRadiusM(target) {
+    if (!target) return 1;
+    const radius = target.userData?.radiusM;
+    if (Number.isFinite(radius) && radius > 0) return radius;
+    const geom = target.geometry;
+    if (geom) {
+        if (!geom.boundingSphere) geom.computeBoundingSphere();
+        const geomRadius = geom.boundingSphere?.radius;
+        if (Number.isFinite(geomRadius) && geomRadius > 0) return geomRadius;
+    }
+    return 1;
+}
+
+function focusCameraOnTarget(target) {
+    if (!camera || !controls || !target) return;
+    const radius = getTargetRadiusM(target);
+    const isPlanet = Boolean(target.userData?.type);
+    const isStar = Boolean(target.userData?.isStar);
+    const distanceMultiplier = isPlanet ? 10 : (isStar ? 200 : 6);
+    const distance = Math.max(radius * distanceMultiplier, radius * 2);
+    tmpFocusDir.copy(camera.position).sub(target.position);
+    if (tmpFocusDir.lengthSq() < 1e-6) tmpFocusDir.set(0, 1, 1);
+    tmpFocusDir.normalize();
+    camera.position.copy(target.position).addScaledVector(tmpFocusDir, distance);
+    controls.target.copy(target.position);
+    controls.update();
+}
+
+function updateCameraClipping() {
+    if (!camera || !controls) return;
+    if (renderer?.xr?.isPresenting) return;
+    // With logarithmic depth buffer, we can use a fixed small near plane
+    // and a massive far plane without precision issues
+    const near = 0.1; // Fixed near plane - log depth handles the precision
+    const far = SCALES.UNIVERSE * 10; // Fixed far plane - encompasses entire universe
+
+    if (camera.near !== near || camera.far !== far) {
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+    }
+}
+
+function applyFloatingOrigin() {
+    if (!camera || !controls) return;
+    if (renderer?.xr?.isPresenting || simState.isTransitioning) return;
+    const threshold = simState.viewLevel === 2
+        ? SCALES.SYSTEM * 0.25
+        : (simState.viewLevel === 1 ? SCALES.GALAXY * 0.1 : SCALES.GALAXY * 1.5);
+    if (camera.position.length() < threshold) return;
+    const shift = camera.position.clone();
+
+    camera.position.sub(shift);
+    controls.target.sub(shift);
+    if (simState.transitionTarget) simState.transitionTarget.sub(shift);
+    if (simState.selectedTarget?.position) simState.selectedTarget.position.sub(shift);
+    if (simState.inspectingTargetPreviousPos) simState.inspectingTargetPreviousPos.sub(shift);
+    simState.worldOffset.add(shift);
+
+    const shiftNode = (node) => { if (node?.position) node.position.sub(shift); };
+    shiftNode(points);
+    shiftNode(volumeGroup);
+    shiftNode(localGalaxy);
+    shiftNode(localSystem);
+    shiftNode(smbhGroup);
+    shiftNode(nebulaSystem);
+    shiftNode(nebulaNursery);
+    shiftNode(supernovaSystem);
+    shiftNode(galaxyCacheGroup);
+    shiftTravelPath(shift);
+    controls.update();
 }
 
 function resetSimulation() {
@@ -1850,9 +2022,12 @@ function resetSimulation() {
     activeBlackHoles = []; blackHoleUniforms.uBHCount.value = 0;
     elLocBtn.style.display = 'block';
     if(points) points.position.set(0,0,0);
-    if (volumeMesh) {
-        volumeMesh.visible = true;
-        volumeMesh.scale.setScalar(volumeMesh.userData.baseScale || 1);
+    if (volumeGroup) {
+        volumeGroup.visible = true;
+        // Reset each sub-volume to its original scale
+        const baseScale = volumeGroup.userData.baseScale || 1;
+        const subScale = baseScale / 3;
+        volumeMeshes.forEach(mesh => mesh.scale.setScalar(subScale));
     }
     if(localGalaxy) localGalaxy.visible = false;
     if(localSystem) localSystem.visible = false;
@@ -1941,7 +2116,8 @@ function completeTransition() {
         simState.inspectingTargetPreviousPos = null;
         simState.trackingTarget = null;
     }
-    if (volumeMesh) volumeMesh.visible = level <= 2;
+    // Keep cosmic web always visible (drawn first, occluded by closer objects)
+    if (volumeGroup) volumeGroup.visible = true;
     
     if (level > prevLevel) {
         if (simState.transitionData) {
@@ -1971,7 +2147,7 @@ function completeTransition() {
     if (level > prevLevel) {
         camera.position.sub(shift); controls.target.sub(shift);
         if (points) points.position.sub(shift);
-        if (volumeMesh) volumeMesh.position.sub(shift);
+        if (volumeGroup) volumeGroup.position.sub(shift);
         if (level === 2 && localGalaxy) localGalaxy.position.sub(shift);
         if (level === 2 && smbhGroup) smbhGroup.position.sub(shift);
         if (level === 2 && nebulaSystem) nebulaSystem.position.sub(shift);
@@ -2024,7 +2200,7 @@ function completeTransition() {
         if (smbhGroup && smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
         disposeNebulaNursery();
         if (simState.activeNebula?.isNursery) {
-            const nurseryRadius = SCALES.SYSTEM * 4.0;
+            const nurseryRadius = (0.5 + Math.random() * 2.0) * UNITS.LY;
             const seed = Math.floor(Math.random() * 100000);
             const tint = new THREE.Color(0.3, 0.75, 0.9);
             const chunkCount = 14 + Math.floor(Math.random() * 8);
@@ -2049,6 +2225,9 @@ function completeTransition() {
         } else camera.position.set(0, SCALES.SYSTEM * 0.4, SCALES.SYSTEM * 0.8);
         controls.target.set(0,0,0);
         resetCamera(2); elAlertMsg.innerText = "SYSTEM ORBIT STABLE";
+        const primaryStar = localSystem.children.find(obj => obj.userData?.isStar && !obj.userData?.isBlackHole)
+            || localSystem.children.find(obj => obj.userData?.isStar);
+        if (primaryStar) focusCameraOnTarget(primaryStar);
     }
     
     if (simState.isAutopilot && level > 0 && !simState.autopilotPanelHidden) {
@@ -2112,9 +2291,11 @@ function getGalaxyInfo(seed, age) {
     let type = "SPIRAL GALAXY";
     if (age < 3.0) { if (rnd() > 0.3) type = "IRREGULAR GALAXY"; else if (rnd() > 0.5) type = "QUASAR (AGN)"; else type = "PROTO-GALAXY"; } 
     else if (age > 10.0) { if (rnd() > 0.4) type = "ELLIPTICAL GALAXY"; else type = "LENTICULAR GALAXY"; }
+    const baseRadiusKly = SCALES.GALAXY / UNITS.KLY;
+    const radiusKly = baseRadiusKly * (0.6 + rnd() * 0.8);
     return {
         designation: `NGC-${Math.floor(rnd()*5000)}`, type: type, age: age.toFixed(2),
-        mass: (rnd() * 50 + 10).toFixed(1) + " Billion", radius: (rnd() * 50 + 20).toFixed(1) + " kly",
+        mass: (rnd() * 50 + 10).toFixed(1) + " Billion", radius: radiusKly.toFixed(1) + " kly",
         lum: "HIGH", spectrum: [], composition: generateComposition(seed, false)
     };
 }
@@ -2255,14 +2436,20 @@ function createBlackHole(radius, x, y, z) {
 // --- GENERATION FUNCTIONS ---
 
 function disposeUniverseVolume() {
-    if (!volumeMesh) return;
-    scene.remove(volumeMesh);
-    if (volumeMesh.geometry) volumeMesh.geometry.dispose();
-    if (volumeMaterial) volumeMaterial.dispose();
+    if (volumeGroup) {
+        scene.remove(volumeGroup);
+        volumeGroup = null;
+    }
+    for (const mesh of volumeMeshes) {
+        if (mesh.geometry) mesh.geometry.dispose();
+    }
+    for (const mat of volumeMaterials) {
+        if (mat) mat.dispose();
+    }
     if (volumeTexture) volumeTexture.dispose();
-    volumeMesh = null;
+    volumeMeshes = [];
+    volumeMaterials = [];
     volumeTexture = null;
-    volumeMaterial = null;
 }
 
 function supportsVolumeRendering() {
@@ -2289,94 +2476,156 @@ function buildUniverseVolume({ density, resolution, scale }) {
     texture.needsUpdate = true;
     volumeTexture = texture;
 
-    const material = new THREE.ShaderMaterial({
-        glslVersion: THREE.GLSL3,
-        uniforms: {
-            uDensity: { value: texture },
-            uInvModelMatrix: { value: new THREE.Matrix4() },
-            uStepSize: { value: (1.0 / resolution) * 2.2 },
-            uDensityScale: { value: 0.75 },
-            uTime: { value: 0.0 }
-        },
-        vertexShader: `
-            out vec3 vLocalPos;
-            void main() {
-                vLocalPos = position;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            precision highp float;
-            precision highp sampler3D;
-            uniform sampler3D uDensity;
-            uniform mat4 uInvModelMatrix;
-            uniform float uStepSize;
-            uniform float uDensityScale;
-            uniform float uTime;
-            in vec3 vLocalPos;
-            out vec4 fragColor;
+    // Create a group to hold all 27 sub-volumes
+    volumeGroup = new THREE.Group();
+    volumeGroup.userData.baseScale = scale * 2;
+    scene.add(volumeGroup);
 
-            vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
-                vec3 boundsMin = vec3(-0.5);
-                vec3 boundsMax = vec3(0.5);
-                vec3 invDir = 1.0 / rayDir;
-                vec3 t0 = (boundsMin - rayOrigin) * invDir;
-                vec3 t1 = (boundsMax - rayOrigin) * invDir;
-                vec3 tmin = min(t0, t1);
-                vec3 tmax = max(t0, t1);
-                float tNear = max(max(tmin.x, tmin.y), tmin.z);
-                float tFar = min(min(tmax.x, tmax.y), tmax.z);
-                return vec2(tNear, tFar);
-            }
-
-            void main() {
-                vec3 rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz;
-                vec3 rayDir = normalize(vLocalPos - rayOrigin);
-                vec2 hit = intersectBox(rayOrigin, rayDir);
-                if (hit.y <= hit.x) discard;
-
-                float t = max(hit.x, 0.0);
-                float tEnd = hit.y;
-                vec3 color = vec3(0.0);
-                float alpha = 0.0;
-
-                for (int i = 0; i < 192; i++) {
-                    if (t > tEnd || alpha > 0.97) break;
-                    vec3 p = rayOrigin + rayDir * t;
-                    vec3 texPos = p + vec3(0.5);
-                    float d = texture(uDensity, texPos).r;
-                    d = pow(d, 0.9);
-                    d = clamp(d * 1.15, 0.0, 1.0);
-                    float a = d * uDensityScale;
-                    vec3 tint = mix(vec3(0.45, 0.6, 1.0), vec3(1.0, 0.95, 0.8), d);
-                    color += (1.0 - alpha) * a * tint;
-                    alpha += (1.0 - alpha) * a;
-                    t += uStepSize;
-                }
-
-                if (alpha <= 0.01) discard;
-                fragColor = vec4(color, alpha);
-            }
-        `,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.BackSide
-    });
-
-    volumeMaterial = material;
     const geom = new THREE.BoxGeometry(1, 1, 1);
-    const mesh = new THREE.Mesh(geom, material);
-    mesh.frustumCulled = false;
-    mesh.userData.baseScale = scale * 2;
-    mesh.scale.setScalar(mesh.userData.baseScale);
-    mesh.onBeforeRender = () => {
-        mesh.updateMatrixWorld();
-        material.uniforms.uInvModelMatrix.value.copy(mesh.matrixWorld).invert();
-        material.uniforms.uTime.value = simState.universeSimTime;
-    };
-    volumeMesh = mesh;
-    scene.add(mesh);
+    const subScale = volumeGroup.userData.baseScale / 3; // Each sub-volume is 1/3 the size
+    const texScale = 1.0 / 3.0; // Each sub-volume samples 1/3 of texture in each dimension
+
+    // Create 3x3x3 grid of sub-volumes
+    for (let iz = 0; iz < 3; iz++) {
+        for (let iy = 0; iy < 3; iy++) {
+            for (let ix = 0; ix < 3; ix++) {
+                // Texture offset for this sub-volume (0, 1/3, or 2/3)
+                const texOffset = new THREE.Vector3(ix / 3, iy / 3, iz / 3);
+
+                const material = new THREE.ShaderMaterial({
+                    glslVersion: THREE.GLSL3,
+                    uniforms: {
+                        uDensity: { value: texture },
+                        uCameraLocal: { value: new THREE.Vector3() },
+                        uTexOffset: { value: texOffset },
+                        uTexScale: { value: texScale },
+                        uStepSize: { value: (1.0 / resolution) * 2.2 * 3 }, // Adjusted for smaller volume
+                        uDensityScale: { value: 0.75 },
+                        uTime: { value: 0.0 }
+                    },
+                    vertexShader: `
+                        out vec3 vLocalPos;
+                        void main() {
+                            vLocalPos = position;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        precision highp float;
+                        precision highp sampler3D;
+                        uniform sampler3D uDensity;
+                        uniform vec3 uCameraLocal;
+                        uniform vec3 uTexOffset;
+                        uniform float uTexScale;
+                        uniform float uStepSize;
+                        uniform float uDensityScale;
+                        uniform float uTime;
+                        in vec3 vLocalPos;
+                        out vec4 fragColor;
+
+                        vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
+                            vec3 boundsMin = vec3(-0.5);
+                            vec3 boundsMax = vec3(0.5);
+                            vec3 invDir = 1.0 / rayDir;
+                            vec3 t0 = (boundsMin - rayOrigin) * invDir;
+                            vec3 t1 = (boundsMax - rayOrigin) * invDir;
+                            vec3 tmin = min(t0, t1);
+                            vec3 tmax = max(t0, t1);
+                            float tNear = max(max(tmin.x, tmin.y), tmin.z);
+                            float tFar = min(min(tmax.x, tmax.y), tmax.z);
+                            return vec2(tNear, tFar);
+                        }
+
+                        void main() {
+                            vec3 rayOrigin = uCameraLocal;
+                            // vLocalPos is on back face (exit point), compute proper ray direction
+                            vec3 rayDir = normalize(vLocalPos - rayOrigin);
+
+                            // Compute entry point - either front face intersection or camera if inside
+                            vec2 hit = intersectBox(rayOrigin, rayDir);
+
+                            // Skip invalid rays
+                            if (hit.y < 0.0 || hit.y <= hit.x) discard;
+
+                            float t = max(hit.x, 0.0);
+                            float tEnd = hit.y;
+                            vec3 color = vec3(0.0);
+                            float alpha = 0.0;
+
+                            for (int i = 0; i < 64; i++) {
+                                if (t > tEnd || alpha > 0.97) break;
+                                vec3 p = rayOrigin + rayDir * t;
+                                // Map local [-0.5, 0.5] to this sub-volume's texture region
+                                vec3 texPos = uTexOffset + (p + vec3(0.5)) * uTexScale;
+
+                                if (any(lessThan(texPos, vec3(0.0))) || any(greaterThan(texPos, vec3(1.0)))) {
+                                    t += uStepSize;
+                                    continue;
+                                }
+
+                                float d = texture(uDensity, texPos).r;
+                                d = pow(d, 0.9);
+                                d = clamp(d * 1.15, 0.0, 1.0);
+                                float a = d * uDensityScale;
+
+                                vec3 tint = mix(vec3(0.45, 0.6, 1.0), vec3(1.0, 0.95, 0.8), d);
+                                color += (1.0 - alpha) * a * tint;
+                                alpha += (1.0 - alpha) * a;
+                                t += uStepSize;
+                            }
+
+                            if (alpha <= 0.01) discard;
+                            fragColor = vec4(color, alpha);
+                        }
+                    `,
+                    transparent: true,
+                    depthWrite: false,
+                    depthTest: true,
+                    blending: THREE.AdditiveBlending,
+                    side: THREE.BackSide // Only render back faces - proper volume raymarching
+                });
+
+                volumeMaterials.push(material);
+
+                const mesh = new THREE.Mesh(geom, material);
+                mesh.frustumCulled = false;
+                mesh.renderOrder = -100;
+                mesh.scale.setScalar(subScale);
+
+                // Position in grid: center is at (1,1,1), so offset by (ix-1, iy-1, iz-1) * subScale
+                mesh.position.set(
+                    (ix - 1) * subScale,
+                    (iy - 1) * subScale,
+                    (iz - 1) * subScale
+                );
+
+                const invMatrix = new THREE.Matrix4();
+                const camLocal = new THREE.Vector3();
+                mesh.onBeforeRender = (renderer, scene, cam) => {
+                    mesh.updateMatrixWorld();
+                    invMatrix.copy(mesh.matrixWorld).invert();
+                    camLocal.copy(cam.position).applyMatrix4(invMatrix);
+                    material.uniforms.uCameraLocal.value.copy(camLocal);
+                    material.uniforms.uTime.value = simState.universeSimTime;
+                };
+
+                volumeMeshes.push(mesh);
+                volumeGroup.add(mesh);
+
+                // Add debug wireframe if enabled
+                if (DEBUG_WEB) {
+                    const edgesGeom = new THREE.EdgesGeometry(geom);
+                    const lineMat = makeDebugLineMaterial();
+                    const wireframe = new THREE.LineSegments(edgesGeom, lineMat);
+                    wireframe.scale.copy(mesh.scale);
+                    wireframe.position.copy(mesh.position);
+                    wireframe.renderOrder = 1000; // Draw on top
+                    volumeGroup.add(wireframe);
+                }
+            }
+        }
+    }
+
     return true;
 }
 
@@ -2443,7 +2692,7 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
         glslVersion: THREE.GLSL3,
         uniforms: {
             uDensity: { value: texture },
-            uInvModelMatrix: { value: new THREE.Matrix4() },
+            uCameraLocal: { value: new THREE.Vector3() },
             uStepSize: { value: (1.0 / resolution) * 2.4 },
             uDensityScale: { value: 0.85 },
             uTime: { value: 0.0 },
@@ -2460,7 +2709,7 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
             precision highp float;
             precision highp sampler3D;
             uniform sampler3D uDensity;
-            uniform mat4 uInvModelMatrix;
+            uniform vec3 uCameraLocal;
             uniform float uStepSize;
             uniform float uDensityScale;
             uniform float uTime;
@@ -2472,7 +2721,7 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
             vec2 intersectBox(vec3 rayOrigin, vec3 rayDir) {
                 vec3 boundsMin = vec3(-0.5);
                 vec3 boundsMax = vec3(0.5);
-                vec3 invDir = 1.0 / rayDir;
+                vec3 invDir = 1.0 / (rayDir + vec3(1e-10));
                 vec3 t0 = (boundsMin - rayOrigin) * invDir;
                 vec3 t1 = (boundsMax - rayOrigin) * invDir;
                 vec3 tmin = min(t0, t1);
@@ -2483,7 +2732,8 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
             }
 
             void main() {
-                vec3 rayOrigin = (uInvModelMatrix * vec4(cameraPosition, 1.0)).xyz;
+                // Camera position in local space computed on CPU with full precision
+                vec3 rayOrigin = uCameraLocal;
                 vec3 rayDir = normalize(vLocalPos - rayOrigin);
                 vec2 hit = intersectBox(rayOrigin, rayDir);
                 if (hit.y <= hit.x) discard;
@@ -2523,17 +2773,24 @@ function buildNebulaVolume({ density, resolution, radius, tint }) {
         `,
         transparent: true,
         depthWrite: false,
+        depthTest: true,
         blending: THREE.AdditiveBlending,
-        side: THREE.BackSide
+        side: THREE.BackSide // Only render back faces - proper volume raymarching
     });
 
     const geom = new THREE.BoxGeometry(1, 1, 1);
     const mesh = new THREE.Mesh(geom, material);
     mesh.frustumCulled = false;
+    mesh.renderOrder = -100; // Same as cosmic web
     mesh.scale.setScalar(radius * 2);
-    mesh.onBeforeRender = () => {
+    const invMatrix = new THREE.Matrix4();
+    const camLocal = new THREE.Vector3();
+    mesh.onBeforeRender = (renderer, scene, cam) => {
         mesh.updateMatrixWorld();
-        material.uniforms.uInvModelMatrix.value.copy(mesh.matrixWorld).invert();
+        // Compute camera position in nebula's local space on CPU with full precision
+        invMatrix.copy(mesh.matrixWorld).invert();
+        camLocal.copy(cam.position).applyMatrix4(invMatrix);
+        material.uniforms.uCameraLocal.value.copy(camLocal);
         material.uniforms.uTime.value = simState.universeSimTime;
     };
     return mesh;
@@ -2544,7 +2801,8 @@ function buildNebulaCluster({ seed, radius, tint, chunkCount }) {
     const group = new THREE.Group();
     group.userData.isNebula = true;
     group.userData.radius = radius;
-    group.userData.velocity = randomSphericalLocal(rand, radius * 0.000015);
+        const nebulaSpeedMPerSec = 2000 + rand() * 6000;
+        group.userData.velocity = randomSphericalLocal(rand, nebulaSpeedMPerSec * PHYSICS_SECONDS_PER_UNIT);
     const nurseryOptions = [
         { type: 'STELLAR NURSERY', isNursery: true, composition: 'H, He, dust, ionized gas' },
         { type: 'MOLECULAR CLOUD', isNursery: true, composition: 'H2, CO, dust, cold gas' }
@@ -2623,7 +2881,7 @@ function spawnNebulaStar() {
     if (!nebulaNursery || !localSystem) return;
     const radius = nebulaNursery.userData?.radius || SCALES.SYSTEM;
     const pos = randomSphericalLocal(Math.random, radius * 0.5);
-    const starRadius = Math.max(SCALES.SYSTEM * 0.0004, radius * 0.00015);
+    const starRadius = SOLAR_RADIUS_M * (0.2 + Math.random() * 0.6);
     const geom = new THREE.SphereGeometry(starRadius, 24, 24);
     const mat = new THREE.MeshStandardMaterial({
         color: 0xffd6aa,
@@ -2635,7 +2893,8 @@ function spawnNebulaStar() {
     star.userData.nebulaStar = true;
     star.userData.age = 0;
     star.userData.life = 12 + Math.random() * 8;
-    star.userData.velocity = randomSphericalLocal(Math.random, SCALES.SYSTEM * 0.02);
+    const driftMPerSec = 5000 + Math.random() * 15000;
+    star.userData.velocity = randomSphericalLocal(Math.random, driftMPerSec * PHYSICS_SECONDS_PER_UNIT);
     localSystem.add(star);
     nebulaStars.push(star);
 }
@@ -2699,7 +2958,10 @@ function buildUniversePoints({ positions, colors, sizes }, options = {}) {
     material.opacity = opacity;
     material.transparent = opacity < 1;
     material.colorWrite = !pickOnly;
-    points = new THREE.Points(geometry, material); points.frustumCulled = false; scene.add(points);
+    points = new THREE.Points(geometry, material);
+    points.frustumCulled = false;
+    points.renderOrder = 0; // Render after cosmic web (which is -100)
+    scene.add(points);
 }
 
 async function generateUniverse(seed) {
@@ -2822,6 +3084,7 @@ async function generateDetailedGalaxy(type = 0) {
     });
     localGalaxy = new THREE.Points(geom, mat);
     localGalaxy.frustumCulled = false;
+    localGalaxy.renderOrder = 0; // Render after cosmic web (which is -100)
     localGalaxy.visible = simState.viewLevel !== 0;
     scene.add(localGalaxy);
 
@@ -2833,7 +3096,7 @@ async function generateDetailedGalaxy(type = 0) {
         for (let i = 0; i < nebulaCount; i++) {
             const seed = baseSeed + i * 97;
             const rand = seededRandom(seed);
-            const nebulaRadius = radius * (0.1 + rand() * 0.18);
+            const nebulaRadius = (5 + rand() * 80) * UNITS.LY;
             const position = randomSphericalLocal(rand, radius * (0.35 + rand() * 0.45));
             const tint = new THREE.Color(0.2 + rand() * 0.25, 0.5 + rand() * 0.3, 0.7 + rand() * 0.2);
             const chunkCount = 12 + Math.floor(rand() * 8);
@@ -2845,7 +3108,10 @@ async function generateDetailedGalaxy(type = 0) {
         nebulaSystem.visible = simState.viewLevel === 1;
         scene.add(nebulaSystem);
     }
-    const bh = createBlackHole(radius * 0.005, 0, 0, 0);
+    const smbhInfo = getSmbhInfo();
+    const bhRadiusM = smbhInfo.radiusM || schwarzschildRadiusM((smbhInfo.massSolar || 1_000_000) * SOLAR_MASS_KG);
+    const bh = createBlackHole(bhRadiusM, 0, 0, 0);
+    bh.userData.massSolar = smbhInfo.massSolar;
     smbhGroup.add(bh);
     smbhGroup.visible = simState.viewLevel !== 0;
 }
@@ -2855,25 +3121,31 @@ function generateStarSystem(seedPos) {
     while(localSystem.children.length > 0){ const c = localSystem.children[0]; if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose(); localSystem.remove(c); }
     coronaMeshes.length = 0;
     let seedVal = Math.abs(seedPos.x + seedPos.y + seedPos.z); const rand = () => { const x = Math.sin(seedVal++) * 10000; return x - Math.floor(x); };
-    const S = SCALES.SYSTEM; const G = SCALES.G; 
-    let baseStarColor = 0xffaa00; let baseStarRad = S * 0.25; let isBH = false;
-    if (simState.selectedTarget && simState.selectedTarget.data) {
-         const d = simState.selectedTarget.data;
-         if (d.typeObj?.color) baseStarColor = d.typeObj.color;
-         if (d.typeObj?.id === 'BH') { baseStarRad = S * 0.1; isBH = true; }
-    }
-    const numStars = isBH ? 1 : (rand() > 0.6 ? (rand() > 0.9 ? 3 : 2) : 1);
+    const S = SCALES.SYSTEM;
+    const targetClass = simState.selectedTarget?.data?.typeObj || STAR_CLASSES[4];
+    const isTargetBH = targetClass.id === 'BH';
+    const numStars = isTargetBH ? 1 : (rand() > 0.6 ? (rand() > 0.9 ? 3 : 2) : 1);
+    const starBodies = [];
     for(let i=0; i<numStars; i++) {
-        const sizeMod = (i===0) ? 1.0 : (0.5 + rand() * 0.5); const rad = baseStarRad * sizeMod; const mass = 1000.0 * sizeMod; 
+        const sizeMod = (i===0) ? 1.0 : (0.5 + rand() * 0.5);
+        const classObj = (i === 0) ? targetClass : STAR_CLASSES[Math.max(0, Math.floor(rand() * (STAR_CLASSES.length - 3)))];
+        const starMassSolar = classObj.mass * sizeMod;
+        const starRadiusSolar = classObj.rad * sizeMod;
+        const starMassKg = starMassSolar * SOLAR_MASS_KG;
+        let starRadiusM = starRadiusSolar * SOLAR_RADIUS_M;
+        const isBH = classObj.id === 'BH';
+        if (isBH) {
+            starRadiusM = Math.max(schwarzschildRadiusM(starMassKg), SOLAR_RADIUS_M * 0.001);
+        }
         let mesh;
         if (isBH) {
-             mesh = createBlackHole(rad, 0, 0, 0);
+             mesh = createBlackHole(starRadiusM, 0, 0, 0);
              activeBlackHoles.push(mesh);
-             mesh.add(new THREE.PointLight(0xffaa44, 100000, SCALES.SYSTEM * 5));
+             mesh.add(new THREE.PointLight(0xffaa44, 100000, S * 5));
              mesh.add(new THREE.AmbientLight(0x222233, 0.5));
         } else {
-            const geom = new THREE.SphereGeometry(rad, 64, 64);
-            const mat = new THREE.MeshStandardMaterial({ color: baseStarColor, emissive: baseStarColor, emissiveIntensity: 2.0 });
+            const geom = new THREE.SphereGeometry(starRadiusM, 64, 64);
+            const mat = new THREE.MeshStandardMaterial({ color: classObj.color, emissive: classObj.color, emissiveIntensity: 2.0 });
             
             mat.onBeforeCompile = (shader) => {
                 shader.uniforms.uTime = { value: 0 };
@@ -2883,7 +3155,7 @@ function generateStarSystem(seedPos) {
                 ` + shader.vertexShader;
                 shader.vertexShader = shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n vCustomWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
                 shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n
-                    float disp = (snoise(vec3(position * 0.2 + uTime * 0.5)) + snoise(vec3(position * 0.5 - uTime * 0.2))) * 0.05 * ${rad.toFixed(2)};
+                    float disp = (snoise(vec3(position * 0.2 + uTime * 0.5)) + snoise(vec3(position * 0.5 - uTime * 0.2))) * 0.05 * ${starRadiusM.toFixed(2)};
                     transformed += normal * disp;
                 `);
                 shader.fragmentShader = `uniform float uTime; varying vec3 vCustomWorldPos; ${NOISE_GLSL}` + shader.fragmentShader;
@@ -2899,10 +3171,10 @@ function generateStarSystem(seedPos) {
             };
             mesh = new THREE.Mesh(geom, mat);
             // Corona
-            const cGeom = new THREE.SphereGeometry(rad * 1.4, 32, 32);
+            const cGeom = new THREE.SphereGeometry(starRadiusM * 1.4, 32, 32);
             const cMat = new THREE.ShaderMaterial({
                 uniforms: {
-                    uColor: { value: new THREE.Color(baseStarColor) },
+                    uColor: { value: new THREE.Color(classObj.color) },
                     uBlend: { value: 1.0 }
                 },
                 transparent: true,
@@ -2915,22 +3187,52 @@ function generateStarSystem(seedPos) {
             coronaMesh.userData.isCorona = true;
             coronaMeshes.push(coronaMesh);
             mesh.add(coronaMesh);
-            mesh.add(new THREE.PointLight(baseStarColor, 300000, SCALES.SYSTEM * 10, 2));
+            const lightStrength = 1_500_000 * (starRadiusM / SOLAR_RADIUS_M);
+            const lightRange = Math.max(S * 20, starRadiusM * 2000);
+            mesh.add(new THREE.PointLight(classObj.color, lightStrength, lightRange, 2));
         }
+        mesh.userData.massKg = starMassKg;
+        mesh.userData.radiusM = starRadiusM;
+        mesh.userData.isStar = true;
+        mesh.renderOrder = 0; // Render after cosmic web (which is -100)
         localSystem.add(mesh);
-        if (numStars === 1) physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,0), isStar: true });
-        else {
-             const dist = S * 0.4; mesh.position.set((i===0?1:-1)*dist, 0, 0); 
-             const v = Math.sqrt(G*mass/(2*dist)); physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,(i===0?1:-1)*v), isStar: true });
+        starBodies.push({ mesh, massKg: starMassKg });
+    }
+
+    if (starBodies.length === 1) {
+        physicsBodies.push({ mesh: starBodies[0].mesh, massKg: starBodies[0].massKg, velocity: new THREE.Vector3(0,0,0), isStar: true });
+    } else if (starBodies.length >= 2) {
+        const mass1 = starBodies[0].massKg;
+        const mass2 = starBodies[1].massKg;
+        const totalMass = mass1 + mass2;
+        const separation = UNITS.AU * (0.2 + rand() * 4.0);
+        const r1 = separation * (mass2 / totalMass);
+        const r2 = separation * (mass1 / totalMass);
+        const omega = Math.sqrt(G_M * totalMass / Math.pow(separation, 3));
+        const v1 = omega * r1;
+        const v2 = omega * r2;
+        starBodies[0].mesh.position.set(-r1, 0, 0);
+        starBodies[1].mesh.position.set(r2, 0, 0);
+        physicsBodies.push({ mesh: starBodies[0].mesh, massKg: mass1, velocity: new THREE.Vector3(0, 0, v1), isStar: true });
+        physicsBodies.push({ mesh: starBodies[1].mesh, massKg: mass2, velocity: new THREE.Vector3(0, 0, -v2), isStar: true });
+        for (let i = 2; i < starBodies.length; i++) {
+            physicsBodies.push({ mesh: starBodies[i].mesh, massKg: starBodies[i].massKg, velocity: new THREE.Vector3(0,0,0), isStar: true });
         }
     }
     
     // Planets
     const pCount = Math.floor(rand() * 5) + 3; 
     for(let i=0; i<pCount; i++) {
-        const orbitBase = (numStars > 1) ? S * 0.8 : S * 0.3; const dist = orbitBase + (i * S * 0.2) + rand() * S * 0.1; 
-        const rad = S * 0.01 + rand() * S * 0.02; const mass = rad * 10.0; 
-        const isGas = (i > 2 && rand() > 0.3); const isRocky = !isGas;
+        const orbitBase = (numStars > 1) ? 0.6 : 0.3;
+        const orbitAu = orbitBase + (i * 0.4) + rand() * 0.2;
+        const dist = orbitAu * UNITS.AU;
+        const isGas = (i > 2 && rand() > 0.3);
+        const rad = isGas
+            ? JUPITER_RADIUS_M * (0.4 + rand() * 1.2)
+            : EARTH_RADIUS_M * (0.4 + rand() * 2.5);
+        const density = isGas ? 1300 : 5500; // kg/m^3
+        const mass = (4/3) * Math.PI * Math.pow(rad, 3) * density;
+        const isRocky = !isGas;
         const pGeom = new THREE.SphereGeometry(rad, 64, 64);
         const pMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(rand(), isGas ? 0.8 : 0.2, 0.5), roughness: 0.7 });
         
@@ -2973,10 +3275,19 @@ function generateStarSystem(seedPos) {
             }`
         });
         const aurora = new THREE.Mesh(aGeom, aMat);
-        planet.add(aurora); planet.userData = { designation: `PLANET ${String.fromCharCode(65+i)}`, type: isGas?"GAS GIANT":"ROCKY", aurora: aMat };
-        
+        planet.add(aurora); planet.userData = {
+            designation: `PLANET ${String.fromCharCode(65+i)}`,
+            type: isGas ? "GAS GIANT" : "ROCKY",
+            aurora: aMat,
+            radiusM: rad,
+            orbitRadiusM: dist
+        };
+        planet.renderOrder = 0; // Render after cosmic web (which is -100)
+
         localSystem.add(planet);
-        physicsBodies.push({ mesh: planet, mass: mass, velocity: new THREE.Vector3(-Math.sin(ang)*Math.sqrt(G*1000/dist),0,Math.cos(ang)*Math.sqrt(G*1000/dist)), isStar: false });
+        const centralMass = physicsBodies.reduce((acc, body) => acc + (body.isStar ? body.massKg : 0), 0);
+        const speed = Math.sqrt(G_M * centralMass / dist);
+        physicsBodies.push({ mesh: planet, massKg: mass, velocity: new THREE.Vector3(-Math.sin(ang)*speed,0,Math.cos(ang)*speed), isStar: false });
     }
 }
 
@@ -2985,11 +3296,13 @@ function spawnCME() {
     const stars = physicsBodies.filter(b => b.isStar && !b.mesh?.userData?.isBlackHole);
     if (stars.length === 0) return;
     const star = stars[Math.floor(Math.random()*stars.length)].mesh;
+    const starRadius = star.userData?.radiusM || SOLAR_RADIUS_M;
+    const starColor = star.material?.color ? star.material.color.clone() : new THREE.Color(0xffaa44);
     
     // Volumetric CME using custom shader on sphere
-    const cmeGeom = new THREE.SphereGeometry(5, 32, 32);
+    const cmeGeom = new THREE.SphereGeometry(starRadius * 0.2, 32, 32);
     const cmeMat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xff4400) } },
+        uniforms: { uTime: { value: 0 }, uColor: { value: starColor } },
         transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
         vertexShader: `varying vec3 vPos; void main() { vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
         fragmentShader: `uniform float uTime; uniform vec3 uColor; varying vec3 vPos; ${NOISE_GLSL}
@@ -3000,28 +3313,57 @@ function spawnCME() {
         }`
     });
     const cme = new THREE.Mesh(cmeGeom, cmeMat);
-    cme.position.copy(star.position);
-    
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * Math.PI;
-    const dir = new THREE.Vector3(Math.sin(phi)*Math.cos(theta), Math.cos(phi), Math.sin(phi)*Math.sin(theta));
-    
-    cme.userData = { dir: dir, age: 0, life: 10.0, speed: 20.0, mat: cmeMat };
+
+    const orbitNormal = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    if (orbitNormal.lengthSq() < 1e-4) orbitNormal.set(0, 1, 0);
+    orbitNormal.normalize();
+    const refAxis = Math.abs(orbitNormal.y) > 0.8 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const orbitU = new THREE.Vector3().crossVectors(orbitNormal, refAxis).normalize();
+    const orbitV = new THREE.Vector3().crossVectors(orbitNormal, orbitU).normalize();
+    const baseRadius = starRadius * (1.08 + Math.random() * 0.25);
+    const radiusJitter = starRadius * (0.03 + Math.random() * 0.06);
+    const angle = Math.random() * Math.PI * 2;
+    const angularSpeed = (0.6 + Math.random() * 0.9) / Math.max(0.6, starRadius / SOLAR_RADIUS_M);
+    cme.userData = {
+        star,
+        orbitU,
+        orbitV,
+        angle,
+        angularSpeed,
+        radiusBase: baseRadius,
+        radiusJitter,
+        phase: Math.random() * Math.PI * 2,
+        age: 0,
+        life: 6.0 + Math.random() * 4.0,
+        mat: cmeMat
+    };
+    cme.position.copy(star.position).addScaledVector(orbitU, baseRadius);
     localSystem.add(cme);
     activeCMEs.push(cme);
 }
 
-function updatePhysics(dt) {
-    const subSteps = 2; const dtSub = dt/subSteps;
-    for(let s=0; s<subSteps; s++) {
-        for(let i=0; i<physicsBodies.length; i++) {
-            const b = physicsBodies[i]; 
-            b.mesh.position.add(b.velocity.clone().multiplyScalar(dtSub));
-            if(!b.isStar) {
-                const r = b.mesh.position.lengthSq();
-                const f = b.mesh.position.clone().normalize().multiplyScalar(-SCALES.G * 1000 / r);
-                b.velocity.add(f.multiplyScalar(dtSub));
+function updatePhysics(dtSeconds) {
+    const subSteps = 4;
+    const dt = dtSeconds / subSteps;
+    const softening = 1e9; // m
+    for (let s = 0; s < subSteps; s++) {
+        for (let i = 0; i < physicsBodies.length; i++) {
+            const bi = physicsBodies[i];
+            const acc = new THREE.Vector3();
+            for (let j = 0; j < physicsBodies.length; j++) {
+                if (i === j) continue;
+                const bj = physicsBodies[j];
+                const rVec = new THREE.Vector3().subVectors(bj.mesh.position, bi.mesh.position);
+                const distSq = rVec.lengthSq() + softening * softening;
+                const invDist = 1 / Math.sqrt(distSq);
+                const invDist3 = invDist * invDist * invDist;
+                acc.addScaledVector(rVec, G_M * (bj.massKg || 0) * invDist3);
             }
+            bi.velocity.addScaledVector(acc, dt);
+        }
+        for (let i = 0; i < physicsBodies.length; i++) {
+            const b = physicsBodies[i];
+            b.mesh.position.addScaledVector(b.velocity, dt);
         }
     }
 }
@@ -3049,10 +3391,24 @@ function animate() {
                     }
                 });
             }
-            if (volumeMesh) {
+            if (volumeGroup && volumeMeshes.length > 0) {
                 const expansion = Math.max(0.08, 1.0 - Math.exp(-simState.universeSimTime * 2.0));
-                const baseScale = volumeMesh.userData.baseScale || 1;
-                volumeMesh.scale.setScalar(baseScale * expansion);
+                const baseScale = volumeGroup.userData.baseScale || 1;
+                const subScale = (baseScale / 3) * expansion;
+                // Scale each sub-volume and adjust positions for expansion
+                for (let i = 0; i < volumeMeshes.length; i++) {
+                    const mesh = volumeMeshes[i];
+                    mesh.scale.setScalar(subScale);
+                    // Recompute position based on grid index
+                    const iz = Math.floor(i / 9);
+                    const iy = Math.floor((i % 9) / 3);
+                    const ix = i % 3;
+                    mesh.position.set(
+                        (ix - 1) * subScale,
+                        (iy - 1) * subScale,
+                        (iz - 1) * subScale
+                    );
+                }
             }
         }
         else if (simState.viewLevel === 1) {
@@ -3079,7 +3435,7 @@ function animate() {
             }
         }
         else if (simState.viewLevel === 2) {
-            updatePhysics(simDelta * 5.0);
+            updatePhysics(simDelta * PHYSICS_SECONDS_PER_UNIT);
 
             const coronaBlend = nebulaNursery ? 0.35 : 1.0;
             if (coronaMeshes.length) {
@@ -3094,8 +3450,17 @@ function animate() {
             for (let i = activeCMEs.length - 1; i >= 0; i--) {
                 const cme = activeCMEs[i];
                 cme.userData.age += simDelta;
-                cme.position.add(cme.userData.dir.clone().multiplyScalar(cme.userData.speed * simDelta));
-                cme.scale.setScalar(1.0 + cme.userData.age * 2.0); 
+                const star = cme.userData.star;
+                if (!star || !star.parent) {
+                    localSystem.remove(cme); activeCMEs.splice(i, 1);
+                    continue;
+                }
+                cme.userData.angle += cme.userData.angularSpeed * simDelta;
+                const radius = cme.userData.radiusBase + Math.sin(cme.userData.age * 2.0 + cme.userData.phase) * cme.userData.radiusJitter;
+                tmpCmeVec.copy(cme.userData.orbitU).multiplyScalar(Math.cos(cme.userData.angle));
+                tmpCmeVec.addScaledVector(cme.userData.orbitV, Math.sin(cme.userData.angle));
+                cme.position.copy(star.position).addScaledVector(tmpCmeVec, radius);
+                cme.scale.setScalar(0.9 + cme.userData.age * 0.35); 
                 if (cme.userData.mat) cme.userData.mat.uniforms.uTime.value += delta;
                 
                 physicsBodies.forEach(p => {
@@ -3147,7 +3512,15 @@ function animate() {
 
     // Camera Lock during Inspection
     if (simState.inspectingTarget && controls) {
+        if (simState.inspectingTargetPreviousPos) {
+            tmpInspectDelta.copy(simState.inspectingTarget.position)
+                .sub(simState.inspectingTargetPreviousPos);
+            camera.position.add(tmpInspectDelta);
+        }
         controls.target.copy(simState.inspectingTarget.position);
+        if (simState.inspectingTargetPreviousPos) {
+            simState.inspectingTargetPreviousPos.copy(simState.inspectingTarget.position);
+        }
     }
 
     let bhCount = 0;
@@ -3243,7 +3616,10 @@ function animate() {
                     };
                     simState.selectedTarget = { level: 2, object: p, position: p.position, data: data };
                     updateTargetPanel(data, true);
-                    controls.target.copy(p.position); // Look at planet
+                    simState.inspectingTarget = p;
+                    simState.trackingTarget = null;
+                    simState.inspectingTargetPreviousPos = p.position.clone();
+                    focusCameraOnTarget(p);
                     simState.planetTourIndex++;
                 } else {
                     ejectView();
@@ -3258,6 +3634,9 @@ function animate() {
         camera.position.lerp(simState.transitionTarget, 0.05); controls.target.lerp(simState.transitionTarget, 0.05);
         if (simState.transitionProgress > 3.0) completeTransition();
     } else controls.update();
+
+    applyFloatingOrigin();
+    updateCameraClipping();
 
     // Robust VR UI visibility even on polyfills/devices that don't reliably emit sessionstart/sessionend.
     const xrPresenting = !!renderer?.xr?.isPresenting;
@@ -3322,7 +3701,8 @@ function onPointerUp(event) {
     raycaster.setFromCamera(mouse, camera);
 
     if (simState.viewLevel === 0 && points) {
-        raycaster.params.Points.threshold = 500000; const intersects = raycaster.intersectObject(points);
+        raycaster.params.Points.threshold = SCALES.GALAXY;
+        const intersects = raycaster.intersectObject(points);
         if (intersects.length > 0) {
             disableAutopilot();
             const index = intersects[0].index; const data = getGalaxyInfo(CONFIG.seed + index, simState.universeSimTime);
@@ -3369,7 +3749,7 @@ function onPointerUp(event) {
             }
         }
 
-        raycaster.params.Points.threshold = 50000;
+        raycaster.params.Points.threshold = UNITS.AU;
         const intersects = raycaster.intersectObject(localGalaxy);
         if (intersects.length > 0) {
             disableAutopilot();
