@@ -1,84 +1,85 @@
-import { NetCDFReader } from 'netcdfjs';
-
-// Heuristics to find variable names in NOMADS RAP NetCDF subset
-function findVar(reader, patterns) {
-  const vars = reader.variables.map((v) => v.name.toLowerCase());
-  for (const pat of patterns) {
-    const idx = vars.findIndex((v) => v.includes(pat));
-    if (idx !== -1) return reader.variables[idx].name;
-  }
-  return null;
-}
-
-function sampleField(data, nx, ny, stride) {
-  const samples = [];
-  for (let j = 0; j < ny; j += stride) {
-    for (let i = 0; i < nx; i += stride) {
-      samples.push(data[j * nx + i]);
-    }
-  }
-  return samples;
-}
+import gribJs from 'grib-js';
 
 self.onmessage = async (evt) => {
-  const { url, levels } = evt.data || {};
+  const { url, type, requestedLevels } = evt.data || {};
   if (!url) {
     self.postMessage({ error: 'missing url' });
     return;
   }
+
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`fetch failed ${res.status}`);
     const buf = await res.arrayBuffer();
-    const reader = new NetCDFReader(new DataView(buf));
 
-    const lonName = findVar(reader, ['lon']);
-    const latName = findVar(reader, ['lat']);
-    const levName = findVar(reader, ['isbl', 'lv', 'lev']);
-    const ugrdName = findVar(reader, ['ugrd']);
-    const vgrdName = findVar(reader, ['vgrd']);
-    const hgtName = findVar(reader, ['hgt']);
+    // Parse GRIB2 data
+    gribJs.readData(new DataView(buf), (err, messages) => {
+      if (err) {
+        self.postMessage({ error: err.message || String(err) });
+        return;
+      }
 
-    if (!lonName || !latName || !levName || !ugrdName || !vgrdName || !hgtName) {
-      throw new Error('missing expected variables in NetCDF');
-    }
+      console.log(`[weatherWorker] Parsed ${messages.length} GRIB2 messages`);
 
-    const lon = reader.getDataVariable(lonName);
-    const lat = reader.getDataVariable(latName);
-    const lev = reader.getDataVariable(levName);
-    const ugrd = reader.getDataVariable(ugrdName);
-    const vgrd = reader.getDataVariable(vgrdName);
-    const hgt = reader.getDataVariable(hgtName);
+      // Convert to more usable format
+      const converted = gribJs.convertData(messages);
 
-    // Expect ugrd/vgrd/hgt dimensions [level, lat, lon]
-    const nx = lon.length;
-    const ny = lat.length;
-    const nlev = lev.length;
+      // Group by variable and pressure level
+      const byVariable = {};
+      for (const msg of converted) {
+        const varName = msg.header.parameterNumberName;
+        const level = msg.header.surface1Value;
+        const levelType = msg.header.surface1TypeName;
 
-    // Reduce to a manageable sample count
-    const targetSamples = 2500;
-    const stride = Math.max(1, Math.ceil(Math.sqrt((nx * ny) / targetSamples)));
+        if (!byVariable[varName]) {
+          byVariable[varName] = {};
+        }
+        if (!byVariable[varName][level]) {
+          byVariable[varName][level] = msg;
+        }
+      }
 
-    const levelsOut = [];
-    for (let li = 0; li < nlev; li++) {
-      const offset = li * nx * ny;
-      const uSlice = ugrd.subarray(offset, offset + nx * ny);
-      const vSlice = vgrd.subarray(offset, offset + nx * ny);
-      const hSlice = hgt.subarray(offset, offset + nx * ny);
-      levelsOut.push({
-        level: lev[li],
-        u: sampleField(uSlice, nx, ny, stride),
-        v: sampleField(vSlice, nx, ny, stride),
-        hgt: sampleField(hSlice, nx, ny, stride)
+      // Extract wind data (UGRD/VGRD) at requested pressure levels
+      const targetLevels = requestedLevels || [1000, 850, 700, 500, 300];
+      const levelsOut = [];
+
+      for (const pressureLevel of targetLevels) {
+        const ugrdMsg = byVariable['U component of wind']?.[pressureLevel];
+        const vgrdMsg = byVariable['V component of wind']?.[pressureLevel];
+        const hgtMsg = byVariable['Geopotential height']?.[pressureLevel];
+
+        if (ugrdMsg && vgrdMsg) {
+          const lon0 = ugrdMsg.data.lo1 ?? ugrdMsg.header.lo1;
+          const lon1 = ugrdMsg.data.lo2 ?? ugrdMsg.header.lo2;
+          const lat0 = ugrdMsg.data.la1 ?? ugrdMsg.header.la1;
+          const lat1 = ugrdMsg.data.la2 ?? ugrdMsg.header.la2;
+          levelsOut.push({
+            level: pressureLevel,
+            u: ugrdMsg.data.values,
+            v: vgrdMsg.data.values,
+            hgt: hgtMsg?.data.values || null,
+            lon: lon0 != null && lon1 != null ? [lon0, lon1] : null,
+            lat: lat0 != null && lat1 != null ? [lat0, lat1] : null,
+            nx: ugrdMsg.header.nx,
+            ny: ugrdMsg.header.ny
+          });
+        }
+      }
+
+      if (levelsOut.length === 0) {
+        self.postMessage({ error: 'No wind data found at requested levels' });
+        return;
+      }
+
+      self.postMessage({
+        ok: true,
+        meta: {
+          messageCount: messages.length,
+          url,
+          levelsFound: levelsOut.map(l => l.level)
+        },
+        levels: levelsOut
       });
-    }
-
-    self.postMessage({
-      ok: true,
-      meta: { nx, ny, nlev, stride, url },
-      lon: sampleField(lon, nx, 1, stride),
-      lat: sampleField(lat, 1, ny, stride),
-      levels: levelsOut
     });
   } catch (err) {
     self.postMessage({ error: err.message || String(err) });

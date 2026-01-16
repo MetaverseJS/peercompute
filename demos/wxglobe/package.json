@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "cesium": "^1.120.0",
+    "grib-js": "^1.0.0",
     "netcdfjs": "^3.0.0"
   },
   "devDependencies": {

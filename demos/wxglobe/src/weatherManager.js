@@ -1,5 +1,4 @@
 import { getDataSource } from './dataSources.js';
-const weatherWorkerUrl = new URL('./weatherWorker.js', import.meta.url);
 
 /**
  * WeatherManager scaffolds dataset selection and loading.
@@ -10,7 +9,6 @@ export class WeatherManager {
   constructor({ onStatus } = {}) {
     this.onStatus = onStatus || (() => {});
     this.current = null;
-    this.worker = null;
   }
 
   /**
@@ -38,6 +36,11 @@ export class WeatherManager {
     const HH = String(now.getUTCHours()).padStart(2, '0');
     let url = src.urlPattern.replace('{YYYYMMDD}', `${YYYY}${MM}${DD}`).replace('{HH}', HH);
 
+    // Handle local GRIB2 files
+    if (src.type === 'local-grib2') {
+      return this.fetchLocalGrib2(url, src, options);
+    }
+
     if (src.id === 'rap-130-pressure') {
       // Use NOMADS filter to request a small NetCDF subset (CONUS box) to keep payloads light.
       const dir = encodeURIComponent(`/rap.${YYYY}${MM}${DD}`);
@@ -62,11 +65,33 @@ export class WeatherManager {
     }
 
     if (src.id === 'rap-130-pressure') {
-      return this.decodeWithWorker(url, src);
+      return this.stubSurface(url, src);
     }
 
     // Surface-only sources remain stubbed for now.
     return this.stubSurface(url, src);
+  }
+
+  async fetchLocalGrib2(url, src, options = {}) {
+    const levels = options.requestedLevels || [1000, 850, 700, 500, 300, 250, 200];
+    const stride = options.stride || 4;
+    const local = this.parseLocalPattern(src);
+    const endpoint = new URL('/api/grib2', window.location.origin);
+    endpoint.searchParams.set('region', local.region);
+    endpoint.searchParams.set('model', local.model);
+    endpoint.searchParams.set('variant', local.variant);
+    endpoint.searchParams.set('levels', levels.join(','));
+    endpoint.searchParams.set('stride', String(stride));
+    if (options.hour != null) {
+      endpoint.searchParams.set('hour', String(options.hour).padStart(2, '0'));
+    }
+
+    const res = await fetch(endpoint);
+    if (!res.ok) {
+      throw new Error(`fetch failed ${res.status}`);
+    }
+    const buffer = await res.arrayBuffer();
+    return this.unpackWindResponse(buffer, endpoint.toString());
   }
 
   stubSurface(url, src) {
@@ -84,40 +109,52 @@ export class WeatherManager {
     return { urlPlanned: url, grid: stubGrid, note: 'Surface stub placeholder.' };
   }
 
-  ensureWorker() {
-    if (!this.worker) {
-      this.worker = new Worker(weatherWorkerUrl, { type: 'module' });
+  parseLocalPattern(src) {
+    const urlPattern = src.urlPattern || '';
+    const match = urlPattern.match(/\/weather-data\/([^/]+)\/([^/]+)\.t\{HH\}z\.([^.]+)\.grib2$/);
+    if (match) {
+      return {
+        region: match[1].toLowerCase(),
+        model: match[2],
+        variant: match[3]
+      };
     }
-    return this.worker;
+    return {
+      region: (src.region || 'conus').toLowerCase(),
+      model: 'rtma3d',
+      variant: 'anl_prslev'
+    };
   }
 
-  decodeWithWorker(url, src) {
-    const worker = this.ensureWorker();
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('weather decode timeout')), 20000);
-      const handler = (evt) => {
-        const data = evt.data;
-        if (data?.error) {
-          clearTimeout(timeout);
-          worker.removeEventListener('message', handler);
-          reject(new Error(data.error));
-        } else if (data?.ok) {
-          clearTimeout(timeout);
-          worker.removeEventListener('message', handler);
-          resolve({
-            urlUsed: url,
-            grid: {
-              lon: data.lon,
-              lat: data.lat,
-              levels: data.levels,
-              meta: data.meta
-            },
-            note: 'Live RAP subset via NOMADS filter (netcdf)'
-          });
-        }
-      };
-      worker.addEventListener('message', handler);
-      worker.postMessage({ url, levels: [1000, 850, 700, 500] });
-    });
+  unpackWindResponse(buffer, urlUsed) {
+    const view = new DataView(buffer);
+    const headerLength = view.getUint32(0, true);
+    const headerBytes = new Uint8Array(buffer, 4, headerLength);
+    const header = JSON.parse(new TextDecoder().decode(headerBytes));
+    if (!header?.ok) {
+      throw new Error(header?.error || 'invalid wind payload');
+    }
+    const padding = (4 - (headerLength % 4)) % 4;
+    const dataStart = 4 + headerLength + padding;
+    const floats = new Float32Array(buffer, dataStart);
+    const levels = header.levels.map((lvl) => ({
+      level: lvl.level,
+      nx: lvl.nx,
+      ny: lvl.ny,
+      lon: lvl.lon,
+      lat: lvl.lat,
+      u: floats.subarray(lvl.u.offset, lvl.u.offset + lvl.u.length),
+      v: floats.subarray(lvl.v.offset, lvl.v.offset + lvl.v.length),
+      hgt: lvl.hgt ? floats.subarray(lvl.hgt.offset, lvl.hgt.offset + lvl.hgt.length) : null
+    }));
+
+    return {
+      urlUsed,
+      grid: {
+        levels,
+        meta: header.meta
+      },
+      note: 'Local GRIB2 via Vite server'
+    };
   }
 }

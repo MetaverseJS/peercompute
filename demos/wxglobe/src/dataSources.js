@@ -3,6 +3,34 @@
 
 export const DATA_SOURCES = [
   {
+    id: 'rtma3d-local-pressure',
+    title: 'RTMA3D Local 3D Analysis (UGRD/VGRD/HGT/TMP)',
+    dimension: '3D',
+    region: 'CONUS',
+    resolution: '2.5 km',
+    cadence: 'hourly',
+    vertical: 'Pressure levels (50–1000 mb)',
+    variables: ['UGRD', 'VGRD', 'HGT', 'TMP', 'RH', 'VVEL'],
+    notes: 'Local RTMA3D GRIB2 file with 3D pressure levels. High resolution 2.5km CONUS coverage.',
+    urlPattern: '/weather-data/conus/rtma3d.t{HH}z.anl_prslev.grib2',
+    example: '/weather-data/conus/rtma3d.t00z.anl_prslev.grib2',
+    type: 'local-grib2'
+  },
+  {
+    id: 'rtma3d-local-pressure-alaska',
+    title: 'RTMA3D Local 3D Analysis (UGRD/VGRD/HGT/TMP)',
+    dimension: '3D',
+    region: 'Alaska',
+    resolution: '2.5 km',
+    cadence: 'hourly',
+    vertical: 'Pressure levels (50–1000 mb)',
+    variables: ['UGRD', 'VGRD', 'HGT', 'TMP', 'RH', 'VVEL'],
+    notes: 'Local RTMA3D GRIB2 file with 3D pressure levels. Alaska coverage.',
+    urlPattern: '/weather-data/alaska/rtma3d.t{HH}z.anl_prslev.grib2',
+    example: '/weather-data/alaska/rtma3d.t00z.anl_prslev.grib2',
+    type: 'local-grib2'
+  },
+  {
     id: 'rap-130-pressure',
     title: 'RAP 13 km pressure levels (UGRD/VGRD/HGT)',
     dimension: '3D',
@@ -78,5 +106,5 @@ export function getDataSource(id) {
 }
 
 export function getDefaultDataSource() {
-  return getDataSource('rtma2p5-surface') || DATA_SOURCES[0];
+  return getDataSource('rtma3d-local-pressure') || DATA_SOURCES[0];
 }

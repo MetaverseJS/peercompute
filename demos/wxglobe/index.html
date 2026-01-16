@@ -9,6 +9,7 @@
   <body>
     <div id="app">
       <div id="viewer"></div>
+      <canvas id="wind-canvas" aria-hidden="true"></canvas>
       <div id="overlay" class="panel">
         <div class="overlay-header">
           <div>
@@ -21,6 +22,15 @@
 
         <section id="controls">
           <div class="control-group">
+            <label for="base-layer">Base layer</label>
+            <select id="base-layer">
+              <option value="blue-marble">Blue Marble (offline)</option>
+              <option value="dark" selected>Dark (no labels)</option>
+              <option value="osm">OpenStreetMap</option>
+              <option value="osm-overlay">OSM + Blue Marble</option>
+            </select>
+          </div>
+          <div class="control-group">
             <label for="resolution">Terrain source</label>
             <select id="resolution">
               <option value="30m" selected>Terrarium ~30m (z≤14)</option>
@@ -31,6 +41,23 @@
             <label for="dataset">Weather dataset</label>
             <select id="dataset"></select>
             <div class="notes" id="dataset-notes"></div>
+          </div>
+          <div class="control-group">
+            <label>Wind altitude range</label>
+            <div class="wind-range">
+              <div class="altitude-slider" id="altitude-slider" role="group" aria-label="Altitude range">
+                <div class="altitude-track"></div>
+                <div class="altitude-range"></div>
+                <button class="altitude-handle min" data-handle="min" aria-label="Minimum altitude"></button>
+                <button class="altitude-handle max" data-handle="max" aria-label="Maximum altitude"></button>
+              </div>
+              <div class="altitude-readout">
+                <div><span class="label">Min</span><span id="altitude-min">--</span></div>
+                <div><span class="label">Max</span><span id="altitude-max">--</span></div>
+                <div class="wind-status" id="wind-status">wind: idle</div>
+              </div>
+            </div>
+            <div class="notes" id="wind-notes">Select pressure levels to shape wind streamlines.</div>
           </div>
           <div class="control-group inline">
             <button id="reload-terrain">Reload terrain</button>
