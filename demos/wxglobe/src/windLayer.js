@@ -22,10 +22,14 @@ export class WindLayer {
     this.grid = null;
     this.range = { minIndex: 0, maxIndex: 0 };
     this.particles = [];
-    this.particleCount = 1500;
-    this.maxAge = 90;
-    this.speedScale = 30;
-    this.fadeStrength = 0.9;
+    // Dense field with very long-lived particles for map-covering paths
+    this.particleCount = 500;
+    this.maxAge = 500;
+    this.speedScale = 1000;
+    // Minimal fade so long strokes persist
+    this.fadeStrength = 0.1;
+    // Run multiple integration steps per frame to draw long segments
+    this.stepsPerFrame = 1;
 
     this.running = false;
     this.lastTime = 0;
@@ -33,6 +37,7 @@ export class WindLayer {
     this._scratchCartesian = new Cesium.Cartesian3();
     this._scratchCanvasA = new Cesium.Cartesian2();
     this._scratchCanvasB = new Cesium.Cartesian2();
+    this._scratchDiff = new Cesium.Cartesian3();
 
     this.resize();
     this.viewer.camera.moveStart.addEventListener(() => this.clear());
@@ -75,6 +80,7 @@ export class WindLayer {
     const lon1 = base.lon[1];
     const lat0 = base.lat[0];
     const lat1 = base.lat[1];
+    const lov = base.lov;
 
     const dx = (lon1 - lon0) / (nx - 1);
     const dy = (lat1 - lat0) / (ny - 1);
@@ -104,7 +110,8 @@ export class WindLayer {
       lonMax,
       latMin,
       latMax,
-      wrapLongitude: lonMin >= 0 && lonMax > 180
+      wrapLongitude: lonMin >= 0 && lonMax > 180,
+      lov
     };
 
     this.range = { minIndex: 0, maxIndex: this.levels.length - 1 };
@@ -142,8 +149,8 @@ export class WindLayer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const density = clientWidth * clientHeight;
-    const target = Math.round(density / 900);
-    this.particleCount = clamp(target, 800, 4000);
+    const target = Math.round(density / 160);
+    this.particleCount = clamp(target, 4000, 12000);
     this.seedParticles();
     this.clear();
   }
@@ -169,16 +176,21 @@ export class WindLayer {
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
 
+    // Fade slightly each frame, then add bright strokes
     ctx.globalCompositeOperation = 'destination-in';
-    ctx.fillStyle = `rgba(0, 0, 0, ${this.fadeStrength})`;
+    ctx.fillStyle = `rgba(0, 0, 0, ${1 - this.fadeStrength})`;
     ctx.fillRect(0, 0, width, height);
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation = 'lighter';
 
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 2.6;
     ctx.lineCap = 'round';
 
-    for (const particle of this.particles) {
-      this.advanceParticle(particle, dt);
+    const steps = Math.max(1, Math.floor(this.stepsPerFrame));
+    const subDt = dt / steps;
+    for (let s = 0; s < steps; s += 1) {
+      for (const particle of this.particles) {
+        this.advanceParticle(particle, subDt);
+      }
     }
   }
 
@@ -189,7 +201,7 @@ export class WindLayer {
       return;
     }
 
-    const { u, v, speed } = sample;
+    const { u, v, speed, hgt } = sample;
     const mPerDegLon = METERS_PER_DEGREE_LAT * Math.cos(particle.lat * DEG2RAD);
     const dLat = (v * this.speedScale * dt) / METERS_PER_DEGREE_LAT;
     const dLon = mPerDegLon ? (u * this.speedScale * dt) / mPerDegLon : 0;
@@ -201,8 +213,8 @@ export class WindLayer {
       return;
     }
 
-    const startOk = this.projectToCanvas(particle.lon, particle.lat, this._scratchCanvasA);
-    const endOk = this.projectToCanvas(nextLon, nextLat, this._scratchCanvasB);
+    const startOk = this.projectToCanvas(particle.lon, particle.lat, hgt, this._scratchCanvasA);
+    const endOk = this.projectToCanvas(nextLon, nextLat, hgt, this._scratchCanvasB);
 
     if (startOk && endOk) {
       this.ctx.strokeStyle = this.colorForSpeed(speed);
@@ -255,7 +267,7 @@ export class WindLayer {
   sampleWind(lon, lat, levelIndex) {
     if (!this.grid || !this.levels[levelIndex]) return null;
 
-    const { lon0, lat0, dx, dy, nx, ny, wrapLongitude } = this.grid;
+    const { lon0, lat0, dx, dy, nx, ny, wrapLongitude, lov } = this.grid;
     let lonSample = lon;
     if (wrapLongitude && lonSample < 0) {
       lonSample += 360;
@@ -278,6 +290,7 @@ export class WindLayer {
     const level = this.levels[levelIndex];
     const uData = level.u;
     const vData = level.v;
+    const hData = level.hgt;
     const idx00 = y0 * nx + x0;
     const idx10 = y0 * nx + x1;
     const idx01 = y1 * nx + x0;
@@ -312,7 +325,33 @@ export class WindLayer {
     const u = u0 * (1 - fy) + u1 * fy;
     const v = v0 * (1 - fy) + v1 * fy;
 
-    return { u, v, speed: Math.hypot(u, v) };
+    let hgt = 0;
+    if (hData) {
+      const h00 = hData[idx00];
+      const h10 = hData[idx10];
+      const h01 = hData[idx01];
+      const h11 = hData[idx11];
+      if (
+        isFiniteNumber(h00) &&
+        isFiniteNumber(h10) &&
+        isFiniteNumber(h01) &&
+        isFiniteNumber(h11)
+      ) {
+        const h0 = h00 * (1 - fx) + h10 * fx;
+        const h1 = h01 * (1 - fx) + h11 * fx;
+        hgt = h0 * (1 - fy) + h1 * fy;
+      }
+    }
+
+    // Rotate from grid-relative to earth-relative using polar stereographic grid convergence
+    const dLon = ((lonSample - (lov ?? 0) + 540) % 360) - 180;
+    const gamma = dLon * DEG2RAD;
+    const cosG = Math.cos(gamma);
+    const sinG = Math.sin(gamma);
+    const uEarth = u * cosG - v * sinG;
+    const vEarth = u * sinG + v * cosG;
+
+    return { u: uEarth, v: vEarth, speed: Math.hypot(uEarth, vEarth), hgt };
   }
 
   inBounds(lon, lat) {
@@ -320,17 +359,31 @@ export class WindLayer {
     return lon >= lonMin && lon <= lonMax && lat >= latMin && lat <= latMax;
   }
 
-  projectToCanvas(lon, lat, out) {
+  projectToCanvas(lon, lat, heightMeters, out) {
     if (!this.grid) return false;
     const lonForCesium = this.grid.wrapLongitude && lon > 180 ? lon - 360 : lon;
-    Cesium.Cartesian3.fromDegrees(lonForCesium, lat, 0, Cesium.Ellipsoid.WGS84, this._scratchCartesian);
+    const h = Number.isFinite(heightMeters) ? heightMeters : 0;
+    Cesium.Cartesian3.fromDegrees(lonForCesium, lat, h, Cesium.Ellipsoid.WGS84, this._scratchCartesian);
+
+    // Horizon/occlusion cull
+    const cameraPosition = this.viewer.camera.positionWC;
+    const occluder = new Cesium.EllipsoidalOccluder(this.viewer.scene.globe.ellipsoid, cameraPosition);
+    if (!occluder.isPointVisible(this._scratchCartesian)) {
+      return false;
+    }
+
+    // Behind-camera cull
+    Cesium.Cartesian3.subtract(this._scratchCartesian, cameraPosition, this._scratchDiff);
+    if (Cesium.Cartesian3.dot(this._scratchDiff, this.viewer.camera.directionWC) < 0) {
+      return false;
+    }
+
     const canvasPos = this.viewer.scene.cartesianToCanvasCoordinates(this._scratchCartesian, out);
     return Boolean(canvasPos);
   }
 
   colorForSpeed(speed) {
-    const clamped = clamp(speed, 0, 40);
-    const hue = 140 - (clamped / 40) * 110;
-    return `hsla(${hue}, 90%, 60%, 0.8)`;
+    // Deep pink with slight alpha so overlaps glow
+    return 'rgba(220, 40, 150, 0.95)';
   }
 }

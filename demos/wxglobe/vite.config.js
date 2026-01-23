@@ -48,6 +48,72 @@ function normalizePressureLevel(value) {
   return Math.round(normalized);
 }
 
+function canonicalVarKey(msg) {
+  const header = msg?.header || {};
+  const rawName = (header.parameterNumberName || '').toLowerCase();
+  const cleaned = rawName.replace(/[^a-z0-9]+/g, '');
+  const combo = `${header.parameterCategory}:${header.parameterNumber}`;
+  if (cleaned.includes('ucomponentofwind')) return 'ugrd';
+  if (cleaned.includes('vcomponentofwind')) return 'vgrd';
+  if (cleaned.includes('geopotentialheight') || cleaned === 'hgt') return 'hgt';
+  if (combo === '2:2') return 'ugrd'; // category 2, number 2 = U wind
+  if (combo === '2:3') return 'vgrd'; // category 2, number 3 = V wind
+  if (combo === '3:5') return 'hgt'; // category 3, number 5 = geopotential height
+  return null;
+}
+
+function extractMessagesWithGrid(messages) {
+  const extracted = [];
+  for (const msg of messages) {
+    const field = msg?.fields?.[0];
+    const details = field?.product?.details;
+    const grid = field?.grid?.definition || {};
+    if (!field || !details) continue;
+
+    const varKey = canonicalVarKey({
+      header: {
+        parameterNumberName: details.parameter?.name || details.parameterNumberName,
+        parameterCategory: details.category?.value,
+        parameterNumber: details.parameter?.value
+      }
+    });
+    const levelValue = normalizePressureLevel(details.surfaceTypeValue);
+
+    const nx = grid.nx ?? grid.ni;
+    const ny = grid.ny ?? grid.nj;
+    let lon0 = grid.lo1;
+    let lon1 = grid.lo2;
+    let lat0 = grid.la1;
+    let lat1 = grid.la2;
+    const lov = grid.lov;
+
+    // Many RTMA3D GRIBs omit lo2/la2; approximate using dx/dy if needed.
+    const dxRaw = grid.dx;
+    const dyRaw = grid.dy;
+    if ((lon1 == null || lat1 == null) && nx && ny && lon0 != null && lat0 != null && dxRaw != null && dyRaw != null) {
+      const dxMeters = dxRaw > 1e5 ? dxRaw / 1000 : dxRaw; // RTMA encodes meters*1000
+      const dyMeters = dyRaw > 1e5 ? dyRaw / 1000 : dyRaw;
+      const cosLat = Math.cos((lat0 * Math.PI) / 180) || 1;
+      const dxDeg = dxMeters / (111320 * cosLat);
+      const dyDeg = dyMeters / 111320;
+      lon1 = lon0 + dxDeg * (nx - 1);
+      lat1 = lat0 + dyDeg * (ny - 1);
+    }
+
+    extracted.push({
+      varKey,
+      levelValue,
+      nx,
+      ny,
+      lon: [lon0, lon1],
+      lat: [lat0, lat1],
+      lov,
+      data: field.data
+    });
+  }
+  return extracted;
+}
+
 function findLatestGribFile(dirPath, model, variant) {
   if (!fs.existsSync(dirPath)) return null;
   const pattern = new RegExp(`^${model}\\.t\\d{2}z\\.${variant}\\.grib2$`);
@@ -153,16 +219,13 @@ export default defineConfig({
                 });
               });
 
-              const converted = grib.convertData(messages);
               const byVariable = {};
-              for (const msg of converted) {
-                const varName = msg.header.parameterNumberName;
-                const levelValue = normalizePressureLevel(msg.header.surface1Value);
-                if (!varName || !Number.isFinite(levelValue)) continue;
-                if (!byVariable[varName]) {
-                  byVariable[varName] = {};
-                }
-                byVariable[varName][levelValue] = msg;
+              const extracted = extractMessagesWithGrid(messages);
+              for (const msg of extracted) {
+                const { varKey, levelValue } = msg;
+                if (!varKey || !Number.isFinite(levelValue)) continue;
+                if (!byVariable[varKey]) byVariable[varKey] = {};
+                byVariable[varKey][levelValue] = msg;
               }
 
               const levelsOut = [];
@@ -170,26 +233,26 @@ export default defineConfig({
               let floatOffset = 0;
 
               for (const level of levels) {
-                const ugrdMsg = byVariable['U component of wind']?.[level];
-                const vgrdMsg = byVariable['V component of wind']?.[level];
-                const hgtMsg = byVariable['Geopotential height']?.[level];
+                const ugrdMsg = byVariable.ugrd?.[level];
+                const vgrdMsg = byVariable.vgrd?.[level];
+                const hgtMsg = byVariable.hgt?.[level];
                 if (!ugrdMsg || !vgrdMsg) continue;
-                if (!ugrdMsg.data?.values || !vgrdMsg.data?.values) continue;
+                if (!ugrdMsg.data || !vgrdMsg.data) continue;
 
-                const nx = ugrdMsg.header.nx;
-                const ny = ugrdMsg.header.ny;
-                const uOut = decimateGrid(ugrdMsg.data.values, nx, ny, stride);
-                const vOut = decimateGrid(vgrdMsg.data.values, nx, ny, stride);
-                const hOut = hgtMsg?.data?.values
-                  ? decimateGrid(hgtMsg.data.values, nx, ny, stride)
-                  : null;
+                const nx = ugrdMsg.nx;
+                const ny = ugrdMsg.ny;
+                if (!nx || !ny) continue;
+                const uOut = decimateGrid(ugrdMsg.data, nx, ny, stride);
+                const vOut = decimateGrid(vgrdMsg.data, nx, ny, stride);
+                const hOut = hgtMsg?.data ? decimateGrid(hgtMsg.data, nx, ny, stride) : null;
 
                 levelsOut.push({
                   level,
                   nx: uOut.nx,
                   ny: uOut.ny,
-                  lon: [ugrdMsg.header.lo1, ugrdMsg.header.lo2],
-                  lat: [ugrdMsg.header.la1, ugrdMsg.header.la2],
+                  lon: ugrdMsg.lon,
+                  lat: ugrdMsg.lat,
+                  lov: ugrdMsg.lov,
                   u: { offset: floatOffset, length: uOut.data.length },
                   v: { offset: floatOffset + uOut.data.length, length: vOut.data.length },
                   hgt: hOut

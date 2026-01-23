@@ -242,8 +242,8 @@ function createTerrainProvider(mode) {
 }
 
 const viewer = new Cesium.Viewer('viewer', {
-  imageryProvider: blueMarbleImagery, // Use Blue Marble as base; can add OSM layer on top
-  terrainProvider: new Cesium.EllipsoidTerrainProvider(), // temporary fallback to avoid terrain crashes
+  imageryProvider: blueMarbleImagery, // Blue Marble as default base
+  terrainProvider: safeTerrainProvider('30m'), // load Terrarium by default
   baseLayerPicker: false,
   geocoder: false,
   animation: false,
@@ -312,8 +312,9 @@ function applyBaseLayer(layerType) {
   }
 }
 
-// Initialize with dark basemap (default)
-applyBaseLayer('dark');
+// Initialize base layer and terrain from current control values
+baseLayerSelect.value = baseLayerSelect.value || 'blue-marble';
+applyBaseLayer(baseLayerSelect.value);
 
 function applyTerrain(mode) {
   const provider = safeTerrainProvider(mode);
@@ -356,8 +357,8 @@ toggleBtn.addEventListener('click', () => {
   }
 });
 
-// Start with ellipsoid terrain; user can reload terrarium via controls.
-setStatus('terrain: ellipsoid fallback');
+// Start terrain using current selection
+applyTerrain(resolutionSelect.value || '30m');
 
 function renderDatasetInfo(source) {
   if (!source) {
