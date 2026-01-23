@@ -96,6 +96,10 @@ const relayGossipsubConfig = (() => {
   }
   return null;
 })();
+const relayControlOnlyMode = (() => {
+  const raw = (process.env.RELAY_CONTROL_ONLY_MODE || '').trim().toLowerCase();
+  return raw === 'true' || raw === '1';
+})();
 
 const toMultiaddrHostSegment = (host) => {
   if (!host) return '';
@@ -296,21 +300,34 @@ async function startServer() {
     });
 
     // Subscribe to pubsub topics so the relay can forward game traffic.
+    // In control-only mode, relay only handles discovery/presence/signaling, not state.
     const discoveryTopic = 'peercompute._peer-discovery._p2p._pubsub';
-    const relayTopics = [
+    const controlTopics = [
       discoveryTopic,
       'peercompute-presence',
-      'peercompute-direct',
+      'peercompute-direct'
+    ];
+    const dataTopics = [
       'peercompute-state',
       'peercompute-state-sync'
     ];
+    const relayTopics = relayControlOnlyMode ? controlTopics : [...controlTopics, ...dataTopics];
     const relayTopicSet = new Set(relayTopics);
     relayTopics.forEach((topic) => {
       server.services.pubsub.subscribe(topic);
     });
+    if (relayControlOnlyMode) {
+      console.log('[Relay] Control-only mode enabled - skipping state topic subscriptions');
+    }
     console.log(`Relay subscribed to topics: ${relayTopics.join(', ')}`);
 
     const shouldRelayTopic = (topic) => relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
+    const isDataTopic = (topic) => {
+      // Data topics include state, state-sync, and shard topics
+      if (topic.includes('.state') || topic.includes('-state')) return true;
+      if (topic.includes('.shard.') || topic.includes('-shard-')) return true;
+      return false;
+    };
 
     server.services.pubsub.addEventListener('subscription-change', (evt) => {
       const subscriptions = evt?.detail?.subscriptions || [];
@@ -319,6 +336,11 @@ async function startServer() {
         const topic = sub?.topic;
         if (!topic || relayTopicSet.has(topic)) return;
         if (!shouldRelayTopic(topic)) return;
+        // In control-only mode, skip data topics (state, shard)
+        if (relayControlOnlyMode && isDataTopic(topic)) {
+          console.log(`[Relay] Skipping data topic (control-only mode): ${topic}`);
+          return;
+        }
         relayTopicSet.add(topic);
         server.services.pubsub.subscribe(topic);
         console.log(`[Relay] Auto-subscribed to topic: ${topic}`);

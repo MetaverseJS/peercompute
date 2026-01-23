@@ -9,6 +9,7 @@ Instructions: This file contains short term goals for the current branch.
 - Room isolation and time sync anchor in cb.
 - Layered DataState + commitDelta integration notes (hot/warm/cold).
 - GPU hub ownership (main thread) and isolated compute worker path.
+- Topology-aware topic scoping (topologyId + roomId) and topology controller wiring.
 
 ### TODO:
 - Re-run Playwright suite outside sandbox and record results in plan/log.md.
@@ -16,7 +17,7 @@ Instructions: This file contains short term goals for the current branch.
 - Confirm dev/test scripts work in a clean env and update docs if needed.
 - Resume ComputeManager work once P2P stack is stable.
 - Wire warm DataState deltas into netman publish path end-to-end.
-- Add topology-aware topic scoping (topologyId + roomId) and sharded-state publish hooks.
+- Add sharded-state publish hooks (shard topics for snapshots + AOI filtering).
 
 ### TODONT:
 - Compute/physics feature work.

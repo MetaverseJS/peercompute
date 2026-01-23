@@ -1653,11 +1653,26 @@ export class NetworkManager {
       if (activeConnections < targetConnections) return true;
     }
     const retention = this._getRelayRetentionConfig();
-    if (!retention) return false;
-    if (retention.mode !== 'logn' && retention.mode !== 'sqrt') return false;
+    if (!retention) {
+      debugLog('[NetworkManager] No retention config, dropping relay');
+      return false;
+    }
+    if (retention.mode !== 'logn' && retention.mode !== 'sqrt') {
+      debugLog('[NetworkManager] Invalid retention mode:', retention.mode);
+      return false;
+    }
     const candidates = this._getRetentionCandidates();
     const keepCount = this._getRelayRetentionKeepCount(candidates.length, retention);
-    if (keepCount <= 0) return false;
+    if (keepCount <= 0) {
+      debugLog('[NetworkManager] keepCount=0, dropping relay');
+      return false;
+    }
+    // Don't drop relay until we know about enough peers to make a stable retention decision
+    const minCandidates = retention.minCandidates ?? Math.max(keepCount * 2, retention.min ?? 1);
+    if (candidates.length < minCandidates) {
+      debugLog('[NetworkManager] Not enough candidates:', candidates.length, '<', minCandidates);
+      return true;
+    }
     const ordered = candidates
       .slice()
       .sort((a, b) => {
@@ -1726,6 +1741,18 @@ export class NetworkManager {
     if (!this.config.useScopedTopics) return [];
     return ids.map((id) =>
       buildScopedTopic(this.config.topicPrefix, this.config.topologyId, this.config.roomId, `shard.${id}`)
+    );
+  }
+
+  _getShardSnapshotTopic() {
+    if (!this.config.enableSharding) return null;
+    if (!this.config.useScopedTopics) return null;
+    if (!this.topologyShardId) return null;
+    return buildScopedTopic(
+      this.config.topicPrefix,
+      this.config.topologyId,
+      this.config.roomId,
+      `shard.${this.topologyShardId}`
     );
   }
 
@@ -2216,8 +2243,14 @@ export class NetworkManager {
     if (this.schedulerProfile.snapshotsRequireAuthority && this.authorityId && this.authorityId !== this.peerId) {
       return;
     }
-    const topic = this.scheduler?.getProfile()?.snapshotTopic || this.config.pubsubTopic;
-    await this._publish(topic, message);
+    const snapshotTopic = this.scheduler?.getProfile()?.snapshotTopic || null;
+    const shardTopic = this._getShardSnapshotTopic();
+    const useShardTopic = !snapshotTopic && shardTopic;
+    const topic = snapshotTopic || shardTopic || this.config.pubsubTopic;
+    const payload = useShardTopic
+      ? { ...message, shardId: this.topologyShardId }
+      : message;
+    await this._publish(topic, payload);
   }
 
   async _sendScheduledCommand(message) {

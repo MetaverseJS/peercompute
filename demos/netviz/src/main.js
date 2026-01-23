@@ -35,6 +35,12 @@ const QUERY_PARAM_TOPOLOGY = 'topology';
 const QUERY_PARAM_TOPOLOGY_TYPE = 'topologyType';
 const QUERY_PARAM_RENDER = 'render';
 const QUERY_PARAM_RENDER_MODE = 'renderMode';
+const QUERY_PARAM_CONNECTION_RADIUS = 'connectionRadius';
+const QUERY_PARAM_MAX_CONNECTIONS = 'maxConnections';
+const QUERY_PARAM_TARGET_CONNECTIONS = 'targetConnections';
+const QUERY_PARAM_DROP_RELAY = 'dropRelay';
+const QUERY_PARAM_RELAY_RETENTION_MODE = 'relayRetentionMode';
+const QUERY_PARAM_RELAY_RETENTION_MIN = 'relayRetentionMin';
 
 const resolveRenderMode = () => {
   const params = new URLSearchParams(window.location.search);
@@ -1144,7 +1150,27 @@ const connect = async () => {
     } else {
       logEvent(`Relay config loaded (${bootstrapPeers.length} bootstrap peer(s)).`);
     }
-    const webrtc = normalizeWebRTCConfig(cfg);
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlDropRelay = urlParams.get(QUERY_PARAM_DROP_RELAY);
+    const urlRetentionMode = urlParams.get(QUERY_PARAM_RELAY_RETENTION_MODE);
+    const urlRetentionMin = parseInt(urlParams.get(QUERY_PARAM_RELAY_RETENTION_MIN), 10);
+    const urlMaxConnections = parseInt(urlParams.get(QUERY_PARAM_MAX_CONNECTIONS), 10);
+    const urlTargetConnections = parseInt(urlParams.get(QUERY_PARAM_TARGET_CONNECTIONS), 10);
+    const webrtcOverrides = {};
+    if (urlDropRelay === 'true' || urlDropRelay === '1') {
+      webrtcOverrides.dropRelayBootstrapOnDirect = true;
+    }
+    if (urlRetentionMode && ['sqrt', 'logn'].includes(urlRetentionMode)) {
+      const retentionMin = Number.isFinite(urlRetentionMin) ? urlRetentionMin : 2;
+      webrtcOverrides.relayRetention = { mode: urlRetentionMode, min: retentionMin, max: 10 };
+    }
+    const webrtcBase = normalizeWebRTCConfig(cfg) || {};
+    const webrtc = Object.keys(webrtcOverrides).length
+      ? { ...webrtcBase, ...webrtcOverrides }
+      : (Object.keys(webrtcBase).length ? webrtcBase : null);
+    if (webrtcOverrides.dropRelayBootstrapOnDirect || webrtcOverrides.relayRetention) {
+      console.log('[NetViz] Relay drop config:', JSON.stringify(webrtc));
+    }
     const pubsubType = normalizePubsubType(cfg) || 'gossipsub';
     const gossipsub = normalizeGossipsubConfig(cfg);
     const topologySelection = readTopologyInputs();
@@ -1152,11 +1178,22 @@ const connect = async () => {
     topologyId = topologySelection.topologyId;
     visualizer.setTopologyMode(topologyType);
     const roomId = roomInput.value.trim() || 'telemetry';
-    const maxConnections = Number.isFinite(cfg.maxConnections) ? cfg.maxConnections : 5;
-    const targetConnections = Number.isFinite(cfg.targetConnections)
-      ? cfg.targetConnections
-      : maxConnections;
-    const connectionRadius = Number.isFinite(cfg.connectionRadius) ? cfg.connectionRadius : 1.2;
+    const maxConnections = Number.isFinite(urlMaxConnections)
+      ? urlMaxConnections
+      : Number.isFinite(cfg.maxConnections)
+        ? cfg.maxConnections
+        : 5;
+    const targetConnections = Number.isFinite(urlTargetConnections)
+      ? urlTargetConnections
+      : Number.isFinite(cfg.targetConnections)
+        ? cfg.targetConnections
+        : maxConnections;
+    const urlConnectionRadius = parseFloat(urlParams.get(QUERY_PARAM_CONNECTION_RADIUS));
+    const connectionRadius = Number.isFinite(urlConnectionRadius)
+      ? urlConnectionRadius
+      : Number.isFinite(cfg.connectionRadius)
+        ? cfg.connectionRadius
+        : 1.2;
     const isolationMinConnections = Number.isFinite(cfg.isolationMinConnections)
       ? cfg.isolationMinConnections
       : 2;
@@ -1228,6 +1265,32 @@ const connect = async () => {
     connectBtn.disabled = false;
   }
 };
+
+const attachDebugHandles = () => {
+  if (typeof window === 'undefined') return;
+  window.__NETVIZ__ = {
+    getStatus: () => ({
+      localPeerId,
+      topologyType,
+      topologyId,
+      roomId: roomInput?.value?.trim() || null,
+      relayPeerIds: Array.from(relayPeerIds),
+      relayReachable,
+      telemetry: networkManager?.getTelemetrySnapshot?.() || null,
+      peers: telemetryStore.list(),
+      relayRetentionDebug: networkManager ? {
+        dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
+        relayRetention: networkManager.config?.webrtc?.relayRetention,
+        hasBootstrapRelayConnections: networkManager._hasBootstrapRelayConnections?.(),
+        hasDirectPeerConnections: networkManager._hasDirectPeerConnections?.(),
+        shouldKeepRelay: networkManager._shouldKeepRelayBootstrapConnection?.()
+      } : null
+    }),
+    connect: () => connect()
+  };
+};
+
+attachDebugHandles();
 
 connectBtn.addEventListener('click', () => {
   connect().catch(() => {});
