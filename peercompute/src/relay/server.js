@@ -101,6 +101,19 @@ const relayControlOnlyMode = (() => {
   return raw === 'true' || raw === '1';
 })();
 
+// Phase 5: Peer directory configuration
+const relayEnableDirectory = (() => {
+  const raw = (process.env.RELAY_ENABLE_DIRECTORY || '').trim().toLowerCase();
+  // Default to true if not explicitly disabled
+  return raw !== 'false' && raw !== '0';
+})();
+const relayDirectoryTtlMs = Number(process.env.RELAY_DIRECTORY_TTL_MS) || 5 * 60 * 1000; // 5 min default
+const DIRECTORY_CLEANUP_INTERVAL_MS = 60 * 1000; // Cleanup every minute
+const DIRECTORY_TOPIC = 'peercompute-directory';
+
+// Phase 5: Peer directory storage
+const peerDirectory = new Map(); // peerId -> { multiaddrs, lastSeen, roomId, topologyId, shardId }
+
 const toMultiaddrHostSegment = (host) => {
   if (!host) return '';
   const isIpv6 = host.includes(':');
@@ -321,6 +334,28 @@ async function startServer() {
     }
     console.log(`Relay subscribed to topics: ${relayTopics.join(', ')}`);
 
+    // Phase 5: Subscribe to directory topic and start cleanup interval
+    if (relayEnableDirectory) {
+      server.services.pubsub.subscribe(DIRECTORY_TOPIC);
+      relayTopicSet.add(DIRECTORY_TOPIC);
+      console.log(`[Relay] Peer directory enabled (TTL: ${relayDirectoryTtlMs}ms)`);
+
+      // Periodic cleanup of stale directory entries
+      setInterval(() => {
+        const now = Date.now();
+        let expiredCount = 0;
+        for (const [peerId, entry] of peerDirectory.entries()) {
+          if (now - entry.lastSeen > relayDirectoryTtlMs) {
+            peerDirectory.delete(peerId);
+            expiredCount++;
+          }
+        }
+        if (expiredCount > 0) {
+          console.log(`[Directory] Expired ${expiredCount} entries (${peerDirectory.size} remaining)`);
+        }
+      }, DIRECTORY_CLEANUP_INTERVAL_MS);
+    }
+
     const shouldRelayTopic = (topic) => relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
     const isDataTopic = (topic) => {
       // Data topics include state, state-sync, and shard topics
@@ -349,12 +384,77 @@ async function startServer() {
     
     // Log peer discovery events
     const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+
+    // Phase 5: Directory query handler
+    const handleDirectoryQuery = async (query, requesterId) => {
+      const entry = peerDirectory.get(query.targetPeerId);
+      const response = {
+        type: 'directory-response',
+        requestId: query.requestId,
+        targetPeerId: query.targetPeerId,
+        found: Boolean(entry),
+        multiaddrs: entry?.multiaddrs || [],
+        lastSeen: entry?.lastSeen || null,
+        metadata: entry ? {
+          roomId: entry.roomId,
+          topologyId: entry.topologyId,
+          shardId: entry.shardId
+        } : null
+      };
+      const payload = encoder.encode(JSON.stringify(response));
+      try {
+        await server.services.pubsub.publish(DIRECTORY_TOPIC, payload);
+        console.log(`[Directory] Responded to query for ${query.targetPeerId} from ${requesterId} (found: ${response.found})`);
+      } catch (err) {
+        console.warn('[Directory] Failed to respond:', err?.message || err);
+      }
+    };
+
     server.services.pubsub.addEventListener('message', (evt) => {
       const { topic, from, data } = evt.detail;
       if (topic === discoveryTopic) {
         console.log(`[Discovery] Peer announcement from ${from.toString()}`);
         return;
       }
+
+      // Phase 5: Update directory from presence messages
+      if (relayEnableDirectory && (topic === 'peercompute-presence' || topic.includes('.presence'))) {
+        try {
+          const parsed = JSON.parse(decoder.decode(data));
+          if (parsed?.from && Array.isArray(parsed?.multiaddrs)) {
+            peerDirectory.set(parsed.from, {
+              multiaddrs: parsed.multiaddrs,
+              lastSeen: Date.now(),
+              roomId: parsed.roomId,
+              topologyId: parsed.topologyId,
+              shardId: parsed.shardId
+            });
+          }
+        } catch (_) {}
+      }
+
+      // Phase 5: Handle directory queries
+      if (relayEnableDirectory && topic === DIRECTORY_TOPIC) {
+        try {
+          const query = JSON.parse(decoder.decode(data));
+          if (query.type === 'directory-query' && query.targetPeerId) {
+            handleDirectoryQuery(query, from.toString());
+          } else if (query.type === 'directory-register' && query.from) {
+            // Explicit registration
+            peerDirectory.set(query.from, {
+              multiaddrs: query.multiaddrs || [],
+              lastSeen: Date.now(),
+              roomId: query.roomId,
+              topologyId: query.topologyId,
+              shardId: query.shardId
+            });
+            console.log(`[Directory] Registered peer: ${query.from}`);
+          }
+        } catch (_) {}
+        return;
+      }
+
       if (topic === 'peercompute-presence' || topic === 'peercompute-state' || topic === 'peercompute-state-sync') {
         let summary = 'message';
         try {

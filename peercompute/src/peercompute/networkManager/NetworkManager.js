@@ -154,6 +154,14 @@ const normalizeWebRTCConfig = (config = {}) => {
   const relayRetention = normalizeRelayRetention(
     raw.relayRetention ?? config.relayRetention
   );
+  // Phase 4: Reconnect-on-demand config
+  const reconnectOnDialFailure = raw.reconnectOnDialFailure ?? config.reconnectOnDialFailure ?? true;
+  const reconnectThrottleMs = Number.isFinite(raw.reconnectThrottleMs)
+    ? Math.max(5000, raw.reconnectThrottleMs)
+    : (Number.isFinite(config.reconnectThrottleMs) ? Math.max(5000, config.reconnectThrottleMs) : 30000);
+  const autoDropRelayAfterDialMs = Number.isFinite(raw.autoDropRelayAfterDialMs)
+    ? Math.max(0, raw.autoDropRelayAfterDialMs)
+    : (Number.isFinite(config.autoDropRelayAfterDialMs) ? Math.max(0, config.autoDropRelayAfterDialMs) : 60000);
   const iceServers = normalizeIceServers(
     raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
   );
@@ -168,6 +176,9 @@ const normalizeWebRTCConfig = (config = {}) => {
     dropRelayOnDirect,
     dropRelayBootstrapOnDirect,
     relayRetention,
+    reconnectOnDialFailure,
+    reconnectThrottleMs,
+    autoDropRelayAfterDialMs,
     iceServers,
     rtcConfiguration
   };
@@ -359,6 +370,12 @@ export class NetworkManager {
       pubsubType,
       gossipsub: expandedGossipsubOptions,
       pubsubPeerDiscovery,
+      // Phase 5: Peer directory config
+      enablePeerDirectory: config.enablePeerDirectory !== false,
+      directoryTopic: config.directoryTopic || 'peercompute-directory',
+      directoryQueryTimeoutMs: Number.isFinite(config.directoryQueryTimeoutMs)
+        ? Math.max(1000, config.directoryQueryTimeoutMs)
+        : 5000,
       onPublishError: typeof config.onPublishError === 'function' ? config.onPublishError : null,
       onPublishSuccess: typeof config.onPublishSuccess === 'function' ? config.onPublishSuccess : null
     };
@@ -392,6 +409,14 @@ export class NetworkManager {
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
+    // Phase 4: Relay reconnect-on-demand state
+    this.relayReconnectState = {
+      lastReconnectAt: 0,
+      pendingDialsNeedingRelay: new Set(),
+      autoDisconnectTimer: null
+    };
+    // Phase 5: Peer directory query state
+    this.pendingDirectoryQueries = new Map();
     this.telemetry = {
       rxCount: 0,
       txCount: 0,
@@ -435,6 +460,10 @@ export class NetworkManager {
       this.config.directTopic,
       this.config.presenceTopic
     ]);
+    // Phase 5: Add directory topic to allowed topics
+    if (this.config.enablePeerDirectory) {
+      this.allowedTopics.add(this.config.directoryTopic);
+    }
     [this.schedulerProfile.snapshotTopic, this.schedulerProfile.commandTopic, this.schedulerProfile.eventTopic]
       .filter(Boolean)
       .forEach((topic) => this.allowedTopics.add(topic));
@@ -1226,6 +1255,12 @@ export class NetworkManager {
         return;
       }
 
+      // Phase 5: Handle directory responses
+      if (topic === this.config.directoryTopic) {
+        this._handleDirectoryMessage(parsed);
+        return;
+      }
+
       if (topic === this.config.directTopic) {
         if (parsed?.target && parsed.target !== this.peerId) return;
       }
@@ -1494,6 +1529,64 @@ export class NetworkManager {
     }
   }
 
+  // Phase 4: Reconnect-on-demand methods
+  _shouldReconnectRelayForDial(peerId) {
+    // Already connected to relay?
+    if (this._hasBootstrapRelayConnections()) return false;
+    // Feature disabled?
+    if (this.config.webrtc?.reconnectOnDialFailure === false) return false;
+    // Throttle check
+    const now = Date.now();
+    const throttleMs = this.config.webrtc?.reconnectThrottleMs ?? 30000;
+    if (now - this.relayReconnectState.lastReconnectAt < throttleMs) return false;
+    // Don't reconnect for bootstrap peers
+    if (this.bootstrapPeerIds.has(peerId)) return false;
+    // Only reconnect if peer is known (seen in presence)
+    if (!this.peers.has(peerId)) return false;
+    return true;
+  }
+
+  async _reconnectRelayForDial(peerId) {
+    if (!this._shouldReconnectRelayForDial(peerId)) return false;
+    debugLog('[NetworkManager] Reconnecting to relay for dial:', peerId);
+    this.relayReconnectState.lastReconnectAt = Date.now();
+    this.relayReconnectState.pendingDialsNeedingRelay.add(peerId);
+    try {
+      await this._dialBootstrapPeers();
+      return this._hasBootstrapRelayConnections();
+    } catch (err) {
+      debugWarn('[NetworkManager] Relay reconnect failed:', err?.message || err);
+      return false;
+    }
+  }
+
+  _buildCircuitAddr(peerId) {
+    if (!peerId || !this.config.bootstrapPeers?.length) return null;
+    try {
+      const relayAddr = this.config.bootstrapPeers[0];
+      const normalized = normalizeBootstrapAddr(relayAddr);
+      return multiaddr(`${normalized}/p2p-circuit/p2p/${peerId}`);
+    } catch (err) {
+      debugWarn('[NetworkManager] Failed to build circuit addr:', err?.message || err);
+      return null;
+    }
+  }
+
+  _scheduleAutoRelayDrop() {
+    const delay = this.config.webrtc?.autoDropRelayAfterDialMs ?? 60000;
+    if (delay <= 0) return;
+    // Clear existing timer
+    if (this.relayReconnectState.autoDisconnectTimer) {
+      clearTimeout(this.relayReconnectState.autoDisconnectTimer);
+    }
+    this.relayReconnectState.autoDisconnectTimer = setTimeout(() => {
+      this.relayReconnectState.autoDisconnectTimer = null;
+      this.relayReconnectState.pendingDialsNeedingRelay.clear();
+      debugLog('[NetworkManager] Auto-dropping relay after dial timeout');
+      this._maybeUpdateBootstrapRelayConnections();
+    }, delay);
+  }
+
   _shouldDialDiscoveredPeer(peerId) {
     if (!peerId) return false;
     const nonBootstrapConnections = this._countDialedPeers();
@@ -1726,6 +1819,70 @@ export class NetworkManager {
       clearInterval(this.presenceInterval);
       this.presenceInterval = null;
     }
+  }
+
+  // Phase 5: Peer directory methods
+  async queryPeerDirectory(targetPeerId) {
+    if (!this.libp2p || !this.config.enablePeerDirectory) {
+      return null;
+    }
+    const requestId = `${this.peerId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const query = {
+      type: 'directory-query',
+      requestId,
+      targetPeerId,
+      from: this.peerId
+    };
+    return new Promise((resolve) => {
+      const timeoutMs = this.config.directoryQueryTimeoutMs;
+      const timeout = setTimeout(() => {
+        this.pendingDirectoryQueries.delete(requestId);
+        resolve(null); // Timeout = not found
+      }, timeoutMs);
+      this.pendingDirectoryQueries.set(requestId, { resolve, timeout });
+      const payload = JSON.stringify(query);
+      this._publish(this.config.directoryTopic, payload).catch(() => {
+        clearTimeout(timeout);
+        this.pendingDirectoryQueries.delete(requestId);
+        resolve(null);
+      });
+    });
+  }
+
+  _handleDirectoryMessage(data) {
+    try {
+      const response = typeof data === 'string' ? JSON.parse(data) : data;
+      if (response.type !== 'directory-response') return;
+      const pending = this.pendingDirectoryQueries.get(response.requestId);
+      if (!pending) return; // Not our query
+      clearTimeout(pending.timeout);
+      this.pendingDirectoryQueries.delete(response.requestId);
+      if (response.found && Array.isArray(response.multiaddrs)) {
+        // Store addresses for future dial attempts
+        this._rememberPeerAddresses(response.targetPeerId, response.multiaddrs);
+        pending.resolve({
+          peerId: response.targetPeerId,
+          multiaddrs: response.multiaddrs,
+          lastSeen: response.lastSeen,
+          metadata: response.metadata
+        });
+      } else {
+        pending.resolve(null);
+      }
+    } catch (_) {}
+  }
+
+  async registerWithDirectory() {
+    if (!this.libp2p || !this.config.enablePeerDirectory) return;
+    const registration = {
+      type: 'directory-register',
+      from: this.peerId,
+      multiaddrs: this._getAnnounceAddrs(),
+      roomId: this.config.roomId,
+      topologyId: this.config.topologyId,
+      shardId: this.topologyShardId
+    };
+    await this._publish(this.config.directoryTopic, JSON.stringify(registration));
   }
 
   _updateShardState(force = false) {
@@ -2278,6 +2435,10 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    // Phase 5: Subscribe to directory topic
+    if (this.config.enablePeerDirectory) {
+      this.libp2p.services.pubsub.subscribe(this.config.directoryTopic);
+    }
     if (this.config.enableSharding && this.topologyController) {
       this._syncShardSubscriptions(this.topologyController.getNeighborShardIds(this.topologyMetric));
     }
@@ -2378,9 +2539,17 @@ export class NetworkManager {
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
     if (now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
     this.recentDialAttempts.set(peerId, now);
-    const maybeDialTargets = Array.isArray(addrs) && addrs.length > 0
+    let maybeDialTargets = Array.isArray(addrs) && addrs.length > 0
       ? addrs.map(toPeerMultiaddr).filter(Boolean)
       : [];
+    // Phase 5: Query directory if no addresses provided
+    if (maybeDialTargets.length === 0 && this.config.enablePeerDirectory) {
+      const directoryResult = await this.queryPeerDirectory(peerId);
+      if (directoryResult?.multiaddrs?.length > 0) {
+        maybeDialTargets = directoryResult.multiaddrs.map(toPeerMultiaddr).filter(Boolean);
+        debugLog('[NetworkManager] Got addresses from directory for:', peerId, maybeDialTargets.length);
+      }
+    }
     const orderedTargets = preferDirect ? orderDialTargets(maybeDialTargets) : maybeDialTargets;
     if (orderedTargets.length > 0) {
       for (const addr of orderedTargets) {
@@ -2397,6 +2566,30 @@ export class NetworkManager {
             stage: 'dial',
             error: err
           });
+        }
+      }
+    }
+    // Phase 4: Try relay reconnection if all direct addresses failed
+    if (orderedTargets.length > 0 && !this._hasBootstrapRelayConnections()) {
+      const reconnected = await this._reconnectRelayForDial(peerId);
+      if (reconnected) {
+        const circuitAddr = this._buildCircuitAddr(peerId);
+        if (circuitAddr) {
+          try {
+            await this.libp2p.dial(circuitAddr);
+            debugLog('[NetworkManager] Dialed via relay circuit after reconnect:', peerId);
+            this._scheduleAutoRelayDrop();
+            return;
+          } catch (err) {
+            debugWarn('[NetworkManager] Circuit dial failed after reconnect:', peerId, err?.message || err);
+            this._emitConnectionFailure({
+              peerId,
+              address: circuitAddr.toString(),
+              source,
+              stage: 'dial',
+              error: err
+            });
+          }
         }
       }
     }

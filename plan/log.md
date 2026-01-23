@@ -4159,3 +4159,82 @@ Results:
 - peercompute/tests/runtime/netviz-scale.mjs (--controlOnly flag)
 - plan/branch/relay-scaling.md (Phase 2 documentation)
 - plan/log.md
+
+---
+
+## Date: 2026-01-22 (Phase 4 & 5 Implementation)
+
+### Prompt
+- lets do phase 4 and 5
+
+### Changes
+
+**Phase 4: Reconnect-on-Demand for Dialing**
+
+1. **Config Options** (NetworkManager.js `normalizeWebRTCConfig()`):
+   - `reconnectOnDialFailure` (default: true) - enable feature
+   - `reconnectThrottleMs` (default: 30000) - min time between reconnects
+   - `autoDropRelayAfterDialMs` (default: 60000) - auto-drop relay after dial (0 to disable)
+
+2. **State Tracking** (NetworkManager constructor):
+   ```javascript
+   this.relayReconnectState = {
+     lastReconnectAt: 0,
+     pendingDialsNeedingRelay: new Set(),
+     autoDisconnectTimer: null
+   };
+   ```
+
+3. **New Methods**:
+   - `_shouldReconnectRelayForDial(peerId)` - checks throttle, relay status, feature flag
+   - `_reconnectRelayForDial(peerId)` - calls `_dialBootstrapPeers()`, returns success/fail
+   - `_buildCircuitAddr(peerId)` - constructs `/p2p-circuit/p2p/{peerId}` multiaddr
+   - `_scheduleAutoRelayDrop()` - drops relay 60s after successful dial
+
+4. **Integration** (in `_maybeDialPeer()`):
+   - After all direct addresses fail, if relay not connected
+   - Call `_reconnectRelayForDial(peerId)`
+   - If reconnected, dial via circuit relay
+   - Schedule auto-drop timer
+
+**Phase 5: Enhanced Peer Directory**
+
+1. **Relay Implementation** (server.js):
+   - `RELAY_ENABLE_DIRECTORY` env var (default: true)
+   - `RELAY_DIRECTORY_TTL_MS` env var (default: 5 min)
+   - `peerDirectory` Map stores `{ multiaddrs, lastSeen, roomId, topologyId, shardId }`
+   - Populated from presence messages
+   - `handleDirectoryQuery()` responds to queries
+   - Handles `directory-register` for explicit registration
+   - Periodic cleanup every 60s
+
+2. **Client Implementation** (NetworkManager.js):
+   - `enablePeerDirectory` config (default: true)
+   - `directoryTopic` config (default: 'peercompute-directory')
+   - `directoryQueryTimeoutMs` config (default: 5000)
+   - `pendingDirectoryQueries` Map for tracking requests
+   - `queryPeerDirectory(targetPeerId)` - returns Promise with addresses or null
+   - `registerWithDirectory()` - explicit registration
+   - `_handleDirectoryMessage()` - processes responses
+
+3. **Integration** (in `_maybeDialPeer()`):
+   - If no addresses provided, query directory first
+   - Store returned addresses in peerStore for future dials
+
+### Validation
+
+**Unit Tests**: All 35 pass (no regressions)
+```
+npm --prefix peercompute run test:unit
+✔ tests 35, pass 35, fail 0
+```
+
+**Code Changes Summary**:
+- NetworkManager.js: ~150 lines added for Phase 4 & 5 client logic
+- server.js: ~80 lines added for directory service
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js (Phase 4 & 5 client implementation)
+- peercompute/src/relay/server.js (Phase 5 directory service)
+- plan/branch/relay-scaling.md (documentation updates)
+- plan/log.md

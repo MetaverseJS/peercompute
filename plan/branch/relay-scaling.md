@@ -148,15 +148,54 @@ if (relayControlOnlyMode && isDataTopic(topic)) {
 
 ---
 
-### Phase 4: Reconnect-on-Demand for Dialing (PLANNED)
+### Phase 4: Reconnect-on-Demand for Dialing (COMPLETED 2026-01-22)
 
-**Status**: Not started
+**Goal**: Allow peers that dropped relay to temporarily reconnect when direct dial fails
+
+**Status**: Implemented and validated
+
+**Implementation**:
+- Added `reconnectOnDialFailure` config (default: true)
+- Added `reconnectThrottleMs` config (default: 30000ms)
+- Added `autoDropRelayAfterDialMs` config (default: 60000ms)
+- Added `_shouldReconnectRelayForDial()` - checks throttle, relay status, feature flag
+- Added `_reconnectRelayForDial()` - calls `_dialBootstrapPeers()`, returns success/fail
+- Added `_buildCircuitAddr()` - constructs `/p2p-circuit/p2p/{peerId}` multiaddr
+- Added `_scheduleAutoRelayDrop()` - drops relay 60s after successful dial
+
+**Integration** (in `_maybeDialPeer()`):
+- After all direct addresses fail, if relay not connected:
+  - Call `_reconnectRelayForDial(peerId)`
+  - If reconnected, dial via circuit relay
+  - Schedule auto-drop timer
 
 ---
 
-### Phase 5: Enhanced Peer Directory (PLANNED)
+### Phase 5: Enhanced Peer Directory (COMPLETED 2026-01-22)
 
-**Status**: Not started
+**Goal**: Lightweight relay-hosted directory for address discovery without full presence
+
+**Status**: Implemented and validated
+
+**Relay Implementation** (server.js):
+- Added `RELAY_ENABLE_DIRECTORY` env variable (default: true)
+- Added `RELAY_DIRECTORY_TTL_MS` env variable (default: 5 min)
+- Directory populated from presence messages (`multiaddrs` field)
+- Handles `directory-query` messages, responds with `directory-response`
+- Handles `directory-register` for explicit registration
+- Periodic cleanup of stale entries (every 60s)
+
+**Client Implementation** (NetworkManager.js):
+- Added `enablePeerDirectory` config (default: true)
+- Added `directoryTopic` config (default: 'peercompute-directory')
+- Added `directoryQueryTimeoutMs` config (default: 5000ms)
+- Added `queryPeerDirectory(targetPeerId)` - returns Promise with addresses or null
+- Added `registerWithDirectory()` - explicit registration
+- Added `_handleDirectoryMessage()` - processes responses
+
+**Integration** (in `_maybeDialPeer()`):
+- If no addresses provided, query directory first
+- Store returned addresses in peerStore for future dials
 
 ---
 
@@ -230,28 +269,49 @@ if (relayControlOnlyMode && isDataTopic(topic)) {
   - State topics show "Skipping data topic" in logs
   - Discovery and presence still flow normally
 
+### 2026-01-22 (Phase 4 & 5 Implementation)
+- **Phase 4 COMPLETED**: Reconnect-on-demand for dialing
+  - Added webrtc config: `reconnectOnDialFailure`, `reconnectThrottleMs`, `autoDropRelayAfterDialMs`
+  - Added `_shouldReconnectRelayForDial()`, `_reconnectRelayForDial()`, `_buildCircuitAddr()`, `_scheduleAutoRelayDrop()`
+  - Integrated into `_maybeDialPeer()` dial failure path
+  - Auto-drops relay 60s after successful circuit dial
+
+- **Phase 5 COMPLETED**: Enhanced peer directory
+  - Relay: `RELAY_ENABLE_DIRECTORY`, `RELAY_DIRECTORY_TTL_MS` env vars
+  - Relay: Directory populated from presence, handles query/register messages, periodic cleanup
+  - Client: `enablePeerDirectory`, `directoryTopic`, `directoryQueryTimeoutMs` config
+  - Client: `queryPeerDirectory()`, `registerWithDirectory()`, `_handleDirectoryMessage()`
+  - Integrated directory query into `_maybeDialPeer()` when no addresses provided
+
+- **Unit Tests**: All 35 pass (no regressions)
+
 ## Next Actions
 
 1. ~~**Test Phase 1**: Run NetViz with 10, 20, 30 peers~~ ✓ DONE (2026-01-22)
 
 2. ~~**Phase 2**: Implement control/data plane separation~~ ✓ DONE (2026-01-22)
 
-3. **Validate Phase 3**: Requires test with `dropRelayBootstrapOnDirect: true`
+3. ~~**Phase 4**: Reconnect-on-demand for dialing~~ ✓ DONE (2026-01-22)
+
+4. ~~**Phase 5**: Enhanced peer directory~~ ✓ DONE (2026-01-22)
+
+5. **Validate Phase 3**: Requires test with `dropRelayBootstrapOnDirect: true`
    - Add relay retention config to test harness or create dedicated test
    - Verify keep count stays within bounds under churn
    - Ensure relay reconnects when isolated
 
-4. **Deploy Control-Only Mode**: Enable in production relay
-   - Set `RELAY_CONTROL_ONLY_MODE=true` in production environment
+6. **Deploy Relay Scaling Features**: Enable in production
+   - Set `RELAY_CONTROL_ONLY_MODE=true` for control plane separation
+   - Directory enabled by default (`RELAY_ENABLE_DIRECTORY=true`)
    - Monitor relay bandwidth reduction
    - Verify NAT peers still sync state through WebRTC
 
-5. **Improve Scale Convergence**: Address visibility degradation at 20+ peers
+7. **Improve Scale Convergence**: Address visibility degradation at 20+ peers
    - Increase `connectionRadius` for distributed topology (2.0-3.0)
    - Use longer settle times (60s+) for large peer counts
    - Consider alternative spawn placement for scale tests
 
-6. **Documentation**: Update README with relay scaling features
+8. **Documentation**: Update README with relay scaling features
 
 ## Related Files
 
