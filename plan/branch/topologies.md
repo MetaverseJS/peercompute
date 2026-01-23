@@ -71,6 +71,7 @@ Goal: move to explicit topologies (fully distributed, three-layer hierarchical, 
 - Full state only within shard; summarize/aggregate to parent or higher-level topics for global views.
 - Presence messages include metric position, shard id, and joinedAt for relay retention and host election.
 - NetViz uses aggregate summaries rather than full per-node state in the hierarchical overview.
+ - Snapshot publishing uses shard topics when `enableSharding` is true (per-node shard broadcast).
 
 ### Relay stability + publish-on-closed-stream fixes
 - Add a publish guard: per-peer queue with stream state checks; drop or retry on StreamStateError without crashing.
@@ -114,3 +115,4 @@ Goal: move to explicit topologies (fully distributed, three-layer hierarchical, 
 - NetworkManager patches gossipsub outbound streams to catch async send failures and hang up the peer.
 - Distributed topology now swaps out the farthest connected peer when a closer desired peer appears at max connections.
 - Distributed topology distance scoring now uses adjacency (Manhattan) to prioritize grid neighbors.
+- Sharded snapshots now publish on per-shard topics when `enableSharding` is enabled.

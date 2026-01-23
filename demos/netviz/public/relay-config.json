@@ -1,39 +1,6 @@
 {
   "bootstrapPeers": [
-    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
+    "/ip4/127.0.0.1/tcp/42525/wss/p2p/12D3KooWHHbiwiqV8MMqE2gKD6oYDESDdBBR9DsLusULJEwkJxP2"
   ],
-  "pubsubType": "gossipsub",
-  "webrtc": {
-    "iceServers": [
-      {
-        "urls": [
-          "stun:stun.l.google.com:19302",
-          "stun:stun.cloudflare.com:3478"
-        ]
-      }
-    ],
-    "preferDirect": true,
-    "dropRelayOnDirect": false,
-    "dropRelayBootstrapOnDirect": false,
-    "relayRetention": {
-      "mode": "sqrt",
-      "min": 1
-    }
-  },
-  "gossipsub": {
-    "D": 8,
-    "Dhi": 16,
-    "Dout": 1,
-    "scoreParams": {
-      "IPColocationFactorWeight": 0,
-      "behaviourPenaltyWeight": 0,
-      "topics": {
-        "__default": {
-          "meshMessageDeliveriesWeight": 0,
-          "meshMessageDeliveriesThreshold": 0,
-          "meshFailurePenaltyWeight": 0
-        }
-      }
-    }
-  }
+  "pubsubType": "gossipsub"
 }

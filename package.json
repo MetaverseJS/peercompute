@@ -46,7 +46,8 @@
     "vite": "^6.4.1"
   },
   "dependencies": {
-    "@libp2p/utils": "^7.0.9"
+    "@libp2p/utils": "^7.0.9",
+    "three": "^0.182.0"
   },
   "overrides": {
     "@libp2p/utils": "^7.0.9"
