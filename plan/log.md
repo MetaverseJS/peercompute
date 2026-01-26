@@ -4238,3 +4238,38 @@ npm --prefix peercompute run test:unit
 - peercompute/src/relay/server.js (Phase 5 directory service)
 - plan/branch/relay-scaling.md (documentation updates)
 - plan/log.md
+
+---
+
+## Date: 2026-01-26 (Rebase conflict resolution)
+
+### Prompt
+- we are currently rebasing local changes to the demo fixes branch with changes merged in from relay-scaling. review the log and all plan files and then resolve the merge conflict in topologies.md
+
+### Changes
+- Reviewed plan/log.md and all plan/*.md files to align with current branch documentation.
+- Resolved merge conflict in plan/branch/topologies.md by keeping the consolidated progress list, adding missing progress bullets (tests + sharded snapshots), and restoring the remaining work list.
+- Removed conflict markers from topologies.md.
+
+### Commands
+- ls
+- git status -sb
+- ls -la plan plan/branch
+- rg --files -g '*.md' plan
+- sed -n '1,220p' plan/branch/topologies.md
+- tail -n 200 plan/log.md
+- git log --oneline -n 20
+- sed -n '1,200p' plan/branch/demo-fixes.md
+- sed -n '1,200p' plan/branch/relay-scaling.md
+- for f in $(rg --files -g '*.md' plan | sort); do ... sed -n '1,80p' "$f"; done
+- sed -n '1,200p' plan/arch/topology.md
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/branch/topologies.md
+- plan/log.md
+
+### Open Questions
+- None.
