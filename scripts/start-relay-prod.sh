@@ -8,6 +8,12 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prod_config="$repo_root/config/relay.json"
 
+relay_env_file="${RELAY_ENV_FILE:-$repo_root/config/relay.env}"
+if [[ -f "$relay_env_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$relay_env_file"
+fi
+
 cd "$repo_root"
 
 relay_host=""
@@ -45,55 +51,85 @@ if [[ -x "$repo_root/scripts/ensure-relay-config-perms.sh" ]]; then
 fi
 
 if [[ -n "$relay_host" && -z "${RELAY_PUBLIC_HOST:-}" ]]; then
-  export RELAY_PUBLIC_HOST="$relay_host"
+  RELAY_PUBLIC_HOST="$relay_host"
 fi
 if [[ -n "$relay_port" && -z "${RELAY_PUBLIC_PORT:-}" ]]; then
-  export RELAY_PUBLIC_PORT="$relay_port"
+  RELAY_PUBLIC_PORT="$relay_port"
 fi
 if [[ -n "$relay_protocol" && -z "${RELAY_PUBLIC_PROTOCOL:-}" ]]; then
-  export RELAY_PUBLIC_PROTOCOL="$relay_protocol"
+  RELAY_PUBLIC_PROTOCOL="$relay_protocol"
 fi
 if [[ -n "$listen_host" && -z "${RELAY_LISTEN_HOST:-}" ]]; then
-  export RELAY_LISTEN_HOST="$listen_host"
+  RELAY_LISTEN_HOST="$listen_host"
 fi
 if [[ -n "$listen_port" && -z "${RELAY_LISTEN_PORT:-}" ]]; then
-  export RELAY_LISTEN_PORT="$listen_port"
+  RELAY_LISTEN_PORT="$listen_port"
 fi
 if [[ -n "$ssl_cert" && -z "${RELAY_SSL_CERT:-}" ]]; then
-  export RELAY_SSL_CERT="$ssl_cert"
+  RELAY_SSL_CERT="$ssl_cert"
 fi
 if [[ -n "$ssl_key" && -z "${RELAY_SSL_KEY:-}" ]]; then
-  export RELAY_SSL_KEY="$ssl_key"
+  RELAY_SSL_KEY="$ssl_key"
 fi
 if [[ -n "$identity_file" && -z "${RELAY_IDENTITY_FILE:-}" ]]; then
-  export RELAY_IDENTITY_FILE="$identity_file"
+  RELAY_IDENTITY_FILE="$identity_file"
 fi
 if [[ -n "$relay_config_file" && -z "${RELAY_CONFIG_FILE:-}" ]]; then
-  export RELAY_CONFIG_FILE="$relay_config_file"
+  RELAY_CONFIG_FILE="$relay_config_file"
 fi
 if [[ -n "$webrtc_config" && -z "${RELAY_WEBRTC_CONFIG:-}" ]]; then
-  export RELAY_WEBRTC_CONFIG="$webrtc_config"
+  RELAY_WEBRTC_CONFIG="$webrtc_config"
 fi
 if [[ -n "$pubsub_type" && -z "${RELAY_PUBSUB_TYPE:-}" ]]; then
-  export RELAY_PUBSUB_TYPE="$pubsub_type"
+  RELAY_PUBSUB_TYPE="$pubsub_type"
 fi
 if [[ -n "$gossipsub_config" && -z "${RELAY_GOSSIPSUB_CONFIG:-}" ]]; then
-  export RELAY_GOSSIPSUB_CONFIG="$gossipsub_config"
+  RELAY_GOSSIPSUB_CONFIG="$gossipsub_config"
 fi
 
-export RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"
+prefer_ipv6=0
+case "${RELAY_PREFER_IPV6:-}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    prefer_ipv6=1
+    ;;
+esac
+if [[ "$prefer_ipv6" == "1" ]]; then
+  listen_host_value="${RELAY_LISTEN_HOST:-}"
+  if [[ -z "$listen_host_value" || "$listen_host_value" == "0.0.0.0" || "$listen_host_value" == "127.0.0.1" || "$listen_host_value" == "localhost" ]]; then
+    RELAY_LISTEN_HOST="::"
+  fi
+fi
+
+RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"
 if [[ -z "${RELAY_LISTEN_PORT:-}" && -n "${RELAY_PUBLIC_PORT:-}" ]]; then
-  export RELAY_LISTEN_PORT="$RELAY_PUBLIC_PORT"
+  RELAY_LISTEN_PORT="$RELAY_PUBLIC_PORT"
 fi
 if [[ -z "${RELAY_PUBLIC_PORT:-}" && -n "${RELAY_LISTEN_PORT:-}" ]]; then
-  export RELAY_PUBLIC_PORT="$RELAY_LISTEN_PORT"
+  RELAY_PUBLIC_PORT="$RELAY_LISTEN_PORT"
 fi
 
-if [[ -n "${relay_protocol:-}" ]] && [[ "${relay_protocol,,}" == "wss" ]]; then
+if [[ -n "${RELAY_PUBLIC_PROTOCOL:-}" ]] && [[ "${RELAY_PUBLIC_PROTOCOL,,}" == "wss" ]]; then
   if [[ -z "${RELAY_SSL_CERT:-}" || -z "${RELAY_SSL_KEY:-}" ]]; then
     echo "Warning: relayProtocol=wss but RELAY_SSL_CERT/RELAY_SSL_KEY not set. Relay will listen with ws; ensure TLS is terminated by nginx."
   fi
 fi
+
+RELAY_IMPL="${RELAY_IMPL:-go}"
+
+export RELAY_PUBLIC_HOST
+export RELAY_PUBLIC_PORT
+export RELAY_PUBLIC_PROTOCOL
+export RELAY_LISTEN_HOST
+export RELAY_LISTEN_PORT
+export RELAY_SSL_CERT
+export RELAY_SSL_KEY
+export RELAY_IDENTITY_FILE
+export RELAY_CONFIG_FILE
+export RELAY_WEBRTC_CONFIG
+export RELAY_PUBSUB_TYPE
+export RELAY_GOSSIPSUB_CONFIG
+export RELAY_PREFER_IPV6
+export RELAY_IMPL
 
 echo "Starting PeerCompute relay server (production)..."
 echo "  RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST:-}"
@@ -102,5 +138,4 @@ echo "  RELAY_PUBLIC_PROTOCOL=${RELAY_PUBLIC_PROTOCOL:-}"
 echo "  RELAY_LISTEN_HOST=${RELAY_LISTEN_HOST:-}"
 echo "  RELAY_LISTEN_PORT=${RELAY_LISTEN_PORT:-}"
 
-export RELAY_IMPL="${RELAY_IMPL:-node}"
 exec bash "$repo_root/scripts/run-relay.sh"

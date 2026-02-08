@@ -21,6 +21,7 @@ if (typeof Promise.withResolvers === 'undefined') {
 }
 
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { createLibp2p } from 'libp2p';
 import { tcp } from '@libp2p/tcp';
@@ -123,6 +124,18 @@ const toMultiaddrHostSegment = (host) => {
   return `/dns4/${host}`;
 };
 
+const toListenHostSegment = (host) => {
+  const trimmed = (host || '').trim();
+  if (!trimmed) return '/ip4/127.0.0.1';
+  if (trimmed === 'localhost') return '/ip4/127.0.0.1';
+  const ipVersion = net.isIP(trimmed);
+  if (ipVersion === 6) return `/ip6/${trimmed}`;
+  if (ipVersion === 4) return `/ip4/${trimmed}`;
+  return `/dns4/${trimmed}`;
+};
+
+const listenHostSegment = toListenHostSegment(relayListenHost);
+
 const loadRelayIdentity = async () => {
   if (!relayIdentityFile) return null;
   const identityPath = path.resolve(relayIdentityFile);
@@ -216,7 +229,7 @@ async function startServer() {
       ...(relayPrivateKey ? { privateKey: relayPrivateKey } : {}),
       addresses: {
         listen: [
-          `/ip4/${relayListenHost}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`
+          `${listenHostSegment}/tcp/${relayListenPort}/${useWss ? 'wss' : 'ws'}`
         ]
       },
       transports: [

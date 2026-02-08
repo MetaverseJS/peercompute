@@ -9,7 +9,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 service_name="${RELAY_SERVICE_NAME:-peercompute-relay}"
 service_user="${RELAY_SERVICE_USER:-${SUDO_USER:-$USER}}"
 service_group="${RELAY_SERVICE_GROUP:-$service_user}"
-relay_impl="${RELAY_IMPL:-node}"
+relay_impl="${RELAY_IMPL:-go}"
 unit_path="/etc/systemd/system/${service_name}.service"
 
 if [[ "$(id -u)" -ne 0 ]]; then

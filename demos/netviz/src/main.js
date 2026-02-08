@@ -10,6 +10,13 @@ const connectBtn = document.getElementById('connect-btn');
 const topologySelect = document.getElementById('topology-select');
 const topologyIdInput = document.getElementById('topology-id');
 const roomInput = document.getElementById('room-input');
+const renderModeSelect = document.getElementById('render-mode');
+const connectionRadiusInput = document.getElementById('connection-radius');
+const maxConnectionsInput = document.getElementById('max-connections');
+const targetConnectionsInput = document.getElementById('target-connections');
+const dropRelayToggle = document.getElementById('drop-relay');
+const relayRetentionModeSelect = document.getElementById('relay-retention-mode');
+const relayRetentionMinInput = document.getElementById('relay-retention-min');
 const hideGhostsToggle = document.getElementById('hide-ghosts');
 const autoRotateToggle = document.getElementById('auto-rotate');
 const consoleToggle = document.getElementById('console-toggle');
@@ -41,6 +48,12 @@ const QUERY_PARAM_TARGET_CONNECTIONS = 'targetConnections';
 const QUERY_PARAM_DROP_RELAY = 'dropRelay';
 const QUERY_PARAM_RELAY_RETENTION_MODE = 'relayRetentionMode';
 const QUERY_PARAM_RELAY_RETENTION_MIN = 'relayRetentionMin';
+const CONNECTION_STATE = Object.freeze({
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  DISCONNECTING: 'disconnecting'
+});
 
 const resolveRenderMode = () => {
   const params = new URLSearchParams(window.location.search);
@@ -54,6 +67,14 @@ const resolveRenderMode = () => {
   return 'full';
 };
 
+const normalizeRenderModeValue = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (['off', 'none', 'false', '0'].includes(raw)) return 'off';
+  if (['low', 'lite', 'minimal'].includes(raw)) return 'low';
+  return 'full';
+};
+
 const renderMode = resolveRenderMode();
 const visualizer = new NetworkVisualizer({ canvas, renderMode });
 const telemetryStore = new TelemetryStore();
@@ -64,6 +85,7 @@ let stateManager = null;
 let localPeerId = null;
 let telemetryTimer = null;
 let uiTimer = null;
+let debugLogTimer = null;
 let relayPeerIds = new Set();
 let relayReachable = null;
 let lastRelayPeerId = null;
@@ -81,6 +103,7 @@ let dragMoved = false;
 let skipNextClick = false;
 let lastPeerView = [];
 let lastMetricRelocationAt = 0;
+let connectionState = CONNECTION_STATE.DISCONNECTED;
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -130,6 +153,23 @@ const readTopologyInputs = () => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const parseNumberValue = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const parseIntValue = (value) => {
+  const num = Number.parseInt(String(value), 10);
+  return Number.isFinite(num) ? num : null;
+};
+
+const normalizeRetentionMode = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'logn' || raw === 'log(n)') return 'logn';
+  if (raw === 'sqrt') return 'sqrt';
+  return '';
+};
 
 const getDeviceScale = () => {
   const cores = Number.isFinite(navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : 4;
@@ -209,7 +249,27 @@ const readQueryParams = () => {
     || params.get('topologyId')?.trim()
     || '';
   const topologyType = params.get(QUERY_PARAM_TOPOLOGY_TYPE)?.trim() || '';
-  return { room, topologyId, topologyType };
+  const renderModeValue = params.get(QUERY_PARAM_RENDER)
+    || params.get(QUERY_PARAM_RENDER_MODE)
+    || '';
+  const connectionRadius = params.get(QUERY_PARAM_CONNECTION_RADIUS) || '';
+  const maxConnections = params.get(QUERY_PARAM_MAX_CONNECTIONS) || '';
+  const targetConnections = params.get(QUERY_PARAM_TARGET_CONNECTIONS) || '';
+  const dropRelay = params.get(QUERY_PARAM_DROP_RELAY) || '';
+  const relayRetentionMode = params.get(QUERY_PARAM_RELAY_RETENTION_MODE) || '';
+  const relayRetentionMin = params.get(QUERY_PARAM_RELAY_RETENTION_MIN) || '';
+  return {
+    room,
+    topologyId,
+    topologyType,
+    renderMode: renderModeValue,
+    connectionRadius,
+    maxConnections,
+    targetConnections,
+    dropRelay,
+    relayRetentionMode,
+    relayRetentionMin
+  };
 };
 
 const applyQueryParams = () => {
@@ -226,16 +286,95 @@ const applyQueryParams = () => {
   if (query.room && roomInput) {
     roomInput.value = query.room;
   }
+  const normalizedRender = normalizeRenderModeValue(query.renderMode) || renderMode;
+  if (renderModeSelect && normalizedRender) {
+    renderModeSelect.value = normalizedRender;
+  }
+  if (connectionRadiusInput && query.connectionRadius) {
+    connectionRadiusInput.value = query.connectionRadius;
+  }
+  if (maxConnectionsInput && query.maxConnections) {
+    maxConnectionsInput.value = query.maxConnections;
+  }
+  if (targetConnectionsInput && query.targetConnections) {
+    targetConnectionsInput.value = query.targetConnections;
+  }
+  if (dropRelayToggle) {
+    dropRelayToggle.checked = query.dropRelay === 'true' || query.dropRelay === '1';
+  }
+  if (relayRetentionModeSelect) {
+    relayRetentionModeSelect.value = normalizeRetentionMode(query.relayRetentionMode);
+  }
+  if (relayRetentionMinInput && query.relayRetentionMin) {
+    relayRetentionMinInput.value = query.relayRetentionMin;
+  }
   return query;
 };
 
-const syncQueryParams = ({ room, topologyId, topologyType: nextType }) => {
+const syncQueryParams = ({
+  room,
+  topologyId,
+  topologyType: nextType,
+  renderMode: nextRender,
+  connectionRadius,
+  maxConnections,
+  targetConnections,
+  dropRelay,
+  relayRetentionMode,
+  relayRetentionMin
+} = {}) => {
   const params = new URLSearchParams(window.location.search);
-  if (room) params.set(QUERY_PARAM_ROOM, room);
-  if (topologyId) params.set(QUERY_PARAM_TOPOLOGY, topologyId);
-  if (nextType) params.set(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
+  const setParam = (key, value) => {
+    if (value === null || value === undefined || value === '') {
+      params.delete(key);
+      return;
+    }
+    params.set(key, String(value));
+  };
+  setParam(QUERY_PARAM_ROOM, room);
+  setParam(QUERY_PARAM_TOPOLOGY, topologyId);
+  setParam(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
+  setParam(QUERY_PARAM_RENDER, nextRender);
+  setParam(QUERY_PARAM_CONNECTION_RADIUS, connectionRadius);
+  setParam(QUERY_PARAM_MAX_CONNECTIONS, maxConnections);
+  setParam(QUERY_PARAM_TARGET_CONNECTIONS, targetConnections);
+  if (dropRelay) {
+    params.set(QUERY_PARAM_DROP_RELAY, 'true');
+  } else {
+    params.delete(QUERY_PARAM_DROP_RELAY);
+  }
+  setParam(QUERY_PARAM_RELAY_RETENTION_MODE, relayRetentionMode);
+  setParam(QUERY_PARAM_RELAY_RETENTION_MIN, relayRetentionMin);
   const nextUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, '', nextUrl);
+};
+
+const readUrlInputState = () => {
+  const topology = readTopologyInputs();
+  const room = roomInput?.value?.trim() || 'telemetry';
+  const renderModeValue = normalizeRenderModeValue(renderModeSelect?.value);
+  const connectionRadius = parseNumberValue(connectionRadiusInput?.value);
+  const maxConnections = parseIntValue(maxConnectionsInput?.value);
+  const targetConnections = parseIntValue(targetConnectionsInput?.value);
+  const relayRetentionMode = normalizeRetentionMode(relayRetentionModeSelect?.value);
+  const relayRetentionMin = parseIntValue(relayRetentionMinInput?.value);
+  return {
+    room,
+    topologyId: topology.topologyId,
+    topologyType: topology.topologyType,
+    renderMode: renderModeValue,
+    connectionRadius,
+    maxConnections,
+    targetConnections,
+    dropRelay: dropRelayToggle?.checked ?? false,
+    relayRetentionMode,
+    relayRetentionMin
+  };
+};
+
+const syncInputsToUrl = () => {
+  if (node) return;
+  syncQueryParams(readUrlInputState());
 };
 
 const formatMetric = (metric) => {
@@ -508,6 +647,45 @@ const normalizeGossipsubConfig = (cfg) => {
 
 const setStatus = (lines) => {
   statusEl.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
+};
+
+const setConfigInputsDisabled = (disabled) => {
+  const controls = [
+    topologySelect,
+    topologyIdInput,
+    roomInput,
+    renderModeSelect,
+    connectionRadiusInput,
+    maxConnectionsInput,
+    targetConnectionsInput,
+    dropRelayToggle,
+    relayRetentionModeSelect,
+    relayRetentionMinInput
+  ];
+  controls.forEach((control) => {
+    if (control) control.disabled = disabled;
+  });
+};
+
+const setConnectButtonState = (state) => {
+  if (!connectBtn) return;
+  if (state === CONNECTION_STATE.CONNECTING) {
+    connectBtn.textContent = 'Connecting...';
+    connectBtn.disabled = true;
+    return;
+  }
+  if (state === CONNECTION_STATE.DISCONNECTING) {
+    connectBtn.textContent = 'Disconnecting...';
+    connectBtn.disabled = true;
+    return;
+  }
+  connectBtn.disabled = false;
+  connectBtn.textContent = state === CONNECTION_STATE.CONNECTED ? 'Disconnect' : 'Connect';
+};
+
+const setConnectionState = (state) => {
+  connectionState = state;
+  setConnectButtonState(state);
 };
 
 const showInspector = (title, lines) => {
@@ -785,7 +963,8 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextTxBps = Number(metrics?.txBps) || 0;
     const nextRxCount = Number(metrics?.rxCount) || 0;
     const nextTxCount = Number(metrics?.txCount) || 0;
-    const via = metrics?.via || null;
+    const rawVia = metrics?.via || null;
+    const via = rawVia === 'webrtc' ? 'webrtc' : 'relay';
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
     if (existing) {
@@ -863,7 +1042,6 @@ const buildEdges = (peers, localId, relayState = null) => {
 const buildPubsubEdges = (peers, relayState = null) => {
   const edges = [];
   const now = Date.now();
-  const relayFallback = relayState?.activeRelayIds?.[0] || null;
   const peerRelayMap = relayState?.peerRelayMap;
 
   peers.forEach((peer) => {
@@ -871,9 +1049,7 @@ const buildPubsubEdges = (peers, relayState = null) => {
     const pubsub = peer.pubsub || {};
     const txCount = Number(pubsub.txCount) || 0;
     const rxCount = Number(pubsub.rxCount) || 0;
-    const hasPubsub = txCount > 0 || rxCount > 0 || pubsub.lastTxAt || pubsub.lastRxAt;
-    if (!hasPubsub) return;
-    const relayPeerId = peerRelayMap?.get(peer.peerId) || relayFallback;
+    const relayPeerId = peerRelayMap?.get(peer.peerId);
     if (!relayPeerId) return;
     const lastTxAt = Number(pubsub.lastTxAt);
     const lastRxAt = Number(pubsub.lastRxAt);
@@ -1126,10 +1302,111 @@ const startTelemetryLoop = () => {
   uiTimer = setInterval(updateHud, HUD_UPDATE_MS);
 };
 
+const stopTelemetryLoop = () => {
+  if (telemetryTimer) {
+    clearInterval(telemetryTimer);
+    telemetryTimer = null;
+  }
+  if (uiTimer) {
+    clearInterval(uiTimer);
+    uiTimer = null;
+  }
+};
+
+const stopDebugLoop = () => {
+  if (!debugLogTimer) return;
+  clearInterval(debugLogTimer);
+  debugLogTimer = null;
+};
+
+const shutdownNode = async (nodeInstance) => {
+  if (!nodeInstance) return;
+
+  let stopped = false;
+  if (nodeInstance.isStarted) {
+    try {
+      await nodeInstance.stop();
+      stopped = true;
+    } catch (err) {
+      console.warn('[NetViz] Node stop failed:', err?.message || err);
+    }
+  }
+
+  if (stopped) return;
+
+  try {
+    await nodeInstance.networkManager?.disconnect?.();
+  } catch (err) {
+    console.warn('[NetViz] Network disconnect cleanup failed:', err?.message || err);
+  }
+  try {
+    await nodeInstance.stateManager?.destroy?.();
+  } catch (err) {
+    console.warn('[NetViz] State cleanup failed:', err?.message || err);
+  }
+};
+
+const resetRuntimeState = () => {
+  node = null;
+  networkManager = null;
+  stateManager = null;
+  localPeerId = null;
+  relayPeerIds = new Set();
+  relayReachable = null;
+  lastRelayPeerId = null;
+  connectStartedAt = 0;
+  libp2pLogAttached = false;
+  lastConnectionPolicy = null;
+  lastPeerView = [];
+  connectionErrors.clear();
+  telemetryStore.clear();
+  setDragActive(false);
+  dragMoved = false;
+  skipNextClick = false;
+  hideInspector();
+};
+
+const disconnect = async ({ reason = 'manual' } = {}) => {
+  if (connectionState === CONNECTION_STATE.DISCONNECTING
+    || connectionState === CONNECTION_STATE.DISCONNECTED) {
+    return;
+  }
+
+  const previousState = connectionState;
+  setConnectionState(CONNECTION_STATE.DISCONNECTING);
+  setConfigInputsDisabled(true);
+  setStatus('Status: disconnecting...');
+  stopTelemetryLoop();
+  stopDebugLoop();
+  const activeNode = node;
+
+  try {
+    await shutdownNode(activeNode);
+  } catch (err) {
+    console.error('NetViz disconnect failed', err);
+    logEvent(`Disconnect warning: ${err?.message || err}`);
+  } finally {
+    resetRuntimeState();
+    visualizer.updatePeers([], null, [], []);
+    peerListEl.textContent = 'No peers yet.';
+    setConfigInputsDisabled(false);
+    setConnectionState(CONNECTION_STATE.DISCONNECTED);
+    if (reason === 'manual') {
+      logEvent('Disconnected.');
+    } else if (previousState === CONNECTION_STATE.CONNECTING) {
+      logEvent('Connect attempt cancelled.');
+    }
+    setStatus('Status: disconnected');
+    syncInputsToUrl();
+  }
+};
+
 const connect = async () => {
-  if (node) return;
+  if (connectionState !== CONNECTION_STATE.DISCONNECTED) return;
+  setConnectionState(CONNECTION_STATE.CONNECTING);
+  setConfigInputsDisabled(true);
+  syncQueryParams(readUrlInputState());
   setStatus('Status: connecting...');
-  connectBtn.disabled = true;
   logEvent('Connecting to relay...');
   connectStartedAt = Date.now();
   relayReachable = null;
@@ -1193,7 +1470,7 @@ const connect = async () => {
       ? urlConnectionRadius
       : Number.isFinite(cfg.connectionRadius)
         ? cfg.connectionRadius
-        : 1.2;
+        : 1.1;
     const isolationMinConnections = Number.isFinite(cfg.isolationMinConnections)
       ? cfg.isolationMinConnections
       : 2;
@@ -1252,17 +1529,48 @@ const connect = async () => {
     seedLocalMetricIfNeeded();
     logEvent(`Local peer ready (${formatPeerId(localPeerId)})`);
     logEvent(`Topology set to ${topologyType} (${topologyId})`);
-    if (topologySelect) topologySelect.disabled = true;
-    if (topologyIdInput) topologyIdInput.disabled = true;
-    if (roomInput) roomInput.disabled = true;
-    syncQueryParams({ room: roomId, topologyId, topologyType });
+    setConnectionState(CONNECTION_STATE.CONNECTED);
+    if (!debugLogTimer) {
+      debugLogTimer = setInterval(() => {
+        const debug = window.__NETVIZ__?.getStatus?.().relayRetentionDebug || null;
+        console.log('[NetViz] Relay retention debug:', debug ? JSON.stringify(debug) : 'n/a');
+        try {
+          const libp2p = networkManager?.getLibp2pNode?.();
+          const addrs = libp2p?.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+          const connections = libp2p?.getConnections?.() || [];
+          const summarized = Array.isArray(connections)
+            ? connections.map((conn) => {
+                const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+                return {
+                  peerId: conn?.remotePeer?.toString?.() || '',
+                  remoteAddr,
+                  isRelay: remoteAddr.includes('/p2p-circuit'),
+                  isWebRTC: remoteAddr.includes('/webrtc')
+                };
+              })
+            : [];
+          console.log('[NetViz] Libp2p addrs:', addrs);
+          console.log('[NetViz] Connections:', summarized);
+        } catch (err) {
+          console.warn('[NetViz] Libp2p debug failed:', err?.message || err);
+        }
+      }, 60000);
+    }
+    syncQueryParams(readUrlInputState());
     startTelemetryLoop();
     updateHud();
   } catch (err) {
     console.error('NetViz connect failed', err);
+    stopTelemetryLoop();
+    stopDebugLoop();
+    await shutdownNode(node);
+    resetRuntimeState();
+    visualizer.updatePeers([], null, [], []);
+    peerListEl.textContent = 'No peers yet.';
+    setConfigInputsDisabled(false);
+    setConnectionState(CONNECTION_STATE.DISCONNECTED);
     setStatus(`Status: error (${err?.message || err})`);
     logEvent(`Connect failed: ${err?.message || err}`);
-    connectBtn.disabled = false;
   }
 };
 
@@ -1270,6 +1578,7 @@ const attachDebugHandles = () => {
   if (typeof window === 'undefined') return;
   window.__NETVIZ__ = {
     getStatus: () => ({
+      connectionState,
       localPeerId,
       topologyType,
       topologyId,
@@ -1286,14 +1595,34 @@ const attachDebugHandles = () => {
         shouldKeepRelay: networkManager._shouldKeepRelayBootstrapConnection?.()
       } : null
     }),
-    connect: () => connect()
+    connect: () => connect(),
+    disconnect: () => disconnect(),
+    toggleConnection: () => {
+      if (connectionState === CONNECTION_STATE.CONNECTED) {
+        return disconnect();
+      }
+      if (connectionState === CONNECTION_STATE.DISCONNECTED) {
+        return connect();
+      }
+      return Promise.resolve();
+    }
   };
 };
 
 attachDebugHandles();
 
+const toggleConnection = () => {
+  if (connectionState === CONNECTION_STATE.CONNECTED) {
+    return disconnect();
+  }
+  if (connectionState === CONNECTION_STATE.DISCONNECTED) {
+    return connect();
+  }
+  return Promise.resolve();
+};
+
 connectBtn.addEventListener('click', () => {
-  connect().catch(() => {});
+  toggleConnection().catch(() => {});
 });
 
 const handlePick = (event) => {
@@ -1385,18 +1714,55 @@ topologySelect?.addEventListener('change', () => {
   topologyType = normalizeTopologyType(topologySelect.value);
   visualizer.setTopologyMode(topologyType);
   updateHud();
+  syncInputsToUrl();
 });
 
 topologyIdInput?.addEventListener('input', () => {
   topologyId = topologyIdInput.value.trim() || 'netviz-topology';
   updateHud();
+  syncInputsToUrl();
 });
 
 roomInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && connectionState === CONNECTION_STATE.DISCONNECTED) {
     connect().catch(() => {});
   }
 });
+
+roomInput.addEventListener('input', () => {
+  syncInputsToUrl();
+});
+
+renderModeSelect?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+connectionRadiusInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+maxConnectionsInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+targetConnectionsInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+dropRelayToggle?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+relayRetentionModeSelect?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+relayRetentionMinInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+setConnectionState(CONNECTION_STATE.DISCONNECTED);
+setConfigInputsDisabled(false);
 
 const queryParams = applyQueryParams();
 if (queryParams.room && queryParams.topologyId) {
@@ -1404,14 +1770,17 @@ if (queryParams.room && queryParams.topologyId) {
 }
 
 topologyIdInput?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && connectionState === CONNECTION_STATE.DISCONNECTED) {
     connect().catch(() => {});
   }
 });
 
 window.addEventListener('beforeunload', () => {
-  if (telemetryTimer) clearInterval(telemetryTimer);
-  if (uiTimer) clearInterval(uiTimer);
+  stopTelemetryLoop();
+  stopDebugLoop();
+  if (node) {
+    node.stop().catch(() => {});
+  }
 });
 
 updateHud();

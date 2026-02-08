@@ -4273,3 +4273,2875 @@ npm --prefix peercompute run test:unit
 
 ### Open Questions
 - None.
+
+## Date: 2026-02-08
+
+### Prompt Timestamp
+- 2026-02-08T11:53:51-09:00
+
+### Prompt
+- back to netviz after reviewing AGENTS.md. we are seeing some direction connections that then fail. nodes also get isolated and do not redial the relay ... Determine what's wrong. why are the direct connections failing.
+
+### Changes
+- Reviewed `AGENTS.md`, `plan/plan.md`, and recent `plan/log.md` entries before code changes.
+- Correlated reported console events with `NetworkManager` connection classification and relay-retention/redial logic.
+- Identified policy misclassification: relay-webrtc addresses (`/p2p-circuit/webrtc/...`) were treated as direct/non-relay in core helpers, which can cause incorrect direct/relay decisions and isolation behavior under relay-drop mode.
+- Implemented classification fix in `NetworkManager`:
+- added `isRelayWebRTCAddr(...)`,
+- changed `isDirectAddr(...)` to only treat non-relay addresses as direct,
+- updated `getConnectionKind(...)` to label relay-webrtc separately,
+- updated `_getPreferredConnectionType(...)` so relay-webrtc is not reported as true non-relay `webrtc`.
+- Added unit coverage to lock behavior: relay-webrtc links must not count as direct for relay retention/drop decisions.
+- Added baseline test-strategy documentation in `plan/tests.md` (unit/direct-path/netviz runtime checks + manual diagnosis checklist).
+- Re-ran unit tests after patch.
+
+### Files Modified
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- peercompute/tests/unit/networkManager.webrtc.test.js
+- plan/tests.md
+- plan/log.md
+
+### Commands
+- `nl -ba AGENTS.md | sed -n '1,260p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1180,1325p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '2800,3045p'`
+- `rg -n "No local /webrtc addrs to announce|Connection upgraded|Connection closed|hasDirectPeerConnections|shouldKeepRelayBootstrap|dropRelayBootstrapOnDirect|relayRetention|announce" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1536,1675p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1868,1965p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1675,1788p'`
+- `rg -n "function getConnectionKind|const getConnectionKind|isWebRTCAddr|isDirectAddr|isTrulyDirectAddr|isRelayAddr|isRelayOnlyAddr|parseIceCandidate|orderDialTargets|ensurePeerIdSuffix" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1,135p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '2685,2778p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1953,2018p'`
+- `nl -ba peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '700,860p'`
+- `rg -n "listenAddrs|listen:|allowLocalDial|webrtc-direct|/webrtc|local addrs" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '1,140p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `(apply_patch) peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `(apply_patch) peercompute/tests/unit/networkManager.webrtc.test.js`
+- `(apply_patch) plan/tests.md`
+- `npm --prefix peercompute run test:unit`
+- `date -Iseconds`
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --retention sqrt --retentionMin 2 --radius 2 --maxConnections 5 --targetConnections 4 --settle 45000 --timeout 240000` (attempted; blocked by occupied Vite port and stale local dev processes)
+
+### Tests
+- `npm --prefix peercompute run test:unit`
+- Result: pass (39/39).
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --retention sqrt --retentionMin 2 --radius 2 --maxConnections 5 --targetConnections 4 --settle 45000 --timeout 240000`
+- Result: failed to complete; harness expected `https://localhost:5182/` but Vite shifted to `5183` because `5182` was already in use.
+
+### Open Questions
+- Even with corrected relay/direct classification, your logs still show ICE gathering dominated by host mDNS candidates (`*.local`) and no `srflx`; if cross-subnet or firewall conditions prevent host candidate reachability, WebRTC upgrades can still churn and fall back.
+
+## Date: 2026-02-08
+
+### Prompt
+- the connect button should be a connect/disconnect toggle where the text changes depending on state.  when disconnected you should be able to change the settings and then reconnect.
+
+### Changes
+- Added explicit NetViz connection state handling (`disconnected`, `connecting`, `connected`, `disconnecting`) and connected it to connect-button label/disabled behavior.
+- Implemented a full `disconnect()` path in NetViz:
+- stops telemetry/UI/debug timers,
+- gracefully stops or cleans up `NodeKernel` (including partial-init fallback),
+- clears runtime telemetry/peer state and visualizer graph,
+- re-enables connection/settings inputs so users can edit and reconnect.
+- Converted connect button behavior to toggle (`connect` when disconnected, `disconnect` when connected), with temporary disabled state during transitions.
+- Added `TelemetryStore.clear()` to support immediate graph/state reset on disconnect.
+- Updated debug handle surface (`window.__NETVIZ__`) with `connectionState`, `disconnect()`, and `toggleConnection()`.
+- Guarded Enter-to-connect handlers so they only trigger while disconnected.
+
+### Files Modified
+- demos/netviz/src/main.js
+- demos/netviz/src/telemetryStore.js
+- plan/log.md
+
+### Commands
+- `sed -n '1,260p' demos/netviz/src/main.js`
+- `sed -n '260,620p' demos/netviz/src/main.js`
+- `sed -n '620,1040p' demos/netviz/src/main.js`
+- `sed -n '1040,1460p' demos/netviz/src/main.js`
+- `sed -n '1460,1760p' demos/netviz/src/main.js`
+- `rg -n "class NodeKernel|async stop\\(|shutdown\\(|destroy\\(|terminate\\(|start\\(" peercompute/src -S`
+- `rg -n "getStateManager\\(|getNetworkManager\\(|initialize\\(|start\\(|stop\\(" peercompute/src/peercompute/nodeKernel/NodeKernel.js -S`
+- `sed -n '1,280p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '280,380p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '1,260p' demos/netviz/src/telemetryStore.js`
+- `(apply_patch) demos/netviz/src/main.js`
+- `(apply_patch) demos/netviz/src/telemetryStore.js`
+- `npm --prefix peercompute run test:unit`
+- `rg -n "CONNECTION_STATE|setConnectionState|disconnect\\(|connectBtn|setConfigInputsDisabled|stopTelemetryLoop|stopDebugLoop|resetRuntimeState" demos/netviz/src/main.js -S`
+- `nl -ba demos/netviz/src/main.js | sed -n '46,120p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '640,720p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '1296,1428p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '1568,1650p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '1718,1788p'`
+- `nl -ba demos/netviz/src/telemetryStore.js | sed -n '1,120p'`
+- `(apply_patch) plan/log.md`
+
+### Tests
+- `npm --prefix peercompute run test:unit`
+- Result: pass (38/38).
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (NetViz URL params + connection viz)
+
+### Prompt
+- OK first I want you to add UI elements for every URL variable we have in netviz.
+- then we need to come up with a better way of visualizing the different connection types.
+- I think the amber direct peer connections should only be shown for direct webRTC connections.
+- for connections that pass through the relay, we should use the green midpoint connection line that has a line drawn from the relay to the midpoint of the facilitated peer connection.
+- use the current direct relay connection to communicate the relay connecitons that should only be log n of them.
+
+### Changes
+- Added NetViz console controls for render mode, connection radius, max/target connections, drop relay, and relay retention (mode/min).
+- Synced new UI controls to URL params and applied them during connect; disabled these inputs after connect.
+- Adjusted relay pubsub/relay-link visualization to only draw for peers with actual relay connections (no fallback).
+- Updated edge coloring so amber is only used for WebRTC connections; relayed links stay green with midpoint spur.
+- Updated help text + legend to match the new connection visual semantics.
+
+### Commands
+- sed -n '1,220p' demos/netviz/index.html
+- sed -n '220,520p' demos/netviz/index.html
+- rg -n "URLSearchParams|QUERY_PARAM_" demos/netviz/src/main.js
+- sed -n '1129,1345p' demos/netviz/src/main.js
+- rg -n "relay|pubsub" demos/netviz/src/visualizer.js demos/netviz/src/main.js
+- sed -n '420,940p' demos/netviz/src/main.js
+- sed -n '640,960p' demos/netviz/src/visualizer.js
+- rg -n "_getPreferredConnectionType" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2620,2705p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- demos/netviz/index.html
+- demos/netviz/src/main.js
+- demos/netviz/src/visualizer.js
+- plan/log.md
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (NetViz console layout cleanup)
+
+### Prompt
+- clean that up. put each setting on it's own line. group related controls together.
+
+### Changes
+- Reworked NetViz console controls into grouped sections with one setting per line.
+- Added control-group + field layout styles for clearer spacing and consistent alignment.
+
+### Commands
+- sed -n '1,220p' demos/netviz/index.html
+- sed -n '220,520p' demos/netviz/index.html
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- demos/netviz/index.html
+- plan/log.md
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (NetViz relayed spur normalization)
+
+### Prompt
+- we only have two types of peer connections right? webrtc or those passing through the relay. therefore any non webrtc connections should also show the spur.
+
+### Changes
+- Normalized NetViz edge "via" to treat all non-WebRTC connections as relay, so green edges always include relay spurs.
+
+### Commands
+- rg -n "relay|pubsub" demos/netviz/src/visualizer.js demos/netviz/src/main.js
+- sed -n '420,940p' demos/netviz/src/main.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- demos/netviz/src/main.js
+- plan/log.md
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (Direct dial upgrade over relay)
+
+### Prompt
+- do 2
+- webrtc is supposed to work between browser tabs. but we aren't getting a single one. what's wrong?
+
+### Changes
+- Updated NetworkManager direct dialing to prefer non-relay multiaddrs even when a relay connection already exists.
+- Added directory/peerStore fallback lookup to source non-relay addresses when presence only supplies relay addrs.
+- Avoided re-dialing relay addresses once a relay connection is already active, so direct upgrade attempts are prioritized.
+
+### Commands
+- rg -n "multiaddrs" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1360,1445p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "_maybeDialPeer" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2529,2605p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Verify browser WebRTC direct connections form after direct-only dialing changes.
+
+---
+
+## Date: 2026-01-26 (NetViz relay debug logging)
+
+### Prompt
+- modiify netviz to console log that output by default every 60 seconds so I don' thave to keep copy pasting.
+
+### Changes
+- Added a 60s interval in NetViz to log relayRetentionDebug to the console after connect.
+- Cleared the debug interval on page unload.
+
+### Commands
+- rg -n "relayRetentionDebug" demos/netviz/src/main.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- demos/netviz/src/main.js
+- plan/log.md
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (Direct upgrade dial gate)
+
+### Prompt
+- webrtc is supposed to work between browser tabs. but we aren't getting a single one. what's wrong?
+
+### Changes
+- Allowed discovery/presence dialing to attempt direct upgrades even when already connected via relay by bypassing target-connection gating for relay-only peers.
+
+### Commands
+- rg -n "_shouldDialDiscoveredPeer" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1560,1635p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Verify direct WebRTC connections form after allowing relay-only upgrades.
+
+---
+
+## Date: 2026-01-26 (NetViz libp2p debug logging)
+
+### Prompt
+- please
+
+### Changes
+- Extended the 60s NetViz debug log to include libp2p multiaddrs and connection remote addresses (relay/webrtc flags).
+
+### Commands
+- rg -n "debugLogTimer" demos/netviz/src/main.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- demos/netviz/src/main.js
+- plan/log.md
+
+### Open Questions
+- None.
+
+---
+
+## Date: 2026-01-26 (Relay redial watchdog + WebRTC direct classification)
+
+### Prompt
+- occasionally a peer gets isolated see screenshot.  so the relay isn't being redialed when it should be.
+-
+-I think you're failing to see the point here hoss. the point isn't to SEE amber edges the point is to maximize direct webRTC connections and minimize relay connections so we can scale the network up! there's no point in a distributed p2p network if the relay server has to scale linearly with the number of peers that's just plain dumb.
+-
+-we're clearly doing something fundimentally wrong here little dog.
+
+### Changes
+- Added a presence-tick watchdog to call `_maybeUpdateBootstrapRelayConnections()` so isolated peers redial the relay when needed.
+- Treated any `/webrtc` connection as direct for dial/retention decisions, while keeping `/p2p-circuit` without `/webrtc` as relay-only.
+- Updated relay pruning and connection type selection to align with the new direct/relay classification.
+
+### Commands
+- rg -n "relay|bootstrap|dial|discovered|shouldKeepRelay|dropRelay" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1470,1775p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2460,2725p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "PEER_DIAL_THROTTLE_MS|bootstrapDialThrottleMs|reconnectThrottleMs" peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "setInterval|setTimeout|tick|scheduler|heartbeat|presence" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1760,1855p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "createLibp2p|transports|webRTC" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '620,760p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "function isRelayAddr|isRelayAddr" -n peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/src/peercompute
+- sed -n '1,120p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "isRelayAddr\(" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1568,1625p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "isRelayOnlyAddr|isDirectAddr" peercompute/src/peercompute/networkManager/NetworkManager.js
+- cat plan/llm.md
+- cat plan/plan.md
+- tail -n 80 plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm whether `/p2p-circuit/webrtc` connections should be treated as direct for relay-drop decisions in this environment.
+- Verify relay redial watchdog resolves isolated-peer cases under load.
+
+---
+
+## Date: 2026-01-26 (Bootstrap redial ignores closed connections)
+
+### Prompt
+- occasionally a peer gets isolated see screenshot.  so the relay isn't being redialed when it should be.
+-
+-I think you're failing to see the point here hoss. the point isn't to SEE amber edges the point is to maximize direct webRTC connections and minimize relay connections so we can scale the network up! there's no point in a distributed p2p network if the relay server has to scale linearly with the number of peers that's just plain dumb.
+-
+-we're clearly doing something fundimentally wrong here little dog.
+
+### Changes
+- Allowed bootstrap redial attempts when existing relay connections are present but closed, instead of treating any connection entry as active.
+
+### Commands
+- rg -n "relay|bootstrap|dial|discovered|shouldKeepRelay|dropRelay" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1470,1775p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2460,2725p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "PEER_DIAL_THROTTLE_MS|bootstrapDialThrottleMs|reconnectThrottleMs" peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "setInterval|setTimeout|tick|scheduler|heartbeat|presence" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1760,1855p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "createLibp2p|transports|webRTC" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '620,760p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "function isRelayAddr|isRelayAddr" -n peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/src/peercompute
+- sed -n '1,120p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "isRelayAddr\(" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1568,1625p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "isRelayOnlyAddr|isDirectAddr" peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- If relay isolation persists, inspect libp2p connection status values and whether presence tick runs under disconnect storms.
+
+---
+
+## Date: 2026-01-26 (Force relay redial on isolation)
+
+### Prompt
+- 2
+
+### Changes
+- Added a fail-safe in `_maybeUpdateBootstrapRelayConnections` to immediately redial bootstrap peers when active connection count hits zero.
+
+### Commands
+- rg -n "_getActiveConnectionCount" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1435,1465p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1500,1545p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm whether isolated peers recover within one presence tick under relay drop scenarios.
+
+---
+
+## Date: 2026-01-26 (Delayed isolation relay redial)
+
+### Prompt
+- 1
+
+### Changes
+- Added a delayed isolation check on connection close to re-dial bootstrap relay if active connections drop to zero.
+- Added an isolation redial timer with cleanup on disconnect.
+
+### Commands
+- rg -n "relayReconnectState|autoDisconnectTimer|lastBootstrapDialAt|presenceInterval" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '360,450p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '760,820p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm the delayed isolation redial fires under disconnect storms and recovers within one tick.
+
+---
+
+## Date: 2026-01-26 (Relay redial election by lowest connections)
+
+### Prompt
+- OK well we're making some progress. but we're rinning into an issue where the network itself gets isolated from the relay. when that happens. the node with the fewest connections should redial.
+
+### Changes
+- Added `relayConnected` to presence payloads and stored it per peer.
+- Implemented `_shouldElectRelayRedial` to elect the peer with the fewest active connections (tie-break by peerId) to redial when no peer reports a relay connection.
+- Hooked the election into `_maybeUpdateBootstrapRelayConnections` to avoid thundering-herd relay dials.
+
+### Commands
+- rg -n "_handlePresence|presence" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1360,1445p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "_pruneStalePeers" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1965,2015p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Validate that peers reliably receive `relayConnected` in presence before isolation events.
+
+---
+
+## Date: 2026-01-26 (Relay redial reliability + retention semantics)
+
+### Prompt
+- nodes are still getting isolated ad not redialing.
+- also cubecath isn't working anymore.
+- try again
+
+### Changes
+- Require explicit `status === 'open'` when treating connections as active (active count, bootstrap relay detection, bootstrap dial skip).
+- Restored relay-retention semantics to only treat non-relay connections as "direct" for drop/prune decisions, while still treating WebRTC addrs as direct dial targets.
+
+### Commands
+- cat plan/plan.md
+- tail -n 40 plan/log.md
+- rg --files -g '*cubecath*'
+- rg -n "cube|cath|catch" demos
+- sed -n '1,120p' demos/README.md
+- ls demos
+- ls demos/cubechat
+- cat demos/cubechat/plan.md
+- sed -n '1,200p' demos/cubechat/src/main.js
+- sed -n '1,200p' demos/cubechat/src/p2p/network.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Need cubechat error details (console/stack) to target the regression.
+- Verify relay redial now triggers when connection status objects exist without `status` field.
+
+---
+
+## Date: 2026-01-26 (Cubechat relay scheme + relay open detection)
+
+### Prompt
+- cubechat:
+- (console log provided)
+
+### Changes
+- Improved `isConnectionOpen` to treat missing status as open unless the connection timeline shows a close, reducing stale open false positives.
+- Normalized cubechat bootstrap peer multiaddrs to switch between `/ws` and `/wss` based on the page protocol.
+
+### Commands
+- cat plan/plan.md
+- tail -n 40 plan/log.md
+- rg --files -g '*cubecath*'
+- rg -n "cube|cath|catch" demos
+- sed -n '1,120p' demos/README.md
+- ls demos
+- ls demos/cubechat
+- cat demos/cubechat/plan.md
+- sed -n '1,200p' demos/cubechat/src/main.js
+- sed -n '1,200p' demos/cubechat/src/p2p/network.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- demos/cubechat/src/p2p/network.js
+- plan/log.md
+
+### Open Questions
+- Confirm the relay still fails when using HTTPS and a non-TLS relay (mixed-content block).
+- Re-test isolation scenario after `isConnectionOpen` change.
+
+---
+
+## Date: 2026-01-26 (Force advertise relay WebRTC addrs)
+
+### Prompt
+- here's netviz output. network looks more stable but still not seeing any webrtc connections in the UI.
+
+### Changes
+- Restored WebRTC-aware direct classification for relay retention/pruning and dialing.
+- Synthesized `/p2p-circuit/webrtc` announce addrs from bootstrap relays so peers have explicit WebRTC targets even when libp2p doesn't advertise them.
+
+### Commands
+- rg -n "normalizeWebRTCConfig|webrtcConfig|rtcConfiguration" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '140,220p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm `/p2p-circuit/webrtc` addrs appear in NetViz logs and produce WebRTC connections between tabs.
+
+---
+
+## Date: 2026-01-26 (Only drop relay on truly direct links)
+
+### Prompt
+- here's netviz output. network looks more stable but still not seeing any webrtc connections in the UI.
+- OK here's an interesting development. if I run the relay server with RELAY_IMPL=go npm run dev:local-relay cubechat works and I also get amber webRTC links initially in netviz which then get replaced by the green relay facilitated links.
+
+### Changes
+- Distinguished truly-direct connections (`! /p2p-circuit`) from WebRTC-over-relay so relay drop/prune decisions only trigger on non-relay links.
+- Kept WebRTC addresses as direct dial targets while preventing relay bootstrap drops when only relay-based WebRTC is present.
+
+### Commands
+- rg -n "isWebRTC|isRelay" demos/netviz/src/main.js
+- sed -n '1395,1435p' demos/netviz/src/main.js
+- rg -n "amber|direct|webrtc|relay" demos/netviz/src/visualizer.js
+- sed -n '780,870p' demos/netviz/src/visualizer.js
+- rg -n "_ensureTopologyConnections|_maybeSwapTopologyConnections|_disconnectPeer" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2015,2195p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm if initial WebRTC links are `/webrtc` (direct) or `/p2p-circuit/webrtc` (relay-signaled) in NetViz logs.
+
+---
+
+## Date: 2026-01-26 (Connection lifecycle console diagnostics)
+
+### Prompt
+- can you add some console output that describe how a peer is connected once they connect and then if they disconnect. the reason why. (connection upgrades, timeout, etc)
+
+### Changes
+- Added connection open/upgrade logs with connection type and remoteAddr.
+- Added connection close logs with type, remoteAddr, reason, and remaining open connections.
+- Added helpers to classify connection kind and format close reasons.
+
+### Commands
+- rg -n "isWebRTC|isRelay" demos/netviz/src/main.js
+- sed -n '1395,1435p' demos/netviz/src/main.js
+- rg -n "amber|direct|webrtc|relay" demos/netviz/src/visualizer.js
+- sed -n '780,870p' demos/netviz/src/visualizer.js
+- rg -n "_ensureTopologyConnections|_maybeSwapTopologyConnections|_disconnectPeer" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2015,2195p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Confirm whether connection close reasons expose timeout info in libp2p close timeline under load.
+
+---
+
+## Date: 2026-01-26 (Direct WebRTC dial failure logging)
+
+### Prompt
+- actually. I'd like you to add some additional logging so we can determine why the direct route fails
+
+### Changes
+- Added dial target summaries that label direct vs relay vs WebRTC relay targets when preferring direct.
+- Logged direct/webrtc dial attempts and failures with address + error, plus peerId fallbacks.
+
+### Commands
+- rg -n "isWebRTC|isRelay" demos/netviz/src/main.js
+- sed -n '1395,1435p' demos/netviz/src/main.js
+- rg -n "amber|direct|webrtc|relay" demos/netviz/src/visualizer.js
+- sed -n '780,870p' demos/netviz/src/visualizer.js
+- rg -n "_ensureTopologyConnections|_maybeSwapTopologyConnections|_disconnectPeer" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2015,2195p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Identify whether direct WebRTC failures are ICE timeouts or dial errors based on new logs.
+
+---
+
+## Date: 2026-01-26 (Advertise direct WebRTC multiaddrs)
+
+### Prompt
+- I'd like you to keep trying to debug the webRTC direct issues. here's the console output from two failing clients
+
+### Changes
+- Added `/webrtc/p2p/<peerId>` to announce addresses so peers attempt `webrtc-direct` dials instead of only `webrtc-relay`.
+
+### Commands
+- rg -n "ensurePeerIdSuffix|toPeerMultiaddr" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '232,285p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "RELAY_PUBLIC|RELAY_IMPL|local-relay|relay" scripts package.json demos -S
+- cat config/relay.json
+- sed -n '1,120p' scripts/dev-local-relay.sh
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Verify peers now see `webrtc-direct` targets in dial logs and whether those attempts succeed or fail.
+
+---
+
+## Date: 2026-01-27 (WeRTC direct debug: stop synthetic /webrtc announces)
+
+### Prompt
+- 1 
+- (two client console logs with webrtc-direct failures: missing peer id / no transport for /p2p/<peerId>)
+
+### Changes
+- Stopped advertising synthetic `/webrtc/p2p/<peerId>` announce addrs so peers only see real libp2p-provided WebRTC addrs.
+- Added rate-limited info log when no local `/webrtc` addrs are available to announce (direct dials will be skipped).
+- Logged peerStore multiaddrs when no direct targets are available and relay is used.
+
+### Commands
+- sed -n '1,200p' /home/cos/projects/peercompute/plan/plan.md
+- sed -n '1,200p' /home/cos/projects/peercompute/plan/log.md
+- tail -n 200 /home/cos/projects/peercompute/plan/log.md
+- rg -n "webrtc-direct|webrtc-relay|Direct dial targets|Dial attempt|_maybeDialPeer|_getAnnounceAddrs" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2620,2795p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2795,2905p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "webrtc" peercompute/src/peercompute -g '*.js'
+- sed -n '600,740p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "peer:disconnect|connection:close|connection:open" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1160,1315p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "toPeerMultiaddr|ensurePeerIdSuffix|toAddrString" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '220,310p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1385,1435p' demos/netviz/src/main.js
+- rg -n "certhash" /home/cos/projects/peercompute
+- rg -n "this\." -n peercompute/src/peercompute/networkManager/NetworkManager.js | head -n 20
+- sed -n '420,490p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Do libp2p peers ever advertise non-relay `/webrtc` addrs (with host/udp) in this environment? Check new logs for `[NetworkManager] No local /webrtc addrs to announce` and `PeerStore addrs` output.
+
+---
+
+## Date: 2026-01-27 (WebRTC direct diagnostics: no /webrtc addrs)
+
+### Prompt
+- client:789 [vite] connecting...
+- client:912 [vite] connected.
+- main.js:1303 [NetViz] Relay drop config: {"iceServers":[{"urls":["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}],"preferDirect":true,"dropRelayOnDirect":false,"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"sqrt","min":2,"max":10}}
+- NodeKernel.js:103 [NodeKernel] Initializing...
+- NodeKernel.js:107 [NodeKernel] Node ID: 1769483793732-cg6rpmpbv
+- NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+- StateManager.js:223 [StateManager] Initialized
+- NodeKernel.js:187 [NodeKernel] StateManager initialized
+- NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+- NodeKernel.js:206 [NodeKernel] Initialization complete
+- NodeKernel.js:230 [NodeKernel] Starting...
+- NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+- NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+- NetworkManager.js:2817 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+- NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+- NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9
+- NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9 relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9
+- NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9 relay -> webrtc /webrtc/p2p/12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9
+- NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9 (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9']
+- NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWRAs9ZU2DqazcuRBwgPicgJeaNEoHsTLXoWXRyndMfNk9 webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+- (second client log with same "No local /webrtc addrs" and webrtc-relay dial targets)
+
+### Changes
+- No code changes (analysis only).
+
+### Commands
+- cat <<'EOF' >> /home/cos/projects/peercompute/plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+### Open Questions
+- Do local libp2p multiaddrs ever include non-relay /webrtc addresses in this environment, or is the transport only usable via relay signaling?
+
+---
+
+## Date: 2026-01-27 (Backfill: missing prompt entries)
+
+### Prompt
+- we got disconnected.
+
+### Changes
+- No code changes (backfill entry only).
+
+### Commands
+- None (backfill entry).
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+---
+
+## Date: 2026-01-27 (Backfill: missing prompt entries)
+
+### Prompt
+- would it hurt to try ipv6?
+
+### Changes
+- No code changes (backfill entry only).
+
+### Commands
+- None (backfill entry).
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+---
+
+## Date: 2026-01-27 (WebRTC ICE progress logging + CGNAT analysis)
+
+### Prompt
+- well we're on CGNAT so we might have to use ICE/STUN/TURN but I don't see that being tried. even with the config options for google/cloudflare 
+- you do not appear to be updating the log with every prompt. you should go back and repopulate that. 
+- here is the most recent logs:
+client:789 [vite] connecting...
+main.js:1303 [NetViz] Relay drop config: {"iceServers":[{"urls":["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}],"preferDirect":true,"dropRelayOnDirect":true,"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"sqrt","min":2,"max":10}}
+NodeKernel.js:103 [NodeKernel] Initializing...
+NodeKernel.js:107 [NodeKernel] Node ID: 1769484100091-yn4no58um
+NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+StateManager.js:223 [StateManager] Initialized
+NodeKernel.js:187 [NodeKernel] StateManager initialized
+NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+NodeKernel.js:206 [NodeKernel] Initialization complete
+NodeKernel.js:230 [NodeKernel] Starting...
+client:912 [vite] connected.
+NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:2817 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay -> webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 0
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay -> webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 0
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay -> webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 0
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy (2) ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay -> webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 0
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+main.js:1399 [NetViz] Relay retention debug: {"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"sqrt","min":2,"max":10,"base":2},"hasBootstrapRelayConnections":true,"hasDirectPeerConnections":false,"shouldKeepRelay":true}
+main.js:1415 [NetViz] Libp2p addrs: (2) ['/ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7…3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8', '/ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7…3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8']
+main.js:1416 [NetViz] Connections: [{…}]
+NetworkManager.js:2749 [NetworkManager] Dial failed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy signal timed out
+_maybeDialPeer @ NetworkManager.js:2749
+await in _maybeDialPeer
+_handlePresence @ NetworkManager.js:1462
+(anonymous) @ NetworkManager.js:1305
+dispatchEvent @ chunk-UGCHWWFE.js?v=5112865b:367
+handleReceivedMessage @ @libp2p_gossipsub.js?v=5112865b:4376
+await in handleReceivedMessage
+handleReceivedRpc @ @libp2p_gossipsub.js?v=5112865b:4307
+(anonymous) @ @libp2p_gossipsub.js?v=5112865b:4230
+await in (anonymous)
+rawPipe @ chunk-G2WTM7A6.js?v=5112865b:690
+pipe @ chunk-G2WTM7A6.js?v=5112865b:685
+pipePeerReadStream @ @libp2p_gossipsub.js?v=5112865b:4197
+createInboundStream @ @libp2p_gossipsub.js?v=5112865b:4098
+onIncomingStream @ @libp2p_gossipsub.js?v=5112865b:4025
+(anonymous) @ libp2p.js?v=5112865b:6315
+(anonymous) @ libp2p.js?v=5112865b:6329
+runMiddlewareChain @ libp2p.js?v=5112865b:6327
+onIncomingStream @ libp2p.js?v=5112865b:6318
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay -> webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc /webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy reason: unknown remaining: 0
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWJXMvAah3NWrSz3HykyJ4HhvBHmfeYCipxx7RcXoT8VEy
+webxr-polyfill.js:34048 [Immersive Web Emulator] native WebXR API successfully overridden
+client:789 [vite] connecting...
+client:912 [vite] connected.
+main.js:1303 [NetViz] Relay drop config: {"iceServers":[{"urls":["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}],"preferDirect":true,"dropRelayOnDirect":true,"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"sqrt","min":2,"max":10}}
+NodeKernel.js:103 [NodeKernel] Initializing...
+NodeKernel.js:107 [NodeKernel] Node ID: 1769484110049-50vonfq94
+NodeKernel.js:161 [NetworkManager] NetworkManager initialized
+StateManager.js:223 [StateManager] Initialized
+NodeKernel.js:187 [NodeKernel] StateManager initialized
+NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+NodeKernel.js:206 [NodeKernel] Initialization complete
+NodeKernel.js:230 [NodeKernel] Starting...
+NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:2817 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+NetworkManager.js:2729 [NetworkManager] Direct dial targets 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8']
+NetworkManager.js:2741 [NetworkManager] Dial attempt 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8
+NetworkManager.js:1200 [NetworkManager] Connection open 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8
+NetworkManager.js:1198 [NetworkManager] Connection upgraded 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 relay -> webrtc /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8
+NetworkManager.js:1236 [NetworkManager] Connection closed 12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 webrtc /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWFyqrfqjiih1zpT85TxsXMBr3GHeE5ahm6JXFrpkXZXQ8 reason: unknown remaining: 0
+
+
+### Changes
+- Added WebRTC dial progress logging to surface ICE gathering events and candidate types (host/srflx/relay) during dial attempts.
+- Added candidate parsing helper to summarize ICE candidates for logging.
+- Added backfill log entries for missing prompts.
+
+### Commands
+- ls /home/cos/projects/peercompute/node_modules/@libp2p | head
+- ls /home/cos/projects/peercompute/node_modules/@libp2p/webrtc
+- rg -n "RTCPeerConnection|getStats|icecandidate|ice" /home/cos/projects/peercompute/node_modules/@libp2p/webrtc/src
+- sed -n '40,140p' /home/cos/projects/peercompute/node_modules/@libp2p/webrtc/src/private-to-private/transport.ts
+- rg -n "onProgress" /home/cos/projects/peercompute/node_modules/libp2p -S
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- plan/log.md
+
+### Open Questions
+- Verify `webrtc:add-ice-candidate` events appear and whether candidate types include `srflx` or `relay` on CGNAT.
+- Confirm whether relay drop should be gated on ICE candidate type (e.g., keep relay if only `relay` candidates).
+
+---
+
+## Date: 2026-01-27 (Supplement: RTC config inspection)
+
+### Prompt
+- (continuation of CGNAT/ICE/STUN/TURN investigation from prior prompt)
+
+### Changes
+- No code changes (inspected normalizeWebRTCConfig and rtcConfiguration wiring).
+
+### Commands
+- rg -n "function normalizeWebRTCConfig|normalizeWebRTCConfig" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '170,230p' peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+---
+
+## Date: 2026-01-27 (Relay env var checklist)
+
+### Prompt
+- can you give me all the env variables you want me to run this with?
+
+### Changes
+- No code changes (provided env var list and command guidance).
+
+### Commands
+- sed -n '1,200p' /home/cos/projects/peercompute/scripts/dev-local-relay.sh
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+---
+
+## Date: 2026-01-27 (ICE candidate results from peers)
+
+### Prompt
+- peer 1:
+
+client:789 [vite] connecting...
+client:912 [vite] connected.
+main.js:1303 [NetViz] Relay drop config: {"iceServers":[{"urls":["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}],"preferDirect":true,"dropRelayOnDirect":true,"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"sqrt","min":2,"max":10}}
+NodeKernel.js:103 [NodeKernel] Initializing...
+NodeKernel.js:107 [NodeKernel] Node ID: 1769489609612-cl28tfkx2
+NodeKernel.js:161 [NetworkManager] NetworkManager initialized
+StateManager.js:223 [StateManager] Initialized
+NodeKernel.js:187 [NodeKernel] StateManager initialized
+NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+NodeKernel.js:206 [NodeKernel] Initialization complete
+NodeKernel.js:230 [NodeKernel] Starting...
+NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:2861 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+NetworkManager.js:2739 [NetworkManager] Direct dial targets 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj ['webrtc-relay:/ip4/192.168.1.133/tcp/8080/wss/p2p/1…3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj']
+NetworkManager.js:2785 [NetworkManager] Dial attempt 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:dial-relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:open-signaling-stream /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:send-sdp-offer /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:read-sdp-answer /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:read-ice-candidates /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:2765 [NetworkManager] ICE candidate 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj host udp af0769f4-6b9f-4228-91a8-3bef6951de74.local:37222
+NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc:close-signaling-stream /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:1208 [NetworkManager] Connection upgraded 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj relay -> webrtc /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj relay /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj reason: unknown remaining: 1
+NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj
+NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj webrtc /ip4/192.168.1.133/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWHgruxYHdfUYqzZdCa2WEfKCiaQY36EQZixLugASKFQuj reason: unknown remaining: 0
+...(second peer log continued in prompt)
+
+### Changes
+- No code changes (analysis only).
+
+### Commands
+- None.
+
+### Tests
+- Not run (not requested).
+
+### Files Touched
+- plan/log.md
+
+### Open Questions
+- Only `host` ICE candidates observed; no `srflx` or `relay` candidates yet. Need to confirm STUN/TURN reachability or add TURN to validate CGNAT path.
+
+## Date: 2026-01-27
+
+### Prompt
+- I want you to try ipv6 now.
+
+### Changes
+- Added IPv6 selection/fallback logic to `scripts/get-local-ip.mjs`, controlled by `RELAY_PREFER_IPV6` / `PREFER_IPV6` / `IP_VERSION`.
+- Updated `scripts/dev-local-relay.sh` and `scripts/dev-all.sh` to honor `RELAY_PREFER_IPV6` and default the listen host to `::` when requested.
+- Updated `peercompute/src/relay/server.js` to generate listen multiaddrs using ip6 when `RELAY_LISTEN_HOST` is IPv6.
+
+### Commands
+- sed -n '1,200p' plan/plan.md
+- sed -n '1,200p' plan/log.md
+- sed -n '1,200p' scripts/get-local-ip.mjs
+- sed -n '1,200p' scripts/dev-local-relay.sh
+- sed -n '1,200p' config/relay.json
+- rg -n "get-local-ip" -S .
+- sed -n '1,120p' scripts/dev-all.sh
+- rg -n "ip4|ip6" peercompute -S
+- sed -n '1,260p' peercompute/src/relay/server.js
+- sed -n '1,200p' peercompute/src/relay/server.ts
+- sed -n '150,260p' peercompute/src/relay-go/main.go
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-27
+
+### Prompt
+- these env variable are getting absolutely ridiculous. you need to put them all at the start of the server scripts.
+
+### Changes
+- Consolidated relay env configuration into a single top-of-file block and a single export block in `scripts/dev-local-relay.sh`.
+- Consolidated relay env configuration into a single top-of-file block and a single export block in `scripts/dev-all.sh`.
+- Consolidated relay env configuration into a single top-of-file block and a single export block in `scripts/start-relay-prod.sh`, including IPv6 preference handling.
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,120p' plan/log.md
+- rg --files scripts
+- sed -n '1,200p' scripts/run-relay.sh
+- sed -n '1,200p' scripts/run-go-relay.sh
+- sed -n '1,200p' scripts/start-relay-prod.sh
+- sed -n '1,160p' scripts/dev-local-relay.sh
+- sed -n '1,140p' scripts/dev-all.sh
+- sed -n '40,200p' scripts/start-relay-prod.sh
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-27
+
+### Prompt
+- actually put them into a config file for the server
+
+### Changes
+- Added `config/relay.env` and moved relay env defaults there so scripts source a single config file.
+- Updated `scripts/dev-local-relay.sh`, `scripts/dev-all.sh`, and `scripts/start-relay-prod.sh` to source `config/relay.env` and rely on it for defaults.
+- Updated `scripts/run-relay.sh` and `scripts/run-go-relay.sh` to source `config/relay.env` so direct runs pick up config values.
+
+### Commands
+- rg -n "RELAY_ENV|relay.env|relay\.env" -S .
+- sed -n '1,200p' scripts/dev-local-relay.sh
+- sed -n '1,140p' scripts/dev-all.sh
+- sed -n '1,80p' scripts/start-relay-prod.sh
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-27
+
+### Prompt
+- ok one issue: when I "run dev:local-relay" the peercompute demo landing page doesn't link to the correct IPs. it uses 127.0.0.1 when it should be using whatever the local IP address is. that should be detected automatically.
+
+### Changes
+- Updated `docs/index.html` dev link rewrite to auto-detect the host from relay-config.json bootstrap peers (with loopback fallback) and use that host when building demo links.
+
+### Commands
+- rg -n "127\.0\.0\.1" -S docs demos config
+- rg -n "relay-config" peercompute/src/relay/server.js
+- sed -n '460,580p' peercompute/src/relay/server.js
+- sed -n '600,690p' docs/index.html
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-27
+
+### Prompt
+- hmm the netviz link doesn't work
+
+### Changes
+- Fixed the dev landing page NetViz port to use 5182 instead of 5185 in `docs/index.html`.
+
+### Commands
+- sed -n '1,40p' plan/plan.md
+- sed -n '1,40p' plan/log.md
+
+### Tests
+- Not run (not requested).
+
+## Date: 2026-01-31
+
+### Prompt
+- ok one issue: when I "run dev:local-relay" the peercompute demo landing page doesn't link to the correct IPs. it uses 127.0.0.1 when it should be using whatever the local IP address is. that should be detected automatically.
+
+### Actions
+- Reviewed plan/plan.md and plan/log.md per workflow.
+- Inspected docs landing page link-rewrite logic and relay-config usage.
+- Checked relay-config outputs and dev scripts for how RELAY_PUBLIC_HOST is derived.
+- Verified local IP detection via scripts/get-local-ip.mjs.
+
+### Changes
+- Updated scripts/dev-local-relay.sh to treat loopback public hosts as candidates for auto-detection, then override with get-local-ip when possible; also switched overview/dev URL prints to use the resolved host (IPv6-safe).
+- Updated scripts/dev-all.sh with the same loopback override and host-aware dev URL printing.
+
+### Commands
+- ls
+- sed -n '1,200p' plan/plan.md
+- sed -n '1,200p' plan/log.md
+- git status -sb
+- sed -n '1,240p' docs/index.html
+- rg -n "netviz|relay-config|link" docs/index.html
+- sed -n '620,760p' docs/index.html
+- sed -n '1,240p' scripts/dev-local-relay.sh
+- rg -n "RELAY_CONFIG_DIRS|relay-config" -S peercompute/src/relay/server.js
+- sed -n '480,580p' peercompute/src/relay/server.js
+- sed -n '1,200p' scripts/get-local-ip.mjs
+- cat docs/netviz/relay-config.json
+- node scripts/get-local-ip.mjs
+- sed -n '1,200p' scripts/dev-all.sh
+
+### Tests
+- Not run.
+
+### Open Questions
+- None from this change; pending confirmation from user that landing page now picks the LAN IP.
+
+## Date: 2026-01-31
+
+### Prompt
+- hmm the netviz link doesn't work
+
+### Actions
+- Confirmed NetViz card link and port mapping in docs/index.html.
+- Determined failure is consistent with loopback host rewriting when the overview is opened via 127.0.0.1; fix is covered by the dev script updates above.
+
+### Changes
+- No additional changes beyond the dev script updates listed in the prior entry.
+
+### Commands
+- rg -n "port" demos/netviz -S
+- sed -n '470,540p' docs/index.html
+
+### Tests
+- Not run.
+
+### Open Questions
+- Needs user confirmation that NetViz opens once overview uses LAN IP.
+
+## Date: 2026-01-31
+
+### Prompt
+- make sure to update the log on every prompt and with all your changes. make sure you haven't missed any.
+-
+- then see if you can diagnose the  webrtc-direct bug that seems to oscillate between a relay-webrtc and direct:
+- webxr-polyfill.js:34048 [Immersive Web Emulator] native WebXR API successfully overridden
+- client:789 [vite] connecting...
+- client:912 [vite] connected.
+- NodeKernel.js:103 [NodeKernel] Initializing...
+- NodeKernel.js:107 [NodeKernel] Node ID: 1769894697633-1l6zl3opk
+- NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+- StateManager.js:223 [StateManager] Initialized
+- NodeKernel.js:187 [NodeKernel] StateManager initialized
+- NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+- NodeKernel.js:206 [NodeKernel] Initialization complete
+- NodeKernel.js:230 [NodeKernel] Starting...
+- NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv
+- NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv direct /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv
+- NetworkManager.js:2861 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+- NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+- NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1208 [NetworkManager] Connection upgraded 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay -> webrtc /webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2739 [NetworkManager] Direct dial targets 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq (2) ['webrtc-relay:/ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12…DM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc', 'webrtc-relay:/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3K…DM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc']
+- NetworkManager.js:2785 [NetworkManager] Dial attempt 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc-relay /ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc
+- main.js:1399 [NetViz] Relay retention debug: {"dropRelayBootstrapOnDirect":false,"relayRetention":{"mode":"sqrt","min":1,"max":null,"base":2},"hasBootstrapRelayConnections":true,"hasDirectPeerConnections":true,"shouldKeepRelay":true}
+- main.js:1415 [NetViz] Libp2p addrs: (4) ['/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKH…3KooWQJRQBb9Bo4t1GyyAHi4YJc5hbuxLcaWt5BYCt6qp5d3y', '/ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12D3KooWQnyQsyh…3KooWQJRQBb9Bo4t1GyyAHi4YJc5hbuxLcaWt5BYCt6qp5d3y', '/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKH…3KooWQJRQBb9Bo4t1GyyAHi4YJc5hbuxLcaWt5BYCt6qp5d3y', '/ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12D3KooWQnyQsyh…3KooWQJRQBb9Bo4t1GyyAHi4YJc5hbuxLcaWt5BYCt6qp5d3y']
+- main.js:1416 [NetViz] Connections: (3) [{…}, {…}, {…}]
+- NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq reason: unknown remaining: 1
+- NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq reason: unknown remaining: 0
+- NetworkManager.js:2739 [NetworkManager] Direct dial targets 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq (2) ['webrtc-relay:/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3K…3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq', 'webrtc-relay:/ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12…3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq']
+- NetworkManager.js:2785 [NetworkManager] Dial attempt 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc-relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:dial-relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:open-signaling-stream /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:send-sdp-offer /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:read-sdp-answer /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:read-ice-candidates /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2765 [NetworkManager] ICE candidate 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq host udp fa7d1115-56e7-47fc-97cd-ca872d1aa3b5.local:54042
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:close-signaling-stream /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1208 [NetworkManager] Connection upgraded 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay -> webrtc /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq reason: unknown remaining: 1
+- NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1246 [NetworkManager] Connection closed 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq reason: unknown remaining: 0
+- NetworkManager.js:2739 [NetworkManager] Direct dial targets 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq (2) ['webrtc-relay:/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3K…3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq', 'webrtc-relay:/ip4/127.0.0.1/tcp/8080/tls/ws/p2p/12…3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq']
+- NetworkManager.js:2785 [NetworkManager] Dial attempt 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc-relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:dial-relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1210 [NetworkManager] Connection open 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:open-signaling-stream /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:send-sdp-offer /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:read-sdp-answer /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:read-ice-candidates /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:2765 [NetworkManager] ICE candidate 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq host udp fa7d1115-56e7-47fc-97cd-ca872d1aa3b5.local:45725
+- NetworkManager.js:2778 [NetworkManager] WebRTC progress 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq webrtc:close-signaling-stream /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- NetworkManager.js:1208 [NetworkManager] Connection upgraded 12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq relay -> webrtc /ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv/p2p-circuit/webrtc/p2p/12D3KooWShyTHvtCjizvBkFKLAmd1j8hTGtRawGkip7XJsp349Sq
+- 
+- Search the web. it might be related to gossipsub.
+
+### Actions
+- Appended log entries for the two prior prompts and this one.
+- Searched libp2p WebRTC and js-libp2p guides to understand private-to-private signaling, STUN reliance, and gossipsub’s role in peer discovery/delivery.
+
+### Changes
+- No code changes for the WebRTC diagnosis in this entry.
+
+### Commands
+- (web.run) search/open/find on libp2p WebRTC docs and js-libp2p WebRTC guide.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Requires user confirmation of ICE candidate types (host vs srflx/relay) and whether TURN is available in their network.
+
+## Date: 2026-01-31
+
+### Prompt
+- since we're using the local lan IP why should any of that be necessary in regard to stun/turn/ice
+
+### Actions
+- Reviewed the latest WebRTC logs and provided explanation for why ICE still runs on LAN and when STUN/TURN are still needed (mDNS host candidates, UDP/firewall/VLAN constraints).
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Whether the peers are on the same L2 subnet and whether mDNS/UDP is allowed on the LAN.
+
+## Date: 2026-01-31
+
+### Prompt
+- can you determine from the logs if the STUN servers are being used?  can you add the google and cloudflare ones to the config file? would it be hard for us to spin up our own turn server?
+
+### Actions
+- Reviewed recent WebRTC logs showing only host candidates (no srflx/relay), indicating STUN isn’t yielding public candidates.
+- Added default STUN servers to the relay env config so relay-config.json includes them for clients.
+
+### Changes
+- Updated `config/relay.env` to set `RELAY_WEBRTC_CONFIG` default with Google + Cloudflare STUN servers.
+
+### Commands
+- (apply_patch) config/relay.env
+
+### Tests
+- Not run.
+
+### Open Questions
+- Need confirmation after restart whether ICE candidates include srflx/relay and whether direct /webrtc addrs are announced.
+
+## Date: 2026-01-31
+
+### Prompt
+- what am I looking for here? 
+- <image>
+
+### Actions
+- Gave guidance on how to read chrome://webrtc-internals: candidate types, selected candidate pair, ICE states, and icecandidateerror events to confirm STUN/TURN usage.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Need confirmation whether any srflx/relay candidates appear or only host.
+
+## Date: 2026-01-31
+
+### Prompt
+- peers are getting isolated [NetViz] Connections: [{…}]
+- NetworkManager.js:2739 [NetworkManager] Direct dial targets 12D3KooWKduixKZm48z1yGA4tHbCK1sCXXjR1hMcvVyhT3RikSE9 (2) ['webrtc-relay:...']
+- NetworkManager.js:2785 [NetworkManager] Dial attempt ... webrtc-relay ...
+
+### Actions
+- Interpreted logs: only webrtc-relay targets are being generated (no webrtc-direct), so isolation happens when relay dial fails; reinforced that missing /webrtc announce addrs prevents direct fallback.
+- Suggested keeping bootstrap relay connections until a non-relayed WebRTC address is confirmed and adding stronger rejoin/health checks.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Need confirmation whether any /webrtc direct addrs are ever announced or if all peers only advertise relay-based WebRTC paths.
+
+## Date: 2026-01-31
+
+### Prompt
+- are we trying ipv6 yet?
+
+### Actions
+- Answered that IPv6 is only used when RELAY_PREFER_IPV6 (or config/relay.json listenHost/publicHost) is set; otherwise defaults stay IPv4.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Whether the user wants RELAY_PREFER_IPV6=1 set in config/relay.env for default behavior.
+
+## Date: 2026-01-31
+
+### Prompt
+- 1
+
+### Actions
+- Set IPv6 preference in relay env config so local relay uses IPv6 by default.
+
+### Changes
+- Updated `config/relay.env` to set `RELAY_PREFER_IPV6=1`.
+
+### Commands
+- (apply_patch) config/relay.env
+
+### Tests
+- Not run.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-01
+
+### Prompt
+- looks like all the urls still point at localhost in the demo launcher. and netviz is still trying to connect via ipv4 @libp2p_websockets.js?v=5112865b:348 WebSocket connection to 'wss://192.168.1.133:8080/' failed: ...
+
+### Actions
+- Fixed demo launcher dev rewrite to run automatically when opened on loopback even without ?dev=1.
+- Adjusted IPv6 preference logic so relay only switches to IPv6 listen host when the resolved public host is IPv6, avoiding IPv4 dial failures.
+
+### Changes
+- Updated `docs/index.html` to rewrite links on loopback without requiring ?dev=1.
+- Updated `scripts/dev-local-relay.sh` to resolve public host before setting IPv6 listen host and only set `RELAY_LISTEN_HOST=::` when IPv6 is actually selected.
+- Updated `scripts/dev-all.sh` with the same IPv6 listen host gating.
+
+### Commands
+- rg -n "RELAY_LISTEN_HOST" -n peercompute/src/relay/server.js
+- sed -n '1,120p' peercompute/src/relay/server.js
+- (apply_patch) scripts/dev-local-relay.sh
+- (apply_patch) scripts/dev-all.sh
+- (apply_patch) docs/index.html
+
+### Tests
+- Not run.
+
+### Open Questions
+- Confirm whether relay-config.json now advertises IPv6 when available and whether the demo launcher links switch off localhost.
+
+## Date: 2026-02-01
+
+### Prompt
+- { JSON relay-config.json showing bootstrapPeers /ip4/127.0.0.1/tcp/8080/wss/... }
+
+### Actions
+- Explained that relay-config.json still advertising loopback means RELAY_PUBLIC_HOST is not being overridden or relay was not restarted; asked to restart relay and verify Relay env output and relay-config regeneration.
+- Suggested checking config/relay.json for a hard-coded publicHost and ensuring relay-config files are rewritten.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Whether config/relay.json defines publicHost=127.0.0.1 or the relay process was restarted after changes.
+
+## Date: 2026-02-01
+
+### Prompt
+- looks like all the urls still point at localhost in the demo launcher. and netviz is still trying to connect via ipv4 ... WebSocket connection to 'wss://192.168.1.133:8080/' failed ...
+
+### Actions
+- Ran dev:local-relay to verify the relay env and demo URL output; confirmed it now prints LAN URLs and writes relay-config.json with the LAN IP.
+- Found RELAY_WEBRTC_CONFIG default was truncated by bash parameter expansion and fixed it.
+- Updated relay.json listenHost from 127.0.0.1 to 0.0.0.0 so the relay binds to LAN by default.
+
+### Changes
+- Updated `config/relay.json` listenHost to 0.0.0.0.
+- Updated `config/relay.env` to set RELAY_WEBRTC_CONFIG via a bash guard instead of parameter expansion (avoids JSON truncation).
+
+### Commands
+- cat config/relay.json
+- timeout 8s npm run dev:local-relay
+- sed -n '1,120p' config/relay.env
+- bash -c 'source config/relay.env; printf "%s\n" "$RELAY_WEBRTC_CONFIG"'
+
+### Tests
+- Not run.
+
+### Open Questions
+- Need a fresh relay restart (without timeout) so clients can dial the LAN relay; verify the launcher now rewrites to LAN URLs and relay-config.json shows /ip4/192.168.1.133.
+
+## Date: 2026-02-01
+
+### Prompt
+- I restarted and then closed the relay. all clients now isolated with only relay connections I don't see any ipv6 attemps at direct connections or anything.
+
+### Actions
+- Explained that closing the relay removes the signaling path; relay-based connections drop and peers isolate unless true direct /webrtc connections exist.
+- Clarified that IPv6 attempts only happen if the host actually has IPv6 and the relay advertises /ip6 addrs; otherwise connections remain IPv4.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Whether the host has a global IPv6 address and whether relay-config.json shows /ip6 addrs when the relay is running.
+
+## Date: 2026-02-01
+
+### Prompt
+- I think we do have usable ipv6 here's my ifconfig output: [ifconfig pasted]
+
+### Actions
+- Confirmed host has multiple global IPv6 addresses; explained we need to pick one to advertise and set it as relay publicHost/listenHost to force /ip6 addresses in relay-config.json.
+- Recommended using a global 2605:... address for reachability; ULA fd83:... only works inside the LAN.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+### Open Questions
+- Which IPv6 address should be advertised (global 2605:... vs ULA fd83:...).
+
+## Date: 2026-02-01
+
+### Prompt
+- def global.  also clients should assess their own ipv6 abilities and attempt to connect to eachother via ipv6 if available.
+
+### Actions
+- Set relay publicHost/listenHost to a global IPv6 so relay-config.json advertises /ip6 addresses.
+- Updated NetworkManager to prefer IPv6 dial targets when the local node advertises IPv6 addresses.
+
+### Changes
+- Updated `config/relay.json` to set `publicHost` to the chosen global IPv6 and `listenHost` to `::`.
+- Updated `peercompute/src/peercompute/networkManager/NetworkManager.js` to add local IPv6 detection and to prioritize IPv6 dial targets when available.
+
+### Commands
+- (apply_patch) config/relay.json
+- (apply_patch) peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Tests
+- Not run.
+
+### Open Questions
+- Confirm relay-config.json now contains /ip6 entries and whether clients show IPv6 dial attempts.
+
+## Date: 2026-02-01
+
+### Prompt
+- npm run dev:local-relay output shows IPv6 relay address, but the overview URL refuses to connect. Relay logs show /ip6 listeners; browser cannot reach https://[2605:...]:4173.
+
+### Actions
+- Determined Vite dev servers were binding only to IPv4, causing IPv6 URLs to refuse connection.
+- Updated dev scripts to pass `--host ::` to Vite when the chosen overview host is IPv6.
+
+### Changes
+- Updated `scripts/dev-local-relay.sh` to compute `vite_host_args` and pass it to all demo/docs dev servers.
+- Updated `scripts/dev-all.sh` with the same IPv6-aware Vite host args.
+
+### Commands
+- (apply_patch) scripts/dev-local-relay.sh
+- (apply_patch) scripts/dev-all.sh
+
+### Tests
+- Not run.
+
+### Open Questions
+- Need confirmation that the overview and demo URLs open over IPv6 and that relay-config.json includes /ip6 entries.
+
+## Date: 2026-02-02
+
+### Prompt
+- progress. the demo page loads but links result in about:blank#blocked; opening netviz URL works; Vite still advertises IPv4; pasted dev:local-relay output + netviz logs; request: change default relay impl to go.
+
+### Actions
+- Switched relay defaults to Go in the shared env config and relay launchers so dev/prod/systemd default to Go (with node fallback in run-relay.sh when Go is missing).
+
+### Changes
+- Updated `config/relay.env` default RELAY_IMPL to go.
+- Updated `scripts/run-relay.sh` default RELAY_IMPL to go.
+- Updated `scripts/start-relay-prod.sh` default RELAY_IMPL to go.
+- Updated `scripts/install-relay-systemd.sh` default RELAY_IMPL to go.
+
+### Commands
+- (apply_patch) config/relay.env
+- (apply_patch) scripts/run-relay.sh
+- (apply_patch) scripts/start-relay-prod.sh
+- (apply_patch) scripts/install-relay-systemd.sh
+
+### Tests
+- Not run.
+
+### Open Questions
+- Demo launcher links still going to about:blank#blocked; likely needs link handling fix.
+- Vite still advertising IPv4; likely due to duplicate --host args in dev scripts vs package scripts.
+
+## Date: 2026-02-02
+
+### Prompt
+- do both 1 and 2.
+
+### Actions
+- Removed double --host forwarding by calling demo Vite dev scripts directly from dev-local-relay/dev-all so IPv6 host binding is not clobbered by root scripts.
+- Hardened demo launcher link rewriting by resolving dev host once, rewriting card hrefs, and forcing click navigation through the resolved IPv6/IPv4 base to avoid about:blank#blocked.
+
+### Changes
+- Updated `scripts/dev-local-relay.sh` to run demo dev servers via `npm --prefix demos/<name> run dev` with IPv6-aware `--host` args.
+- Updated `scripts/dev-all.sh` similarly for demo dev servers.
+- Updated `docs/index.html` to resolve the dev host once, rewrite demo card links, and handle clicks via `window.location.assign` to prevent blocked blank tabs.
+
+### Commands
+- (apply_patch) scripts/dev-local-relay.sh
+- (apply_patch) scripts/dev-all.sh
+- (apply_patch) docs/index.html
+
+### Tests
+- Not run.
+
+### Open Questions
+- Verify Vite logs now show IPv6 network addresses and that demo links navigate correctly from the overview page.
+
+## Date: 2026-02-02
+
+### Prompt
+- dev:local-relay output shows Vite still advertising IPv4; overview loads but demo links still open about:blank#blocked (screenshots provided).
+
+### Actions
+- Removed the async click handler that navigated after a Promise, and made link rewrites synchronous when the overview host is non-loopback to avoid losing the user activation gesture.
+
+### Changes
+- Updated `docs/index.html` to rewrite demo links synchronously for non-loopback hosts and drop the click handler that caused about:blank#blocked.
+
+### Commands
+- (apply_patch) docs/index.html
+
+### Tests
+- Not run.
+
+### Open Questions
+- Confirm the overview links now navigate correctly from the IPv6 overview page.
+- Vite still prints IPv4 in “Network:” output even with `--host ::`; check whether binding is actually IPv6 (may just be Vite display).
+
+## Date: 2026-02-02
+
+### Prompt
+- why can't it just use whatever ip or host is being used for the overview page and just change the port? it's still doing it.
+
+### Actions
+- Simplified overview link rewriting to always use the current overview hostname (including IPv6) and protocol, only swapping ports for demo links.
+
+### Changes
+- Updated `docs/index.html` to remove relay-config-based host guessing and rewrite demo links based on `window.location.hostname` and `window.location.protocol`.
+
+### Commands
+- (apply_patch) docs/index.html
+
+### Tests
+- Not run.
+
+## Date: 2026-02-02
+
+### Prompt
+- why all this dynamic shit why can't it just be a normal href? it's still doing it. this is your last chance to fix it.
+
+### Actions
+- Replaced dynamic link rewriting in the overview with static Vite HTML env placeholders so hrefs are normal anchors.
+- Added docs/.env defaults for relative links so production docs still work.
+- Exported VITE_* demo URLs in dev-local-relay so the overview renders absolute IPv6/IPv4 links with correct ports.
+
+### Changes
+- Updated `docs/index.html` to use `%VITE_*%` placeholders for demo hrefs and removed the runtime link-rewrite script.
+- Added `docs/.env` with default relative URLs for production/docs.
+- Updated `scripts/dev-local-relay.sh` to export VITE_* demo URLs based on the overview host.
+
+### Commands
+- (apply_patch) docs/index.html
+- (apply_patch) docs/.env
+- (apply_patch) scripts/dev-local-relay.sh
+
+### Tests
+- Not run.
+
+## Date: 2026-02-02
+
+### Prompt
+- Now I'd like you to look at the chrome://webrtc-internals/ and determine why we are still not getting direct connections
+
+### Actions
+- Explained I cannot access chrome://webrtc-internals directly and requested a dump/screenshot of the selected candidate pair and candidate types to diagnose.
+
+### Changes
+- No code changes.
+
+### Commands
+- None.
+
+### Tests
+- Not run.
+
+## Date: 2026-02-02
+
+### Prompt
+- I have placed both files in the root of the directory. I'm not going to parse them for you.
+
+### Actions
+- Reviewed `plan/plan.md` and `plan/log.md` per instructions before starting analysis.
+- Inspected `webrtc_internals_dump.txt` and `rtcstats_dump.gz` in repo root.
+- Parsed `webrtc_internals_dump.txt` to extract selected ICE candidate pairs and candidate types for netviz sessions.
+- Decompressed the head of `rtcstats_dump.gz` to confirm it contains mixed site sessions; focused analysis on the webrtc internals dump instead.
+- Found 23 selected candidate pairs for netviz sessions; all selected pairs are host-host with no relay candidates selected and no srflx selected (local srflx candidates present but not chosen). This indicates ICE is selecting direct host candidates; STUN/TURN are not the blocker.
+
+### Commands
+- `ls -la`
+- `sed -n '1,200p' plan/plan.md`
+- `sed -n '1,200p' plan/log.md`
+- `head -n 5 webrtc_internals_dump.txt`
+- `node -e "..."` (multiple Node one-liners to inspect stats and extract candidate pairs)
+- `gzip -cd rtcstats_dump.gz | head -n 5`
+
+### Notes
+- No files were modified besides this log update.
+
+## Date: 2026-02-02
+
+### Prompt
+- do 1 and 2.  run the tests yourself and resolve any failures yourself without my intervention but don't make any system changes outside of the project directory or running / killing processes that belong to this project.
+
+### Changes
+- Stored the circuit relay transport instance so we can reserve relay slots for WebRTC and log local/announce addresses.
+- Added relay reservation helpers to reserve configured bootstrap relays and log success/failure.
+- Wired relay reservation + address logging after bootstrap dial and on bootstrap peer connect.
+- Added local/announce/peerStore address dump to confirm when /webrtc addrs appear.
+- Updated WebRTC dial preference unit test expectation to include the appended peer id.
+
+### Files Modified
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+- peercompute/tests/unit/networkManager.webrtc.test.js
+
+### Commands
+- rg -n "class NetworkManager|initialize\(|_getAnnounceAddrs|relay" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '640,760p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '1100,1320p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "_dialBootstrapPeers|bootstrap" -n peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '800,880p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2600,2685p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '2860,2965p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "class CircuitRelayTransport|reservationStore" node_modules/@libp2p/circuit-relay-v2/src -S
+- sed -n '40,120p' node_modules/@libp2p/circuit-relay-v2/src/transport/index.ts
+- rg -n "hasReservation" node_modules/@libp2p/circuit-relay-v2/src/transport/reservation-store.ts
+- sed -n '350,380p' node_modules/@libp2p/circuit-relay-v2/src/transport/reservation-store.ts
+- node --test peercompute/tests/unit/*.test.js
+- node --test demos/tests/demo-ports.test.js
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js (failed initially: updated test expectation; pass on rerun)
+- node --test demos/tests/demo-ports.test.js
+
+## Date: 2026-02-03
+
+### Prompt
+- here you go webxr-polyfill.js:34048 [Immersive Web Emulator] native WebXR API successfully overridden
+client:789 [vite] connecting...
+client:912 [vite] connected.
+NodeKernel.js:103 [NodeKernel] Initializing...
+NodeKernel.js:107 [NodeKernel] Node ID: 1770095346692-678u8ipr1
+NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+StateManager.js:223 [StateManager] Initialized
+NodeKernel.js:187 [NodeKernel] StateManager initialized
+NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+NodeKernel.js:206 [NodeKernel] Initialization complete
+NodeKernel.js:230 [NodeKernel] Starting...
+NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+NetworkManager.js:2941 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+NetworkManager.js:2711 [NetworkManager] Local multiaddrs (post-bootstrap) Array(0)
+NetworkManager.js:2712 [NetworkManager] Announce addrs (post-bootstrap) Array(2)
+NetworkManager.js:2720 [NetworkManager] PeerStore addrs (post-bootstrap) Array(0)
+NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+NetworkManager.js:2711 [NetworkManager] Local multiaddrs (redial-bootstrap) Array(2)
+NetworkManager.js:2712 [NetworkManager] Announce addrs (redial-bootstrap) Array(2)
+NetworkManager.js:2720 [NetworkManager] PeerStore addrs (redial-bootstrap) Array(0)
+NetworkManager.js:2807 [NetworkManager] Direct dial targets 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc Array(1)
+NetworkManager.js:2853 [NetworkManager] Dial attempt 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc
+NetworkManager.js:2846 [NetworkManager] WebRTC progress 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc
+installHook.js:1 [NetworkManager] Dial failed 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWDmKQefGV5kwLGbEyqPwupFigk7SFYz1r2PQWRK2XNQkc The stream has been reset
+...
+
+### Changes
+- Expanded address logging to stringify local/announce/peerStore addresses and include explicit /webrtc and /p2p-circuit subsets.
+- Added relay reservation store status logging (total/configured/discovered) to the address dump.
+- Added warnings when the relay reservation store is missing or not started.
+
+### Files Modified
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Commands
+- node --test peercompute/tests/unit/*.test.js
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js
+
+## Date: 2026-02-03
+
+### Prompt
+- |
+  webxr-polyfill.js:34048 [Immersive Web Emulator] native WebXR API successfully overridden
+  client:789 [vite] connecting...
+  client:912 [vite] connected.
+  NodeKernel.js:103 [NodeKernel] Initializing...
+  NodeKernel.js:107 [NodeKernel] Node ID: 1770096622982-4r9kedvyz
+  NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+  StateManager.js:223 [StateManager] Initialized
+  NodeKernel.js:187 [NodeKernel] StateManager initialized
+  NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+  NodeKernel.js:206 [NodeKernel] Initialization complete
+  NodeKernel.js:230 [NodeKernel] Starting...
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap-connect
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:1286
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  Libp2p.events.dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6753
+  safeDispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:377
+  _onConnect @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4933
+  onConnect @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4906
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  Libp2p.events.dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6752
+  safeDispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:377
+  _createConnection @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6621
+  _performUpgrade @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6593
+  await in _performUpgrade
+  upgradeOutbound @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6516
+  await in upgradeOutbound
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_websockets.js?v=5112865b:339
+  await in dial
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:5860
+  dialPeer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4218
+  await in dialPeer
+  queue.add.peerId.peerId @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4169
+  run @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:1992
+  tryToStartAnother @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2096
+  add @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2129
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4160
+  openConnection @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4985
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6919
+  (anonymous) @ NetworkManager.js:2662
+  _dialBootstrapPeers @ NetworkManager.js:2646
+  connect @ NetworkManager.js:826
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap-dial
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2664
+  await in (anonymous)
+  _dialBootstrapPeers @ NetworkManager.js:2646
+  connect @ NetworkManager.js:826
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2710
+  _reserveBootstrapRelayAddrs @ NetworkManager.js:2710
+  connect @ NetworkManager.js:827
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NetworkManager.js:2959 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+  NetworkManager.js:2719 [NetworkManager] Local multiaddrs (post-bootstrap) []
+  NetworkManager.js:2720 [NetworkManager] Local webrtc addrs (post-bootstrap) []
+  NetworkManager.js:2721 [NetworkManager] Local relay addrs (post-bootstrap) []
+  NetworkManager.js:2722 [NetworkManager] Announce addrs (post-bootstrap) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2738 [NetworkManager] PeerStore addrs (post-bootstrap) []
+  NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2710
+  _reserveBootstrapRelayAddrs @ NetworkManager.js:2710
+  redialBootstrapPeers @ NetworkManager.js:848
+  await in redialBootstrapPeers
+  _schedulerReconnect @ NetworkManager.js:2576
+  reconnect @ NetworkManager.js:2535
+  _checkReconnect @ NetworkScheduler.js:383
+  tick @ NetworkScheduler.js:205
+  tick @ NetworkManager.js:2517
+  setTimeout
+  _startScheduler @ NetworkManager.js:2520
+  connect @ NetworkManager.js:840
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NetworkManager.js:2719 [NetworkManager] Local multiaddrs (redial-bootstrap) []
+  NetworkManager.js:2720 [NetworkManager] Local webrtc addrs (redial-bootstrap) []
+  NetworkManager.js:2721 [NetworkManager] Local relay addrs (redial-bootstrap) []
+  NetworkManager.js:2722 [NetworkManager] Announce addrs (redial-bootstrap) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2738 [NetworkManager] PeerStore addrs (redial-bootstrap) []
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE host udp f33d02ba-58b9-465f-b716-aa2543d9bd92.local:53041
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW host udp 6f7c144d-3ab1-4fce-9138-d5989c9bb160.local:51082
+  NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW reason: unknown remaining: 0
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:close-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2719 [NetworkManager] Local multiaddrs (post-bootstrap+2s) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2720 [NetworkManager] Local webrtc addrs (post-bootstrap+2s) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2721 [NetworkManager] Local relay addrs (post-bootstrap+2s) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2722 [NetworkManager] Announce addrs (post-bootstrap+2s) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2738 [NetworkManager] PeerStore addrs (post-bootstrap+2s) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc"]
+  NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW reason: unknown remaining: 0
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE signal timed out
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  NetworkManager.js:1224 [NetworkManager] Connection upgraded 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay -> webrtc /webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE reason: unknown remaining: 1
+  NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc /webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE reason: unknown remaining: 0
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1224 [NetworkManager] Connection upgraded 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay -> webrtc /webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW reason: unknown remaining: 1
+  NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc /webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW reason: unknown remaining: 0
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE host udp f33d02ba-58b9-465f-b716-aa2543d9bd92.local:53041
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE RTCErrorEvent {isTrusted: true, error: OperationError: User-Initiated Abort, reason=Close called, type: 'error', target: RTCDataChannel, currentTarget: RTCDataChannel, …}isTrusted: truebubbles: falsecancelBubble: falsecancelable: falsecomposed: falsecurrentTarget: nulldefaultPrevented: falseerror: OperationError: User-Initiated Abort, reason=Close calledeventPhase: 0returnValue: truesrcElement: RTCDataChannel {label: 'init', ordered: true, maxPacketLifeTime: null, maxRetransmits: null, protocol: '', …}target: RTCDataChannel {label: 'init', ordered: true, maxPacketLifeTime: null, maxRetransmits: null, protocol: '', …}timeStamp: 30755.400000035763type: "error"[[Prototype]]: RTCErrorEvent
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  await in _maybeDialPeer
+  _handlePresence @ NetworkManager.js:1491
+  (anonymous) @ NetworkManager.js:1334
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  handleReceivedMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4376
+  await in handleReceivedMessage
+  handleReceivedRpc @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4307
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4230
+  await in (anonymous)
+  rawPipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:690
+  pipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:685
+  pipePeerReadStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4197
+  createInboundStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4098
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4025
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6315
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6329
+  runMiddlewareChain @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6327
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6318
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc /webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE reason: unknown remaining: 1
+  NodeKernel.js:512 [NodeKernel] Peer disconnected: 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1262 [NetworkManager] Connection closed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc /webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE reason: unknown remaining: 0
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW (2) ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']0: "webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc"1: "webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW"length: 2[[Prototype]]: Array(0)
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW (2) ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…eYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc', 'webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']0: "webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc"1: "webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW"length: 2[[Prototype]]: Array(0)
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW host udp 6f7c144d-3ab1-4fce-9138-d5989c9bb160.local:54652
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:reuse-relay-connection /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW RTCErrorEvent {isTrusted: true, error: OperationError: User-Initiated Abort, reason=Close called, type: 'error', target: RTCDataChannel, currentTarget: RTCDataChannel, …}
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  await in _maybeDialPeer
+  _handlePresence @ NetworkManager.js:1491
+  (anonymous) @ NetworkManager.js:1334
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  handleReceivedMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4376
+  await in handleReceivedMessage
+  handleReceivedRpc @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4307
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4230
+  await in (anonymous)
+  rawPipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:690
+  pipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:685
+  pipePeerReadStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4197
+  createInboundStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4098
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4025
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6315
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6329
+  runMiddlewareChain @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6327
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6318
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE host udp f33d02ba-58b9-465f-b716-aa2543d9bd92.local:36816
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE RTCErrorEvent {isTrusted: true, error: OperationError: User-Initiated Abort, reason=Close called, type: 'error', target: RTCDataChannel, currentTarget: RTCDataChannel, …}
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  await in _maybeDialPeer
+  _handlePresence @ NetworkManager.js:1491
+  (anonymous) @ NetworkManager.js:1334
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  handleReceivedMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4376
+  await in handleReceivedMessage
+  handleReceivedRpc @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4307
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4230
+  await in (anonymous)
+  rawPipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:690
+  pipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:685
+  pipePeerReadStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4197
+  createInboundStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4098
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4025
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6315
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6329
+  runMiddlewareChain @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6327
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6318
+  main.js:1399 [NetViz] Relay retention debug: {"dropRelayBootstrapOnDirect":false,"relayRetention":null,"hasBootstrapRelayConnections":true,"hasDirectPeerConnections":false,"shouldKeepRelay":true}
+  main.js:1415 [NetViz] Libp2p addrs: (2) ['/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/80…3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n', '/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/80…3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n']
+  main.js:1416 [NetViz] Connections: (3) [{…}, {…}, {…}]
+
+### Changes
+- Replaced demo launcher placeholder URLs with runtime link generation based on the current overview host/port so IPv6 and LAN links stay valid.
+- Refreshed the relay transport reference after libp2p init/start to use the actual circuit-relay transport and avoid missing reservation store warnings.
+
+### Files Modified
+- docs/index.html
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Commands
+- sed -n '1,220p' docs/index.html
+- rg -n "%VITE_|demo-link" docs/index.html
+- sed -n '430,560p' docs/index.html
+- sed -n '2400,3080p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "relayTransport|circuitRelayTransport" peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '620,780p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- sed -n '780,980p' peercompute/src/peercompute/networkManager/NetworkManager.js
+- rg -n "WEBGPUPHYS_(TOYCHEST|MPM|PPF)|webgpuphys" /home/cos/projects/peercompute -g'*.sh' -g'*.mjs' -g'*.js' -g'*.json'
+- sed -n '170,220p' scripts/dev-local-relay.sh
+- rg -n "RELAY_IMPL" scripts/dev-local-relay.sh scripts/dev-all.sh
+- sed -n '1,120p' scripts/dev-local-relay.sh
+- tail -n 60 plan/log.md
+- node --test peercompute/tests/unit/*.test.js
+- node --test peercompute/tests/*.unit.test.js
+- node --test demos/tests/demo-ports.test.js
+
+### Tests
+- node --test peercompute/tests/unit/*.test.js
+- node --test peercompute/tests/*.unit.test.js
+- node --test demos/tests/demo-ports.test.js
+
+### Research
+- web.run search_query: libp2p gossipsub specification
+- web.run search_query: libp2p gossipsub overview js
+- web.run search_query: libp2p webrtc transport browser direct connection
+
+## Date: 2026-02-03
+
+### Prompt
+- |
+  webxr-polyfill.js:34048 [Immersive Web Emulator] native WebXR API successfully overridden
+  client:789 [vite] connecting...
+  client:912 [vite] connected.
+  NodeKernel.js:103 [NodeKernel] Initializing...
+  NodeKernel.js:107 [NodeKernel] Node ID: 1770096622982-4r9kedvyz
+  NodeKernel.js:161 [NodeKernel] NetworkManager initialized
+  StateManager.js:223 [StateManager] Initialized
+  NodeKernel.js:187 [NodeKernel] StateManager initialized
+  NodeKernel.js:203 [NodeKernel] ComputeManager initialized
+  NodeKernel.js:206 [NodeKernel] Initialization complete
+  NodeKernel.js:230 [NodeKernel] Starting...
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap-connect
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:1286
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  Libp2p.events.dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6753
+  safeDispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:377
+  _onConnect @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4933
+  onConnect @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4906
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  Libp2p.events.dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6752
+  safeDispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:377
+  _createConnection @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6621
+  _performUpgrade @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6593
+  await in _performUpgrade
+  upgradeOutbound @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6516
+  await in upgradeOutbound
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_websockets.js?v=5112865b:339
+  await in dial
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:5860
+  dialPeer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4218
+  await in dialPeer
+  queue.add.peerId.peerId @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4169
+  run @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:1992
+  tryToStartAnother @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2096
+  add @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2129
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4160
+  openConnection @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:4985
+  dial @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6919
+  (anonymous) @ NetworkManager.js:2662
+  _dialBootstrapPeers @ NetworkManager.js:2646
+  connect @ NetworkManager.js:826
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NodeKernel.js:496 [NodeKernel] Peer connected: 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1 direct /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap-dial
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2664
+  await in (anonymous)
+  _dialBootstrapPeers @ NetworkManager.js:2646
+  connect @ NetworkManager.js:826
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2710
+  _reserveBootstrapRelayAddrs @ NetworkManager.js:2710
+  connect @ NetworkManager.js:827
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NetworkManager.js:2959 [NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.
+  NetworkManager.js:2719 [NetworkManager] Local multiaddrs (post-bootstrap) []
+  NetworkManager.js:2720 [NetworkManager] Local webrtc addrs (post-bootstrap) []
+  NetworkManager.js:2721 [NetworkManager] Local relay addrs (post-bootstrap) []
+  NetworkManager.js:2722 [NetworkManager] Announce addrs (post-bootstrap) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2738 [NetworkManager] PeerStore addrs (post-bootstrap) []
+  NodeKernel.js:247 [NodeKernel] Node started and connected to P2P network
+  installHook.js:1 [NetworkManager] Relay reservation store unavailable bootstrap
+  overrideMethod @ installHook.js:1
+  _reserveRelayForPeer @ NetworkManager.js:2683
+  (anonymous) @ NetworkManager.js:2710
+  _reserveBootstrapRelayAddrs @ NetworkManager.js:2710
+  redialBootstrapPeers @ NetworkManager.js:848
+  await in redialBootstrapPeers
+  _schedulerReconnect @ NetworkManager.js:2576
+  reconnect @ NetworkManager.js:2535
+  _checkReconnect @ NetworkScheduler.js:383
+  tick @ NetworkScheduler.js:205
+  tick @ NetworkManager.js:2517
+  setTimeout
+  _startScheduler @ NetworkManager.js:2520
+  connect @ NetworkManager.js:840
+  await in connect
+  start @ NodeKernel.js:233
+  connect @ main.js:1374
+  await in connect
+  (anonymous) @ main.js:1601
+  NetworkManager.js:2719 [NetworkManager] Local multiaddrs (redial-bootstrap) []
+  NetworkManager.js:2720 [NetworkManager] Local webrtc addrs (redial-bootstrap) []
+  NetworkManager.js:2721 [NetworkManager] Local relay addrs (redial-bootstrap) []
+  NetworkManager.js:2722 [NetworkManager] Announce addrs (redial-bootstrap) ["/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n","/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n"]
+  NetworkManager.js:2738 [NetworkManager] PeerStore addrs (redial-bootstrap) []
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:dial-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:1226 [NetworkManager] Connection open 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE host udp f33d02ba-58b9-465f-b716-aa2543d9bd92.local:53041
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWMyzvrbT3bHMPMwNtDQdqukCxYRnvSCZ22YGm9czheayE RTCErrorEvent {isTrusted: true, error: OperationError: User-Initiated Abort, reason=Close called, type: 'error', target: RTCDataChannel, currentTarget: RTCDataChannel, …}
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  await in _maybeDialPeer
+  _handlePresence @ NetworkManager.js:1491
+  (anonymous) @ NetworkManager.js:1334
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  handleReceivedMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4376
+  await in handleReceivedMessage
+  handleReceivedRpc @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4307
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4230
+  await in (anonymous)
+  rawPipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:690
+  pipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:685
+  pipePeerReadStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4197
+  createInboundStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4098
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4025
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6315
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6329
+  runMiddlewareChain @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6327
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6318
+  await in onIncomingStream
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  safeDispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:377
+  onRemoteStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2857
+  incomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:808
+  handleStreamMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:759
+  handleFrame @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:719
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:561
+  muxerMaConnOnMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2767
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  dispatchReadBuffer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2646
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2487
+  noiseOnMessageDecrypt @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_noise.js?v=5112865b:674
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  dispatchReadBuffer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2646
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2487
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_circuit-relay-v2.js?v=5112865b:1832
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  dispatchReadBuffer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2646
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2487
+  handleData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:402
+  handleStreamMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:772
+  handleFrame @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:719
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_yamux.js?v=5112865b:561
+  muxerMaConnOnMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2767
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  dispatchReadBuffer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2646
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2487
+  noiseOnMessageDecrypt @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_noise.js?v=5112865b:674
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  dispatchReadBuffer @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2646
+  onData @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:2487
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_websockets.js?v=5112865b:254
+  NetworkManager.js:2825 [NetworkManager] Direct dial targets 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW ['webrtc-relay:/ip6/2605:59c0:2c05:c108:c95c:4e95:71…3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW']
+  NetworkManager.js:2871 [NetworkManager] Dial attempt 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:reuse-relay-connection /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:open-signaling-stream /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:send-sdp-offer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-sdp-answer /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2864 [NetworkManager] WebRTC progress 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc:read-ice-candidates /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW
+  NetworkManager.js:2851 [NetworkManager] ICE candidate 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW host udp 6f7c144d-3ab1-4fce-9138-d5989c9bb160.local:57805
+  installHook.js:1 [NetworkManager] Dial failed 12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW webrtc-relay /ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW RTCErrorEvent {isTrusted: true, error: OperationError: User-Initiated Abort, reason=Close called, type: 'error', target: RTCDataChannel, currentTarget: RTCDataChannel, …}
+  overrideMethod @ installHook.js:1
+  _maybeDialPeer @ NetworkManager.js:2879
+  await in _maybeDialPeer
+  _handlePresence @ NetworkManager.js:1491
+  (anonymous) @ NetworkManager.js:1334
+  dispatchEvent @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-UGCHWWFE.js?v=5112865b:367
+  handleReceivedMessage @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4376
+  await in handleReceivedMessage
+  handleReceivedRpc @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4307
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4230
+  await in (anonymous)
+  rawPipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:690
+  pipe @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/chunk-G2WTM7A6.js?v=5112865b:685
+  pipePeerReadStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4197
+  createInboundStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4098
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/@libp2p_gossipsub.js?v=5112865b:4025
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6315
+  (anonymous) @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6329
+  runMiddlewareChain @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6327
+  onIncomingStream @ https://[2605:59c0:2c05:c108:c95c:4e95:717:86d1]:5182/node_modules/.vite/deps/libp2p.js?v=5112865b:6318
+  main.js:1399 [NetViz] Relay retention debug: {"dropRelayBootstrapOnDirect":false,"relayRetention":null,"hasBootstrapRelayConnections":true,"hasDirectPeerConnections":false,"shouldKeepRelay":true}
+  main.js:1415 [NetViz] Libp2p addrs: (2) ['/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/80…3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n', '/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/80…3KooWNV3Zbc8h6TKzVcYJwRxMQe1TZrVYPgNGq3U8YHCwy75n']
+  main.js:1416 [NetViz] Connections: (3) [{…}, {…}, {…}]
+
+### Changes
+- Logged this prompt; no code changes.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- tail -n 60 plan/log.md
+- tail -n 120 plan/log.md
+- rg -n "^### Prompt" plan/log.md | tail -n 5
+- sed -n '5940,5985p' plan/log.md
+- cat <<'EOF' >> plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Research
+- None.
+
+## Date: 2026-02-04
+
+### Prompt
+- yes do that.
+
+### Changes
+- Read `plan/plan.md` and `plan/log.md` for instructions.
+- Searched `webrtc_internals_dump.txt` for ICE candidate types and errors.
+- Decompressed `rtcstats_dump.gz` with `gzip -cd` and inspected ICE candidate types.
+- Ran web searches on WebRTC candidate types, Chrome mDNS candidate obfuscation, and libp2p WebRTC transport for diagnosis.
+
+### Files Modified
+- None.
+
+### Commands
+- sed -n '1,120p' plan/plan.md
+- sed -n '1,160p' plan/log.md
+- rg -n "[^\\x00-\\x7F]" plan/log.md
+- tail -n 40 plan/log.md
+- rg -n "candidateType" webrtc_internals_dump.txt | head -n 60
+- sed -n '420,470p' webrtc_internals_dump.txt
+- rg -n "srflx|relay|prflx" webrtc_internals_dump.txt
+- gzip -cd rtcstats_dump.gz | rg -n "candidateType" | head -n 60
+- rg -n "iceCandidateError|icecandidateerror|ICE" webrtc_internals_dump.txt | head -n 80
+
+### Tests
+- Not run (not requested).
+
+### Research
+- web.run search_query: WebRTC candidate types host srflx relay prflx
+- web.run search_query: Chrome WebRTC mDNS ICE candidate obfuscation
+- web.run search_query: libp2p WebRTC transport overview
+
+## Date: 2026-02-03
+
+### Prompt
+- Follow-up actions for the previous prompt (no new user input).
+
+### Changes
+- Logged follow-up commands and research; no code changes.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- rg -n "window\.open|about:blank|preventDefault|demo-link" docs/index.html
+
+### Tests
+- Not run (not requested).
+
+### Research
+- web.run search_query: libp2p WebRTC transport multiaddr /webrtc documentation
+- web.run search_query: libp2p gossipsub overview pubsub protocol
+- web.run search_query: libp2p specs gossipsub specification
+- web.run search_query: libp2p WebRTC transport relay circuit relay v2 documentation
+
+## Date: 2026-02-03
+
+### Prompt
+- |
+  how do I view the current webrtc info in chrome? is it only chrome://webrtc-internals? 
+
+### Changes
+- Logged response guidance; no code changes.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- cat <<'EOF' >> plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Research
+- None.
+
+## Date: 2026-02-04
+
+### Prompt
+- |
+  how do I view the current webrtc info in chrome? is it only chrome://webrtc-internals? 
+
+### Changes
+- Prepared response guidance with current Chrome/Edge WebRTC diagnostics and logging options.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- tail -n 40 /home/cos/projects/peercompute/plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Research
+- web.run search_query: Chrome WebRTC internals page chrome://webrtc-internals
+- web.run search_query: Chrome webrtc logs page chrome://webrtc-logs
+- web.run search_query: Chrome about:webrtc page
+- web.run search_query: Chromium WebRTC diagnostics chrome://webrtc-internals documentation
+
+## Date: 2026-02-04
+
+### Prompt
+- how do I view the current webrtc info in chrome? is it only chrome://webrtc-internals?
+
+### Changes
+- Reviewed log tail/head for context; no code changes made in this step.
+- Will reply with current Chrome WebRTC diagnostics entry points.
+
+### Files Modified
+- None.
+
+### Commands
+- tail -n 40 /home/cos/projects/peercompute/plan/log.md
+- head -n 20 /home/cos/projects/peercompute/plan/log.md
+
+### Tests
+- Not run (not requested).
+
+### Research
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- you're still missing stuff
+
+### Changes
+- Re-ran full context review before changing code:
+- Reviewed `plan/plan.md` and enumerated plan files excluding `plan/plan.old`.
+- Extracted and inspected last ~100 prompts from `plan/log.md` (plus surrounding direct/WebRTC troubleshooting history).
+- Searched all plan docs for direct/relay/WebRTC/NAT/address references.
+- Reviewed current networking implementation paths in `NetworkManager` and NetViz edge classification/diagnostics.
+- Reviewed historical PeerJS commit context to compare old behavior and assumptions.
+- Reproduced the issue with runtime tests and direct diagnostics:
+- `test:direct-path` passes locally and confirms relay-independent data path.
+- `netviz-scale` reproduced relay-only behavior with `Peers with direct WebRTC: 0` in the same codebase.
+- Added temporary headless NetViz diagnostic runner (outside repo tracked files), captured page console logs, and confirmed repeated pattern: relay->webrtc upgrade followed by immediate close/churn.
+- Identified and validated a concrete root cause via A/B:
+- Existing StreamStateError mitigation in `NetworkManager._handlePubsubStreamError()` removed pubsub peer and also called `libp2p.hangUp(peer)`; this was forcing full-connection teardown during churn.
+- Removed forced `hangUp` path and re-tested.
+- Updated direct-connection detection logic so `_hasDirectPeerConnections()` counts WebRTC addresses (`isDirectAddr`) rather than only non-relay addresses.
+
+### Files Modified
+- peercompute/src/peercompute/networkManager/NetworkManager.js
+
+### Commands
+- `rg --files plan | rg -v '^plan/plan\\.old/' | sort`
+- `rg -n '^### Prompt' plan/log.md | wc -l`
+- `rg -n --no-heading -S '(webrtc|direct|relay|nat|stun|turn|address|candidate|peerjs|bootstrap|p2p-circuit)' plan | rg -v '^plan/plan\\.old/'`
+- `sed -n '5400,6585p' plan/log.md`
+- `git show --name-only 2ef77e65`
+- `git show 2ef77e65:peercompute/src/network/NetworkManager.js`
+- `rg -n '_maybeDialPeer|_getAnnounceAddrs|_hasDirectPeerConnections|_handlePubsubStreamError|_shouldKeepRelayBootstrapConnection' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,320p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1500,2120p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2120,3200p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n 'Connections:|hasDirectPeerConnections|dropRelay|relayRetention' demos/netviz/src/main.js demos/netviz/src/visualizer.js`
+- `npm --prefix peercompute run test:direct-path`
+- `P2P_DIRECT_TEST_VERBOSE=1 npm --prefix peercompute run test:direct-path`
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 2 --dropRelay true --settle 30000 --timeout 120000`
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --settle 30000 --timeout 150000`
+- `node /home/cos/projects/peercompute/.tmp-netviz-diag.mjs` (temporary diagnostic script, removed after use)
+- `npm --prefix peercompute run test:unit`
+- `npm --prefix peercompute run test:direct-path`
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 2 --dropRelay true --settle 30000 --timeout 120000` (post-fix)
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --settle 30000 --timeout 150000` (post-fix)
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --maxConnections 4 --targetConnections 2 --settle 30000 --timeout 150000` (post-fix retention behavior probe)
+
+### Tests
+- `npm --prefix peercompute run test:unit`
+- Result: pass (38/38).
+- `npm --prefix peercompute run test:direct-path`
+- Result: pass; relay-independent payload sync confirmed after relay shutdown.
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 2 --dropRelay true --settle 30000 --timeout 120000`
+- Before fix: relay-connected 2/2, direct WebRTC peers 0/2.
+- After fix: relay-connected 2/2, direct WebRTC peers 2/2.
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --settle 30000 --timeout 150000`
+- After fix: relay-connected 4/4, direct WebRTC peers 4/4.
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 4 --dropRelay true --maxConnections 4 --targetConnections 2 --settle 30000 --timeout 150000`
+- After fix: relay-connected 1/4, direct WebRTC peers 3/4; indicates retention/drop policy still needs stabilization under aggressive pruning.
+
+### Open Questions
+- Relay retention/pruning behavior can still isolate peers when `targetConnections` is low and `dropRelayBootstrapOnDirect=true`; follow-up is needed to harden relay-drop decision logic against transient churn.
+
+## Date: 2026-02-08
+
+### Prompt
+- go read llm.md
+
+### Changes
+- Read `plan/llm.md` fully and loaded instructions into active context.
+
+### Files Modified
+- None.
+
+### Commands
+- `wc -l plan/llm.md`
+- `sed -n '1,260p' plan/llm.md`
+
+### Tests
+- Not run (not requested).
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- backfill the log with all the entries you missed
+
+### Changes
+- Backfilled missing log entries for this session, including prompt context, actions, files touched, commands, tests, and open questions.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n '^## Date:|^### Prompt' plan/log.md | tail -n 60`
+- `(apply_patch) plan/log.md`
+
+### Tests
+- Not run (documentation-only update).
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- We've been stuck on trying to determine why webRTC direct connections won't work locally or on my lanfor two weeks now.  but you are the newest model who hasn't given it a shot yet.  review all plan files (you can skip the plan.old folder) look at the last 100 or so entries in the log.  review the codebase and see if you can debug and determine the path forward. should I try a different router? should we deploy to a VPS with a proper domain and cert?  let me know.
+- you can also look at the peerjs implementation. which was in main just a few PRs ago.
+
+### Changes
+- Backfilled prompt context.
+- Full review/execution for this request was completed in the 2026-02-08 `you're still missing stuff` entry (plan/log/code sweep, PeerJS historical comparison, runtime reproduction, and fixes).
+
+### Files Modified
+- None in this specific response step (work captured in later 2026-02-08 entry).
+
+### Commands
+- None in this specific response step (commands captured in later 2026-02-08 entry).
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- re-test and diagnose
+
+### Changes
+- Backfilled prompt context.
+- Re-test/diagnosis execution captured in the 2026-02-08 `you're still missing stuff` entry and follow-up tests (`test:direct-path`, `netviz-scale`, page-console diagnostics).
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- so what do you think the actual problem with direct connections is?
+
+### Changes
+- Backfilled prompt context.
+- Root-cause determination and validating evidence are captured in the 2026-02-08 `you're still missing stuff` entry:
+- Pubsub StreamStateError mitigation was forcing full peer hangups.
+- Direct-connection detection undercounted WebRTC in relay-prefixed address forms.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- well I am in a ideal same lan case though. we're running everything on one box it should be able to work right?
+
+### Changes
+- Backfilled prompt context.
+- LAN/same-box validation was executed in this session and logged in 2026-02-08 `you're still missing stuff` using:
+- `test:direct-path` (relay-independent path passes).
+- `netviz-scale` and page-console diagnostics (isolated the churn path).
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- and yet we're still not seeing any direct connections stick.
+
+### Changes
+- Backfilled prompt context.
+- Confirmed and reproduced this symptom in NetViz path in 2026-02-08 `you're still missing stuff` entry; direct upgrades were occurring then dropping.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- hmm you see the key thing we're trying to solve here is scaling the network.  we want as few relay connections as possible so the network can grow faster than the relay infrastructure. the relay should only need to be there to halp people join the network. and in extreme cases when direct connections can't work.
+
+### Changes
+- Backfilled prompt context.
+- Relay-scaling constraints were incorporated into diagnosis and test choices (focus on true peer-peer survivability after relay disruption and relay-drop behavior under NetViz).
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- you might be screwing up here. a webRTC connection that still passes through the relay does not solve our relay scaling issue.  the webrtc connection really does need to be direct to the other peer without passing through the relay.
+
+### Changes
+- Backfilled prompt context.
+- Session diagnostics explicitly separated:
+- relay-signaled WebRTC establishment,
+- sustained peer-peer data path after relay loss,
+- and relay-retention/relay-drop policy effects.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- in the past it looked like the reason we werent getting direct connections was due to missing direct peer addresses. is that still the case?
+
+### Changes
+- Backfilled prompt context.
+- Session findings: missing direct addresses at startup still appears transiently, but was not the only blocker; churn from forced hangup on pubsub stream errors was a primary cause in NetViz runtime.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- what's the next step in determining why we aren't getting direct dialable addresses?
+
+### Changes
+- Backfilled prompt context.
+- Next-step execution was performed in-session via headless diagnostics:
+- capture per-page WebRTC/libp2p logs in NetViz,
+- compare against direct-path harness,
+- A/B StreamStateError mitigation behavior.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- ok can you set that up as a headless test using puppeteer or something?
+
+### Changes
+- Backfilled prompt context.
+- Implemented headless diagnostics using Playwright-based runtime harnesses:
+- existing `peercompute/tests/runtime/netviz-scale.mjs`,
+- temporary one-off page-console capture script for deep WebRTC event traces.
+
+### Files Modified
+- None in this specific response step (diagnostic script was temporary and removed).
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- yes
+
+### Changes
+- Backfilled prompt context.
+- Proceeded with the requested headless diagnostics and runtime re-tests (recorded in the 2026-02-08 `you're still missing stuff` entry).
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- I'm worried that you haven't read all the plan files you're missing some key things I can tell.
+
+### Changes
+- Backfilled prompt context.
+- Triggered full plan/log re-read and broader context sweep before code changes; those concrete commands and outcomes are captured in the 2026-02-08 `you're still missing stuff` entry.
+
+### Files Modified
+- None in this specific response step.
+
+### Commands
+- None in this specific response step.
+
+### Tests
+- Not run in this specific response step.
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- that's it what about the other prompts and changes you've made?
+
+### Changes
+- Backfilled missing prompt entries in `plan/log.md` for the unlogged prompt sequence from this thread.
+
+### Files Modified
+- plan/log.md
+
+### Commands
+- `rg -n "We've been stuck on trying to determine why webRTC direct connections|re-test and diagnose|actual problem with direct connections|same lan case|not seeing any direct connections stick|scaling the network|webrtc connection really does need to be direct|missing direct peer addresses|next step in determining why we aren't getting direct dialable addresses|headless test using puppeteer|I'm worried that you haven't read all the plan files|you're still missing stuff|go read llm.md|backfill the log" plan/log.md`
+- `(apply_patch) plan/log.md`
+
+### Tests
+- Not run (documentation-only update).
+
+### Open Questions
+- None.
+
+## Date: 2026-02-08
+
+### Prompt
+- when I run netviz I'm still seeing relay connections though. what's going on with that?
+
+### Changes
+- Investigated the current NetViz relay visualization and relay-drop wiring to explain observed relay edges.
+- Confirmed `Drop Relay` behavior in NetViz only overrides `webrtc.dropRelayBootstrapOnDirect` via URL/toggle path.
+- Confirmed relay edge rendering uses `via === 'relay'` and draws spur/relay segment when relay peer is detected.
+- Confirmed if `dropRelayOnDirect` remains false in loaded WebRTC config, relayed peer links are intentionally preserved even when direct links exist.
+
+### Files Modified
+- None (diagnosis only).
+
+### Commands
+- `nl -ba demos/netviz/src/visualizer.js | sed -n '800,940p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '880,960p'`
+- `nl -ba demos/netviz/src/main.js | sed -n '1280,1320p'`
+- `cat demos/netviz/public/relay-config.json`
+- `cat config/relay.json | sed -n '1,200p'`
+
+### Tests
+- Not run (diagnosis-only question).
+
+### Open Questions
+- Need confirmation of runtime toggle state before connect (`dropRelay`), and whether the loaded relay config includes `dropRelayOnDirect=false` for this run.
+
+## Date: 2026-02-08
+
+### Prompt
+- I'd like you to set the default radius to 1.1
+
+### Changes
+- Updated NetViz default distributed connection radius fallback from `1.2` to `1.1`.
+- Updated NetViz connection radius input placeholder from `1.2` to `1.1` so UI default guidance matches runtime default.
+
+### Files Modified
+- demos/netviz/src/main.js
+- demos/netviz/index.html
+- plan/log.md
+
+### Commands
+- `rg -n "radius|connectionRadius|defaultRadius|RADIUS" demos/netviz plan -S`
+- `sed -n '1240,1385p' demos/netviz/src/main.js`
+- `sed -n '360,430p' demos/netviz/index.html`
+- `rg -n "connectionRadius" demos/netviz peercompute/tests/runtime -S`
+- `rg -n "\\b1\\.2\\b" demos/netviz peercompute/tests/runtime -S`
+- `(apply_patch) demos/netviz/src/main.js`
+- `(apply_patch) demos/netviz/index.html`
+- `(apply_patch) plan/log.md`
+
+### Tests
+- Validation search only (no runtime test):
+- `rg -n "\\b1\\.2\\b|placeholder=\\\"1\\.1\\\"|: 1\\.1;" demos/netviz/src/main.js demos/netviz/index.html -S`
+
+### Open Questions
+- None.

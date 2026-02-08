@@ -12,6 +12,9 @@
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:auto": "./start-relay-and-test.sh",
+    "test:direct-path": "node tests/runtime/direct-path-headless.mjs",
+    "test:direct-path:lan-agent": "node tests/runtime/direct-path-lan-agent.mjs",
+    "test:direct-path:lan-controller": "node tests/runtime/direct-path-lan-controller.mjs",
     "test:unit": "node --test tests/unit/*.test.js"
   },
   "devDependencies": {

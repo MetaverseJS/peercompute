@@ -818,11 +818,12 @@ export class NetworkVisualizer {
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
+      const isWebRTC = via === 'webrtc';
       const edgeColor = errorActive
         ? COLORS.edgeError
-        : via === 'relay'
-          ? COLORS.edgeRelay
-          : COLORS.edge;
+        : isWebRTC
+          ? COLORS.edge
+          : COLORS.edgeRelay;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {

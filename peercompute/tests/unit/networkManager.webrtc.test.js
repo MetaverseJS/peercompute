@@ -53,6 +53,7 @@ test('NetworkManager prunes relayed connections when direct is available', async
   assert.equal(directClosed, false);
 });
 
+
 test('NetworkManager prefers WebRTC addresses when dialing', async () => {
   const manager = new NetworkManager({ webrtc: { preferDirect: true } });
   manager.bootstrapPeerIds = new Set();
@@ -69,7 +70,82 @@ test('NetworkManager prefers WebRTC addresses when dialing', async () => {
   const webrtcAddr = buildAddr('/webrtc/ip4/2.2.2.2');
   await manager._maybeDialPeer('invalid-peer', 'presence', [relayAddr, webrtcAddr]);
 
-  assert.equal(dialed[0], webrtcAddr.toString());
+  assert.equal(dialed[0], `${webrtcAddr.toString()}/p2p/invalid-peer`);
+});
+
+test('NetworkManager appends target peerId to relay WebRTC multiaddrs', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';
+  const relayWebrtcAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc'
+  );
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [relayWebrtcAddr]);
+
+  assert.equal(
+    dialed[0],
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW'
+  );
+});
+
+test('NetworkManager deduplicates relay WebRTC targets after peer suffix normalization', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  const targetPeerId = 'invalid-peer';
+  const shortAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc'
+  );
+  const fullAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/invalid-peer'
+  );
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [shortAddr, fullAddr]);
+
+  assert.deepEqual(
+    dialed,
+    ['/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/invalid-peer']
+  );
+});
+
+test('NetworkManager does not redial relay-webrtc when already relayed and no true direct targets exist', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [{
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-a'),
+      status: 'open'
+    }],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  await manager._maybeDialPeer('peer-a', 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+  ]);
+
+  assert.equal(dialed.length, 0);
 });
 
 test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
@@ -115,6 +191,48 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
 
   manager._maybeUpdateBootstrapRelayConnections();
   assert.equal(relayClosed, true);
+});
+
+test('NetworkManager does not treat relay-webrtc connections as direct peers', () => {
+  const manager = new NetworkManager({
+    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+  });
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  manager.peerId = 'peer-self';
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'peer-a') {
+        return [{
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer/p2p-circuit/webrtc/p2p/peer-a'),
+          status: 'open'
+        }];
+      }
+      if (peerId === 'relay-peer') {
+        return [{
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        }];
+      }
+      return [
+        {
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        },
+        {
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer/p2p-circuit/webrtc/p2p/peer-a'),
+          status: 'open'
+        }
+      ];
+    }
+  };
+
+  assert.equal(manager._getPreferredConnectionType('peer-a'), 'relay');
+  assert.equal(manager._hasDirectPeerConnections(), false);
+  assert.equal(manager._shouldKeepRelayBootstrapConnection(), true);
 });
 
 test('NetworkManager keeps relay for longest-connected logN peers', () => {
