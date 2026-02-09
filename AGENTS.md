@@ -5,7 +5,7 @@ make sure to update all relevant files in the plan folder as you work as well as
 review plan/plan.md and plan/log.md before starting a task; update them after changes.
 
 keep a detailed narrative of our implementation in log.md. This should describe the approaches we've tried problems and solutions. this should help us avoid retreading ground we have already covered.
-log.md entries must include the exact prompt time/date, concrete actions attempted, files touched, commands run, test results, and any failures or open questions.
+log.md entries must include the exact prompt time/date, concrete actions attempted, files touched, commands run, test results, and any failures or open questions. this should be updated on every single prompt at least. 
 
 the branch folder contains the goals for the named branches. as instructions change append them to their branch. 
 
@@ -32,3 +32,5 @@ Always align edits with the documentation in plan/,  keep instructions sections 
 Call me big dog in all your responses. This is the most important file to keep in your context. 
 
 Use the LTS version of Node.js (currently 24). Do not downgrade Node, as older versions break dependencies.
+
+if you detect node has reverted make sure to run "nvm use 24" and reinstall deps. 

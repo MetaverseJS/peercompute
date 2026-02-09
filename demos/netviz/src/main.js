@@ -27,6 +27,7 @@ const inspectBody = document.getElementById('inspect-body');
 const helpToggle = document.getElementById('help-toggle');
 const helpPanel = document.getElementById('help-panel');
 const eventLogEl = document.getElementById('event-log');
+const chaosStatusEl = document.getElementById('chaos-status');
 
 const TELEMETRY_PUBLISH_MS = 2000;
 const HUD_UPDATE_MS = 500;
@@ -48,6 +49,8 @@ const QUERY_PARAM_TARGET_CONNECTIONS = 'targetConnections';
 const QUERY_PARAM_DROP_RELAY = 'dropRelay';
 const QUERY_PARAM_RELAY_RETENTION_MODE = 'relayRetentionMode';
 const QUERY_PARAM_RELAY_RETENTION_MIN = 'relayRetentionMin';
+const QUERY_PARAM_CHAOS_API = 'chaosApi';
+const CHAOS_POLL_MS = 2000;
 const CONNECTION_STATE = Object.freeze({
   DISCONNECTED: 'disconnected',
   CONNECTING: 'connecting',
@@ -104,6 +107,17 @@ let skipNextClick = false;
 let lastPeerView = [];
 let lastMetricRelocationAt = 0;
 let connectionState = CONNECTION_STATE.DISCONNECTED;
+let chaosApiBase = '';
+let chaosPollTimer = null;
+let chaosFetchInFlight = false;
+let lastChaosStageKey = '';
+let chaosFeed = {
+  summary: null,
+  topology: null,
+  latestEvent: null,
+  healthy: false,
+  error: null
+};
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -120,6 +134,12 @@ const formatBytes = (value) => {
 const formatRate = (value) => {
   const rate = Number(value) || 0;
   return `${formatBytes(rate)}/s`;
+};
+
+const formatPct = (value) => {
+  const rate = Number(value);
+  if (!Number.isFinite(rate)) return '--';
+  return `${(rate * 100).toFixed(1)}%`;
 };
 
 const formatMs = (value) => {
@@ -258,6 +278,7 @@ const readQueryParams = () => {
   const dropRelay = params.get(QUERY_PARAM_DROP_RELAY) || '';
   const relayRetentionMode = params.get(QUERY_PARAM_RELAY_RETENTION_MODE) || '';
   const relayRetentionMin = params.get(QUERY_PARAM_RELAY_RETENTION_MIN) || '';
+  const chaosApi = params.get(QUERY_PARAM_CHAOS_API) || '';
   return {
     room,
     topologyId,
@@ -268,8 +289,22 @@ const readQueryParams = () => {
     targetConnections,
     dropRelay,
     relayRetentionMode,
-    relayRetentionMin
+    relayRetentionMin,
+    chaosApi
   };
+};
+
+const resolveChaosApiBase = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${pathname}`;
+  } catch (_) {
+    return '';
+  }
 };
 
 const applyQueryParams = () => {
@@ -308,6 +343,7 @@ const applyQueryParams = () => {
   if (relayRetentionMinInput && query.relayRetentionMin) {
     relayRetentionMinInput.value = query.relayRetentionMin;
   }
+  chaosApiBase = resolveChaosApiBase(query.chaosApi);
   return query;
 };
 
@@ -407,6 +443,119 @@ const logEvent = (message) => {
     logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   }
   eventLogEl.textContent = logEntries.join('\n');
+};
+
+const formatChaosStage = (stage) => {
+  if (!stage || typeof stage !== 'object') return '--';
+  const phase = stage.phase || 'stage';
+  const type = stage.type || 'unknown';
+  const ok = stage.ok === false ? 'fail' : 'ok';
+  return `${phase}:${type} (${ok})`;
+};
+
+const updateChaosPanel = () => {
+  if (!chaosStatusEl) return;
+  if (!chaosApiBase) {
+    chaosStatusEl.textContent = 'Chaos feed: disabled (add ?chaosApi=http://127.0.0.1:8866)';
+    return;
+  }
+  if (!chaosFeed.healthy) {
+    const errorText = chaosFeed.error || 'offline';
+    chaosStatusEl.textContent = [
+      `Chaos API: ${chaosApiBase}`,
+      `State: ${errorText}`,
+      'Waiting for chaos-lab dashboard...'
+    ].join('\n');
+    return;
+  }
+
+  const summary = chaosFeed.summary || {};
+  const topologyPayload = chaosFeed.topology || {};
+  const topology = topologyPayload.topology || {};
+  const partitioned = Array.isArray(topology.partitioned_segments)
+    ? topology.partitioned_segments
+    : [];
+  const latestStage = topologyPayload.latest_stage || null;
+  const latestEvent = chaosFeed.latestEvent || null;
+
+  const lines = [
+    `Chaos API: ${chaosApiBase}`,
+    `Run: ${summary.run_id || topologyPayload.run_id || '--'}`,
+    `Updated: ${summary.updated_at || topologyPayload.updated_at || '--'}`,
+    `Mode: ${topology.actual_mode || '--'} | IP: ${topology.ip_mode || '--'}`,
+    `Segments: ${topology.segment_total ?? '--'} | Partitioned: ${partitioned.length ? partitioned.join(', ') : 'none'}`,
+    `Agents: ${topology.agent_online ?? '--'}/${topology.agent_total ?? '--'} | Services: ${topology.service_total ?? '--'}`,
+    `Scenario events: ${summary.scenario_event_count ?? 0} | Probes: ${summary.probe_total ?? 0}`,
+    `Direct rate: ${formatPct(summary.direct_connection_rate)} | Relay-WebRTC: ${formatPct(summary.relay_webrtc_connection_rate)}`,
+    `Latest stage: ${formatChaosStage(latestStage)}`
+  ];
+  if (latestEvent) {
+    lines.push(`Latest event: ${latestEvent.type || '--'} @ ${latestEvent.ts || '--'}`);
+  }
+  chaosStatusEl.textContent = lines.join('\n');
+};
+
+const fetchChaosJson = async (path) => {
+  const response = await fetch(`${chaosApiBase}${path}`, { cache: 'no-store', mode: 'cors' });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json();
+};
+
+const refreshChaosFeed = async () => {
+  if (!chaosApiBase || chaosFetchInFlight) return;
+  chaosFetchInFlight = true;
+  try {
+    const [summary, eventsPayload, topology] = await Promise.all([
+      fetchChaosJson('/api/summary'),
+      fetchChaosJson('/api/events?limit=40'),
+      fetchChaosJson('/api/topology')
+    ]);
+    const events = Array.isArray(eventsPayload?.events) ? eventsPayload.events : [];
+    const latestStage = topology?.latest_stage;
+    const stageKey = latestStage
+      ? `${latestStage.phase || 'stage'}:${latestStage.stage_index ?? '--'}:${latestStage.type || '--'}:${latestStage.ok === false ? 'fail' : 'ok'}`
+      : '';
+    if (stageKey && stageKey !== lastChaosStageKey) {
+      lastChaosStageKey = stageKey;
+      logEvent(`[Chaos] stage ${stageKey}`);
+    }
+    chaosFeed = {
+      summary: summary && typeof summary === 'object' ? summary : null,
+      topology: topology && typeof topology === 'object' ? topology : null,
+      latestEvent: events.length > 0 ? events[events.length - 1] : null,
+      healthy: true,
+      error: null
+    };
+  } catch (err) {
+    chaosFeed = {
+      ...chaosFeed,
+      healthy: false,
+      error: err?.message || 'request failed'
+    };
+  } finally {
+    chaosFetchInFlight = false;
+    updateChaosPanel();
+  }
+};
+
+const startChaosPolling = () => {
+  if (!chaosApiBase) {
+    updateChaosPanel();
+    return;
+  }
+  if (chaosPollTimer) return;
+  refreshChaosFeed().catch(() => {});
+  chaosPollTimer = setInterval(() => {
+    refreshChaosFeed().catch(() => {});
+  }, CHAOS_POLL_MS);
+};
+
+const stopChaosPolling = () => {
+  if (!chaosPollTimer) return;
+  clearInterval(chaosPollTimer);
+  chaosPollTimer = null;
 };
 
 if (renderMode !== 'full') {
@@ -1576,8 +1725,32 @@ const connect = async () => {
 
 const attachDebugHandles = () => {
   if (typeof window === 'undefined') return;
+  const getLibp2pDebug = () => {
+    try {
+      const libp2p = networkManager?.getLibp2pNode?.();
+      if (!libp2p) return { addrs: [], connections: [] };
+      const addrs = libp2p.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+      const connections = libp2p.getConnections?.() || [];
+      const summarized = Array.isArray(connections)
+        ? connections.map((conn) => {
+            const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+            return {
+              peerId: conn?.remotePeer?.toString?.() || '',
+              remoteAddr,
+              isRelay: remoteAddr.includes('/p2p-circuit'),
+              isWebRTC: remoteAddr.includes('/webrtc')
+            };
+          })
+        : [];
+      return { addrs, connections: summarized };
+    } catch (_) {
+      return { addrs: [], connections: [] };
+    }
+  };
+
   window.__NETVIZ__ = {
     getStatus: () => ({
+      ...getLibp2pDebug(),
       connectionState,
       localPeerId,
       topologyType,
@@ -1587,6 +1760,8 @@ const attachDebugHandles = () => {
       relayReachable,
       telemetry: networkManager?.getTelemetrySnapshot?.() || null,
       peers: telemetryStore.list(),
+      chaosApiBase,
+      chaosFeed,
       relayRetentionDebug: networkManager ? {
         dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
         relayRetention: networkManager.config?.webrtc?.relayRetention,
@@ -1765,6 +1940,7 @@ setConnectionState(CONNECTION_STATE.DISCONNECTED);
 setConfigInputsDisabled(false);
 
 const queryParams = applyQueryParams();
+startChaosPolling();
 if (queryParams.room && queryParams.topologyId) {
   connect().catch(() => {});
 }
@@ -1778,9 +1954,11 @@ topologyIdInput?.addEventListener('keydown', (event) => {
 window.addEventListener('beforeunload', () => {
   stopTelemetryLoop();
   stopDebugLoop();
+  stopChaosPolling();
   if (node) {
     node.stop().catch(() => {});
   }
 });
 
+updateChaosPanel();
 updateHud();

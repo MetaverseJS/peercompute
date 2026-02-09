@@ -7145,3 +7145,1251 @@ installHook.js:1 [NetworkManager] Dial failed 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7
 
 ### Open Questions
 - None.
+
+## Date: 2026-02-08 22:06:07 UTC
+
+### Prompt
+- back to netviz after reviewing AGENTS.md. we are seeing some direction connections that then fail. nodes also get isolated and do not redial the relay: here's the console: ... Determine what's wrong. why are the direct connections failing.
+- I want you to write this up in the tests.md document and begin implementation.
+- OK I think I know what we need to do. we need a robust simulated network ip topology simulator ...
+- please create a new folder in the root of the project called network-testing that contains:
+- A ready-to-run Containernet topology script:
+- dual-stack
+- multiple NAT segments
+- TURN server
+- 10–50 browser agents
+- A scenario runner:
+- partitions
+- IPv4-only / IPv6-only modes
+- bandwidth shifts
+- A metrics dashboard for connection success and convergence time.
+- That would give you a one-command “internet chaos lab” for libp2p.
+- provide a testing harness so we can deploy our demos and test all functionality of peercompute across this network.
+
+### Actions
+- Reviewed instruction sources before implementation:
+- `AGENTS.md`
+- `plan/plan.md`
+- `plan/log.md`
+- Completed `network-testing` implementation scaffolding to satisfy the chaos-lab requirements:
+- Added Containernet-first topology manager with dry-run fallback (`network-testing/src/chaoslab/topology.py`).
+- Added scenario timeline runner with timed stages + automatic revert stages for temporary partition/ip-mode/churn operations (`network-testing/src/chaoslab/scenario.py`).
+- Added harness for starting demos, running probe cycles, and recording probe results (`network-testing/src/chaoslab/harness.py`).
+- Added orchestrator CLI entrypoint (`network-testing/src/chaoslab/main.py`) with one-command execution path, dashboard server startup, scenario execution, and summary reporting.
+- Added one-command shell launcher (`network-testing/scripts/chaos-lab.sh`) and dependencies file (`network-testing/requirements.txt`).
+- Added chaos-lab documentation (`network-testing/README.md`) and root README integration (`README.md`).
+- Added Python tests for config/metrics/scenario behavior (`network-testing/tests/test_chaoslab.py`).
+- Updated `plan/tests.md` with direct-connection diagnosis criteria and chaos-lab validation gates.
+- Updated `plan/plan.md` Completed/TODO entries to reflect chaos-lab scaffolding and remaining hardening work.
+- Confirmed/recorded current direct-path diagnosis target in `plan/tests.md`:
+- direct `/webrtc` addresses are not being announced (logs repeatedly show no local `/webrtc` addrs), causing dialer fallback to relay-circuit paths.
+
+### Files Touched
+- `network-testing/configs/topology.default.yaml`
+- `network-testing/configs/scenarios/default-chaos.yaml`
+- `network-testing/configs/scenarios/ipv4-only.yaml`
+- `network-testing/configs/scenarios/ipv6-only.yaml`
+- `network-testing/agent/probe.mjs`
+- `network-testing/dashboard/index.html`
+- `network-testing/src/chaoslab/__init__.py`
+- `network-testing/src/chaoslab/config.py`
+- `network-testing/src/chaoslab/metrics.py`
+- `network-testing/src/chaoslab/dashboard.py`
+- `network-testing/src/chaoslab/topology.py`
+- `network-testing/src/chaoslab/scenario.py`
+- `network-testing/src/chaoslab/harness.py`
+- `network-testing/src/chaoslab/main.py`
+- `network-testing/scripts/chaos-lab.sh`
+- `network-testing/requirements.txt`
+- `network-testing/README.md`
+- `network-testing/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/plan.md`
+- `README.md`
+- `package.json`
+
+### Commands Run
+- `pwd && ls -la && git status --short`
+- `sed -n '1,240p' AGENTS.md`
+- `sed -n '1,260p' plan/tests.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,280p' plan/plan.md`
+- `find network-testing -maxdepth 4 -type f | sort`
+- `cat package.json`
+- `sed -n '1,260p' README.md`
+- `rg -n "netviz|relay|direct-path|runtime|dev-all" -S peercompute/tests scripts demos`
+- `sed -n '1,260p' peercompute/tests/runtime/direct-path-headless.mjs`
+- `python3 -m py_compile network-testing/src/chaoslab/*.py`
+- `PYTHONPATH=network-testing/src python3 -m unittest network-testing/tests/test_chaoslab.py`
+- `bash network-testing/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `git status --short`
+
+### Test Results
+- `python3 -m py_compile network-testing/src/chaoslab/*.py`
+- PASS.
+- `PYTHONPATH=network-testing/src python3 -m unittest network-testing/tests/test_chaoslab.py`
+- PASS (3 tests).
+- `bash network-testing/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- PASS; run completed and emitted metrics summary with zero probes/scenario events (expected for skip options).
+
+### Failures / Open Questions
+- Containernet mode was not executed in this environment; only dry-run path was validated end-to-end.
+- Service startup commands for DNS/HTTPS/TURN/relay in Containernet mode are best-effort and need real host validation (images, binary availability, and routing/NAT behavior).
+- Direct-path diagnosis remains consistent with logs: direct dialable `/webrtc` addresses are not available/published, so relay-circuit WebRTC paths dominate.
+
+### Follow-up Validation (2026-02-08 22:06 UTC)
+- Re-ran validation after final doc/log updates:
+- `python3 -m py_compile network-testing/src/chaoslab/*.py` (PASS)
+- `PYTHONPATH=network-testing/src python3 -m unittest network-testing/tests/test_chaoslab.py` (PASS)
+- `bash network-testing/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard` (PASS)
+- Cleaned generated dry-run artifact folder under `network-testing/artifacts/` to avoid checking runtime output into source changes.
+
+## Date: 2026-02-08 22:10:14 UTC
+
+### Prompt
+- You should also create a new big-net-testing.md file in plan/branch/ that describes our goals and implementation status for this
+
+### Actions
+- Reviewed `plan/branch/` file patterns and formatting to align the new branch document with existing planning docs.
+- Created `plan/branch/big-net-testing.md` with:
+- branch goal and motivation
+- direct-connection diagnosis context
+- scope and non-scope
+- completed/in-progress/not-started status snapshot
+- milestones (M1-M4)
+- definition of done
+- command reference and prioritized next steps
+
+### Files Touched
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `ls -la plan/branch && find plan/branch -maxdepth 2 -type f | sort`
+- `for f in $(find plan/branch -maxdepth 1 -type f | sort); do ...; done`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No runtime/code tests executed (documentation-only change).
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-02-08 22:11:42 UTC
+
+### Prompt
+- make sure to update the readme with additional dependencies for testing like docker and whatnot.
+
+### Actions
+- Updated root `README.md` under the Network Chaos Lab section to include explicit testing dependencies:
+- Node.js 24, Python 3.10+, Docker Engine, Mininet, Containernet, and required Linux networking tools.
+- Added a quick verification command block (`node`, `npm`, `python3`, `docker`, `mn`, and a Containernet Python import check).
+- Clarified that dry-run mode does not require Docker/Mininet/Containernet.
+- Updated `network-testing/README.md` with a dedicated `Prerequisites` section covering the same dependency set and privilege expectations for real Containernet mode.
+- Kept quick start concise by removing duplicated dependency install text already covered by prerequisites.
+
+### Files Touched
+- `README.md`
+- `network-testing/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "Quick Start|Tests|Network Chaos Lab|requirements|docker|containernet|mininet" README.md network-testing/README.md plan/log.md`
+- `sed -n '1,260p' README.md`
+- `sed -n '1,260p' network-testing/README.md`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No runtime tests executed (documentation-only update).
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-02-08 22:14:13 UTC
+
+### Prompt
+- I would like this to be called "net-chaos-lab" instead of network-testing
+
+### Actions
+- Renamed project folder from `network-testing/` to `net-chaos-lab/`.
+- Updated active references to the new name across:
+- runtime scripts
+- package scripts
+- root and chaos-lab README docs
+- plan files (`plan/tests.md`, `plan/plan.md`, `plan/branch/big-net-testing.md`)
+- internal harness/default paths in chaos-lab modules (`main.py`, `harness.py`, `topology.py`, `config.py`, launcher script)
+- Left historical log text intact in older `plan/log.md` entries to preserve chronological record of previous prompts/paths.
+
+### Files Touched
+- `package.json`
+- `README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `net-chaos-lab/scripts/chaos-lab.sh`
+- `net-chaos-lab/README.md`
+- `net-chaos-lab/src/chaoslab/main.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/config.py`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "network-testing" -S .`
+- `mv network-testing net-chaos-lab`
+- `files=$(rg -l "network-testing" package.json README.md plan/tests.md plan/plan.md plan/branch/big-net-testing.md net-chaos-lab); perl -pi -e 's/network-testing/net-chaos-lab/g' $files`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- cleanup:
+- `find net-chaos-lab -type f -name '*.pyc' -delete`
+- `find net-chaos-lab -type d -name '__pycache__' -empty -delete`
+- `find net-chaos-lab/artifacts -mindepth 2 -type f -delete`
+- `find net-chaos-lab/artifacts -mindepth 1 -type d -empty -delete`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (3 tests).
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- PASS; dry-run completed and wrote summary with expected zero probe/scenario events for skip mode.
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-02-08 22:15:51 UTC
+
+### Prompt
+- make sure to specify that the net-chaos-lab requirements are only necessary for heavy duty protocol level testing of peercompute iteself and aren't required to use peercompute.
+
+### Actions
+- Updated root `README.md` in the Network Chaos Lab section to explicitly state:
+- `net-chaos-lab` is optional infrastructure for heavy-duty protocol-level testing of PeerCompute itself.
+- It is not required for normal PeerCompute usage, normal demos, or standard dev workflows.
+- Updated `net-chaos-lab/README.md` to explicitly state protocol-testing intent and renamed prerequisites heading to `Prerequisites (Protocol Testing Only)`.
+
+### Files Touched
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "Network Chaos Lab|Chaos-Lab Dependencies|Prerequisites|Quick Start|net-chaos-lab" README.md net-chaos-lab/README.md`
+- `sed -n '288,370p' README.md`
+- `sed -n '1,120p' net-chaos-lab/README.md`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No runtime tests executed (documentation-only update).
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-02-08 22:23:02 UTC
+
+### Prompt
+- are you updating the log on every prompt like AGENTS.md says you need to?
+- do you think this overall approach is the right way to go to solve our long running problem?
+- please proceed with 1 and 2
+
+### Actions
+- Re-checked `AGENTS.md`, `plan/plan.md`, and `plan/log.md` before implementation.
+- Verified host runtime prerequisites for real containernet execution:
+- `docker` binary availability and daemon state
+- `mn` (mininet) availability
+- Containernet Python import
+- Node/Python runtime versions in current environment
+- Executed real containernet-mode run attempt:
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- Baseline result before health-check patch: failed due to missing containernet import.
+- Implemented fail-fast host preflight checks in `net-chaos-lab/src/chaoslab/topology.py`:
+- required host binaries check (`docker`, `mn`, `ip`, `iptables`, `tc`)
+- Docker daemon reachability check (`docker info`)
+- Implemented fail-fast service startup + health checks in `net-chaos-lab/src/chaoslab/topology.py`:
+- added explicit startup specs for DNS/HTTPS/relay/TURN
+- DNS now actually starts with generated CoreDNS config based on service host map
+- service startup now validates command success
+- per-service health loop validates PID and TCP readiness where applicable
+- failure path now includes service log tail for diagnosis
+- Added reusable internal node-shell execution helper for robust return-code parsing.
+- Re-ran containernet-mode run after patch to verify preflight error quality.
+- Updated planning docs to reflect current status and validation gates:
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,260p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `node -v && npm -v && python3 --version`
+- `docker --version && docker ps --format '{{.ID}} {{.Image}}' | head`
+- `mn --version || true; python3 - <<'PY' ... containernet import ... PY`
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- cleanup:
+- `find net-chaos-lab -type f -name '*.pyc' -delete`
+- `find net-chaos-lab -type d -name '__pycache__' -empty -delete`
+- `find net-chaos-lab/artifacts -mindepth 2 -type f -delete`
+- `find net-chaos-lab/artifacts -mindepth 1 -type d -empty -delete`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (3 tests).
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- FAIL-FAST as expected in this environment: `Containernet prerequisites missing on host: docker, mn.`
+
+### Failures / Open Questions
+- Current environment does not have Docker/Mininet/Containernet, so full containernet runtime validation cannot proceed here.
+- Host currently reports Node.js `v18.19.1`; AGENTS guidance calls for Node 24 LTS when running dependency-sensitive flows.
+
+## Date: 2026-02-08 22:32:09 UTC
+
+### Prompt
+- Proceed with implementation here as long as you can without my involvement. I have to do some chores around the house.
+
+### Actions
+- Continued autonomous implementation after completing containernet preflight + service health checks.
+- Expanded NetViz debug surface so headless probes can read libp2p state without console scraping:
+- updated `window.__NETVIZ__.getStatus()` in `demos/netviz/src/main.js` to include `addrs` and normalized `connections` summary.
+- Upgraded headless probe diagnostics in `net-chaos-lab/agent/probe.mjs`:
+- installed RTCPeerConnection diagnostics collector via init script
+- captured selected candidate pair types (local/remote candidate classes)
+- captured NetViz status diagnostics (peer via counts, announced direct/relay-webrtc addrs, connection address type counts)
+- emitted normalized direct/relay indicators in probe output.
+- Extended harness normalization in `net-chaos-lab/src/chaoslab/harness.py` to keep new diagnostics payload fields.
+- Extended summary metrics in `net-chaos-lab/src/chaoslab/metrics.py` to compute:
+- `direct_announce_rate`
+- `direct_connection_rate`
+- `relay_webrtc_connection_rate`
+- `avg_direct_peer_count`
+- `avg_relay_peer_count`
+- `avg_announced_direct_webrtc_addrs`
+- `rtc_probe_count`
+- `rtc_host_only_local_rate`
+- `rtc_local_candidate_types`
+- `rtc_remote_candidate_types`
+- Updated chaos dashboard (`net-chaos-lab/dashboard/index.html`) to surface direct/relay diagnostics rates.
+- Added dedicated scenario config `net-chaos-lab/configs/scenarios/direct-diagnostics.yaml`.
+- Updated docs/plans to reflect diagnostics scope and new scenario:
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- Renamed chaos-lab README title to `Net Chaos Lab` for naming consistency.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `net-chaos-lab/agent/probe.mjs`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/metrics.py`
+- `net-chaos-lab/dashboard/index.html`
+- `net-chaos-lab/configs/scenarios/direct-diagnostics.yaml`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,320p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '1,320p' net-chaos-lab/src/chaoslab/metrics.py`
+- `sed -n '1,320p' net-chaos-lab/dashboard/index.html`
+- `sed -n '1,280p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,300p' net-chaos-lab/src/chaoslab/main.py`
+- `rg -n "__NETVIZ__|getStatus|..." demos/netviz/src/main.js`
+- `sed -n '1460,1660p' demos/netviz/src/main.js`
+- `sed -n '1780,1960p' demos/netviz/src/main.js`
+- `sed -n '1,340p' demos/netviz/src/telemetryStore.js`
+- `rg -n "getTelemetrySnapshot\(|..." peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1020,1138p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `npm --prefix demos/netviz run build`
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --scenario net-chaos-lab/configs/scenarios/direct-diagnostics.yaml --skip-probes --no-dashboard`
+- cleanup:
+- `find net-chaos-lab -type f -name '*.pyc' -delete`
+- `find net-chaos-lab -type d -name '__pycache__' -empty -delete`
+- `find net-chaos-lab/artifacts -mindepth 2 -type f -delete`
+- `find net-chaos-lab/artifacts -mindepth 1 -type d -empty -delete`
+
+### Test Results
+- `node --check net-chaos-lab/agent/probe.mjs`
+- PASS.
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (3 tests; diagnostics assertions included).
+- `npm --prefix demos/netviz run build`
+- PASS.
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --scenario net-chaos-lab/configs/scenarios/direct-diagnostics.yaml --skip-probes --no-dashboard`
+- PASS; scenario stage executed and summary emitted new direct/RTC diagnostic fields.
+
+### Failures / Open Questions
+- Full containernet runtime still blocked in this environment by missing host dependencies (`docker`, `mn`, containernet).
+- Host Node version remains `v18.19.1`; AGENTS guidance expects Node 24 LTS for dependency-sensitive workflows.
+
+### Follow-up Implementation (2026-02-08 22:34 UTC)
+- Added Node LTS guidance to launcher runtime:
+- `net-chaos-lab/scripts/chaos-lab.sh` now warns when Node major < 24.
+- Verified launcher warning path with dry-run execution and confirmed summary output still succeeds.
+- Restored generated `docs/netviz` build artifacts to tracked HEAD content after validation build so only intentional source changes remain.
+- Cleaned temporary run artifacts and Python cache files under `net-chaos-lab/`.
+
+> Additional command run
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard` (PASS)
+
+## Date: 2026-02-08 22:39:58 UTC
+
+### Prompt
+- tell me what I need to install for you/ give you permissions for. maybe I just need to reboot eh?
+
+### Actions
+- Re-checked `net-chaos-lab/README.md` prerequisite section to align response with documented requirements.
+- Used previously gathered runtime checks from this session to identify current blockers:
+  - `docker` + `docker compose` binaries are installed.
+  - `docker info` fails in current shell due to socket permission (`/var/run/docker.sock`).
+  - `mn` command is missing.
+  - `containernet` Python module import fails.
+  - Node runtime is still `v18.19.1` (AGENTS guidance expects Node 24 LTS).
+- Prepared explicit install/permission checklist and whether reboot/logout is needed.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,260p' net-chaos-lab/README.md`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No code/runtime tests executed in this prompt; this step was environment triage + install guidance.
+
+### Failures / Open Questions
+- Open: whether user wants me to proceed with host-side installs now (Mininet/Containernet + Node 24) or continue with docker-only backend work while host setup catches up.
+
+### Follow-up Validation (2026-02-08 22:40 UTC)
+- Pulled current upstream install guidance for Containernet/Mininet to avoid stale commands:
+  - `https://github.com/containernet/containernet`
+  - `https://containernet.github.io/`
+  - `https://mininet.org/download`
+- Confirmed official Containernet bare-metal flow now recommends Ansible installer plus Python venv install on newer Ubuntu versions.
+- Confirmed our environment symptoms remain permission/tooling related rather than code related:
+  - Docker works under `sg docker`, but default shell lacks active docker group on this session.
+  - Mininet/Containernet are still not installed (`mn` missing, `containernet` import missing).
+
+## Date: 2026-02-08 23:00:26 UTC
+
+### Prompt
+- `(.venv) ... python -c "from containernet.net import Containernet; print('containernet ok')"` fails with `ModuleNotFoundError: No module named 'containernet'`
+
+### Actions
+- Re-checked project guidance files before acting:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - tail of `plan/log.md`
+- Investigated Containernet source tree directly at `/home/cos/projects/containernet`.
+- Confirmed module layout from source and package metadata:
+  - `Containernet` class lives in `mininet/net.py`.
+  - package name installed into venv is `mininet` (not `containernet`).
+- Verified in local containernet venv that correct import succeeds:
+  - `python -c "from mininet.net import Containernet; print('containernet ok')"` -> PASS.
+- Patched peercompute chaos-lab loader to support correct Containernet import path first (`mininet.*`) with a legacy fallback (`containernet.*`) for compatibility.
+- Updated docs smoke-test commands to use `from mininet.net import Containernet`.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `ls -la /home/cos/projects/containernet`
+- `rg -n "class Containernet|Containernet\(" /home/cos/projects/containernet -S | head -n 40`
+- `sed -n '1,220p' /home/cos/projects/containernet/pyproject.toml`
+- `bash -lc 'cd /home/cos/projects/containernet && source .venv/bin/activate && python -c "from mininet.net import Containernet; print(\"containernet ok\")"'`
+- `bash -lc 'cd /home/cos/projects/containernet && source .venv/bin/activate && python -m pip show mininet | sed -n "1,40p"'`
+- `rg -n "containernet\.net|from mininet\.net import Containernet" README.md net-chaos-lab/README.md net-chaos-lab/src/chaoslab/topology.py -S`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python -c "from mininet.net import Containernet; print('containernet ok')"` in `/home/cos/projects/containernet/.venv`
+  - PASS.
+- `python -m pip show mininet`
+  - PASS; editable install present from `/home/cos/projects/containernet`.
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (3 tests).
+
+### Failures / Open Questions
+- No code failure remains for this prompt; root cause was incorrect import path in validation guidance and chaos-lab containernet loader.
+
+## Date: 2026-02-08 23:09:33 UTC
+
+### Prompt
+- alright I have relogged. run something to see if we're set up right
+
+### Actions
+- Re-read required context files before execution:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Ran host readiness checks after user relogin:
+  - runtime versions (Node/npm/Python)
+  - Docker daemon access
+  - `mn` availability
+  - system Python import test for `Containernet`
+- Detected Node reverted to `v18.19.1`; enforced AGENTS rule:
+  - executed `nvm use 24`
+  - reinstalled deps with `npm install`
+- Validated Containernet import works via dedicated containernet venv Python.
+- Attempted real containernet-mode lab run using containernet venv Python.
+- Observed hard blocker: Mininet requires root privileges.
+- Checked sudo capability (`sudo -n`) to determine if root escalation was possible from this non-interactive session.
+- Ran dry-run lab execution as a sanity check that orchestrator path otherwise works with current setup.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,180p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `node -v && npm -v && python3 --version`
+- `docker info --format '{{.ServerVersion}} {{.OperatingSystem}}'`
+- `mn --version`
+- `python3 -c "from mininet.net import Containernet; print('containernet ok (system python)')" || true`
+- `source ~/.nvm/nvm.sh && nvm use 24 && node -v && npm -v && npm install`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- `/home/cos/projects/containernet/.venv/bin/python -c "from mininet.net import Containernet; from mininet.node import Controller; print('containernet venv import ok')"`
+- `sudo -n true && echo 'sudo_nopass=ok' || echo 'sudo_nopass=no'`
+- `id`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `docker info ...`
+  - PASS (daemon reachable in current session).
+- `mn --version`
+  - PASS (`2.3.0`).
+- `python3 -c "from mininet.net import Containernet ..."`
+  - FAIL on system Python (`ImportError`, plain Mininet package lacks Containernet class).
+- `nvm use 24` + `npm install`
+  - PASS (`node v24.12.0`, deps up to date).
+- `PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python ... --mode containernet`
+  - FAIL: `*** Mininet must run as root.`
+- `containernet venv import ok`
+  - PASS.
+- `sudo -n true`
+  - FAIL (password required; no non-interactive root escalation available in this session).
+- `--mode dry-run`
+  - PASS (topology initialized with 12 agents, 4 services; summary emitted).
+
+### Failures / Open Questions
+- Remaining blocker is privileged execution for Mininet/Containernet (`root` required). Current non-interactive shell cannot run sudo without password.
+- Once run as root (or with password-allowed sudo), containernet-mode should proceed to next runtime checks.
+
+## Date: 2026-02-08 23:14:06 UTC
+
+### Prompt
+- User ran containernet mode as root and reported failure:
+  - `Exception: Unable to derive default datapath ID - please either specify a dpid or use a canonical switch name such as s23.`
+
+### Actions
+- Analyzed trace and confirmed failure originates at `net.addSwitch(core_switch_id)` where configured name `core` is non-canonical for Mininet DPID auto-derivation.
+- Implemented explicit DPID assignment in containernet topology startup:
+  - added deterministic DPID formatter (`_format_switch_dpid`) returning 16-hex DPIDs.
+  - core and segment switches now call `net.addSwitch(..., dpid=...)`.
+- Added unit test coverage for DPID formatter behavior and invalid index guard.
+- Updated docs with an explicit `sudo` command that preserves Node 24 PATH when running containernet mode.
+- Re-ran local headless validation (py_compile, unittest, dry-run).
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '280,420p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1,240p' net-chaos-lab/src/chaoslab/topology.py`
+- `rg -n "net-chaos-lab/README.md|requirements.txt|Network Chaos Lab|chaos:lab" README.md -S`
+- `sed -n '292,360p' README.md`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (4 tests; includes new DPID formatter test).
+- Dry-run smoke (`--mode dry-run --skip-scenario --skip-probes --no-dashboard`)
+  - PASS.
+
+### Failures / Open Questions
+- Root-required containernet mode cannot be executed from this non-interactive agent session (sudo password required), so final runtime verification of the DPID fix must be confirmed by user-side root run.
+
+### Follow-up Notes (2026-02-08 23:15:15 UTC)
+- Updated `plan/tests.md` with a root containernet execution gate that preserves Node 24 PATH and uses containernet venv Python.
+- Attempted post-run artifact cleanup under `net-chaos-lab/artifacts/`.
+- Cleanup partially failed due root-owned files from prior user `sudo` run (`metrics-events.jsonl`, `metrics-summary.json` in run `20260208T231200Z`).
+- This is expected ownership behavior when launching the lab via `sudo`; either keep artifacts as root-owned history or remove with `sudo rm -rf net-chaos-lab/artifacts/20260208T231200Z`.
+
+## Date: 2026-02-08 23:20:56 UTC
+
+### Prompt
+- Asked how to make Node 24 global default.
+- Reported new containernet failure after previous DPID fix:
+  - `Exception: Error creating interface pair (sw_lan_a-eth1,core-eth1): RTNETLINK answers: File exists`
+
+### Actions
+- Diagnosed error as stale Mininet interfaces/bridges from prior failed runs.
+- Implemented automatic Mininet cleanup in containernet startup path:
+  - `mn -c` now runs before topology build when process has root privileges.
+  - cleanup logs success/warning but does not hard-fail startup solely on cleanup errors.
+- Updated docs to note startup cleanup behavior.
+- Re-ran headless validation gates.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '220,460p' net-chaos-lab/src/chaoslab/topology.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (4 tests).
+- dry-run smoke (`--mode dry-run --skip-scenario --skip-probes --no-dashboard`)
+  - PASS.
+
+### Failures / Open Questions
+- Root containernet mode cannot be executed directly by this non-interactive agent session; user-side `sudo` rerun is still required to confirm startup passes the previous `RTNETLINK ... File exists` point.
+
+## Date: 2026-02-08 23:36:23 UTC
+
+### Prompt
+- User shared successful system-wide Node 24 install output and a new containernet failure:
+  - `docker.errors.APIError ... exec: "sleep": executable file not found in $PATH`
+
+### Actions
+- Confirmed Node 24 install is effective system-wide from user output (`node -v` and `sudo node -v` both 24.13.0).
+- Diagnosed containernet container-start failure cause:
+  - service images like `coredns/coredns` and `caddy` do not provide `bash`/`sleep`, while Containernet docker hosts require shell-compatible images and startup commands.
+- Validated image behavior via Docker checks:
+  - `coredns/coredns:1.11.1` lacks `bash`.
+  - `caddy:2.8` lacks `bash`.
+  - `coturn/coturn:4.6.3` includes shell tooling.
+- Patched chaos-lab topology service defaults to use shell-compatible image family (`node:24-bookworm`) for `dns`, `https`, `relay`, and `turn`.
+- Patched service bootstrap commands:
+  - DNS now bootstraps `dnsmasq` (install on-demand) and writes dynamic host mappings.
+  - HTTPS now installs `caddy` on-demand before launch.
+  - TURN now installs `coturn` on-demand before launch.
+- Hardened docker node creation error handling:
+  - `_add_docker_node` now raises actionable `TopologyError` with image/command context instead of raw docker stack-only failures.
+- Updated default topology config service images to `node:24-bookworm`.
+- Updated docs to reflect shell-compatible service image defaults and first-run package install overhead.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/configs/topology.default.yaml`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/log.md`
+
+### Commands Run
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '520,760p'`
+- image shell checks:
+  - `docker run --rm --entrypoint bash coredns/coredns:1.11.1 -lc 'echo ok'`
+  - `docker run --rm --entrypoint bash caddy:2.8 -lc 'echo ok'`
+  - `docker run --rm coturn/coturn:4.6.3 bash -lc '...'
+`
+- image entrypoint/cmd inspection:
+  - `docker image inspect coredns/coredns:1.11.1 --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}}'`
+  - `docker image inspect caddy:2.8 --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}}'`
+  - `docker image inspect coturn/coturn:4.6.3 --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}}'`
+- package availability check in node image:
+  - `docker run --rm node:24-bookworm bash -lc 'apt-get update >/dev/null && apt-cache policy caddy coturn dnsmasq | sed -n "1,120p"'`
+- validation gates:
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (4 tests).
+- dry-run smoke (`--mode dry-run --skip-scenario --skip-probes --no-dashboard`)
+  - PASS.
+
+### Failures / Open Questions
+- Root containernet mode runtime verification of this patch still requires user-side `sudo` execution (agent cannot provide interactive sudo password here).
+- `sch_htb quantum ... is big` warnings are non-fatal tc warnings; can be tuned later by adjusting link shaping settings if they become noisy.
+
+### Follow-up Cleanup (2026-02-08 23:37:33 UTC)
+- Removed one leftover container from exploratory image checks to keep environment clean:
+  - `docker rm -f 11d2a7fd5348`
+
+## Date: 2026-02-08 23:40:31 UTC
+
+### Prompt
+- User provided new containernet failure after previous fixes:
+  - `Conflict. The container name "/mn.svc_dns" is already in use ...`
+- Also shared NodeSource + apt output confirming Node 24 system install.
+
+### Actions
+- Confirmed root cause as stale Docker container-name collision from prior failed containernet runs.
+- Implemented container collision hardening in topology startup:
+  - Before adding each service docker node, force-remove stale `mn.<name>` container if present.
+  - Before adding each agent docker node, force-remove stale `mn.<name>` container if present.
+  - Enabled `rm=True` in docker node creation kwargs so Containernet prunes same-name containers where supported.
+- Added non-fatal cleanup logging for stale container remove attempts.
+- Updated docs to note stale `mn.<node>` container cleanup behavior.
+- Re-ran headless validation gates.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,200p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (4 tests).
+- dry-run smoke (`--mode dry-run --skip-scenario --skip-probes --no-dashboard`)
+  - PASS.
+
+### Failures / Open Questions
+- Root containernet verification still requires user-side `sudo` rerun from terminal because this agent cannot provide interactive sudo password.
+- `sch_htb quantum ... is big` remains a non-fatal traffic-control warning.
+
+### Node Runtime Follow-up (2026-02-08 23:41:36 UTC)
+- Verified user-shell runtime after NodeSource install:
+  - `node -v` -> `v24.13.0`
+  - `npm -v` -> `11.6.2`
+- Attempted to verify sudo-runtime variants from this non-interactive session, but password prompt is unavailable here (`sudo` requires TTY/password).
+
+## Date: 2026-02-08 23:45:55 UTC
+
+### Prompt
+- Requested guarantee that ANY container created by chaos-lab has a stale-container cleanup check during script initialization; asked for double-check.
+
+### Actions
+- Audited container creation flow in `topology.py` and confirmed all docker node creation paths route through `_add_docker_node`.
+- Implemented init-time preflight stale-container cleanup across the full planned node set (services + agents) before any docker node creation:
+  - added `_planned_docker_node_names(...)` helper.
+  - added `_cleanup_planned_docker_nodes(...)` preflight step in `_start_containernet`.
+  - moved to single preflight pass rather than per-loop opportunistic cleanup.
+- Kept per-node safety by leaving stale-container removal utility in place and `rm=True` docker-node option.
+- Added unit test for planned-node-name collection/dedup ordering to prevent regressions.
+- Updated docs to reflect preflight cleanup semantics.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,200p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "_add_docker_node\(|addDocker\(" net-chaos-lab/src/chaoslab -S`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (5 tests, including new planned-node cleanup helper test).
+- dry-run smoke (`--mode dry-run --skip-scenario --skip-probes --no-dashboard`)
+  - PASS.
+
+### Failures / Open Questions
+- Root containernet runtime verification for this exact prompt’s cleanup behavior still requires user-side `sudo` run with interactive password.
+
+## Date: 2026-02-08 23:49:02 UTC
+
+### Prompt
+- add npm run script alias so command is `npm run chaos-lab`.
+
+### Actions
+- Added root script alias `chaos-lab` in `package.json` pointing to `bash net-chaos-lab/scripts/chaos-lab.sh`.
+- Kept existing `chaos:lab` script for backward compatibility.
+- Updated docs quick-start commands to use `npm run chaos-lab` as primary invocation.
+- Ran the new script command in dry-run mode to verify end-to-end execution under Node 24.
+
+### Files Touched
+- `package.json`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' package.json`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "chaos:lab|chaos-lab" README.md net-chaos-lab/README.md plan/tests.md -S`
+- `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - PASS.
+  - Chaos-lab dry-run initialized topology and emitted summary/artifact output.
+
+### Failures / Open Questions
+- None.
+
+### Follow-up Cleanup (2026-02-08 23:49:37 UTC)
+- Attempted to clean `net-chaos-lab/artifacts/` after dry-run verification.
+- Cleanup failed for several prior root-owned run directories (`Permission denied`), which is expected after `sudo`-executed containernet runs.
+
+## Date: 2026-02-08 23:52:40 UTC
+
+### Prompt
+- User reported: `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard passed.` failed with `main.py: error: unrecognized arguments: passed.`
+
+### Actions
+- Re-read required planning context files before work:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - tail of `plan/log.md`
+- Verified chaos-lab command wiring and argument forwarding path:
+  - `package.json` script `chaos-lab` -> `bash net-chaos-lab/scripts/chaos-lab.sh`
+  - `net-chaos-lab/scripts/chaos-lab.sh` forwards all args to `python -m chaoslab.main`
+  - `chaoslab.main` uses strict `argparse` and rejects unknown tokens.
+- Confirmed runtime state and executed the corrected command (without `passed.`).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,240p' package.json`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab.sh`
+- `sed -n '1,320p' net-chaos-lab/src/chaoslab/main.py`
+- `node -v`
+- `npm -v`
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `node -v` -> `v24.13.0`.
+- `npm -v` -> `11.6.2`.
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - PASS.
+  - Output: `Dry-run topology ready with 12 agents and 4 services.` and normal summary/artifact emission.
+
+### Failures / Open Questions
+- Failure cause from user command is confirmed: trailing token `passed.` is treated as an unexpected positional argument by `argparse`.
+- No code changes required for this prompt.
+
+## Date: 2026-02-09 00:03:15 UTC
+
+### Prompt
+- User requested: "alright proceed with implementation of the chaos lab."
+
+### Actions
+- Re-read required instruction/context files before implementation:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md` entries
+  - `plan/tests.md`
+  - `plan/branch/big-net-testing.md`
+- Audited current `net-chaos-lab` implementation and identified missing milestone: no automated matrix runner with regression gates.
+- Implemented matrix orchestration and gate evaluation:
+  - Added `net-chaos-lab/src/chaoslab/matrix.py` with:
+    - matrix config loading/validation (`load_matrix_config`)
+    - scenario/topology path resolution
+    - per-run metric gate evaluation (`evaluate_gates`)
+    - matrix summary writer (`write_matrix_summary`)
+  - Refactored `net-chaos-lab/src/chaoslab/main.py`:
+    - extracted single-run execution into `run_single(...)`
+    - added matrix mode via `--matrix <config>`
+    - added `--matrix-stop-on-fail`
+    - implemented per-run argument merging from matrix defaults/overrides
+    - added per-run gate reporting and matrix-level summary output
+- Added matrix configs:
+  - `net-chaos-lab/configs/matrix/direct-regression.yaml` (containernet-oriented multi-scenario regression with direct/relay metric gates)
+  - `net-chaos-lab/configs/matrix/dry-run-smoke.yaml` (fast headless matrix smoke validation)
+- Added npm scripts:
+  - `chaos-lab:matrix`
+  - `chaos-lab:matrix:smoke`
+- Updated docs and plan artifacts for the new matrix flow:
+  - `net-chaos-lab/README.md`
+  - `README.md`
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `plan/branch/big-net-testing.md`
+- Added unit tests for matrix functionality in `net-chaos-lab/tests/test_chaoslab.py`:
+  - matrix config path resolution test
+  - gate evaluation required/optional behavior test
+- Updated package/module exports:
+  - `net-chaos-lab/src/chaoslab/__init__.py` includes `matrix`.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/main.py`
+- `net-chaos-lab/src/chaoslab/matrix.py`
+- `net-chaos-lab/src/chaoslab/__init__.py`
+- `net-chaos-lab/configs/matrix/direct-regression.yaml`
+- `net-chaos-lab/configs/matrix/dry-run-smoke.yaml`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `package.json`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- Context review:
+  - `sed -n '1,240p' AGENTS.md`
+  - `sed -n '1,260p' plan/plan.md`
+  - `tail -n 260 plan/log.md`
+  - `sed -n '1,280p' plan/tests.md`
+  - `sed -n '1,260p' net-chaos-lab/README.md`
+  - `sed -n '1,260p' plan/branch/big-net-testing.md`
+- Code audit:
+  - `rg --files net-chaos-lab`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '320,1220p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/harness.py`
+  - `sed -n '1,340p' net-chaos-lab/src/chaoslab/metrics.py`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/scenario.py`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/config.py`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/main.py`
+  - `sed -n '1,340p' net-chaos-lab/src/chaoslab/dashboard.py`
+  - `sed -n '1,640p' net-chaos-lab/agent/probe.mjs`
+- Validation:
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `node -v`
+  - `npm -v`
+  - `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - `npm run chaos-lab:matrix:smoke`
+  - `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (7 tests).
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (2/2 matrix runs passed, matrix summary written).
+
+### Failures / Open Questions
+- Real containernet matrix execution with probe-based gates (`direct-regression.yaml`) still needs host-side privileged validation (`sudo` + containernet env) and threshold calibration from observed artifacts.
+
+### Follow-up Validation (2026-02-09 00:04:12 UTC)
+- Ran direct regression matrix command to validate failure handling + stop-on-fail flow in non-provisioned context:
+  - `npm run chaos-lab:matrix -- --matrix-stop-on-fail`
+- Result:
+  - Expected FAIL in this environment (`Containernet not available` without privileged/provisioned backend).
+  - Matrix behavior verified:
+    - captured failed run summary
+    - evaluated and reported gate failures
+    - honored `--matrix-stop-on-fail`
+    - wrote matrix summary artifact at `net-chaos-lab/artifacts/20260209T000405Z/matrix-summary.json`.
+
+### Follow-up Hardening (2026-02-09 00:05:39 UTC)
+- Tightened matrix gate parsing in `net-chaos-lab/src/chaoslab/matrix.py`:
+  - gate `value` is now strict numeric during config load (invalid values raise `MatrixError` instead of silently coercing to `0`).
+- Re-ran validation after hardening:
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (7 tests)
+
+### Follow-up Matrix Re-Run (2026-02-09 00:06:03 UTC)
+- Re-ran smoke matrix after strict gate numeric parsing hardening:
+  - `npm run chaos-lab:matrix:smoke`
+- Result: PASS (2/2 runs, matrix summary written at `net-chaos-lab/artifacts/20260209T000554Z/matrix-summary.json`).
+
+## Date: 2026-02-09 00:15:10 UTC
+
+### Prompt
+- User requested: "proceed"
+
+### Actions
+- Re-reviewed `plan/plan.md` and latest `plan/log.md` before starting this prompt’s implementation.
+- Implemented direct-link persistence/churn diagnostics in the probe pipeline:
+  - Updated `net-chaos-lab/agent/probe.mjs` to add post-convergence NetViz stability sampling:
+    - periodic snapshot collection of peer set + direct/relay connection presence
+    - computed stability metrics per probe:
+      - `stabilitySampleCount`
+      - `peerSetChangeCount`
+      - `directConnectionFlipCount`
+      - `relayConnectionFlipCount`
+      - `directConnectionSampleRate`
+      - `relayConnectionSampleRate`
+      - `stabilityAvgPeerCount`, `stabilityMinPeerCount`, `stabilityMaxPeerCount`
+- Wired new stability fields through harness normalization:
+  - Updated `net-chaos-lab/src/chaoslab/harness.py` with robust numeric coercion helpers and normalized stability keys.
+- Extended metrics aggregation summary:
+  - Updated `net-chaos-lab/src/chaoslab/metrics.py` to compute new run-level stability aggregates:
+    - `stability_probe_count`
+    - `avg_stability_sample_count`
+    - `avg_peer_set_change_count`
+    - `avg_direct_connection_flip_count`
+    - `avg_relay_connection_flip_count`
+    - `avg_direct_connection_sample_rate`
+    - `avg_relay_connection_sample_rate`
+    - `avg_stability_peer_count`
+- Expanded default direct-regression matrix config to include optional stability gates:
+  - Updated `net-chaos-lab/configs/matrix/direct-regression.yaml` with optional (`required: false`) thresholds for:
+    - `avg_direct_connection_sample_rate`
+    - `avg_peer_set_change_count`
+- Updated tests for new summary metrics:
+  - `net-chaos-lab/tests/test_chaoslab.py` now asserts stability aggregate values in metrics summary test.
+- Updated docs/plans to reflect stability diagnostics and gates:
+  - `net-chaos-lab/README.md`
+  - `README.md`
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `plan/branch/big-net-testing.md`
+
+### Files Touched
+- `net-chaos-lab/agent/probe.mjs`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/metrics.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/configs/matrix/direct-regression.yaml`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,240p' plan/plan.md`
+- `tail -n 200 plan/log.md`
+- `sed -n '1,260p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '260,620p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '1,280p' net-chaos-lab/src/chaoslab/metrics.py`
+- `sed -n '1,280p' net-chaos-lab/src/chaoslab/harness.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `npm run chaos-lab:matrix:smoke`
+- `npm run chaos-lab:matrix -- --matrix-stop-on-fail`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (7 tests).
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (2/2 runs, new stability fields present in summary with zero defaults in no-probe mode).
+- `npm run chaos-lab:matrix -- --matrix-stop-on-fail`
+  - Expected FAIL in this non-provisioned/non-root environment (`Containernet not available`).
+  - Matrix gate output now includes optional stability gate evaluation as designed.
+
+### Failures / Open Questions
+- Real probe-driven stability values still require privileged containernet matrix execution on host to calibrate thresholds from live data.
+
+## Date: 2026-02-09 00:30:52 UTC
+
+### Prompt
+- User requested: "3,4 and 5 all need to be wired up to npm run like the other command maybe with modifies like npm run chaos-lab:full"
+
+### Actions
+- Re-reviewed required context before edits:
+  - `plan/plan.md`
+  - latest `plan/log.md` entries
+- Added npm shortcuts for the previously manual commands:
+  - `chaos-lab:full` (root containernet preflight run with `sudo -E env "PATH=$PATH"` + containernet venv python)
+  - `chaos-lab:matrix:full` (root matrix regression run using direct-regression config)
+  - `chaos-lab:cleanup` (stale container cleanup for `mn.*` docker containers)
+- Updated docs to expose new command names in quick-start sections and useful command lists.
+- Updated `plan/tests.md` execution-gate docs to include the new npm shortcuts.
+
+### Files Touched
+- `package.json`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `cat package.json`
+- `rg -n "chaos-lab" README.md net-chaos-lab/README.md plan/tests.md`
+- `sed -n '1,220p' net-chaos-lab/README.md`
+- `sed -n '280,380p' README.md`
+- `sed -n '1,120p' plan/tests.md`
+- `node -v`
+- `npm -v`
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `npm run chaos-lab:matrix:smoke`
+- `npm run | rg "chaos-lab|chaos:lab"`
+- `npm pkg get scripts."chaos-lab:cleanup" scripts."chaos-lab:full" scripts."chaos-lab:matrix:full"`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `node -v` -> `v24.13.0`.
+- `npm -v` -> `11.6.2`.
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - PASS.
+  - Dry-run topology came up and wrote summary/artifacts.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS.
+  - Matrix ran 2/2 dry-run scenarios with gate pass and wrote matrix summary.
+- `npm pkg get ...`
+  - PASS.
+  - Confirmed new scripts are present with expected command bodies.
+
+### Failures / Open Questions
+- Did not execute `npm run chaos-lab:full`, `npm run chaos-lab:matrix:full`, or `npm run chaos-lab:cleanup` in this non-interactive session because those scripts require `sudo` password entry.
+- Expected behavior when run in your interactive shell is password prompt + execution of the original manual commands.
+
+## Date: 2026-02-09 00:44:15 UTC
+
+### Prompt
+- User requested: "we need a way to visualize the chaos-lab run through netviz... when I run the full matrix run, it should launch the netviz demo with the right defaults so I can watch the run play out through the interface."
+
+### Actions
+- Re-reviewed required context before implementation:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Implemented chaos-lab -> NetViz live visualization pipeline:
+  - Added runtime topology snapshot export on chaos-lab side:
+    - `ChaosTopology.get_state_snapshot()` in `net-chaos-lab/src/chaoslab/topology.py`.
+    - Runner now writes `chaos-topology.json` per run and updates it as scenario stages execute.
+  - Extended dashboard API and browser compatibility:
+    - Added `/api/topology` in `net-chaos-lab/src/chaoslab/dashboard.py`.
+    - Added CORS headers (`Access-Control-Allow-Origin: *`) + `OPTIONS` handling for cross-origin NetViz fetches.
+  - Fixed dashboard lifecycle for matrix runs:
+    - Refactored run startup to create a dashboard server object and cleanly `shutdown()/server_close()` after each run.
+    - Removed forced matrix dashboard-disable behavior; matrix runs can now expose live dashboard APIs run-by-run.
+- Implemented NetViz chaos overlay UI + polling:
+  - Added Chaos Lab panel in `demos/netviz/index.html`.
+  - Added `chaosApi` query-param support in `demos/netviz/src/main.js`.
+  - Added periodic polling (`/api/summary`, `/api/events`, `/api/topology`) and live status rendering in the console panel.
+  - Added chaos stage transition logging into NetViz log stream (`[Chaos] stage ...`).
+- Eliminated HTTPS mixed-content issues for local dev:
+  - Added Vite proxy in `demos/netviz/vite.config.js`:
+    - `/chaos-api/*` -> configurable `VITE_CHAOS_API_PROXY_TARGET` (default `http://127.0.0.1:8866`).
+  - NetViz watcher URL now defaults to `chaosApi=/chaos-api` for same-origin HTTPS requests.
+- Added full-matrix watcher bootstrap script:
+  - New script `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`.
+  - Behavior:
+    - starts NetViz dev server with chaos proxy target env,
+    - prints pre-configured watch URL,
+    - executes privileged matrix run,
+    - cleans up NetViz process on exit.
+  - Updated npm script:
+    - `chaos-lab:matrix:full` now calls the new watcher bootstrap script.
+- Documentation and planning updates:
+  - `README.md`, `net-chaos-lab/README.md`, `demos/netviz/README.md` updated for chaos overlay usage and matrix watcher behavior.
+  - `plan/tests.md` updated with chaos-overlay/proxy gates.
+  - `plan/plan.md` and `plan/branch/big-net-testing.md` updated with status and command references.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/dashboard.py`
+- `net-chaos-lab/src/chaoslab/main.py`
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `demos/netviz/index.html`
+- `demos/netviz/src/main.js`
+- `demos/netviz/vite.config.js`
+- `demos/netviz/README.md`
+- `package.json`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- Context + code audit:
+  - `sed -n '1,260p' AGENTS.md`
+  - `sed -n '1,260p' plan/plan.md`
+  - `tail -n 260 plan/log.md`
+  - `rg --files net-chaos-lab/src/chaoslab demos/netviz/src | sort`
+  - `sed -n ... net-chaos-lab/src/chaoslab/main.py`
+  - `sed -n ... net-chaos-lab/src/chaoslab/dashboard.py`
+  - `sed -n ... net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n ... demos/netviz/src/main.js`
+  - `sed -n ... demos/netviz/index.html`
+  - `sed -n ... demos/netviz/vite.config.js`
+  - `sed -n ... net-chaos-lab/tests/test_chaoslab.py`
+- Validation:
+  - `node -v`
+  - `npm -v`
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `npm --prefix demos/netviz run build`
+  - `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - `npm run chaos-lab:matrix:smoke`
+  - `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - `npm pkg get scripts."chaos-lab:matrix:full"`
+  - `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (8 tests).
+- `npm --prefix demos/netviz run build` -> PASS.
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` -> PASS.
+- `npm run chaos-lab:matrix:smoke` -> PASS.
+  - Confirmed dashboard now starts cleanly on each matrix run (`[dashboard] listening...`) without port-collision failure.
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh` -> PASS.
+- `npm pkg get scripts."chaos-lab:matrix:full"` -> PASS (`bash net-chaos-lab/scripts/chaos-lab-matrix-full.sh`).
+
+### Failures / Open Questions
+- Did not execute the full privileged watcher flow (`npm run chaos-lab:matrix:full`) in this non-interactive session because it requires `sudo` password entry.
+- `npm --prefix demos/netviz run build` updated generated `docs/netviz` artifacts in the working tree; this was validation-driven output.

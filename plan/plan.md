@@ -21,10 +21,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - cb time sync anchored to the first joiner.
 - Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
 - GPU hub scaffolding and warm delta provider hook.
+- Network chaos-lab scaffolding (`net-chaos-lab/`) with topology config, scenario runner, metrics dashboard, and probe harness.
+- Net chaos-lab fail-fast containernet preflight checks (host tooling + Docker daemon) and service health checks (PID/port verification).
+- Net chaos-lab matrix runner with per-scenario metric gates and matrix summary artifacts (`--matrix` + `configs/matrix/direct-regression.yaml`).
+- Net chaos-lab probe stability diagnostics (post-convergence churn/change sampling for direct-vs-relay persistence metrics).
+- NetViz chaos overlay integration: live chaos-lab summary/event/topology feed in NetViz (`?chaosApi=...`) and matrix-full watcher bootstrap (`npm run chaos-lab:matrix:full`).
 
 ### TODO:
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
 - Improve relay scaling: drop relay connection after hitting target peers, rejoin relay only to assist new WebRTC dials, then drop again.
+- Execute and validate full net-chaos-lab containernet matrix runs in a properly provisioned host (docker + mininet + containernet), then calibrate gate thresholds from observed data.
 - Add scoped + sharded Yjs update modes so state sync can be workload-specific instead of global.
 - Validate time sync anchor behavior after reconnects.
 - Finish ComputeManager scheduling + GPU hub runtime integration.

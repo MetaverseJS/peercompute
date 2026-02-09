@@ -6,6 +6,7 @@ import { ensureDevHttpsCert } from '../../scripts/https.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
 const docsRoot = path.resolve(__dirname, '../../docs');
+const chaosApiProxyTarget = process.env.VITE_CHAOS_API_PROXY_TARGET || 'http://127.0.0.1:8866';
 
 export default defineConfig(({ command }) => ({
   root: '.',
@@ -13,6 +14,14 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5182,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,
+    proxy: {
+      '/chaos-api': {
+        target: chaosApiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        rewrite: (pathValue) => pathValue.replace(/^\/chaos-api/, ''),
+      }
+    },
     fs: {
       allow: [__dirname, peercomputeRoot]
     }

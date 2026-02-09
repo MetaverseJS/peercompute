@@ -1,0 +1,9 @@
+name: direct-diagnostics
+settle_seconds: 25
+stages:
+  - at_seconds: 15
+    type: bandwidth_shift
+    link: lan_b:core
+    bw_mbit: 12
+    delay_ms: 35
+    loss_pct: 0.5

@@ -296,6 +296,64 @@ export async function stepWebGPU(input) {
 - **Turn-based**: event-driven, reliable events: join/turn/commit
 - **Sandbox**: low Hz, reliable events: place/delete/join/commit
 
+## Network Chaos Lab
+`net-chaos-lab/` includes a Containernet-based internet simulator for stress-testing libp2p behavior across:
+- dual-stack and single-stack IP modes
+- multiple NAT segments
+- in-lab relay/TURN/DNS/HTTPS services
+- 10-50 browser agents
+- partitions, bandwidth shifts, and churn events
+- direct-vs-relay diagnostics (announced `/webrtc` addresses, connection type ratios, post-convergence churn/flip stability metrics, ICE candidate distributions)
+
+This is optional infrastructure for heavy-duty protocol-level testing of PeerCompute itself. It is not required to use PeerCompute in an app, run normal demos, or use the standard dev workflow.
+
+### Chaos-Lab Dependencies
+- `Node.js` 24 LTS + `npm` (for demo/probe tooling).
+- `Python` 3.10+ with `pip` (for chaos-lab runner modules).
+- `Docker Engine` running locally (required for agent/service containers).
+- `Mininet` + `Containernet` installed (required for real topology mode).
+- Linux networking tools available: `iproute2`, `iptables`, and `tc`.
+
+Quick checks:
+
+```bash
+node --version
+npm --version
+python3 --version
+docker --version
+mn --version
+python3 -c "from mininet.net import Containernet; print('containernet ok')"
+```
+
+For dry-run only (no real containerized topology), Docker/Mininet/Containernet are not required.
+
+Quick start:
+
+```bash
+python3 -m pip install -r net-chaos-lab/requirements.txt
+npm run chaos-lab
+npm run chaos-lab:full
+npm run chaos-lab:matrix
+npm run chaos-lab:matrix:full
+npm run chaos-lab:matrix:smoke
+npm run chaos-lab:cleanup
+```
+
+`npm run chaos-lab:matrix:full` launches a NetViz watcher automatically and prints a URL preloaded with chaos-lab visualization defaults so you can watch matrix behavior live.
+
+If running containernet mode with `sudo`, preserve your Node 24 PATH:
+
+```bash
+sudo -E env "PATH=$PATH" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python \
+  bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet
+```
+
+See `net-chaos-lab/README.md` for topology/scenario config details and dashboard usage.
+Default matrix config is `net-chaos-lab/configs/matrix/direct-regression.yaml`.
+Containernet mode performs `mn -c` cleanup at startup (when run as root) to avoid stale Mininet interface collisions.
+Containernet mode preflights all planned docker node names and removes stale `mn.<node>` containers before node creation to avoid name conflicts after failed runs.
+Default chaos-lab topology uses `node:24-bookworm` for core services; DNS/HTTPS/TURN binaries are installed in those containers during service bootstrap.
+
 ## Tests
 ```bash
 npm run test:unit

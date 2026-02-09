@@ -1,0 +1,12 @@
+name: ipv4-only-stability
+settle_seconds: 10
+stages:
+  - at_seconds: 0
+    type: ip_mode
+    mode: ipv4-only
+  - at_seconds: 20
+    type: bandwidth_shift
+    link: lan_c:core
+    bw_mbit: 8
+    delay_ms: 40
+    loss_pct: 1

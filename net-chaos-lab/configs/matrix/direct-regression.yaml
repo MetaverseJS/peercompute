@@ -1,0 +1,81 @@
+name: direct-regression
+defaults:
+  mode: containernet
+  topology: net-chaos-lab/configs/topology.default.yaml
+  probe_each_stage: true
+  probe_agents: 8
+  probe_parallelism: 4
+  min_peers: 2
+  wait_ms: 30000
+  media: false
+  skip_probes: false
+  skip_scenario: false
+  time_scale: 1.0
+
+runs:
+  - id: direct-diagnostics
+    scenario: net-chaos-lab/configs/scenarios/direct-diagnostics.yaml
+    agents: 12
+    gates:
+      - metric: probe_total
+        op: ">="
+        value: 2
+        description: Collect at least initial and final probe checkpoints.
+      - metric: connection_success_rate
+        op: ">="
+        value: 0.70
+      - metric: direct_connection_rate
+        op: ">="
+        value: 0.40
+      - metric: relay_webrtc_connection_rate
+        op: "<="
+        value: 0.85
+      - metric: avg_announced_direct_webrtc_addrs
+        op: ">="
+        value: 0.50
+      - metric: avg_direct_connection_sample_rate
+        op: ">="
+        value: 0.35
+        required: false
+        description: Optional stability signal; tune higher after collecting baseline data.
+      - metric: avg_peer_set_change_count
+        op: "<="
+        value: 6
+        required: false
+        description: Optional churn signal; lower is steadier.
+
+  - id: ipv4-only
+    scenario: net-chaos-lab/configs/scenarios/ipv4-only.yaml
+    agents: 12
+    gates:
+      - metric: probe_total
+        op: ">="
+        value: 2
+      - metric: connection_success_rate
+        op: ">="
+        value: 0.60
+      - metric: direct_connection_rate
+        op: ">="
+        value: 0.25
+      - metric: avg_direct_connection_sample_rate
+        op: ">="
+        value: 0.20
+        required: false
+
+  - id: ipv6-only
+    scenario: net-chaos-lab/configs/scenarios/ipv6-only.yaml
+    agents: 12
+    gates:
+      - metric: probe_total
+        op: ">="
+        value: 2
+      - metric: connection_success_rate
+        op: ">="
+        value: 0.60
+      - metric: direct_connection_rate
+        op: ">="
+        value: 0.25
+      - metric: avg_direct_connection_sample_rate
+        op: ">="
+        value: 0.20
+        required: false
