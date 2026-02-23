@@ -1,0 +1,220 @@
+{
+  "run_id": "20260209T004338Z-direct-diagnostics",
+  "updated_at": "2026-02-09T00:43:38.696651+00:00",
+  "topology": {
+    "name": "peercompute-chaos-lab",
+    "actual_mode": "dry-run",
+    "requested_mode": "dry-run",
+    "started": true,
+    "ip_mode": "dual-stack",
+    "core_switch": "core",
+    "agent_total": 16,
+    "agent_online": 16,
+    "service_total": 4,
+    "segment_total": 3,
+    "partitioned_segments": [],
+    "segments": [
+      {
+        "id": "lan_a",
+        "ipv4_subnet": "10.40.10.0/24",
+        "ipv6_subnet": "fd42:40:10::/64",
+        "gateway4": "10.40.10.1",
+        "gateway6": "fd42:40:10::1",
+        "partitioned": false,
+        "uplink_enabled": true,
+        "link_profile": {
+          "bw_mbit": 50.0,
+          "delay_ms": 12.0,
+          "loss_pct": 0.0
+        },
+        "nat": {
+          "enabled": true,
+          "type": "full-cone",
+          "uplink_ipv4": "10.40.1.10/24",
+          "uplink_ipv6": "fd42:40:1:10::1/64"
+        }
+      },
+      {
+        "id": "lan_b",
+        "ipv4_subnet": "10.40.20.0/24",
+        "ipv6_subnet": "fd42:40:20::/64",
+        "gateway4": "10.40.20.1",
+        "gateway6": "fd42:40:20::1",
+        "partitioned": false,
+        "uplink_enabled": true,
+        "link_profile": {
+          "bw_mbit": 25.0,
+          "delay_ms": 20.0,
+          "loss_pct": 0.5
+        },
+        "nat": {
+          "enabled": true,
+          "type": "symmetric",
+          "uplink_ipv4": "10.40.1.20/24",
+          "uplink_ipv6": "fd42:40:1:20::1/64"
+        }
+      },
+      {
+        "id": "lan_c",
+        "ipv4_subnet": "10.40.30.0/24",
+        "ipv6_subnet": "fd42:40:30::/64",
+        "gateway4": "10.40.30.1",
+        "gateway6": "fd42:40:30::1",
+        "partitioned": false,
+        "uplink_enabled": true,
+        "link_profile": {
+          "bw_mbit": 15.0,
+          "delay_ms": 30.0,
+          "loss_pct": 1.0
+        },
+        "nat": {
+          "enabled": true,
+          "type": "port-restricted",
+          "uplink_ipv4": "10.40.1.30/24",
+          "uplink_ipv6": "fd42:40:1:30::1/64"
+        }
+      }
+    ],
+    "agents": [
+      {
+        "name": "agent-01",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.2",
+        "ipv6": "fd42:40:10::2",
+        "enabled": true
+      },
+      {
+        "name": "agent-02",
+        "segment_id": "lan_b",
+        "ipv4": "10.40.20.2",
+        "ipv6": "fd42:40:20::2",
+        "enabled": true
+      },
+      {
+        "name": "agent-03",
+        "segment_id": "lan_c",
+        "ipv4": "10.40.30.2",
+        "ipv6": "fd42:40:30::2",
+        "enabled": true
+      },
+      {
+        "name": "agent-04",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.3",
+        "ipv6": "fd42:40:10::3",
+        "enabled": true
+      },
+      {
+        "name": "agent-05",
+        "segment_id": "lan_b",
+        "ipv4": "10.40.20.3",
+        "ipv6": "fd42:40:20::3",
+        "enabled": true
+      },
+      {
+        "name": "agent-06",
+        "segment_id": "lan_c",
+        "ipv4": "10.40.30.3",
+        "ipv6": "fd42:40:30::3",
+        "enabled": true
+      },
+      {
+        "name": "agent-07",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.4",
+        "ipv6": "fd42:40:10::4",
+        "enabled": true
+      },
+      {
+        "name": "agent-08",
+        "segment_id": "lan_b",
+        "ipv4": "10.40.20.4",
+        "ipv6": "fd42:40:20::4",
+        "enabled": true
+      },
+      {
+        "name": "agent-09",
+        "segment_id": "lan_c",
+        "ipv4": "10.40.30.4",
+        "ipv6": "fd42:40:30::4",
+        "enabled": true
+      },
+      {
+        "name": "agent-10",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.5",
+        "ipv6": "fd42:40:10::5",
+        "enabled": true
+      },
+      {
+        "name": "agent-11",
+        "segment_id": "lan_b",
+        "ipv4": "10.40.20.5",
+        "ipv6": "fd42:40:20::5",
+        "enabled": true
+      },
+      {
+        "name": "agent-12",
+        "segment_id": "lan_c",
+        "ipv4": "10.40.30.5",
+        "ipv6": "fd42:40:30::5",
+        "enabled": true
+      },
+      {
+        "name": "agent-13",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.6",
+        "ipv6": "fd42:40:10::6",
+        "enabled": true
+      },
+      {
+        "name": "agent-14",
+        "segment_id": "lan_b",
+        "ipv4": "10.40.20.6",
+        "ipv6": "fd42:40:20::6",
+        "enabled": true
+      },
+      {
+        "name": "agent-15",
+        "segment_id": "lan_c",
+        "ipv4": "10.40.30.6",
+        "ipv6": "fd42:40:30::6",
+        "enabled": true
+      },
+      {
+        "name": "agent-16",
+        "segment_id": "lan_a",
+        "ipv4": "10.40.10.7",
+        "ipv6": "fd42:40:10::7",
+        "enabled": true
+      }
+    ],
+    "services": [
+      {
+        "name": "dns",
+        "host": "dns.peercompute.test",
+        "ipv4": "10.40.254.2",
+        "ipv6": "fd42:40:254::2"
+      },
+      {
+        "name": "https",
+        "host": "demos.peercompute.test",
+        "ipv4": "10.40.254.10",
+        "ipv6": "fd42:40:254::10"
+      },
+      {
+        "name": "relay",
+        "host": "relay.peercompute.test",
+        "ipv4": "10.40.254.20",
+        "ipv6": "fd42:40:254::20"
+      },
+      {
+        "name": "turn",
+        "host": "turn.peercompute.test",
+        "ipv4": "10.40.254.30",
+        "ipv6": "fd42:40:254::30"
+      }
+    ]
+  },
+  "latest_stage": null
+}

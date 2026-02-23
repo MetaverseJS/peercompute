@@ -1,0 +1,96 @@
+{
+  "matrix_name": "direct-regression",
+  "matrix_config": "/home/cos/projects/peercompute/net-chaos-lab/configs/matrix/direct-regression.yaml",
+  "matrix_run_id": "20260209T000405Z",
+  "run_total": 1,
+  "run_passed": 0,
+  "run_failed": 1,
+  "all_passed": false,
+  "results": [
+    {
+      "id": "direct-diagnostics",
+      "run_id": "20260209T000405Z-direct-diagnostics",
+      "scenario": "/home/cos/projects/peercompute/net-chaos-lab/configs/scenarios/direct-diagnostics.yaml",
+      "topology": "/home/cos/projects/peercompute/net-chaos-lab/configs/topology.default.yaml",
+      "exit_code": 1,
+      "gates_passed": false,
+      "run_passed": false,
+      "gates": [
+        {
+          "metric": "probe_total",
+          "op": ">=",
+          "expected": 2.0,
+          "actual": 0.0,
+          "required": true,
+          "passed": false,
+          "description": "Collect at least initial and final probe checkpoints.",
+          "reason": ""
+        },
+        {
+          "metric": "connection_success_rate",
+          "op": ">=",
+          "expected": 0.7,
+          "actual": 0.0,
+          "required": true,
+          "passed": false,
+          "description": "",
+          "reason": ""
+        },
+        {
+          "metric": "direct_connection_rate",
+          "op": ">=",
+          "expected": 0.4,
+          "actual": 0.0,
+          "required": true,
+          "passed": false,
+          "description": "",
+          "reason": ""
+        },
+        {
+          "metric": "relay_webrtc_connection_rate",
+          "op": "<=",
+          "expected": 0.85,
+          "actual": 0.0,
+          "required": true,
+          "passed": true,
+          "description": "",
+          "reason": ""
+        },
+        {
+          "metric": "avg_announced_direct_webrtc_addrs",
+          "op": ">=",
+          "expected": 0.5,
+          "actual": 0.0,
+          "required": true,
+          "passed": false,
+          "description": "",
+          "reason": ""
+        }
+      ],
+      "summary": {
+        "run_id": "20260209T000405Z-direct-diagnostics",
+        "updated_at": "2026-02-09T00:04:05.291836+00:00",
+        "probe_total": 0,
+        "connection_success_rate": 0.0,
+        "media_success_rate": 0.0,
+        "convergence_avg_ms": 0.0,
+        "convergence_p95_ms": 0.0,
+        "scenario_event_count": 0,
+        "direct_announce_rate": 0.0,
+        "direct_connection_rate": 0.0,
+        "relay_webrtc_connection_rate": 0.0,
+        "avg_direct_peer_count": 0.0,
+        "avg_relay_peer_count": 0.0,
+        "avg_announced_direct_webrtc_addrs": 0.0,
+        "rtc_probe_count": 0,
+        "rtc_host_only_local_rate": 0.0,
+        "rtc_local_candidate_types": {},
+        "rtc_remote_candidate_types": {}
+      },
+      "artifacts_dir": "/home/cos/projects/peercompute/net-chaos-lab/artifacts/20260209T000405Z/runs/20260209T000405Z-direct-diagnostics",
+      "summary_path": "/home/cos/projects/peercompute/net-chaos-lab/artifacts/20260209T000405Z/runs/20260209T000405Z-direct-diagnostics/metrics-summary.json",
+      "events_path": "/home/cos/projects/peercompute/net-chaos-lab/artifacts/20260209T000405Z/runs/20260209T000405Z-direct-diagnostics/metrics-events.jsonl"
+    }
+  ],
+  "updated_at": "2026-02-09T00:04:05.292246+00:00"
+}

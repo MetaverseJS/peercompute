@@ -55,21 +55,70 @@ const toAddrString = (addr) => {
 
 const isRelayAddr = (addr) => toAddrString(addr).includes('/p2p-circuit');
 const isWebRTCAddr = (addr) => toAddrString(addr).includes('/webrtc');
+const isRelayOnlyAddr = (addr) => isRelayAddr(addr) && !isWebRTCAddr(addr);
+const isRelayWebRTCAddr = (addr) => isRelayAddr(addr) && isWebRTCAddr(addr);
+const isTrulyDirectAddr = (addr) => !isRelayAddr(addr);
+const isDirectAddr = (addr) => isTrulyDirectAddr(addr);
+const getConnectionKind = (addr) => {
+  if (isRelayWebRTCAddr(addr)) return 'relay-webrtc';
+  if (isWebRTCAddr(addr)) return 'webrtc';
+  if (isRelayAddr(addr)) return 'relay';
+  return 'direct';
+};
+const getDialKind = (addr) => {
+  if (isWebRTCAddr(addr) && isRelayAddr(addr)) return 'webrtc-relay';
+  if (isWebRTCAddr(addr)) return 'webrtc-direct';
+  if (isRelayAddr(addr)) return 'relay';
+  return 'direct';
+};
+const formatDialTargets = (targets) => targets.map((addr) => {
+  const addrStr = toAddrString(addr);
+  return `${getDialKind(addrStr)}:${addrStr}`;
+});
+const isConnectionOpen = (conn) => {
+  if (!conn) return false;
+  if (typeof conn.status === 'string') return conn.status === 'open';
+  const closed = conn?.stat?.timeline?.close || conn?.timeline?.close;
+  if (closed) return false;
+  return true;
+};
+const formatCloseReason = (err) => {
+  if (!err) return 'unknown';
+  const message = typeof err === 'string' ? err : err?.message || err?.toString?.() || '';
+  if (!message) return 'unknown';
+  if (message.toLowerCase().includes('timeout')) return `timeout (${message})`;
+  return message;
+};
+const parseIceCandidate = (candidate) => {
+  if (typeof candidate !== 'string') return null;
+  const match = candidate.match(/candidate:\S+\s+\d+\s+(\w+)\s+\d+\s+([^\s]+)\s+(\d+)\s+typ\s+(\w+)/i);
+  if (!match) return { type: 'unknown', protocol: '', address: '' };
+  return {
+    protocol: match[1].toLowerCase(),
+    address: `${match[2]}:${match[3]}`,
+    type: match[4].toLowerCase()
+  };
+};
 
-const scoreDialTarget = (addr) => {
+const scoreDialTarget = (addr, preferIpv6) => {
   const value = toAddrString(addr);
   const hasRelay = value.includes('/p2p-circuit');
   const hasWebRTC = value.includes('/webrtc');
-  if (hasWebRTC && !hasRelay) return 3;
-  if (hasWebRTC) return 2;
-  if (!hasRelay) return 1;
-  return 0;
+  const baseScore = hasWebRTC && !hasRelay
+    ? 3
+    : hasWebRTC
+      ? 2
+      : !hasRelay
+        ? 1
+        : 0;
+  const ipv6Bonus = preferIpv6 && value.includes('/ip6/') ? 0.1 : 0;
+  return baseScore + ipv6Bonus;
 };
 
-const orderDialTargets = (targets) => {
+const orderDialTargets = (targets, preferIpv6 = false) => {
   const scored = targets.map((addr, index) => ({
     addr,
-    score: scoreDialTarget(addr),
+    score: scoreDialTarget(addr, preferIpv6),
     index
   }));
   scored.sort((a, b) => (b.score - a.score) || (a.index - b.index));
@@ -246,6 +295,15 @@ const buildScopedTopic = (prefix, topologyId, roomId, suffix) => {
   return `${scope}.${suffix}`;
 };
 
+const normalizeTopicList = (input) => {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [input];
+  const normalized = list
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+};
+
 
 export class NetworkManager {
   constructor(config = {}) {
@@ -313,11 +371,13 @@ export class NetworkManager {
     const scopedDirectTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'direct');
     const scopedPresenceTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'presence');
     const discoveryTopic = config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub';
+    const additionalPubsubTopics = normalizeTopicList(config.additionalPubsubTopics);
     const expandedGossipsubOptions = expandScoreParamTopics(gossipsubOptions, [
       config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
       config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
-      discoveryTopic
+      discoveryTopic,
+      ...additionalPubsubTopics
     ]);
 
     const defaults = {
@@ -328,6 +388,7 @@ export class NetworkManager {
       pubsubTopic: config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       directTopic: config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
       presenceTopic: config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
+      additionalPubsubTopics,
       discoveryTopic,
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
@@ -390,6 +451,9 @@ export class NetworkManager {
     this.config = {
       ...defaults,
       ...definedConfig,
+      additionalPubsubTopics: normalizeTopicList(
+        definedConfig.additionalPubsubTopics ?? defaults.additionalPubsubTopics
+      ),
       bootstrapPeers: normalizedBootstrapPeers,
       allowLocalDial,
       webrtc: webrtcConfig
@@ -406,6 +470,10 @@ export class NetworkManager {
     this.publishErrorAt = new Map();
     this.pubsubStreamErrorAt = new Map();
     this.lastBootstrapDialAt = 0;
+    this.isolationReconnectTimer = null;
+    this.lastWebrtcAnnounceWarnAt = 0;
+    this.relayTransport = null;
+    this.relayReservationPeers = new Set();
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -444,6 +512,7 @@ export class NetworkManager {
       ? config.onConnectionFailure
       : null;
     this.messageHandlers = [];
+    this.additionalPubsubTopics = new Set(this.config.additionalPubsubTopics || []);
     this.scheduler = null;
     this.schedulerTimer = null;
     this.schedulerEnabled = config.enableScheduler || false;
@@ -460,6 +529,7 @@ export class NetworkManager {
       this.config.directTopic,
       this.config.presenceTopic
     ]);
+    this.additionalPubsubTopics.forEach((topic) => this.allowedTopics.add(topic));
     // Phase 5: Add directory topic to allowed topics
     if (this.config.enablePeerDirectory) {
       this.allowedTopics.add(this.config.directoryTopic);
@@ -647,6 +717,8 @@ export class NetworkManager {
     const webRtcTransport = Object.keys(rtcConfiguration).length > 0
       ? webRTC({ rtcConfiguration })
       : webRTC();
+    const relayTransport = circuitRelayTransport();
+    this.relayTransport = relayTransport;
     const privateKey = useGossipsub ? await generateKeyPair('Ed25519') : null;
 
     const connectionManagerConfig = {
@@ -679,7 +751,7 @@ export class NetworkManager {
         transports: [
           webSockets(),
           webRtcTransport,
-          circuitRelayTransport()
+          relayTransport
         ],
         connectionEncrypters: [noise(), plaintext()],
         streamMuxers: [yamux()],
@@ -721,6 +793,7 @@ export class NetworkManager {
 
     this._wireLibp2pEvents();
     this._patchGossipsubOutboundStreams();
+    this._refreshRelayTransport();
     return this.libp2p;
   }
 
@@ -741,6 +814,7 @@ export class NetworkManager {
       debugWarn('[NetworkManager] Libp2p start failed', err?.message || err);
       throw err;
     }
+    this._refreshRelayTransport();
     this.peerId = this.libp2p.peerId.toString();
     if (!this.joinedAt) {
       this.joinedAt = Date.now();
@@ -767,10 +841,16 @@ export class NetworkManager {
     subscribeTopic(this.config.pubsubTopic);
     subscribeTopic(this.config.directTopic);
     subscribeTopic(this.config.presenceTopic);
+    this.additionalPubsubTopics.forEach((topic) => subscribeTopic(topic));
     this._syncShardSubscriptions(this.topologyController?.getNeighborShardIds?.() || []);
     this._recordPubsubTx(0);
 
     await this._dialBootstrapPeers();
+    await this._reserveBootstrapRelayAddrs();
+    await this._logLocalAnnounceAddrs('post-bootstrap');
+    setTimeout(() => {
+      this._logLocalAnnounceAddrs('post-bootstrap+2s').catch(() => {});
+    }, 2000);
 
     this._startPresence();
     this._logPubsubStatus('connected');
@@ -784,15 +864,43 @@ export class NetworkManager {
     this._startTopologyController();
   }
 
+  _refreshRelayTransport() {
+    const transportManager = this.libp2p?.components?.transportManager;
+    if (!transportManager?.getTransports) return;
+    const rawTransports = transportManager.getTransports();
+    const transportList = Array.isArray(rawTransports)
+      ? rawTransports
+      : rawTransports?.values
+        ? Array.from(rawTransports.values())
+        : [];
+    const normalized = transportList
+      .map((entry) => entry?.transport || entry)
+      .filter(Boolean);
+    const relayTransport = normalized.find((transport) => {
+      if (transport?.reservationStore) return true;
+      if (transport?.[Symbol.toStringTag] === '@libp2p/circuit-relay-v2-transport') return true;
+      return false;
+    });
+    if (relayTransport) {
+      this.relayTransport = relayTransport;
+    }
+  }
+
   async redialBootstrapPeers() {
     if (!this.libp2p) return;
     await this._dialBootstrapPeers();
+    await this._reserveBootstrapRelayAddrs();
+    await this._logLocalAnnounceAddrs('redial-bootstrap');
   }
 
   async disconnect() {
     this.isConnected = false;
     this._stopScheduler();
     this._clearPresenceTimer();
+    if (this.isolationReconnectTimer) {
+      clearTimeout(this.isolationReconnectTimer);
+      this.isolationReconnectTimer = null;
+    }
     this._stopTelemetrySampler();
     this._stopTopologyController();
 
@@ -1068,14 +1176,6 @@ export class NetworkManager {
       debugWarn('[NetworkManager] Pubsub stream error', peerId, message);
     }
     this._dropPubsubPeer(peerId);
-    if (typeof this.libp2p?.hangUp === 'function') {
-      try {
-        const target = peerIdFromString(peerId);
-        this.libp2p.hangUp(target).catch(() => {});
-      } catch (_) {
-        // ignore invalid peer ids
-      }
-    }
   }
 
   _emitConnectionFailure(details = {}) {
@@ -1153,6 +1253,14 @@ export class NetworkManager {
       const conn = evt.detail;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) return;
+      const remoteAddr = toAddrString(conn?.remoteAddr);
+      const kind = getConnectionKind(remoteAddr);
+      const prevKind = this.peers.get(peerId)?.via || null;
+      if (prevKind && ['relay', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
+        console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
+      } else {
+        console.info('[NetworkManager] Connection open', peerId, kind, remoteAddr);
+      }
       const via = this._getPreferredConnectionType(peerId);
       if (via) {
         this._touchPeer(peerId, { via });
@@ -1165,6 +1273,8 @@ export class NetworkManager {
       const conn = evt.detail;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) return;
+      const remoteAddr = toAddrString(conn?.remoteAddr);
+      const kind = getConnectionKind(remoteAddr);
       const via = this._getPreferredConnectionType(peerId);
       if (via) {
         this._touchPeer(peerId, { via });
@@ -1184,10 +1294,13 @@ export class NetworkManager {
           error: closeError
         });
       }
+      const remaining = this._getConnectionsForPeer(peerId).filter(isConnectionOpen).length;
+      console.info('[NetworkManager] Connection closed', peerId, kind, remoteAddr, 'reason:', formatCloseReason(closeError), 'remaining:', remaining);
       const active = this._getConnectionsForPeer(peerId).filter((entry) => entry?.status === 'open');
       if (active.length === 0) {
         this._dropPubsubPeer(peerId);
       }
+      this._scheduleIsolationRelayRedial();
       this._maybeUpdateBootstrapRelayConnections();
     });
 
@@ -1205,6 +1318,9 @@ export class NetworkManager {
       const preferredVia = this._getPreferredConnectionType(peerId);
       const existingVia = this.peers.get(peerId)?.via || null;
       const existingJoinedAt = this.peers.get(peerId)?.joinedAt;
+      if (this.bootstrapPeerIds.has(peerId)) {
+        this._reserveRelayForPeer(peerId, 'bootstrap-connect').catch(() => {});
+      }
       this._touchPeer(peerId, {
         connectedAt: Date.now(),
         joinedAt: Number.isFinite(existingJoinedAt) ? existingJoinedAt : Date.now(),
@@ -1265,7 +1381,8 @@ export class NetworkManager {
         if (parsed?.target && parsed.target !== this.peerId) return;
       }
 
-      if (!this._matchesScope(parsed)) return;
+      const bypassScope = this.additionalPubsubTopics.has(topic);
+      if (!bypassScope && !this._matchesScope(parsed)) return;
 
       const payload = parsed?.payload ?? parsed;
       if (this._handleTopologyMessage(payload, parsed)) {
@@ -1396,6 +1513,7 @@ export class NetworkManager {
       targetConnections: message.targetConnections,
       maxConnections: message.maxConnections,
       activeConnections: message.activeConnections,
+      relayConnected: message.relayConnected ?? null,
       lastSeen: Date.now(),
       joinedAt,
       via: 'presence'
@@ -1452,8 +1570,7 @@ export class NetworkManager {
     const connectionList = this._getConnections();
     let count = 0;
     for (const conn of connectionList) {
-      if (!conn) continue;
-      if (conn.status && conn.status === 'closed') continue;
+      if (!isConnectionOpen(conn)) continue;
       count += 1;
     }
     return count;
@@ -1476,7 +1593,7 @@ export class NetworkManager {
     return connectionList.some((conn) => {
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
-      return !isRelayAddr(conn?.remoteAddr);
+      return isDirectAddr(conn?.remoteAddr);
     });
   }
 
@@ -1484,7 +1601,7 @@ export class NetworkManager {
     if (!this.libp2p || this.bootstrapPeerIds.size === 0) return false;
     for (const peerId of this.bootstrapPeerIds) {
       const connections = this._getConnectionsForPeer(peerId);
-      if (connections.some((conn) => conn?.status !== 'closed')) {
+      if (connections.some(isConnectionOpen)) {
         return true;
       }
     }
@@ -1512,6 +1629,17 @@ export class NetworkManager {
 
   _maybeUpdateBootstrapRelayConnections() {
     if (!this.libp2p) return;
+    if (this.config.bootstrapPeers?.length) {
+      const activeConnections = this._getActiveConnectionCount();
+      if (activeConnections === 0 && !this._hasBootstrapRelayConnections()) {
+        this._maybeRedialBootstrapPeers();
+        return;
+      }
+    }
+    if (this._shouldElectRelayRedial()) {
+      this._maybeRedialBootstrapPeers();
+      return;
+    }
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) {
       if (!this._hasBootstrapRelayConnections()) {
         this._maybeRedialBootstrapPeers();
@@ -1563,7 +1691,18 @@ export class NetworkManager {
   _buildCircuitAddr(peerId) {
     if (!peerId || !this.config.bootstrapPeers?.length) return null;
     try {
-      const relayAddr = this.config.bootstrapPeers[0];
+      const bootstrapAddrs = this.config.bootstrapPeers
+        .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
+        .map((addr) => normalizeBootstrapAddr(addr));
+      if (bootstrapAddrs.length === 0) return null;
+      const preferIpv6 = this._hasLocalIpv6Addrs();
+      const preferredRelayAddr = bootstrapAddrs.find((addr) => {
+        if (preferIpv6) {
+          return addr.includes('/ip6/') || addr.includes('/dns6/');
+        }
+        return addr.includes('/ip4/') || addr.includes('/dns4/');
+      });
+      const relayAddr = preferredRelayAddr || bootstrapAddrs[0];
       const normalized = normalizeBootstrapAddr(relayAddr);
       return multiaddr(`${normalized}/p2p-circuit/p2p/${peerId}`);
     } catch (err) {
@@ -1587,8 +1726,57 @@ export class NetworkManager {
     }, delay);
   }
 
+  _shouldElectRelayRedial(now = Date.now()) {
+    if (!this.peerId) return false;
+    if (!this.config.bootstrapPeers?.length) return false;
+    if (this._hasBootstrapRelayConnections()) return false;
+    const presenceInterval = Number.isFinite(this.config.presenceIntervalMs)
+      ? this.config.presenceIntervalMs
+      : 3000;
+    const maxAgeMs = Number.isFinite(this.config.peerStaleMs)
+      ? this.config.peerStaleMs
+      : Math.max(30000, presenceInterval * 3);
+    const scopedPeers = this._getScopedPeers().filter((peer) => {
+      const lastSeen = Number(peer?.lastSeen ?? 0);
+      if (!lastSeen) return false;
+      return now - lastSeen <= maxAgeMs;
+    });
+    if (scopedPeers.some((peer) => peer?.relayConnected === true)) return false;
+    const candidates = scopedPeers.map((peer) => ({
+      peerId: peer.peerId,
+      activeConnections: Number.isFinite(peer.activeConnections) ? peer.activeConnections : Infinity
+    }));
+    candidates.push({
+      peerId: this.peerId,
+      activeConnections: this._getActiveConnectionCount()
+    });
+    candidates.sort((a, b) => {
+      if (a.activeConnections !== b.activeConnections) {
+        return a.activeConnections - b.activeConnections;
+      }
+      return String(a.peerId).localeCompare(String(b.peerId));
+    });
+    return candidates[0]?.peerId === this.peerId;
+  }
+
+  _scheduleIsolationRelayRedial() {
+    if (!this.libp2p) return;
+    if (!this.config.bootstrapPeers?.length) return;
+    if (this.isolationReconnectTimer) return;
+    this.isolationReconnectTimer = setTimeout(() => {
+      this.isolationReconnectTimer = null;
+      if (this._getActiveConnectionCount() > 0) return;
+      if (this._hasBootstrapRelayConnections()) return;
+      this._maybeRedialBootstrapPeers();
+    }, 400);
+  }
+
   _shouldDialDiscoveredPeer(peerId) {
     if (!peerId) return false;
+    const existingConnections = this._getConnectionsForPeer(peerId);
+    const hasRelayOnly = existingConnections.length > 0
+      && existingConnections.some((conn) => isRelayOnlyAddr(conn?.remoteAddr))
+      && !existingConnections.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     const nonBootstrapConnections = this._countDialedPeers();
     const allowIsolationDial = this.config.allowDiscoveryDialWhenIsolated
       && nonBootstrapConnections === 0;
@@ -1601,6 +1789,9 @@ export class NetworkManager {
       if (this.config.webrtc?.dropRelayBootstrapOnDirect && this._hasDirectPeerConnections()) {
         return false;
       }
+      return true;
+    }
+    if (hasRelayOnly && this.config.webrtc?.preferDirect !== false) {
       return true;
     }
     const maxDialPeers = this.config.maxDialPeers;
@@ -1781,9 +1972,13 @@ export class NetworkManager {
   _startPresence() {
     this._clearPresenceTimer();
     const publishPresence = () => this._publishPresenceNow();
-    publishPresence().catch(() => {});
-    this.presenceInterval = setInterval(() => {
+    const tick = () => {
+      this._maybeUpdateBootstrapRelayConnections();
       publishPresence().catch(() => {});
+    };
+    tick();
+    this.presenceInterval = setInterval(() => {
+      tick();
     }, this.config.presenceIntervalMs || 3000);
   }
 
@@ -1804,6 +1999,7 @@ export class NetworkManager {
       targetConnections: this.config.targetConnections,
       maxConnections: this.config.maxConnections,
       activeConnections,
+      relayConnected: this._hasBootstrapRelayConnections(),
       multiaddrs: this._getAnnounceAddrs()
     };
   }
@@ -2435,6 +2631,9 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    this.additionalPubsubTopics.forEach((topic) => {
+      this.libp2p.services.pubsub.subscribe(topic);
+    });
     // Phase 5: Subscribe to directory topic
     if (this.config.enablePeerDirectory) {
       this.libp2p.services.pubsub.subscribe(this.config.directoryTopic);
@@ -2503,7 +2702,8 @@ export class NetworkManager {
             try {
               const peerId = peerIdFromString(peerIdStr);
               const existing = this.libp2p?.getConnections?.(peerId) || [];
-              if (existing.length > 0) {
+              const hasOpen = existing.some(isConnectionOpen);
+              if (hasOpen) {
                 return;
               }
             } catch (_) {
@@ -2512,6 +2712,7 @@ export class NetworkManager {
           }
           await this.libp2p.dial(addr);
           debugLog('[NetworkManager] Dialed bootstrap peer', addrStr);
+          await this._reserveRelayForPeer(peerIdStr, 'bootstrap-dial');
         } catch (err) {
           debugWarn('[NetworkManager] Failed to dial bootstrap peer', addrStr, err?.message || err);
           this._emitConnectionFailure({
@@ -2526,11 +2727,76 @@ export class NetworkManager {
     );
   }
 
+  async _reserveRelayForPeer(peerIdStr, source = '') {
+    if (!peerIdStr) return false;
+    const reservationStore = this.relayTransport?.reservationStore;
+    if (!reservationStore) {
+      console.warn('[NetworkManager] Relay reservation store unavailable', source);
+      return false;
+    }
+    if (typeof reservationStore.isStarted === 'function' && !reservationStore.isStarted()) {
+      console.warn('[NetworkManager] Relay reservation store not started', source);
+    }
+    let peerId;
+    try {
+      peerId = peerIdFromString(peerIdStr);
+    } catch (_) {
+      return false;
+    }
+    if (reservationStore.hasReservation(peerId)) return true;
+    try {
+      await reservationStore.addRelay(peerId, 'configured');
+      this.relayReservationPeers.add(peerIdStr);
+      console.info('[NetworkManager] Relay reservation created', peerIdStr, source);
+      return true;
+    } catch (err) {
+      debugWarn('[NetworkManager] Relay reservation failed', peerIdStr, source, err?.message || err);
+      return false;
+    }
+  }
+
+  async _reserveBootstrapRelayAddrs() {
+    if (!this.config.bootstrapPeers?.length) return;
+    const peerIds = Array.from(this.bootstrapPeerIds);
+    await Promise.all(peerIds.map((peerId) => this._reserveRelayForPeer(peerId, 'bootstrap')));
+  }
+
+  async _logLocalAnnounceAddrs(label = 'status') {
+    if (!this.libp2p?.getMultiaddrs) return;
+    const addrs = this.libp2p.getMultiaddrs().map((addr) => addr.toString());
+    const announceAddrs = this._getAnnounceAddrs();
+    const webrtcAddrs = addrs.filter((addr) => addr.includes('/webrtc'));
+    const relayAddrs = addrs.filter((addr) => addr.includes('/p2p-circuit'));
+    console.info(`[NetworkManager] Local multiaddrs (${label})`, JSON.stringify(addrs));
+    console.info(`[NetworkManager] Local webrtc addrs (${label})`, JSON.stringify(webrtcAddrs));
+    console.info(`[NetworkManager] Local relay addrs (${label})`, JSON.stringify(relayAddrs));
+    console.info(`[NetworkManager] Announce addrs (${label})`, JSON.stringify(announceAddrs));
+    const reservationStore = this.relayTransport?.reservationStore;
+    if (reservationStore?.reservationCount) {
+      console.info(`[NetworkManager] Relay reservations (${label})`, {
+        total: reservationStore.reservationCount(),
+        configured: reservationStore.reservationCount('configured'),
+        discovered: reservationStore.reservationCount('discovered')
+      });
+    }
+    if (!this.libp2p?.peerStore?.get || !this.peerId) return;
+    try {
+      const selfId = peerIdFromString(this.peerId);
+      const entry = await this.libp2p.peerStore.get(selfId);
+      const storeAddrs = (entry?.addresses || [])
+        .map((addr) => addr?.multiaddr?.toString?.())
+        .filter(Boolean);
+      console.info(`[NetworkManager] PeerStore addrs (${label})`, JSON.stringify(storeAddrs));
+    } catch (err) {
+      debugWarn('[NetworkManager] Failed to read peerStore addrs', err?.message || err);
+    }
+  }
+
   async _maybeDialPeer(peerId, source, addrs = null) {
     if (!this.libp2p || !peerId || peerId === this.peerId) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
     const active = this._getConnectionsForPeer(peerId);
-    const hasDirect = active.some((conn) => !isRelayAddr(conn?.remoteAddr));
+    const hasDirect = active.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
     const preferDirect = this.config.webrtc?.preferDirect !== false;
     if (hasDirect) return;
@@ -2539,26 +2805,150 @@ export class NetworkManager {
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
     if (now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
     this.recentDialAttempts.set(peerId, now);
-    let maybeDialTargets = Array.isArray(addrs) && addrs.length > 0
-      ? addrs.map(toPeerMultiaddr).filter(Boolean)
-      : [];
-    // Phase 5: Query directory if no addresses provided
-    if (maybeDialTargets.length === 0 && this.config.enablePeerDirectory) {
-      const directoryResult = await this.queryPeerDirectory(peerId);
-      if (directoryResult?.multiaddrs?.length > 0) {
-        maybeDialTargets = directoryResult.multiaddrs.map(toPeerMultiaddr).filter(Boolean);
-        debugLog('[NetworkManager] Got addresses from directory for:', peerId, maybeDialTargets.length);
+    const ensurePeerIdForAddr = (addr) => {
+      if (!peerId) return addr;
+      const addrStr = toAddrString(addr);
+      if (!addrStr) return addr;
+      return ensurePeerIdSuffix(addrStr, peerId);
+    };
+    const normalizeTargets = (list) => {
+      if (!Array.isArray(list)) return [];
+      const seen = new Set();
+      return list
+        .map((addr) => toPeerMultiaddr(ensurePeerIdForAddr(addr)))
+        .filter(Boolean)
+        .filter((addr) => {
+          const key = toAddrString(addr);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    };
+    const splitTargets = (list) => {
+      const directTargets = [];
+      const relayWebrtcTargets = [];
+      const relayTargets = [];
+      list.forEach((addr) => {
+        const addrStr = addr?.toString?.() || String(addr || '');
+        if (isRelayAddr(addrStr) && isWebRTCAddr(addrStr)) {
+          relayWebrtcTargets.push(addr);
+        } else if (isRelayOnlyAddr(addrStr)) {
+          relayTargets.push(addr);
+        } else {
+          directTargets.push(addr);
+        }
+      });
+      return { directTargets, relayWebrtcTargets, relayTargets };
+    };
+    let maybeDialTargets = normalizeTargets(addrs);
+    let { directTargets, relayWebrtcTargets, relayTargets } = splitTargets(maybeDialTargets);
+    let peerStoreAddrs = null;
+
+    if (preferDirect) {
+      if (directTargets.length === 0 && this.config.enablePeerDirectory) {
+        const directoryResult = await this.queryPeerDirectory(peerId);
+        if (directoryResult?.multiaddrs?.length > 0) {
+          const directoryTargets = normalizeTargets(directoryResult.multiaddrs);
+          const split = splitTargets(directoryTargets);
+          directTargets = split.directTargets;
+          relayWebrtcTargets = relayWebrtcTargets.length > 0 ? relayWebrtcTargets : split.relayWebrtcTargets;
+          relayTargets = relayTargets.length > 0 ? relayTargets : split.relayTargets;
+          debugLog('[NetworkManager] Got addresses from directory for:', peerId, directoryTargets.length);
+        }
+      }
+      if (directTargets.length === 0 && this.libp2p?.peerStore?.get) {
+        try {
+          const peer = peerIdFromString(peerId);
+          const entry = await this.libp2p.peerStore.get(peer);
+          peerStoreAddrs = entry?.addresses?.map((addr) => addr?.multiaddr?.toString?.() || String(addr?.multiaddr || '')) || [];
+          const storeTargets = normalizeTargets(entry?.addresses?.map((addr) => addr.multiaddr));
+          const split = splitTargets(storeTargets);
+          directTargets = split.directTargets;
+          relayWebrtcTargets = relayWebrtcTargets.length > 0 ? relayWebrtcTargets : split.relayWebrtcTargets;
+          relayTargets = relayTargets.length > 0 ? relayTargets : split.relayTargets;
+        } catch (_) {
+          // ignore peerStore lookup failures
+        }
       }
     }
-    const orderedTargets = preferDirect ? orderDialTargets(maybeDialTargets) : maybeDialTargets;
+
+    let orderedTargets = [];
+    const preferIpv6 = this._hasLocalIpv6Addrs();
+    if (preferDirect) {
+      if (directTargets.length > 0) {
+        orderedTargets = orderDialTargets(directTargets, preferIpv6);
+      } else if (!hasRelay && relayWebrtcTargets.length > 0) {
+        orderedTargets = relayWebrtcTargets;
+      } else if (!hasRelay && relayTargets.length > 0) {
+        orderedTargets = relayTargets;
+      }
+    } else {
+      orderedTargets = maybeDialTargets.length > 0 ? maybeDialTargets : relayTargets;
+    }
+
     if (orderedTargets.length > 0) {
+      if (preferDirect) {
+        if (directTargets.length > 0) {
+          console.info('[NetworkManager] Direct dial targets', peerId, formatDialTargets(orderedTargets));
+        } else if (relayWebrtcTargets.length > 0) {
+          console.info('[NetworkManager] No direct targets, using relay-webrtc', peerId, formatDialTargets(orderedTargets));
+        } else if (relayTargets.length > 0) {
+          console.info('[NetworkManager] No direct targets, using relay', peerId, formatDialTargets(orderedTargets));
+          if (peerStoreAddrs && peerStoreAddrs.length > 0) {
+            console.info('[NetworkManager] PeerStore addrs', peerId, peerStoreAddrs);
+          }
+        }
+      }
       for (const addr of orderedTargets) {
+        const addrStr = toAddrString(addr);
+        const kind = getDialKind(addrStr);
+        const progressLogger = addrStr.includes('/webrtc')
+          ? (() => {
+              const seenEvents = new Set();
+              const candidateCounts = new Map();
+              return (event) => {
+                const eventType = event?.type || '';
+                if (!eventType.startsWith('webrtc:')) return;
+                if (eventType === 'webrtc:add-ice-candidate') {
+                  const info = parseIceCandidate(event?.detail);
+                  if (!info) return;
+                  const key = info.type || 'unknown';
+                  const count = candidateCounts.get(key) || 0;
+                  candidateCounts.set(key, count + 1);
+                  const logKey = `ice:${key}`;
+                  if (!seenEvents.has(logKey)) {
+                    console.info('[NetworkManager] ICE candidate', peerId, key, info.protocol, info.address);
+                    seenEvents.add(logKey);
+                  }
+                  return;
+                }
+                if (eventType === 'webrtc:end-of-ice-candidates') {
+                  const summary = Array.from(candidateCounts.entries())
+                    .map(([key, count]) => `${key}=${count}`)
+                    .join(', ') || 'none';
+                  console.info('[NetworkManager] ICE gathering done', peerId, summary);
+                  return;
+                }
+                if (!seenEvents.has(eventType)) {
+                  console.info('[NetworkManager] WebRTC progress', peerId, eventType, addrStr);
+                  seenEvents.add(eventType);
+                }
+              };
+            })()
+          : null;
+        if (kind !== 'relay') {
+          console.info('[NetworkManager] Dial attempt', peerId, kind, addrStr);
+        }
         try {
-          await this.libp2p.dial(addr);
+          await this.libp2p.dial(addr, progressLogger ? { onProgress: progressLogger } : undefined);
           debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
           return;
         } catch (err) {
-          debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
+          if (kind !== 'relay') {
+            console.warn('[NetworkManager] Dial failed', peerId, kind, addrStr, err?.message || err);
+          } else {
+            debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, addr.toString(), err?.message || err);
+          }
           this._emitConnectionFailure({
             peerId,
             address: addr.toString(),
@@ -2604,7 +2994,7 @@ export class NetworkManager {
       await this.libp2p.dial(target);
       debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
     } catch (err) {
-      debugWarn('[NetworkManager] Failed to dial discovered peer', peerId, err?.message || err);
+      console.warn('[NetworkManager] Dial failed', peerId, 'peerId', err?.message || err);
       this._emitConnectionFailure({
         peerId,
         source,
@@ -2614,25 +3004,52 @@ export class NetworkManager {
     }
   }
 
+  _hasLocalIpv6Addrs() {
+    if (!this.libp2p?.getMultiaddrs) return false;
+    const addrs = this.libp2p.getMultiaddrs().map((addr) => addr.toString());
+    return addrs.some((addr) => {
+      if (!addr.includes('/ip6/')) return false;
+      if (addr.includes('/ip6/::1')) return false;
+      if (addr.includes('/ip6/::')) return false;
+      if (addr.includes('/ip6/fe80:')) return false;
+      return true;
+    });
+  }
+
   _getAnnounceAddrs() {
     if (!this.libp2p?.getMultiaddrs) return [];
     const addrs = this.libp2p.getMultiaddrs().map((addr) => addr.toString());
     const scoped = addrs.filter((addr) => addr.includes('/p2p-circuit') || addr.includes('/webrtc'));
     const candidates = scoped.length > 0 ? scoped : addrs;
     const preferDirect = this.config.webrtc?.preferDirect !== false;
-    const ordered = preferDirect ? orderDialTargets(candidates) : candidates;
+    if (preferDirect && !addrs.some((addr) => addr.includes('/webrtc'))) {
+      const now = Date.now();
+      if (!this.lastWebrtcAnnounceWarnAt || now - this.lastWebrtcAnnounceWarnAt > 60000) {
+        console.info('[NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.');
+        this.lastWebrtcAnnounceWarnAt = now;
+      }
+    }
+    const preferIpv6 = this._hasLocalIpv6Addrs();
+    const ordered = preferDirect ? orderDialTargets(candidates, preferIpv6) : candidates;
     const peerId = this.peerId;
     const relayAddrs = [];
+    const relayWebrtcAddrs = [];
     if (peerId && Array.isArray(this.config.bootstrapPeers)) {
       this.config.bootstrapPeers
         .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
         .map((addr) => normalizeBootstrapAddr(addr))
         .forEach((addr) => {
           relayAddrs.push(`${addr}/p2p-circuit/p2p/${peerId}`);
+          relayWebrtcAddrs.push(`${addr}/p2p-circuit/webrtc/p2p/${peerId}`);
         });
     }
-    const normalized = [...ordered, ...relayAddrs].map((addr) => ensurePeerIdSuffix(addr, peerId));
+    const normalized = [...ordered, ...relayAddrs, ...relayWebrtcAddrs]
+      .map((addr) => ensurePeerIdSuffix(addr, peerId));
     return Array.from(new Set(normalized));
+  }
+
+  getAnnounceAddrs() {
+    return this._getAnnounceAddrs();
   }
 
   _getConnectionsForPeer(peerId) {
@@ -2650,7 +3067,7 @@ export class NetworkManager {
     if (connections.some((conn) => isWebRTCAddr(conn?.remoteAddr) && !isRelayAddr(conn?.remoteAddr))) {
       return 'webrtc';
     }
-    if (connections.some((conn) => !isRelayAddr(conn?.remoteAddr))) {
+    if (connections.some((conn) => isDirectAddr(conn?.remoteAddr))) {
       return 'direct';
     }
     if (connections.some((conn) => isRelayAddr(conn?.remoteAddr))) {
@@ -2665,9 +3082,9 @@ export class NetworkManager {
     if (this.config.webrtc?.dropRelayOnDirect === false) return;
     const connections = this._getConnectionsForPeer(peerId);
     if (connections.length === 0) return;
-    const hasDirect = connections.some((conn) => !isRelayAddr(conn?.remoteAddr));
+    const hasDirect = connections.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     if (!hasDirect) return;
-    const relayed = connections.filter((conn) => isRelayAddr(conn?.remoteAddr));
+    const relayed = connections.filter((conn) => isRelayOnlyAddr(conn?.remoteAddr));
     relayed.forEach((conn) => {
       if (conn?.status && conn.status !== 'open') return;
       conn.close?.().catch?.(() => {});

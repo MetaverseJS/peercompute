@@ -1,6 +1,7 @@
 {
   "bootstrapPeers": [
-    "/ip4/127.0.0.1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
+    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv",
+    "/dns6/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
   ],
   "pubsubType": "gossipsub",
   "webrtc": {
@@ -11,14 +12,7 @@
           "stun:stun.cloudflare.com:3478"
         ]
       }
-    ],
-    "preferDirect": true,
-    "dropRelayOnDirect": false,
-    "dropRelayBootstrapOnDirect": false,
-    "relayRetention": {
-      "mode": "sqrt",
-      "min": 1
-    }
+    ]
   },
   "gossipsub": {
     "D": 8,

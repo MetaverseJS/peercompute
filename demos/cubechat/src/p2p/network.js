@@ -58,7 +58,15 @@ const loadRelayConfig = async () => {
 
 const normalizeBootstrapPeers = (peers) => {
   if (!Array.isArray(peers)) return [];
-  return peers.filter(Boolean);
+  const protocol = typeof window !== 'undefined' ? window.location?.protocol : '';
+  const preferSecure = protocol === 'https:';
+  return peers.filter(Boolean).map((addr) => {
+    if (typeof addr !== 'string') return addr;
+    if (preferSecure) {
+      return addr.replace('/ws/', '/wss/');
+    }
+    return addr.replace('/wss/', '/ws/');
+  });
 };
 
 const normalizeWebRTCConfig = (cfg) => {

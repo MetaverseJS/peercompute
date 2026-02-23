@@ -456,70 +456,70 @@
           <h2>PeerCompute (GitHub)</h2>
           <span>PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p.</span>
         </a>
-        <a class="card" href="./hyperborea/" style="--i: 0;">
+        <a class="card" href="#" data-demo-port="5175" data-demo-path="/" style="--i: 0;">
           <div class="thumb">
             <img src="./assets/hyperborea.png" alt="Hyperborea screenshot" loading="lazy">
           </div>
           <h2>Hyperborea</h2>
           <span>WebXR-ready multiplayer scene with shared GPU hub.</span>
         </a>
-        <a class="card" href="./cubechat/" style="--i: 1;">
+        <a class="card" href="#" data-demo-port="5176" data-demo-path="/" style="--i: 1;">
           <div class="thumb">
             <img src="./assets/cubechat.png" alt="CubeChat screenshot" loading="lazy">
           </div>
           <h2>CubeChat</h2>
           <span>PeerCompute relay + WebRTC proximity video chat.</span>
         </a>
-        <a class="card" href="./sneakywoods/" style="--i: 2;">
+        <a class="card" href="#" data-demo-port="5180" data-demo-path="/" style="--i: 2;">
           <div class="thumb">
             <img src="./assets/sneakywoods.png" alt="SneakyWoods screenshot" loading="lazy">
           </div>
           <h2>SneakyWoods</h2>
           <span>Lightweight multiplayer arena with shared state sync.</span>
         </a>
-        <a class="card" href="./daddygo/" style="--i: 3;">
+        <a class="card" href="#" data-demo-port="5181" data-demo-path="/" style="--i: 3;">
           <div class="thumb">
             <img src="./assets/daddygo.png" alt="Daddy Go screenshot" loading="lazy">
           </div>
           <h2>Daddy Go!</h2>
           <span>Pose-controlled runner with shared global high score.</span>
         </a>
-        <a class="card" href="./planetgen/" style="--i: 4;">
+        <a class="card" href="#" data-demo-port="5177" data-demo-path="/" style="--i: 4;">
           <div class="thumb">
             <img src="./assets/planetgen.png" alt="PlanetGen screenshot" loading="lazy">
           </div>
           <h2>PlanetGen</h2>
           <span>Procedural planet generator with GPU-driven oceans and weather.</span>
         </a>
-        <a class="card" href="./universes/" style="--i: 5;">
+        <a class="card" href="#" data-demo-port="5178" data-demo-path="/" style="--i: 5;">
           <div class="thumb">
             <img src="./assets/universes.png" alt="Universes screenshot" loading="lazy">
           </div>
           <h2>Universes</h2>
           <span>Universe + galaxy generator with ComputeManager offload.</span>
         </a>
-        <a class="card" href="./netviz/" style="--i: 6;">
+        <a class="card" href="#" data-demo-port="5182" data-demo-path="/" style="--i: 6;">
           <div class="thumb">
             <img src="./assets/netviz-screenshot.gif" alt="NetViz screenshot" loading="lazy">
           </div>
           <h2>NetViz</h2>
           <span>Live topology + telemetry view powered by warm deltas.</span>
         </a>
-        <a class="card" href="./webgpuphys/demos/toychest.html" style="--i: 7;">
+        <a class="card" href="#" data-demo-port="5179" data-demo-path="/demos/toychest.html" style="--i: 7;">
           <div class="thumb">
             <img src="./assets/webgpuphys.png" alt="WebGPUPhys screenshot" loading="lazy">
           </div>
           <h2>Dynamics (WebGpuPhys)</h2>
           <span>A particle based dynamics engine </span>
         </a>
-        <a class="card" href="./webgpuphys/demos/mpm-visual.html" style="--i: 8;">
+        <a class="card" href="#" data-demo-port="5179" data-demo-path="/demos/mpm-visual.html" style="--i: 8;">
           <div class="thumb">
             <img src="./assets/mpm-visual.png" alt="MPM Visual screenshot" loading="lazy">
           </div>
           <h2>MPM Visual (WebGpuPhys)</h2>
           <span>Rendered MLS-MPM particles with orbit controls, materials, and thermal effects.</span>
         </a>
-        <a class="card" href="./webgpuphys/demos/ppf-contact-solver.html" style="--i: 9;">
+        <a class="card" href="#" data-demo-port="5179" data-demo-path="/demos/ppf-contact-solver.html" style="--i: 9;">
           <div class="thumb">
             <img src="./assets/ppf-contact-solver.png" alt="PPF contact solver screenshot" loading="lazy">
           </div>
@@ -535,6 +535,25 @@
   </div>
 
   <script>
+    const demoLinks = document.querySelectorAll('[data-demo-port]');
+    const originSearch = window.location.search;
+    const buildDemoHref = (port, rawPath) => {
+      const path = rawPath && rawPath.startsWith('/') ? rawPath : `/${rawPath || ''}`;
+      const url = new URL(window.location.href);
+      url.port = port;
+      url.pathname = path;
+      url.search = originSearch;
+      url.hash = '';
+      return url.toString();
+    };
+
+    demoLinks.forEach((link) => {
+      const port = link.dataset.demoPort;
+      if (!port) return;
+      const path = link.dataset.demoPath || '/';
+      link.href = buildDemoHref(port, path);
+    });
+
     const canvas = document.getElementById('grid');
     const ctx = canvas.getContext('2d');
     const state = { offset: 0 };
@@ -621,40 +640,6 @@
     } else {
       requestAnimationFrame(draw);
     }
-  </script>
-  <script>
-    (() => {
-      const params = new URLSearchParams(window.location.search);
-      if (!params.has('dev')) {
-        return;
-      }
-
-      const devLinks = [
-        { prefix: './hyperborea/', base: 'https://127.0.0.1:5175/' },
-        { prefix: './cubechat/', base: 'https://127.0.0.1:5176/' },
-        { prefix: './planetgen/', base: 'https://127.0.0.1:5177/' },
-        { prefix: './universes/', base: 'https://127.0.0.1:5178/' },
-        { prefix: './webgpuphys/', base: 'https://127.0.0.1:5179/' },
-        { prefix: './sneakywoods/', base: 'https://127.0.0.1:5180/' },
-        { prefix: './daddygo/', base: 'https://127.0.0.1:5181/' },
-        { prefix: './netviz/', base: 'https://127.0.0.1:5185/' }
-      ];
-
-      document.querySelectorAll('a.card[href]').forEach((card) => {
-        const href = card.getAttribute('href');
-        if (!href || href.startsWith('http')) {
-          return;
-        }
-
-        for (const { prefix, base } of devLinks) {
-          if (href.startsWith(prefix)) {
-            const suffix = href.slice(prefix.length);
-            card.setAttribute('href', `${base}${suffix}`);
-            break;
-          }
-        }
-      });
-    })();
   </script>
 </body>
 </html>

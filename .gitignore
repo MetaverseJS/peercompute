@@ -15,3 +15,12 @@ demos/**/node_modules/
 # Relay identity keys
 config/relay-peer-id.json
 config/relay-config.json
+
+# Python caches / test outputs
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Chaos-lab run artifacts
+net-chaos-lab/artifacts/

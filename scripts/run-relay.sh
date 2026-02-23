@@ -2,7 +2,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-relay_impl="${RELAY_IMPL:-node}"
+relay_env_file="${RELAY_ENV_FILE:-$repo_root/config/relay.env}"
+if [[ -f "$relay_env_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$relay_env_file"
+fi
+relay_impl="${RELAY_IMPL:-go}"
 
 if [[ "$relay_impl" == "go" ]]; then
   if command -v go >/dev/null 2>&1; then

@@ -1,0 +1,33 @@
+name: default-chaos
+settle_seconds: 20
+stages:
+  - at_seconds: 15
+    type: bandwidth_shift
+    link: lan_b:core
+    bw_mbit: 6
+    delay_ms: 50
+    loss_pct: 2
+  - at_seconds: 30
+    type: partition
+    segments: [lan_a, lan_c]
+    action: isolate
+    duration_seconds: 20
+  - at_seconds: 60
+    type: partition
+    segments: [lan_a, lan_c]
+    action: heal
+  - at_seconds: 75
+    type: ip_mode
+    mode: ipv4-only
+    duration_seconds: 20
+  - at_seconds: 100
+    type: ip_mode
+    mode: dual-stack
+  - at_seconds: 115
+    type: agent_churn
+    action: drop
+    count: 3
+    duration_seconds: 15
+  - at_seconds: 140
+    type: agent_churn
+    action: restore

@@ -24,6 +24,63 @@ test('NetworkManager normalizes WebRTC config and ice servers', () => {
   assert.deepEqual(manager.config.webrtc.rtcConfiguration.iceServers, [{ urls: 'stun:example.com:3478' }]);
 });
 
+test('NetworkManager delivers additional pubsub topics even when scope differs', () => {
+  const manager = new NetworkManager({
+    gameId: 'game-a',
+    roomId: 'room-a',
+    topologyId: 'topology-a',
+    additionalPubsubTopics: ['peercompute-netviz-sessions']
+  });
+  assert.equal(manager.allowedTopics.has('peercompute-netviz-sessions'), true);
+
+  const dispatches = [];
+  manager.onMessage = (peerId, message) => {
+    dispatches.push({ peerId, message });
+  };
+
+  let pubsubMessageHandler = null;
+  manager.libp2p = {
+    addEventListener: () => {},
+    services: {
+      pubsub: {
+        addEventListener: (eventName, handler) => {
+          if (eventName === 'message') {
+            pubsubMessageHandler = handler;
+          }
+        }
+      }
+    }
+  };
+
+  manager._wireLibp2pEvents();
+  assert.equal(typeof pubsubMessageHandler, 'function');
+
+  const payload = {
+    from: 'peer-z',
+    gameId: 'other-game',
+    roomId: 'other-room',
+    topologyId: 'other-topology',
+    payload: {
+      type: 'netviz-session-upsert',
+      session: {
+        sessionId: 'session-z',
+        roomId: 'other-room',
+        topologyId: 'other-topology'
+      }
+    }
+  };
+  pubsubMessageHandler({
+    detail: {
+      topic: 'peercompute-netviz-sessions',
+      data: new TextEncoder().encode(JSON.stringify(payload))
+    }
+  });
+
+  assert.equal(dispatches.length, 1);
+  assert.equal(dispatches[0].peerId, 'peer-z');
+  assert.equal(dispatches[0].message.type, 'netviz-session-upsert');
+});
+
 test('NetworkManager prunes relayed connections when direct is available', async () => {
   const manager = new NetworkManager({ webrtc: { dropRelayOnDirect: true } });
   let relayClosed = false;
@@ -53,6 +110,7 @@ test('NetworkManager prunes relayed connections when direct is available', async
   assert.equal(directClosed, false);
 });
 
+
 test('NetworkManager prefers WebRTC addresses when dialing', async () => {
   const manager = new NetworkManager({ webrtc: { preferDirect: true } });
   manager.bootstrapPeerIds = new Set();
@@ -69,7 +127,82 @@ test('NetworkManager prefers WebRTC addresses when dialing', async () => {
   const webrtcAddr = buildAddr('/webrtc/ip4/2.2.2.2');
   await manager._maybeDialPeer('invalid-peer', 'presence', [relayAddr, webrtcAddr]);
 
-  assert.equal(dialed[0], webrtcAddr.toString());
+  assert.equal(dialed[0], `${webrtcAddr.toString()}/p2p/invalid-peer`);
+});
+
+test('NetworkManager appends target peerId to relay WebRTC multiaddrs', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';
+  const relayWebrtcAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc'
+  );
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [relayWebrtcAddr]);
+
+  assert.equal(
+    dialed[0],
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW'
+  );
+});
+
+test('NetworkManager deduplicates relay WebRTC targets after peer suffix normalization', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  const targetPeerId = 'invalid-peer';
+  const shortAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc'
+  );
+  const fullAddr = buildAddr(
+    '/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/invalid-peer'
+  );
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [shortAddr, fullAddr]);
+
+  assert.deepEqual(
+    dialed,
+    ['/ip4/1.2.3.4/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1/p2p-circuit/webrtc/p2p/invalid-peer']
+  );
+});
+
+test('NetworkManager does not redial relay-webrtc when already relayed and no true direct targets exist', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [{
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-a'),
+      status: 'open'
+    }],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  await manager._maybeDialPeer('peer-a', 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+  ]);
+
+  assert.equal(dialed.length, 0);
 });
 
 test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
@@ -115,6 +248,85 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
 
   manager._maybeUpdateBootstrapRelayConnections();
   assert.equal(relayClosed, true);
+});
+
+test('NetworkManager prefers dns6 bootstrap address for circuit dials when local IPv6 is available', () => {
+  const relayPeerId = '12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1';
+  const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';
+  const manager = new NetworkManager({
+    bootstrapPeers: [
+      `/dns4/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}`,
+      `/dns6/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}`
+    ]
+  });
+  manager.libp2p = {
+    getMultiaddrs: () => [buildAddr('/ip6/fd42:40::2/tcp/40997')]
+  };
+
+  const circuitAddr = manager._buildCircuitAddr(targetPeerId);
+  assert.equal(
+    circuitAddr?.toString?.(),
+    `/dns6/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}/p2p-circuit/p2p/${targetPeerId}`
+  );
+});
+
+test('NetworkManager falls back to dns4 bootstrap address for circuit dials when local IPv6 is unavailable', () => {
+  const relayPeerId = '12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1';
+  const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';
+  const manager = new NetworkManager({
+    bootstrapPeers: [
+      `/dns6/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}`,
+      `/dns4/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}`
+    ]
+  });
+
+  const circuitAddr = manager._buildCircuitAddr(targetPeerId);
+  assert.equal(
+    circuitAddr?.toString?.(),
+    `/dns4/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}/p2p-circuit/p2p/${targetPeerId}`
+  );
+});
+
+test('NetworkManager does not treat relay-webrtc connections as direct peers', () => {
+  const manager = new NetworkManager({
+    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+  });
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  manager.peerId = 'peer-self';
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'peer-a') {
+        return [{
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer/p2p-circuit/webrtc/p2p/peer-a'),
+          status: 'open'
+        }];
+      }
+      if (peerId === 'relay-peer') {
+        return [{
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        }];
+      }
+      return [
+        {
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        },
+        {
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer/p2p-circuit/webrtc/p2p/peer-a'),
+          status: 'open'
+        }
+      ];
+    }
+  };
+
+  assert.equal(manager._getPreferredConnectionType('peer-a'), 'relay');
+  assert.equal(manager._hasDirectPeerConnections(), false);
+  assert.equal(manager._shouldKeepRelayBootstrapConnection(), true);
 });
 
 test('NetworkManager keeps relay for longest-connected logN peers', () => {

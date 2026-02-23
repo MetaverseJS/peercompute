@@ -10,6 +10,17 @@ const connectBtn = document.getElementById('connect-btn');
 const topologySelect = document.getElementById('topology-select');
 const topologyIdInput = document.getElementById('topology-id');
 const roomInput = document.getElementById('room-input');
+const attachSessionSelect = document.getElementById('attach-session-select');
+const attachSessionBtn = document.getElementById('attach-session-btn');
+const renderModeSelect = document.getElementById('render-mode');
+const connectionRadiusInput = document.getElementById('connection-radius');
+const maxConnectionsInput = document.getElementById('max-connections');
+const targetConnectionsInput = document.getElementById('target-connections');
+const dropRelayToggle = document.getElementById('drop-relay');
+const relayRetentionModeSelect = document.getElementById('relay-retention-mode');
+const relayRetentionMinInput = document.getElementById('relay-retention-min');
+const showP2PTopologyToggle = document.getElementById('show-p2p-topology');
+const showIPTopologyToggle = document.getElementById('show-ip-topology');
 const hideGhostsToggle = document.getElementById('hide-ghosts');
 const autoRotateToggle = document.getElementById('auto-rotate');
 const consoleToggle = document.getElementById('console-toggle');
@@ -20,6 +31,7 @@ const inspectBody = document.getElementById('inspect-body');
 const helpToggle = document.getElementById('help-toggle');
 const helpPanel = document.getElementById('help-panel');
 const eventLogEl = document.getElementById('event-log');
+const chaosStatusEl = document.getElementById('chaos-status');
 
 const TELEMETRY_PUBLISH_MS = 2000;
 const HUD_UPDATE_MS = 500;
@@ -41,6 +53,21 @@ const QUERY_PARAM_TARGET_CONNECTIONS = 'targetConnections';
 const QUERY_PARAM_DROP_RELAY = 'dropRelay';
 const QUERY_PARAM_RELAY_RETENTION_MODE = 'relayRetentionMode';
 const QUERY_PARAM_RELAY_RETENTION_MIN = 'relayRetentionMin';
+const QUERY_PARAM_CHAOS_API = 'chaosApi';
+const QUERY_PARAM_SHOW_P2P = 'showP2P';
+const QUERY_PARAM_SHOW_IP = 'showIP';
+const QUERY_PARAM_AUTO_CONNECT = 'autoConnect';
+const QUERY_PARAM_ATTACH_SESSION = 'attachSession';
+const CHAOS_POLL_MS = 2000;
+const CHAOS_NODE_PREFIX = 'chaos:';
+const NETVIZ_DEBUG_CHANNEL = 'peercompute-netviz-debug-v1';
+const ATTACH_SESSION_STALE_MS = 12000;
+const CONNECTION_STATE = Object.freeze({
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  DISCONNECTING: 'disconnecting'
+});
 
 const resolveRenderMode = () => {
   const params = new URLSearchParams(window.location.search);
@@ -54,6 +81,14 @@ const resolveRenderMode = () => {
   return 'full';
 };
 
+const normalizeRenderModeValue = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (['off', 'none', 'false', '0'].includes(raw)) return 'off';
+  if (['low', 'lite', 'minimal'].includes(raw)) return 'low';
+  return 'full';
+};
+
 const renderMode = resolveRenderMode();
 const visualizer = new NetworkVisualizer({ canvas, renderMode });
 const telemetryStore = new TelemetryStore();
@@ -64,6 +99,7 @@ let stateManager = null;
 let localPeerId = null;
 let telemetryTimer = null;
 let uiTimer = null;
+let debugLogTimer = null;
 let relayPeerIds = new Set();
 let relayReachable = null;
 let lastRelayPeerId = null;
@@ -81,6 +117,33 @@ let dragMoved = false;
 let skipNextClick = false;
 let lastPeerView = [];
 let lastMetricRelocationAt = 0;
+let connectionState = CONNECTION_STATE.DISCONNECTED;
+let chaosApiBase = '';
+let chaosPollTimer = null;
+let chaosFetchInFlight = false;
+let lastChaosStageKey = '';
+let chaosFeed = {
+  summary: null,
+  topology: null,
+  events: [],
+  latestEvent: null,
+  healthy: false,
+  error: null
+};
+let lastDisplayedPeersById = new Map();
+let lastDisplayedEdgesByKey = new Map();
+let lastP2PPeersById = new Map();
+let lastP2PEdgesByKey = new Map();
+let lastChaosOverlay = {
+  peers: [],
+  edges: [],
+  peerInfo: new Map(),
+  edgeInfo: new Map(),
+  topology: null
+};
+const attachSessions = new Map();
+let attachSessionChannel = null;
+let pendingAttachSessionId = null;
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -99,9 +162,119 @@ const formatRate = (value) => {
   return `${formatBytes(rate)}/s`;
 };
 
+const formatPct = (value) => {
+  const rate = Number(value);
+  if (!Number.isFinite(rate)) return '--';
+  return `${(rate * 100).toFixed(1)}%`;
+};
+
 const formatMs = (value) => {
   if (!Number.isFinite(value)) return '--';
   return `${Math.round(value)}ms`;
+};
+
+const buildEdgeKey = (from, to) => (
+  String(from) < String(to) ? `${from}|${to}` : `${to}|${from}`
+);
+
+const extractMultiaddrProtocolValue = (addr, protocol) => {
+  if (!addr) return null;
+  const match = String(addr).match(new RegExp(`/${protocol}/([^/]+)`));
+  return match ? match[1] : null;
+};
+
+const isPrivateIpv4 = (value) => {
+  const ip = String(value || '').trim();
+  if (!ip) return false;
+  if (ip.startsWith('10.')) return true;
+  if (ip.startsWith('192.168.')) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  if (ip.startsWith('127.')) return true;
+  return false;
+};
+
+const isPrivateIpv6 = (value) => {
+  const ip = String(value || '').trim().toLowerCase();
+  if (!ip) return false;
+  if (ip.startsWith('fc') || ip.startsWith('fd')) return true;
+  if (ip.startsWith('fe80:')) return true;
+  if (ip === '::1') return true;
+  return false;
+};
+
+const classifyConnectionKind = (remoteAddr) => {
+  const addr = String(remoteAddr || '');
+  const hasRelay = addr.includes('/p2p-circuit');
+  const hasWebrtc = addr.includes('/webrtc');
+  if (hasWebrtc && hasRelay) return 'relay-webrtc';
+  if (hasWebrtc) return 'webrtc-direct';
+  if (hasRelay) return 'relay';
+  if (addr.includes('/wss') || addr.includes('/ws')) return 'direct-websocket';
+  return 'direct';
+};
+
+const summarizeConnectionKinds = (connections = []) => {
+  if (!Array.isArray(connections) || connections.length === 0) return 'none';
+  const counts = connections.reduce((acc, conn) => {
+    const key = conn?.kind || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([kind, count]) => `${kind}(${count})`)
+    .join(', ');
+};
+
+const uniqueList = (values = []) => (
+  Array.from(new Set(values.filter((value) => Boolean(value))))
+);
+
+const getLibp2pConnections = () => {
+  const libp2p = networkManager?.getLibp2pNode?.();
+  if (!libp2p?.getConnections) return [];
+  const raw = libp2p.getConnections();
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw.values === 'function') {
+    return Array.from(raw.values()).flat();
+  }
+  return [];
+};
+
+const getConnectionAddressSnapshot = () => {
+  const byPeer = new Map();
+  const all = [];
+  const connections = getLibp2pConnections();
+  connections.forEach((conn) => {
+    const peerId = conn?.remotePeer?.toString?.() || null;
+    if (!peerId) return;
+    const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+    const kind = classifyConnectionKind(remoteAddr);
+    const detail = {
+      peerId,
+      status: conn?.status || null,
+      remoteAddr,
+      kind,
+      ip4: extractMultiaddrProtocolValue(remoteAddr, 'ip4'),
+      ip6: extractMultiaddrProtocolValue(remoteAddr, 'ip6')
+    };
+    all.push(detail);
+    if (!byPeer.has(peerId)) byPeer.set(peerId, []);
+    byPeer.get(peerId).push(detail);
+  });
+  const localAddrs = networkManager?.getLibp2pNode?.()?.getMultiaddrs?.()
+    ?.map((addr) => addr.toString?.() || String(addr))
+    ?.filter(Boolean) || [];
+  return { byPeer, all, localAddrs };
+};
+
+const guessNatStatus = (connections = []) => {
+  if (!Array.isArray(connections) || connections.length === 0) return 'unknown';
+  const hasDirectWebrtc = connections.some((conn) => conn?.kind === 'webrtc-direct');
+  const hasRelayOnly = connections.every((conn) => ['relay', 'relay-webrtc'].includes(conn?.kind));
+  if (hasDirectWebrtc) return 'direct-capable';
+  if (hasRelayOnly) return 'relay-dependent';
+  return 'mixed/unknown';
 };
 
 const formatFailureReason = (err) => {
@@ -130,6 +303,31 @@ const readTopologyInputs = () => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const parseNumberValue = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const parseIntValue = (value) => {
+  const num = Number.parseInt(String(value), 10);
+  return Number.isFinite(num) ? num : null;
+};
+
+const parseBooleanParam = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return null;
+};
+
+const normalizeRetentionMode = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'logn' || raw === 'log(n)') return 'logn';
+  if (raw === 'sqrt') return 'sqrt';
+  return '';
+};
 
 const getDeviceScale = () => {
   const cores = Number.isFinite(navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : 4;
@@ -209,7 +407,50 @@ const readQueryParams = () => {
     || params.get('topologyId')?.trim()
     || '';
   const topologyType = params.get(QUERY_PARAM_TOPOLOGY_TYPE)?.trim() || '';
-  return { room, topologyId, topologyType };
+  const renderModeValue = params.get(QUERY_PARAM_RENDER)
+    || params.get(QUERY_PARAM_RENDER_MODE)
+    || '';
+  const connectionRadius = params.get(QUERY_PARAM_CONNECTION_RADIUS) || '';
+  const maxConnections = params.get(QUERY_PARAM_MAX_CONNECTIONS) || '';
+  const targetConnections = params.get(QUERY_PARAM_TARGET_CONNECTIONS) || '';
+  const dropRelay = params.get(QUERY_PARAM_DROP_RELAY) || '';
+  const relayRetentionMode = params.get(QUERY_PARAM_RELAY_RETENTION_MODE) || '';
+  const relayRetentionMin = params.get(QUERY_PARAM_RELAY_RETENTION_MIN) || '';
+  const chaosApi = params.get(QUERY_PARAM_CHAOS_API) || '';
+  const showP2P = params.get(QUERY_PARAM_SHOW_P2P) || '';
+  const showIP = params.get(QUERY_PARAM_SHOW_IP) || '';
+  const autoConnect = params.get(QUERY_PARAM_AUTO_CONNECT) || '';
+  const attachSession = params.get(QUERY_PARAM_ATTACH_SESSION) || '';
+  return {
+    room,
+    topologyId,
+    topologyType,
+    renderMode: renderModeValue,
+    connectionRadius,
+    maxConnections,
+    targetConnections,
+    dropRelay,
+    relayRetentionMode,
+    relayRetentionMin,
+    chaosApi,
+    showP2P,
+    showIP,
+    autoConnect,
+    attachSession
+  };
+};
+
+const resolveChaosApiBase = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${pathname}`;
+  } catch (_) {
+    return '';
+  }
 };
 
 const applyQueryParams = () => {
@@ -226,16 +467,278 @@ const applyQueryParams = () => {
   if (query.room && roomInput) {
     roomInput.value = query.room;
   }
+  const normalizedRender = normalizeRenderModeValue(query.renderMode) || renderMode;
+  if (renderModeSelect && normalizedRender) {
+    renderModeSelect.value = normalizedRender;
+  }
+  if (connectionRadiusInput && query.connectionRadius) {
+    connectionRadiusInput.value = query.connectionRadius;
+  }
+  if (maxConnectionsInput && query.maxConnections) {
+    maxConnectionsInput.value = query.maxConnections;
+  }
+  if (targetConnectionsInput && query.targetConnections) {
+    targetConnectionsInput.value = query.targetConnections;
+  }
+  if (dropRelayToggle) {
+    dropRelayToggle.checked = query.dropRelay === 'true' || query.dropRelay === '1';
+  }
+  if (relayRetentionModeSelect) {
+    relayRetentionModeSelect.value = normalizeRetentionMode(query.relayRetentionMode);
+  }
+  if (relayRetentionMinInput && query.relayRetentionMin) {
+    relayRetentionMinInput.value = query.relayRetentionMin;
+  }
+  if (showP2PTopologyToggle) {
+    const parsed = parseBooleanParam(query.showP2P);
+    if (parsed !== null) {
+      showP2PTopologyToggle.checked = parsed;
+    }
+  }
+  if (showIPTopologyToggle) {
+    const parsed = parseBooleanParam(query.showIP);
+    if (parsed !== null) {
+      showIPTopologyToggle.checked = parsed;
+    }
+  }
+  pendingAttachSessionId = query.attachSession || null;
+  chaosApiBase = resolveChaosApiBase(query.chaosApi);
   return query;
 };
 
-const syncQueryParams = ({ room, topologyId, topologyType: nextType }) => {
+const syncQueryParams = ({
+  room,
+  topologyId,
+  topologyType: nextType,
+  renderMode: nextRender,
+  connectionRadius,
+  maxConnections,
+  targetConnections,
+  dropRelay,
+  relayRetentionMode,
+  relayRetentionMin,
+  showP2P,
+  showIP
+} = {}) => {
   const params = new URLSearchParams(window.location.search);
-  if (room) params.set(QUERY_PARAM_ROOM, room);
-  if (topologyId) params.set(QUERY_PARAM_TOPOLOGY, topologyId);
-  if (nextType) params.set(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
+  const setParam = (key, value) => {
+    if (value === null || value === undefined || value === '') {
+      params.delete(key);
+      return;
+    }
+    params.set(key, String(value));
+  };
+  setParam(QUERY_PARAM_ROOM, room);
+  setParam(QUERY_PARAM_TOPOLOGY, topologyId);
+  setParam(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
+  setParam(QUERY_PARAM_RENDER, nextRender);
+  setParam(QUERY_PARAM_CONNECTION_RADIUS, connectionRadius);
+  setParam(QUERY_PARAM_MAX_CONNECTIONS, maxConnections);
+  setParam(QUERY_PARAM_TARGET_CONNECTIONS, targetConnections);
+  if (dropRelay) {
+    params.set(QUERY_PARAM_DROP_RELAY, 'true');
+  } else {
+    params.delete(QUERY_PARAM_DROP_RELAY);
+  }
+  if (showP2P === false) {
+    params.set(QUERY_PARAM_SHOW_P2P, '0');
+  } else {
+    params.delete(QUERY_PARAM_SHOW_P2P);
+  }
+  if (showIP === false) {
+    params.set(QUERY_PARAM_SHOW_IP, '0');
+  } else {
+    params.delete(QUERY_PARAM_SHOW_IP);
+  }
+  setParam(QUERY_PARAM_RELAY_RETENTION_MODE, relayRetentionMode);
+  setParam(QUERY_PARAM_RELAY_RETENTION_MIN, relayRetentionMin);
   const nextUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, '', nextUrl);
+};
+
+const readUrlInputState = () => {
+  const topology = readTopologyInputs();
+  const room = roomInput?.value?.trim() || 'telemetry';
+  const renderModeValue = normalizeRenderModeValue(renderModeSelect?.value);
+  const connectionRadius = parseNumberValue(connectionRadiusInput?.value);
+  const maxConnections = parseIntValue(maxConnectionsInput?.value);
+  const targetConnections = parseIntValue(targetConnectionsInput?.value);
+  const relayRetentionMode = normalizeRetentionMode(relayRetentionModeSelect?.value);
+  const relayRetentionMin = parseIntValue(relayRetentionMinInput?.value);
+  return {
+    room,
+    topologyId: topology.topologyId,
+    topologyType: topology.topologyType,
+    renderMode: renderModeValue,
+    connectionRadius,
+    maxConnections,
+    targetConnections,
+    dropRelay: dropRelayToggle?.checked ?? false,
+    relayRetentionMode,
+    relayRetentionMin,
+    showP2P: showP2PTopologyToggle?.checked ?? true,
+    showIP: showIPTopologyToggle?.checked ?? true
+  };
+};
+
+const syncInputsToUrl = () => {
+  if (node) return;
+  syncQueryParams(readUrlInputState());
+};
+
+const normalizeAttachSession = (session) => {
+  if (!session || typeof session !== 'object') return null;
+  const sessionId = String(session.sessionId || '').trim();
+  const topologyIdValue = String(session.topologyId || '').trim();
+  const roomIdValue = String(session.roomId || '').trim();
+  if (!sessionId || !topologyIdValue || !roomIdValue) return null;
+  return {
+    sessionId,
+    peerId: String(session.peerId || '').trim() || null,
+    nodeId: String(session.nodeId || '').trim() || null,
+    gameId: String(session.gameId || '').trim() || 'unknown',
+    roomId: roomIdValue,
+    topologyId: topologyIdValue,
+    topologyType: normalizeTopologyType(session.topologyType || 'distributed'),
+    isStarted: session.isStarted !== false,
+    ts: Number.isFinite(session.ts) ? session.ts : Date.now()
+  };
+};
+
+const pruneAttachSessions = () => {
+  const now = Date.now();
+  for (const [sessionId, session] of attachSessions.entries()) {
+    const age = now - (session.ts || 0);
+    if (age > ATTACH_SESSION_STALE_MS || session.isStarted === false) {
+      attachSessions.delete(sessionId);
+    }
+  }
+};
+
+const formatAttachSessionLabel = (session) => {
+  const gameId = session.gameId || 'unknown';
+  const room = session.roomId || '--';
+  const topology = session.topologyId || '--';
+  const peer = session.peerId ? formatPeerId(session.peerId) : 'pending';
+  return `${gameId} | ${room} | ${topology} | ${peer}`;
+};
+
+const refreshAttachSessionOptions = () => {
+  if (!attachSessionSelect) return;
+  pruneAttachSessions();
+  const previousValue = attachSessionSelect.value;
+  const options = Array.from(attachSessions.values())
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  attachSessionSelect.textContent = '';
+  const manualOption = document.createElement('option');
+  manualOption.value = '';
+  manualOption.textContent = 'Manual';
+  attachSessionSelect.appendChild(manualOption);
+
+  options.forEach((session) => {
+    const option = document.createElement('option');
+    option.value = session.sessionId;
+    option.textContent = formatAttachSessionLabel(session);
+    attachSessionSelect.appendChild(option);
+  });
+
+  if (previousValue && attachSessions.has(previousValue)) {
+    attachSessionSelect.value = previousValue;
+  }
+};
+
+const upsertAttachSession = (session) => {
+  const normalized = normalizeAttachSession(session);
+  if (!normalized) return;
+  attachSessions.set(normalized.sessionId, normalized);
+  refreshAttachSessionOptions();
+  if (!pendingAttachSessionId) return;
+  const shouldAttach = pendingAttachSessionId === 'latest'
+    || pendingAttachSessionId === normalized.sessionId;
+  if (!shouldAttach) return;
+  pendingAttachSessionId = null;
+  if (attachSessionSelect) {
+    attachSessionSelect.value = normalized.sessionId;
+  }
+  queueMicrotask(() => {
+    attachToSelectedSession().catch((err) => {
+      logEvent(`Attach failed: ${err?.message || err}`);
+    });
+  });
+};
+
+const removeAttachSession = (sessionId) => {
+  const id = String(sessionId || '').trim();
+  if (!id) return;
+  attachSessions.delete(id);
+  refreshAttachSessionOptions();
+};
+
+const applyAttachSessionInputs = (session) => {
+  topologyType = normalizeTopologyType(session.topologyType);
+  topologyId = session.topologyId || 'netviz-topology';
+  if (topologySelect) topologySelect.value = topologyType;
+  if (topologyIdInput) topologyIdInput.value = topologyId;
+  if (roomInput) roomInput.value = session.roomId || 'telemetry';
+  visualizer.setTopologyMode(topologyType);
+  syncInputsToUrl();
+};
+
+const attachToSelectedSession = async () => {
+  if (!attachSessionSelect) return;
+  const sessionId = attachSessionSelect.value;
+  if (!sessionId) {
+    logEvent('Attach skipped: no demo session selected.');
+    return;
+  }
+  const session = attachSessions.get(sessionId);
+  if (!session) {
+    logEvent('Attach failed: selected session is no longer active.');
+    refreshAttachSessionOptions();
+    return;
+  }
+
+  applyAttachSessionInputs(session);
+  logEvent(`Attached to ${session.gameId} (${formatPeerId(session.peerId || '')})`);
+
+  if (connectionState === CONNECTION_STATE.DISCONNECTED) {
+    await connect();
+    return;
+  }
+  if (connectionState === CONNECTION_STATE.CONNECTED) {
+    await disconnect({ reason: 'attach' });
+    await connect();
+  }
+};
+
+const startAttachSessionBridge = () => {
+  if (typeof BroadcastChannel === 'undefined') return;
+  try {
+    attachSessionChannel = new BroadcastChannel(NETVIZ_DEBUG_CHANNEL);
+  } catch (_) {
+    attachSessionChannel = null;
+    return;
+  }
+  attachSessionChannel.addEventListener('message', (event) => {
+    const message = event?.data;
+    if (!message || typeof message !== 'object') return;
+    if (message.type === 'session-upsert') {
+      upsertAttachSession(message.session);
+      return;
+    }
+    if (message.type === 'session-remove') {
+      removeAttachSession(message.sessionId);
+    }
+  });
+};
+
+const syncAttachSessionsFromNode = () => {
+  const sessions = node?.getNetVizDiscoveredSessions?.();
+  if (!Array.isArray(sessions) || sessions.length === 0) return;
+  sessions.forEach((session) => {
+    upsertAttachSession(session);
+  });
 };
 
 const formatMetric = (metric) => {
@@ -268,6 +771,637 @@ const logEvent = (message) => {
     logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   }
   eventLogEl.textContent = logEntries.join('\n');
+};
+
+const formatChaosStage = (stage) => {
+  if (!stage || typeof stage !== 'object') return '--';
+  const phase = stage.phase || 'stage';
+  const type = stage.type || 'unknown';
+  const ok = stage.ok === false ? 'fail' : 'ok';
+  return `${phase}:${type} (${ok})`;
+};
+
+const updateChaosPanel = () => {
+  if (!chaosStatusEl) return;
+  if (!chaosApiBase) {
+    chaosStatusEl.textContent = 'Chaos feed: disabled (add ?chaosApi=http://127.0.0.1:8866)';
+    return;
+  }
+  if (!chaosFeed.healthy) {
+    const errorText = chaosFeed.error || 'offline';
+    chaosStatusEl.textContent = [
+      `Chaos API: ${chaosApiBase}`,
+      `State: ${errorText}`,
+      'Waiting for chaos-lab dashboard...'
+    ].join('\n');
+    return;
+  }
+
+  const summary = chaosFeed.summary || {};
+  const topologyPayload = chaosFeed.topology || {};
+  const topology = topologyPayload.topology || {};
+  const partitioned = Array.isArray(topology.partitioned_segments)
+    ? topology.partitioned_segments
+    : [];
+  const latestStage = topologyPayload.latest_stage || null;
+  const latestEvent = chaosFeed.latestEvent || null;
+
+  const lines = [
+    `Chaos API: ${chaosApiBase}`,
+    `Run: ${summary.run_id || topologyPayload.run_id || '--'}`,
+    `Updated: ${summary.updated_at || topologyPayload.updated_at || '--'}`,
+    `Mode: ${topology.actual_mode || '--'} | IP: ${topology.ip_mode || '--'}`,
+    `Segments: ${topology.segment_total ?? '--'} | Partitioned: ${partitioned.length ? partitioned.join(', ') : 'none'}`,
+    `Agents: ${topology.agent_online ?? '--'}/${topology.agent_total ?? '--'} | Services: ${topology.service_total ?? '--'}`,
+    `Overlay nodes: ${(Number(topology.segment_total) || 0) + (Number(topology.agent_total) || 0) + (Number(topology.service_total) || 0) + 1}`,
+    `Scenario events: ${summary.scenario_event_count ?? 0} | Probes: ${summary.probe_total ?? 0}`,
+    `Direct rate: ${formatPct(summary.direct_connection_rate)} | Relay-WebRTC: ${formatPct(summary.relay_webrtc_connection_rate)}`,
+    `Latest stage: ${formatChaosStage(latestStage)}`
+  ];
+  if (latestEvent) {
+    lines.push(`Latest event: ${latestEvent.type || '--'} @ ${latestEvent.ts || '--'}`);
+  }
+  chaosStatusEl.textContent = lines.join('\n');
+};
+
+const chaosFallbackPayload = (path) => {
+  const pathOnly = String(path || '').split('?')[0];
+  if (pathOnly.endsWith('/api/events')) {
+    return { events: [] };
+  }
+  if (pathOnly.endsWith('/api/topology')) {
+    return { run_id: null, updated_at: null, topology: null };
+  }
+  return { run_id: null, updated_at: null };
+};
+
+const fetchChaosJson = async (path) => {
+  const fallback = chaosFallbackPayload(path);
+  try {
+    const response = await fetch(`${chaosApiBase}${path}`, { cache: 'no-store', mode: 'cors' });
+    if (!response.ok) {
+      return { ...fallback, degraded: true, status: response.status };
+    }
+    const payload = await response.json();
+    if (payload && typeof payload === 'object') {
+      return payload;
+    }
+  } catch (err) {
+    return { ...fallback, degraded: true, error: err?.message || 'request failed' };
+  }
+  return { ...fallback, degraded: true };
+};
+
+const refreshChaosFeed = async () => {
+  if (!chaosApiBase || chaosFetchInFlight) return;
+  chaosFetchInFlight = true;
+  try {
+    const [summary, eventsPayload, topology] = await Promise.all([
+      fetchChaosJson('/api/summary'),
+      fetchChaosJson('/api/events?limit=40'),
+      fetchChaosJson('/api/topology')
+    ]);
+    const summaryDegraded = Boolean(summary?.degraded);
+    const eventsDegraded = Boolean(eventsPayload?.degraded);
+    const topologyDegraded = Boolean(topology?.degraded);
+    const feedDegraded = summaryDegraded || eventsDegraded || topologyDegraded;
+
+    const events = Array.isArray(eventsPayload?.events) ? eventsPayload.events : [];
+    const latestStage = topology?.latest_stage;
+    const stageKey = latestStage
+      ? `${latestStage.phase || 'stage'}:${latestStage.stage_index ?? '--'}:${latestStage.type || '--'}:${latestStage.ok === false ? 'fail' : 'ok'}`
+      : '';
+    if (stageKey && stageKey !== lastChaosStageKey) {
+      lastChaosStageKey = stageKey;
+      logEvent(`[Chaos] stage ${stageKey}`);
+    }
+    chaosFeed = {
+      summary: summary && typeof summary === 'object' ? summary : null,
+      topology: topology && typeof topology === 'object' ? topology : null,
+      events,
+      latestEvent: events.length > 0 ? events[events.length - 1] : null,
+      healthy: !feedDegraded,
+      error: feedDegraded ? 'dashboard offline (degraded fallback)' : null
+    };
+  } catch (err) {
+    chaosFeed = {
+      ...chaosFeed,
+      healthy: false,
+      error: err?.message || 'request failed'
+    };
+  } finally {
+    chaosFetchInFlight = false;
+    updateChaosPanel();
+  }
+};
+
+const startChaosPolling = () => {
+  if (!chaosApiBase) {
+    updateChaosPanel();
+    return;
+  }
+  if (chaosPollTimer) return;
+  refreshChaosFeed().catch(() => {});
+  chaosPollTimer = setInterval(() => {
+    refreshChaosFeed().catch(() => {});
+  }, CHAOS_POLL_MS);
+};
+
+const stopChaosPolling = () => {
+  if (!chaosPollTimer) return;
+  clearInterval(chaosPollTimer);
+  chaosPollTimer = null;
+};
+
+const isChaosNodeId = (peerId) => (
+  typeof peerId === 'string' && peerId.startsWith(CHAOS_NODE_PREFIX)
+);
+
+const buildChaosOverlay = () => {
+  if (!chaosFeed.healthy) {
+    return {
+      peers: [],
+      edges: [],
+      peerInfo: new Map(),
+      edgeInfo: new Map(),
+      topology: null
+    };
+  }
+  const topologyPayload = chaosFeed.topology || {};
+  const topology = topologyPayload.topology;
+  if (!topology || typeof topology !== 'object') {
+    return {
+      peers: [],
+      edges: [],
+      peerInfo: new Map(),
+      edgeInfo: new Map(),
+      topology: null
+    };
+  }
+
+  const rawSegments = Array.isArray(topology.segments) ? topology.segments : [];
+  const rawServices = Array.isArray(topology.services) ? topology.services : [];
+  const rawAgents = Array.isArray(topology.agents) ? topology.agents : [];
+  const partitioned = new Set(
+    Array.isArray(topology.partitioned_segments) ? topology.partitioned_segments : []
+  );
+
+  const peers = [];
+  const edges = [];
+  const peerInfo = new Map();
+  const edgeInfo = new Map();
+  const segmentCenters = new Map();
+  const coreId = `${CHAOS_NODE_PREFIX}core`;
+
+  peers.push({
+    peerId: coreId,
+    role: 'chaos-core',
+    source: 'ip-topology',
+    isRoot: true,
+    metricInitialized: true,
+    metric: { x: 0, y: 0, z: 0 }
+  });
+  peerInfo.set(coreId, {
+    kind: 'core',
+    source: 'ip-topology',
+    actualMode: topology.actual_mode || '--',
+    requestedMode: topology.requested_mode || '--',
+    ipMode: topology.ip_mode || '--',
+    segmentTotal: Number.isFinite(topology.segment_total) ? topology.segment_total : rawSegments.length,
+    agentTotal: Number.isFinite(topology.agent_total) ? topology.agent_total : rawAgents.length,
+    serviceTotal: Number.isFinite(topology.service_total) ? topology.service_total : rawServices.length
+  });
+
+  const segmentRadius = Math.max(4.5, rawSegments.length * 1.75);
+  rawSegments.forEach((segment, index) => {
+    const segmentId = String(segment?.id || '').trim();
+    if (!segmentId) return;
+    const angle = (index / Math.max(1, rawSegments.length)) * Math.PI * 2;
+    const center = {
+      x: Math.cos(angle) * segmentRadius,
+      y: 0,
+      z: Math.sin(angle) * segmentRadius
+    };
+    const peerId = `${CHAOS_NODE_PREFIX}segment:${segmentId}`;
+    segmentCenters.set(segmentId, center);
+    peers.push({
+      peerId,
+      role: 'chaos-segment',
+      source: 'ip-topology',
+      isHost: true,
+      metricInitialized: true,
+      metric: center
+    });
+    peerInfo.set(peerId, {
+      kind: 'segment',
+      source: 'ip-topology',
+      segmentId,
+      ipv4Subnet: segment?.ipv4_subnet || '--',
+      ipv6Subnet: segment?.ipv6_subnet || '--',
+      gateway4: segment?.gateway4 || '--',
+      gateway6: segment?.gateway6 || '--',
+      partitioned: Boolean(segment?.partitioned),
+      uplinkEnabled: segment?.uplink_enabled !== false,
+      natEnabled: Boolean(segment?.nat?.enabled),
+      natType: segment?.nat?.type || '--',
+      natUplinkIpv4: segment?.nat?.uplink_ipv4 || '--',
+      natUplinkIpv6: segment?.nat?.uplink_ipv6 || '--',
+      linkProfile: {
+        bwMbit: segment?.link_profile?.bw_mbit ?? null,
+        delayMs: segment?.link_profile?.delay_ms ?? null,
+        lossPct: segment?.link_profile?.loss_pct ?? null
+      }
+    });
+    edges.push({
+      from: coreId,
+      to: peerId,
+      via: 'webrtc',
+      source: 'ip-topology',
+      errorActive: partitioned.has(segmentId),
+      rxBps: 0,
+      txBps: 0,
+      rxCount: 0,
+      txCount: 0
+    });
+    edgeInfo.set(buildEdgeKey(coreId, peerId), {
+      kind: 'core-segment',
+      source: 'ip-topology',
+      segmentId,
+      partitioned: partitioned.has(segmentId),
+      natType: segment?.nat?.type || '--',
+      bwMbit: segment?.link_profile?.bw_mbit ?? null,
+      delayMs: segment?.link_profile?.delay_ms ?? null,
+      lossPct: segment?.link_profile?.loss_pct ?? null
+    });
+  });
+
+  const serviceRadius = Math.max(2.2, rawServices.length * 0.9);
+  rawServices.forEach((service, index) => {
+    const name = String(service?.name || '').trim();
+    if (!name) return;
+    const angle = (index / Math.max(1, rawServices.length)) * Math.PI * 2;
+    const metric = {
+      x: Math.cos(angle) * serviceRadius,
+      y: 0.65,
+      z: Math.sin(angle) * serviceRadius
+    };
+    const peerId = `${CHAOS_NODE_PREFIX}service:${name}`;
+    peers.push({
+      peerId,
+      role: 'chaos-service',
+      source: 'ip-topology',
+      isRelay: name === 'relay',
+      metricInitialized: true,
+      metric
+    });
+    peerInfo.set(peerId, {
+      kind: 'service',
+      source: 'ip-topology',
+      service: name,
+      host: service?.host || '--',
+      ipv4: service?.ipv4 || '--',
+      ipv6: service?.ipv6 || '--'
+    });
+    edges.push({
+      from: coreId,
+      to: peerId,
+      via: 'webrtc',
+      source: 'ip-topology',
+      rxBps: 0,
+      txBps: 0,
+      rxCount: 0,
+      txCount: 0
+    });
+    edgeInfo.set(buildEdgeKey(coreId, peerId), {
+      kind: 'core-service',
+      source: 'ip-topology',
+      service: name,
+      host: service?.host || '--'
+    });
+  });
+
+  const agentsBySegment = new Map();
+  rawAgents.forEach((agent) => {
+    const segmentId = String(agent?.segment_id || '').trim();
+    if (!segmentId || !segmentCenters.has(segmentId)) return;
+    if (!agentsBySegment.has(segmentId)) agentsBySegment.set(segmentId, []);
+    agentsBySegment.get(segmentId).push(agent);
+  });
+
+  agentsBySegment.forEach((segmentAgents, segmentId) => {
+    const center = segmentCenters.get(segmentId);
+    if (!center) return;
+    segmentAgents.forEach((agent, index) => {
+      const name = String(agent?.name || '').trim();
+      if (!name) return;
+      const angle = (index / Math.max(1, segmentAgents.length)) * Math.PI * 2;
+      const radius = 1.2 + Math.floor(index / 8) * 0.8;
+      const metric = {
+        x: center.x + Math.cos(angle) * radius,
+        y: 0,
+        z: center.z + Math.sin(angle) * radius
+      };
+      const enabled = agent?.enabled !== false;
+      const peerId = `${CHAOS_NODE_PREFIX}agent:${name}`;
+      const segmentPeerId = `${CHAOS_NODE_PREFIX}segment:${segmentId}`;
+      peers.push({
+        peerId,
+        role: 'chaos-agent',
+        source: 'ip-topology',
+        inferred: !enabled,
+        metricInitialized: true,
+        metric
+      });
+      const segment = rawSegments.find((entry) => String(entry?.id || '').trim() === segmentId) || null;
+      peerInfo.set(peerId, {
+        kind: 'agent',
+        source: 'ip-topology',
+        name,
+        enabled,
+        segmentId,
+        ipv4: agent?.ipv4 || '--',
+        ipv6: agent?.ipv6 || '--',
+        natType: segment?.nat?.type || '--',
+        natEnabled: Boolean(segment?.nat?.enabled)
+      });
+      edges.push({
+        from: segmentPeerId,
+        to: peerId,
+        via: 'webrtc',
+        source: 'ip-topology',
+        errorActive: partitioned.has(segmentId) || !enabled,
+        rxBps: 0,
+        txBps: 0,
+        rxCount: 0,
+        txCount: 0
+      });
+      edgeInfo.set(buildEdgeKey(segmentPeerId, peerId), {
+        kind: 'segment-agent',
+        source: 'ip-topology',
+        segmentId,
+        agentName: name,
+        enabled,
+        partitioned: partitioned.has(segmentId)
+      });
+    });
+  });
+
+  return { peers, edges, peerInfo, edgeInfo, topology };
+};
+
+const normalizeEventTimestamp = (value) => {
+  if (!value) return 0;
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const buildChaosP2POverlay = (topology = null) => {
+  if (!chaosFeed.healthy) {
+    return {
+      peers: [],
+      edges: [],
+      peerInfo: new Map(),
+      edgeInfo: new Map()
+    };
+  }
+  const events = Array.isArray(chaosFeed.events) ? chaosFeed.events : [];
+  if (events.length === 0) {
+    return {
+      peers: [],
+      edges: [],
+      peerInfo: new Map(),
+      edgeInfo: new Map()
+    };
+  }
+
+  const latestByAgent = new Map();
+  events.forEach((event) => {
+    if (!event || event.type !== 'probe_result') return;
+    const payload = event.payload;
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.ok === false || payload.connected === false) return;
+    const agent = String(payload.agent || '').trim();
+    if (!agent) return;
+    const ts = normalizeEventTimestamp(event.ts);
+    const current = latestByAgent.get(agent);
+    if (!current || ts >= current.ts) {
+      latestByAgent.set(agent, { ts, payload });
+    }
+  });
+
+  if (latestByAgent.size === 0) {
+    return {
+      peers: [],
+      edges: [],
+      peerInfo: new Map(),
+      edgeInfo: new Map()
+    };
+  }
+
+  const peerMap = new Map();
+  const edgeMap = new Map();
+  const peerInfo = new Map();
+  const edgeInfo = new Map();
+  const agentSegmentByName = new Map();
+  if (topology && typeof topology === 'object') {
+    const agents = Array.isArray(topology.agents) ? topology.agents : [];
+    agents.forEach((agent) => {
+      const name = String(agent?.name || '').trim();
+      const segmentId = String(agent?.segment_id || '').trim();
+      if (!name || !segmentId) return;
+      agentSegmentByName.set(name, segmentId);
+    });
+  }
+
+  const mergePeer = (next) => {
+    const peerId = String(next?.peerId || '').trim();
+    if (!peerId) return;
+    const current = peerMap.get(peerId);
+    if (!current) {
+      peerMap.set(peerId, { ...next, peerId });
+      return;
+    }
+    const merged = { ...current };
+    const truthyKeys = ['isRelay', 'isHost', 'isRoot'];
+    truthyKeys.forEach((key) => {
+      if (next[key]) merged[key] = true;
+    });
+    if (next.role && !merged.role) merged.role = next.role;
+    if (next.source && !merged.source) merged.source = next.source;
+    if (next.inferred === false) merged.inferred = false;
+    if (!merged.metricInitialized && next.metricInitialized) merged.metricInitialized = true;
+    if (next.metric && (!merged.metric || !merged.metricInitialized)) {
+      merged.metric = next.metric;
+      merged.metricInitialized = Boolean(next.metricInitialized);
+    }
+    peerMap.set(peerId, merged);
+  };
+
+  const mergeEdge = (next) => {
+    const from = String(next?.from || '').trim();
+    const to = String(next?.to || '').trim();
+    if (!from || !to || from === to) return;
+    const key = buildEdgeKey(from, to);
+    const current = edgeMap.get(key);
+    if (!current) {
+      edgeMap.set(key, { ...next, from, to });
+      return;
+    }
+    const merged = { ...current };
+    if (next.via === 'webrtc') {
+      merged.via = 'webrtc';
+    } else if (!merged.via && next.via) {
+      merged.via = next.via;
+    }
+    merged.rxBps = Math.max(Number(merged.rxBps) || 0, Number(next.rxBps) || 0);
+    merged.txBps = Math.max(Number(merged.txBps) || 0, Number(next.txBps) || 0);
+    merged.rxCount = Math.max(Number(merged.rxCount) || 0, Number(next.rxCount) || 0);
+    merged.txCount = Math.max(Number(merged.txCount) || 0, Number(next.txCount) || 0);
+    const nextRxAt = Number(next.lastRxAt) || 0;
+    const nextTxAt = Number(next.lastTxAt) || 0;
+    if (nextRxAt > (Number(merged.lastRxAt) || 0)) merged.lastRxAt = nextRxAt;
+    if (nextTxAt > (Number(merged.lastTxAt) || 0)) merged.lastTxAt = nextTxAt;
+    edgeMap.set(key, merged);
+  };
+
+  latestByAgent.forEach(({ payload }, agentName) => {
+    const diagnostics = payload?.diagnostics;
+    const netviz = diagnostics && typeof diagnostics === 'object' ? diagnostics.netviz : null;
+    const telemetry = netviz && typeof netviz === 'object' ? netviz.telemetry : null;
+    const localPeerId = String(
+      netviz?.localPeerId
+      || telemetry?.peerId
+      || ''
+    ).trim();
+    if (!localPeerId) return;
+
+    const metric = telemetry?.metric && typeof telemetry.metric === 'object'
+      ? {
+          x: Number.isFinite(telemetry.metric.x) ? telemetry.metric.x : 0,
+          y: Number.isFinite(telemetry.metric.y) ? telemetry.metric.y : 0,
+          z: Number.isFinite(telemetry.metric.z) ? telemetry.metric.z : 0
+        }
+      : null;
+    const metricInitialized = Boolean(telemetry?.metricInitialized) || Boolean(metric);
+    mergePeer({
+      peerId: localPeerId,
+      role: 'chaos-p2p-agent',
+      source: 'chaos-p2p',
+      inferred: false,
+      metricInitialized,
+      metric
+    });
+
+    const segmentId = agentSegmentByName.get(agentName) || '--';
+    peerInfo.set(localPeerId, {
+      kind: 'p2p-node',
+      source: 'chaos-p2p',
+      agentName,
+      segmentId,
+      peerId: localPeerId,
+      peerCount: Number(payload?.peer_count ?? telemetry?.peerCount ?? 0),
+      directPeerCount: Number(payload?.direct_peer_count ?? netviz?.directPeerCount ?? 0),
+      relayPeerCount: Number(payload?.relay_peer_count ?? netviz?.relayPeerCount ?? 0),
+      hasDirectConnection: Boolean(payload?.has_direct_connection ?? netviz?.hasDirectConnection),
+      hasRelayWebrtcConnection: Boolean(
+        payload?.has_relay_webrtc_connection ?? netviz?.hasRelayWebrtcConnection
+      ),
+      announcedDirectWebrtcAddrsCount: Number(
+        payload?.announced_direct_webrtc_addrs_count
+        ?? (Array.isArray(netviz?.announcedDirectWebrtcAddrs) ? netviz.announcedDirectWebrtcAddrs.length : 0)
+      )
+    });
+
+    const neighbors = Array.isArray(telemetry?.peers) ? telemetry.peers : [];
+    neighbors.forEach((neighbor) => {
+      if (!neighbor || typeof neighbor !== 'object') return;
+      const peerId = String(neighbor.peerId || neighbor.id || '').trim();
+      if (!peerId || peerId === localPeerId) return;
+      mergePeer({
+        peerId,
+        role: 'chaos-p2p-peer',
+        source: 'chaos-p2p',
+        inferred: !peerInfo.has(peerId)
+      });
+      if (!peerInfo.has(peerId)) {
+        peerInfo.set(peerId, {
+          kind: 'p2p-node',
+          source: 'chaos-p2p',
+          agentName: '--',
+          segmentId: '--',
+          peerId,
+          peerCount: null,
+          directPeerCount: null,
+          relayPeerCount: null,
+          hasDirectConnection: false,
+          hasRelayWebrtcConnection: false,
+          announcedDirectWebrtcAddrsCount: null
+        });
+      }
+
+      const viaRaw = String(neighbor.via || '').trim().toLowerCase();
+      const via = viaRaw === 'relay' ? 'relay' : 'webrtc';
+      mergeEdge({
+        from: localPeerId,
+        to: peerId,
+        source: 'chaos-p2p',
+        via,
+        rxBps: Number(neighbor.rxBps) || 0,
+        txBps: Number(neighbor.txBps) || 0,
+        rxCount: Number(neighbor.rxCount) || 0,
+        txCount: Number(neighbor.txCount) || 0,
+        lastRxAt: Number(neighbor.lastRxAt) || null,
+        lastTxAt: Number(neighbor.lastTxAt) || null,
+        errorActive: false
+      });
+
+      edgeInfo.set(buildEdgeKey(localPeerId, peerId), {
+        kind: 'p2p-link',
+        source: 'chaos-p2p',
+        agentName,
+        via: viaRaw || 'unknown',
+        fromPeerId: localPeerId,
+        toPeerId: peerId,
+        rxBps: Number(neighbor.rxBps) || 0,
+        txBps: Number(neighbor.txBps) || 0,
+        rxCount: Number(neighbor.rxCount) || 0,
+        txCount: Number(neighbor.txCount) || 0
+      });
+    });
+  });
+
+  return {
+    peers: Array.from(peerMap.values()),
+    edges: Array.from(edgeMap.values()),
+    peerInfo,
+    edgeInfo
+  };
+};
+
+const mergePeersForDisplay = (primaryPeers, overlayPeers) => {
+  const merged = new Map();
+  const add = (peer) => {
+    const peerId = peer?.peerId;
+    if (!peerId || merged.has(peerId)) return;
+    merged.set(peerId, peer);
+  };
+  primaryPeers.forEach(add);
+  overlayPeers.forEach(add);
+  return Array.from(merged.values());
+};
+
+const mergeEdgesForDisplay = (primaryEdges, overlayEdges) => {
+  const merged = new Map();
+  const add = (edge) => {
+    const from = edge?.from;
+    const to = edge?.to;
+    if (!from || !to || from === to) return;
+    const key = from < to ? `${from}|${to}` : `${to}|${from}`;
+    if (!merged.has(key)) merged.set(key, edge);
+  };
+  primaryEdges.forEach(add);
+  overlayEdges.forEach(add);
+  return Array.from(merged.values());
 };
 
 if (renderMode !== 'full') {
@@ -510,6 +1644,45 @@ const setStatus = (lines) => {
   statusEl.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
 };
 
+const setConfigInputsDisabled = (disabled) => {
+  const controls = [
+    topologySelect,
+    topologyIdInput,
+    roomInput,
+    renderModeSelect,
+    connectionRadiusInput,
+    maxConnectionsInput,
+    targetConnectionsInput,
+    dropRelayToggle,
+    relayRetentionModeSelect,
+    relayRetentionMinInput
+  ];
+  controls.forEach((control) => {
+    if (control) control.disabled = disabled;
+  });
+};
+
+const setConnectButtonState = (state) => {
+  if (!connectBtn) return;
+  if (state === CONNECTION_STATE.CONNECTING) {
+    connectBtn.textContent = 'Connecting...';
+    connectBtn.disabled = true;
+    return;
+  }
+  if (state === CONNECTION_STATE.DISCONNECTING) {
+    connectBtn.textContent = 'Disconnecting...';
+    connectBtn.disabled = true;
+    return;
+  }
+  connectBtn.disabled = false;
+  connectBtn.textContent = state === CONNECTION_STATE.CONNECTED ? 'Disconnect' : 'Connect';
+};
+
+const setConnectionState = (state) => {
+  connectionState = state;
+  setConnectButtonState(state);
+};
+
 const showInspector = (title, lines) => {
   inspectTitle.textContent = title;
   inspectBody.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
@@ -536,6 +1709,8 @@ const setConsoleVisible = (visible) => {
   }
 };
 
+const shouldShowP2PTopology = () => showP2PTopologyToggle?.checked ?? true;
+const shouldShowIPTopology = () => showIPTopologyToggle?.checked ?? true;
 const shouldHideGhosts = () => hideGhostsToggle?.checked ?? true;
 const shouldAutoRotate = () => autoRotateToggle?.checked ?? false;
 
@@ -785,7 +1960,8 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextTxBps = Number(metrics?.txBps) || 0;
     const nextRxCount = Number(metrics?.rxCount) || 0;
     const nextTxCount = Number(metrics?.txCount) || 0;
-    const via = metrics?.via || null;
+    const rawVia = metrics?.via || null;
+    const via = rawVia === 'webrtc' ? 'webrtc' : 'relay';
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
     if (existing) {
@@ -821,6 +1997,7 @@ const buildEdges = (peers, localId, relayState = null) => {
     edgeMap.set(key, {
       from,
       to,
+      source: 'p2p-topology',
       rxBps: nextRxBps,
       txBps: nextTxBps,
       rxCount: nextRxCount,
@@ -863,7 +2040,6 @@ const buildEdges = (peers, localId, relayState = null) => {
 const buildPubsubEdges = (peers, relayState = null) => {
   const edges = [];
   const now = Date.now();
-  const relayFallback = relayState?.activeRelayIds?.[0] || null;
   const peerRelayMap = relayState?.peerRelayMap;
 
   peers.forEach((peer) => {
@@ -871,9 +2047,7 @@ const buildPubsubEdges = (peers, relayState = null) => {
     const pubsub = peer.pubsub || {};
     const txCount = Number(pubsub.txCount) || 0;
     const rxCount = Number(pubsub.rxCount) || 0;
-    const hasPubsub = txCount > 0 || rxCount > 0 || pubsub.lastTxAt || pubsub.lastRxAt;
-    if (!hasPubsub) return;
-    const relayPeerId = peerRelayMap?.get(peer.peerId) || relayFallback;
+    const relayPeerId = peerRelayMap?.get(peer.peerId);
     if (!relayPeerId) return;
     const lastTxAt = Number(pubsub.lastTxAt);
     const lastRxAt = Number(pubsub.lastRxAt);
@@ -897,13 +2071,133 @@ const findNeighborMetrics = (fromPeer, toPeerId) => {
   return neighbors.find((neighbor) => neighbor?.peerId === toPeerId) || null;
 };
 
+const formatLocalTime = (value) => (
+  Number.isFinite(value) ? new Date(value).toLocaleTimeString() : '--'
+);
+
+const formatCompactList = (values = [], max = 3) => {
+  const list = uniqueList(values);
+  if (list.length === 0) return '--';
+  if (list.length <= max) return list.join(', ');
+  return `${list.slice(0, max).join(', ')} (+${list.length - max})`;
+};
+
+const buildChaosNodeInfo = (peerId) => {
+  const info = lastChaosOverlay.peerInfo.get(peerId);
+  if (!info) {
+    return {
+      title: `Node ${formatPeerId(peerId)}`,
+      lines: ['No IP-topology metadata for this node.']
+    };
+  }
+
+  if (info.kind === 'core') {
+    return {
+      title: 'IP Topology Core',
+      lines: [
+        `Mode: ${info.actualMode}`,
+        `Requested mode: ${info.requestedMode}`,
+        `IP mode: ${info.ipMode}`,
+        `Segments: ${info.segmentTotal}`,
+        `Agents: ${info.agentTotal}`,
+        `Services: ${info.serviceTotal}`
+      ]
+    };
+  }
+
+  if (info.kind === 'segment') {
+    return {
+      title: `IP Segment ${info.segmentId}`,
+      lines: [
+        `Partitioned: ${info.partitioned ? 'yes' : 'no'}`,
+        `Uplink: ${info.uplinkEnabled ? 'enabled' : 'disabled'}`,
+        `IPv4 subnet: ${info.ipv4Subnet}`,
+        `IPv6 subnet: ${info.ipv6Subnet}`,
+        `Gateway v4/v6: ${info.gateway4} / ${info.gateway6}`,
+        `NAT: ${info.natEnabled ? 'enabled' : 'disabled'} (${info.natType})`,
+        `NAT uplink v4/v6: ${info.natUplinkIpv4} / ${info.natUplinkIpv6}`,
+        `Link profile: bw ${info.linkProfile?.bwMbit ?? '--'}mbit | delay ${info.linkProfile?.delayMs ?? '--'}ms | loss ${info.linkProfile?.lossPct ?? '--'}%`
+      ]
+    };
+  }
+
+  if (info.kind === 'service') {
+    return {
+      title: `IP Service ${info.service}`,
+      lines: [
+        `Host: ${info.host}`,
+        `IPv4: ${info.ipv4}`,
+        `IPv6: ${info.ipv6}`
+      ]
+    };
+  }
+
+  if (info.kind === 'agent') {
+    return {
+      title: `IP Agent ${info.name}`,
+      lines: [
+        `Enabled: ${info.enabled ? 'yes' : 'no'}`,
+        `Segment: ${info.segmentId}`,
+        `IPv4: ${info.ipv4}`,
+        `IPv6: ${info.ipv6}`,
+        `NAT: ${info.natEnabled ? 'enabled' : 'disabled'} (${info.natType})`
+      ]
+    };
+  }
+
+  if (info.kind === 'p2p-node') {
+    return {
+      title: `P2P Node ${formatPeerId(peerId)}`,
+      lines: [
+        `Source: chaos probe telemetry`,
+        `Agent: ${info.agentName || '--'}`,
+        `Segment: ${info.segmentId || '--'}`,
+        `Peer ID: ${info.peerId || peerId}`,
+        `Peers: ${info.peerCount ?? '--'} (direct ${info.directPeerCount ?? '--'} | relay ${info.relayPeerCount ?? '--'})`,
+        `Has direct connection: ${info.hasDirectConnection ? 'yes' : 'no'}`,
+        `Has relay WebRTC: ${info.hasRelayWebrtcConnection ? 'yes' : 'no'}`,
+        `Announced direct /webrtc addrs: ${info.announcedDirectWebrtcAddrsCount ?? '--'}`
+      ]
+    };
+  }
+
+  return {
+    title: `Node ${formatPeerId(peerId)}`,
+    lines: ['Unknown IP-topology node type.']
+  };
+};
+
 const buildNodeInfo = (peerId) => {
+  const displayedPeer = lastDisplayedPeersById.get(peerId) || null;
+  if (
+    displayedPeer?.source === 'ip-topology'
+    || displayedPeer?.source === 'chaos-p2p'
+    || String(peerId).startsWith(CHAOS_NODE_PREFIX)
+  ) {
+    return buildChaosNodeInfo(peerId);
+  }
+
+  const connectionSnapshot = getConnectionAddressSnapshot();
+  const liveConnections = connectionSnapshot.byPeer.get(peerId) || [];
+  const observedIpv4 = uniqueList(liveConnections.map((entry) => entry.ip4));
+  const observedIpv6 = uniqueList(liveConnections.map((entry) => entry.ip6));
+  const hasPrivateIpv4 = observedIpv4.some((value) => isPrivateIpv4(value));
+  const hasPrivateIpv6 = observedIpv6.some((value) => isPrivateIpv6(value));
+
   const data = telemetryStore.get(peerId);
   if (!data) {
     const isRelay = relayPeerIds.has(peerId);
     return {
       title: `Node ${formatPeerId(peerId)}`,
-      lines: isRelay ? ['Role: Relay server', 'No telemetry for this node yet.'] : ['No telemetry for this node yet.']
+      lines: isRelay
+        ? [
+            'Role: Relay server',
+            `Link modes: ${summarizeConnectionKinds(liveConnections)}`,
+            `Observed IPv4: ${formatCompactList(observedIpv4)}`,
+            `Observed IPv6: ${formatCompactList(observedIpv6)}`,
+            'No telemetry for this node yet.'
+          ]
+        : ['No telemetry for this node yet.']
     };
   }
   const isRelay = relayPeerIds.has(peerId);
@@ -917,21 +2211,43 @@ const buildNodeInfo = (peerId) => {
   const role = isRelay
     ? 'relay'
     : data.role || (peerId === localPeerId ? 'local' : 'peer');
+  const natGuess = guessNatStatus(liveConnections);
+  const localAddrSummary = peerId === localPeerId
+    ? connectionSnapshot.localAddrs
+    : [];
+  const localWebrtcAddrs = peerId === localPeerId
+    ? localAddrSummary.filter((addr) => String(addr).includes('/webrtc'))
+    : [];
+  const localRelayAddrs = peerId === localPeerId
+    ? localAddrSummary.filter((addr) => String(addr).includes('/p2p-circuit'))
+    : [];
   const lines = [
     `Peer ID: ${peerId}`,
     `Role: ${role}`,
+    `Connection state: ${connectionState}`,
     `Topology: ${data.topologyId || '--'}`,
     `Room: ${data.roomId || '--'}`,
     `Shard: ${data.shardId || '--'}`,
     `Metric: ${formatMetric(data.metric)}`,
     `Connections: ${data.connections ?? peers.length}`,
     `Peers: ${data.peerCount ?? peers.length}`,
+    `Link modes: ${summarizeConnectionKinds(liveConnections)}`,
+    `NAT status (heuristic): ${natGuess}`,
+    `Observed IPv4: ${formatCompactList(observedIpv4)}${hasPrivateIpv4 ? ' (private seen)' : ''}`,
+    `Observed IPv6: ${formatCompactList(observedIpv6)}${hasPrivateIpv6 ? ' (private seen)' : ''}`,
     `Rx: ${counts.rx ?? 0} (${formatBytes(counts.rxBytes)}) @ ${formatRate(rates.rxBps)}`,
     `Tx: ${counts.tx ?? 0} (${formatBytes(counts.txBytes)}) @ ${formatRate(rates.txBps)}`,
     `Avg RTT: ${formatMs(avgRtt)}`,
-    `Last Rx: ${data.lastRxAt ? new Date(data.lastRxAt).toLocaleTimeString() : '--'}`,
-    `Last Tx: ${data.lastTxAt ? new Date(data.lastTxAt).toLocaleTimeString() : '--'}`
+    `Last Rx: ${formatLocalTime(data.lastRxAt)}`,
+    `Last Tx: ${formatLocalTime(data.lastTxAt)}`
   ];
+  if (peerId === localPeerId) {
+    lines.push(`Announce addrs: total ${localAddrSummary.length} | webrtc ${localWebrtcAddrs.length} | relay ${localRelayAddrs.length}`);
+    lines.push(`Local addrs: ${formatCompactList(localAddrSummary, 2)}`);
+  } else {
+    const liveAddrs = uniqueList(liveConnections.map((entry) => entry.remoteAddr));
+    lines.push(`Remote addrs: ${formatCompactList(liveAddrs, 2)}`);
+  }
 
   return {
     title: `Node ${formatPeerId(peerId)}`,
@@ -939,24 +2255,83 @@ const buildNodeInfo = (peerId) => {
   };
 };
 
-const buildEdgeInfo = (fromId, toId) => {
+const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
+  const edgeKey = buildEdgeKey(fromId, toId);
+  const edgeMeta = lastDisplayedEdgesByKey.get(edgeKey)
+    || lastP2PEdgesByKey.get(edgeKey)
+    || null;
+  const chaosEdgeMeta = lastChaosOverlay.edgeInfo.get(edgeKey) || null;
+  if ((edgeMeta?.source === 'ip-topology' || chaosEdgeMeta) && edgeType !== 'pubsub') {
+    const info = chaosEdgeMeta || edgeMeta;
+    if (info?.source === 'chaos-p2p' || info?.kind === 'p2p-link') {
+      const lines = [
+        `From: ${fromId}`,
+        `To: ${toId}`,
+        `Agent sample: ${info.agentName || '--'}`,
+        `Via: ${info.via || '--'}`,
+        `Rx rate: ${formatRate(info.rxBps)} (${info.rxCount ?? 0} msgs)`,
+        `Tx rate: ${formatRate(info.txBps)} (${info.txCount ?? 0} msgs)`
+      ];
+      return {
+        title: `P2P Edge ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
+        lines
+      };
+    }
+    const lines = [
+      `From: ${fromId}`,
+      `To: ${toId}`,
+      `Type: ${info.kind || 'ip-link'}`
+    ];
+    if (info.segmentId) lines.push(`Segment: ${info.segmentId}`);
+    if (info.service) lines.push(`Service: ${info.service}`);
+    if (info.agentName) lines.push(`Agent: ${info.agentName}`);
+    if (info.natType) lines.push(`NAT: ${info.natType}`);
+    if (Number.isFinite(info.bwMbit)) lines.push(`Bandwidth: ${info.bwMbit} mbit`);
+    if (Number.isFinite(info.delayMs)) lines.push(`Delay: ${info.delayMs} ms`);
+    if (Number.isFinite(info.lossPct)) lines.push(`Loss: ${info.lossPct}%`);
+    if (typeof info.partitioned === 'boolean') lines.push(`Partitioned: ${info.partitioned ? 'yes' : 'no'}`);
+    if (typeof info.enabled === 'boolean') lines.push(`Agent enabled: ${info.enabled ? 'yes' : 'no'}`);
+    return {
+      title: `IP Edge ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
+      lines
+    };
+  }
+
   const fromData = telemetryStore.get(fromId);
   const toData = telemetryStore.get(toId);
   const fromMetrics = findNeighborMetrics(fromData, toId);
   const toMetrics = findNeighborMetrics(toData, fromId);
   const rttMs = Number.isFinite(fromMetrics?.rttMs) ? fromMetrics.rttMs : toMetrics?.rttMs;
-  const rxBps = Number.isFinite(fromMetrics?.rxBps) ? fromMetrics.rxBps : 0;
-  const txBps = Number.isFinite(fromMetrics?.txBps) ? fromMetrics.txBps : 0;
+  const rxBps = Number.isFinite(edgeMeta?.rxBps) ? edgeMeta.rxBps : (Number.isFinite(fromMetrics?.rxBps) ? fromMetrics.rxBps : 0);
+  const txBps = Number.isFinite(edgeMeta?.txBps) ? edgeMeta.txBps : (Number.isFinite(fromMetrics?.txBps) ? fromMetrics.txBps : 0);
+  const rxCount = Number.isFinite(edgeMeta?.rxCount) ? edgeMeta.rxCount : (Number.isFinite(fromMetrics?.rxCount) ? fromMetrics.rxCount : 0);
+  const txCount = Number.isFinite(edgeMeta?.txCount) ? edgeMeta.txCount : (Number.isFinite(fromMetrics?.txCount) ? fromMetrics.txCount : 0);
+  const via = edgeType === 'pubsub' ? 'pubsub' : (edgeMeta?.via || fromMetrics?.via || toMetrics?.via || 'unknown');
+  const relayPeerId = edgeMeta?.relayPeerId || null;
+  const lastRxAt = Number.isFinite(edgeMeta?.lastRxAt) ? edgeMeta.lastRxAt : fromMetrics?.lastRxAt;
+  const lastTxAt = Number.isFinite(edgeMeta?.lastTxAt) ? edgeMeta.lastTxAt : fromMetrics?.lastTxAt;
+  const localPeer = fromId === localPeerId ? toId : toId === localPeerId ? fromId : null;
+  const connectionSnapshot = getConnectionAddressSnapshot();
+  const liveConnections = localPeer ? (connectionSnapshot.byPeer.get(localPeer) || []) : [];
+  const observedIpv4 = uniqueList(liveConnections.map((entry) => entry.ip4));
+  const observedIpv6 = uniqueList(liveConnections.map((entry) => entry.ip6));
 
   return {
-    title: `Edge ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
+    title: `${edgeType === 'pubsub' ? 'Pubsub' : 'Edge'} ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
     lines: [
       `From: ${fromId}`,
       `To: ${toId}`,
+      `Transport: ${via}`,
+      relayPeerId ? `Relay peer: ${relayPeerId}` : 'Relay peer: --',
       `RTT: ${formatMs(rttMs)}`,
-      `Rx rate: ${formatRate(rxBps)}`,
-      `Tx rate: ${formatRate(txBps)}`,
-      `Updated: ${fromMetrics?.lastRttAt ? new Date(fromMetrics.lastRttAt).toLocaleTimeString() : '--'}`
+      `Rx rate: ${formatRate(rxBps)} (${rxCount} msgs)`,
+      `Tx rate: ${formatRate(txBps)} (${txCount} msgs)`,
+      `Observed IPv4: ${formatCompactList(observedIpv4)}`,
+      `Observed IPv6: ${formatCompactList(observedIpv6)}`,
+      `Last Rx: ${formatLocalTime(lastRxAt)}`,
+      `Last Tx: ${formatLocalTime(lastTxAt)}`,
+      edgeMeta?.errorActive ? 'Edge state: error active' : 'Edge state: healthy',
+      `Updated: ${formatLocalTime(fromMetrics?.lastRttAt)}`
     ]
   };
 };
@@ -1028,6 +2403,7 @@ const updateRelayStatus = () => {
 
 const updateHud = () => {
   telemetryStore.prune(15000);
+  syncAttachSessionsFromNode();
   updateRelayStatus();
   const entries = telemetryStore.list();
   resolveLocalMetricOverlap(entries);
@@ -1044,7 +2420,37 @@ const updateHud = () => {
   updateHierarchicalRelayPolicy();
   const edges = buildEdges(peers, localPeerId, relayState);
   const pubsubEdges = buildPubsubEdges(peers, relayState);
-  visualizer.updatePeers(peers, localPeerId, edges, pubsubEdges);
+  const chaosOverlay = buildChaosOverlay();
+  const chaosP2POverlay = buildChaosP2POverlay(chaosOverlay.topology);
+  const p2pEnabled = shouldShowP2PTopology();
+  const ipEnabled = shouldShowIPTopology();
+  const p2pPeers = peers.map((peer) => ({ ...peer, source: peer.source || 'p2p-topology' }));
+  const p2pEdges = edges.map((edge) => ({ ...edge, source: edge.source || 'p2p-topology' }));
+  const mergedP2PPeers = mergePeersForDisplay(p2pPeers, chaosP2POverlay.peers);
+  const mergedP2PEdges = mergeEdgesForDisplay(p2pEdges, chaosP2POverlay.edges);
+  const displayPeers = mergePeersForDisplay(
+    p2pEnabled ? mergedP2PPeers : [],
+    ipEnabled ? chaosOverlay.peers : []
+  );
+  const displayEdges = mergeEdgesForDisplay(
+    p2pEnabled ? mergedP2PEdges : [],
+    ipEnabled ? chaosOverlay.edges : []
+  );
+  const displayPubsubEdges = p2pEnabled ? pubsubEdges : [];
+
+  lastP2PPeersById = new Map(mergedP2PPeers.map((peer) => [peer.peerId, peer]));
+  lastP2PEdgesByKey = new Map(mergedP2PEdges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
+  lastChaosOverlay = {
+    ...chaosOverlay,
+    peers: mergePeersForDisplay(chaosOverlay.peers, chaosP2POverlay.peers),
+    edges: mergeEdgesForDisplay(chaosOverlay.edges, chaosP2POverlay.edges),
+    peerInfo: new Map([...chaosOverlay.peerInfo, ...chaosP2POverlay.peerInfo]),
+    edgeInfo: new Map([...chaosOverlay.edgeInfo, ...chaosP2POverlay.edgeInfo])
+  };
+  lastDisplayedPeersById = new Map(displayPeers.map((peer) => [peer.peerId, peer]));
+  lastDisplayedEdgesByKey = new Map(displayEdges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
+
+  visualizer.updatePeers(displayPeers, localPeerId, displayEdges, displayPubsubEdges);
 
   const local = localPeerId ? telemetryStore.get(localPeerId) : null;
   if (local) {
@@ -1074,16 +2480,20 @@ const updateHud = () => {
     setStatus('Status: connecting...');
   }
 
-  if (peers.length === 0) {
+  if (displayPeers.length === 0) {
     peerListEl.textContent = 'No peers yet.';
     return;
   }
 
-  const lines = peers
+  const lines = displayPeers
     .slice()
     .sort((a, b) => (a.peerId || '').localeCompare(b.peerId || ''))
     .map((peer) => {
-      const tag = peer.isRelay
+      const tag = isChaosNodeId(peer.peerId)
+        ? 'CHAOS'
+        : peer.source === 'chaos-p2p'
+          ? 'P2P* '
+        : peer.isRelay
         ? 'RELAY'
         : peer.peerId === localPeerId
           ? 'LOCAL'
@@ -1093,7 +2503,10 @@ const updateHud = () => {
       const rx = peer.counts?.rx ?? peer.rxCount ?? 0;
       const tx = peer.counts?.tx ?? peer.txCount ?? 0;
       const rtt = Number.isFinite(peer.rttMs) ? ` | rtt ${Math.round(peer.rttMs)}ms` : '';
-      return `${tag} ${formatPeerId(peer.peerId)} | rx ${rx} | tx ${tx}${rtt}`;
+      const displayId = isChaosNodeId(peer.peerId)
+        ? String(peer.peerId).slice(CHAOS_NODE_PREFIX.length, CHAOS_NODE_PREFIX.length + 18)
+        : formatPeerId(peer.peerId);
+      return `${tag} ${displayId} | rx ${rx} | tx ${tx}${rtt}`;
     });
   peerListEl.textContent = lines.join('\n');
 };
@@ -1126,10 +2539,111 @@ const startTelemetryLoop = () => {
   uiTimer = setInterval(updateHud, HUD_UPDATE_MS);
 };
 
+const stopTelemetryLoop = () => {
+  if (telemetryTimer) {
+    clearInterval(telemetryTimer);
+    telemetryTimer = null;
+  }
+  if (uiTimer) {
+    clearInterval(uiTimer);
+    uiTimer = null;
+  }
+};
+
+const stopDebugLoop = () => {
+  if (!debugLogTimer) return;
+  clearInterval(debugLogTimer);
+  debugLogTimer = null;
+};
+
+const shutdownNode = async (nodeInstance) => {
+  if (!nodeInstance) return;
+
+  let stopped = false;
+  if (nodeInstance.isStarted) {
+    try {
+      await nodeInstance.stop();
+      stopped = true;
+    } catch (err) {
+      console.warn('[NetViz] Node stop failed:', err?.message || err);
+    }
+  }
+
+  if (stopped) return;
+
+  try {
+    await nodeInstance.networkManager?.disconnect?.();
+  } catch (err) {
+    console.warn('[NetViz] Network disconnect cleanup failed:', err?.message || err);
+  }
+  try {
+    await nodeInstance.stateManager?.destroy?.();
+  } catch (err) {
+    console.warn('[NetViz] State cleanup failed:', err?.message || err);
+  }
+};
+
+const resetRuntimeState = () => {
+  node = null;
+  networkManager = null;
+  stateManager = null;
+  localPeerId = null;
+  relayPeerIds = new Set();
+  relayReachable = null;
+  lastRelayPeerId = null;
+  connectStartedAt = 0;
+  libp2pLogAttached = false;
+  lastConnectionPolicy = null;
+  lastPeerView = [];
+  connectionErrors.clear();
+  telemetryStore.clear();
+  setDragActive(false);
+  dragMoved = false;
+  skipNextClick = false;
+  hideInspector();
+};
+
+const disconnect = async ({ reason = 'manual' } = {}) => {
+  if (connectionState === CONNECTION_STATE.DISCONNECTING
+    || connectionState === CONNECTION_STATE.DISCONNECTED) {
+    return;
+  }
+
+  const previousState = connectionState;
+  setConnectionState(CONNECTION_STATE.DISCONNECTING);
+  setConfigInputsDisabled(true);
+  setStatus('Status: disconnecting...');
+  stopTelemetryLoop();
+  stopDebugLoop();
+  const activeNode = node;
+
+  try {
+    await shutdownNode(activeNode);
+  } catch (err) {
+    console.error('NetViz disconnect failed', err);
+    logEvent(`Disconnect warning: ${err?.message || err}`);
+  } finally {
+    resetRuntimeState();
+    visualizer.updatePeers([], null, [], []);
+    peerListEl.textContent = 'No peers yet.';
+    setConfigInputsDisabled(false);
+    setConnectionState(CONNECTION_STATE.DISCONNECTED);
+    if (reason === 'manual') {
+      logEvent('Disconnected.');
+    } else if (previousState === CONNECTION_STATE.CONNECTING) {
+      logEvent('Connect attempt cancelled.');
+    }
+    setStatus('Status: disconnected');
+    syncInputsToUrl();
+  }
+};
+
 const connect = async () => {
-  if (node) return;
+  if (connectionState !== CONNECTION_STATE.DISCONNECTED) return;
+  setConnectionState(CONNECTION_STATE.CONNECTING);
+  setConfigInputsDisabled(true);
+  syncQueryParams(readUrlInputState());
   setStatus('Status: connecting...');
-  connectBtn.disabled = true;
   logEvent('Connecting to relay...');
   connectStartedAt = Date.now();
   relayReachable = null;
@@ -1193,7 +2707,7 @@ const connect = async () => {
       ? urlConnectionRadius
       : Number.isFinite(cfg.connectionRadius)
         ? cfg.connectionRadius
-        : 1.2;
+        : 1.1;
     const isolationMinConnections = Number.isFinite(cfg.isolationMinConnections)
       ? cfg.isolationMinConnections
       : 2;
@@ -1225,6 +2739,9 @@ const connect = async () => {
       disableStateNetworkProvider: true,
       disableStateBroadcast: true,
       enableWarmDeltaProvider: true,
+      enableNetVizDebugTelemetry: false,
+      enableNetVizSessionBroadcast: false,
+      enableNetVizSessionDiscovery: true,
       deltaNamespace: 'telemetry',
       gameId: 'netviz',
       roomId,
@@ -1252,24 +2769,81 @@ const connect = async () => {
     seedLocalMetricIfNeeded();
     logEvent(`Local peer ready (${formatPeerId(localPeerId)})`);
     logEvent(`Topology set to ${topologyType} (${topologyId})`);
-    if (topologySelect) topologySelect.disabled = true;
-    if (topologyIdInput) topologyIdInput.disabled = true;
-    if (roomInput) roomInput.disabled = true;
-    syncQueryParams({ room: roomId, topologyId, topologyType });
+    setConnectionState(CONNECTION_STATE.CONNECTED);
+    if (!debugLogTimer) {
+      debugLogTimer = setInterval(() => {
+        const debug = window.__NETVIZ__?.getStatus?.().relayRetentionDebug || null;
+        console.log('[NetViz] Relay retention debug:', debug ? JSON.stringify(debug) : 'n/a');
+        try {
+          const libp2p = networkManager?.getLibp2pNode?.();
+          const addrs = libp2p?.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+          const connections = libp2p?.getConnections?.() || [];
+          const summarized = Array.isArray(connections)
+            ? connections.map((conn) => {
+                const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+                return {
+                  peerId: conn?.remotePeer?.toString?.() || '',
+                  remoteAddr,
+                  isRelay: remoteAddr.includes('/p2p-circuit'),
+                  isWebRTC: remoteAddr.includes('/webrtc')
+                };
+              })
+            : [];
+          console.log('[NetViz] Libp2p addrs:', addrs);
+          console.log('[NetViz] Connections:', summarized);
+        } catch (err) {
+          console.warn('[NetViz] Libp2p debug failed:', err?.message || err);
+        }
+      }, 60000);
+    }
+    syncQueryParams(readUrlInputState());
     startTelemetryLoop();
     updateHud();
   } catch (err) {
     console.error('NetViz connect failed', err);
+    stopTelemetryLoop();
+    stopDebugLoop();
+    await shutdownNode(node);
+    resetRuntimeState();
+    visualizer.updatePeers([], null, [], []);
+    peerListEl.textContent = 'No peers yet.';
+    setConfigInputsDisabled(false);
+    setConnectionState(CONNECTION_STATE.DISCONNECTED);
     setStatus(`Status: error (${err?.message || err})`);
     logEvent(`Connect failed: ${err?.message || err}`);
-    connectBtn.disabled = false;
   }
 };
 
 const attachDebugHandles = () => {
   if (typeof window === 'undefined') return;
+  const getLibp2pDebug = () => {
+    try {
+      const libp2p = networkManager?.getLibp2pNode?.();
+      if (!libp2p) return { addrs: [], announceAddrs: [], connections: [] };
+      const addrs = libp2p.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+      const announceAddrs = networkManager?.getAnnounceAddrs?.() || addrs;
+      const connections = libp2p.getConnections?.() || [];
+      const summarized = Array.isArray(connections)
+        ? connections.map((conn) => {
+            const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+            return {
+              peerId: conn?.remotePeer?.toString?.() || '',
+              remoteAddr,
+              isRelay: remoteAddr.includes('/p2p-circuit'),
+              isWebRTC: remoteAddr.includes('/webrtc')
+            };
+          })
+        : [];
+      return { addrs, announceAddrs, connections: summarized };
+    } catch (_) {
+      return { addrs: [], announceAddrs: [], connections: [] };
+    }
+  };
+
   window.__NETVIZ__ = {
     getStatus: () => ({
+      ...getLibp2pDebug(),
+      connectionState,
       localPeerId,
       topologyType,
       topologyId,
@@ -1278,6 +2852,9 @@ const attachDebugHandles = () => {
       relayReachable,
       telemetry: networkManager?.getTelemetrySnapshot?.() || null,
       peers: telemetryStore.list(),
+      chaosApiBase,
+      chaosFeed,
+      attachSessions: Array.from(attachSessions.values()),
       relayRetentionDebug: networkManager ? {
         dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
         relayRetention: networkManager.config?.webrtc?.relayRetention,
@@ -1286,14 +2863,40 @@ const attachDebugHandles = () => {
         shouldKeepRelay: networkManager._shouldKeepRelayBootstrapConnection?.()
       } : null
     }),
-    connect: () => connect()
+    connect: () => connect(),
+    disconnect: () => disconnect(),
+    toggleConnection: () => {
+      if (connectionState === CONNECTION_STATE.CONNECTED) {
+        return disconnect();
+      }
+      if (connectionState === CONNECTION_STATE.DISCONNECTED) {
+        return connect();
+      }
+      return Promise.resolve();
+    }
   };
 };
 
 attachDebugHandles();
 
+const toggleConnection = () => {
+  if (connectionState === CONNECTION_STATE.CONNECTED) {
+    return disconnect();
+  }
+  if (connectionState === CONNECTION_STATE.DISCONNECTED) {
+    return connect();
+  }
+  return Promise.resolve();
+};
+
 connectBtn.addEventListener('click', () => {
-  connect().catch(() => {});
+  toggleConnection().catch(() => {});
+});
+
+attachSessionBtn?.addEventListener('click', () => {
+  attachToSelectedSession().catch((err) => {
+    logEvent(`Attach failed: ${err?.message || err}`);
+  });
 });
 
 const handlePick = (event) => {
@@ -1319,6 +2922,11 @@ const handlePick = (event) => {
   }
   if (hit.type === 'edge') {
     const info = buildEdgeInfo(hit.from, hit.to);
+    showInspector(info.title, info.lines);
+    return;
+  }
+  if (hit.type === 'pubsub') {
+    const info = buildEdgeInfo(hit.from, hit.to, 'pubsub');
     showInspector(info.title, info.lines);
   }
 };
@@ -1375,6 +2983,17 @@ consoleToggle?.addEventListener('click', () => {
 
 hideGhostsToggle?.addEventListener('change', () => {
   updateHud();
+  syncInputsToUrl();
+});
+
+showP2PTopologyToggle?.addEventListener('change', () => {
+  updateHud();
+  syncInputsToUrl();
+});
+
+showIPTopologyToggle?.addEventListener('change', () => {
+  updateHud();
+  syncInputsToUrl();
 });
 
 autoRotateToggle?.addEventListener('change', () => {
@@ -1385,33 +3004,88 @@ topologySelect?.addEventListener('change', () => {
   topologyType = normalizeTopologyType(topologySelect.value);
   visualizer.setTopologyMode(topologyType);
   updateHud();
+  syncInputsToUrl();
 });
 
 topologyIdInput?.addEventListener('input', () => {
   topologyId = topologyIdInput.value.trim() || 'netviz-topology';
   updateHud();
+  syncInputsToUrl();
 });
 
 roomInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && connectionState === CONNECTION_STATE.DISCONNECTED) {
     connect().catch(() => {});
   }
 });
 
+roomInput.addEventListener('input', () => {
+  syncInputsToUrl();
+});
+
+renderModeSelect?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+connectionRadiusInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+maxConnectionsInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+targetConnectionsInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+dropRelayToggle?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+relayRetentionModeSelect?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+relayRetentionMinInput?.addEventListener('change', () => {
+  syncInputsToUrl();
+});
+
+setConnectionState(CONNECTION_STATE.DISCONNECTED);
+setConfigInputsDisabled(false);
+
 const queryParams = applyQueryParams();
-if (queryParams.room && queryParams.topologyId) {
+refreshAttachSessionOptions();
+startAttachSessionBridge();
+startChaosPolling();
+const autoConnect = parseBooleanParam(queryParams.autoConnect);
+const shouldAutoConnect = autoConnect ?? Boolean(queryParams.room && queryParams.topologyId);
+if (shouldAutoConnect) {
   connect().catch(() => {});
 }
 
 topologyIdInput?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && connectionState === CONNECTION_STATE.DISCONNECTED) {
     connect().catch(() => {});
   }
 });
 
 window.addEventListener('beforeunload', () => {
-  if (telemetryTimer) clearInterval(telemetryTimer);
-  if (uiTimer) clearInterval(uiTimer);
+  stopTelemetryLoop();
+  stopDebugLoop();
+  stopChaosPolling();
+  if (attachSessionChannel) {
+    try {
+      attachSessionChannel.close();
+    } catch (_) {
+      // no-op
+    }
+    attachSessionChannel = null;
+  }
+  if (node) {
+    node.stop().catch(() => {});
+  }
 });
 
+updateChaosPanel();
 updateHud();

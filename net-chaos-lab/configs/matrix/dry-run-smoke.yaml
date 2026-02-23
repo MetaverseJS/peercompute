@@ -1,0 +1,30 @@
+name: dry-run-smoke
+defaults:
+  mode: dry-run
+  topology: net-chaos-lab/configs/topology.default.yaml
+  skip_probes: true
+  skip_scenario: true
+  probe_each_stage: false
+  time_scale: 0.0
+
+runs:
+  - id: baseline
+    scenario: net-chaos-lab/configs/scenarios/default-chaos.yaml
+    gates:
+      - metric: probe_total
+        op: "=="
+        value: 0
+      - metric: scenario_event_count
+        op: "=="
+        value: 0
+
+  - id: direct-diagnostics
+    scenario: net-chaos-lab/configs/scenarios/direct-diagnostics.yaml
+    agents: 16
+    gates:
+      - metric: probe_total
+        op: "=="
+        value: 0
+      - metric: scenario_event_count
+        op: "=="
+        value: 0

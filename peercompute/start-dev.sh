@@ -43,6 +43,11 @@ if [ -z "${RELAY_PUBLIC_HOST:-}" ]; then
   LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}') || true
   if [ -n "$LOCAL_IP" ]; then
     export RELAY_PUBLIC_HOST="$LOCAL_IP"
+    # Keep listen/public address families aligned so the advertised relay
+    # address is actually reachable by local browsers.
+    if [ "${RELAY_LISTEN_HOST:-}" = "::" ]; then
+      export RELAY_LISTEN_HOST="0.0.0.0"
+    fi
     echo "   Auto-detected RELAY_PUBLIC_HOST=$RELAY_PUBLIC_HOST"
   fi
 fi

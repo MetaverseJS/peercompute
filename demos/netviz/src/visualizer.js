@@ -59,7 +59,7 @@ export class NetworkVisualizer {
     const lowPower = this.renderMode === 'low';
     const shouldRender = this.renderMode !== 'off';
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 900);
     this.renderer = shouldRender
       ? new THREE.WebGLRenderer({
         canvas,
@@ -173,10 +173,10 @@ export class NetworkVisualizer {
       this.camera.lookAt(0, 0, 0);
       return;
     }
-    const gridSize = this.renderMode === 'low' ? 40 : 60;
-    const baseDetail = this.renderMode === 'low' ? 40 : 60;
-    const fineDetail = this.renderMode === 'low' ? 80 : 120;
-    const horizonDetail = this.renderMode === 'low' ? 14 : 20;
+    const gridSize = this.renderMode === 'low' ? 220 : 320;
+    const baseDetail = this.renderMode === 'low' ? 90 : 140;
+    const fineDetail = this.renderMode === 'low' ? 180 : 260;
+    const horizonDetail = this.renderMode === 'low' ? 26 : 40;
     const gridGroup = new THREE.Group();
     const baseGrid = new THREE.GridHelper(gridSize, baseDetail, COLORS.grid, COLORS.grid);
     baseGrid.material.opacity = 0.22;
@@ -204,9 +204,10 @@ export class NetworkVisualizer {
 
     const pillarGeometry = new THREE.BufferGeometry();
     const pillarPoints = [];
-    const pillarRange = this.renderMode === 'low' ? 10 : 20;
-    for (let x = -pillarRange; x <= pillarRange; x += 10) {
-      for (let z = -pillarRange; z <= pillarRange; z += 10) {
+    const pillarRange = this.renderMode === 'low' ? 80 : 120;
+    const pillarStep = this.renderMode === 'low' ? 20 : 24;
+    for (let x = -pillarRange; x <= pillarRange; x += pillarStep) {
+      for (let z = -pillarRange; z <= pillarRange; z += pillarStep) {
         if ((Math.abs(x) + Math.abs(z)) % 20 !== 0) continue;
         pillarPoints.push(x, 0, z, x, 6, z);
       }
@@ -230,7 +231,7 @@ export class NetworkVisualizer {
 
     this.scene.add(ambient, key, rim);
 
-    this.camera.position.set(0, 10, 16);
+    this.camera.position.set(0, 20, 52);
     this.camera.lookAt(0, 0, 0);
   }
 
@@ -242,7 +243,7 @@ export class NetworkVisualizer {
     this.controls.enablePan = true;
     this.controls.enableZoom = true;
     this.controls.minDistance = 6;
-    this.controls.maxDistance = 45;
+    this.controls.maxDistance = 240;
     this.controls.autoRotate = false;
     this.controls.autoRotateSpeed = 0.6;
     this.controls.target.set(0, 0, 0);
@@ -818,11 +819,12 @@ export class NetworkVisualizer {
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
+      const isWebRTC = via === 'webrtc';
       const edgeColor = errorActive
         ? COLORS.edgeError
-        : via === 'relay'
-          ? COLORS.edgeRelay
-          : COLORS.edge;
+        : isWebRTC
+          ? COLORS.edge
+          : COLORS.edgeRelay;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {
@@ -880,6 +882,7 @@ export class NetworkVisualizer {
         const relayGeometry = new THREE.TubeGeometry(relayCurve, 32, relayRadius, 6, false);
         if (!edgeData.relay) {
           const relayMesh = new THREE.Mesh(relayGeometry, this.edgeMaterial.clone());
+          relayMesh.userData = { type: 'edge', from, to, relayPeerId };
           relayMesh.material.color.set(COLORS.edgeRelay);
           this.edgeGroup.add(relayMesh);
           edgeData.relay = {
@@ -890,6 +893,7 @@ export class NetworkVisualizer {
         } else {
           edgeData.relay.mesh.geometry.dispose();
           edgeData.relay.mesh.geometry = relayGeometry;
+          edgeData.relay.mesh.userData = { type: 'edge', from, to, relayPeerId };
           edgeData.relay.mesh.material.color.set(COLORS.edgeRelay);
           edgeData.relay.curve = relayCurve;
           edgeData.relay.relayPeerId = relayPeerId;
@@ -1014,7 +1018,10 @@ export class NetworkVisualizer {
 
     const targets = [
       ...this.nodeMeshes.values(),
-      ...Array.from(this.edgeMeshes.values()).map((edge) => edge.mesh)
+      ...Array.from(this.edgeMeshes.values()).flatMap((edge) => (
+        edge?.relay?.mesh ? [edge.mesh, edge.relay.mesh] : [edge.mesh]
+      )),
+      ...Array.from(this.pubsubMeshes.values()).map((edge) => edge.mesh)
     ];
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length) return null;

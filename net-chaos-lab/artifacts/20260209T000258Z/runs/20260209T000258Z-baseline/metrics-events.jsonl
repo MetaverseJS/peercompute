@@ -1,0 +1,2 @@
+{"run_id": "20260209T000258Z-baseline", "ts": "2026-02-09T00:02:58.239576+00:00", "type": "run_started", "payload": {"run_id": "20260209T000258Z-baseline", "topology_config": "/home/cos/projects/peercompute/net-chaos-lab/configs/topology.default.yaml", "scenario_config": "/home/cos/projects/peercompute/net-chaos-lab/configs/scenarios/default-chaos.yaml", "mode": "dry-run"}}
+{"run_id": "20260209T000258Z-baseline", "ts": "2026-02-09T00:02:58.249784+00:00", "type": "topology_started", "payload": {"actual_mode": "dry-run", "agent_count": 12, "service_count": 4}}

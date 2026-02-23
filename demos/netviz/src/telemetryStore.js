@@ -47,4 +47,8 @@ export class TelemetryStore {
   list() {
     return Array.from(this.entries.values());
   }
+
+  clear() {
+    this.entries.clear();
+  }
 }
