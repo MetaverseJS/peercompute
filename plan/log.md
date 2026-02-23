@@ -14701,3 +14701,134 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - `git check-ignore -v` initially only reported the artifact path because the `__pycache__` / `*.pyc` files in `net-chaos-lab` are already tracked; ignore rules do not affect tracked files unless they are later untracked (e.g., `git rm --cached ...`).
 - No additional open questions for this prompt.
+
+## Date: 2026-02-23
+
+### Prompt
+- "having some issues running dev:local-relay"
+
+### Prompt Time/Date
+- 2026-02-23T08:31:15-09:00
+
+### Actions Attempted
+- Re-read required planning context before troubleshooting:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Reproduced `npm run dev:local-relay` startup failure and isolated two distinct classes of failures in this sandboxed environment:
+  - Vite demo servers fail to bind local ports (`listen EPERM`) due sandbox port restrictions.
+  - Go relay initially failed with misleading `imports net: cannot find package`.
+- Isolated the relay path (`npm run dev:relay`, `scripts/run-relay.sh`, `scripts/run-go-relay.sh`) and confirmed the Go relay source/module were valid (`peercompute/src/relay-go`).
+- Ran a minimal Go `import net` sanity program and verified:
+  - default env in sandbox can emit misleading `imports net: cannot find package`,
+  - forcing `CGO_ENABLED=0` or using writable cache dirs in `/tmp` makes the same test compile/run.
+- Hardened `scripts/run-go-relay.sh`:
+  - default `CGO_ENABLED=0` when not explicitly set,
+  - probe real cache writeability (actual write test, not only `-w`),
+  - fall back to `/tmp/peercompute-go-build` and `/tmp/peercompute-go-modcache` when default caches are blocked.
+- Re-ran relay startup after patch and verified the misleading stdlib import failure is gone; error output now correctly reflects sandbox network restrictions (Go module downloads blocked to `proxy.golang.org`) and, when deps are cached, sandbox port-binding restrictions.
+- Updated `plan/plan.md` Completed list with the Go relay launcher env-hardening note.
+
+### Files Touched
+- `scripts/run-go-relay.sh`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `node -v`
+- `pwd && rg --files plan && rg -n "dev:local-relay" package.json || true`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,220p' package.json && printf '\n---\n' && sed -n '1,260p' scripts/dev-local-relay.sh`
+- `sed -n '261,520p' scripts/dev-local-relay.sh`
+- `sed -n '1,260p' scripts/dev-all.sh`
+- `rg -n "ensure-https|write-relay-config|concurrently" scripts peercompute -g '!**/dist/**'`
+- `DEV_OPEN_OVERVIEW=0 npm run dev:local-relay`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `go version && go env GOROOT GOPATH GOOS GOARCH`
+- `DEV_OPEN_OVERVIEW=0 npm --prefix demos/sneakywoods run dev -- --host --strictPort`
+- `sed -n '1,260p' scripts/run-go-relay.sh`
+- `rg --files peercompute/src/relay-go`
+- `sed -n '1,220p' peercompute/src/relay-go/go.mod`
+- `rg -n "^package |^import \\(" peercompute/src/relay-go -g '*.go'`
+- `go env | rg '^(GO(OS|ARCH|HOSTOS|HOSTARCH|ROOT|ENV|EXE|FLAGS|MOD|CACHE|PATH|TOOLCHAIN|AMD64)|CGO_ENABLED|GOWORK)='`
+- `sed -n '1,260p' peercompute/src/relay-go/main.go`
+- `ls -ld /usr/lib/go-1.25 /usr/lib/go-1.25/src /usr/lib/go-1.25/src/net`
+- `cd peercompute/src/relay-go && go env GOMOD GOROOT GOOS GOARCH && go list std | rg '^net$'`
+- `cat /home/cos/.config/go/env || true`
+- `DEV_OPEN_OVERVIEW=0 npm run dev:relay`
+- `cat > /tmp/go-net-check.go <<'EOF' ... EOF && go run /tmp/go-net-check.go`
+- `CGO_ENABLED=0 go run /tmp/go-net-check.go`
+- `mkdir -p /tmp/go-build /tmp/gomodcache && GOCACHE=/tmp/go-build GOMODCACHE=/tmp/gomodcache CGO_ENABLED=1 go run /tmp/go-net-check.go`
+- `ls -ld /home/cos/.cache /home/cos/.cache/go-build || true`
+- `stat -c '%A %U:%G %n' /home/cos/.cache/go-build /home/cos/.cache/go-build/trim.txt 2>/dev/null || true`
+- `go env GOCACHE`
+- `tail -n 120 plan/log.md`
+- `rg -n "Local relay dev hardening|Local relay stale-config guard|Local relay strict-port guard" plan/plan.md`
+- `bash -n scripts/run-go-relay.sh`
+- `DEV_OPEN_OVERVIEW=0 npm run dev:relay` (re-run after patch)
+
+### Test Results
+- `bash -n scripts/run-go-relay.sh`
+  - PASS (syntax valid after edits)
+- `DEV_OPEN_OVERVIEW=0 npm run dev:local-relay`
+  - FAIL in sandbox (expected environment limitation): demo Vite servers `listen EPERM`; relay path also failed before patch with misleading Go stdlib import error.
+- `go run /tmp/go-net-check.go`
+  - FAIL in sandbox default env: `imports net: cannot find package` (misleading symptom traced to constrained Go runtime/cache/cgo behavior in sandbox).
+- `CGO_ENABLED=0 go run /tmp/go-net-check.go`
+  - PASS (`4` printed), then cache trim warning on default `GOCACHE` write.
+- `mkdir -p /tmp/go-build /tmp/gomodcache && GOCACHE=/tmp/go-build GOMODCACHE=/tmp/gomodcache CGO_ENABLED=1 go run /tmp/go-net-check.go`
+  - PASS (`4` printed)
+- `DEV_OPEN_OVERVIEW=0 npm run dev:relay` (after patch)
+  - PASS for launcher hardening behavior verification: emits fallback cache paths and no longer shows `imports net: cannot find package`.
+  - Runtime still FAILS in sandbox due blocked outbound network (Go module download to `proxy.golang.org`) and, when deps are already cached, local socket bind restrictions (`socket: operation not permitted`).
+
+### Failures / Open Questions
+- This Codex sandbox blocks both outbound network access and local listening sockets, so `dev:local-relay` cannot complete end-to-end here regardless of repo fixes.
+- On a normal host terminal (outside sandbox), `dev:local-relay` should proceed further; if Go relay still causes problems, use `RELAY_IMPL=node` as a temporary workaround while checking local Go/toolchain/network setup.
+
+## Date: 2026-02-23
+
+### Prompt
+- "ok it's up. Looks like the direct dials are having issues on localhost. is that a symptom of the environment based on our testing with the chaos lab? [console log excerpt]"
+
+### Prompt Time/Date
+- 2026-02-23T08:46:29-09:00
+
+### Actions Attempted
+- Re-read required planning context before diagnosis:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Reviewed the provided runtime log and mapped it to `NetworkManager` debug messages in source.
+- Confirmed the relevant code paths/conditions:
+  - `No local /webrtc addrs to announce; direct WebRTC dials will be skipped.`
+  - `No direct targets, using relay-webrtc`
+- Cross-checked plan/log notes from chaos-lab work for:
+  - mDNS host candidate obfuscation effects,
+  - TURN/STUN injection for measurability,
+  - direct-path classification when libp2p multiaddrs remain relay-scoped.
+- Determined the observed localhost behavior is largely environment/topology-related and consistent with prior chaos-lab findings, not immediate evidence of a regression:
+  - local direct `/webrtc` announce addresses are absent (`Local webrtc addrs []`, `PeerStore addrs []`),
+  - announce addresses are relay-scoped (`/p2p-circuit/...`),
+  - peers successfully connect/upgrade on relay / relay-webrtc for many cases,
+  - repeated `webrtc-relay` dial failures (`stream reset`, `CONNECTION_FAILED`) are occurring within relay-webrtc retry/fallback flows, not direct peer dials.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,120p' plan/plan.md >/dev/null && tail -n 40 plan/log.md`
+- `rg -n "No local /webrtc addrs to announce|No direct targets, using relay-webrtc|Connection upgraded .*relay -> relay-webrtc|Dial failed .*webrtc-relay" peercompute/src -g '*.js'`
+- `sed -n '2990,3065p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2840,2925p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "mDNS|mdns|ICE guard|direct-path classification guard|announced_direct_webrtc_addrs" plan/plan.md | sed -n '1,80p'`
+- `rg -n "mDNS|mdns|announced_direct_webrtc_addrs|direct-path classification" plan/log.md | tail -n 40`
+- `rg -n "stun|turn|iceServers" config/relay.json config/relay.env peercompute/src/relay-go/config/relay-config.json config/relay-config.json 2>/dev/null`
+
+### Test Results
+- No automated tests run (diagnosis-only prompt).
+
+### Failures / Open Questions
+- Open diagnostic question for host testing: whether Chrome/Chromium is exposing only mDNS-obfuscated host candidates in this localhost session (expected in many builds) and whether that is suppressing usable direct announce paths in libp2p.
+- If direct localhost validation is required (not just relay/relay-webrtc), next step is to inspect `chrome://webrtc-internals` selected candidate pairs and/or run with mDNS host obfuscation disabled for a targeted comparison.

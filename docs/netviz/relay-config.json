@@ -1,24 +1,32 @@
 {
   "bootstrapPeers": [
-    "/dns4/relay.peercompute.test/tcp/8080/wss/p2p/12D3KooWRVgqJZmntXKAaP2qSZVe4tVzXVB5iayM9Uav6Sr6HgEP",
-    "/dns6/relay.peercompute.test/tcp/8080/wss/p2p/12D3KooWRVgqJZmntXKAaP2qSZVe4tVzXVB5iayM9Uav6Sr6HgEP"
+    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
   ],
-  "pubsubType": "floodsub",
+  "pubsubType": "gossipsub",
   "webrtc": {
     "iceServers": [
       {
         "urls": [
-          "stun:turn.peercompute.test:3478"
+          "stun:stun.l.google.com:19302",
+          "stun:stun.cloudflare.com:3478"
         ]
-      },
-      {
-        "urls": [
-          "turn:turn.peercompute.test:3478?transport=udp",
-          "turn:turn.peercompute.test:3478?transport=tcp"
-        ],
-        "username": "peer",
-        "credential": "compute"
       }
     ]
+  },
+  "gossipsub": {
+    "D": 8,
+    "Dhi": 16,
+    "Dout": 1,
+    "scoreParams": {
+      "IPColocationFactorWeight": 0,
+      "behaviourPenaltyWeight": 0,
+      "topics": {
+        "__default": {
+          "meshMessageDeliveriesWeight": 0,
+          "meshMessageDeliveriesThreshold": 0,
+          "meshFailurePenaltyWeight": 0
+        }
+      }
+    }
   }
 }
