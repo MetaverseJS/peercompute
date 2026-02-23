@@ -1,0 +1,65 @@
+name: demo-regression
+defaults:
+  mode: containernet
+  topology: net-chaos-lab/configs/topology.default.yaml
+  scenario: net-chaos-lab/configs/scenarios/direct-diagnostics.yaml
+  probe_mode: peercompute
+  probe_each_stage: true
+  probe_agents: 8
+  probe_parallelism: 4
+  min_peers: 1
+  wait_ms: 30000
+  simulate_profile: basic
+  simulate_ms: 2500
+  media: false
+  skip_probes: false
+  skip_scenario: false
+  time_scale: 1.0
+  gates:
+    - metric: probe_total
+      op: ">="
+      value: 2
+      description: Collect at least initial and final probe checkpoints.
+    - metric: connection_success_rate
+      op: ">="
+      value: 0.70
+    - metric: infra_failure_rate
+      op: "<="
+      value: 0.20
+      description: Demo probes should not be dominated by preflight infra failures.
+    - metric: preflight_success_rate
+      op: ">="
+      value: 0.80
+      description: Most probes should complete network preflight successfully.
+    - metric: avg_stability_sample_count
+      op: ">="
+      value: 2
+      required: false
+      description: Optional stability sampling floor.
+    - metric: avg_peer_set_change_count
+      op: "<="
+      value: 8
+      required: false
+      description: Optional churn signal; lower is steadier.
+    - metric: avg_direct_connection_sample_rate
+      op: ">="
+      value: 0.05
+      required: false
+      description: Optional direct-path persistence signal.
+
+runs:
+  - id: cubechat
+    url: https://demos.peercompute.test/cubechat/?e2e=1
+    simulate_profile: cubechat
+
+  - id: hyperborea
+    url: https://demos.peercompute.test/hyperborea/cb.html
+    simulate_profile: hyperborea
+
+  - id: sneakywoods
+    url: https://demos.peercompute.test/sneakywoods/
+    simulate_profile: sneakywoods
+
+  - id: daddygo
+    url: https://demos.peercompute.test/daddygo/
+    simulate_profile: daddygo

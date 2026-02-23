@@ -77,6 +77,11 @@ class MetricsStore:
     direct_connection_sample_rates = []
     relay_connection_sample_rates = []
     stability_avg_peer_counts = []
+    preflight_ok_values = []
+    preflight_dns_values = []
+    preflight_https_values = []
+    preflight_hosts_entry_values = []
+    infra_failure_values = []
     rtc_probe_count = 0
     rtc_host_only_local_probe_count = 0
     rtc_local_candidate_types: dict[str, int] = {}
@@ -197,6 +202,42 @@ class MetricsStore:
         if local_total > 0 and local_host == local_total:
           rtc_host_only_local_probe_count += 1
 
+      preflight = payload.get('network_preflight')
+      if preflight is None:
+        preflight = payload.get('networkPreflight')
+      if isinstance(preflight, dict):
+        preflight_ok = preflight.get('ok')
+        if isinstance(preflight_ok, bool):
+          preflight_ok_values.append(1 if preflight_ok else 0)
+
+        dns_ok = preflight.get('dns_ok')
+        if dns_ok is None:
+          dns_ok = preflight.get('dnsOk')
+        if isinstance(dns_ok, bool):
+          preflight_dns_values.append(1 if dns_ok else 0)
+
+        https_ok = preflight.get('https_ok')
+        if https_ok is None:
+          https_ok = preflight.get('httpsOk')
+        if isinstance(https_ok, bool):
+          preflight_https_values.append(1 if https_ok else 0)
+
+        hosts_entry_ok = preflight.get('hosts_entry_ok')
+        if hosts_entry_ok is None:
+          hosts_entry_ok = preflight.get('hostsEntryOk')
+        if isinstance(hosts_entry_ok, bool):
+          preflight_hosts_entry_values.append(1 if hosts_entry_ok else 0)
+
+      infra_failure = payload.get('infra_failure')
+      if infra_failure is None:
+        infra_failure = payload.get('infraFailure')
+      if infra_failure is None and isinstance(preflight, dict):
+        preflight_ok = preflight.get('ok')
+        if isinstance(preflight_ok, bool):
+          infra_failure = not preflight_ok
+      if isinstance(infra_failure, bool):
+        infra_failure_values.append(1 if infra_failure else 0)
+
     success_rate = (sum(success_values) / len(success_values)) if success_values else 0.0
     media_rate = (sum(media_values) / len(media_values)) if media_values else 0.0
     direct_announce_rate = (sum(direct_announce_values) / len(direct_announce_values)) if direct_announce_values else 0.0
@@ -264,6 +305,32 @@ class MetricsStore:
       if rtc_probe_count > 0
       else 0.0
     )
+    preflight_probe_count = len(preflight_ok_values)
+    preflight_success_rate = (
+      statistics.mean(preflight_ok_values)
+      if preflight_ok_values
+      else 0.0
+    )
+    preflight_dns_success_rate = (
+      statistics.mean(preflight_dns_values)
+      if preflight_dns_values
+      else 0.0
+    )
+    preflight_https_success_rate = (
+      statistics.mean(preflight_https_values)
+      if preflight_https_values
+      else 0.0
+    )
+    preflight_hosts_entry_rate = (
+      statistics.mean(preflight_hosts_entry_values)
+      if preflight_hosts_entry_values
+      else 0.0
+    )
+    infra_failure_rate = (
+      statistics.mean(infra_failure_values)
+      if infra_failure_values
+      else 0.0
+    )
 
     summary = {
       'run_id': self.run_id,
@@ -292,6 +359,12 @@ class MetricsStore:
       'rtc_host_only_local_rate': rtc_host_only_local_rate,
       'rtc_local_candidate_types': rtc_local_candidate_types,
       'rtc_remote_candidate_types': rtc_remote_candidate_types,
+      'preflight_probe_count': preflight_probe_count,
+      'preflight_success_rate': preflight_success_rate,
+      'preflight_dns_success_rate': preflight_dns_success_rate,
+      'preflight_https_success_rate': preflight_https_success_rate,
+      'preflight_hosts_entry_rate': preflight_hosts_entry_rate,
+      'infra_failure_rate': infra_failure_rate,
     }
 
     with self.paths.summary_json.open('w', encoding='utf-8') as handle:

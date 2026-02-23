@@ -8,6 +8,29 @@ const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
 const docsRoot = path.resolve(__dirname, '../../docs');
 const chaosApiProxyTarget = process.env.VITE_CHAOS_API_PROXY_TARGET || 'http://127.0.0.1:8866';
 
+const chaosApiFallbackPayload = (urlPath = '') => {
+  const pathOnly = String(urlPath || '').split('?')[0];
+  if (pathOnly.endsWith('/api/events') || pathOnly.endsWith('/events')) {
+    return { events: [], degraded: true };
+  }
+  if (pathOnly.endsWith('/api/topology') || pathOnly.endsWith('/topology')) {
+    return { run_id: null, updated_at: null, topology: null, degraded: true };
+  }
+  return { run_id: null, updated_at: null, degraded: true };
+};
+
+const writeChaosApiFallback = (res, req) => {
+  if (!res || res.headersSent || res.writableEnded) return;
+  const payload = chaosApiFallbackPayload(req?.url || '');
+  const body = Buffer.from(JSON.stringify(payload), 'utf-8');
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Length': String(body.length),
+  });
+  res.end(body);
+};
+
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
@@ -20,6 +43,11 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         secure: false,
         rewrite: (pathValue) => pathValue.replace(/^\/chaos-api/, ''),
+        configure: (proxy) => {
+          proxy.on('error', (_err, req, res) => {
+            writeChaosApiFallback(res, req);
+          });
+        },
       }
     },
     fs: {

@@ -4,6 +4,7 @@ import argparse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import traceback
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -39,7 +40,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
     if not path.exists():
       self.send_error(HTTPStatus.NOT_FOUND, 'File not found')
       return
-    body = path.read_bytes()
+    try:
+      body = path.read_bytes()
+    except OSError as exc:
+      self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f'Unable to read file: {exc}')
+      return
     self.send_response(HTTPStatus.OK)
     self.send_header('Content-Type', content_type)
     self.send_header('Cache-Control', 'no-store')
@@ -49,48 +54,61 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
   def do_GET(self) -> None:  # noqa: N802
     parsed = urlparse(self.path)
+    try:
+      if parsed.path in {'/', '/index.html'}:
+        self._write_file(self.static_dir / 'index.html', 'text/html; charset=utf-8')
+        return
 
-    if parsed.path in {'/', '/index.html'}:
-      self._write_file(self.static_dir / 'index.html', 'text/html; charset=utf-8')
-      return
+      if parsed.path == '/api/summary':
+        if self.summary_path.exists():
+          try:
+            payload = json.loads(self.summary_path.read_text(encoding='utf-8'))
+            if isinstance(payload, dict):
+              self._write_json(payload)
+              return
+          except json.JSONDecodeError:
+            pass
+        self._write_json({'run_id': None, 'updated_at': None})
+        return
 
-    if parsed.path == '/api/summary':
-      if self.summary_path.exists():
+      if parsed.path == '/api/events':
+        params = parse_qs(parsed.query)
+        limit_raw = params.get('limit', ['50'])[0]
         try:
-          payload = json.loads(self.summary_path.read_text(encoding='utf-8'))
-          if isinstance(payload, dict):
-            self._write_json(payload)
-            return
-        except json.JSONDecodeError:
-          pass
-      self._write_json({'run_id': None, 'updated_at': None})
-      return
+          limit = max(1, min(500, int(limit_raw)))
+        except ValueError:
+          limit = 50
+        events = tail_events(self.events_path, limit=limit)
+        self._write_json({'events': events})
+        return
 
-    if parsed.path == '/api/events':
-      params = parse_qs(parsed.query)
-      limit_raw = params.get('limit', ['50'])[0]
-      try:
-        limit = max(1, min(500, int(limit_raw)))
-      except ValueError:
-        limit = 50
-      events = tail_events(self.events_path, limit=limit)
-      self._write_json({'events': events})
-      return
+      if parsed.path == '/api/topology':
+        path = self.topology_path
+        if path is not None and path.exists():
+          try:
+            payload = json.loads(path.read_text(encoding='utf-8'))
+            if isinstance(payload, dict):
+              self._write_json(payload)
+              return
+          except json.JSONDecodeError:
+            pass
+        self._write_json({'run_id': None, 'updated_at': None, 'topology': None})
+        return
 
-    if parsed.path == '/api/topology':
-      path = self.topology_path
-      if path is not None and path.exists():
-        try:
-          payload = json.loads(path.read_text(encoding='utf-8'))
-          if isinstance(payload, dict):
-            self._write_json(payload)
-            return
-        except json.JSONDecodeError:
-          pass
-      self._write_json({'run_id': None, 'updated_at': None, 'topology': None})
-      return
-
-    self.send_error(HTTPStatus.NOT_FOUND, 'Route not found')
+      self.send_error(HTTPStatus.NOT_FOUND, 'Route not found')
+    except Exception as exc:  # pragma: no cover - defensive HTTP fallback
+      self.log_error('dashboard handler error: %s', exc)
+      self.log_error('%s', traceback.format_exc())
+      if parsed.path == '/api/events':
+        self._write_json({'events': [], 'error': str(exc)})
+        return
+      if parsed.path == '/api/topology':
+        self._write_json({'run_id': None, 'updated_at': None, 'topology': None, 'error': str(exc)})
+        return
+      if parsed.path.startswith('/api/'):
+        self._write_json({'run_id': None, 'updated_at': None, 'error': str(exc)})
+        return
+      self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f'Unhandled dashboard error: {exc}')
 
 
 def create_dashboard_server(

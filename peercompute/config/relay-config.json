@@ -1,6 +1,7 @@
 {
   "bootstrapPeers": [
-    "/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
+    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv",
+    "/dns6/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
   ],
   "pubsubType": "gossipsub",
   "webrtc": {

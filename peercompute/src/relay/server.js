@@ -115,13 +115,14 @@ const DIRECTORY_TOPIC = 'peercompute-directory';
 // Phase 5: Peer directory storage
 const peerDirectory = new Map(); // peerId -> { multiaddrs, lastSeen, roomId, topologyId, shardId }
 
-const toMultiaddrHostSegment = (host) => {
-  if (!host) return '';
-  const isIpv6 = host.includes(':');
-  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-  if (isIpv6) return `/ip6/${host}`;
-  if (isIpv4) return `/ip4/${host}`;
-  return `/dns4/${host}`;
+const toMultiaddrHostSegments = (host) => {
+  const trimmed = String(host || '').trim();
+  if (!trimmed) return [];
+  const ipVersion = net.isIP(trimmed);
+  if (ipVersion === 6) return [`/ip6/${trimmed}`];
+  if (ipVersion === 4) return [`/ip4/${trimmed}`];
+  // Publish both families so IPv4-only and IPv6-only agents can bootstrap.
+  return [`/dns4/${trimmed}`, `/dns6/${trimmed}`];
 };
 
 const toListenHostSegment = (host) => {
@@ -485,14 +486,8 @@ async function startServer() {
         const relayAddr = wsAddr.includes('/p2p/')
           ? wsAddr
           : `${wsAddr}/p2p/${server.peerId.toString()}`;
-        const hostSegment = relayPublicHost ? toMultiaddrHostSegment(relayPublicHost) : '';
+        const hostSegments = relayPublicHost ? toMultiaddrHostSegments(relayPublicHost) : [];
         let announceAddr = relayAddr;
-        if (hostSegment) {
-          announceAddr = announceAddr
-            .replace(/\/ip4\/[^/]+/, hostSegment)
-            .replace(/\/ip6\/[^/]+/, hostSegment)
-            .replace(/\/dns4\/[^/]+/, hostSegment);
-        }
         if (relayPublicPort) {
           announceAddr = announceAddr.replace(/\/tcp\/\d+/, `/tcp/${relayPublicPort}`);
         }
@@ -501,10 +496,32 @@ async function startServer() {
           announceAddr = announceAddr.replace(/\/wss?/, `/${publicProtocol}`);
         }
         announceAddr = announceAddr.replace(/\/tls(\/wss?)/, '$1');
+        const announceAddrs = (hostSegments.length > 0 ? hostSegments : [''])
+          .map((hostSegment) => {
+            if (!hostSegment) return announceAddr;
+            return announceAddr
+              .replace(/\/ip4\/[^/]+/, hostSegment)
+              .replace(/\/ip6\/[^/]+/, hostSegment)
+              .replace(/\/dns4\/[^/]+/, hostSegment)
+              .replace(/\/dns6\/[^/]+/, hostSegment)
+              .replace(/\/dns\/[^/]+/, hostSegment);
+          })
+          .filter(Boolean);
+        const orderedAddrs = [];
+        const seenAddrs = new Set();
+        for (const value of announceAddrs) {
+          if (seenAddrs.has(value)) continue;
+          seenAddrs.add(value);
+          orderedAddrs.push(value);
+        }
+        const primaryAnnounceAddr = orderedAddrs[0] || announceAddr;
         // Output in the format expected by start-relay-and-test.sh (grep)
-        console.log(`Relay Address: ${announceAddr}`);
+        console.log(`Relay Address: ${primaryAnnounceAddr}`);
+        if (orderedAddrs.length > 1) {
+          console.log(`[Relay] Additional relay addresses: ${orderedAddrs.slice(1).join(', ')}`);
+        }
         const relayConfigPayload = {
-          bootstrapPeers: [announceAddr],
+          bootstrapPeers: orderedAddrs.length > 0 ? orderedAddrs : [primaryAnnounceAddr],
           pubsubType: useGossipsub ? 'gossipsub' : 'floodsub'
         };
         if (relayWebrtcConfig) {

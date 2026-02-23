@@ -1,6 +1,6 @@
 {
   "bootstrapPeers": [
-    "/ip6/2605:59c0:2c05:c108:c95c:4e95:717:86d1/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
+    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
   ],
   "pubsubType": "gossipsub",
   "webrtc": {

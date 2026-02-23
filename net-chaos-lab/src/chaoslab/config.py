@@ -78,7 +78,7 @@ def load_topology_config(path_like: str | Path) -> LoadedConfig:
     },
     'agents': {
       'count': 10,
-      'image': 'mcr.microsoft.com/playwright:v1.56.1-noble',
+      'image': 'peercompute/net-chaos-lab-node:latest',
       'command': 'sleep infinity',
       'media_enabled': False,
     },

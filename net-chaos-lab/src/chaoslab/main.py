@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import subprocess
 import threading
 from typing import Any
 
@@ -23,6 +25,65 @@ def default_run_id() -> str:
 
 def repo_root() -> Path:
   return Path(__file__).resolve().parents[3]
+
+
+def _latest_mtime(paths: list[Path]) -> float:
+  latest = 0.0
+  for path in paths:
+    try:
+      if path.exists():
+        latest = max(latest, path.stat().st_mtime)
+    except OSError:
+      continue
+  return latest
+
+
+def _ensure_netviz_docs_bundle(root: Path, logger: Any = print) -> None:
+  skip = str(os.environ.get('CHAOSLAB_SKIP_NETVIZ_BUILD', '')).strip().lower() in {
+    '1', 'true', 'yes', 'on',
+  }
+  if skip:
+    logger('[chaos-lab] skipping NetViz docs build (CHAOSLAB_SKIP_NETVIZ_BUILD=1)')
+    return
+
+  netviz_dir = root / 'demos' / 'netviz'
+  docs_dir = root / 'docs' / 'netviz'
+  docs_assets_dir = docs_dir / 'assets'
+  source_paths = [
+    netviz_dir / 'index.html',
+    netviz_dir / 'src' / 'main.js',
+    netviz_dir / 'src' / 'relayConfig.js',
+    netviz_dir / 'src' / 'visualizer.js',
+    netviz_dir / 'public' / 'relay-config.json',
+    netviz_dir / 'vite.config.js',
+  ]
+  bundle_paths = list(docs_assets_dir.glob('index-*.js'))
+  docs_paths = bundle_paths + [docs_dir / 'index.html']
+
+  source_mtime = _latest_mtime(source_paths)
+  docs_mtime = _latest_mtime(docs_paths)
+  should_build = (not bundle_paths) or (source_mtime > docs_mtime)
+  if not should_build:
+    logger('[chaos-lab] NetViz docs bundle is up to date.')
+    return
+
+  logger('[chaos-lab] building NetViz docs bundle...')
+  proc = subprocess.run(
+    ['npm', '--prefix', str(netviz_dir), 'run', 'build'],
+    cwd=str(root),
+    text=True,
+    capture_output=True,
+    check=False,
+  )
+  if proc.returncode != 0:
+    detail = '\n'.join(
+      part for part in [str(proc.stdout or '').strip(), str(proc.stderr or '').strip()] if part
+    ).strip()
+    raise RuntimeError(
+      'NetViz docs build failed; containernet probes require a fresh docs/netviz bundle.'
+      + (f'\n{detail}' if detail else '')
+    )
+  logger('[chaos-lab] NetViz docs bundle refreshed.')
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,13 +114,42 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument('--demo-cwd', default='', help='Working directory for demo command')
 
   parser.add_argument('--url', default='', help='Probe URL override')
+  parser.add_argument(
+    '--probe-mode',
+    default='',
+    help='Probe mode override (for example `netviz` or `peercompute`)',
+  )
   parser.add_argument('--min-peers', type=int, default=0, help='Minimum peers required for probe pass')
   parser.add_argument('--wait-ms', type=int, default=0, help='Probe wait timeout override in ms')
+  parser.add_argument(
+    '--simulate-profile',
+    default='',
+    help='Optional probe interaction profile (for example `basic`, `cubechat`)',
+  )
+  parser.add_argument(
+    '--simulate-ms',
+    type=int,
+    default=0,
+    help='Optional simulated input window in ms (0 uses probe defaults)',
+  )
   parser.add_argument('--probe-agents', type=int, default=0, help='How many agents to probe per cycle')
   parser.add_argument('--probe-parallelism', type=int, default=4)
   parser.add_argument('--probe-each-stage', action='store_true')
   parser.add_argument('--skip-probes', action='store_true')
   parser.add_argument('--media', action='store_true', help='Enable audio/video loopback probe')
+  parser.add_argument(
+    '--probe-fail-fast',
+    dest='probe_fail_fast',
+    action='store_true',
+    default=False,
+    help='Abort run when a probe checkpoint reports infra failure for all probed agents',
+  )
+  parser.add_argument(
+    '--no-probe-fail-fast',
+    dest='probe_fail_fast',
+    action='store_false',
+    help='Disable probe fail-fast behavior',
+  )
 
   parser.add_argument('--skip-scenario', action='store_true')
   parser.add_argument('--time-scale', type=float, default=1.0, help='Scenario timing multiplier')
@@ -186,8 +276,11 @@ def run_single(args: argparse.Namespace) -> tuple[int, dict[str, Any], Path]:
 
   harness_cfg = topology_cfg.get('harness', {})
   probe_url = str(args.url or harness_cfg.get('default_url') or 'https://demos.peercompute.test/netviz/')
+  probe_mode = str(args.probe_mode or harness_cfg.get('probe_mode') or harness_cfg.get('default_demo') or 'netviz')
   min_peers = int(args.min_peers or harness_cfg.get('min_expected_peers') or 2)
   wait_ms = int(args.wait_ms or harness_cfg.get('probe_duration_ms') or 30000)
+  simulate_profile = str(args.simulate_profile or harness_cfg.get('simulate_profile') or '').strip()
+  simulate_ms = int(args.simulate_ms or harness_cfg.get('simulate_ms') or 0)
   probe_agents = int(args.probe_agents or 0)
   probe_parallelism = max(1, int(args.probe_parallelism or 4))
 
@@ -196,18 +289,29 @@ def run_single(args: argparse.Namespace) -> tuple[int, dict[str, Any], Path]:
       url=probe_url,
       min_peers=min_peers,
       wait_ms=wait_ms,
-      mode=str(harness_cfg.get('default_demo') or 'netviz'),
+      mode=probe_mode,
       media=bool(args.media),
+      simulate_profile=simulate_profile,
+      simulate_ms=simulate_ms,
       limit_agents=probe_agents,
       parallelism=probe_parallelism,
     )
     metrics.record('probe_checkpoint', {'label': label, 'results': len(results)})
     metrics.build_summary()
+    if bool(args.probe_fail_fast) and results:
+      infra_failures = sum(1 for payload in results if bool(payload.get('infra_failure')))
+      if infra_failures >= len(results):
+        raise RuntimeError(
+          f'probe fail-fast triggered at checkpoint "{label}": '
+          f'{infra_failures}/{len(results)} probes reported infra_failure'
+        )
     return results
 
   exit_code = 0
   summary: dict[str, Any] = {}
   try:
+    if not args.skip_probes and str(args.mode).strip().lower() != 'dry-run':
+      _ensure_netviz_docs_bundle(root, logger=print)
     topology.start()
     _write_topology_state(topology_state_path, run_id, topology, latest_stage=None)
     metrics.record(
@@ -359,6 +463,10 @@ def run_matrix(args: argparse.Namespace) -> int:
       'skip_scenario': _coerce_bool(
         _matrix_value(run_spec, defaults, 'skip_scenario', args.skip_scenario),
         fallback=bool(args.skip_scenario),
+      ),
+      'probe_fail_fast': _coerce_bool(
+        _matrix_value(run_spec, defaults, 'probe_fail_fast', args.probe_fail_fast),
+        fallback=bool(args.probe_fail_fast),
       ),
       'time_scale': float(_matrix_value(run_spec, defaults, 'time_scale', args.time_scale)),
       'dashboard': _coerce_bool(

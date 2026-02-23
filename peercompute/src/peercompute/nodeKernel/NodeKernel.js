@@ -10,6 +10,13 @@ import { ComputeManager } from '../computeManager/ComputeManager.js';
 import { GPUHubManager } from '../gpu/GPUHubManager.js';
 import { generateId } from '../utils/Utils.js';
 
+const NETVIZ_DEBUG_CHANNEL = 'peercompute-netviz-debug-v1';
+const NETVIZ_DEBUG_TELEMETRY_PREFIX = 'telemetry:';
+const NETVIZ_SESSION_TOPIC = 'peercompute-netviz-sessions';
+const PEERCOMPUTE_KERNEL_REGISTRY_KEY = '__PEERCOMPUTE_KERNELS__';
+const PEERCOMPUTE_KERNEL_LAST_KEY = '__PEERCOMPUTE_LAST_KERNEL__';
+const PEERCOMPUTE_KERNEL_INDEX_KEY = '__PEERCOMPUTE_KERNEL_INDEX__';
+
 /**
  * NodeKernel class - Core orchestrator for a PeerCompute node
  * Coordinates State, Network, and Compute managers
@@ -34,6 +41,11 @@ export class NodeKernel {
    * @param {boolean} config.dropRelayBootstrapOnDirect - Drop relay bootstrap when direct peers exist
    * @param {number} config.maxConnections - Max libp2p connections per node
    * @param {number} config.maxIncomingPendingConnections - Max pending inbound connections
+   * @param {boolean} config.enableNetVizDebugTelemetry - Publish `telemetry:<peerId>` warm deltas for NetViz attach/debug
+   * @param {number} config.netVizDebugTelemetryIntervalMs - NetViz telemetry publish interval in ms
+   * @param {boolean} config.enableNetVizSessionBroadcast - Broadcast active demo session metadata for NetViz attach picker
+   * @param {boolean} config.enableNetVizSessionDiscovery - Listen for active NetViz session metadata over pubsub
+   * @param {string} config.netVizSessionTopic - Cross-demo pubsub topic used for NetViz session discovery
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
@@ -43,6 +55,40 @@ export class NodeKernel {
     const topicPrefix = config.topicPrefix || config.topicBase || 'pc';
     const useScopedTopics = config.useScopedTopics !== false;
     const scopedStateTopic = `${topicPrefix}.${topologyId}.${roomId}.state`;
+    const enableNetVizDebugTelemetry = config.enableNetVizDebugTelemetry !== false;
+    const enableWarmDeltaProvider =
+      typeof config.enableWarmDeltaProvider === 'boolean'
+        ? config.enableWarmDeltaProvider
+        : enableNetVizDebugTelemetry;
+    const netVizDebugTelemetryIntervalMs = Number.isFinite(config.netVizDebugTelemetryIntervalMs)
+      ? Math.max(500, config.netVizDebugTelemetryIntervalMs)
+      : 2000;
+    const netVizDebugSessionIntervalMs = Number.isFinite(config.netVizDebugSessionIntervalMs)
+      ? Math.max(1000, config.netVizDebugSessionIntervalMs)
+      : 2000;
+    const netVizSessionTopic =
+      typeof config.netVizSessionTopic === 'string' && config.netVizSessionTopic.trim()
+        ? config.netVizSessionTopic.trim()
+        : NETVIZ_SESSION_TOPIC;
+    const enableNetVizSessionBroadcast = config.enableNetVizSessionBroadcast !== false;
+    const enableNetVizSessionDiscovery = config.enableNetVizSessionDiscovery === true;
+    const netVizSessionStaleMs = Number.isFinite(config.netVizSessionStaleMs)
+      ? Math.max(5000, config.netVizSessionStaleMs)
+      : 15000;
+    const additionalPubsubTopics = [];
+    if (Array.isArray(config.additionalPubsubTopics)) {
+      config.additionalPubsubTopics
+        .map((topic) => String(topic || '').trim())
+        .filter(Boolean)
+        .forEach((topic) => additionalPubsubTopics.push(topic));
+    }
+    if (enableNetVizSessionDiscovery && !additionalPubsubTopics.includes(netVizSessionTopic)) {
+      additionalPubsubTopics.push(netVizSessionTopic);
+    }
+    const netVizDebugTelemetryTaskPrefix =
+      typeof config.netVizDebugTelemetryTaskPrefix === 'string' && config.netVizDebugTelemetryTaskPrefix.trim()
+        ? config.netVizDebugTelemetryTaskPrefix.trim()
+        : NETVIZ_DEBUG_TELEMETRY_PREFIX;
     this.config = {
       topology: topologyType,
       topologyId,
@@ -51,7 +97,17 @@ export class NodeKernel {
       storageMode: config.storageMode || 'local',
       enableWebGPU: config.enableWebGPU || false,
       enableGPUHub: config.enableGPUHub !== false,
-      enableWarmDeltaProvider: config.enableWarmDeltaProvider || false,
+      enableWarmDeltaProvider,
+      enableNetVizDebugTelemetry,
+      netVizDebugTelemetryIntervalMs,
+      netVizDebugTelemetryTaskPrefix,
+      enableNetVizSessionBroadcast,
+      enableNetVizSessionDiscovery,
+      netVizSessionTopic,
+      netVizSessionStaleMs,
+      netVizDebugSessionIntervalMs,
+      netVizAttachPath: config.netVizAttachPath || '/netviz/',
+      additionalPubsubTopics,
       enablePersistence: config.enablePersistence !== false,
       disableStateNetworkProvider: config.disableStateNetworkProvider || false,
       disableStateBroadcast: config.disableStateBroadcast || false,
@@ -76,6 +132,20 @@ export class NodeKernel {
       clockPolicy,
       ...config
     };
+    const normalizedSessionTopic = String(this.config.netVizSessionTopic || '').trim() || NETVIZ_SESSION_TOPIC;
+    this.config.netVizSessionTopic = normalizedSessionTopic;
+    const normalizedAdditionalTopics = Array.isArray(this.config.additionalPubsubTopics)
+      ? this.config.additionalPubsubTopics
+        .map((topic) => String(topic || '').trim())
+        .filter(Boolean)
+      : [];
+    if (
+      this.config.enableNetVizSessionDiscovery &&
+      !normalizedAdditionalTopics.includes(normalizedSessionTopic)
+    ) {
+      normalizedAdditionalTopics.push(normalizedSessionTopic);
+    }
+    this.config.additionalPubsubTopics = Array.from(new Set(normalizedAdditionalTopics));
 
     this.stateManager = null;
     this.networkManager = null;
@@ -86,6 +156,12 @@ export class NodeKernel {
     this.isStarted = false;
     this.nodeId = null;
     this.kernelClockTimer = null;
+    this.netVizDebugTelemetryTimer = null;
+    this.netVizDebugSessionTimer = null;
+    this.netVizNetworkSessionTimer = null;
+    this.netVizDebugSessionId = null;
+    this.netVizDebugChannel = null;
+    this.netVizDiscoveredSessions = new Map();
     this.kernelTickMs = Math.round(1000 / (this.config.clockPolicy.tickHz || 30));
   }
 
@@ -104,6 +180,8 @@ export class NodeKernel {
       
       // Generate unique node ID
       this.nodeId = generateId();
+      this.netVizDebugSessionId = `session-${this.nodeId}`;
+      this._registerBrowserKernelHandle();
       console.log(`[NodeKernel] Node ID: ${this.nodeId}`);
       
       // 1. Initialize NetworkManager first
@@ -128,6 +206,7 @@ export class NodeKernel {
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
+        additionalPubsubTopics: this.config.additionalPubsubTopics,
         allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
         allowLocalDial: this.config.allowLocalDial,
         webrtc: this.config.webrtc,
@@ -242,6 +321,11 @@ export class NodeKernel {
       // Set node state to active
       this.stateManager.write('status', 'active');
       this.stateManager.write('startedAt', Date.now());
+
+      this._startNetVizDebugTelemetryLoop();
+      this._startNetVizSessionBroadcast();
+      this._startNetVizNetworkSessionLoop();
+      this._logNetVizAttachHint();
       
       this.isStarted = true;
       console.log('[NodeKernel] Node started and connected to P2P network');
@@ -265,6 +349,9 @@ export class NodeKernel {
     try {
       console.log('[NodeKernel] Stopping...');
       this._stopKernelClock();
+      this._stopNetVizDebugTelemetryLoop();
+      this._stopNetVizSessionBroadcast();
+      this._stopNetVizNetworkSessionLoop();
       
       // Update state
       if (this.stateManager) {
@@ -287,6 +374,7 @@ export class NodeKernel {
       }
       
       this.isStarted = false;
+      this._unregisterBrowserKernelHandle();
       console.log('[NodeKernel] Node stopped');
       
     } catch (error) {
@@ -330,6 +418,275 @@ export class NodeKernel {
     if (!this.kernelClockTimer) return;
     clearInterval(this.kernelClockTimer);
     this.kernelClockTimer = null;
+  }
+
+  _isBrowserRuntime() {
+    return typeof window !== 'undefined' && typeof document !== 'undefined';
+  }
+
+  _registerBrowserKernelHandle() {
+    if (!this._isBrowserRuntime()) return;
+    try {
+      const root = window;
+      if (!Array.isArray(root[PEERCOMPUTE_KERNEL_REGISTRY_KEY])) {
+        root[PEERCOMPUTE_KERNEL_REGISTRY_KEY] = [];
+      }
+      const registry = root[PEERCOMPUTE_KERNEL_REGISTRY_KEY];
+      if (!registry.includes(this)) {
+        registry.push(this);
+      }
+
+      root[PEERCOMPUTE_KERNEL_LAST_KEY] = this;
+      if (
+        !root[PEERCOMPUTE_KERNEL_INDEX_KEY]
+        || typeof root[PEERCOMPUTE_KERNEL_INDEX_KEY] !== 'object'
+        || Array.isArray(root[PEERCOMPUTE_KERNEL_INDEX_KEY])
+      ) {
+        root[PEERCOMPUTE_KERNEL_INDEX_KEY] = {};
+      }
+      if (this.nodeId) {
+        root[PEERCOMPUTE_KERNEL_INDEX_KEY][this.nodeId] = this;
+      }
+    } catch (_) {
+      // Best-effort debug registration only.
+    }
+  }
+
+  _unregisterBrowserKernelHandle() {
+    if (!this._isBrowserRuntime()) return;
+    try {
+      const root = window;
+      const registry = Array.isArray(root[PEERCOMPUTE_KERNEL_REGISTRY_KEY])
+        ? root[PEERCOMPUTE_KERNEL_REGISTRY_KEY]
+        : null;
+      if (registry) {
+        const next = registry.filter((entry) => entry !== this);
+        root[PEERCOMPUTE_KERNEL_REGISTRY_KEY] = next;
+      }
+
+      if (root[PEERCOMPUTE_KERNEL_LAST_KEY] === this) {
+        root[PEERCOMPUTE_KERNEL_LAST_KEY] = null;
+      }
+      if (
+        this.nodeId
+        && root[PEERCOMPUTE_KERNEL_INDEX_KEY]
+        && typeof root[PEERCOMPUTE_KERNEL_INDEX_KEY] === 'object'
+      ) {
+        delete root[PEERCOMPUTE_KERNEL_INDEX_KEY][this.nodeId];
+      }
+    } catch (_) {
+      // Best-effort debug registration only.
+    }
+  }
+
+  getNetVizAttachUrl(basePath = this.config.netVizAttachPath || '/netviz/') {
+    if (!this._isBrowserRuntime()) return null;
+    try {
+      const url = new URL(basePath, window.location.origin);
+      url.searchParams.set('topologyType', this.config.topology || 'distributed');
+      url.searchParams.set('topologyId', this.config.topologyId || 'default-topology');
+      url.searchParams.set('room', this.config.roomId || 'default-room');
+      url.searchParams.set('autoConnect', '1');
+      if (this.netVizDebugSessionId) {
+        url.searchParams.set('attachSession', this.netVizDebugSessionId);
+      }
+      return url.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  getNetVizDebugSession() {
+    return {
+      sessionId: this.netVizDebugSessionId || `session-${this.nodeId || 'pending'}`,
+      nodeId: this.nodeId || null,
+      peerId: this.networkManager?.peerId || null,
+      gameId: this.config.gameId || null,
+      roomId: this.config.roomId || null,
+      topologyId: this.config.topologyId || null,
+      topologyType: this.config.topology || null,
+      isStarted: this.isStarted,
+      attachUrl: this.getNetVizAttachUrl(),
+      ts: Date.now()
+    };
+  }
+
+  _normalizeNetVizSession(session, fallbackPeerId = null) {
+    if (!session || typeof session !== 'object') return null;
+    const sessionId = String(session.sessionId || '').trim();
+    const roomId = String(session.roomId || '').trim();
+    const topologyId = String(session.topologyId || '').trim();
+    if (!sessionId || !roomId || !topologyId) return null;
+    return {
+      sessionId,
+      nodeId: String(session.nodeId || '').trim() || null,
+      peerId: String(session.peerId || fallbackPeerId || '').trim() || null,
+      gameId: String(session.gameId || '').trim() || 'unknown',
+      roomId,
+      topologyId,
+      topologyType: String(session.topologyType || 'distributed').trim() || 'distributed',
+      isStarted: session.isStarted !== false,
+      attachUrl: String(session.attachUrl || '').trim() || null,
+      ts: Number.isFinite(session.ts) ? session.ts : Date.now(),
+      seenAt: Date.now()
+    };
+  }
+
+  _pruneNetVizDiscoveredSessions() {
+    const staleMs = this.config.netVizSessionStaleMs || 15000;
+    const now = Date.now();
+    for (const [sessionId, session] of this.netVizDiscoveredSessions.entries()) {
+      const ageMs = now - (Number.isFinite(session?.seenAt) ? session.seenAt : 0);
+      if (ageMs > staleMs || session?.isStarted === false) {
+        this.netVizDiscoveredSessions.delete(sessionId);
+      }
+    }
+  }
+
+  getNetVizDiscoveredSessions() {
+    this._pruneNetVizDiscoveredSessions();
+    return Array.from(this.netVizDiscoveredSessions.values())
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+      .map((session) => ({ ...session }));
+  }
+
+  _publishNetVizDebugTelemetry() {
+    if (!this.config.enableNetVizDebugTelemetry) return;
+    if (!this.networkManager?.getTelemetrySnapshot || !this.stateManager?.commitDelta) return;
+    const snapshot = this.networkManager.getTelemetrySnapshot();
+    if (!snapshot?.peerId) return;
+    const taskPrefix = this.config.netVizDebugTelemetryTaskPrefix || NETVIZ_DEBUG_TELEMETRY_PREFIX;
+    const taskId = `${taskPrefix}${snapshot.peerId}`;
+    try {
+      this.stateManager.commitDelta({
+        taskId,
+        version: snapshot.ts,
+        payload: snapshot,
+        timestamp: snapshot.ts,
+        scope: this.config.deltaNamespace
+      });
+    } catch (err) {
+      console.warn('[NodeKernel] NetViz telemetry publish failed:', err?.message || err);
+    }
+  }
+
+  _startNetVizDebugTelemetryLoop() {
+    this._stopNetVizDebugTelemetryLoop();
+    if (!this.config.enableNetVizDebugTelemetry) return;
+    this._publishNetVizDebugTelemetry();
+    this.netVizDebugTelemetryTimer = setInterval(() => {
+      this._publishNetVizDebugTelemetry();
+    }, this.config.netVizDebugTelemetryIntervalMs || 2000);
+  }
+
+  _stopNetVizDebugTelemetryLoop() {
+    if (!this.netVizDebugTelemetryTimer) return;
+    clearInterval(this.netVizDebugTelemetryTimer);
+    this.netVizDebugTelemetryTimer = null;
+  }
+
+  _startNetVizSessionBroadcast() {
+    this._stopNetVizSessionBroadcast();
+    if (!this.config.enableNetVizSessionBroadcast) return;
+    if (!this._isBrowserRuntime()) return;
+    if (typeof BroadcastChannel === 'undefined') return;
+    try {
+      this.netVizDebugChannel = new BroadcastChannel(NETVIZ_DEBUG_CHANNEL);
+    } catch (_) {
+      this.netVizDebugChannel = null;
+      return;
+    }
+    const publish = () => {
+      const session = this.getNetVizDebugSession();
+      if (!session || !this.netVizDebugChannel) return;
+      this.netVizDebugChannel.postMessage({
+        type: 'session-upsert',
+        ts: Date.now(),
+        session
+      });
+    };
+    publish();
+    this.netVizDebugSessionTimer = setInterval(
+      publish,
+      this.config.netVizDebugSessionIntervalMs || 2000
+    );
+  }
+
+  _stopNetVizSessionBroadcast() {
+    if (this.netVizDebugSessionTimer) {
+      clearInterval(this.netVizDebugSessionTimer);
+      this.netVizDebugSessionTimer = null;
+    }
+    if (this.netVizDebugChannel) {
+      try {
+        this.netVizDebugChannel.postMessage({
+          type: 'session-remove',
+          ts: Date.now(),
+          sessionId: this.netVizDebugSessionId
+        });
+        this.netVizDebugChannel.close();
+      } catch (_) {
+        // no-op
+      }
+      this.netVizDebugChannel = null;
+    }
+  }
+
+  async _publishNetVizSessionUpsertOverNetwork() {
+    if (!this.config.enableNetVizSessionBroadcast) return;
+    if (!this.networkManager?.broadcast) return;
+    const session = this.getNetVizDebugSession();
+    if (!session) return;
+    try {
+      await this.networkManager.broadcast(
+        {
+          type: 'netviz-session-upsert',
+          session
+        },
+        { topic: this.config.netVizSessionTopic || NETVIZ_SESSION_TOPIC }
+      );
+    } catch (err) {
+      console.warn('[NodeKernel] NetViz session pubsub upsert failed:', err?.message || err);
+    }
+  }
+
+  async _publishNetVizSessionRemoveOverNetwork() {
+    if (!this.config.enableNetVizSessionBroadcast) return;
+    if (!this.networkManager?.broadcast) return;
+    try {
+      await this.networkManager.broadcast(
+        {
+          type: 'netviz-session-remove',
+          sessionId: this.netVizDebugSessionId
+        },
+        { topic: this.config.netVizSessionTopic || NETVIZ_SESSION_TOPIC }
+      );
+    } catch (err) {
+      console.warn('[NodeKernel] NetViz session pubsub remove failed:', err?.message || err);
+    }
+  }
+
+  _startNetVizNetworkSessionLoop() {
+    this._stopNetVizNetworkSessionLoop();
+    if (!this.config.enableNetVizSessionBroadcast) return;
+    this._publishNetVizSessionUpsertOverNetwork().catch(() => {});
+    this.netVizNetworkSessionTimer = setInterval(() => {
+      this._publishNetVizSessionUpsertOverNetwork().catch(() => {});
+    }, this.config.netVizDebugSessionIntervalMs || 2000);
+  }
+
+  _stopNetVizNetworkSessionLoop() {
+    if (this.netVizNetworkSessionTimer) {
+      clearInterval(this.netVizNetworkSessionTimer);
+      this.netVizNetworkSessionTimer = null;
+    }
+    this._publishNetVizSessionRemoveOverNetwork().catch(() => {});
+  }
+
+  _logNetVizAttachHint() {
+    const attachUrl = this.getNetVizAttachUrl();
+    if (!attachUrl) return;
+    console.info('[NodeKernel] NetViz attach URL:', attachUrl);
   }
 
   _normalizeClockPolicy(policy = {}, base = {}) {
@@ -481,6 +838,24 @@ export class NodeKernel {
       case 'ping':
         this._handlePing(peerId, message.data);
         break;
+
+      case 'netviz-session-upsert': {
+        if (!this.config.enableNetVizSessionDiscovery) break;
+        const session = this._normalizeNetVizSession(message.session, peerId);
+        if (session) {
+          this.netVizDiscoveredSessions.set(session.sessionId, session);
+        }
+        break;
+      }
+
+      case 'netviz-session-remove': {
+        if (!this.config.enableNetVizSessionDiscovery) break;
+        const sessionId = String(message.sessionId || '').trim();
+        if (sessionId) {
+          this.netVizDiscoveredSessions.delete(sessionId);
+        }
+        break;
+      }
         
       default:
         console.warn(`[NodeKernel] Unknown message type: ${message.type}`);

@@ -295,6 +295,15 @@ const buildScopedTopic = (prefix, topologyId, roomId, suffix) => {
   return `${scope}.${suffix}`;
 };
 
+const normalizeTopicList = (input) => {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [input];
+  const normalized = list
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+};
+
 
 export class NetworkManager {
   constructor(config = {}) {
@@ -362,11 +371,13 @@ export class NetworkManager {
     const scopedDirectTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'direct');
     const scopedPresenceTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'presence');
     const discoveryTopic = config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub';
+    const additionalPubsubTopics = normalizeTopicList(config.additionalPubsubTopics);
     const expandedGossipsubOptions = expandScoreParamTopics(gossipsubOptions, [
       config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
       config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
-      discoveryTopic
+      discoveryTopic,
+      ...additionalPubsubTopics
     ]);
 
     const defaults = {
@@ -377,6 +388,7 @@ export class NetworkManager {
       pubsubTopic: config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       directTopic: config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
       presenceTopic: config.presenceTopic || (useScopedTopics ? scopedPresenceTopic : DEFAULT_PRESENCE_TOPIC),
+      additionalPubsubTopics,
       discoveryTopic,
       bootstrapPeers: Array.isArray(config.bootstrapPeers) ? config.bootstrapPeers : [],
       gameId: config.gameId || 'default-game',
@@ -439,6 +451,9 @@ export class NetworkManager {
     this.config = {
       ...defaults,
       ...definedConfig,
+      additionalPubsubTopics: normalizeTopicList(
+        definedConfig.additionalPubsubTopics ?? defaults.additionalPubsubTopics
+      ),
       bootstrapPeers: normalizedBootstrapPeers,
       allowLocalDial,
       webrtc: webrtcConfig
@@ -497,6 +512,7 @@ export class NetworkManager {
       ? config.onConnectionFailure
       : null;
     this.messageHandlers = [];
+    this.additionalPubsubTopics = new Set(this.config.additionalPubsubTopics || []);
     this.scheduler = null;
     this.schedulerTimer = null;
     this.schedulerEnabled = config.enableScheduler || false;
@@ -513,6 +529,7 @@ export class NetworkManager {
       this.config.directTopic,
       this.config.presenceTopic
     ]);
+    this.additionalPubsubTopics.forEach((topic) => this.allowedTopics.add(topic));
     // Phase 5: Add directory topic to allowed topics
     if (this.config.enablePeerDirectory) {
       this.allowedTopics.add(this.config.directoryTopic);
@@ -824,6 +841,7 @@ export class NetworkManager {
     subscribeTopic(this.config.pubsubTopic);
     subscribeTopic(this.config.directTopic);
     subscribeTopic(this.config.presenceTopic);
+    this.additionalPubsubTopics.forEach((topic) => subscribeTopic(topic));
     this._syncShardSubscriptions(this.topologyController?.getNeighborShardIds?.() || []);
     this._recordPubsubTx(0);
 
@@ -1363,7 +1381,8 @@ export class NetworkManager {
         if (parsed?.target && parsed.target !== this.peerId) return;
       }
 
-      if (!this._matchesScope(parsed)) return;
+      const bypassScope = this.additionalPubsubTopics.has(topic);
+      if (!bypassScope && !this._matchesScope(parsed)) return;
 
       const payload = parsed?.payload ?? parsed;
       if (this._handleTopologyMessage(payload, parsed)) {
@@ -1672,7 +1691,18 @@ export class NetworkManager {
   _buildCircuitAddr(peerId) {
     if (!peerId || !this.config.bootstrapPeers?.length) return null;
     try {
-      const relayAddr = this.config.bootstrapPeers[0];
+      const bootstrapAddrs = this.config.bootstrapPeers
+        .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
+        .map((addr) => normalizeBootstrapAddr(addr));
+      if (bootstrapAddrs.length === 0) return null;
+      const preferIpv6 = this._hasLocalIpv6Addrs();
+      const preferredRelayAddr = bootstrapAddrs.find((addr) => {
+        if (preferIpv6) {
+          return addr.includes('/ip6/') || addr.includes('/dns6/');
+        }
+        return addr.includes('/ip4/') || addr.includes('/dns4/');
+      });
+      const relayAddr = preferredRelayAddr || bootstrapAddrs[0];
       const normalized = normalizeBootstrapAddr(relayAddr);
       return multiaddr(`${normalized}/p2p-circuit/p2p/${peerId}`);
     } catch (err) {
@@ -2601,6 +2631,9 @@ export class NetworkManager {
     this.libp2p.services.pubsub.subscribe(this.config.pubsubTopic);
     this.libp2p.services.pubsub.subscribe(this.config.directTopic);
     this.libp2p.services.pubsub.subscribe(this.config.presenceTopic);
+    this.additionalPubsubTopics.forEach((topic) => {
+      this.libp2p.services.pubsub.subscribe(topic);
+    });
     // Phase 5: Subscribe to directory topic
     if (this.config.enablePeerDirectory) {
       this.libp2p.services.pubsub.subscribe(this.config.directoryTopic);
@@ -3013,6 +3046,10 @@ export class NetworkManager {
     const normalized = [...ordered, ...relayAddrs, ...relayWebrtcAddrs]
       .map((addr) => ensurePeerIdSuffix(addr, peerId));
     return Array.from(new Set(normalized));
+  }
+
+  getAnnounceAddrs() {
+    return this._getAnnounceAddrs();
   }
 
   _getConnectionsForPeer(peerId) {

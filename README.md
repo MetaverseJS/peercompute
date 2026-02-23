@@ -68,6 +68,13 @@ Dev servers:
 - `https://localhost:5181/` (Daddy Go!)
 - `https://localhost:5182/` (NetViz)
 
+### NetViz Attach (Any Demo)
+- Every `NodeKernel` now publishes NetViz debug telemetry (`telemetry:<peerId>`) by default.
+- Demos now also publish lightweight NetViz session beacons on a shared pubsub topic (`peercompute-netviz-sessions`), so NetViz can discover sessions across different demo ports/origins.
+- Open NetViz (`https://localhost:5182/`), connect to the relay network, then use **Attach demo** to auto-load topology/room from discovered live sessions.
+- NetViz then connects to that session and shows peer graph + link types (direct/relay/pubsub) for the target demo.
+- To disable publishing in a demo, set `enableNetVizDebugTelemetry: false` on that demo's `NodeKernel` config.
+
 ### Docs Build / Preview
 ```bash
 npm run build
@@ -86,6 +93,20 @@ To run the relay directly without the npm wrapper:
 
 ```bash
 bash scripts/run-go-relay.sh
+```
+
+`npm run dev` and `npm run dev:local-relay` now default to loopback-safe relay settings (`localhost` / `127.0.0.1`) so HTTPS/WSS certs stay valid and demos consistently discover peers.  
+If you explicitly want LAN exposure, opt in:
+
+```bash
+RELAY_DEV_EXPOSE_LAN=1 npm run dev:local-relay
+```
+
+Dev launchers now run Vite with `--strictPort` by default (`DEV_STRICT_PORT=1`) so port conflicts fail fast instead of silently moving demos to different ports.
+If you intentionally want automatic port fallback, opt out:
+
+```bash
+DEV_STRICT_PORT=0 npm run dev:local-relay
 ```
 
 ### Relay Host Config (Single File)
@@ -306,6 +327,8 @@ export async function stepWebGPU(input) {
 - direct-vs-relay diagnostics (announced `/webrtc` addresses, connection type ratios, post-convergence churn/flip stability metrics, ICE candidate distributions)
 
 This is optional infrastructure for heavy-duty protocol-level testing of PeerCompute itself. It is not required to use PeerCompute in an app, run normal demos, or use the standard dev workflow.
+If you are building apps/demos and not debugging protocol internals, you can ignore `net-chaos-lab/` entirely.
+Chaos-lab commands are now owned by `net-chaos-lab/package.json`; root `npm run chaos-lab:*` scripts are lightweight wrappers.
 
 ### Chaos-Lab Dependencies
 - `Node.js` 24 LTS + `npm` (for demo/probe tooling).
@@ -330,16 +353,30 @@ For dry-run only (no real containerized topology), Docker/Mininet/Containernet a
 Quick start:
 
 ```bash
-python3 -m pip install -r net-chaos-lab/requirements.txt
+npm run chaos-lab:deps
 npm run chaos-lab
 npm run chaos-lab:full
 npm run chaos-lab:matrix
+npm run chaos-lab:matrix:demos
 npm run chaos-lab:matrix:full
+npm run chaos-lab:matrix:demos:full
+npm run chaos-lab:matrix:demos:loop
 npm run chaos-lab:matrix:smoke
 npm run chaos-lab:cleanup
 ```
 
-`npm run chaos-lab:matrix:full` launches a NetViz watcher automatically and prints a URL preloaded with chaos-lab visualization defaults so you can watch matrix behavior live.
+You can also run chaos-lab commands directly in its own package namespace:
+
+```bash
+npm --prefix net-chaos-lab run deps:python
+npm --prefix net-chaos-lab run matrix:full
+```
+
+`npm run chaos-lab:matrix:full` launches a NetViz watcher automatically and prints a URL preloaded with chaos-lab visualization defaults (including `autoConnect=0`). In watcher mode, NetViz now renders live chaos IP topology plus probe-derived P2P topology from `/chaos-api`, even when the observer browser is not directly peered. Open the printed URL exactly (the script may choose a non-5182 port if 5182 is already in use). Click `Connect` manually only if you also want the observer browser to join a relay-backed P2P session directly.
+
+`npm run chaos-lab:matrix:smoke` is a dry-run orchestration smoke gate (it intentionally reports `probe_total: 0`).
+
+`npm run chaos-lab:matrix:full` must be run from an interactive terminal so sudo can prompt for containernet execution.
 
 If running containernet mode with `sudo`, preserve your Node 24 PATH:
 
@@ -350,9 +387,10 @@ sudo -E env "PATH=$PATH" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/
 
 See `net-chaos-lab/README.md` for topology/scenario config details and dashboard usage.
 Default matrix config is `net-chaos-lab/configs/matrix/direct-regression.yaml`.
+Cross-demo matrix config is `net-chaos-lab/configs/matrix/demo-regression.yaml`.
 Containernet mode performs `mn -c` cleanup at startup (when run as root) to avoid stale Mininet interface collisions.
 Containernet mode preflights all planned docker node names and removes stale `mn.<node>` containers before node creation to avoid name conflicts after failed runs.
-Default chaos-lab topology uses `node:24-bookworm` for core services; DNS/HTTPS/TURN binaries are installed in those containers during service bootstrap.
+Default chaos-lab topology uses `peercompute/net-chaos-lab-node:latest` for agents and core services; this image is auto-built from `net-chaos-lab/docker/chaos-node.Dockerfile` when missing and already includes `iproute2` + DNS/HTTPS/TURN tooling.
 
 ## Tests
 ```bash

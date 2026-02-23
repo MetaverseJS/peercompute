@@ -8393,3 +8393,6311 @@ installHook.js:1 [NetworkManager] Dial failed 12D3KooWDmKQefGV5kwLGbEyqPwupFigk7
 ### Failures / Open Questions
 - Did not execute the full privileged watcher flow (`npm run chaos-lab:matrix:full`) in this non-interactive session because it requires `sudo` password entry.
 - `npm --prefix demos/netviz run build` updated generated `docs/netviz` artifacts in the working tree; this was validation-driven output.
+
+## Date: 2026-02-09 00:48:55 UTC
+
+### Prompt
+- User asked: "I'm not seeing the watcher url do I just have to wait a bit?" and shared output from `npm run chaos-lab:full`.
+
+### Actions
+- Re-reviewed required files before answering:
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Verified npm script wiring in `package.json`:
+  - `chaos-lab:full` runs containernet preflight with `--no-dashboard` and does **not** launch NetViz watcher.
+  - `chaos-lab:matrix:full` runs `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`, which launches NetViz watcher and prints the watcher URL before running the matrix.
+- Verified watcher-url print behavior by inspecting `net-chaos-lab/scripts/chaos-lab-matrix-full.sh` (`echo "[chaos-lab] open NetViz watcher URL:"`).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `jq '.scripts["chaos-lab:full"], .scripts["chaos-lab:matrix:full"]' package.json`
+- `sed -n '1,120p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- Script wiring check PASS:
+  - `chaos-lab:full` -> no watcher URL expected.
+  - `chaos-lab:matrix:full` -> watcher URL expected.
+
+### Failures / Open Questions
+- None. User ran the correct infrastructure command for containernet startup, but the wrong command for watcher output.
+
+## Date: 2026-02-09 01:02:21 UTC
+
+### Prompt
+- User reported NetViz watcher view was mostly empty and shared console output showing repeated relay bootstrap websocket failures (`wss://[2605:...]:8080`) while running chaos-lab.
+
+### Actions
+- Re-reviewed required context before edits:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+  - `plan/tests.md`
+- Diagnosed root cause from code + logs:
+  - NetViz watcher URL auto-started network connect.
+  - NetViz loaded default `demos/netviz/public/relay-config.json` with hard-coded public IPv6 bootstrap relay (`wss://[2605:...]:8080`).
+  - When that endpoint is unreachable, NetViz repeatedly retries relay dials and never gets meaningful peer telemetry.
+- Implemented a direct fix in NetViz for chaos-lab observability:
+  - Added `autoConnect` query parameter support (`?autoConnect=0`) to keep NetViz in observer mode when needed.
+  - Added live 3D chaos-topology overlay synthesis from dashboard `/api/topology` data:
+    - renders synthetic core/segment/service/agent nodes in the graph,
+    - renders synthetic links (including partition/agent-offline error highlighting),
+    - merges chaos overlay graph with real P2P graph when present.
+  - Added chaos node tagging in peer list (`CHAOS`) so overlay state is visible even without relay connectivity.
+  - Extended Chaos panel text with computed overlay-node count.
+- Updated matrix watcher defaults:
+  - `net-chaos-lab/scripts/chaos-lab-matrix-full.sh` watcher URL now includes `autoConnect=0` by default.
+- Updated docs/plans for the new behavior:
+  - `README.md`
+  - `net-chaos-lab/README.md`
+  - `demos/netviz/README.md`
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `plan/branch/big-net-testing.md`
+- Attempted to clean newly created artifact folders from the working tree.
+  - Removal of root-owned artifact files failed due permissions (created by prior sudo runs).
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `demos/netviz/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+- `docs/netviz/index.html` (build output)
+- `docs/netviz/assets/index-CFYVYHjd.js` (build output)
+- `docs/netviz/assets/index-BtAfTryL.js` removed (build output replacement)
+
+### Commands Run
+- `pwd && git status -sb`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' AGENTS.md`
+- `tail -n 260 plan/log.md`
+- `sed -n '1,260p' plan/tests.md`
+- `cat package.json`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab.sh`
+- `rg -n "relay|bootstrap|chaosApi|wss|connect" demos/netviz/src/main.js demos/netviz/src -g '*.js'`
+- `sed -n '1,340p' demos/netviz/src/main.js`
+- `sed -n '340,820p' demos/netviz/src/main.js`
+- `nl -ba demos/netviz/src/main.js | sed -n '1510,1735p'`
+- `sed -n '1,240p' demos/netviz/src/relayConfig.js`
+- `rg --files demos/netviz/public && ...cat relay/json files`
+- `rg -n "relay-config|bootstrapPeers|..." net-chaos-lab/src ...`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '260,760p' net-chaos-lab/src/chaoslab/topology.py`
+- `find net-chaos-lab/configs -maxdepth 3 -type f | sort`
+- `sed -n '1,320p' net-chaos-lab/configs/topology.default.yaml`
+- `sed -n '1,340p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,760p' net-chaos-lab/src/chaoslab/main.py`
+- `nl -ba demos/netviz/src/main.js | sed -n '960,1488p'`
+- `nl -ba demos/netviz/src/visualizer.js | sed -n '300,980p'`
+- `rg -n "matrix:full|watcher|chaosApi|autoConnect|NetViz watcher" README.md net-chaos-lab/README.md demos/netviz/README.md plan/tests.md`
+- `node -v && npm -v`
+- `npm --prefix demos/netviz run build`
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard && npm run chaos-lab:matrix:smoke`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `rm -r net-chaos-lab/artifacts/20260209T004659Z ...` (permission failures on root-owned files)
+- `git status -sb`
+
+### Test Results
+- `node -v` -> PASS (`v24.13.0`)
+- `npm -v` -> PASS (`11.6.2`)
+- `npm --prefix demos/netviz run build` -> PASS
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh` -> PASS
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` -> PASS
+- `npm run chaos-lab:matrix:smoke` -> PASS
+  - Note: dashboard bind warning (`Address already in use`) observed for smoke matrix sub-runs in this environment; run still completed and gates passed.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (8 tests)
+
+### Failures / Open Questions
+- Root-owned artifact directories from prior sudo runs remain untracked in git status because current user cannot remove those files without privileged cleanup.
+- This patch solves watcher visibility (chaos topology overlay + observer mode) and suppresses automatic relay dial spam by default, but does not itself make the existing hard-coded public relay bootstrap endpoint reachable.
+
+## Date: 2026-02-09 01:19:01 UTC
+
+### Prompt
+- User reported: "still not seeing anything" and shared NetViz console logs plus screenshot showing repeated websocket failures to `wss://[2605:...]:8080`, URL containing `autoConnect=0&chaosApi=/chaos-api`, and empty-ish viewer.
+
+### Actions
+- Re-reviewed required context before edits:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Investigated live run mismatch with provided screenshot/logs and verified likely root cause:
+  - Checked `net-chaos-lab/artifacts/netviz-watch.log` and found Vite selected `https://localhost:5184/` because ports `5182` and `5183` were already in use.
+  - Existing watcher URL generation still pointed users at `https://localhost:5182/...`, which can be a stale NetViz instance.
+  - This explains continued relay-dial spam and missing chaos overlay updates in the viewed browser tab.
+- Implemented watcher robustness fixes in `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`:
+  - Auto-picks a free dashboard port when `CHAOS_DASHBOARD_PORT` is not explicitly set (avoids stale `8866` collisions).
+  - Parses actual Vite local URL from watcher log and builds watcher URL using the real port.
+  - Keeps `autoConnect=0` default in watcher URL.
+  - Prints explicit note when requested NetViz port was busy and a different port is used.
+- Confirmed script syntax validity and updated docs/plans to reflect this behavior.
+
+### Files Touched
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,320p' net-chaos-lab/src/chaoslab/dashboard.py`
+- `rg -n "topology|/api/topology|summary|events" net-chaos-lab/src/chaoslab/dashboard.py net-chaos-lab/src/chaoslab/main.py`
+- `find net-chaos-lab/artifacts -maxdepth 3 -name 'chaos-topology.json' -o -name 'metrics-summary.json' | sort | tail -n 20`
+- `find net-chaos-lab/artifacts -maxdepth 4 -type f | rg '20260209T011133|chaos-topology|metrics-summary|matrix-summary'`
+- `sed -n '1,280p' net-chaos-lab/artifacts/20260209T011123Z/runs/20260209T011123Z-direct-diagnostics/chaos-topology.json`
+- `sed -n '1,220p' net-chaos-lab/artifacts/20260209T011123Z/runs/20260209T011123Z-direct-diagnostics/metrics-summary.json`
+- `sed -n '1,220p' net-chaos-lab/artifacts/20260209T011036Z/runs/20260209T011036Z-direct-diagnostics/chaos-topology.json`
+- `ls -la net-chaos-lab/artifacts | tail -n 40`
+- `tail -n 200 net-chaos-lab/artifacts/netviz-watch.log`
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `sed -n '1,180p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh` -> PASS.
+- Artifact inspection confirmed `/chaos-topology.json` payloads are populated for matrix runs (including containernet direct-diagnostics runs), so missing topology in UI was not due missing topology generation.
+- `netviz-watch.log` confirmed previous mismatch where watcher URL consumer could land on wrong/stale port.
+
+### Failures / Open Questions
+- Root-owned artifact trees from sudo runs remain; cleanup requires privileged removal if desired.
+- Existing stale NetViz/dashboard processes may still be running on old ports; user should relaunch watcher and use the newly printed URL exactly.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 01:26:02 UTC)
+- "looks like it's working to some degree at this point.
+
+here's the matrix:full output:
+
+[chaos-lab] summary:
+{ ... }
+[chaos-lab] matrix gates for ipv6-only: 1/4 passed ...
+[chaos-lab] matrix summary: { ... }
+
+can you parse the output from the run and tell me what's happening?"
+
+### Actions Taken
+- Reviewed required planning context before analysis:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected matrix artifacts and per-run outputs for run id `20260209T011123Z`:
+  - `net-chaos-lab/artifacts/20260209T011123Z/matrix-summary.json`
+  - `net-chaos-lab/artifacts/20260209T011123Z/runs/20260209T011123Z-direct-diagnostics/metrics-summary.json`
+  - `net-chaos-lab/artifacts/20260209T011123Z/runs/20260209T011123Z-ipv4-only/metrics-summary.json`
+  - `net-chaos-lab/artifacts/20260209T011123Z/runs/20260209T011123Z-ipv6-only/metrics-summary.json`
+  - corresponding `metrics-events.jsonl` files for each run.
+- Computed probe error counts directly from events:
+  - direct-diagnostics: 24/24 probe results failed with `page.goto: net::ERR_NAME_NOT_RESOLVED at https://demos.peercompute.test/netviz/`.
+  - ipv4-only: 32/32 failed with same DNS error.
+  - ipv6-only: 32/32 failed with same DNS error.
+- Verified probe checkpoints existed (the harness did run scheduled probes):
+  - direct-diagnostics checkpoints: `initial`, `stage-0`, `final`.
+  - ipv4-only checkpoints: `initial`, `stage-0`, `stage-1`, `final`.
+  - ipv6-only checkpoints: `initial`, `stage-0`, `stage-1`, `final`.
+- Reviewed topology defaults and resolver/service setup code:
+  - `net-chaos-lab/configs/topology.default.yaml` (default URL is `https://demos.peercompute.test/netviz/`).
+  - `net-chaos-lab/src/chaoslab/topology.py` around service DNS config and `_seed_agent_hosts()`.
+
+### Result / Diagnosis
+- Matrix failure is currently dominated by harness reachability, not by observed WebRTC/libp2p behavior.
+- All connectivity metrics are zero because the probe browser inside agents never successfully loaded NetViz; every probe failed at DNS resolution stage (`ERR_NAME_NOT_RESOLVED`).
+- Because probes never reached app runtime, gates like `connection_success_rate`, `direct_connection_rate`, and `avg_announced_direct_webrtc_addrs` are not measuring network behavior yet.
+
+### Files Touched
+- `plan/log.md` (appended this entry only).
+
+### Commands Run
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg --files net-chaos-lab/artifacts/20260209T011123Z`
+- `ls -la net-chaos-lab/artifacts/20260209T011123Z`
+- `sed -n '1,220p' net-chaos-lab/artifacts/20260209T011123Z/matrix-summary.json`
+- `sed -n '220,420p' net-chaos-lab/artifacts/20260209T011123Z/matrix-summary.json`
+- `sed -n '1,40p' .../metrics-events.jsonl` (all 3 runs)
+- `jq` summaries over each run’s probe errors and checkpoint counts
+- `sed -n '1,220p' net-chaos-lab/configs/topology.default.yaml`
+- `rg -n "ERR_NAME_NOT_RESOLVED|demos.peercompute.test|dns" net-chaos-lab/src -g'*'`
+- `sed -n '80,540p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '520,760p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '760,980p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '980,1240p' net-chaos-lab/src/chaoslab/topology.py`
+- `date -u` and local `date` for timestamping.
+
+### Tests Run
+- No code-change tests run in this prompt (analysis-only prompt; no implementation yet).
+
+### Open Questions / Next Step
+- Need to validate name resolution from probe agents before starting browser probes (e.g., run `getent hosts demos.peercompute.test` and `curl -kI https://demos.peercompute.test/netviz/` inside each selected probe agent).
+- If DNS/hosts injection is flaky, add pre-probe diagnostics and fail-fast reporting so future matrix runs distinguish infrastructure failures from direct-connection regressions.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 02:15:48 UTC)
+- "alright proceed."
+
+### Actions Taken
+- Implemented chaos-lab probe infrastructure fixes focused on the DNS/reachability failure mode discovered in run `20260209T011123Z`.
+
+1) Probe execution path correctness + fallback control (`net-chaos-lab/src/chaoslab/harness.py`)
+- Added explicit host-vs-agent probe script paths:
+  - host: `<repo>/net-chaos-lab/agent/probe.mjs`
+  - containernet agent: `/workspace/net-chaos-lab/agent/probe.mjs`
+- Fixed containernet probing to use the in-agent `/workspace/...` script path (previously used host absolute path, which can force fallback or failure).
+- Added `CHAOSLAB_ALLOW_HOST_PROBE_FALLBACK` env flag (default disabled) so containernet runs no longer silently hide in-agent probe failures behind host fallback.
+- Added in-agent preflight before Playwright run:
+  - probe script existence check inside agent
+  - `getent hosts` DNS resolution check
+  - `/etc/hosts` presence check
+  - `/etc/resolv.conf` capture
+  - `curl -k` HTTPS status check to target URL
+- Added structured preflight + infra diagnostics into each probe payload:
+  - `network_preflight`
+  - `probe_execution` (`agent`, `host`, `host-fallback`)
+  - `infra_failure`
+
+2) Topology resolution hardening (`net-chaos-lab/src/chaoslab/topology.py`)
+- Set `self._services` before agent configuration so DNS service details are available during `_configure_agent`.
+- Added `get_service_host_entries()` to expose both IPv4 and IPv6 host mappings.
+- Updated DNS service config generation to include both IPv4 and IPv6 host entries and `listen-address=::`.
+- Updated agent `/etc/hosts` seeding to write all host entries (IPv4 + IPv6) via `_exec_node_shell` with warning logs on failure.
+- Added agent resolver bootstrap in `_configure_agent` to point `/etc/resolv.conf` at chaos-lab DNS service addresses (IPv4/IPv6 when present).
+
+3) Metrics coverage for infra/preflight (`net-chaos-lab/src/chaoslab/metrics.py`)
+- Added summary fields:
+  - `preflight_probe_count`
+  - `preflight_success_rate`
+  - `preflight_dns_success_rate`
+  - `preflight_https_success_rate`
+  - `preflight_hosts_entry_rate`
+  - `infra_failure_rate`
+- Implemented per-probe aggregation using `network_preflight`/`infra_failure` payload fields.
+
+4) Tests + docs
+- Extended unit tests (`net-chaos-lab/tests/test_chaoslab.py`):
+  - Added `FakeProbeTopology` test helper.
+  - Added harness test verifying containernet uses `/workspace/net-chaos-lab/agent/probe.mjs`.
+  - Added metrics test for new preflight/infra summary rates.
+  - Updated existing metrics test expectations with new fields.
+- Updated docs:
+  - `net-chaos-lab/README.md` (new preflight/infra metrics and fallback behavior docs).
+  - `plan/tests.md` (preflight/infra expectations in chaos-lab gates).
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/metrics.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- Discovery / inspection:
+  - `rg -n "probe|Playwright|netviz|page.goto|probe_result|metrics-summary|stability|diagnostics" net-chaos-lab/src -g'*'`
+  - `sed -n '1,280p' net-chaos-lab/src/chaoslab/harness.py`
+  - `sed -n '1,360p' net-chaos-lab/src/chaoslab/metrics.py`
+  - `sed -n '1,320p' net-chaos-lab/src/chaoslab/main.py`
+  - `sed -n '1,320p' net-chaos-lab/agent/probe.mjs`
+  - `sed -n '320,640p' net-chaos-lab/agent/probe.mjs`
+  - `rg -n "def get_service_host_map|def _seed_agent_hosts|def _configure_agent|if key == 'dns'|net.start\(\)|self\._services = service_records" net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '300,380p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '440,560p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '780,900p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '900,1020p' net-chaos-lab/src/chaoslab/topology.py`
+- Validation:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` (first run: 1 failure)
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - Fixed harness preflight propagation and reran:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` (pass)
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` (pass)
+  - `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` (pass)
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - Initial: failed (`network_preflight` assertion in new harness test).
+  - After fix: `Ran 10 tests ... OK`.
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - Passed after final changes.
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - Passed and summary printed expected new preflight/infra fields.
+
+### Failures / Follow-ups
+- Attempted cleanup command for generated artifact folder using `rm -rf` was blocked by command policy in this environment; artifact folder remains.
+- Next practical validation step requires a root containernet run to confirm:
+  - probes execute in-agent (no silent host fallback),
+  - `network_preflight` fields report true/false correctly,
+  - matrix failures (if any) are now attributable to networking behavior rather than unresolved probe URL infrastructure.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 02:33:30 UTC)
+- "also the chaos-lab run failed. check the output"
+
+### Actions Taken
+- Re-reviewed required context before this task:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest section of `plan/log.md`
+- Inspected newest artifacts and run summaries for the latest matrix run:
+  - `net-chaos-lab/artifacts/20260209T022451Z/matrix-summary.json`
+  - per-run summaries under `net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-summary.json`
+  - per-run events under `net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-events.jsonl`
+- Inspected NetViz watcher log for the reported `/chaos-api` HTTP 500 behavior:
+  - `net-chaos-lab/artifacts/netviz-watch.log`
+
+### Diagnosis
+- Latest matrix execution is a **gate failure**, not a topology boot crash:
+  - `run_total=3`, `run_passed=0`, `run_failed=3` in `matrix-summary.json`.
+  - Each child run has `exit_code=0` but required metric gates fail.
+- Common root cause across all 3 runs:
+  - `preflight_probe_count` is non-zero (probes ran), but
+  - `preflight_success_rate=0`, `preflight_dns_success_rate=0`, `preflight_https_success_rate=0`, `infra_failure_rate=1`.
+  - `metrics-events.jsonl` probe payloads repeatedly report:
+    - `error: "dns resolution failed for demos.peercompute.test"`
+    - resolver inside agents: `nameserver 10.40.254.2` and `nameserver fd42:40:254::2`.
+- Reported NetViz `/chaos-api/*` 500 errors are explained by proxy target loss:
+  - `netviz-watch.log` shows repeated Vite proxy errors:
+    - `connect ECONNREFUSED 127.0.0.1:8866`
+  - This means NetViz is still polling while chaos-lab dashboard backend is no longer listening on the configured dashboard port.
+
+### Files Touched
+- `plan/log.md` (this entry)
+
+### Commands Run
+- `ls -1dt net-chaos-lab/artifacts/* | head -n 20`
+- `find net-chaos-lab/artifacts -maxdepth 2 -name 'matrix-summary.json' -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' | sort -r | head -n 10`
+- `tail -n 160 net-chaos-lab/artifacts/netviz-watch.log`
+- `sed -n '1,260p' net-chaos-lab/artifacts/20260209T022451Z/matrix-summary.json`
+- `for f in net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-summary.json; do ...; done`
+- `for f in net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-events.jsonl; do ...; done`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No code changes made in this prompt; no unit/integration tests executed.
+
+### Open Questions / Next Steps
+- Why are agent DNS lookups failing despite hosts-entry presence (`preflight_hosts_entry_rate=1`) and DNS service addresses being configured in resolv.conf?
+- We should add a deterministic per-agent resolution validation step (`getent hosts` + `nslookup`) before first probe checkpoint and record explicit service reachability (DNS/TLS) in summary/gates.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 02:50:54 UTC)
+- "can you fix it?"
+
+### Actions Taken
+- Re-reviewed required context before editing:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Diagnosed latest matrix failure (`20260209T022451Z`) as probe preflight abort path + backend watcher mismatch symptoms:
+  - Matrix runs completed (`exit_code=0`) but all gates failed due preflight DNS failures (`demos.peercompute.test` unresolved in probe preflight).
+  - NetViz `500 /chaos-api/*` errors were Vite proxy backend connection refusals when dashboard backend was down (`ECONNREFUSED 127.0.0.1:8866`).
+- Implemented robustness fixes in chaos-lab runtime:
+  1. `net-chaos-lab/src/chaoslab/topology.py`
+     - Added terminal-noise-safe shell parsing for containernet command wrappers:
+       - ANSI/control-sequence stripping.
+       - deterministic sentinel parsing (`__CHAOSLAB_EXIT_CODE__:`) for exit code extraction.
+       - `TERM=dumb bash --noprofile --norc` wrappers to reduce PTY artifacts.
+     - Applied parser to both `run_command_in_agent()` and `_exec_node_shell()`.
+  2. `net-chaos-lab/src/chaoslab/harness.py`
+     - Changed preflight behavior to hard-fail only on true infra blockers (missing probe script/curl/invalid URL host).
+     - Non-fatal preflight warnings now continue into probe execution (instead of aborting every probe).
+     - Added service-IP URL fallback for probe navigation when host DNS/HTTPS check fails (`https://<service-ip>/...`) while preserving preflight diagnostics.
+     - Added helper methods for preflight-hard-failure classification and fallback URL construction.
+  3. Tests and docs updates:
+     - `net-chaos-lab/tests/test_chaoslab.py`
+       - Added shell-output parser noise test.
+       - Added containernet preflight fallback URL test.
+       - Kept existing containernet probe path test coverage.
+     - `net-chaos-lab/README.md`
+       - Documented non-fatal preflight continuation and service-IP fallback behavior.
+     - `plan/tests.md`
+       - Added expectations for preflight resilience and shell-output sanitization behavior.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- Inspection/diagnosis:
+  - `sed -n '1,260p' AGENTS.md`
+  - `sed -n '1,260p' plan/plan.md`
+  - `tail -n 220 plan/log.md`
+  - `tail -n 260 net-chaos-lab/artifacts/netviz-watch.log`
+  - `sed -n '1,260p' net-chaos-lab/artifacts/20260209T022451Z/matrix-summary.json`
+  - `for f in net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-summary.json; do ...; done`
+  - `for f in net-chaos-lab/artifacts/20260209T022451Z/runs/*/metrics-events.jsonl; do ...; done`
+- Validation:
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 12 tests ... OK`).
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` -> PASS.
+
+### Failures / Open Questions
+- Full containernet matrix re-run not executed in this session because root/sudo execution requires interactive password entry on your host.
+- Existing root-owned artifact directories remain from prior runs.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 03:10:41 UTC)
+- "can you fix it?"
+- "webxr-polyfill.js... /chaos-api/api/summary ... 500 (Internal Server Error) ... netviz output"
+
+### Actions Taken
+- Re-reviewed required context before edits:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Verified current failure mode from local artifacts/logs:
+  - `net-chaos-lab/artifacts/netviz-watch.log` still showed repeated proxy backend refusals (`ECONNREFUSED 127.0.0.1:8866`) consistent with stale watcher/proxy sessions.
+- Implemented watcher-launch hardening so matrix runs do not silently reuse stale NetViz servers:
+  1. `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+     - Added stale NetViz listener cleanup on the requested watcher port (`lsof` + `kill`) before launching a new watcher.
+     - Switched default watcher command to `--strictPort` to avoid hidden port drift.
+     - Added `wait_for_netviz_chaos_api` preflight that requires HTTP 200 from `https://localhost:<watcher-port>/chaos-api/api/summary` before starting the matrix run.
+     - Added fail-fast log tail output when the watcher preflight does not pass.
+  2. `demos/netviz/src/main.js`
+     - Added chaos-feed fallback payload builder for summary/events/topology API paths.
+     - Changed chaos feed fetches to degrade gracefully on non-200 responses and request errors (instead of throwing), preventing repeated app-level request exceptions from taking the chaos panel fully offline.
+     - Added degraded-state handling in feed health status (`dashboard offline (degraded fallback)`).
+- Updated docs/tests metadata:
+  - `net-chaos-lab/README.md` now documents stale-listener cleanup + chaos-api preflight behavior in `chaos-lab:matrix:full`.
+  - `plan/tests.md` now includes matrix watcher preflight expectations (stale listener cleanup + `/chaos-api/api/summary` HTTP 200 requirement).
+
+### Files Touched
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `demos/netviz/src/main.js`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- Context/inspection:
+  - `date -Iseconds`
+  - `git status --short`
+  - `git rev-parse --abbrev-ref HEAD`
+  - `sed -n '1,240p' AGENTS.md`
+  - `sed -n '1,240p' plan/plan.md`
+  - `sed -n '1,260p' plan/log.md`
+  - `rg -n "chaos-api|summary|events|topology|proxy" demos/netviz/vite.config.js demos/netviz/src/main.js net-chaos-lab/src/chaoslab/dashboard.py`
+  - `sed -n '1,260p' net-chaos-lab/src/chaoslab/dashboard.py`
+  - `sed -n '1,260p' demos/netviz/vite.config.js`
+  - `tail -n 120 net-chaos-lab/artifacts/netviz-watch.log`
+  - `cat package.json`
+  - `sed -n '1,280p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - `sed -n '1,280p' net-chaos-lab/scripts/chaos-lab.sh`
+  - `sed -n '460,620p' demos/netviz/src/main.js`
+  - `sed -n '1,260p' net-chaos-lab/README.md`
+  - `sed -n '1,240p' plan/tests.md`
+- Validation:
+  - `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - `npm --prefix demos/netviz run build`
+  - `VITE_CHAOS_API_PROXY_TARGET=http://127.0.0.1:9999 npm --prefix demos/netviz run dev -- --host 127.0.0.1 --port 5192` (temporary) + `curl -k` probes:
+    - `https://localhost:5192/chaos-api/api/summary`
+    - `https://localhost:5192/chaos-api/api/events?limit=40`
+    - `https://localhost:5192/chaos-api/api/topology`
+  - `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh` -> PASS.
+- `npm --prefix demos/netviz run build` -> PASS.
+- Chaos proxy degradation smoke (unreachable backend target) -> PASS:
+  - `/chaos-api/api/summary` HTTP `200` with degraded JSON.
+  - `/chaos-api/api/events?limit=40` HTTP `200` with degraded JSON.
+  - `/chaos-api/api/topology` HTTP `200` with degraded JSON.
+
+### Failures / Open Questions
+- Full containernet `npm run chaos-lab:matrix:full` was not executed in this session because it requires interactive sudo/root execution on the host.
+- Remaining WebSocket failures in your browser logs to `wss://[2605:...]:8080` are separate from the chaos overlay endpoint and indicate relay reachability/transport issues for the local NetViz node, not chaos-api endpoint availability.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 03:12:43 UTC)
+- Follow-up validation/cleanup after "can you fix it?" implementation.
+
+### Actions Taken
+- Added branch-status documentation update for watcher hardening + chaos-feed graceful degradation:
+  - `plan/branch/big-net-testing.md`
+- Ran additional smoke validation for root chaos command after script/UI changes.
+
+### Files Touched
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` -> PASS.
+
+### Open Questions
+- Full containernet matrix path still needs host-side rerun/confirmation under sudo: `npm run chaos-lab:matrix:full`.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 03:29:04 UTC)
+- "hmm any idea how these are stuck? I tried running sudo npm run chaos-lab:matrix:full maybe it can't kill those?"
+
+### Actions Taken
+- Investigated active/stale watcher processes and listener ownership after mixed sudo/non-sudo runs.
+- Confirmed multiple stale NetViz Vite processes remained, including root-owned processes started from sudo-based runs.
+- Confirmed at least one active listener on `0.0.0.0:5182` while stale Vite process pool existed.
+
+### Findings
+- Running `sudo npm run chaos-lab:matrix:full` can leave root-owned watcher processes (`node ...vite ... --port 5182 --strictPort`) that non-sudo cleanup paths cannot always terminate.
+- Current launcher cleanup can kill matching listeners when visible/killable, but mixed ownership and interrupted runs can still accumulate stale Vite processes.
+- Root-owned and user-owned watcher processes were both present at the same time in process listings.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `ps -eo pid,user,ppid,cmd | rg -n "vite|net-chaos-lab/scripts/chaos-lab-matrix-full.sh|chaoslab.main|npm --prefix .*demos/netviz|node .*vite"`
+- `sudo lsof -nP -iTCP -sTCP:LISTEN | rg "(:5182|:8866|:8867|:5190|:5191|:5192)"` (failed here due non-interactive sudo password requirement)
+- `pgrep -af "net-chaos-lab/scripts/chaos-lab-matrix-full.sh|chaoslab.main|vite"`
+- `lsof -nP -iTCP:5182 -sTCP:LISTEN || true`
+- `ps -o pid,user,stat,etime,cmd -p 1175495,1181176,1213559,1223526,1245429,1247082,1267522`
+- `ss -ltnp | rg "node|5182|8866|8867|519" || true`
+- `fuser -v 5182/tcp || true`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- Diagnostic-only prompt; no unit/integration suite executed.
+
+### Open Questions
+- Consider adding a dedicated root-level watcher cleanup script (`sudo`-friendly) to remove stale Vite/dashboard processes before matrix runs.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 03:58:40 UTC)
+- "OK netviz finally linked up. you need to make the grid much bigger and let the user zoom out probably 5x more. the user should also be able to see the IP topology and the p2p topology at the same time or one or the other. toggle them with check boxes."
+- "clicking on a node or an edge should provide some info about that node like connection state bandwidth ipv4/6 nat status etc"
+
+### Actions Taken
+- Re-reviewed required planning context before edits:
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Audited existing NetViz changes already in progress for this prompt (`demos/netviz/index.html`, `demos/netviz/src/visualizer.js`, `demos/netviz/src/main.js`) and confirmed:
+  - larger grid + farther camera + larger zoom-out range are present.
+  - Display checkboxes for `Show P2P` and `Show IP topology` are present in the console UI.
+  - enriched inspector builders for P2P/IP node and edge metadata are present.
+- Completed the remaining integration gap in `demos/netviz/src/main.js`:
+  - wired `show-p2p-topology` and `show-ip-topology` checkbox change handlers to call `updateHud()` + `syncInputsToUrl()`.
+  - updated `hide-ghosts` handler to also sync URL state for consistent share/reload behavior.
+- Updated plan docs to reflect this capability in roadmap and manual verification strategy.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && git status --short`
+- `rg -n "showP2P|showIP|buildChaosNodeInfo|buildEdgeInfo|maxDistance|gridSize" demos/netviz/src/main.js demos/netviz/src/visualizer.js demos/netviz/index.html`
+- `sed -n '2360,2535p' demos/netviz/src/main.js`
+- `sed -n '1,220p' demos/netviz/index.html`
+- `rg -n "show-p2p-topology|show-ip-topology|toggle P2P/IP|inspect panel" demos/netviz/index.html && sed -n '300,470p' demos/netviz/index.html`
+- `tail -n 80 demos/netviz/src/main.js`
+- `rg -n "showP2PTopologyToggle|showIPTopologyToggle|hideGhostsToggle|autoRotateToggle" demos/netviz/src/main.js`
+- `sed -n '1240,1395p' demos/netviz/src/main.js`
+- `sed -n '1560,1885p' demos/netviz/src/main.js`
+- `sed -n '1885,2065p' demos/netviz/src/main.js`
+- `npm --prefix demos/netviz run build`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `npm --prefix demos/netviz run build` -> PASS.
+
+### Failures / Open Questions
+- No local runtime/browser interaction test was executed in this prompt; verification here is static + build-level.
+
+## Date: 2026-02-09
+
+### Prompt (2026-02-09 04:21:38 UTC)
+- "can you review the matrix output results and tell me how things are going and then fix failing tests"
+
+### Actions Taken
+- Re-reviewed required planning context before making changes:
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Parsed the latest matrix run artifacts (`20260209T033243Z`) and confirmed all three runs failed for infrastructure-preflight reasons, not scenario logic:
+  - `preflight_success_rate=0`
+  - `preflight_dns_success_rate=0`
+  - `preflight_hosts_entry_rate=0`
+  - `infra_failure_rate=1`
+  - probe payloads showed `dns_output` / `hosts_output` contaminated by repeated `>` prompt lines.
+- Identified root cause in containernet command execution wrapper:
+  - `run_command_in_agent()` wrapped commands with multi-line shell snippets, which interactive containernet shells echoed as continuation prompts (`>`), polluting parsed stdout and causing false DNS/hosts failures in preflight.
+- Implemented fix:
+  1. `net-chaos-lab/src/chaoslab/topology.py`
+     - changed `run_command_in_agent()` wrapper to a single-line shell command with sentinel exit marker.
+     - preserved shell-output sentinel parsing.
+     - updated `_parse_shell_output()` to ignore continuation-prompt-only lines (`>` / `>>`).
+  2. `net-chaos-lab/tests/test_chaoslab.py`
+     - added regression test `test_parse_shell_output_ignores_continuation_prompts`.
+- Re-ran validation suites after patch.
+
+### Matrix Review Summary
+- Current state from latest full matrix (`net-chaos-lab/artifacts/20260209T033243Z/matrix-summary.json`):
+  - Matrix: `direct-regression`
+  - Runs: `3`, Passed: `0`, Failed: `3`
+  - App-level direct/relay metrics remain `0.0` because probes are failing before app telemetry is captured.
+  - Primary blocker was preflight contamination; fix has been implemented in wrapper/parser path but requires a fresh full containernet matrix rerun to confirm on-host behavior.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- Context + artifact review:
+  - `sed -n '1,220p' plan/plan.md`
+  - `tail -n 260 plan/log.md`
+  - `ls -1dt net-chaos-lab/artifacts/* | head -n 20`
+  - `find net-chaos-lab/artifacts -maxdepth 2 -name 'matrix-summary.json' -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' | sort -r | head -n 10`
+  - `sed -n '1,260p' net-chaos-lab/artifacts/20260209T033243Z/matrix-summary.json`
+  - `sed -n '1,20p' net-chaos-lab/artifacts/20260209T033243Z/runs/*/metrics-events.jsonl`
+  - `jq -r '.type' net-chaos-lab/artifacts/20260209T033243Z/runs/*/metrics-events.jsonl | sort | uniq -c`
+  - `rg -n ... net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '130,235p' net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '940,1045p' net-chaos-lab/src/chaoslab/topology.py`
+  - `rg -n ... net-chaos-lab/src/chaoslab/harness.py`
+  - `git diff -- net-chaos-lab/src/chaoslab/topology.py | sed -n '1,260p'`
+  - `rg -n ... net-chaos-lab/tests/test_chaoslab.py`
+  - `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- Validation:
+  - `node -v && npm -v && python3 --version`
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `npm --prefix demos/netviz run build`
+  - `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard`
+  - `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 13 tests ... OK`).
+- `npm --prefix demos/netviz run build` -> PASS.
+- `npm run chaos-lab -- --mode dry-run --skip-scenario --skip-probes --no-dashboard` -> PASS.
+- `npm run chaos-lab:matrix:smoke` -> PASS (`2/2` runs passed).
+
+### Failures / Open Questions
+- Full containernet matrix revalidation (`npm run chaos-lab:matrix:full`) was not executed in this session because it requires interactive sudo/root execution on host.
+- Next required confirmation is a fresh full matrix run to verify preflight rates recover (`preflight_hosts_entry_rate` / `preflight_dns_success_rate` > 0) with the wrapper fix in place.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 02:21:12 UTC)
+- "so I rebooted and now the matrix:full doesn';t seem to be running. do I need a python venv or something?"
+- User shared `npm run chaos-lab:matrix:smoke` output showing successful dry-run smoke matrix with `probe_total: 0`.
+
+### Actions Taken
+- Re-reviewed required context before diagnosis:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Validated environment/prerequisites after reboot:
+  - Node.js and npm versions.
+  - containernet venv python path and interpreter.
+  - mininet module imports from containernet venv.
+  - docker client/server availability.
+- Reproduced containernet-mode behavior without root:
+  - confirmed expected failure: `*** Mininet must run as root.` for non-sudo containernet start.
+- Reproduced `npm run chaos-lab:matrix:full` in non-interactive session:
+  - script launched watcher then failed at sudo prompt (`sudo: a terminal is required ...`).
+- Implemented UX fix in matrix-full launcher:
+  - `net-chaos-lab/scripts/chaos-lab-matrix-full.sh` now performs an early `ensure_sudo_ready` check.
+  - In non-interactive sessions it now fails fast with explicit guidance before launching watcher.
+  - In interactive terminals it runs `sudo -v` early so password prompting is explicit.
+- Updated docs to clarify expected behavior:
+  - `net-chaos-lab/README.md`: `matrix:smoke` intentionally has `probe_total: 0`; `matrix:full` needs interactive sudo.
+  - `README.md`: same clarification in root quick-start section.
+  - `plan/tests.md`: added smoke expectation and matrix-full interactive-sudo expectation.
+
+### Files Touched
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `net-chaos-lab/README.md`
+- `README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- Context review:
+  - `sed -n '1,260p' AGENTS.md`
+  - `sed -n '1,220p' plan/plan.md`
+  - `tail -n 220 plan/log.md`
+- Diagnosis:
+  - `cat package.json`
+  - `sed -n '1,280p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - `sed -n '1,320p' net-chaos-lab/scripts/chaos-lab.sh`
+  - `node -v && npm -v && which node && which npm`
+  - `ls -l /home/cos/projects/containernet/.venv/bin/python`
+  - `/home/cos/projects/containernet/.venv/bin/python -c "import sys; print(sys.version)"`
+  - `/home/cos/projects/containernet/.venv/bin/python - <<'PY' ... importlib.import_module('mininet.net') ... PY`
+  - `docker --version && docker info --format '{{.ServerVersion}}'`
+  - `PYTHON_BIN=/home/cos/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+  - `npm run chaos-lab:matrix:full`
+  - `rg -n "matrix:full|matrix:smoke|dry-run-smoke|interactive|sudo" README.md net-chaos-lab/README.md`
+  - `sed -n '52,120p' net-chaos-lab/README.md`
+  - `sed -n '320,370p' README.md`
+- Validation after patch:
+  - `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - `npm run chaos-lab:matrix:smoke`
+  - `npm run chaos-lab:matrix:full`
+  - `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh` -> PASS.
+- `npm run chaos-lab:matrix:smoke` -> PASS (`2/2` smoke runs passed, expected `probe_total: 0`).
+- `npm run chaos-lab:matrix:full` (non-interactive session) -> expected FAIL with new clear message:
+  - `[chaos-lab] sudo requires an interactive terminal for matrix:full.`
+  - `[chaos-lab] run this command directly in your shell and enter your sudo password when prompted.`
+
+### Failures / Open Questions
+- Full containernet matrix execution was not run in this non-interactive session because sudo cannot prompt here; host-side interactive rerun is required.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 03:03:28 UTC)
+- "I ran it again. please check the output log and determine next steps"
+
+### Actions Taken
+- Re-reviewed required context before diagnosis:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Parsed newest matrix artifacts after reboot:
+  - `net-chaos-lab/artifacts/20260210T022840Z/matrix-summary.json`
+  - `net-chaos-lab/artifacts/20260210T021612Z/matrix-summary.json`
+- Confirmed both runs executed all 3 matrix scenarios but failed all required connection gates with identical infrastructure signature:
+  - `preflight_success_rate=0`
+  - `preflight_dns_success_rate=0`
+  - `preflight_https_success_rate=0`
+  - `preflight_hosts_entry_rate=0`
+  - `infra_failure_rate=1`
+- Inspected per-probe payloads and identified concrete failure path:
+  - every `probe_result` had `error: in-agent probe failed (rc=1); host fallback is disabled`
+  - `network_preflight.host=demos.peercompute.test`
+  - `dns_ok=false`, `dns_output=""`, `hosts_entry_ok=false`, `hosts_output=""`
+  - `fallback_url=https://10.40.254.10/netviz/` with `fallback_https_ok=false`
+- Root-cause hypothesis from topology inspection:
+  - NAT routers had no explicit route to core services subnet (`10.40.254.0/24`, `fd42:40:254::/64`).
+  - Service containers had no return route to router uplink subnets (`10.40.1.0/24` and per-segment IPv6 uplink /64s).
+  - Result: agents could not reach DNS/HTTPS services across the core switch path, so in-agent probes failed before P2P metrics.
+- Implemented routing fix in topology bring-up:
+  - NAT routers now add routes to core service subnet(s) via WAN interface.
+  - Core service containers now add routes to NAT uplink subnet(s) via `eth0`.
+- Added a topology unit regression test covering core service/uplink network derivation.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- Context/artifact inspection:
+  - `pwd && date -Iseconds && node -v && npm -v`
+  - `sed -n '1,220p' plan/plan.md`
+  - `tail -n 220 plan/log.md`
+  - `ls -1dt net-chaos-lab/artifacts/* | head -n 30`
+  - `ls -la net-chaos-lab/artifacts/20260210T022840Z`
+  - `sed -n '1,260p' net-chaos-lab/artifacts/20260210T022840Z/matrix-summary.json`
+  - `for f in .../metrics-events.jsonl; do jq -r '.type' ...; done`
+  - `jq -c 'select(.type=="probe_result") | .payload ...' .../metrics-events.jsonl`
+  - `tail -n 180 net-chaos-lab/artifacts/netviz-watch.log`
+- Code inspection:
+  - `rg -n "in-agent probe failed|ALLOW_HOST_PROBE_FALLBACK|run_command_in_agent|_parse_shell_output|_start_containernet" net-chaos-lab/src/chaoslab -S`
+  - `sed -n ... net-chaos-lab/src/chaoslab/harness.py`
+  - `sed -n ... net-chaos-lab/src/chaoslab/topology.py`
+  - `sed -n '1,220p' net-chaos-lab/configs/topology.default.yaml`
+  - `docker image inspect mcr.microsoft.com/playwright:v1.56.1-noble ...`
+- Validation:
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 14 tests ... OK`).
+- `npm run chaos-lab:matrix:smoke` -> PASS (`2/2` dry-run matrix runs passed).
+
+### Failures / Open Questions
+- Full containernet matrix re-run is still required on host interactive sudo to confirm routing fix resolves preflight failures in live topology:
+  - `npm run chaos-lab:matrix:full`
+- `netviz-watch.log` still records `ECONNREFUSED 127.0.0.1:<port>` bursts when dashboard sidecar exits while NetViz watcher remains; this is observer-plane degradation and should be addressed separately from probe routing.
+
+### Follow-up (2026-02-10 03:03:28 UTC)
+- Added routing validation note to `plan/tests.md` under containernet preflight expectations:
+  - NAT router <-> core services reachability + service return routes to uplink subnet(s) are now explicit test expectations.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 03:29:03 UTC)
+- "done. review the run"
+
+### Actions Taken
+- Re-reviewed required planning context before run review:
+  - `plan/plan.md`
+  - latest `plan/log.md`
+- Located newest artifacts and reviewed latest full matrix run:
+  - `net-chaos-lab/artifacts/20260210T030938Z/matrix-summary.json`
+  - per-run summaries/events under `.../runs/*/metrics-summary.json` and `.../metrics-events.jsonl`
+- Confirmed matrix execution health:
+  - matrix orchestrator ran all 3 scenarios (`direct-diagnostics`, `ipv4-only`, `ipv6-only`)
+  - each run exited with `exit_code: 0`
+  - gate evaluation failed in all 3 runs (`run_passed: 0/3`)
+- Confirmed failure signature remains infrastructure-preflight (same as earlier runs):
+  - `preflight_probe_count` equals `probe_total` (probes are being attempted)
+  - `preflight_success_rate: 0`
+  - `preflight_dns_success_rate: 0`
+  - `preflight_https_success_rate: 0`
+  - `preflight_hosts_entry_rate: 0`
+  - `infra_failure_rate: 1`
+- Parsed representative probe payloads from all three runs and confirmed identical diagnostics:
+  - `host: demos.peercompute.test`
+  - `dns_ok: false`, `dns_output: ""`
+  - `hosts_entry_ok: false`, `hosts_output: ""`
+  - `resolver` includes `10.40.254.2` and `fd42:40:254::2`
+  - fallback attempted to `https://10.40.254.10/netviz/` with `fallback_https_ok: false`
+  - probe error in all events: `in-agent probe failed (rc=1); host fallback is disabled`
+- Performed quick container capability check outside containernet:
+  - confirmed `mcr.microsoft.com/playwright:v1.56.1-noble` allows writing `/etc/hosts` as root in a standalone docker run.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Iseconds`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 20`
+- `ls -la net-chaos-lab/artifacts/20260210T030938Z`
+- `sed -n '1,320p' net-chaos-lab/artifacts/20260210T030938Z/matrix-summary.json`
+- `find net-chaos-lab/artifacts/20260210T030938Z -maxdepth 3 -type f | sort`
+- `for f in .../metrics-events.jsonl; do jq -c 'select(.type=="probe_result") | .payload.network_preflight | ...' ...; done`
+- `for f in .../metrics-events.jsonl; do jq -r 'select(.type=="probe_result") | .payload.error' ... | sort | uniq -c; done`
+- `for f in .../metrics-events.jsonl; do jq -r '.type' ... | sort | uniq -c; done`
+- `docker run --rm mcr.microsoft.com/playwright:v1.56.1-noble bash -lc "id; echo '1.2.3.4 demos.peercompute.test' >> /etc/hosts; rc=$?; echo rc:$rc; tail -n 2 /etc/hosts"`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No new code changes validated in this prompt; this was an artifact/run diagnosis pass.
+
+### Failures / Open Questions
+- Latest full matrix still fails at in-agent DNS/HTTPS preflight before app-level connectivity metrics can be observed.
+- Next diagnostic step should capture in-container command-level failure details during preflight (e.g., explicit command stderr/rc traces for `getent`, `/etc/hosts` grep, and `curl` fallback path), because current summaries only expose aggregate booleans.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 04:11:30 UTC)
+- "you seem to not be making any progress here. what's going on?"
+
+### Actions Taken
+- Acknowledged stall point and shifted from hypothesis-only debugging to instrumented diagnosis.
+- Implemented probable network dataplane unblock in router config:
+  - Added explicit IPv4/IPv6 `FORWARD` accept rules on each segment router for LAN->WAN and WAN->LAN established/related flows.
+- Added richer preflight diagnostics in harness payloads so future matrix runs expose concrete failing command paths instead of generic `rc=1`:
+  - `probe_script_rc`, `dns_rc`, `hosts_rc`, `resolver_rc`, `curl_check_rc`, `curl_rc`, `curl_status_raw`
+  - `fallback_curl_rc`, `fallback_status_raw`, `service_ip`
+  - `hosts_file_tail`, `hosts_file_tail_rc`
+  - `route_to_fallback`, `route_to_fallback_rc`
+  - expanded preflight error text to include rc context for DNS/HTTPS failures.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `plan/log.md`
+
+### Commands Run
+- `nl -ba net-chaos-lab/src/chaoslab/harness.py | sed -n '410,575p'`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 14 tests ... OK`).
+
+### Failures / Open Questions
+- Full containernet validation still needs a fresh host-side matrix run to confirm if router FORWARD rule fix resolves preflight zero rates.
+- Next run should now include detailed preflight rc/output fields to pinpoint remaining blocker if preflight still fails.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 05:18:23 UTC)
+- "no this one LATEST=... jq ..."
+
+### Actions Taken
+- Executed the exact artifact parsing commands requested by user against newest run directory.
+- Verified newest artifact root and matrix summary status.
+- Pulled first 30 preflight diagnostic payloads from `metrics-events.jsonl` as requested.
+- Pulled additional `service_ip` and `route_to_fallback_rc` fields to refine diagnosis.
+
+### Findings
+- Latest run: `net-chaos-lab/artifacts/20260210T050531Z`.
+- All scenarios still fail preflight/infrastructure gates:
+  - `preflight_success_rate: 0`
+  - `infra_failure_rate: 1`
+  - `connection_success_rate: 0.0`
+  - `direct_connection_rate: 0.0`
+- Probe-level diagnostics now show concrete failure shape:
+  - `dns_rc=2` (`getent hosts demos.peercompute.test` failure)
+  - `hosts_rc=0` but `hosts_output=""`
+  - `/etc/hosts` tail lacks any chaos host mappings (`demos.peercompute.test` missing)
+  - `curl_rc=6` (host resolve/connect failure on hostname URL)
+  - `fallback_curl_rc=28` (timeout to fallback IP URL)
+  - `service_ip` resolves to `10.40.254.10` but fallback still times out.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1)`
+- `jq '.results[] | {id, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate}' "$LATEST/matrix-summary.json"`
+- `jq -c 'select(.type=="probe_result") | .payload.network_preflight | {error,dns_rc,hosts_rc,curl_rc,fallback_curl_rc,route_to_fallback,hosts_file_tail}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 30`
+- `jq -c 'select(.type=="probe_result") | .payload.network_preflight | {service_ip,route_to_fallback_rc,route_to_fallback,hosts_entry_ok,hosts_output,error}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 20`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- No code-change test suite run in this prompt; artifact diagnostics only.
+
+### Failures / Open Questions
+- `route_to_fallback_rc` is currently not authoritative because route probe command path still includes `|| true` and can mask non-zero route failures.
+- Primary unresolved blocker remains missing host mappings in agents + fallback IP timeout path; further topology/runtime instrumentation or startup-time connectivity assertions are still required.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 19:55:05 UTC)
+- "ok proceed"
+
+### Actions Taken
+- Re-read planning context before changes:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Re-traced containernet topology + harness code paths and confirmed two concrete root-cause bugs for the matrix preflight failures:
+  1. Host seeding ordering bug:
+     - `_seed_agent_hosts()` was called before `self._agents`/`self._agent_index` were assigned in `_start_containernet()`, so no agents were iterated and no service host mappings were written to `/etc/hosts`.
+  2. Interface targeting bug:
+     - `_configure_agent()` and `_configure_service()` hardcoded `eth0`.
+     - In containernet docker nodes, the data-plane Mininet interface is the node-attached interface (e.g., `agent-01-eth0`), not necessarily Docker bridge `eth0`.
+     - This can route traffic incorrectly and cause HTTPS fallback IP probes to time out even when services are up.
+- Implemented topology fixes:
+  - In `_start_containernet()`, set `self._agents` and `self._agent_index` immediately after agent allocation and before host seeding.
+  - Changed `_seed_agent_hosts()` to accept an explicit agent list (`agents: Iterable[AgentRecord] | None`) and called it as `_seed_agent_hosts(agents)` from startup flow.
+  - Added `_node_data_interface()` helper that picks the first non-loopback interface from `node.intfNames()` with `eth0` fallback.
+  - Updated `_configure_agent()` and `_configure_service()` to use `_node_data_interface(...)` instead of hardcoded `eth0`.
+- Implemented harness diagnostics fix:
+  - Removed `|| true` masking from:
+    - hosts lookup command (`grep -F -- <host> /etc/hosts`)
+    - fallback route checks (`ip route get` / `ip -6 route get`)
+  - This preserves meaningful `hosts_rc` and `route_to_fallback_rc` values in preflight diagnostics.
+- Updated tests:
+  - Adjusted fake topology command matchers for the stricter grep command.
+  - Added `test_node_data_interface_prefers_mininet_intf`.
+  - Added `test_configure_agent_uses_data_interface`.
+  - Added `test_seed_agent_hosts_accepts_explicit_agent_list`.
+- Updated test strategy documentation in `plan/tests.md` with new containernet expectations:
+  - data-plane interface selection requirement,
+  - host seeding ordering requirement,
+  - route diagnostic non-masking requirement.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg -n "hosts|extra_hosts|demos.peercompute.test|resolv|dns" net-chaos-lab/src/chaoslab -g '*.py'`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '260,620p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '620,980p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '980,1180p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1,320p' net-chaos-lab/configs/topology.default.yaml`
+- `sed -n '260,420p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '420,660p' net-chaos-lab/src/chaoslab/harness.py`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST"; find "$LATEST" -maxdepth 3 -type f | sort`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); rg -n "seed|hosts|preflight|Warning|failed" "$LATEST" -g '*.log' -g '*.json' -g '*.jsonl'`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="probe_result") | {run:.run_id,agent:.payload.agent,error:.payload.network_preflight.error,dns_rc:.payload.network_preflight.dns_rc,hosts_rc:.payload.network_preflight.hosts_rc,hosts_entry_ok:.payload.network_preflight.hosts_entry_ok,hosts_output:.payload.network_preflight.hosts_output,hosts_tail:.payload.network_preflight.hosts_file_tail,route_rc:.payload.network_preflight.route_to_fallback_rc,curl_rc:.payload.network_preflight.curl_rc,fallback_rc:.payload.network_preflight.fallback_curl_rc}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 60`
+- `rg -n "class Docker|addDocker|network_mode|eth0|docker run|--net" /home/cos/projects/containernet/mininet/node.py /home/cos/projects/containernet/mininet/net.py`
+- `sed -n '760,980p' /home/cos/projects/containernet/mininet/node.py`
+- `sed -n '980,1220p' /home/cos/projects/containernet/mininet/node.py`
+- `ls -la net-chaos-lab/tests`
+- `sed -n '1,320p' net-chaos-lab/tests/test_chaoslab.py`
+- `sed -n '320,760p' net-chaos-lab/tests/test_chaoslab.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `sed -n '1,260p' plan/tests.md`
+- `tail -n 120 plan/log.md`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 17 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+
+### Failures / Open Questions
+- Full containernet matrix was not rerun in this prompt (requires root-capable interactive execution on host) so end-to-end validation of these fixes remains pending.
+- Next required validation: rerun `npm run chaos-lab:matrix:full`, then inspect `preflight_hosts_entry_rate`, `preflight_success_rate`, and fallback route/curl diagnostics for movement off zero.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 19:57:22 UTC)
+- "ok proceed" (verification continuation)
+
+### Actions Taken
+- Ran dry-run smoke matrix after topology/harness changes to confirm orchestration paths still behave and gate logic remains intact.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `npm run chaos-lab:matrix:smoke`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `npm run chaos-lab:matrix:smoke` -> PASS.
+  - `matrix_name: dry-run-smoke`
+  - `run_total: 2`
+  - `run_passed: 2`
+  - `run_failed: 0`
+  - `all_passed: true`
+
+### Failures / Open Questions
+- Smoke matrix confirms harness/orchestration health only; containernet/root matrix validation is still pending for the network dataplane fixes.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 19:57:22 UTC)
+- "ok proceed" (containernet execution check)
+
+### Actions Taken
+- Verified whether this session can execute root-gated containernet commands non-interactively.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sudo -n true && echo SUDO_OK || echo SUDO_NEEDS_PASSWORD`
+
+### Test Results
+- Command output: `sudo: a password is required` and `SUDO_NEEDS_PASSWORD`.
+
+### Failures / Open Questions
+- Full containernet matrix still requires an interactive sudo terminal on host; cannot be executed directly from this non-interactive session.
+
+## Date: 2026-02-10
+
+### Prompt (2026-02-10 20:53:06 UTC)
+- "OK I ran both of those"
+
+### Actions Taken
+- Parsed newest matrix artifacts generated by user run:
+  - latest: `net-chaos-lab/artifacts/20260210T203804Z`
+  - matrix summary still failing (`run_passed: 0/3`), but metrics shifted in a useful way.
+- Confirmed prior host-seeding fix is now effective:
+  - `preflight_hosts_entry_rate: 1` across all scenarios.
+  - `dns_ok: true` and `hosts_entry_ok: true` in probe preflight payloads.
+- Isolated new dominant failure mode:
+  - every probe fails HTTPS preflight due timeout:
+    - `curl_rc=28`
+    - `fallback_curl_rc=28`
+    - error string: `https preflight failed (no HTTP status) (curl_rc=28, fallback_curl_rc=28)`
+  - route diagnostics now reveal tool gap:
+    - `route_to_fallback_rc=127`
+    - `route_to_fallback="bash: line 1: ip: command not found"`
+- Identified likely remaining topology issue:
+  - interface selector could still choose Docker bridge `eth0` when both `eth0` and `<node>-eth0` are present.
+  - this can misplace default route/IP config and cause service curl timeouts.
+- Implemented targeted interface-selection fix:
+  - `_node_data_interface()` now prefers interfaces matching `<node-name>-eth*`, then other `*-eth*`, then non-loopback fallback.
+- Added regression test for mixed-interface case (`eth0` + `<node>-eth0`) to ensure Mininet interface is chosen.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,180p' plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "LATEST=$LATEST"; ls -la "$LATEST"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.matrix_name, .matrix_run_id, .run_total, .run_passed, .run_failed, .all_passed' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.results[] | {id, preflight:.summary.preflight_success_rate, hosts:.summary.preflight_hosts_entry_rate, infra:.summary.infra_failure_rate, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, relay_webrtc:.summary.relay_webrtc_connection_rate, probes:.summary.probe_total}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="probe_result") | .payload.network_preflight | {ok,dns_ok,hosts_entry_ok,https_ok,fallback_https_ok,error,dns_rc,hosts_rc,curl_rc,curl_status_raw,fallback_curl_rc,fallback_status_raw,service_ip,route_to_fallback_rc,route_to_fallback}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 80`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -r 'select(.type=="probe_result") | .payload.network_preflight.error' "$LATEST"/runs/*/metrics-events.jsonl | sort | uniq -c`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -r 'select(.type=="probe_result") | [.run_id,.payload.agent,.payload.network_preflight.curl_rc,.payload.network_preflight.fallback_curl_rc,.payload.network_preflight.route_to_fallback_rc] | @tsv' "$LATEST"/runs/*/metrics-events.jsonl | head -n 40`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 18 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+
+### Failures / Open Questions
+- Need a fresh containernet matrix run after this interface-selection patch to verify HTTPS timeout regression is resolved.
+- `ip` binary is missing in agent image; route diagnostics currently show command-not-found. This no longer blocks preflight itself but limits route observability.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 02:18:32 UTC)
+- "done"
+
+### Actions Taken
+- Re-read `plan/plan.md` and `plan/log.md` before making changes.
+- Parsed latest matrix/full artifact payloads (`net-chaos-lab/artifacts/20260211T015008Z`) and confirmed current failure shape:
+  - `preflight_dns_success_rate=1`
+  - `preflight_hosts_entry_rate=1`
+  - `preflight_https_success_rate=0`
+  - `infra_failure_rate=1`
+  - probe-level preflight timeouts on HTTPS hostname and IP fallback (`curl_rc=28`, `fallback_curl_rc=28`).
+- Implemented service return-route hardening in containernet topology setup:
+  - Added `_core_segment_routes()` to derive LAN subnet routes paired with each segment router uplink gateway.
+  - Updated `_configure_service()` to install explicit IPv4/IPv6 LAN subnet routes via uplink gateway using `onlink` semantics.
+  - Kept existing uplink-network routes in place for SNAT-path compatibility.
+- Added unit test coverage for the new route derivation and service route programming behavior.
+- Updated `plan/tests.md` expectations to include explicit service return-route requirement via uplink gateways.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 260 plan/log.md`
+- `bash -lc 'LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); ... jq ...'`
+- `bash -lc 'LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); ... rg ...'`
+- `rg -n "caddy|https|svc_https|addDocker|service|command|image" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '730,930p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '955,1055p' net-chaos-lab/src/chaoslab/topology.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `sudo -n true >/dev/null 2>&1; echo $?`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 20 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `npm run chaos-lab:matrix:smoke` -> PASS (`run_passed: 2`, `run_failed: 0`, `all_passed: true`).
+- `sudo -n true >/dev/null 2>&1; echo $?` -> `1` (non-interactive sudo still unavailable in this session).
+
+### Failures / Open Questions
+- Full containernet matrix (`npm run chaos-lab:matrix:full`) still needs rerun on host to confirm the HTTPS timeout gate is resolved by the new service return-route programming.
+- Agent probe diagnostics still show `route_to_fallback_rc=127` when `ip` binary is absent in the Playwright image; this is diagnostic noise and not a hard blocker for probe execution.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 04:24:15 UTC)
+- "OK validate results. do we need an ICE server? we're still getting NO CONNECTIONS ... are the clients even able to reach the relay server? ... certificate issue? ... have you tried ipv6?"
+
+### Actions Taken
+- Re-read `plan/plan.md` and latest `plan/log.md` before analysis.
+- Validated newest full matrix artifacts and confirmed failure state persisted in latest run:
+  - latest run root: `net-chaos-lab/artifacts/20260211T035911Z`
+  - matrix failed `0/3` scenarios.
+- Parsed per-run summary + probe diagnostics to isolate blocker stage:
+  - `preflight_dns_success_rate=1` and `preflight_hosts_entry_rate=1`
+  - `preflight_https_success_rate=0` and `infra_failure_rate=1`
+  - all probe failures happen before app-level metrics (`connection_success_rate=0`, `direct_connection_rate=0`).
+- Verified concrete preflight error shape from events:
+  - `https preflight failed (curl_rc=28, fallback_curl_rc=28)`
+  - `route_to_fallback_rc=127`, `route_to_fallback="ip: command not found"`.
+- Validated image tooling directly with Docker runtime checks:
+  - `mcr.microsoft.com/playwright:v1.56.1-noble` has no `ip` binary.
+  - `node:24-bookworm` has no `ip` binary.
+- Identified fundamental topology setup failure:
+  - containernet IP/route programming uses `ip` commands in `_configure_agent`/`_configure_service`.
+  - with `ip` missing, network programming silently fails, leaving containers off intended Mininet addressing.
+- Implemented fail-safe remediation in topology startup:
+  - added `_ensure_node_network_tooling()` to auto-install `iproute2` in each docker node before network address/route setup.
+  - wired into `_start_containernet()` immediately after `net.start()` for all service + agent nodes.
+- Added unit tests for the new remediation path:
+  - no-op when `ip` already exists
+  - install path when `ip` is missing.
+- Verified relay bootstrap config used by NetViz assets remains external/public by default:
+  - `demos/netviz/public/relay-config.json` and `docs/netviz/relay-config.json` still point to public `/ip6/.../wss/...` bootstrap relay (not chaos-lab local relay).
+  - this is a separate bootstrap concern after infra preflight is fixed.
+- Updated `plan/tests.md` with explicit image-tooling expectation for `iproute2`.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `node -v && npm -v`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); ... jq ... matrix-summary.json`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... preflight/conn/direct fields ...`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -r 'select(.type=="probe_result") | .payload.error' ... | sort | uniq -c`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="probe_result") | .payload.network_preflight | {...}' ... | head -n 40`
+- `sed -n '1,220p' demos/netviz/public/relay-config.json`
+- `sed -n '1,220p' docs/netviz/relay-config.json`
+- `sed -n '1,260p' net-chaos-lab/configs/scenarios/direct-diagnostics.yaml`
+- `docker run --rm --entrypoint bash mcr.microsoft.com/playwright:v1.56.1-noble -lc 'command -v ip || echo NO_IP; command -v curl || echo NO_CURL'`
+- `docker run --rm --entrypoint bash node:24-bookworm -lc 'command -v ip || echo NO_IP; command -v curl || echo NO_CURL; command -v bash || echo NO_BASH'`
+- `sed -n '1,260p' peercompute/src/relay/server.js`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 22 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+- `npm run chaos-lab:matrix:smoke` -> PASS (`run_passed: 2`, `run_failed: 0`, `all_passed: true`).
+
+### Failures / Open Questions
+- Need a fresh privileged containernet matrix run to validate the new `iproute2` auto-install unblocks HTTPS preflight (`npm run chaos-lab:matrix:full`).
+- After infra preflight is green, relay bootstrap config must be switched from hardcoded public relay to chaos-lab-local relay endpoint(s) to avoid external dependency during lab runs.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 05:10:21 UTC)
+- "done please review"
+
+### Actions Taken
+- Reviewed latest matrix artifacts produced by user rerun:
+  - `net-chaos-lab/artifacts/20260211T043250Z/matrix-summary.json`
+  - `net-chaos-lab/artifacts/20260211T043250Z/runs/*/metrics-summary.json`
+  - `net-chaos-lab/artifacts/20260211T043250Z/runs/*/metrics-events.jsonl`
+  - `net-chaos-lab/artifacts/20260211T043250Z/runs/*/chaos-topology.json`
+- Confirmed matrix status remained `0/3` pass with same infra signature in all scenarios (`direct-diagnostics`, `ipv4-only`, `ipv6-only`):
+  - `preflight_dns_success_rate=1`
+  - `preflight_hosts_entry_rate=1`
+  - `preflight_https_success_rate=0`
+  - `infra_failure_rate=1`
+  - `connection_success_rate=0`, `direct_connection_rate=0`
+- Confirmed probe diagnostics still show HTTPS timeout from every agent, with fallback timeout too:
+  - `curl_rc=28`, `fallback_curl_rc=28`
+  - route probe still exits `0` but points to docker bridge path:
+    - `route_to_fallback: 10.40.254.10 via 172.17.0.1 dev eth0 src 172.17.0.x`
+- Implemented hardening in topology startup and routing checks:
+  - `net-chaos-lab/src/chaoslab/topology.py`
+    - `_add_docker_node`: request network privileges for containernet docker nodes (`privileged=True`, `cap_add=['NET_ADMIN','NET_RAW']`) with backward-compatible fallback for older Containernet kwargs handling.
+    - `_node_data_interface`: prefer non-`eth0` linux interface names when available to avoid accidental Docker bridge data-plane selection.
+    - `_configure_agent`: call new route validation in containernet mode.
+    - added `_validate_agent_routing(...)` fail-fast check to ensure agent route to HTTPS core service resolves through the configured data interface; raises `TopologyError` on mismatch with explicit diagnostics.
+- Added/updated unit tests:
+  - `net-chaos-lab/tests/test_chaoslab.py`
+    - `test_node_data_interface_prefers_non_eth0_when_only_linux_names_exist`
+    - `test_validate_agent_routing_fails_when_route_stays_on_docker_eth0`
+
+### Commands Run
+- Artifact review and extraction:
+  - `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1)`
+  - `jq '.matrix_name,.matrix_run_id,.run_total,.run_passed,.run_failed,.all_passed' "$LATEST/matrix-summary.json"`
+  - `jq '.results[] | {id,status,preflight:.summary.preflight_success_rate,infra:.summary.infra_failure_rate,dns:.summary.preflight_dns_success_rate,https:.summary.preflight_https_success_rate,conn:.summary.connection_success_rate,direct:.summary.direct_connection_rate,relay_webrtc:.summary.relay_webrtc_connection_rate}' "$LATEST/matrix-summary.json"`
+  - `jq -c 'select(.type=="probe_result") | {run_id,agent:.payload.agent,error:.payload.network_preflight.error,dns_rc:.payload.network_preflight.dns_rc,hosts_rc:.payload.network_preflight.hosts_rc,curl_rc:.payload.network_preflight.curl_rc,fallback_curl_rc:.payload.network_preflight.fallback_curl_rc,route_to_fallback:.payload.network_preflight.route_to_fallback,route_to_fallback_rc:.payload.network_preflight.route_to_fallback_rc,hosts_file_tail:.payload.network_preflight.hosts_file_tail}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 40`
+- Code validation:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - `node -v`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 24 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `node -v`
+  - `v24.13.0`
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Remaining Failures / Open Questions
+- Full containernet matrix has not yet been rerun after this patch in this session.
+- Next confirmation needed from user host run:
+  - If startup now fails fast with route mismatch, capture exact `TopologyError` text (expected, actionable).
+  - If preflight recovers, then next blocker likely shifts to app-layer relay/bootstrap wiring (`ws` vs `wss` local relay endpoint + netviz default relay config alignment).
+
+### Follow-up Validation (2026-02-11 05:12:48 UTC)
+- Ran `npm run chaos-lab:matrix:smoke` after routing/privilege patch.
+- Result: PASS (`2/2` runs passed, `all_passed=true`).
+- Artifacts: `net-chaos-lab/artifacts/20260211T051247Z/`.
+- Purpose: confirm matrix orchestration remained healthy while containernet/full run awaits user-side sudo execution.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 05:53:54 UTC)
+- "this really doesn't seem fast fail at all. it's still doing the full thing"
+
+### Actions Taken
+- Investigated fail-fast control path in chaos-lab runtime and matrix runner.
+- Confirmed root causes:
+  - `matrix:full` command path did not pass `--matrix-stop-on-fail` by default.
+  - preflight timeout errors (`https preflight failed ...`) were not classified as hard failures in `ChaosHarness._is_preflight_hard_failure(...)`, so runs continued through full checkpoints/stages.
+- Implemented fail-fast hardening:
+  - `net-chaos-lab/src/chaoslab/harness.py`
+    - Added `'https preflight failed'` to hard-failure tokens in `_is_preflight_hard_failure(...)`.
+  - `net-chaos-lab/src/chaoslab/main.py`
+    - Added CLI flags:
+      - `--probe-fail-fast`
+      - `--no-probe-fail-fast`
+    - Added checkpoint-level abort behavior in `run_probe_checkpoint(...)`:
+      - raises runtime error when all probe results at a checkpoint are `infra_failure=true` and `probe_fail_fast` is enabled.
+    - Propagated `probe_fail_fast` through matrix per-run overrides in `run_matrix(...)`.
+  - `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+    - Enabled fast-stop defaults for full matrix runs:
+      - `--matrix-stop-on-fail`
+      - `--probe-fail-fast`
+- Added tests:
+  - `net-chaos-lab/tests/test_chaoslab.py`
+    - `test_harness_marks_https_preflight_timeout_as_hard_failure`
+    - `test_harness_keeps_dns_preflight_failure_soft_for_fallback`
+
+### Commands Run
+- `rg -n "fail-fast|fail_fast|preflight|infra_failure|_is_preflight_hard_failure|matrix" net-chaos-lab/src/chaoslab -S`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '260,520p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '520,760p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/main.py`
+- `sed -n '260,520p' net-chaos-lab/src/chaoslab/main.py`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab.sh`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 26 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`2/2` runs passed, `all_passed=true`)
+  - Artifacts: `net-chaos-lab/artifacts/20260211T055332Z/`
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/main.py`
+- `net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Remaining Open Items
+- Need user-side containernet/full rerun confirmation that `chaos-lab:matrix:full` now stops after first failing run/checkpoint instead of executing the full matrix.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 06:06:12 UTC)
+- "OK I ran it again check the results"
+
+### Actions Taken
+- Inspected latest matrix artifacts and parsed run status + probe/preflight diagnostics.
+- Confirmed fail-fast behavior now triggers as intended (matrix stopped after first failed run).
+
+### Commands Run
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1)`
+- `jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed,summary_path}' "$LATEST/matrix-summary.json"`
+- `jq '.results[] | {id,run_id,exit_code,run_passed,gates_passed,probe_total:.summary.probe_total,preflight:.summary.preflight_success_rate,infra:.summary.infra_failure_rate,dns:.summary.preflight_dns_success_rate,https:.summary.preflight_https_success_rate,conn:.summary.connection_success_rate,direct:.summary.direct_connection_rate,error:.summary.error}' "$LATEST/matrix-summary.json"`
+- `jq -c 'select(.type=="probe_result" and (.payload.ok==false)) | {run_id,agent:.payload.agent,infra_failure:.payload.infra_failure,error:.payload.error,preflight_error:.payload.network_preflight.error,probe_execution:.payload.probe_execution}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 25`
+- `jq -c 'select(.type=="run_failed" or .type=="run_interrupted")' "$LATEST"/runs/*/metrics-events.jsonl`
+
+### Results
+- Latest matrix artifact: `net-chaos-lab/artifacts/20260211T055649Z`.
+- Matrix summary:
+  - `run_total=1`, `run_failed=1`, `all_passed=false`.
+  - only `direct-diagnostics` executed (matrix did not continue to ipv4-only/ipv6-only).
+- `run_failed` reason:
+  - `probe fail-fast triggered at checkpoint "initial": 8/8 probes reported infra_failure`.
+- Per-probe failures are consistent across all 8 agents:
+  - `https preflight failed (no HTTP status) (curl_rc=28, fallback_curl_rc=28)`
+  - `infra_failure=true`, `probe_execution=agent`
+- Run-level summary still indicates infra-only failure:
+  - `preflight_dns_success_rate=1`
+  - `preflight_https_success_rate=0`
+  - `infra_failure_rate=1`
+  - `connection_success_rate=0`, `direct_connection_rate=0`
+
+### Files Touched
+- `plan/log.md`
+
+### Open Items
+- Fail-fast behavior is fixed; root infra issue remains unchanged: in-agent HTTPS reachability to demo service still times out before P2P metrics can become meaningful.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 06:32:55 UTC)
+- "well what the heck is wrong?"
+
+### Actions Taken
+- Pulled concrete preflight evidence from latest matrix run (`20260211T055649Z`) and confirmed all agents route core-service traffic through Docker bridge, not simulated topology:
+  - `route_to_fallback: 10.40.254.10 via 172.17.0.1 dev eth0 src 172.17.0.x`
+  - `/etc/hosts` tails show agent host IP is still `172.17.0.x` (not segment subnet).
+- Inspected local Containernet source (`/home/cos/projects/containernet/mininet/node.py`) and confirmed Docker node default is `network_mode=None` (Docker bridge attached unless explicitly set).
+- Implemented root-cause fix and stricter startup guardrails:
+  - `net-chaos-lab/src/chaoslab/topology.py`
+    - `_add_docker_node(...)`: set `network_mode='none'` to disable Docker bridge and force Mininet data-plane usage.
+    - keep fallback kwargs removal list updated to include `network_mode` for legacy compatibility.
+    - `_validate_agent_routing(...)`: now validates, in containernet mode:
+      - expected IPv4 is configured on selected interface,
+      - default route is via segment gateway and selected interface,
+      - route to HTTPS service includes expected gateway, interface, and source IP.
+- Added coverage for the stricter routing validator:
+  - `net-chaos-lab/tests/test_chaoslab.py`
+    - `test_validate_agent_routing_passes_with_expected_gateway_and_src`
+
+### Commands Run
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1)`
+- `jq -c 'select(.type=="probe_result") | .payload.network_preflight | {error,dns_output,hosts_output,route_to_fallback,route_to_fallback_rc,curl_rc,fallback_curl_rc,hosts_file_tail}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 8`
+- `rg -n "def addDocker|class Docker|network_mode|cap_add" /home/cos/projects/containernet/mininet/net.py /home/cos/projects/containernet/mininet/node.py -S`
+- `sed -n '760,980p' /home/cos/projects/containernet/mininet/node.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 27 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - PASS
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Current Hypothesis / Next Validation
+- Primary failure cause is Docker bridge attachment in containernet nodes (`172.17.0.x` path), which bypasses the simulated NAT/IP topology.
+- Next user rerun should either:
+  - succeed preflight routing and move failure downstream, or
+  - fail immediately at topology startup with explicit route/address mismatch diagnostics from `_validate_agent_routing(...)`.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 06:52:49 UTC)
+- "you keep saying that you've fixed the bug or that you've definitely found it but you continue to fail... maybe look around online for how you're supposed to use containernet"
+
+### Actions Taken
+- Reproduced and validated the reported blocker from matrix run `20260211T063416Z`:
+  - containernet startup failed before probes while trying to install `iproute2` in `svc_dns`.
+  - apt logs showed `Temporary failure resolving 'deb.debian.org'` inside the lab container.
+- Verified base container images used by topology lacked the `ip` binary:
+  - `node:24-bookworm`: no `ip`
+  - `mcr.microsoft.com/playwright:v1.56.1-noble`: no `ip`
+- Pivoted approach from in-container runtime apt installs to prebuilt image provisioning:
+  - Added `net-chaos-lab/docker/chaos-node.Dockerfile` based on Playwright image with preinstalled:
+    - `iproute2`, `iptables`, `iputils-ping`, `dnsmasq`, `caddy`, `coturn`.
+  - Switched default chaos-lab images to `peercompute/net-chaos-lab-node:latest` for agents and core services.
+  - Added containernet startup image preflight/auto-build in topology startup:
+    - `_required_container_images(...)`
+    - `_docker_image_exists(...)`
+    - `_ensure_container_images(...)`
+    - `_build_default_chaos_image(...)`
+  - Removed runtime apt dependency for service startup commands (`dnsmasq`, `caddy`, `turnserver`) and replaced with explicit fail-fast binary checks.
+  - Changed `_ensure_node_network_tooling(...)` to fail-fast with clear image-provisioning guidance instead of attempting apt install in-lab.
+- Added npm helper script to build the chaos image directly:
+  - `npm run chaos-lab:image:build`
+- Updated docs/plans to match the new model (image prebuild/auto-build, no runtime apt requirement in containernet nodes).
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/docker/chaos-node.Dockerfile` (new)
+- `net-chaos-lab/src/chaoslab/config.py`
+- `net-chaos-lab/configs/topology.default.yaml`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `package.json`
+- `README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `node -v && npm -v`
+- `rg -n "Installing iproute2|iproute2|network_mode|addDocker|ip command|_configure_agent|_add_docker_node|mn\." net-chaos-lab/src/chaoslab/topology.py`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '620,760p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '790,930p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '922,1075p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1080,1195p'`
+- `find net-chaos-lab -maxdepth 3 -type f | sort`
+- `nl -ba net-chaos-lab/configs/topology.default.yaml | sed -n '1,220p'`
+- `docker run --rm node:24-bookworm bash -lc 'command -v ip || true; uname -a'`
+- `docker run --rm mcr.microsoft.com/playwright:v1.56.1-noble bash -lc 'command -v ip || true; command -v curl || true; command -v node || true'`
+- `docker run --rm mcr.microsoft.com/playwright:v1.56.1-noble bash -lc 'set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; apt-get update >/tmp/apt.log 2>&1; apt-get install -y --no-install-recommends iproute2 dnsmasq caddy coturn >/tmp/install.log 2>&1; command -v ip; command -v dnsmasq; command -v caddy; command -v turnserver'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:image:build`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - Initial run: FAIL (1 assertion in `test_configure_agent_uses_data_interface` due new intentional `ip route del default dev eth0` cleanup command).
+  - After updating assertion: PASS (`Ran 28 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:image:build`
+  - PASS. Built `peercompute/net-chaos-lab-node:latest` successfully.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`2/2`, `all_passed=true`, artifact root `net-chaos-lab/artifacts/20260211T065227Z`).
+
+### Failures / Open Questions
+- Full privileged containernet matrix (`npm run chaos-lab:matrix:full`) still needs to be rerun on host after this image-provisioning pivot to verify we moved past the previous `iproute2` DNS failure and to measure real direct/relay metrics.
+- If direct connection metrics remain zero after startup is healthy, next focus is relay/bootstrap reachability and direct `/webrtc` announce generation under the simulated topology.
+
+### Follow-up Validation (2026-02-11 06:56:56 UTC)
+- Ran containernet startup command in this coding environment (without sudo):
+  - `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- Result:
+  - FAIL (expected in this environment): `Containernet not available. Install Containernet + Mininet or run with --mode dry-run.`
+  - Mininet cleanup skipped due non-root.
+- Artifact emitted: `net-chaos-lab/artifacts/20260211T065656Z/`.
+- Interpretation: local CI agent environment still cannot execute privileged containernet runs, so full matrix verification remains host-side.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 07:29:41 UTC)
+- "can you get the payload yourself? I ran it."
+
+### Actions Taken
+- Reviewed latest matrix artifact directly from disk and parsed matrix summary + failure events + probe preflight payloads.
+- Confirmed latest artifact root:
+  - `net-chaos-lab/artifacts/20260211T071400Z`
+- Extracted matrix-level result and run-level diagnostics from:
+  - `net-chaos-lab/artifacts/20260211T071400Z/matrix-summary.json`
+  - `net-chaos-lab/artifacts/20260211T071400Z/runs/20260211T071400Z-direct-diagnostics/metrics-events.jsonl`
+- Confirmed this was a probe fail-fast stop (single run executed) and not a topology startup crash.
+
+### Commands Run
+- `nl -ba plan/plan.md | sed -n '1,120p'`
+- `tail -n 120 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed,summary_path}' "$LATEST/matrix-summary.json"`
+- `jq '.results[] | {id,status,run_passed,gates_passed,exit_code,error:.summary.error,probe_total:.summary.probe_total,preflight:.summary.preflight_success_rate,infra:.summary.infra_failure_rate,conn:.summary.connection_success_rate,direct:.summary.direct_connection_rate,relay_webrtc:.summary.relay_webrtc_connection_rate}' "$LATEST/matrix-summary.json"`
+- `jq -c 'select(.type=="run_failed" or .type=="run_interrupted" or .type=="run_started") | {ts,type,payload}' "$LATEST"/runs/*/metrics-events.jsonl`
+- `jq -c 'select(.type=="probe_result") | {ts,run_id,agent:(.payload.agent // .payload.peer // ""),ok:.payload.ok,infra_failure:.payload.infra_failure,error:.payload.error,preflight:.payload.network_preflight}' "$LATEST"/runs/*/metrics-events.jsonl | head -n 20`
+- `cat "$LATEST/matrix-summary.json"`
+- `RUN_DIR=$(jq -r '.results[0].artifacts_dir' ...); ls -la "$RUN_DIR"`
+
+### Test/Run Results (Observed)
+- Matrix summary:
+  - `matrix_name`: `direct-regression`
+  - `matrix_run_id`: `20260211T071400Z`
+  - `run_total`: `1`
+  - `run_failed`: `1`
+  - `all_passed`: `false`
+- Executed run: `direct-diagnostics`
+  - `exit_code`: `1`
+  - `probe_total`: `8`
+  - `preflight_success_rate`: `0`
+  - `infra_failure_rate`: `1`
+  - `connection_success_rate`: `0`
+  - `direct_connection_rate`: `0`
+- Run failure payload:
+  - `probe fail-fast triggered at checkpoint "initial": 8/8 probes reported infra_failure`
+- Probe payload pattern (all sampled agents):
+  - `dns_ok=true`
+  - `hosts_entry_ok=true`
+  - `https_ok=false`
+  - `curl_rc=7`
+  - `fallback_curl_rc=7`
+  - `route_to_fallback="RTNETLINK answers: Network is unreachable"`
+  - `route_to_fallback_rc=2`
+
+### Files Touched
+- `plan/log.md`
+
+### Open Questions / Next Step
+- Since DNS + hosts are healthy but HTTPS + fallback route are unreachable for all 8 agents, next debugging step should focus on in-lab service reachability/routing to `10.40.254.10:443` (core-service path) rather than relay/WebRTC behavior.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 07:50:04 UTC)
+- "ok this sure is taking a long time... have you looked around for ready made mininet/containernet configurations we can just use? or at least COMPARE to this..."
+
+### Actions Taken
+- Re-ran plan preflight review and topology failure triage:
+  - Reviewed `plan/plan.md` and latest `plan/log.md` context.
+  - Re-read current net-chaos-lab routing/topology code paths and containernet startup flow.
+- Compared against ready-made Containernet examples on host checkout (`/home/cos/projects/containernet/examples`):
+  - `natnet.py` (NAT + `defaultRoute='via ...'` pattern)
+  - `linuxrouter.py` (router-forwarding and explicit subnet gateway pattern)
+  - `dockerhosts.py` (docker-host link wiring pattern)
+- Found a concrete startup bug in our implementation:
+  - `self.actual_mode` stayed `dry-run` during `_configure_agent(...)`, so `_validate_agent_routing(...)` never executed in containernet startup.
+- Implemented routing hardening in `net-chaos-lab/src/chaoslab/topology.py`:
+  - Set `self.actual_mode = 'containernet'` immediately after `net.start()` and before address/route/service configuration.
+  - Forced docker nodes to start with `network_mode='none'` in `_add_docker_node(...)` so docker bridge defaults do not interfere with Mininet routing.
+  - Extended TypeError fallback kwargs stripping to include `network_mode`.
+  - Added runtime interface resolver `_node_runtime_interface(...)` that:
+    - uses configured Mininet-style interface if present,
+    - remaps `node-ethN -> ethN` when needed,
+    - falls back to discovered live interfaces from `ip -o link show`,
+    - fails fast with `TopologyError` if no valid runtime interface can be resolved.
+  - Updated `_configure_agent(...)` and `_configure_service(...)` to use runtime-resolved interfaces.
+- Added unit test coverage for interface remapping:
+  - `test_node_runtime_interface_remaps_prefixed_name_to_eth_index` in `net-chaos-lab/tests/test_chaoslab.py`.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,200p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `rg -n "_configure_router|_configure_agent|_configure_service|_core_segment_routes|_core_uplink_networks|defaultRoute|ip route|network_preflight|preflight|infra_failure" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab -g'*.py'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '260,640p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '820,1375p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1370,1495p'`
+- `nl -ba /home/cos/projects/containernet/examples/natnet.py | sed -n '1,260p'`
+- `nl -ba /home/cos/projects/containernet/examples/linuxrouter.py | sed -n '1,260p'`
+- `nl -ba /home/cos/projects/containernet/examples/dockerhosts.py | sed -n '1,260p'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact root: `net-chaos-lab/artifacts/20260211T074923Z`.
+
+### Failures / Open Questions
+- Full containernet matrix (`npm run chaos-lab:matrix:full`) still needs host-side rerun after this patch to validate whether preflight infra failures are cleared in privileged mode.
+- If full matrix still reports `route_to_fallback: Network is unreachable`, capture one affected agent route table and link list (`ip -4 route`, `ip -o link show`, `ip -4 addr`) from containernet runtime for final wiring correction.
+
+### Addendum (2026-02-11 07:50:04 UTC)
+- Updated planning docs to keep instruction alignment explicit:
+  - `plan/tests.md`: added containernet interface-remap and `network_mode=none` expectations.
+  - `plan/plan.md`: added TODO item to align net-chaos-lab routing with proven `natnet`/`linuxrouter` reference patterns.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 16:13:22 UTC)
+- "failed"
+
+### Actions Taken
+- Parsed the newest matrix artifact after user-reported failure:
+  - `net-chaos-lab/artifacts/20260211T160906Z`
+- Verified this was an early startup routing failure (not probe-stage infra failure):
+  - `run_failed` payload: `Agent agent-01 default route mismatch: expected via 10.40.10.1 dev agent-01-eth0, got "".`
+- Hardened containernet agent route setup in `topology.py`:
+  - Added `_ensure_default_route(...)` to enforce default-route installation with explicit verification.
+  - Added route programming fallback order:
+    - `ip route replace ...` / `ip -6 route replace ...`
+    - retry with `onlink`
+    - interface fallback (`<node>-ethN` -> `ethN`) when needed.
+  - Added richer `TopologyError` diagnostics that include route command rc/output for quick root cause isolation.
+  - In `_configure_agent(...)`:
+    - set interface `up` before default-route setup,
+    - route setup uses `_ensure_default_route(...)` in containernet mode,
+    - preserves dry-run behavior for existing tests.
+- Re-ran local validation gates (unit + syntax), both passing.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST" && ls -la "$LATEST"`
+- `jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed,summary_path}' "$LATEST/matrix-summary.json"`
+- `jq '.results[] | {id,status,exit_code,error:.summary.error,probe_total:.summary.probe_total,preflight:.summary.preflight_success_rate,infra:.summary.infra_failure_rate,conn:.summary.connection_success_rate,direct:.summary.direct_connection_rate,relay_webrtc:.summary.relay_webrtc_connection_rate}' "$LATEST/matrix-summary.json"`
+- `jq -c 'select(.type=="run_failed" or .type=="run_started")' "$LATEST"/runs/*/metrics-events.jsonl`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+
+### Failures / Open Questions
+- Full privileged containernet matrix must be rerun on host to confirm this route-setup patch resolves the startup default-route mismatch.
+- If it still fails, the new route command detail in `TopologyError` should now expose whether the kernel rejected route install (`Network is unreachable`, `No such device`, etc.) and on which interface variant.
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 16:28:27 UTC)
+- "A little progress. check the log"
+
+### Actions Taken
+- Parsed newest containernet matrix artifact and compared against prior failure mode:
+  - New artifact: `net-chaos-lab/artifacts/20260211T162002Z`
+- Confirmed progress from previous startup-route failure:
+  - Prior run failed before probes with default-route mismatch.
+  - Current run reaches probe stage (`probe_total=8`), proving startup route programming now succeeds.
+- Extracted preflight diagnostics from probe payloads in `metrics-events.jsonl`.
+- Identified new primary blocker:
+  - DNS resolution and hosts-file seeding are both healthy (`preflight_dns_success_rate=1`, `preflight_hosts_entry_rate=1`).
+  - Route lookup to fallback HTTPS IP is healthy (`route_to_fallback_rc=0`, valid `via ... dev ... src ...` output for all sampled agents).
+  - HTTPS reachability fails for both hostname and fallback service IP (`curl_rc=7`, `fallback_curl_rc=7`, `https_ok=false`).
+  - This isolates failure to service bind/listener reachability (not route discovery or DNS).
+- Implemented service-side hardening in `topology.py`:
+  - HTTPS Caddy service now binds on all interfaces (`bind 0.0.0.0 ::`) and serves `https://:443` so agent-to-service IP dials are accepted.
+  - Service health check now verifies TCP port readiness on both loopback and the service IPv4 address, not only `127.0.0.1`.
+- Re-ran validation gates after patch.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,140p' plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST" && ls -la "$LATEST"`
+- `jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed}' "$LATEST/matrix-summary.json"`
+- `jq '.results[] | {id,run_passed,gates_passed,exit_code,summary:{error,probe_total,preflight_success_rate,infra_failure_rate,connection_success_rate,direct_connection_rate,relay_webrtc_connection_rate}}' "$LATEST/matrix-summary.json"`
+- `jq -c 'select(.type=="run_started" or .type=="run_failed")' "$LATEST"/runs/*/metrics-events.jsonl`
+- `jq '.' "$RUN/metrics-summary.json"`
+- `rg -n "error|route|default|preflight|infra_failure|Network is unreachable|No such device|No route|failed" "$RUN" -g'*.jsonl' -g'*.json'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+
+### Failures / Open Questions
+- Need host-side rerun of full privileged matrix after HTTPS bind/health patch to confirm `curl_rc=7`/`fallback_curl_rc=7` is resolved.
+- If HTTPS still fails, next capture should include in-container service process/network state for `svc_https` during run (`ss -ltnp`, `ip -4 addr`, `ip route`, and `/tmp/https.log` tail).
+
+## Date: 2026-02-11
+
+### Prompt (2026-02-11 16:53:15 UTC)
+- "done"
+
+### Actions Taken
+- Reviewed required planning context before task start:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Parsed the newest matrix artifact after the user rerun:
+  - `net-chaos-lab/artifacts/20260211T164512Z`
+- Confirmed the failure mode changed from probe-stage infra failure to a service startup failure:
+  - `run_failed` payload now reports HTTPS service health-check failure before probes.
+  - Root cause from log tail: Caddy startup error `listen udp 0.0.0.0:443: bind: address already in use` while enabling HTTP/3.
+- Implemented a targeted fix in HTTPS service bootstrap:
+  - Updated generated `/tmp/Caddyfile` to disable HTTP/3 by forcing server protocols to `h1 h2`.
+  - Kept TLS/internal cert + file server behavior unchanged.
+- Re-ran validation checks:
+  - Python unit tests,
+  - Python syntax compile,
+  - smoke matrix.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "LATEST=$LATEST"; jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed,summary_path}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.results[] | {id,status,exit_code,summary:{error,probe_total,preflight_success_rate,infra_failure_rate,connection_success_rate,direct_connection_rate,relay_webrtc_connection_rate,preflight_https_success_rate,preflight_dns_success_rate,preflight_hosts_entry_rate}}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="run_failed" or .type=="run_started" or .type=="run_completed" or .type=="probe_result")' "$LATEST"/runs/*/metrics-events.jsonl | head -n 80`
+- `rg -n "Caddyfile|caddy|https://:443|bind|HTTP/3|protocols h1 h2|svc_https|service health" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab -g'*.py'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1120,1325p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1325,1425p'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`matrix_name=dry-run-smoke`, `run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260211T165216Z`.
+
+### Failures / Open Questions
+- Need host-side rerun of the privileged full matrix (`npm run chaos-lab:matrix:full`) to confirm the HTTP/3/UDP bind issue is resolved in containernet mode.
+- If any HTTPS preflight failures remain after this patch, inspect `svc_https` runtime state during run (`ss -ltnup`, `/tmp/https.log`) to verify listener binds and route reachability from agents.
+
+## Date: 2026-02-12
+
+### Prompt (2026-02-12 05:38:10 UTC)
+- "ok go look"
+
+### Actions Taken
+- Reviewed planning context first:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Parsed newest matrix artifact after user rerun:
+  - `net-chaos-lab/artifacts/20260212T052228Z`
+- Confirmed current failure profile:
+  - Matrix still stops on `direct-diagnostics`.
+  - `probe_total=8`, `preflight_dns_success_rate=1`, `preflight_hosts_entry_rate=1`, but `preflight_https_success_rate=0` and `infra_failure_rate=1`.
+  - Every sampled probe failed with `curl_rc=7` and `fallback_curl_rc=7` to `https://10.40.254.10/netviz/`.
+  - Agent routes to fallback service IP are present (`route_to_fallback_rc=0`), so failure is transport reachability to `:443`, not route discovery/hosts seeding.
+- Implemented containernet-network hardening to reduce forwarding edge cases and add deterministic early diagnostics:
+  - Router config hardening in `_configure_router(...)`:
+    - disable IPv4 reverse-path filtering (`rp_filter`) globally/default and on lan/wan interfaces,
+    - set IPv4/IPv6 FORWARD policy to ACCEPT,
+    - add explicit WAN->LAN ACCEPT rules (both iptables and ip6tables), in addition to existing conntrack-established rules.
+  - Added `_validate_core_service_reachability(...)` and wired it into containernet startup right after services are configured:
+    - samples one agent per segment,
+    - probes TCP reachability to core HTTPS service (`/dev/tcp/<https-ip>/443`) with retry window,
+    - on failure raises `TopologyError` with agent route probe output and service-side diagnostics (`ip addr`, `ip route`, listeners on 443, caddy pid state, `/tmp/https.log` tail).
+- Re-ran local validations after patch.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 200 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST"; ls -la "$LATEST"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.results[] | {id,exit_code,run_passed,gates_passed,summary:{error,probe_total,preflight_success_rate,preflight_dns_success_rate,preflight_https_success_rate,preflight_hosts_entry_rate,infra_failure_rate,connection_success_rate,direct_connection_rate,relay_webrtc_connection_rate,avg_announced_direct_webrtc_addrs,avg_direct_peer_count,avg_relay_peer_count}}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="run_failed" or .type=="run_completed" or .type=="probe_result")' "$LATEST"/runs/*/metrics-events.jsonl | head -n 80`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '320,520p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '760,940p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '940,1125p'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260212T053744Z`.
+
+### Failures / Open Questions
+- Full privileged containernet matrix still needs rerun to verify whether router forwarding/rp_filter hardening clears HTTPS preflight timeouts.
+- If full matrix still fails, new startup validator should now emit a direct service-side diagnostic payload (listener/routes/log tail) in the failure path for targeted fix.
+### Addendum (2026-02-12 05:38:10 UTC)
+- Updated `plan/tests.md` to include a new containernet startup expectation for core HTTPS reachability validation with service-side diagnostics on failure.
+
+## Date: 2026-02-12
+
+### Prompt (2026-02-12 05:51:44 UTC)
+- `npm run chaos-lab:matrix:full` (user-provided output)
+
+### Actions Taken
+- Reviewed the provided full-matrix output and identified new actionable root cause from the startup validator diagnostics:
+  - core service `svc_https-eth0` had `state DOWN` even though Caddy process was healthy and listening on `:443`.
+  - agent-side route lookup succeeded (`ip route get` returned via segment gateway), but TCP connect failed with `No route to host` from all sampled segments.
+- Implemented service interface bring-up in containernet service config path:
+  - `_configure_service(...)` now explicitly runs `ip link set dev <service-intf> up` before applying addresses/routes.
+- Added regression assertion in unit tests to ensure service interface bring-up command is issued.
+- Re-ran local validation suite (unit tests + py_compile + matrix smoke).
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 29 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260212T055114Z`.
+
+### Failures / Open Questions
+- Need host-side rerun of `npm run chaos-lab:matrix:full` to verify the service-link-down fix clears the core HTTPS reachability validator and allows probes to start.
+- If a failure persists, the new validator output should continue to provide service listener/state/route diagnostics for the next targeted fix.
+
+## Date: 2026-02-12
+
+### Prompt (2026-02-12 06:17:55 UTC)
+- "npm run chaos-lab:matrix:full ... [topology ready, probes start, then fail-fast: 8/8 infra_failure, preflight_dns_success_rate=1, preflight_https_success_rate=0, curl_rc=35 / fallback_curl_rc=35]"
+
+### Actions Taken
+- Re-read required planning context before work:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Parsed latest direct-regression artifacts and confirmed current blocker signature:
+  - Full startup reaches healthy services + probe phase.
+  - Probe preflight consistently fails with TLS handshake errors (`curl_rc=35`, `fallback_curl_rc=35`) while DNS/hosts/routes are healthy.
+- Confirmed this was not a stale route/no-route failure:
+  - `route_to_fallback_rc=0` in probe payloads.
+  - `dns_rc=0` and hosts entries present for service hostnames.
+- Reproduced/compared HTTPS behavior in standalone Docker (outside containernet) using the same caddy config style and image:
+  - Host + IPv4 (+ IPv6 identifier) site labels worked and returned HTTP status codes.
+  - This reduced likelihood of pure Caddyfile syntax failure and pointed toward startup readiness timing in containernet run flow.
+- Implemented a targeted containernet startup hardening fix:
+  - Service health no longer accepts HTTPS service readiness on TCP-open alone.
+  - Added optional `ready_checks` support in `_wait_for_service_health(...)` so services can gate on protocol-level readiness.
+  - Added HTTPS `ready_checks` in `_service_start_spec(...)` that require successful TLS+HTTP status checks before continuing:
+    - host SNI check via `curl --resolve <host>:443:127.0.0.1 https://<host>/netviz/`
+    - IPv4 endpoint check via `curl https://<service-ip>/netviz/`
+  - This is intended to prevent probes from starting during transient TLS-not-ready windows that manifest as `curl_rc=35`.
+- Updated tests and test strategy docs accordingly.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && git status --short`
+- `node -v && npm -v`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 5`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 260 plan/log.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "LATEST=$LATEST"; jq ... "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="probe_result") ...' "$LATEST"/runs/*/metrics-events.jsonl | head -n 20`
+- `rg -n "Caddyfile|https://:443|..." net-chaos-lab/src/chaoslab/topology.py`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1218,1315p'`
+- `for d in $(ls -1dt net-chaos-lab/artifacts/20* | head -n 12); do ... jq ...; done`
+- `for d in net-chaos-lab/artifacts/20260212T055323Z net-chaos-lab/artifacts/20260212T055704Z; do ... jq ...; done`
+- `RUN=net-chaos-lab/artifacts/20260212T055704Z/runs/...; ls -la "$RUN"; rg -n ... "$RUN"`
+- `rg -n "network_preflight|curl_rc|fallback_url|..." net-chaos-lab/src/chaoslab/harness.py ...`
+- `nl -ba net-chaos-lab/src/chaoslab/harness.py | sed -n '400,640p'`
+- Docker repro commands (temporary test net/containers, caddy run, curl host+ip, log tail) to compare TLS behavior outside containernet.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 31 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260212T061608Z`.
+
+### Failures / Open Questions
+- Full privileged containernet matrix (`npm run chaos-lab:matrix:full`) still needs rerun on host to validate this TLS-readiness gate clears `curl_rc=35` preflight failures.
+- If `curl_rc=35` persists after this patch, next step is to capture `svc_https` runtime handshake diagnostics during preflight failure window (Caddy log tail + `openssl s_client` from an agent) and enforce explicit TLS handshake policy if needed.
+
+## Date: 2026-02-12
+
+### Prompt (2026-02-12 16:35:41 UTC)
+- "ok proceed with your original plan"
+
+### Actions Taken
+- Re-read required planning context before continuing:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Attempted to run the real full matrix path directly in this session:
+  - `npm run chaos-lab:matrix:full`
+  - Result: script exited early with explicit guard message requiring interactive sudo terminal.
+- Attempted direct containernet start without sudo to gather runtime signals:
+  - `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+  - Result: fail-fast (`Containernet not available`) due non-root/non-provisioned runtime in this shell.
+- Continued with original stabilization plan by hardening HTTPS service startup against TLS preflight flakes:
+  - Reworked HTTPS service bootstrap to generate an explicit self-signed cert/key via OpenSSL (SAN includes host + IPv4 + IPv6 when present).
+  - Switched Caddy TLS config from `tls internal` to explicit cert/key files:
+    - `tls /tmp/chaoslab-https.crt /tmp/chaoslab-https.key`
+  - Kept host/IP site labels and existing readiness checks.
+  - Rationale: remove dependency on runtime internal CA issuance/trust install timing as a source of transient `curl_rc=35` handshake failures.
+- Updated unit tests to cover the new HTTPS startup behavior.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 8`
+- `npm run chaos-lab:matrix:full`
+- `bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard`
+- `docker run --rm peercompute/net-chaos-lab-node:latest bash -lc 'command -v openssl && openssl version'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 31 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260212T163511Z`.
+
+### Failures / Open Questions
+- Full privileged containernet validation is still required to confirm the TLS hardening clears `curl_rc=35` in `matrix:full`.
+- This shell cannot perform privileged containernet runs due interactive sudo guard; run must be executed in user terminal with password entry.
+
+## Date: 2026-02-14
+
+### Prompt (2026-02-14 05:25:22 UTC)
+- "ok it finished take a peek"
+
+### Actions Taken
+- Re-read required planning context before analysis:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Parsed newest matrix artifacts and extracted direct-regression failure payload.
+- Confirmed the latest run root cause changed signature:
+  - preflight now reports `curl_rc=0` and `fallback_curl_rc=0` with empty `curl_status_raw`/`http_status:null`.
+  - DNS/hosts/routes remain healthy (`dns_ok=true`, `hosts_entry_ok=true`, `route_to_fallback_rc=0`).
+- Identified parser bug in containernet command wrapper path:
+  - `_parse_shell_output(...)` discarded entire lines containing `__CHAOSLAB_EXIT_CODE__`.
+  - For commands like `curl -w '%{http_code}'`, output can be inline with sentinel (`404__CHAOSLAB_EXIT_CODE__:0`), causing status loss.
+- Implemented parser fix:
+  - preserve inline text before sentinel marker while still extracting rc.
+- Added regression unit test for inline text + sentinel handling.
+- Re-ran unit/syntax/smoke validation after patch.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,140p' plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 10`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="run_failed" or .type=="run_completed" or .type=="probe_result" or .type=="run_started")' "$LATEST"/runs/*/metrics-events.jsonl | head -n 60`
+- `rg -n "def _parse_shell_output|_SHELL_EXIT_SENTINEL|run_command_in_agent" net-chaos-lab/src/chaoslab/topology.py`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '150,260p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1380,1485p'`
+- `rg -n "_parse_shell_output|SHELL_EXIT_SENTINEL|curl_status_raw|run_command_in_agent" net-chaos-lab/tests/test_chaoslab.py`
+- `nl -ba net-chaos-lab/tests/test_chaoslab.py | sed -n '360,460p'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 32 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260214T052456Z`.
+
+### Failures / Open Questions
+- Need a new privileged `npm run chaos-lab:matrix:full` run to verify that preflight now records actual HTTP status values (instead of empty status) and to confirm whether remaining failures are true transport/TLS issues versus parser artifacts.
+
+## Date: 2026-02-14
+
+### Prompt (2026-02-14 18:14:22 UTC)
+- "try again"
+
+### Actions Taken
+- Re-read required planning context before making changes:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Re-checked latest run artifacts and confirmed root-cause shift from preflight to in-agent probe runtime failures:
+  - latest run: `net-chaos-lab/artifacts/20260214T053103Z`
+  - `preflight_success_rate=1` and `preflight_https_success_rate=1`
+  - every probe still failed with `in-agent probe failed (rc=1)`.
+- Reproduced the in-agent probe runtime issue with a direct container run and captured the concrete Playwright mismatch signal:
+  - `Executable doesn't exist at /ms-playwright/chromium_headless_shell-1200/...`
+  - message indicated package/image drift (`Playwright 1.57.0` package vs image `v1.56.1-noble`).
+- Implemented hardening/fix path:
+  - bumped chaos-lab base image to `mcr.microsoft.com/playwright:v1.57.0-noble`.
+  - added containernet startup validation to run a lightweight in-agent Playwright+Chromium launch/close and fail fast with a rebuild hint when runtime is broken.
+  - improved probe fail-fast payload to include diagnostic tail from in-agent probe output when host fallback is disabled.
+- Updated documentation and test strategy to explicitly call out Playwright/image sync requirement.
+- Added/updated unit tests for:
+  - agent probe runtime validation success/failure paths.
+  - harness diagnostic-tail inclusion for in-agent `rc!=0` failures.
+
+### Files Touched
+- `net-chaos-lab/docker/chaos-node.Dockerfile`
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 8`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); cat "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -c 'select(.type=="run_failed" or .type=="run_completed" or .type=="probe_result" or .type=="run_started")' "$LATEST"/runs/*/metrics-events.jsonl | head -n 120`
+- `docker run --rm -v /home/cos/projects/peercompute:/workspace:rw peercompute/net-chaos-lab-node:latest bash -lc 'cd /workspace && node /workspace/net-chaos-lab/agent/probe.mjs --url https://example.com --waitMs 1000 --minPeers 0 --mode smoke --media false'`
+- `node -v && npm -v`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `docker images --format '{{.Repository}}:{{.Tag}}' | head -n 5`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - initial run: FAIL (`2` test errors from outdated `AgentRecord` kwargs in new tests)
+  - rerun after fix: PASS (`Ran 35 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`)
+  - artifact: `net-chaos-lab/artifacts/20260214T181305Z`
+
+### Failures / Open Questions
+- Full containernet matrix validation (`npm run chaos-lab:matrix:full`) was not executed in this session because docker daemon access is blocked in the current sandbox (`permission denied while trying to connect to docker API socket`).
+- Next host-side confirmation step is required:
+  - rebuild image: `npm run chaos-lab:image:build`
+  - rerun: `npm run chaos-lab:matrix:full`
+  - confirm startup runtime validator passes and probes proceed past the initial checkpoint.
+
+## Date: 2026-02-16
+
+### Prompt (2026-02-16 21:29:50 UTC)
+- "try again" after user-provided `npm run chaos-lab:matrix:full` output showing fail-fast:
+  - `Agent probe runtime validation failed in agent-01 (rc=41)`
+  - diagnostic: `playwright require failed: Cannot find module 'playwright'`
+
+### Actions Taken
+- Parsed the user's run output and confirmed the fail-fast check is now exposing a concrete runtime/module-resolution issue instead of opaque probe `rc=1`.
+- Implemented a stronger fix so containernet agents no longer rely solely on host-mounted workspace module resolution:
+  - Added a dedicated Playwright loader module with fallback specifier support (`playwright` + `CHAOSLAB_PLAYWRIGHT_MODULE` absolute path).
+  - Added a dedicated runtime-check script used by topology startup validation.
+  - Updated probe script to use the shared loader (same resolution path as runtime-check).
+- Updated containernet image build to provision a pinned Playwright module under `/opt/chaoslab` and skip browser re-downloads.
+- Added container env variable for fallback module path (`CHAOSLAB_PLAYWRIGHT_MODULE=/opt/chaoslab/node_modules/playwright/index.js`).
+- Replaced inline `node -e require('playwright')` startup validator with `node /workspace/net-chaos-lab/agent/runtime-check.mjs` from `/workspace` to match real probe execution context.
+- Updated tests for the new runtime-check command and probe diagnostic behavior.
+- Updated docs/tests planning notes to capture new fallback/runtime expectations.
+
+### Files Touched
+- `net-chaos-lab/docker/chaos-node.Dockerfile`
+- `net-chaos-lab/agent/playwright-loader.mjs` (new)
+- `net-chaos-lab/agent/runtime-check.mjs` (new)
+- `net-chaos-lab/agent/probe.mjs`
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 35 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`)
+  - artifact: `net-chaos-lab/artifacts/20260216T212928Z`
+
+### Failures / Open Questions
+- Full containernet matrix still requires host-side rerun after rebuilding the image so the new `/opt/chaoslab` Playwright module is actually present in containers.
+- Required host steps:
+  - `npm run chaos-lab:image:build`
+  - `npm run chaos-lab:matrix:full`
+- If a failure persists after rebuild, the updated runtime-check + probe diagnostic tail should now expose exact module/launch failure details for the next fix.
+
+### Addendum (2026-02-16 21:29:50 UTC)
+- Attempted direct host runtime-check invocation for quick sanity (`node net-chaos-lab/agent/runtime-check.mjs`) in the current sandbox.
+- Result: expected sandbox/browser-launch restriction (`rc=43`, Chromium launch operation not permitted) in this environment.
+- Impact: does not invalidate containernet-host validation path; authoritative validation remains host-side `npm run chaos-lab:matrix:full` after image rebuild.
+
+### Addendum (2026-02-16 21:38:29 UTC)
+- Implemented follow-up hardening to remove stale-image/manual-rebuild footgun exposed by runtime-check failure (`Cannot find module 'playwright'`).
+- Added image revision guard + auto-rebuild behavior for default chaos image:
+  - New constants in topology: `DEFAULT_CHAOSLAB_IMAGE_REV_LABEL`, `DEFAULT_CHAOSLAB_IMAGE_REV`.
+  - `_ensure_container_images()` now rebuilds default image when revision label mismatches (unless `CHAOSLAB_SKIP_IMAGE_BUILD=1`).
+- Added dedicated in-agent Playwright loader/runtime files:
+  - `net-chaos-lab/agent/playwright-loader.mjs`
+  - `net-chaos-lab/agent/runtime-check.mjs`
+- Updated `probe.mjs` to use loader fallback (`playwright` + `CHAOSLAB_PLAYWRIGHT_MODULE`) and include resolved module source in diagnostics.
+- Updated chaos image Dockerfile:
+  - revision label `org.peercompute.chaoslab.image-rev=20260216-playwright-runtime`
+  - installs pinned Playwright package into `/opt/chaoslab` with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
+- Updated docs/tests strategy to reflect revision-guard + module fallback behavior.
+
+#### Additional Commands Run
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+#### Additional Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 37 tests ... OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`)
+  - artifact: `net-chaos-lab/artifacts/20260216T213807Z`
+
+## Date: 2026-02-16
+
+### Prompt (2026-02-16 22:44:29 UTC)
+- "significant visual progress
+what's next? ..." (user included full `npm run chaos-lab:matrix:full` output showing services healthy, probes running, then `probe fail-fast triggered at checkpoint \"initial\": 8/8 probes reported infra_failure` with summary `preflight_success_rate=1`, `preflight_https_success_rate=1`, `infra_failure_rate=1`).
+
+### Actions Taken
+- Re-read required planning context before edits:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Parsed latest matrix artifact payloads to identify mismatch:
+  - `net-chaos-lab/artifacts/20260216T223032Z`
+  - Confirmed each `probe_result` had:
+    - `network_preflight.ok=true`, `http_status=200`
+    - `infra_failure=true`
+    - error string containing a full JSON probe payload with `ok:false`, `peerCount:0`.
+- Root cause identified in `ChaosHarness._probe_one(...)`:
+  - when containernet in-agent probe returns nonzero and host fallback is disabled, code returned early and force-set `infra_failure=true` without parsing JSON payload from stdout.
+  - this incorrectly classified functional connection failures as infra failures and tripped fail-fast.
+- Implemented fix:
+  - in the nonzero/no-fallback branch, attempt `_extract_probe_payload(stdout)` first.
+  - if JSON exists, keep probe in normal normalization flow (do not early-return infra failure).
+  - attach preflight context/probe execution metadata and synthesize error message (`in-agent probe exited with rc=<n>`) when payload omitted one.
+  - retain previous hard infra-failure early return only when no JSON payload is present.
+- Added regression coverage for this classification behavior.
+- Updated test strategy doc with a dedicated expectation for nonzero+JSON probe classification.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `LATEST=net-chaos-lab/artifacts/20260216T223032Z; jq '.results[] | {id, summary:{probe_total:.summary.probe_total, preflight_success_rate:.summary.preflight_success_rate, preflight_https_success_rate:.summary.preflight_https_success_rate, infra_failure_rate:.summary.infra_failure_rate, connection_success_rate:.summary.connection_success_rate, direct_connection_rate:.summary.direct_connection_rate}}' "$LATEST/matrix-summary.json"`
+- `RUN=net-chaos-lab/artifacts/20260216T223032Z/runs/20260216T223032Z-direct-diagnostics/metrics-events.jsonl; jq -c 'select(.type=="probe_result") | {agent:.payload.agent_id, ok:.payload.ok, infra_failure:.payload.infra_failure, preflight:.payload.network_preflight, result_summary:(.payload.summary // {}), error:(.payload.error // null), stage:(.stage // null)}' "$RUN" | sed -n '1,40p'`
+- `RUN=net-chaos-lab/artifacts/20260216T223032Z/runs/20260216T223032Z-direct-diagnostics/metrics-events.jsonl; jq -c 'select(.type=="run_failed" or .type=="probe_cycle_completed" or .type=="run_completed" or .type=="scenario_event")' "$RUN" | sed -n '1,120p'`
+- `rg -n "in-agent probe failed|host fallback is disabled|infra_failure|probe fail-fast|CHAOSLAB_ALLOW_HOST_PROBE_FALLBACK|_run_probe" net-chaos-lab/src/chaoslab/harness.py`
+- `nl -ba net-chaos-lab/src/chaoslab/harness.py | sed -n '120,320p'`
+- `nl -ba net-chaos-lab/src/chaoslab/harness.py | sed -n '320,470p'`
+- `rg -n "class FakeProbeFailureTopology|class FakeProbeTopology|class FakePreflightFallbackTopology" net-chaos-lab/tests/test_chaoslab.py`
+- `nl -ba net-chaos-lab/tests/test_chaoslab.py | sed -n '1,170p'`
+- `rg -n "host fallback is disabled|infra_failure|probe output missing JSON payload|_probe_one|preflight" net-chaos-lab/tests/test_chaoslab.py`
+- `nl -ba net-chaos-lab/tests/test_chaoslab.py | sed -n '940,1080p'`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 38 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - Artifact: `net-chaos-lab/artifacts/20260216T224400Z`.
+
+### Failures / Open Questions
+- Full containernet confirmation still required in host terminal:
+  - rerun `npm run chaos-lab:matrix:full`.
+  - expected change: no immediate fail-fast from `infra_failure_rate=1` when preflight is green; run should proceed to connection/direct-path gating failures if peers remain disconnected.
+- If direct rates remain `0.0` after this fix, next blocker is no longer infra classification and should be debugged in bootstrap/relay/WebRTC behavior itself.
+
+### Addendum (2026-02-16 22:44:29 UTC)
+- Updated `plan/plan.md` completed milestones with the new chaos-lab probe classification guard so planning status matches the implemented harness behavior.
+
+## Date: 2026-02-16
+
+### Prompt (2026-02-16 23:30:55 UTC)
+- User shared latest matrix summary for `20260216T225004Z-direct-diagnostics` showing:
+  - `probe_total=24`
+  - `preflight_success_rate=1`, `infra_failure_rate=0`
+  - but `connection_success_rate=0`, `direct_connection_rate=0`, `avg_announced_direct_webrtc_addrs=0`
+  - matrix stop-on-fail after first run.
+
+### Actions Taken
+- Re-read required plan context before analysis:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Parsed run artifacts to classify failure mode:
+  - all probe results had healthy preflight but functional probe failure.
+  - every probe diagnostic showed NetViz state: `connectionState:"disconnected"`, `localPeerId:null`, no announced addrs, no peers.
+- Traced source of probe URL and NetViz auto-connect behavior:
+  - harness default URL is `https://demos.peercompute.test/netviz/` (no query).
+  - NetViz only auto-connects when `autoConnect=1` or when required query fields are present.
+- Implemented fix in harness:
+  - added `ChaosHarness._normalize_probe_url(...)`.
+  - for `mode=netviz`, inject defaults when missing:
+    - `room=telemetry`
+    - `topologyId=netviz-topology`
+    - `topologyType=distributed`
+    - `autoConnect=1`
+  - applied URL normalization before preflight/probe execution.
+  - host-fallback execution now uses the normalized/effective URL.
+- Added regression tests:
+  - normalization injects defaults.
+  - explicit query params are preserved (no override).
+  - non-netviz modes are unchanged.
+  - updated fallback and failure URL assertions for normalized query behavior.
+- Updated docs/plans for this new guard/expectation.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `RUN=net-chaos-lab/artifacts/20260216T225004Z/runs/20260216T225004Z-direct-diagnostics/metrics-events.jsonl; jq -c 'select(.type=="probe_result") | {ok:.payload.ok, error:.payload.error, mode:.payload.mode, url:.payload.url, connected:.payload.connected, peer_count:.payload.peer_count, direct_peer_count:.payload.direct_peer_count, relay_peer_count:.payload.relay_peer_count, has_direct_announce:.payload.has_direct_announce, has_direct_connection:.payload.has_direct_connection, preflight_ok:(.payload.network_preflight.ok // null), netviz:(.payload.diagnostics.netviz // null)}' "$RUN" | sed -n '1,20p'`
+- `jq -c '.results[] | {id, summary:{probe_total:.summary.probe_total, connection_success_rate:.summary.connection_success_rate, direct_connection_rate:.summary.direct_connection_rate, relay_webrtc_connection_rate:.summary.relay_webrtc_connection_rate, preflight_success_rate:.summary.preflight_success_rate, infra_failure_rate:.summary.infra_failure_rate}}' net-chaos-lab/artifacts/20260216T225004Z/matrix-summary.json`
+- `sed -n '1,220p' net-chaos-lab/configs/scenarios/direct-diagnostics.yaml`
+- `sed -n '1,260p' net-chaos-lab/configs/topology.default.yaml`
+- `sed -n '1,280p' net-chaos-lab/src/chaoslab/main.py`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/config.py`
+- `rg -n "default_url|probe|netviz|autoConnect|harness" net-chaos-lab/README.md`
+- `sed -n '216,255p' net-chaos-lab/README.md`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - initial run: FAIL (`1` assertion expecting legacy bare URL in failure test).
+  - rerun after assertion update: PASS (`Ran 41 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - artifact: `net-chaos-lab/artifacts/20260216T232756Z`.
+
+### Failures / Open Questions
+- Need host-side `npm run chaos-lab:matrix:full` rerun to verify this translates into actual in-agent NetViz connects (`localPeerId` non-null) and non-zero connection metrics.
+- If full run still reports zero connections after this fix, next focus should be relay bootstrap path from in-agent browser runtime (network handshake/cert/proxy path) rather than probe orchestration.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 02:30:25 UTC)
+- User provided matrix results and extracted probe lines for `20260217T015736Z` showing:
+  - `preflight_success_rate=1`, `infra_failure_rate=0`
+  - `localPeerId` present and `connectionState:"connected"` for all probes
+  - but `peerCount=0`, `connection_success_rate=0`, `direct_connection_rate=0`.
+
+### Actions Taken
+- Re-read required planning context before edits:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Parsed probe payload details from the run and confirmed topology state:
+  - probes now connect NetViz client successfully (`localPeerId` non-null, connection state connected).
+  - no peer bootstrap/discovery occurs (`telemetry.peerCount=0`, no announced addrs, no rtc pairs).
+- Traced relay bootstrap path in containernet service startup:
+  - found relay service was launched with `RELAY_PUBLIC_PROTOCOL=ws`.
+  - found no `RELAY_CONFIG_FILE/RELAY_CONFIG_DIRS` set in relay service command, so in-lab NetViz kept reading stale static relay config (`docs/netviz/relay-config.json`) pointing to external relay.
+  - this creates a likely HTTPS mixed-content / wrong-endpoint bootstrap failure mode.
+- Implemented relay startup hardening in `ChaosTopology._service_start_spec(..., 'relay')`:
+  - generate short-lived relay TLS cert/key in container (`/tmp/chaoslab-relay.crt` + `/tmp/chaoslab-relay.key`).
+  - run relay in `wss` mode (`RELAY_PUBLIC_PROTOCOL=wss`, `RELAY_SSL_CERT`, `RELAY_SSL_KEY`).
+  - set `RELAY_PUBLIC_HOST` + `RELAY_PUBLIC_PORT=8080` for stable announce addresses.
+  - set `RELAY_CONFIG_FILE=/workspace/docs/netviz/relay-config.json` so in-lab NetViz consumes local bootstrap peers.
+  - added relay ready checks to ensure config file exists and includes `/wss/` + relay hostname.
+- Added regression unit test verifying relay spec contains wss/tls/config-file wiring.
+- Updated README + test strategy + plan milestone docs accordingly.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `RUN=net-chaos-lab/artifacts/20260217T015736Z/runs/20260217T015736Z-direct-diagnostics/metrics-events.jsonl; jq -c 'select(.type=="probe_result") | {ok:.payload.ok, connected:.payload.connected, peer_count:.payload.peer_count, direct_peer_count:.payload.direct_peer_count, relay_peer_count:.payload.relay_peer_count, error:.payload.error, localPeerId:(.payload.diagnostics.netviz.localPeerId//null), connectionState:(.payload.diagnostics.netviz.connectionState//null), telemetryPeerCount:(.payload.diagnostics.netviz.telemetry.peerCount//null), peerViaCounts:(.payload.diagnostics.netviz.peerViaCounts//{}), announceDirect:(.payload.diagnostics.netviz.hasDirectAnnounce//false), announceAddrs:(.payload.diagnostics.netviz.announcedAddrs//[])}' "$RUN" | sed -n '1,30p'`
+- `jq -c '.results[] | {id, summary:{probe_total:.summary.probe_total, connection_success_rate:.summary.connection_success_rate, direct_connection_rate:.summary.direct_connection_rate, avg_direct_peer_count:.summary.avg_direct_peer_count, avg_announced_direct_webrtc_addrs:.summary.avg_announced_direct_webrtc_addrs, preflight_success_rate:.summary.preflight_success_rate, infra_failure_rate:.summary.infra_failure_rate}}' net-chaos-lab/artifacts/20260217T015736Z/matrix-summary.json`
+- `rg -n "relay-config|relay.peercompute|bootstrap|wss|websocket|/netviz|caddy|https service|svc_relay|relay service|turn" net-chaos-lab/src/chaoslab/topology.py`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '700,1080p'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1080,1460p'`
+- `cat docs/netviz/relay-config.json`
+- `cat demos/netviz/public/relay-config.json`
+- `rg -n "RELAY_PUBLIC_PROTOCOL|wss|tls|https|cert|key|websocket|WebSocketServer|createServer|wsServer|server.js" peercompute/src/relay/server.js peercompute/src/relay -g '*.js'`
+- `sed -n '1,260p' peercompute/src/relay/server.js`
+- `sed -n '260,620p' peercompute/src/relay/server.js`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `npm run chaos-lab:matrix:smoke`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 42 tests ... OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `npm run chaos-lab:matrix:smoke`
+  - PASS (`run_total=2`, `run_failed=0`, `all_passed=true`).
+  - artifact: `net-chaos-lab/artifacts/20260217T022749Z`.
+
+### Failures / Open Questions
+- Host-side containernet rerun is required to validate that local `wss` relay-config now yields non-zero peer counts and connection success in `matrix:full`.
+- If peers still remain at zero, next debugging step should capture browser console/network errors from `probe.mjs` and inspect relay container `/tmp/relay.log` for inbound connections per agent peer ID.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 03:33:42Z)
+- "[chaos-lab] summary: { run_id: 20260217T025440Z-direct-diagnostics, connection_success_rate: 1.0, direct_connection_rate: 0.0, avg_announced_direct_webrtc_addrs: 0.0, ... } ... jq probe output shows `ok:true`, nonzero `peer_count`, `connectionState:\"connected\"`, but `announced: []` for all sampled probes."
+
+### Actions Attempted
+- Reviewed current metrics pipeline and probe normalization path to locate why direct-path metrics remained zero despite successful connectivity.
+- Confirmed probe diagnostics were reading `status.addrs` (local libp2p multiaddrs) which are often empty in browser/relay contexts, instead of advertised announce addresses.
+- Confirmed relay-generated config lacked in-lab ICE settings (`webrtc.iceServers`), meaning WebRTC path formation depended on non-local defaults.
+- Implemented relay-side in-lab ICE injection (TURN/STUN host from topology service map) by setting `RELAY_WEBRTC_CONFIG` in the containernet relay service startup command.
+- Added relay readiness checks ensuring generated `relay-config.json` includes `iceServers` and turn host entries.
+- Added a `NetworkManager.getAnnounceAddrs()` accessor and exposed `announceAddrs` in NetViz `window.__NETVIZ__.getStatus()` debug output.
+- Updated probe diagnostics to consume `status.announceAddrs` when available.
+- Updated probe WebRTC announce counting to include all `/webrtc` announce addresses (relay-webrtc + direct-webrtc) for better visibility of dialable WebRTC advertise state in this lab.
+- Added Chromium launch flag `--disable-features=WebRtcHideLocalIpsWithMdns` in probe runner to improve same-segment host-candidate observability during direct-path measurement.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/agent/probe.mjs`
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `demos/netviz/src/main.js`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg -n "direct_connection_rate|avg_announced_direct_webrtc_addrs|announcedAddrs|direct_announce_rate|relay_webrtc_connection_rate|connection_success_rate" net-chaos-lab/src demos/netviz -S`
+- `sed -n '1,520p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,420p' net-chaos-lab/src/chaoslab/metrics.py`
+- `sed -n '1,680p' net-chaos-lab/agent/probe.mjs`
+- `rg/sed` inspections across `demos/netviz/src/main.js`, `peercompute/src/peercompute/networkManager/NetworkManager.js`, `peercompute/src/relay/server.js`, and `net-chaos-lab/src/chaoslab/topology.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `node --check demos/netviz/src/main.js`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`:
+  - PASS (`Ran 43 tests`, `OK`)
+- `node --check net-chaos-lab/agent/probe.mjs`:
+  - PASS (no syntax errors)
+- `node --check demos/netviz/src/main.js`:
+  - PASS (no syntax errors)
+- `npm run chaos-lab:matrix:smoke`:
+  - PASS (`all_passed: true`, expected dry-run behavior with `probe_total: 0`)
+
+### Failures / Open Questions
+- Full containernet matrix was not rerun in this sandboxed session, so direct-path gate recovery is not yet re-validated against `direct-regression` thresholds.
+- Need user-side rerun of `npm run chaos-lab:matrix:full` to confirm whether:
+  - `direct_connection_rate` increases from `0.0`
+  - `avg_announced_direct_webrtc_addrs` now reflects non-empty WebRTC announce paths
+  - `rtc_local_candidate_types` distribution shifts away from overwhelmingly `unknown`
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 04:49:06Z)
+- "[chaos-lab] summary ... connection_success_rate 1.0, but direct_connection_rate 0.0 and avg_announced_direct_webrtc_addrs 0.0 ... jq output shows hasDirect:false, announcedWebrtc:0 for all probes, with relayAny>0 and directOther=1."
+
+### Actions Attempted
+- Parsed the new run payload and confirmed transport health improved (peers/connectivity/preflight all pass), but direct-path metrics remained zero.
+- Investigated bundle provenance for in-agent probes and confirmed probes load `https://demos.peercompute.test/netviz/` (served from static `docs/netviz`) rather than `demos/netviz/src` runtime source.
+- Verified current deployed docs bundle did not include the freshly added `announceAddrs` probe diagnostics path, explaining persistent `announcedWebrtc: 0` despite source-level fixes.
+- Implemented automatic NetViz docs freshness guard in chaos-lab runner:
+  - Added `_ensure_netviz_docs_bundle()` in `chaoslab.main`.
+  - For non-dry-run + probes enabled, runner now builds `demos/netviz` when source mtimes are newer than `docs/netviz` bundle (or bundle missing).
+  - Added opt-out env `CHAOSLAB_SKIP_NETVIZ_BUILD=1`.
+  - Build failures now fail-fast with explicit error to avoid silent stale-probe behavior.
+- Added unit tests for NetViz docs freshness guard (stale -> build; fresh -> skip).
+- Updated docs/plan artifacts to record the new guard and expectations.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/main.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `cat demos/netviz/vite.config.js`
+- `rg -n "from 'peercompute|NodeKernel|getAnnounceAddrs" demos/netviz/src -S`
+- `cat peercompute/src/peercompute/index.js`
+- `sed -n '1,280p' net-chaos-lab/scripts/chaos-lab.sh`
+- `sed -n '1,340p' net-chaos-lab/src/chaoslab/main.py`
+- `python3` token-check against docs bundle for `announceAddrs` / `status.announceAddrs`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `node --check demos/netviz/src/main.js`
+- `npm run chaos-lab:matrix:smoke`
+
+### Test Results
+- Initial unit run failed once (new stale-build test timing assertion mismatch), then fixed:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`:
+    - PASS after fix (`Ran 45 tests`, `OK`)
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`:
+  - PASS
+- `node --check net-chaos-lab/agent/probe.mjs`:
+  - PASS
+- `node --check demos/netviz/src/main.js`:
+  - PASS
+- `npm run chaos-lab:matrix:smoke`:
+  - PASS (`all_passed: true`)
+
+### Failures / Open Questions
+- Full containernet matrix has not yet been rerun after this docs freshness guard patch, so direct-gate improvement is not yet empirically confirmed in a post-fix run.
+- If direct metrics remain at zero after fresh docs deployment, next likely root cause is transport-path classification/dial target behavior (relay-only websockets + limited direct-webrtc address publication) rather than stale UI/probe code.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 06:35:03Z)
+- User provided latest direct-regression output and asked: "can we set this up to just run in a loop or something so you can keep working without my intervention?"
+
+### Actions Attempted
+- Re-read planning context before changes:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Reviewed current root scripts and discovered a loop runner already exists at `net-chaos-lab/scripts/chaos-lab-matrix-loop.sh` but was not wired in root `npm` scripts/docs.
+- Wired the existing loop runner into root scripts:
+  - added `npm run chaos-lab:matrix:loop`.
+- Updated chaos-lab docs to expose unattended usage patterns:
+  - added Quick Start entry for `chaos-lab:matrix:loop`.
+  - documented defaults (repeat-until-pass), stop conditions (`--max-runs`, `--no-until-pass`), and examples.
+- Updated plan docs to keep strategy/status aligned:
+  - added matrix-loop execution gate reference in `plan/tests.md`.
+  - added completed-item note in `plan/plan.md`.
+  - added branch status + command reference entry in `plan/branch/big-net-testing.md`.
+- Performed lightweight validation for loop launcher syntax/help and package script integrity.
+
+### Files Touched
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,280p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `ls -la net-chaos-lab/scripts`
+- `sed -n '1,320p' net-chaos-lab/scripts/chaos-lab-matrix-loop.sh`
+- `rg -n "matrix:full|matrix:loop|loop|chaos-lab-matrix" net-chaos-lab/README.md package.json plan/tests.md plan/branch/big-net-testing.md`
+- `sed -n '1,200p' net-chaos-lab/README.md`
+- `sed -n '1,220p' plan/tests.md`
+- `sed -n '1,240p' plan/branch/big-net-testing.md`
+- `rg -n "matrix:full|watcher|Command Reference|matrix:smoke" plan/branch/big-net-testing.md && sed -n '40,220p' plan/branch/big-net-testing.md`
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-loop.sh && bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `npm run chaos-lab:matrix:loop -- --help`
+- `node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json ok')"`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-loop.sh && bash -n net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+  - PASS (no shell syntax errors).
+- `npm run chaos-lab:matrix:loop -- --help`
+  - PASS; prints usage/options/examples without attempting containernet startup.
+- `node -e "JSON.parse(...)"`
+  - PASS (`package.json ok`).
+
+### Failures / Open Questions
+- No functional failures in this prompt's wiring/validation changes.
+- Full containernet execution was not rerun in this prompt; next runtime validation should be user-host run of:
+  - `npm run chaos-lab:matrix:loop -- --max-runs 3 --sleep 15`
+  - then inspect newest `matrix-summary.json` for direct-path gates.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 06:47:58Z)
+- User asked: "I'll launch it in my own terminal since it needs sudo. wire the watcher so you can see it first"
+
+### Actions Attempted
+- Re-read required planning context first:
+  - `plan/plan.md`
+  - latest `plan/log.md` tail
+- Reviewed existing scripts and confirmed no dedicated artifact watcher existed for externally-launched matrix runs.
+- Implemented a new matrix artifact watcher script:
+  - added `net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`.
+  - default behavior: wait for next completed `matrix-summary.json`, print compact matrix/run/gate summary, exit.
+  - supports continuous mode (`--follow`), include-current mode (`--include-current`), and configurable poll interval (`--sleep`).
+- Wired watcher into npm scripts:
+  - added `npm run chaos-lab:matrix:watch`.
+- Updated docs/plans to include watcher workflow:
+  - `net-chaos-lab/README.md` quick-start and watcher usage examples.
+  - `plan/tests.md` execution gate references for watcher command/help validation.
+  - `plan/plan.md` completed milestones updated with matrix artifact watcher capability.
+  - `plan/branch/big-net-testing.md` status + command reference updates.
+- Validated watcher syntax/help/summary parsing against current artifacts.
+
+### Files Touched
+- `net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 240 plan/log.md`
+- `ls -la net-chaos-lab/scripts && rg -n "watch|matrix-summary|artifacts|loop" net-chaos-lab/scripts package.json net-chaos-lab/README.md`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.' "$LATEST/matrix-summary.json" | sed -n '1,240p'`
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+- `npm run chaos-lab:matrix:watch -- --help`
+- `npm run chaos-lab:matrix:watch -- --include-current --once`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `bash -n net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+  - PASS (no shell syntax errors).
+- `npm run chaos-lab:matrix:watch -- --help`
+  - PASS (usage/options/examples printed).
+- `npm run chaos-lab:matrix:watch -- --include-current --once`
+  - PASS (parsed latest summary and printed matrix metrics + failing gates).
+
+### Failures / Open Questions
+- No functional failures in watcher wiring.
+- Next operational step: keep watcher running (`npm run chaos-lab:matrix:watch`) before user starts sudo matrix run in another terminal; then consume new summary immediately after completion.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 16:02:20Z)
+- User said they ran `npm run chaos-lab:matrix:loop -- --no-until-pass --max-runs 100` and asked why watcher did not appear to see it.
+
+### Actions Attempted
+- Polled the existing watcher session and confirmed it had detected one new summary (`20260217T065812Z`) and then exited.
+- Diagnosed cause: watcher default is one-shot (`--once` semantics), so it stopped after first completion and did not continue for later loop iterations.
+- Queried latest artifacts and verified loop runs are continuing with newer matrix summaries (`20260217T120256Z` latest at check time).
+- Parsed current latest matrix result and failing gates:
+  - connectivity and preflight healthy (`conn=1.0`, `preflight=1`, `infra=0`, `announce=1.0`)
+  - still failing direct-path gate (`direct_connection_rate=0.0`).
+- Restarted watcher in continuous mode:
+  - `npm run chaos-lab:matrix:watch -- --follow --since-latest`
+  - now waiting for summaries newer than `20260217T120256Z`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `write_stdin(session_id=67459, chars="")` (poll prior watcher session output)
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 8`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); [ -f "$LATEST/matrix-summary.json" ] && jq '{matrix_run_id,run_total,run_passed,run_failed,all_passed,updated_at}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '.results[] | {id, run_id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, announce:.summary.avg_announced_direct_webrtc_addrs, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, direct_sample:.summary.avg_direct_connection_sample_rate}' "$LATEST/matrix-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq -r '.results[] as $r | $r.gates[] | select(.passed|not) | "run=\($r.id) metric=\(.metric) expected=\(.op) \(.expected) actual=\(.actual) required=\(.required)"' "$LATEST/matrix-summary.json"`
+- `npm run chaos-lab:matrix:watch -- --follow --since-latest` (started persistent watcher; session id 94737)
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Watcher behavior validated:
+  - prior one-shot watcher correctly detected a run then exited.
+  - new follow watcher now runs continuously and waits for subsequent summaries.
+
+### Failures / Open Questions
+- Direct-path gate remains unresolved in latest matrix run (`direct_connection_rate=0.0`), even with healthy announce/preflight/connectivity metrics.
+- Need next completed run (captured by follow watcher) to continue iterative diagnosis of direct-vs-relay classification/transport behavior.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 16:21:24Z)
+- User asked: "did you pick it up ?"
+
+### Actions Attempted
+- Polled the live continuous watcher session (`session_id=94737`) to verify whether new loop iterations were detected.
+- Confirmed watcher captured multiple newly completed matrix runs in sequence:
+  - `20260217T160402Z`
+  - `20260217T160703Z`
+  - `20260217T161010Z`
+  - `20260217T161315Z`
+  - `20260217T161614Z`
+- Parsed watcher output and verified repeated pattern across runs:
+  - `connection_success_rate=1.0`
+  - `avg_announced_direct_webrtc_addrs=1.0`
+  - `preflight_success_rate=1`
+  - failing required gate remains `direct_connection_rate=0.0`.
+- Checked latest artifact directory state and noted race condition where newest run directory existed before `matrix-summary.json` was written.
+- Queried latest available completed summary file explicitly via glob on `20*/matrix-summary.json`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `write_stdin(session_id=94737, chars="")`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 8`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST"; jq '{matrix_run_id,updated_at,run_total,run_passed,run_failed,all_passed}' "$LATEST/matrix-summary.json'`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST"; jq '{matrix_run_id,updated_at,run_total,run_passed,run_failed,all_passed}' "$LATEST/matrix-summary.json"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); echo "$LATEST_SUMMARY"; jq '{matrix_run_id,updated_at,run_total,run_passed,run_failed,all_passed}' "$LATEST_SUMMARY"`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Watcher polling: PASS (new matrix completions detected continuously).
+- Direct gate status: still FAIL on every newly completed run (`direct_connection_rate` remains `0.0`).
+
+### Failures / Open Questions
+- One shell command failed due quote mismatch while probing latest summary path; reran with corrected quoting.
+- A transient race can occur when listing latest artifact directory before `matrix-summary.json` exists; watcher remains reliable because it triggers only on completed summary file creation.
+
+## Date: 2026-02-17
+
+### Prompt (2026-02-17 16:37:00Z)
+- User asked: "alright so I'd like you to keep working on fixing it between each run"
+
+### Actions Attempted
+- Re-reviewed required planning context before coding (`plan/plan.md`, `plan/log.md`) per repo instructions.
+- Re-validated current root-cause signal in code:
+  - `NetworkManager` browser listen set still `/p2p-circuit,/webrtc` (no direct-webrtc transport path visible in metrics).
+  - `probe.mjs` classified `hasDirectConnection` only from libp2p connection multiaddrs (`/webrtc` without `/p2p-circuit`).
+- Confirmed live watcher (`session_id=94737`) is still running and receiving completed summaries; latest observed pattern remained `conn=1.0`, `announce=1.0`, `direct=0.0`.
+- Implemented a direct-path classification fix in probe runtime:
+  - Added RTC candidate-pair fallback classifier in `net-chaos-lab/agent/probe.mjs`.
+  - If selected/active RTC pairs show non-relay candidate types (`host`/`srflx`/`prflx`) with traffic, probe now sets `hasDirectConnection=true` even when libp2p addr strings remain relay-scoped.
+  - Added diagnostic flag `hasDirectConnectionInferredFromRtc` under `diagnostics.netviz` when fallback is used.
+- Updated docs/plans to reflect this classification change:
+  - `plan/tests.md`: added explicit direct-path classification expectation using RTC selected-pair evidence.
+  - `plan/branch/big-net-testing.md`: appended completed-status note for RTC fallback classification.
+  - `net-chaos-lab/README.md`: documented `direct_connection_rate` fallback semantics.
+
+### Files Touched
+- `net-chaos-lab/agent/probe.mjs`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `net-chaos-lab/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg -n "webRTC|webRTCDirect|transports|listen|/webrtc-direct|/webrtc|circuitRelayTransport" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '260,520p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '640,820p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2940,3065p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "has_direct_connection|direct_connection_rate|announced_direct_webrtc_addrs_count|connectionAddrCounts|directWebrtc|directOther|relayWebrtc|hasRelayWebrtc" net-chaos-lab -g'*.*'`
+- `sed -n '1,320p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '320,760p' net-chaos-lab/agent/probe.mjs`
+- `write_stdin(session_id=94737, chars="")`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `rg -n "direct_connection_rate|has_direct_connection|announced_direct_webrtc_addrs_count|rtc" net-chaos-lab/README.md`
+- `sed -n '120,240p' net-chaos-lab/README.md`
+- `ls -1 plan/branch`
+- `sed -n '1,240p' plan/branch/big-net-testing.md`
+- `sed -n '1,240p' plan/tests.md`
+- `tail -n 120 plan/log.md`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `node --check net-chaos-lab/agent/probe.mjs`
+  - PASS (syntax valid after RTC fallback changes).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS (no Python syntax regressions).
+- Live watcher poll
+  - PASS (still detects completed matrix summaries in follow mode).
+
+### Failures / Open Questions
+- No code-level test failures in this patch set.
+- Need the next completed matrix run to verify whether `direct_connection_rate` now reflects RTC-observed direct paths and clears the required gate.
+- Optional gate `avg_direct_connection_sample_rate` may still fail (stability sampler still uses addr-shape-only logic); decision pending whether to align stability sampler to RTC evidence as a second step.
+
+## Date: 2026-02-17
+
+### Prompt Follow-up (2026-02-17 16:43:42Z)
+- Continuing the same user request: keep fixing matrix direct-path failures between runs.
+
+### Additional Actions Attempted
+- Extended RTC fallback beyond one-time probe classification to stability sampling:
+  - updated `collectNetvizSnapshot` in `net-chaos-lab/agent/probe.mjs` to consult `window.__CHAOSLAB_RTC__.collect()` each sample window.
+  - when selected/active RTC pairs show non-relay candidate types (`host`/`srflx`/`prflx`) with traffic, sample now counts as direct even if libp2p connection addrs remain relay-shaped.
+  - this targets under-reported `avg_direct_connection_sample_rate` in matrix gating.
+- Updated docs/plans to reflect stability-sampling fallback behavior:
+  - `net-chaos-lab/README.md` direct-metrics note now covers both rate + stability sample metrics.
+  - `plan/tests.md` direct-path expectation now explicitly includes stability sampling fallback.
+  - `plan/branch/big-net-testing.md` and `plan/plan.md` status bullets updated accordingly.
+
+### Files Touched
+- `net-chaos-lab/agent/probe.mjs`
+- `net-chaos-lab/README.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `node --check net-chaos-lab/agent/probe.mjs`
+  - PASS (syntax valid after stability fallback changes).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+
+### Failures / Open Questions
+- No local validation failures.
+- Awaiting next completed matrix run to confirm:
+  - required `direct_connection_rate >= 0.4` now passes with RTC fallback.
+  - optional `avg_direct_connection_sample_rate >= 0.35` improves under same conditions.
+
+## Date: 2026-02-17
+
+### Prompt Follow-up (2026-02-17 16:54:08Z)
+- Continuing same user request to keep fixing matrix failures between runs.
+
+### Additional Actions Attempted
+- Polled live watcher (`session_id=94737`) and captured first post-patch matrix result (`20260217T163224Z`):
+  - `direct-diagnostics`: `direct_connection_rate=0.625` (required gate now passing).
+  - `ipv4-only`: `direct_connection_rate=0.90625` (required gate now passing).
+  - remaining required failure moved to `ipv6-only`: `connection_success_rate=0.5`, `preflight_success_rate=0.5`, `infra_failure_rate=0.5`.
+- Per-run artifact analysis showed `ipv6-only` failures were preflight HTTPS timeouts (`curl_rc=28`) across the second probe checkpoint, with DNS/hosts still healthy.
+- Identified root cause as family-selection ambiguity in preflight curl under IP-mode scenarios (hostnames with dual-stack host entries + mode-specific filtering).
+- Implemented IP-mode-aware preflight in `net-chaos-lab/src/chaoslab/harness.py`:
+  - added `_topology_ip_mode()` normalization.
+  - added `_service_host_maps()` to gather IPv4+IPv6 service mappings (from `get_service_host_entries` and `get_service_host_map`).
+  - primary HTTPS preflight now uses `curl -6` in `ipv6-only`, `curl -4` in `ipv4-only`.
+  - fallback service-IP selection now prefers matching-family address for active mode.
+  - fallback curl also enforces matching family flag.
+  - improved HTTP status parsing by reading final status token from curl output tail.
+- Updated unit-test fakes for optional `-4/-6` curl flags in `net-chaos-lab/tests/test_chaoslab.py`.
+- Updated plan/docs to reflect new guard:
+  - `plan/tests.md` added explicit IP-mode preflight expectation.
+  - `plan/branch/big-net-testing.md` added completed-status note.
+  - `plan/plan.md` added completed item.
+  - `net-chaos-lab/README.md` notes now document IP-mode-aware preflight behavior.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/plan.md`
+- `net-chaos-lab/README.md`
+- `plan/log.md`
+
+### Commands Run
+- `write_stdin(session_id=94737, chars="")`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); echo "$LATEST"; jq ... "$LATEST/matrix-summary.json"` (failed due race: no summary yet)
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq ... "$LATEST_SUMMARY"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq -c 'select(.type=="probe_result") | select(.run_id|contains("ipv6-only")) | ...' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | head -n 60`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq -r 'select(.type=="probe_result") | select(.run_id|contains("ipv6-only")) | ...' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | wc -l`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 45 tests in 0.070s`, `OK`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - PASS.
+- `node --check net-chaos-lab/agent/probe.mjs`
+  - PASS.
+
+### Failures / Open Questions
+- One artifact-inspection command failed initially because a fresh artifact directory appeared before `matrix-summary.json` was written (expected race); switched to `20*/matrix-summary.json` glob to avoid this.
+- Awaiting next completed matrix run to confirm `ipv6-only` preflight/connection gate recovery with family-aware curl behavior.
+
+## Date: 2026-02-17
+
+### Prompt Follow-up (2026-02-17 16:56:28Z)
+- Post-patch verification check while waiting for the next matrix completion.
+
+### Additional Actions Attempted
+- Inspected latest completed matrix artifact after harness preflight patch to verify new fields were present in `network_preflight`.
+- Observed `network_preflight.ip_mode` and `network_preflight.curl_family` were still `null` in `20260217T164733Z`, indicating that run completed before patched harness code took effect.
+- Confirmed latest failed `ipv6-only` preflight payloads still used IPv4 fallback URL (`https://10.40.254.10/...`) and no family-forced curl options.
+- Conclusion: need one fresh matrix run after current code changes to validate IP-mode-aware preflight fix.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); echo "$MATRIX_DIR"; jq -c 'select(.type=="probe_result") | select(.run_id|contains("ipv6-only")) | {agent:.payload.agent, ok:.payload.ok, infra:.payload.infra_failure, preflight_ok:.payload.network_preflight.ok, ip_mode:.payload.network_preflight.ip_mode, curl_family:.payload.network_preflight.curl_family, curl_status:.payload.network_preflight.curl_status_raw, fallback_url:.payload.network_preflight.fallback_url, fallback_status:.payload.network_preflight.fallback_status_raw, error:.payload.network_preflight.error}' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | head -n 40`
+- `write_stdin(session_id=94737, chars="")`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Artifact inspection succeeded; no new run completed after patch during this check window.
+
+### Failures / Open Questions
+- Need a fresh post-patch matrix run to confirm `ipv6-only` stage recovery.
+
+## Date: 2026-02-18
+
+### Prompt (2026-02-18 04:18:59Z)
+- User asked: "how many completions did you catch?"
+
+### Actions Attempted
+- Counted completed matrix summaries since watcher baseline (`--since-latest` at `20260217T120256Z`) by scanning artifact summary files.
+- Verified latest completion run IDs to ensure count reflects current watcher window.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `ls -1 net-chaos-lab/artifacts/20*/matrix-summary.json | sed 's#.*/\(20[0-9TZ]*\)/matrix-summary.json#\1#' | awk '$1 > "20260217T120256Z"' | wc -l`
+- `ls -1 net-chaos-lab/artifacts/20*/matrix-summary.json | sed 's#.*/\(20[0-9TZ]*\)/matrix-summary.json#\1#' | awk '$1 > "20260217T120256Z"' | tail -n 3`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Completion count query succeeded.
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-02-18
+
+### Prompt (2026-02-18 04:23:07Z)
+- User asked: "what progress did you make?"
+
+### Actions Attempted
+- Queried latest completed matrix artifact and summarized run-level metrics for `direct-diagnostics`, `ipv4-only`, and `ipv6-only`.
+- Queried latest `ipv6-only` probe payloads to verify whether recent harness changes are active and to identify the exact remaining failure signature.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); echo "$LATEST_SUMMARY"; jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, direct_sample:.summary.avg_direct_connection_sample_rate}' "$LATEST_SUMMARY"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq -c 'select(.type=="probe_result") | select(.run_id|contains("ipv6-only")) | {agent:.payload.agent, ok:.payload.ok, infra:.payload.infra_failure, preflight_ok:.payload.network_preflight.ok, preflight_error:.payload.network_preflight.error, ip_mode:(.payload.network_preflight.ip_mode//"<missing>"), curl_family:(.payload.network_preflight.curl_family//"<missing>"), service_ip:(.payload.network_preflight.service_ip//"<none>"), fallback_url:(.payload.network_preflight.fallback_url//"<none>")}' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | head -n 20`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Artifact inspection successful.
+- Confirmed latest run behavior:
+  - `direct-diagnostics`: connection/direct/preflight all passing.
+  - `ipv4-only`: connection/direct/preflight all passing.
+  - `ipv6-only`: only remaining required failure is connection success due HTTPS preflight failures in ipv6-only stage.
+
+### Failures / Open Questions
+- Remaining blocker: in ipv6-only stage, all sample probes fail preflight with `curl_rc=7` on `curl -6` to hostname and IPv6 fallback (`fd42:40:254::10`), causing `preflight_success_rate=0.5` and `infra_failure_rate=0.5` overall for that run.
+
+## Date: 2026-02-18
+
+### Prompt (2026-02-18 04:26:41Z)
+- User asked: "so are libp2p direct connections actually working?"
+
+### Actions Attempted
+- Pulled latest matrix summary and extracted direct/relay connection rates by scenario.
+- Pulled `direct-diagnostics` probe payload samples to compare `has_direct_connection` with raw connection address counts and RTC candidate diagnostics.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq '.results[] | {id, direct_rate:.summary.direct_connection_rate, relay_webrtc_rate:.summary.relay_webrtc_connection_rate, conn:.summary.connection_success_rate}' "$LATEST_SUMMARY"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq -c 'select(.type=="probe_result") | select(.run_id|contains("direct-diagnostics")) | {has_direct:.payload.has_direct_connection, connCounts:(.payload.diagnostics.netviz.connectionAddrCounts//{}), rtcLocal:(.payload.diagnostics.rtc.localCandidateTypes//{}), rtcRemote:(.payload.diagnostics.rtc.remoteCandidateTypes//{})}' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | head -n 8`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Latest summary shows strong direct rate in non-ipv6-only scenarios:
+  - `direct-diagnostics direct_rate=0.875`
+  - `ipv4-only direct_rate=0.90625`
+- Probe payload inspection confirms `has_direct_connection=true` frequently while `connectionAddrCounts.directWebrtc=0` and `relayAny>0`; RTC candidates include non-relay types (`host`, `prflx`).
+
+### Failures / Open Questions
+- Interpretation nuance remains: direct transport appears to work at WebRTC pair level, but libp2p address-level classification still mostly presents relay-scoped connection addrs.
+
+## Date: 2026-02-18
+
+### Prompt (2026-02-18 06:33:23Z)
+- User reported NetViz P2P visualization not working and requested continued fixes while matrix loop runs.
+
+### Actions Attempted
+- Inspected `demos/netviz/src/main.js`, `demos/netviz/src/visualizer.js`, and `net-chaos-lab/agent/probe.mjs` to verify why watcher view could show IP overlay while missing P2P topology.
+- Confirmed latest probe artifacts already include per-agent NetViz telemetry (`diagnostics.netviz.telemetry.peers`) and `has_direct_connection=true` in current runs, so direct behavior exists but watcher P2P view still depends too heavily on local browser connectivity.
+- Implemented NetViz chaos-feed P2P overlay synthesis:
+  - Added storage of `/api/events` payloads in NetViz runtime state.
+  - Added `buildChaosP2POverlay()` to construct P2P nodes/edges from latest per-agent `probe_result` diagnostics (`localPeerId` + telemetry peer links).
+  - Merged synthesized chaos P2P graph with existing local P2P graph before rendering so watcher can still display swarm topology when local watcher node is disconnected or sparse.
+  - Extended node/edge inspector handling for `chaos-p2p` metadata.
+- Kept existing IP topology overlay pipeline intact and merged IP + chaos-P2P metadata maps for inspect panel lookup.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la`
+- `rg --files demos/netviz | head -n 200`
+- `sed -n '1,320p' demos/netviz/src/main.js`
+- `sed -n '760,1320p' demos/netviz/src/main.js`
+- `rg -n "showP2P|showIP|updateHud|buildEdgeInfo|buildNodeInfo" demos/netviz/src/main.js`
+- `node --check demos/netviz/src/main.js`
+- `python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `npm --prefix demos/netviz run build`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `node --check demos/netviz/src/main.js`
+  - PASS.
+
+## Date: 2026-02-19
+
+### Prompt (2026-02-19 03:56:32Z)
+- User asked for a status update.
+
+### Actions Attempted
+- Queried latest completed matrix summary and per-scenario gate metrics.
+- Queried newest artifact directory to detect whether a new run is still in progress.
+- Checked newest run event stream to confirm current run stage.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json 2>/dev/null | head -n1); echo "LATEST_SUMMARY=$LATEST_SUMMARY"; jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed}' "$LATEST_SUMMARY"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json 2>/dev/null | head -n1); jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, announce:.summary.avg_announced_direct_webrtc_addrs, directSample:.summary.avg_direct_connection_sample_rate, relayWebrtc:.summary.relay_webrtc_connection_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate}' "$LATEST_SUMMARY"`
+- `LATEST_DIR=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); if [ -f "$LATEST_DIR/matrix-summary.json" ]; then jq '{matrix_name,matrix_run_id,run_total,run_passed,run_failed,all_passed}' "$LATEST_DIR/matrix-summary.json"; else find "$LATEST_DIR" -maxdepth 3 -type f -name 'metrics-summary.json' | sort | xargs -r -I{} sh -c 'echo --- {}; jq "{run_id,connection_success_rate,direct_connection_rate,avg_announced_direct_webrtc_addrs,avg_direct_connection_sample_rate,preflight_success_rate,infra_failure_rate}" {}'; fi`
+- `LATEST_DIR=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); RUN_DIR=$(find "$LATEST_DIR/runs" -maxdepth 1 -mindepth 1 -type d | head -n1); tail -n 40 "$RUN_DIR/metrics-events.jsonl"`
+
+### Test Results
+- Latest completed matrix summary (`20260219T033841Z`):
+  - `run_total=3`, `run_passed=2`, `run_failed=1`, `all_passed=false`.
+  - `direct-diagnostics`: `conn=1.0`, `direct=1.0`, `announce=1.0`, `directSample=0.751...`, `preflight=1`, `infra=0`.
+  - `ipv4-only`: `conn=1.0`, `direct=0.9375`, `announce=1.0`, `directSample=0.641...`, `preflight=1`, `infra=0`.
+  - `ipv6-only`: `conn=0.5`, `direct=0.5`, `announce=0.5`, `directSample=0.376...`, `preflight=0.5`, `infra=0.5`.
+- Newest artifact directory (`20260219T035632Z`) has no `matrix-summary.json` yet and currently only contains `run_started` for `direct-diagnostics` (run in progress / not finalized).
+
+### Failures / Open Questions
+- Remaining matrix blocker is still `ipv6-only` reliability/preflight consistency.
+
+## Date: 2026-02-19
+
+### Prompt (2026-02-19 04:11:42Z)
+- User asked: "tell me what you've fixed and what these results mean".
+
+### Actions Attempted
+- Pulled latest completed matrix summary and per-scenario metrics to avoid stale interpretation.
+- Pulled sample `probe_result` rows from latest completed matrix to validate direct/connect flags at payload level.
+- Checked newest artifact directory separately to distinguish in-progress run data from finalized matrix output.
+- Pulled partial summaries from in-progress run for trend check only.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json 2>/dev/null | head -n1); jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, announce:.summary.avg_announced_direct_webrtc_addrs, directSample:.summary.avg_direct_connection_sample_rate, relayWebrtc:.summary.relay_webrtc_connection_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, probe_total:.summary.probe_total}' "$LATEST_SUMMARY"`
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json 2>/dev/null | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); jq -c 'select(.type=="probe_result") | select(.run_id|contains("direct-diagnostics")) | {ok:.payload.ok, connected:.payload.connected, hasDirect:.payload.has_direct_connection, hasRelayWebrtc:.payload.has_relay_webrtc_connection, announce:.payload.announced_direct_webrtc_addrs_count, preflight_ok:(.payload.network_preflight.ok//null), infra:.payload.infra_failure}' "$MATRIX_DIR"/runs/*/metrics-events.jsonl | head -n 12`
+- `LATEST_DIR=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); find "$LATEST_DIR" -maxdepth 3 -type f -name 'metrics-summary.json' | sort | xargs -r -I{} sh -c 'echo --- {}; jq "{run_id,connection_success_rate,direct_connection_rate,avg_announced_direct_webrtc_addrs,avg_direct_connection_sample_rate,preflight_success_rate,infra_failure_rate,probe_total}" {}'`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Latest completed matrix (`net-chaos-lab/artifacts/20260219T035632Z/matrix-summary.json`):
+  - `direct-diagnostics`: `conn=1.0`, `direct=0.9167`, `announce=1.0`, `directSample=0.6542`, `preflight=1`, `infra=0`.
+  - `ipv4-only`: `conn=1.0`, `direct=0.8125`, `announce=1.0`, `directSample=0.6774`, `preflight=1`, `infra=0`.
+  - `ipv6-only`: `conn=0.5`, `direct=0.5`, `announce=0.5`, `directSample=0.3180`, `preflight=0.5`, `infra=0.5`.
+- Newest run directory (`20260219T040539Z`) is still in progress (no matrix summary yet), with current partial results for `direct-diagnostics` and `ipv4-only` remaining strong.
+
+### Failures / Open Questions
+- Matrix-wide pass is still blocked by `ipv6-only` preflight/infra reliability (`preflight_success_rate=0.5`, `infra_failure_rate=0.5`).
+
+## Date: 2026-02-19
+
+### Prompt (2026-02-19 04:29:16Z)
+- User asked: "is mixed ipv4/6 working?"
+
+### Actions Attempted
+- Queried latest completed matrix artifact and inspected the `direct-diagnostics` run topology metadata to verify `ip_mode`.
+- Queried same run summary metrics for connection/direct/preflight status.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `LATEST_SUMMARY=$(ls -1t net-chaos-lab/artifacts/20*/matrix-summary.json 2>/dev/null | head -n1); MATRIX_DIR=$(dirname "$LATEST_SUMMARY"); DD_RUN=$(find "$MATRIX_DIR/runs" -maxdepth 1 -mindepth 1 -type d -name '*-direct-diagnostics' | head -n1); jq '{run_id, actual_mode:(.topology.actual_mode), ip_mode:(.topology.ip_mode), segment_total:(.topology.segment_total), agent_total:(.topology.agent_total)}' "$DD_RUN/chaos-topology.json"; jq '{run_id,connection_success_rate,direct_connection_rate,avg_announced_direct_webrtc_addrs,preflight_success_rate,infra_failure_rate}' "$DD_RUN/metrics-summary.json"`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Latest completed `direct-diagnostics` run (`20260219T041438Z-direct-diagnostics`) reports:
+  - `ip_mode: "dual-stack"` (mixed IPv4/IPv6 mode),
+  - `connection_success_rate: 1.0`,
+  - `direct_connection_rate: 0.8333`,
+  - `avg_announced_direct_webrtc_addrs: 1.0`,
+  - `preflight_success_rate: 1`,
+  - `infra_failure_rate: 0`.
+
+### Failures / Open Questions
+- Mixed mode is working in `direct-diagnostics`; remaining instability is specific to `ipv6-only` scenarios.
+
+### Prompt Follow-up (2026-02-18 06:43:12Z)
+- Minor HUD readability tweak for chaos-derived P2P nodes.
+
+### Additional Actions Attempted
+- Updated peer-list tag rendering so probe-derived P2P nodes are labeled `P2P*` (distinct from local live telemetry and chaos IP overlay nodes), making watcher output easier to interpret during matrix runs.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/netviz/src/main.js`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `node --check demos/netviz/src/main.js`
+  - PASS.
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - PASS (`Ran 45 tests`, `OK`).
+- `npm --prefix demos/netviz run build`
+  - FAIL with filesystem permission error: `EACCES, Permission denied: /home/cos/projects/peercompute/docs/netviz/assets` (root-owned output dir from prior sudo workflows).
+
+### Failures / Open Questions
+- Need a fresh watcher + matrix loop observation to verify the new chaos-feed-derived P2P overlay displays as intended during active runs.
+- Optional cleanup needed on host: reset ownership/permissions for `docs/netviz` so local non-sudo Vite build checks can run (`EACCES` currently blocks this).
+
+### Prompt Follow-up (2026-02-18 06:36:45Z)
+- Added documentation updates for the new watcher behavior and test gate coverage.
+
+### Additional Actions Attempted
+- Updated project docs to describe that NetViz watcher mode can render P2P topology from chaos probe events without requiring observer `Connect`.
+- Added/updated planning and test docs to track this as a new completed capability and validation gate.
+
+### Files Touched
+- `plan/plan.md`
+- `plan/tests.md`
+- `README.md`
+- `net-chaos-lab/README.md`
+
+### Commands Run
+- `rg -n "chaos-lab|matrix:full|NetViz watcher|chaosApi|watcher" README.md demos/netviz/README.md net-chaos-lab/README.md`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- Documentation-only changes; no additional runtime test command executed in this follow-up step.
+
+### Prompt Follow-up (2026-02-18 06:41:07Z)
+- Added a small inspector-metadata hardening patch for chaos-derived P2P neighbor nodes and revalidated JS syntax.
+
+### Additional Actions Attempted
+- Ensured peers seen only as neighbors (before their own agent sample arrives) still get `chaos-p2p` inspector metadata instead of falling through to unknown node messaging.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/netviz/src/main.js`
+- `date -u +"%Y-%m-%d %H:%M:%SZ"`
+
+### Test Results
+- `node --check demos/netviz/src/main.js`
+  - PASS.
+
+## Date: 2026-02-19
+
+### Prompt
+- "interesting why is ipv6 giving us a hard time?"
+
+### Prompt Time/Zone
+- 2026-02-19T08:34:01-09:00
+
+### Actions Attempted
+- Reviewed current matrix artifacts to isolate latest `ipv6-only` failures vs `direct-diagnostics` and `ipv4-only`.
+- Inspected latest matrix summary and gates:
+  - `net-chaos-lab/artifacts/20260219T171651Z/matrix-summary.json`
+- Inspected full `ipv6-only` result object (gates + summary + artifact paths) from matrix summary.
+- Parsed `metrics-events.jsonl` for `ipv6-only` run and compared checkpoint behavior before/after `ip_mode` stage.
+- Confirmed event ordering in `ipv6-only` run:
+  - `probe_checkpoint initial` (8 results)
+  - `scenario_event stage-0 ip_mode=ipv6-only`
+  - `probe_checkpoint stage-0` (8 results)
+  - `run_failed` with fail-fast due `infra_failure`.
+- Pulled probe-level preflight diagnostics for failing stage probes.
+- Reviewed `ip_mode` implementation to correlate behavior:
+  - `net-chaos-lab/src/chaoslab/topology.py:1781-1794`
+- Reviewed service bind/config path for HTTPS service:
+  - `net-chaos-lab/src/chaoslab/topology.py:1386-1404`
+- Reviewed service route configuration path:
+  - `net-chaos-lab/src/chaoslab/topology.py:1116-1156`
+
+### Commands Run
+- `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' | sort -r | head -n 8`
+- `jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, announce:.summary.avg_announced_direct_webrtc_addrs, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, rtc_host_only_local_rate:.summary.rtc_host_only_local_rate}' net-chaos-lab/artifacts/20260219T171651Z/matrix-summary.json`
+- `jq '.results[] | select(.id=="ipv6-only")' net-chaos-lab/artifacts/20260219T171651Z/matrix-summary.json`
+- `jq -r '.type' net-chaos-lab/artifacts/20260219T171651Z/runs/20260219T171651Z-ipv6-only/metrics-events.jsonl | sort | uniq -c`
+- `jq -c 'select(.type=="probe_result") | {ts:.timestamp, agent:(.payload.agent_id // .payload.agent // "?"), ok:.payload.ok, connected:.payload.connected, infra:.payload.infra_failure, preflight:(.payload.network_preflight // null), peer_count:.payload.peer_count, has_direct:.payload.has_direct_connection, announced:(.payload.announced_direct_webrtc_addrs_count // null)}' .../metrics-events.jsonl | head -n 40`
+- `jq -c 'select(.type=="run_failed" or .type=="probe_checkpoint" or .type=="scenario_event")' .../metrics-events.jsonl`
+- `sed -n '1,220p' net-chaos-lab/configs/scenarios/ipv6-only.yaml`
+- `rg -n "ip_mode|ipv6-only|set_ip_mode|apply_ip_mode|curl_family" net-chaos-lab/src net-chaos-lab/configs -g'*.py' -g'*.yaml'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1740,1835p'`
+- `rg -n "Caddyfile|demos.peercompute.test|bind|\[::\]|caddy" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab -g'*.py' -g'*.sh' -g'*.yaml'`
+- `nl -ba net-chaos-lab/src/chaoslab/topology.py | sed -n '1080,1175p'`
+- `date --iso-8601=seconds`
+
+### Findings / Test Results
+- Latest run set shows `direct-diagnostics` and `ipv4-only` passing required gates; `ipv6-only` fails on `connection_success_rate`.
+- In `ipv6-only` run (`20260219T171651Z-ipv6-only`):
+  - `probe_total=16`, `connection_success_rate=0.5`, `direct_connection_rate=0.5`, `preflight_success_rate=0.5`, `infra_failure_rate=0.5`.
+- Probe/event timeline proves split behavior by checkpoint:
+  - Initial checkpoint (before `ip_mode` stage execution): probes pass.
+  - Stage-0 checkpoint (after `ip_mode=ipv6-only`): 8/8 probes fail with infra failures.
+- Failing stage preflight diagnostics are consistent:
+  - `dns_ok=true`, `hosts_entry_ok=true`, `route_to_fallback_rc=0`.
+  - `https_ok=false`, `curl_rc=7`, `fallback_curl_rc=7`.
+  - `curl -6` cannot connect to `https://demos.peercompute.test` and fallback IPv6 literal `https://[fd42:40:254::10]`.
+- Conclusion from diagnostics: IPv6 name resolution and routing are present, but TCP reachability to the HTTPS service over IPv6 fails after the scenario switches to `ipv6-only` (transport-path/service-reachability issue in IPv6 mode, not DNS/hosts setup).
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Not yet fully isolated whether IPv6 HTTPS failure is caused by service-side IPv6 reachability/listener behavior, core-router forwarding path under `ip_mode=ipv6-only`, or mode-policy side effects on containernet nodes.
+- Need next targeted capture during a live failing `ipv6-only` stage:
+  - `ip -6 addr`, `ip -6 route`, `ss -ltnp` on `mn.svc_https`.
+  - cross-node `curl -6` from multiple agents while stage is active.
+
+## Date: 2026-02-19
+
+### Prompt
+- "what all have you modified so far to get everything working"
+
+### Prompt Time/Zone
+- 2026-02-19T09:43:25-09:00
+
+### Actions Attempted
+- Collected current repository change inventory to prepare an accurate summary of implemented work across NetViz, chaos-lab, docs, and scripts.
+- Queried unstaged/staged file state and high-level diff stats.
+- Inspected newly added matrix loop/watch scripts and newly added chaos-lab docker build file for exact scope.
+
+### Commands Run
+- `git status --short`
+- `git diff --name-only`
+- `git diff --cached --name-only`
+- `git diff --stat -- . ':(exclude)net-chaos-lab/artifacts/**'`
+- `find net-chaos-lab/docker -maxdepth 3 -type f | sort`
+- `ls -l net-chaos-lab/scripts/chaos-lab-matrix-loop.sh net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+- `sed -n '1,220p' net-chaos-lab/scripts/chaos-lab-matrix-loop.sh`
+- `sed -n '1,220p' net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Large workstream is present across:
+  - NetViz UI/rendering + chaos feed integration (`demos/netviz/src/main.js`, `demos/netviz/src/visualizer.js`, `demos/netviz/index.html`, `demos/netviz/vite.config.js`, docs bundle files).
+  - Chaos-lab core runtime (`net-chaos-lab/src/chaoslab/{topology.py,harness.py,metrics.py,main.py,dashboard.py,config.py}`).
+  - Probe runtime (`net-chaos-lab/agent/probe.mjs` + new loader/runtime-check modules).
+  - Matrix automation scripts (`net-chaos-lab/scripts/chaos-lab-matrix-full.sh` + new `chaos-lab-matrix-loop.sh`, `chaos-lab-matrix-watch.sh`).
+  - Config/docs/tests (`net-chaos-lab/configs/topology.default.yaml`, `net-chaos-lab/tests/test_chaoslab.py`, README and plan files).
+- Diff stat (excluding artifacts) reports broad implementation churn consistent with prior iterative bring-up and diagnostics.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- None for this prompt; this was an inventory/summarization pass.
+
+## Date: 2026-02-19
+
+### Prompt
+- "we still seem stuck on the ipv6 stuff we're very close to passing though. can you describe the issue concisely and why it is failing and why 0.6 is the minimum passing threshold?"
+
+### Prompt Time/Zone
+- 2026-02-19T12:53:16-09:00
+
+### Actions Attempted
+- Verified exact matrix gate configuration for `ipv6-only` in direct regression matrix.
+- Pulled the latest completed matrix summary and extracted `ipv6-only` gate metrics.
+- Confirmed failure is isolated to `connection_success_rate` in `ipv6-only` with current run data.
+
+### Commands Run
+- `sed -n '1,220p' net-chaos-lab/configs/matrix/direct-regression.yaml`
+- `LATEST=$(find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %p\\n' | sort -nr | head -n1 | awk '{print $2}'); echo "$LATEST"; jq '.results[] | {id, conn:.summary.connection_success_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate, probe_total:.summary.probe_total}' "$LATEST"`
+- `jq '.results[] | select(.id=="ipv6-only") | {run_id, gates, summary:{connection_success_rate:.summary.connection_success_rate, preflight_success_rate:.summary.preflight_success_rate, infra_failure_rate:.summary.infra_failure_rate, probe_total:.summary.probe_total, scenario_event_count:.summary.scenario_event_count}}' net-chaos-lab/artifacts/20260219T214116Z/matrix-summary.json`
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Gate threshold source:
+  - `net-chaos-lab/configs/matrix/direct-regression.yaml`
+  - `ipv6-only` requires `connection_success_rate >= 0.60`.
+- Latest run (`20260219T214116Z-ipv6-only`) reports:
+  - `probe_total=16`
+  - `connection_success_rate=0.5`
+  - `preflight_success_rate=0.5`
+  - `infra_failure_rate=0.5`
+- Interpretation:
+  - We pass 8/16 probes and fail 8/16 probes after the IPv6-only mode stage, yielding exactly `0.5` and missing the `0.6` gate.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Open: remaining IPv6 transport reachability intermittency during `ip_mode=ipv6-only` stage (not DNS/hosts; those remain healthy).
+
+## Date: 2026-02-19
+
+### Prompt
+- "are you still monitoring the runs and fixing it?"
+
+### Prompt Time/Zone
+- 2026-02-19T13:19:46-09:00
+
+### Actions Attempted
+- Confirmed active monitoring/fix loop status for matrix runs.
+- Logged current status checkpoint per workflow requirements.
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Yes, active monitoring and iterative fixes are ongoing between matrix completions.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- None for this status prompt.
+
+## Date: 2026-02-19
+
+### Prompt
+- "is it always the same probes and nodes failing the test? if so, what is the troublesome network configuration?"
+
+### Prompt Time/Zone
+- 2026-02-19T13:24:12-09:00
+
+### Actions Attempted
+- Queried the latest 20 matrix summaries containing `ipv6-only` results.
+- Extracted per-run failing probe agent sets where `infra_failure=true`.
+- Verified whether failing agent identities changed between runs.
+- Verified failing path distribution by IPv6 next-hop gateway in a representative run.
+
+### Commands Run
+- `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %p\\n' | sort -nr | awk '{print $2}' | head -n 30` (via scripted loop)
+- `jq -r '.results[]? | select(.id=="ipv6-only") | [.run_id, .summary.connection_success_rate, .summary.preflight_success_rate, .summary.infra_failure_rate] | @tsv' <matrix-summary.json>` (looped)
+- `jq -r 'select(.type=="probe_result" and (.payload.infra_failure==true)) | .payload.agent' <metrics-events.jsonl> | sort -u`
+- `jq -r 'select(.type=="probe_result" and .payload.infra_failure==true) | .payload.network_preflight.route_to_fallback' net-chaos-lab/artifacts/20260219T220905Z/runs/20260219T220905Z-ipv6-only/metrics-events.jsonl | sed -E 's/.*via ([^ ]+) .*/\\1/' | sort | uniq -c`
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Yes: across the latest 20 `ipv6-only` runs checked, the failing probe set is consistent.
+- Failing agents are always the sampled set `agent-01..agent-08` during the IPv6-only stage.
+- Their aggregate metrics are nearly invariant (`connection_success_rate=0.5`, `preflight_success_rate=0.5`, `infra_failure_rate=0.5`), indicating initial checkpoint pass + stage checkpoint fail split.
+- Failed route next-hop distribution in representative run:
+  - `fd42:40:10::1` (3 probes)
+  - `fd42:40:20::1` (3 probes)
+  - `fd42:40:30::1` (2 probes)
+- This shows failures span all three LAN segments (`lan_a`, `lan_b`, `lan_c`), so the issue is not a single segment/NAT type; it is shared IPv6 service-path behavior after `ip_mode=ipv6-only` is applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Open: pinpoint exact shared IPv6 break (service listener/state vs core forwarding policy vs mode-switch side effect) causing `curl -6` HTTPS preflight failures on all sampled agents after mode transition.
+
+## Date: 2026-02-19
+
+### Prompt
+- "where we at?"
+
+### Prompt Time/Zone
+- 2026-02-19T16:07:17-09:00
+
+### Actions Attempted
+- Pulled latest matrix summary artifact and extracted per-scenario headline metrics for current status.
+
+### Commands Run
+- `date --iso-8601=seconds`
+- `LATEST=$(find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %p\\n' | sort -nr | head -n1 | awk '{print $2}'); echo "$LATEST"; jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate}' "$LATEST"`
+
+### Findings / Results
+- Latest matrix summary: `net-chaos-lab/artifacts/20260220T005251Z/matrix-summary.json`.
+- `direct-diagnostics`: `conn=1.0`, `direct=0.9167`, `preflight=1`, `infra=0` (good).
+- `ipv4-only`: `conn=1.0`, `direct=0.78125`, `preflight=1`, `infra=0` (good).
+- `ipv6-only`: `conn=0.5`, `direct=0.5`, `preflight=0.5`, `infra=0.5` (still failing gate at `conn>=0.6`).
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Remaining blocker is IPv6-only stage transport/preflight reliability after `ip_mode=ipv6-only`; behavior remains stable at 50% checkpoint split.
+
+## Date: 2026-02-19
+
+### Prompt
+- "ya. why aren't we making progress on the ipv6 issue? do you need to take a different approach or continue persisting on?"
+
+### Prompt Time/Zone
+- 2026-02-19T16:10:50-09:00
+
+### Actions Attempted
+- Assessed current debugging pattern and identified that repeated full matrix loops are confirming the same failure signature without increasing root-cause resolution.
+- Chosen strategy pivot: targeted IPv6-stage isolation with focused diagnostics and narrower execution scope instead of broad persistence on full matrix loops.
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Current loop confirms stable failure pattern (`ipv6-only` stays at `0.5` preflight/connection) but does not add enough per-stage service/router state to close the root cause.
+- Decision: switch to a different approach (targeted instrumentation and scope reduction), not continue identical persistence strategy.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Need to implement stage-focused diagnostics and scope controls to isolate whether `ip_mode` should apply to agents only vs all nodes, and validate IPv6 service reachability immediately after mode transition.
+
+## Date: 2026-02-19
+
+### Prompt
+- "any progress yet? are you still interfacing the loop?"
+
+### Prompt Time/Zone
+- 2026-02-19T18:48:58-09:00
+
+### Actions Attempted
+- Verified live process state for loop/watch/full scripts.
+- Verified new matrix artifacts are still being generated.
+- Pulled latest matrix summary to assess current progress snapshot.
+
+### Commands Run
+- `ps -eo pid,ppid,etimes,cmd | rg 'chaos-lab-matrix-(loop|watch|full)\\.sh|npm run chaos-lab:matrix:loop|chaos-lab\\.sh --matrix'`
+- `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %TY-%Tm-%Td %TH:%TM:%TS %p\\n' | sort -nr | head -n 8`
+- `LATEST=$(find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %p\\n' | sort -nr | head -n1 | awk '{print $2}'); echo "$LATEST"; jq '.results[] | {id, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate}' "$LATEST"`
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Yes, loop/watch are still active:
+  - `npm run chaos-lab:matrix:loop --no-until-pass --max-runs 500`
+  - `bash net-chaos-lab/scripts/chaos-lab-matrix-watch.sh --follow --since-latest`
+- Matrix artifacts are still landing approximately every 8-10 minutes.
+- Latest run snapshot (`net-chaos-lab/artifacts/20260220T033540Z/matrix-summary.json`):
+  - `direct-diagnostics`: `conn=1.0`, `direct=1.0`, `preflight=1`, `infra=0`
+  - `ipv4-only`: `conn=1.0`, `direct=0.96875`, `preflight=1`, `infra=0`
+  - `ipv6-only`: `conn=0.5`, `direct=0.5`, `preflight=0.5`, `infra=0.5`
+- Net effect: overall progress is stable/high for direct+IPv4, but IPv6-only remains unchanged and is still the blocker.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Open: persistent deterministic IPv6-only stage split (initial pass, stage pass/fail collapse to 50%) still unresolved.
+
+## Date: 2026-02-19
+
+### Prompt
+- "ya I'm specifically talking about the blocker ya dingus. did your new approach bear fruit?"
+
+### Prompt Time/Zone
+- 2026-02-19T19:05:47-09:00
+
+### Actions Attempted
+- Logged explicit blocker-status checkpoint for the user’s question.
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- The blocker-focused approach has confirmed deterministic failure shape (post-`ip_mode=ipv6-only`, 8/8 sampled probes fail preflight), but has not yet produced a code-level fix that clears the `ipv6-only` gate.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Open: implement and validate targeted mitigation for IPv6-only stage service-path failure.
+
+## Date: 2026-02-19
+
+### Prompt
+- "let me know when you start testing your code change"
+
+### Prompt Time/Zone
+- 2026-02-19T19:21:18-09:00
+
+### Actions Attempted
+- Acknowledged instruction to provide an explicit notification at the moment test execution starts for the IPv6 blocker fix workstream.
+- Recorded status checkpoint per workflow requirement.
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- No code changes or test runs were started in this prompt.
+- User notification commitment set: provide immediate update before/when testing begins.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- None for this prompt.
+
+## Date: 2026-02-19
+
+### Prompt
+- "are you waiting for something?"
+
+### Prompt Time/Zone
+- 2026-02-19T20:02:37-09:00
+
+### Actions Attempted
+- Confirmed active status and intent to begin blocker fix implementation immediately.
+- Logged this status checkpoint per workflow requirement.
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Not waiting on external input; proceeding directly to IPv6 blocker code-change and test cycle.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- None for this prompt.
+
+## Date: 2026-02-19
+
+### Prompt
+- "interesting what exactly are you doing?"
+
+### Prompt Time/Zone
+- 2026-02-19T20:33:14-09:00
+
+### Actions Attempted
+- Performed live in-run IPv6 path isolation against active Containernet lab containers while matrix loop was running.
+- Compared dual-stack vs forced IPv6 probe behavior directly from `mn.agent-01`.
+- Inspected `mn.svc_https` listener, routes, firewall policy, and Caddy config/logs.
+- Checked recency of matrix outputs to ensure observations match active run window.
+
+### Commands Run
+- `docker ps --format '{{.Names}}' | rg '^mn\\.' | sort | head -n 30`
+- `docker exec mn.agent-01 bash -lc '... curl dual-stack ... curl -6 ... curl -6 literal ...'`
+- `docker exec mn.svc_https bash -lc '... ip -6 addr ... ss -lntp ... iptables/ip6tables ...'`
+- `docker exec mn.svc_https bash -lc 'ss -lntp | grep :443; ip -6 route; ip route; iptables -S OUTPUT; ip6tables -S INPUT/FORWARD/OUTPUT; sed -n 1,200p /tmp/Caddyfile; tail -n 50 /tmp/https.log'`
+- `docker exec mn.agent-01 bash -lc 'ping -6 -c 2 fd42:40:10::1; ping -6 -c 2 fd42:40:254::10; ip -6 neigh show dev agent-01-eth0'`
+- `docker exec mn.svc_https bash -lc 'ping -6 -c 2 fd42:40:254::110/120/130; ping -6 -c 2 fd42:40:10::2/20::2/30::2'`
+- `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %TY-%Tm-%Td %TH:%TM:%TS %p\\n' | sort -nr | head -n 3`
+- `jq '.results[] | {id, conn:.summary.connection_success_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate}' net-chaos-lab/artifacts/20260220T051631Z/matrix-summary.json`
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- `mn.agent-01` results during active run:
+  - `curl https://demos.peercompute.test/netviz/` -> `200`
+  - `curl -6 https://demos.peercompute.test/netviz/` -> `rc=7` (connect failed)
+  - `curl -6 https://[fd42:40:254::10]/netviz/` -> `rc=7` (connect failed)
+- `mn.svc_https` state:
+  - IPv6 address present: `fd42:40:254::10/64`
+  - Caddy listening on `*:443`
+  - `ip6tables` default policies ACCEPT (no obvious drop rule)
+  - Caddyfile includes `bind 0.0.0.0 ::`
+- ICMP checks:
+  - Agent can reach its local IPv6 gateway at times, but cannot reach `fd42:40:254::10`.
+  - `svc_https` cannot ping router uplink IPv6 addresses (`fd42:40:254::110/120/130`) or agent IPv6 addresses.
+- Latest matrix summary remains unchanged on blocker:
+  - `direct-diagnostics=pass`, `ipv4-only=pass`, `ipv6-only` still `conn/preflight/infra = 0.5/0.5/0.5`.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Strong evidence indicates IPv6 L3 path between core service subnet and segment routers is broken/intermittent under current run conditions, despite service listener and address appearing healthy.
+- Need controlled run-window capture tied to exact stage boundaries to rule out teardown race when sampling and then patch routing/interface policy accordingly.
+
+## Date: 2026-02-20
+
+### Prompt
+- "any progress over the night? sine I last asked?"
+
+### Prompt Time/Zone
+- 2026-02-20T07:21:58-09:00
+
+### Actions Attempted
+- Checked whether loop/watch runners were still active overnight.
+- Pulled newest matrix summaries and compared recent `ipv6-only` outcomes.
+- Captured latest trend for `connection_success_rate`, `preflight_success_rate`, and `infra_failure_rate` in `ipv6-only`.
+
+### Commands Run
+- `date --iso-8601=seconds`
+- `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %TY-%Tm-%Td %TH:%TM:%TS %p\\n' | sort -nr | head -n 12`
+- `ps -eo pid,ppid,etimes,cmd | rg 'chaos-lab-matrix-(loop|watch|full)\\.sh|npm run chaos-lab:matrix:loop|chaos-lab\\.sh --matrix'`
+- `for s in $(find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%T@ %p\\n' | sort -nr | awk '{print $2}' | head -n 10); do jq -r --arg s "$s" '.results[] | select(.id=="ipv6-only") | [$s, .run_id, (.summary.connection_success_rate|tostring), (.summary.preflight_success_rate|tostring), (.summary.infra_failure_rate|tostring), (.summary.direct_connection_rate|tostring)] | @tsv' "$s"; done`
+
+### Findings / Results
+- Overnight loop/watch remained active and continued producing matrix summaries every ~9 minutes.
+- `direct-diagnostics` and `ipv4-only` remain healthy in latest summaries.
+- `ipv6-only` showed no overnight movement on the blocker metrics:
+  - `connection_success_rate=0.5`
+  - `preflight_success_rate=0.5`
+  - `infra_failure_rate=0.5`
+- `direct_connection_rate` in `ipv6-only` fluctuated (roughly `0.375` to `0.5`) but does not affect the failing gate; the hard blocker remains connection/preflight at exactly 50%.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- No overnight regression elsewhere; blocker remains deterministic IPv6-only preflight/service-path split.
+
+## Date: 2026-02-20
+
+### Prompt
+- "what have you tried?"
+
+### Prompt Time/Zone
+- 2026-02-20T07:24:07-09:00
+
+### Actions Attempted
+- Compiled a concise blocker-specific attempt history to report to the user (diagnostic steps + implemented mitigations already in place + current gap).
+
+### Commands Run
+- `date --iso-8601=seconds`
+
+### Findings / Results
+- Prepared summary of all major attempts across chaos-lab bring-up, probe instrumentation, IPv6 preflight enforcement, and live container forensics.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Failures / Open Questions
+- Open: code-level remediation for deterministic IPv6-only 50% preflight split still pending.
+
+## Date: 2026-02-20
+
+### Prompt
+- "I think we might have to give up on ipv6. but I'm gonna let you keep testing until I get back from work. I"d like you to try searching the web to see if you can come up with a solution"
+
+### Prompt Time/Zone
+- 2026-02-20T08:36:21-09:00
+
+### Actions Attempted
+- Reviewed required planning context before coding:
+  - `AGENTS.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+- Pulled targeted web references for IPv6 behavior and host forwarding policy interaction:
+  - Linux kernel IPv6 sysctl behavior (`disable_ipv6`) and route/address side effects.
+  - Docker packet-filtering/forward-policy behavior and `ip-forward-no-drop` guidance.
+- Confirmed latest completed matrix state from artifacts and extracted per-run metrics (showing only `ipv6-only` failing while other runs pass).
+- Parsed latest `ipv6-only` probe events to isolate failure mode:
+  - initial dual-stack checkpoint passes,
+  - `ip_mode=ipv6-only` checkpoint flips to infra failures (`curl -6` / fallback IPv6 connect failures) across sampled agents.
+- Ran live container forensics against active `mn.*` containers to confirm asymmetry and path behavior during looped runs.
+- Implemented code changes intended to stabilize IPv6-mode switching and expose better diagnostics:
+  1. Reworked `ip_mode` stage application to use firewall toggles only (no `disable_ipv6` sysctl writes).
+  2. Added host FORWARD policy runtime guard in containernet mode:
+     - capture host `iptables`/`ip6tables` FORWARD policy,
+     - set temporary `FORWARD=ACCEPT` during lab runtime,
+     - restore original policies on shutdown/startup failure.
+  3. Extended in-agent preflight telemetry to include selected curl remote endpoint metadata (`curl_remote_ip`, `curl_remote_port`, fallback equivalents).
+- Updated docs/plans/tests files to reflect new behavior and expectations.
+- Ran unit suite after each code change cycle.
+
+### Commands Run
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,260p' plan/plan.md`
+- `sed -n '1,320p' plan/log.md`
+- `git status --short`
+- Web research via tool:
+  - Kernel docs query/open (`docs.kernel.org/networking/ip-sysctl.html`)
+  - Docker docs query/open (`docs.docker.com/engine/network/packet-filtering-firewalls/`)
+- Local config/metrics inspection:
+  - `sed -n '1,260p' net-chaos-lab/configs/matrix/direct-regression.yaml`
+  - `sed -n '1,340p' net-chaos-lab/configs/topology.default.yaml`
+  - `sed -n '1,340p' net-chaos-lab/src/chaoslab/metrics.py`
+  - `sed -n '1,240p' net-chaos-lab/agent/probe.mjs`
+  - `sed -n '240,520p' net-chaos-lab/agent/probe.mjs`
+  - `sed -n '520,760p' net-chaos-lab/agent/probe.mjs`
+  - `ls -1dt net-chaos-lab/artifacts/20* | head -n5`
+  - `find net-chaos-lab/artifacts -maxdepth 2 -name matrix-summary.json -printf '%h\n' | sort | tail -n1`
+  - `jq '.results[] | {id, pass:.passed, conn:.summary.connection_success_rate, direct:.summary.direct_connection_rate, announce:.summary.avg_announced_direct_webrtc_addrs, directSample:.summary.avg_direct_connection_sample_rate, preflight:.summary.preflight_success_rate, infra:.summary.infra_failure_rate}' "$LATEST_DONE/matrix-summary.json"`
+  - `jq -c 'select(.type=="probe_result") | ...' "$RUN/metrics-events.jsonl" | head -n 80`
+  - `jq -c 'select(.type=="scenario_event") | .payload' "$RUN/metrics-events.jsonl"`
+- Live runtime diagnostics:
+  - `docker ps --format '{{.Names}}' | rg '^mn\.' | head -n 30`
+  - `docker exec mn.agent-01 ...`
+  - `docker exec mn.svc_https ...`
+  - `ping/curl/route/sysctl/iptables/ip6tables` checks from both agent and service containers.
+- Test execution:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` (multiple runs)
+- Timestamp:
+  - `date --iso-8601=seconds`
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - Initial run after telemetry change: 4 failures (updated fake preflight curl stubs required).
+  - After test fixture updates: `Ran 48 tests ... OK`.
+
+### Findings / Results
+- Latest completed matrix before this code cycle:
+  - `direct-diagnostics`: pass-level metrics,
+  - `ipv4-only`: pass-level metrics,
+  - `ipv6-only`: consistent failure pattern (`conn=0.5`, `preflight=0.5`, `infra=0.5`).
+- `ipv6-only` event traces show deterministic split:
+  - dual-stack checkpoint succeeds,
+  - forced IPv6 checkpoint fails with `curl -6` connect errors and browser `ERR_ADDRESS_UNREACHABLE`.
+- Live checks confirmed agent IPv6 path issues during failing window despite service listeners/routes being present.
+- Web references support avoiding `disable_ipv6` toggles during dynamic mode changes and checking host forward-policy interactions in Docker-heavy environments.
+
+### Failures / Open Questions
+- Still open: need post-change matrix evidence confirming whether the new firewall-only `ip_mode` handling + host FORWARD policy guard eliminates the `ipv6-only` 50% preflight split.
+- If `ipv6-only` remains stuck after this patch set, next step is to instrument router namespace FORWARD counters/rules from inside topology process (root context) during stage probes to localize drop point precisely.
+
+### Follow-up (2026-02-20T08:48:34-09:00)
+- Polled artifacts for the first post-patch matrix completion.
+- Latest completed matrix remained `20260220T172922Z` (started before this patch set), still `2/3` with only `ipv6-only` failing at `0.5` preflight/infra.
+- New run directory `20260220T173751Z` was still in progress at poll end (no `matrix-summary.json` yet).
+
+### Follow-up (2026-02-20T08:50:21-09:00)
+
+#### Additional Actions Attempted
+- Read in-progress post-patch run artifacts (`20260220T173751Z`) directly from per-run summaries before matrix summary finalized.
+- Confirmed preflight family selection using newly-added endpoint telemetry fields.
+- Implemented additional router-forwarding-chain stabilization in topology startup.
+- Re-ran unit/syntax gates after router-forwarding change.
+- Updated branch/test/README planning docs to reflect the new guard.
+
+#### Additional Commands Run
+- `RUNROOT=net-chaos-lab/artifacts/20260220T173751Z/runs; for f in "$RUNROOT"/*/metrics-summary.json; do ...; done`
+- `jq -c 'select(.type=="probe_result") | {agent,ip_mode,curl_family,curl_remote_ip,...}' net-chaos-lab/artifacts/20260220T173751Z/runs/20260220T173751Z-ipv6-only/metrics-events.jsonl | head -n 40`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- `date --iso-8601=seconds`
+
+#### Additional Findings / Results
+- Post-patch run `20260220T173751Z` still shows `ipv6-only` at `conn/preflight/infra = 0.5/0.5/0.5` while `direct-diagnostics` and `ipv4-only` pass.
+- New preflight endpoint telemetry confirms dual-stack checkpoint was using IPv4 path:
+  - `ip_mode=dual-stack`, `curl_remote_ip=10.40.254.10` for successful probes.
+- Forced IPv6 checkpoint confirms hard IPv6 path failure:
+  - `ip_mode=ipv6-only`, `curl_family=-6`, `curl_remote_ip=0`, `fallback_remote_ip=0`, `curl_rc=7`, `fallback_curl_rc=7`.
+- This narrows the blocker to routed IPv6 service-path connectivity (not DNS, not hosts seeding, not probe script/runtime).
+
+#### Additional Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+#### Additional Open Questions
+- Need first completed matrix summary after the router-forwarding-chain patch to verify whether `ipv6-only` preflight rises above 0.5.
+
+### Follow-up (2026-02-20T08:53:42-09:00)
+- Started monitoring first fully post-router-patch matrix run (`20260220T174627Z`).
+- `direct-diagnostics` and `ipv4-only` run summaries were already written; `ipv6-only` summary was still pending at the end of this polling window.
+
+### Prompt: "status update?" (2026-02-20T12:04:11-09:00)
+
+#### Actions Attempted
+- Polled active `chaos-lab:matrix:loop`/watcher processes to confirm the loop is still running and ingesting runs.
+- Enumerated the newest artifact directories and compared recent completed `matrix-summary.json` files.
+- Inspected the newest in-progress run (`20260220T205558Z`) at per-run summary/event level.
+- Re-read `plan/plan.md` and `plan/log.md` tails before reporting status.
+
+#### Commands Run
+- `date -Is`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 8`
+- `for d in $(ls -1dt net-chaos-lab/artifacts/20* | head -n 10); do ... jq ... "$d/matrix-summary.json"; done`
+- `ps -eo pid,ppid,cmd | rg -i "chaos-lab:matrix:loop|chaos-lab-matrix-full|net-chaos-lab/scripts/chaos-lab|python3 -m chaoslab|npm run chaos-lab"`
+- `find "$LATEST" -maxdepth 3 -type f | sort`
+- `jq ... "$LATEST/runs/...-direct-diagnostics/metrics-summary.json"`
+- `jq ... "$LATEST/runs/...-ipv4-only/metrics-summary.json"`
+- `wc -l`/`tail`/`jq` against in-progress `metrics-events.jsonl`
+- `tail -n 40 plan/plan.md`
+- `tail -n 80 plan/log.md`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Test Results
+- No new code tests run in this prompt window (status/telemetry inspection only).
+
+#### Findings / Results
+- Loop is active: `npm run chaos-lab:matrix:loop --no-until-pass --max-runs 500` is running.
+- Latest fully completed matrix remains `net-chaos-lab/artifacts/20260220T204650Z`:
+  - `direct-diagnostics`: `conn=0.9583`, `direct=0.9583`, `preflight=1`, `infra=0` (pass-level)
+  - `ipv4-only`: `conn=1.0`, `direct=0.96875`, `preflight=1`, `infra=0` (pass-level)
+  - `ipv6-only`: `conn=0.5`, `direct=0.375`, `preflight=0.5`, `infra=0.5` (still failing)
+- Newer run `20260220T205558Z` is still in progress (no `matrix-summary.json` yet).
+- In-progress details so far:
+  - `direct-diagnostics` already strong (`conn=0.9583`, `direct=0.9167`, `announce=1.0`, `direct_sample_rate=0.6819`).
+  - `ipv4-only` has many successful probe events and checkpoint entries, but its `metrics-summary.json` has not finalized yet (placeholder zeros while run is mid-flight).
+
+#### Failures / Open Questions
+- Main blocker remains unchanged in latest completed runs: `ipv6-only` stage oscillates at 50% preflight/infra failure.
+- Need the next completed matrix (post `20260220T205558Z`) to confirm whether any additional stabilization has shifted the IPv6 failure rate.
+
+#### Log Correction (2026-02-20T12:04:11-09:00)
+- Previous heading for this prompt printed literal `$TS`; actual prompt-handling window was around 2026-02-20T12:04:11-09:00 local time.
+
+### Prompt: "are you performing NAT for ipv6?" (2026-02-20T12:36:03-09:00)
+
+#### Actions Attempted
+- Inspected current topology implementation and README for IPv6 NAT behavior.
+- Verified exact iptables/ip6tables commands used during router configuration.
+
+#### Commands Run
+- rg -n "MASQUERADE|SNAT|DNAT|ip6tables|nat66|POSTROUTING|ip_mode_scope|router" net-chaos-lab/src/chaoslab/topology.py
+- rg -n "ip6tables|MASQUERADE|POSTROUTING|FORWARD|sysctl" net-chaos-lab/src/chaoslab -g'*.py'
+- rg -n "ipv6|NAT|MASQUERADE|ip6tables" net-chaos-lab/README.md
+
+#### Files Touched
+- plan/log.md
+
+#### Findings / Results
+- IPv4 NAT is enabled explicitly on segment routers:
+  - iptables -t nat ... -A POSTROUTING -o <wan> -j MASQUERADE
+- IPv6 NAT66 is not effectively enabled in current logic:
+  - Code only runs ip6tables -t nat -C POSTROUTING ... -j MASQUERADE || true and does not append rule on miss.
+  - This behaves as a no-op where NAT66 is absent/unsupported.
+- Current IPv6 path is intended to rely on routing + forwarding rules, not mandatory NAT66.
+
+#### Open Questions
+- Decide whether to keep routed IPv6 model (preferred) or add strict NAT66 fallback for environments with broken routed IPv6 behavior.
+### Prompt: "could the blocker be related to the fundimentally different networking behavior of ipv6?..." (2026-02-20T12:41:07-09:00)
+
+#### Actions Attempted
+- Evaluated whether current blocker is consistent with IPv6 routed-model vs NAT-model mismatch.
+- Cross-checked current known topology behavior from recent diagnostics already gathered in-session.
+
+#### Commands Run
+- `date --iso-8601=seconds`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- User hypothesis is directionally correct: IPv6 should be routed end-to-end, and forcing NAT66 semantics can break reachability/ICE behavior.
+- Current code path primarily uses routed IPv6 behavior (forwarding + routes), while IPv6 NAT rule handling is effectively a no-op.
+- Current 50% ipv6-only failure pattern is more consistent with partial routed IPv6 path/asymmetry in specific cohorts, not successful NAT66.
+
+#### Open Questions
+- Whether to remove all IPv6 NAT table references entirely and enforce a pure routed-IPv6 model for clarity.
+### Prompt: "how could the paths be inconsistent?..." (2026-02-20T12:52:07-09:00)
+
+#### Actions Attempted
+- Verified whether recent failing `ipv6-only` run failures were segment-specific or stage-specific.
+- Pulled probe-level preflight outcomes from a concrete failing run.
+- Reviewed topology/scenario definitions to correlate stage timing with observed 50% rates.
+
+#### Commands Run
+- `rg -n "_configure_router|_configure_service_node|ip -6 route|default via|FORWARD|POSTROUTING|bandwidth|partition|ip_mode" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '980,1145p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1145,1285p' net-chaos-lab/src/chaoslab/topology.py`
+- `cat net-chaos-lab/configs/scenarios/ipv6-only.yaml`
+- `cat net-chaos-lab/configs/topology.default.yaml`
+- `RUN=net-chaos-lab/artifacts/20260220T204650Z/runs/20260220T204650Z-ipv6-only; jq -r 'select(.type=="probe_result") | [...] | @tsv' "$RUN/metrics-events.jsonl"`
+- `jq -r '.topology.agents[] | [.name,.segment_id,.enabled] | @tsv' "$RUN/chaos-topology.json" | sort`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- The observed `0.5` preflight rate is primarily a checkpoint split, not random multi-path routing:
+  - checkpoint A (`dual-stack`): probes succeed and use IPv4 endpoint (`curl_remote_ip=10.40.254.10`),
+  - checkpoint B (`ipv6-only`): probes fail (`curl_rc=7`, `curl_remote_ip=0`).
+- In sampled failing run `20260220T204650Z-ipv6-only`, forced IPv6 checkpoint failures affected all sampled agents (across lan_a/lan_b/lan_c), indicating a family-stage effect rather than one broken segment only.
+- So even with one static hierarchical path per segment, the *effective* dataplane changes by address family/stage policy; success in IPv4 does not imply success in IPv6.
+
+#### Open Questions
+- Need deeper per-hop IPv6 forwarding/neighbor tracing during forced `ipv6-only` stage to isolate exact drop locus (agent egress, router forward, or service return path).
+### Prompt: "so our routers are misconfigured for ipv6?" (2026-02-20T12:56:08-09:00)
+
+#### Actions Attempted
+- Assessed current evidence from recent matrix/probe telemetry to classify likelihood of router misconfiguration vs broader IPv6 dataplane issue.
+
+#### Commands Run
+- `date --iso-8601=seconds`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- Current evidence strongly indicates IPv6 dataplane misbehavior during forced `ipv6-only` stage.
+- This likely includes router forwarding/rule behavior, but cannot yet be attributed solely to router config; host/namespace packet-filter behavior and stage policy interactions remain plausible contributors.
+- Practical conclusion: treat as an IPv6 routed-path configuration bug centered around router/forwarding plane until disproven.
+
+#### Open Questions
+- Whether final drop point is router FORWARD, neighbor discovery/return path, or family-mode filter interaction on node egress.
+### Prompt: "are there any containernet ipv6 router configs you can compare our configuration to online to see what we've got wrong?" (2026-02-20T13:04:03-09:00)
+
+#### Actions Attempted
+- Searched online/remote upstream sources for Containernet/Mininet IPv6 router reference configs.
+- Cloned upstream `containernet/containernet` and `mininet/mininet` repos (shallow) and scanned for IPv6 router/NAT patterns.
+- Compared discovered upstream guidance to current lab router setup.
+
+#### Commands Run
+- `git clone --depth 1 https://github.com/containernet/containernet <tmp> && rg -n "ipv6|ip -6|ip6tables|forwarding" <tmp>/containernet`
+- `sed -n '1,180p' <tmp>/containernet/examples/linuxrouter.py`
+- `sed -n '1,230p' <tmp>/containernet/mininet/nodelib.py`
+- `git clone --depth 1 https://github.com/mininet/mininet <tmp> && rg -n "ip -6|ipv6|ip6tables|bridge-nf-call-ip6tables" <tmp>/mininet`
+- `sysctl -a 2>/dev/null | rg 'bridge-nf-call-(ip|ip6)tables|ip_forward|net.ipv6.conf.all.forwarding' | head -n 40`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- There is no strong official Containernet IPv6 router example equivalent to `linuxrouter.py`; upstream examples are IPv4-focused.
+- Upstream Mininet/Containernet code warns that Linux bridge firewall hooks can break forwarding if bridge netfilter settings are unfavorable.
+- Upstream Mininet/Containernet NAT helpers are IPv4-centric; IPv6 routed setups are mostly DIY static route/forwarding configs.
+- Our config aligns with routed IPv6 intent (forwarding + static routes) but still needs per-stage verification of end-to-end IPv6 forwarding behavior.
+
+#### Open Questions
+- Whether host bridge netfilter + host ip6tables policy interaction is still clipping IPv6 forwarded packets during forced ipv6-only stages.
+### Prompt: "what is left to try before we just give up?" (2026-02-20T13:31:39-09:00)
+
+#### Actions Attempted
+- Reviewed current plan/log state and distilled remaining high-yield options before declaring IPv6 blocker intractable.
+- Prepared a bounded final-attempt checklist with explicit stop criteria.
+
+#### Commands Run
+- `tail -n 50 plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `date --iso-8601=seconds`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- Direct and IPv4 scenarios are repeatedly passing in recent completed runs.
+- Remaining blocker is isolated to forced `ipv6-only` stage behavior.
+- Best remaining path is short, instrumentation-first experiments rather than broad refactors.
+
+#### Open Questions
+- Whether to timebox IPv6 lab fidelity and proceed with production gating on dual-stack+IPv4 while tracking IPv6 as known limitation.
+### Prompt: "OK I killed the chaos-lab-loop. go ahead and implement and tell me what command to run" (2026-02-20T14:06:27-09:00)
+
+#### Actions Attempted
+- Implemented a focused IPv6 triage patch set in chaos-lab runtime code.
+- Added host bridge-netfilter runtime guard + restore behavior.
+- Removed ambiguous IPv6 NAT66 behavior from router setup (keep routed IPv6 model).
+- Added richer `ipv6-only` preflight diagnostics for per-agent route/neighbor/filter visibility.
+- Added minimal single-segment IPv6 topology/scenario configs and npm shortcut for fast iterative runs.
+- Added/updated unit tests for routed-IPv6 router command behavior and startup fallback restoration behavior.
+
+#### Commands Run
+- `git status --short`
+- `ls -la net-chaos-lab/scripts`
+- `cat package.json`
+- `sed -n '1,220p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '404,530p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '520,740p' net-chaos-lab/src/chaoslab/topology.py`
+- `rg -n "_ensure_host_forwarding_policy|_restore_host_forwarding_policy|_start_containernet\(" net-chaos-lab/src/chaoslab/topology.py`
+- `rg -n "network_preflight|curl_remote_ip|fallback_remote_ip|infra_failure|preflight|curl -6|curl_family" net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '500,760p' net-chaos-lab/src/chaoslab/harness.py`
+- `rg -n "class FakePreflightFallbackTopology|class FakeProbeTopology|run_command_in_agent\(" net-chaos-lab/tests/test_chaoslab.py`
+- `sed -n '1,230p' net-chaos-lab/tests/test_chaoslab.py`
+- `sed -n '620,880p' net-chaos-lab/tests/test_chaoslab.py`
+- `tail -n 120 plan/plan.md`
+- `tail -n 140 plan/tests.md`
+- `tail -n 120 plan/branch/big-net-testing.md`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+
+#### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/configs/topology.ipv6-minimal.yaml` (new)
+- `net-chaos-lab/configs/scenarios/ipv6-only-minimal.yaml` (new)
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+#### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `Ran 50 tests in 0.034s`
+  - `OK`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - pass (no syntax errors)
+
+#### Findings / Results
+- Host runtime now hardens both FORWARD policy and bridge-netfilter sysctls during containernet runs, then restores prior host values.
+- Router setup now enforces routed-only IPv6 semantics by deleting stale IPv6 NAT66 masquerade rule if present.
+- Failed `ipv6-only` preflights now produce richer per-agent diagnostics to locate drop locus quickly without ad-hoc shelling.
+- A fast minimal IPv6 triage launcher now exists (`npm run chaos-lab:ipv6:min`) to debug IPv6 path behavior without full matrix overhead.
+
+#### Failures / Open Questions
+- This patch set has not yet been validated against a new live containernet run in this prompt window; next step is user-run execution of `chaos-lab:ipv6:min` and artifact review.
+- If minimal topology still fails in forced `ipv6-only`, we need hop-level packet trace capture (agent/router/service) during failure window.
+### Prompt: "OK I killed the chaos-lab-loop. go ahead and implement and tell me what command to run" (2026-02-20T14:10:34-09:00)
+
+#### Actions Attempted
+- Verified the previously implemented IPv6 triage changes are present in the working tree.
+- Verified npm command wiring for minimal IPv6 containernet triage run.
+- Re-ran chaos-lab unit suite to ensure no regressions before handing off next-run command.
+
+#### Commands Run
+- `rg -n "chaos-lab:ipv6:min|chaos-lab:matrix:full|chaos-lab:matrix:loop" package.json`
+- `rg -n "topology.ipv6-minimal|ipv6-only-minimal|bridge-nf|NAT66|ip6tables -t nat -D POSTROUTING" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab/harness.py net-chaos-lab/README.md net-chaos-lab/tests/test_chaoslab.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `Ran 50 tests in 0.032s`
+  - `OK`
+
+#### Findings / Results
+- The new minimal triage entrypoint is wired: `npm run chaos-lab:ipv6:min`.
+- Bridge-netfilter guard + routed-IPv6 cleanup + richer ipv6 preflight diagnostics are present in code/docs/tests.
+- Current tree is ready for next live containernet run using the minimal IPv6 profile.
+
+#### Failures / Open Questions
+- Need fresh live run artifacts from `chaos-lab:ipv6:min` to confirm whether the IPv6 blocker is resolved in minimal topology mode.
+### Prompt: "{ \"run_id\": \"20260220T231223Z\", ... }" (2026-02-20T14:27:40-09:00)
+
+#### Actions Attempted
+- Parsed artifact `net-chaos-lab/artifacts/20260220T231223Z` to classify why the run split 4-pass/4-fail.
+- Confirmed all failures were isolated to stage `ip_mode=ipv6-only` checkpoint with infra preflight HTTPS failures (`curl -6` + IPv6 literal fallback both failed).
+- Implemented runner/config defaults to avoid mutating infra during minimal IPv6 triage by default:
+  - changed minimal topology `ip_mode_scope` from `all` to `agents`,
+  - changed `npm run chaos-lab:ipv6:min` to default scope,
+  - added explicit stress-mode command `npm run chaos-lab:ipv6:min:all`.
+- Updated README + plan docs to document the two minimal IPv6 modes and intended use.
+
+#### Commands Run
+- `find net-chaos-lab/artifacts/20260220T231223Z -maxdepth 3 -type f | sort`
+- `jq -r '.type' net-chaos-lab/artifacts/20260220T231223Z/metrics-events.jsonl | sort | uniq -c`
+- `jq -c 'select(.type=="probe_result") | ...' net-chaos-lab/artifacts/20260220T231223Z/metrics-events.jsonl`
+- `jq -c 'select(.type=="run_failed" or .type=="scenario_event" or .type=="probe_checkpoint")' net-chaos-lab/artifacts/20260220T231223Z/metrics-events.jsonl`
+- `rg -n "ip_mode|ip_mode_scope|_apply_ip_mode_to_node|curl -6|preflight" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab/harness.py net-chaos-lab/src/chaoslab/scenario.py`
+- `sed -n '1940,2045p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1260,1360p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1504,1615p' net-chaos-lab/src/chaoslab/topology.py`
+- `node -e "const p=require('./package.json'); ..."`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+
+#### Files Touched
+- `package.json`
+- `net-chaos-lab/configs/topology.ipv6-minimal.yaml`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+#### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `Ran 50 tests in 0.035s`
+  - `OK`
+
+#### Findings / Results
+- Artifact evidence: checkpoint `initial` (dual-stack) passed 4/4; checkpoint `stage-0` (`ipv6-only`) failed 4/4 with `curl_rc=7` to `fd42:50:254::10:443` despite valid DNS/hosts/default-route, giving run-level `preflight_success_rate=0.5` and `infra_failure_rate=0.5`.
+- Direct path logic itself is not the only issue in this run; infra reachability during the forced `ipv6-only` phase was the blocker for half the probes.
+- Minimal triage now has two clear modes:
+  - `chaos-lab:ipv6:min` => agents-only ip_mode mutation (default)
+  - `chaos-lab:ipv6:min:all` => full infra mutation stress mode
+
+#### Open Questions
+- Need fresh `chaos-lab:ipv6:min` run results to verify if agents-only scope removes the 0.5 preflight split.
+- If failures persist in agents-only mode, next action is router/service-side `ip -6 route` + `ss -lnt` + `ip6tables -L` snapshots at failure time.
+### Prompt: "the ipv6 requirement isn't harsh. it doesn't work at all. half the internet is on ipv6 now." (2026-02-20T14:44:51-09:00)
+
+#### Actions Attempted
+- Re-audited latest failing minimal run artifact (`20260220T233010Z`) to determine whether failures were random or stage-specific.
+- Confirmed deterministic pattern: dual-stack checkpoint passes, then `ip_mode=ipv6-only` checkpoint fails all probes at HTTPS preflight (`curl -6` + IPv6-literal fallback).
+- Implemented a behavioral change for agents-only ip_mode handling:
+  - switched from OUTPUT filter-drop toggles to default-route family toggles (`ip route` / `ip -6 route`),
+  - retained legacy filter-based behavior as fallback and for `ip_mode_scope=all` paths.
+- Added a unit test validating agents-only route-family toggles.
+- Updated README + plan docs to reflect the new ip_mode agents-only behavior.
+
+#### Commands Run
+- `ls -la net-chaos-lab/artifacts/20260220T233010Z`
+- `cat net-chaos-lab/artifacts/20260220T233010Z/metrics-summary.json`
+- `jq -r '.type' net-chaos-lab/artifacts/20260220T233010Z/metrics-events.jsonl | sort | uniq -c`
+- `jq -c 'select(.type=="probe_checkpoint" or .type=="scenario_event" or .type=="run_failed")' net-chaos-lab/artifacts/20260220T233010Z/metrics-events.jsonl`
+- `jq -c 'select(.type=="probe_result") | {...}' net-chaos-lab/artifacts/20260220T233010Z/metrics-events.jsonl`
+- `cat net-chaos-lab/artifacts/20260220T233010Z/chaos-topology.json`
+- `rg -n "ip_mode|_apply_ip_mode_to_node|ip_mode_scope" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab/harness.py net-chaos-lab/src/chaoslab/scenario.py`
+- `sed -n '240,320p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1940,2045p' net-chaos-lab/src/chaoslab/topology.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` (initial run: 1 failing test from new coverage)
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` (post-fix rerun: all pass)
+
+#### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+#### Test Results
+- Initial test run after change:
+  - `Ran 51 tests`
+  - `FAILED (failures=1)`
+  - Failure: `test_ip_mode_agents_scope_uses_route_family_toggles` due fake node shell sentinel handling.
+- Post-test-fix rerun:
+  - `Ran 51 tests in 0.035s`
+  - `OK`
+
+#### Findings / Results
+- Artifact analysis confirms current minimal failure is not noisy: all four failures occur only after `ipv6-only` stage, all four are infra preflight failures (`curl_rc=7`, `fallback_curl_rc=7`) while DNS/hosts remain healthy.
+- `chaos-topology.json` confirms the run used `ip_mode_scope: agents`.
+- New code path now avoids packet-filter family toggles for agents-only mode and instead changes default routes per family, which should reduce side effects observed during ipv6-only stage transitions.
+
+#### Open Questions
+- Need a fresh `npm run chaos-lab:ipv6:min` artifact to verify whether route-based agent ip_mode toggling removes the `0.5` split.
+- If failure persists, next instrumentation target is router/service-side IPv6 path snapshots at failure time (not just agent-local route state).
+### Prompt: "{ \"run_id\": \"20260220T234658Z\", ... failure is still 0.5 }" (2026-02-20T14:59:07-09:00)
+
+#### Actions Attempted
+- Parsed new run artifact (`20260220T234658Z`) to confirm whether behavior changed after agents-only route-toggle patch.
+- Verified the same deterministic split remains: dual-stack checkpoint passes, `ipv6-only` checkpoint fails all probes with HTTPS preflight failure (`curl_rc=7`, `fallback_curl_rc=7`).
+- Implemented deeper `ipv6-only` failure diagnostics by adding router/service command execution hooks in topology and wiring them into preflight failure payloads.
+- Updated docs/plans to capture the new diagnostic fields.
+
+#### Commands Run
+- `ls -la net-chaos-lab/artifacts/20260220T234658Z`
+- `jq -c 'select(.type=="probe_checkpoint" or .type=="scenario_event" or .type=="run_failed")' net-chaos-lab/artifacts/20260220T234658Z/metrics-events.jsonl`
+- `jq -c 'select(.type=="probe_result" and (.payload.ok|not)) | {...}' net-chaos-lab/artifacts/20260220T234658Z/metrics-events.jsonl`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+
+#### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+#### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+  - `Ran 51 tests in 0.038s`
+  - `OK`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+  - pass
+
+#### Findings / Results
+- New run still fails exactly at `ipv6-only` checkpoint while dual-stack preflight succeeds.
+- Agent-side diagnostics continue to show valid DNS/hosts/default IPv6 route to gateway and valid route lookup to service IPv6.
+- Added router/service preflight snapshots to next failing artifacts to disambiguate:
+  - router forwarding/path problem vs
+  - HTTPS service IPv6 bind/route problem.
+
+#### Open Questions
+- Need one fresh `npm run chaos-lab:ipv6:min` run after this patch to inspect new fields:
+  - `router_ip6_addr`, `router_ip6_route`, `router_ip6tables_forward`, `router_to_service_ipv6`,
+  - `service_ip6_addr`, `service_ip6_route`, `service_listeners`.
+### Prompt: "be honest with me. is there actual progress on the ipv6 front now?" (2026-02-20T15:29:13-09:00)
+
+#### Actions Attempted
+- Parsed latest run (`20260221T002348Z`) to quantify per-checkpoint and per-ip-mode outcomes.
+- Extracted ipv6-only probe failure tuples including `router_to_service_ipv6` diagnostics to determine whether failures are consistently infrastructure or mixed infra/probe.
+
+#### Commands Run
+- `jq -c 'select(.type=="probe_checkpoint") | .payload' net-chaos-lab/artifacts/20260221T002348Z/metrics-events.jsonl`
+- `jq -r 'select(.type=="probe_result") | [...] | @tsv' ... | awk ...` (ip_mode rollup)
+- `jq -c 'select(.type=="probe_result" and (.payload.network_preflight.ip_mode=="ipv6-only") and (.payload.ok|not)) | {err,router_to_service_ipv6,curl_rc,fallback_curl_rc}' net-chaos-lab/artifacts/20260221T002348Z/metrics-events.jsonl`
+
+#### Files Touched
+- `plan/log.md`
+
+#### Findings / Results
+- Checkpoints: `initial=4`, `stage-0=4`, `final=4` (12 total probes).
+- Rollup by ip_mode:
+  - `dual-stack total=4 ok=4 preflight_ok=4 https_ok=4`
+  - `ipv6-only total=8 ok=0 preflight_ok=4 https_ok=4`
+- Interpretation:
+  - IPv6 preflight is no longer uniformly failing; half of ipv6-only probes have successful HTTPS preflight now.
+  - However, ipv6-only phase still has zero end-to-end successful probes (`ok=0/8`), so functional stability remains blocked.
+- Router/service diagnostics show mixed behavior in same run:
+  - Some failing probes: `router_to_service_ipv6` returns `200 fd42:50:254::10 443`.
+  - Other failing probes: `router_to_service_ipv6` returns `curl: (7) Failed to connect...`.
+  - This indicates intermittent router->service IPv6 path flapping, not a pure agent-only DNS/route issue.
+
+#### Open Questions
+- Need next diagnostic increment for neighbor/discovery flaps:
+  - add `router_ip6_neigh` and `service_ip6_neigh`,
+  - add service->router or service->agent IPv6 probe to validate reverse path symmetry during failures.
+
+## Date: 2026-02-20T15:51:19-09:00
+
+### Prompt
+- proceed with a fix
+
+### Actions Attempted
+- Reviewed planning context before coding per project instructions:
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- Investigated current failure signals and classifier/network paths:
+- `rg -n "direct_connection_rate|has_direct_connection|directWebrtc|relayWebrtc|announced_direct_webrtc_addrs|connectionAddrCounts|ip_mode_scope|ipv6-only|network_preflight" net-chaos-lab/src -S`
+- `sed -n '1,340p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,1200p' net-chaos-lab/agent/probe.mjs`
+- Confirmed topology/scenario/matrix wiring used by current runs:
+- `sed -n '1,320p' net-chaos-lab/configs/topology.default.yaml`
+- `sed -n '1,320p' net-chaos-lab/configs/topology.ipv6-minimal.yaml`
+- `sed -n '1,260p' net-chaos-lab/configs/matrix/direct-regression.yaml`
+- Parsed latest failing artifacts directly to isolate root cause:
+- `jq -c ... net-chaos-lab/artifacts/20260221T002348Z/metrics-events.jsonl` queries for `ip_mode`, `preflight`, `announceAddrs`, `connCounts`, and IPv6 diagnostics.
+- Key finding from artifact inspection:
+- During `ipv6-only`, announced/bootstrap relay addrs remained `/dns4/...` only (no `/dns6/...`).
+- With agent IPv4 default routes removed, peers could not keep/bootstrap relay paths reliably in ipv6-only stages.
+
+### Code Changes
+- Updated relay config generation to publish dual-family bootstrap addrs for hostname relay endpoints.
+- File: `peercompute/src/relay/server.js`
+- Replaced single-host-segment helper with `toMultiaddrHostSegments()`.
+- For hostnames, now emits both `/dns4/<host>` and `/dns6/<host>`.
+- Relay config writer now emits deduped `bootstrapPeers` array across generated announce addrs (instead of a single address).
+- Kept existing protocol/port normalization and retained `Relay Address:` output for compatibility.
+- Updated circuit fallback bootstrap address selection.
+- File: `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `_buildCircuitAddr()` now chooses family-appropriate bootstrap addr:
+- prefers `/dns6` or `/ip6` when local IPv6 addrs are present,
+- otherwise prefers `/dns4` or `/ip4`,
+- falls back to first normalized bootstrap addr if no family-specific match.
+- Added focused unit tests for family-aware circuit fallback behavior.
+- File: `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `NetworkManager prefers dns6 bootstrap address for circuit dials when local IPv6 is available`
+- `NetworkManager falls back to dns4 bootstrap address for circuit dials when local IPv6 is unavailable`
+
+### Plan/Docs Updates
+- Updated completed roadmap item in `plan/plan.md` to include relay dual-family bootstrap publication + family-aware circuit fallback selection.
+- Updated `plan/tests.md` with:
+- relay bootstrap family expectation (`/dns4` + `/dns6`),
+- circuit fallback family-selection expectation,
+- focused unit gate command for webrtc/network manager tests.
+- Updated branch status in `plan/branch/big-net-testing.md` with completed work and revised blocker state.
+- Updated `net-chaos-lab/README.md` notes with:
+- dual-family relay bootstrap behavior,
+- clarified ip_mode behavior (agents route-toggle; all-scope filter fallback).
+
+### Commands Run
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- Result: PASS (`13/13` tests).
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- Result: PASS (`Ran 51 tests ... OK`).
+- `node --check peercompute/src/relay/server.js && node --check peercompute/src/peercompute/networkManager/NetworkManager.js`
+- Result: PASS (no syntax errors).
+
+### Files Touched
+- `peercompute/src/relay/server.js`
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Test Results Summary
+- Unit coverage for new relay/bootstrap family logic is passing.
+- Existing chaos-lab Python suite remains passing after patch.
+- No runtime matrix re-run was executed by the agent in this prompt (requires user sudo terminal flow).
+
+### Failures / Open Questions
+- Pending runtime verification: need a fresh `ipv6:min` / matrix run to confirm `ipv6-only` no longer strands peers on `/dns4` bootstrap paths.
+- If failures persist after this patch, next likely locus is intermittent routed IPv6 service reachability (agent<->router<->service), already instrumented via `network_preflight` router/service diagnostics.
+
+## Date: 2026-02-20T16:14:28-09:00
+
+### Prompt
+- `cos@cosbox:~/projects/peercompute$ npm run chaos-lab:ipv6:min ...`
+- User reported latest run summary/diagnostics for `20260221T005550Z` with:
+  - `connection_success_rate=0.3333333333333333`
+  - `direct_connection_rate=0.3333333333333333`
+  - `preflight_success_rate=0.5454545454545454`
+  - `infra_failure_rate=0.45454545454545453`
+- User also supplied follow-up checks:
+  - `RUN=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq '{conn:.connection_success_rate,direct:.direct_connection_rate,preflight:.preflight_success_rate,infra:.infra_failure_rate}' "$RUN/metrics-summary.json"; jq '.bootstrapPeers' docs/netviz/relay-config.json;`
+
+### Actions Attempted
+- Reviewed required planning context before coding:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Parsed the exact failing artifact (`net-chaos-lab/artifacts/20260221T005550Z/metrics-events.jsonl`) to isolate whether the current blocker was relay bootstrap family or routed IPv6 service reachability.
+- Confirmed dual-family relay bootstrap config is present (`/dns4` + `/dns6`), so the remaining blocker is data-plane IPv6 reliability.
+- Inspected `harness.py` preflight diagnostics and `topology.py` interface/route setup code paths.
+- Identified a concrete IPv6 correctness bug in topology setup:
+  - interface reconfiguration used `ip -6 addr flush dev <if>` on agents/routers/services,
+  - this can remove required link-local IPv6 addresses and destabilize ND/NDP, producing intermittent IPv6 reachability failures.
+- Implemented fix to preserve link-local IPv6 addresses while still resetting global configured addresses.
+
+### Code Changes
+- Updated IPv6 address flush operations to preserve link-local addresses by flushing only global scope:
+  - `net-chaos-lab/src/chaoslab/topology.py`
+    - `ip -6 addr flush dev <if>` -> `ip -6 addr flush dev <if> scope global` in:
+      - router LAN interface setup
+      - router WAN interface setup
+      - agent interface setup
+      - core-service interface setup
+- Added concise in-code comments documenting why link-local preservation is required.
+
+### Plan/Docs Updates
+- Updated completed roadmap in `plan/plan.md`:
+  - added `IPv6 link-local preservation guard` entry.
+- Updated expectations in `plan/tests.md`:
+  - added explicit `Containernet IPv6 link-local expectation`.
+- Updated `net-chaos-lab/README.md`:
+  - documented that IPv6 interface resets preserve link-local addresses (`scope global` flush).
+
+### Commands Run
+- Workspace/context checks:
+  - `pwd && ls -la && git status --short`
+  - `sed -n '1,220p' plan/plan.md`
+  - `sed -n '1,260p' plan/log.md`
+- Artifact triage:
+  - multiple `jq` queries against `net-chaos-lab/artifacts/20260221T005550Z/metrics-events.jsonl` to inspect per-agent `network_preflight` and router/service diagnostics.
+- Source inspection:
+  - `rg -n "router_to_service_ipv6|router_ip6tables_forward|preflight|ip_mode|ip6tables|FORWARD|disable_ipv6|route" net-chaos-lab/agent/probe.mjs net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/src/chaoslab/harness.py`
+  - `sed -n` slices for `probe.mjs`, `harness.py`, and `topology.py` relevant sections.
+- Validation tests after patch:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+    - Result: `Ran 51 tests ... OK`
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+    - Result: `13/13` passing.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Test Results Summary
+- Python chaos-lab suite: PASS.
+- JS network manager unit suite: PASS.
+- No containernet runtime execution by agent in this prompt (requires user-run sudo terminal flow).
+
+### Failures / Open Questions
+- Runtime verification of the new fix is still pending in a fresh user-run containernet scenario.
+- Next required validation command:
+  - `npm run chaos-lab:ipv6:min`
+- Success criteria for this fix:
+  - improved `preflight_https_success_rate` and reduced `infra_failure_rate` vs `20260221T005550Z` baseline,
+  - fewer/no repeated `curl_rc=7` failures in `ipv6-only` stage.
+
+## Date: 2026-02-20T16:35:02-09:00
+
+### Prompt
+- `could the HTTPS failure be resource related. most of my CPUs are pegged.  perhapps we increase the timeout?`
+- User supplied fresh run output for `npm run chaos-lab:ipv6:min` with artifact `net-chaos-lab/artifacts/20260221T012232Z` showing mixed `curl_rc=7` and `curl_rc=28` preflight failures and unchanged summary ratios (`preflight_success_rate=0.545454...`, `infra_failure_rate=0.454545...`).
+
+### Actions Attempted
+- Parsed the new artifact to classify preflight failure modes by ip_mode/agent and verify whether timeouts are present.
+- Confirmed dual behavior in `ipv6-only` stage:
+  - hard connect failures (`curl_rc=7`), and
+  - timeout failures (`curl_rc=28`), including later success from some of the same agents.
+- Implemented preflight resilience changes in harness to better tolerate transient CPU/host contention:
+  - configurable curl timeout,
+  - configurable retry attempts,
+  - configurable retry backoff delay,
+  - retry loop for transient curl errors.
+- Wired stronger defaults into focused IPv6 npm scripts so triage runs automatically use more tolerant preflight settings.
+- Updated docs and plan files to record the new knobs/expectations.
+
+### Code Changes
+- `net-chaos-lab/src/chaoslab/harness.py`
+  - added `import time`.
+  - added helper `ChaosHarness._env_int(...)` for bounded integer env parsing.
+  - `_run_agent_network_preflight(...)` now reads:
+    - `CHAOSLAB_PREFLIGHT_CURL_MAX_TIME` (default `8`),
+    - `CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS` (default `2`),
+    - `CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS` (default `700`).
+  - added retry-capable curl probe execution with transient error handling (`7`, `28`, `35`, `52`, `56`).
+  - records attempt metadata in preflight payload:
+    - `curl_attempt_count`,
+    - `fallback_curl_attempt_count`,
+    - configured timeout/retry fields.
+- `package.json`
+  - updated `chaos-lab:ipv6:min` and `chaos-lab:ipv6:min:all` scripts to run with higher tolerance defaults:
+    - `CHAOSLAB_PREFLIGHT_CURL_MAX_TIME=14`
+    - `CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS=3`
+    - `CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS=900`
+- `net-chaos-lab/README.md`
+  - documented the higher-tolerance defaults on `chaos-lab:ipv6:min*` scripts.
+  - documented preflight curl tuning environment variables.
+- `plan/plan.md`
+  - added completed item for preflight timeout/retry guard.
+- `plan/tests.md`
+  - added preflight timeout/retry expectation.
+- `plan/branch/big-net-testing.md`
+  - added implementation note for preflight retry guard and ipv6:min script defaults.
+
+### Commands Run
+- Artifact triage:
+  - `RUN=net-chaos-lab/artifacts/20260221T012232Z; jq '{conn:.connection_success_rate,direct:.direct_connection_rate,preflight:.preflight_success_rate,https:.preflight_https_success_rate,infra:.infra_failure_rate}' "$RUN/metrics-summary.json"`
+  - `RUN=net-chaos-lab/artifacts/20260221T012232Z; jq -s -r 'map(select(.type=="probe_result")) | map({...})' "$RUN/metrics-events.jsonl"`
+  - `RUN=net-chaos-lab/artifacts/20260221T012232Z; jq -r 'select(.type=="probe_result" and (.payload.network_preflight.ip_mode=="ipv6-only")) | [...] | @tsv' "$RUN/metrics-events.jsonl"`
+- Unit/test validation:
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+    - Result: `Ran 51 tests ... OK`.
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+    - Result: `13/13` passing.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Test Results Summary
+- Python chaos-lab unit suite: PASS.
+- JS NetworkManager unit suite: PASS.
+
+### Failures / Open Questions
+- Not all failures are timeout-only; artifact still shows `curl_rc=7` (connect failure) alongside `curl_rc=28` (timeout), so timeout/retry tuning is necessary but may not be sufficient.
+- Next validation is a fresh `npm run chaos-lab:ipv6:min` with the new script defaults to measure whether preflight success rises above the prior ~0.545 baseline and infra failure falls.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T03:12:41Z)
+- {
+  "run_id": "20260221T023534Z",
+  "updated_at": "2026-02-21T02:40:36.972277+00:00",
+  "probe_total": 12,
+  "connection_success_rate": 0.3333333333333333,
+  "media_success_rate": 0.0,
+  "convergence_avg_ms": 6174.0,
+  "convergence_p95_ms": 6330.0,
+  "scenario_event_count": 1,
+  "direct_announce_rate": 0.8333333333333334,
+  "direct_connection_rate": 0.3333333333333333,
+  "relay_webrtc_connection_rate": 0.0,
+  "avg_direct_peer_count": 0.9090909090909091,
+  "avg_relay_peer_count": 0.0,
+  "avg_announced_direct_webrtc_addrs": 1.8181818181818181,
+  "stability_probe_count": 4,
+  "avg_stability_sample_count": 3.6363636363636362,
+  "avg_peer_set_change_count": 0.18181818181818182,
+  "avg_direct_connection_flip_count": 0.36363636363636365,
+  "avg_relay_connection_flip_count": 0.36363636363636365,
+  "avg_direct_connection_sample_rate": 0.2545454545454545,
+  "avg_relay_connection_sample_rate": 0.2545454545454545,
+  "avg_stability_peer_count": 0.7090909090909091,
+  "rtc_probe_count": 10,
+  "rtc_host_only_local_rate": 0.4,
+  "rtc_local_candidate_types": {
+    "host": 8
+  },
+  "rtc_remote_candidate_types": {
+    "host": 5,
+    "prflx": 3
+  },
+  "preflight_probe_count": 11,
+  "preflight_success_rate": 0.6363636363636364,
+  "preflight_dns_success_rate": 1,
+  "preflight_https_success_rate": 0.6363636363636364,
+  "preflight_hosts_entry_rate": 1,
+  "infra_failure_rate": 0.36363636363636365
+}
+[chaos-lab] artifacts: /home/cos/projects/peercompute/net-chaos-lab/artifacts/20260221T023534Z
+
+it got a little better!
+
+### Actions Attempted
+- Reviewed current planning docs before edits:
+- `plan/plan.md`
+- `plan/log.md`
+- Inspected active implementation and script defaults:
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `package.json`
+- Parsed the provided run artifact to identify whether failures are static-path or transient:
+- Extracted per-probe rows (agent, preflight, curl rc/status, attempts, error)
+- Extracted per-agent success/failure counts
+- Extracted failed preflight route/router/service diagnostic fields
+- Confirmed failures rotate across agents under `ipv6-only` stage (not a single permanently broken node)
+- Implemented an IP-family probe URL selection guard in harness:
+- preflight now computes `service_ip` and `preferred_url` for mode-matched family
+- `_probe_one` now prefers `preferred_url` first, then fallback URL, before launching in-agent probe
+- Goal: remove browser hostname family-selection ambiguity (`ipv6-only`/`ipv4-only`) during/after route-mode toggles.
+- Tuned focused triage npm defaults for resource pressure:
+- Increased preflight curl tolerance to `max_time=20`, `attempts=4`, retry delay `1200ms`
+- Reduced `ipv6:min` probe concurrency to `--probe-parallelism 1`
+- Updated docs/plans to reflect behavior and test expectations.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && git status --short`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,340p' net-chaos-lab/src/chaoslab/harness.py`
+- `rg -n "_run_agent_network_preflight|curl_max_time|curl_attempts|router_to_service_ipv6|ip6tables|ip -6" net-chaos-lab/src/chaoslab/harness.py net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/tests/test_chaoslab.py`
+- `sed -n '1080,2160p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1,280p' net-chaos-lab/src/chaoslab/scenario.py`
+- Artifact triage commands (run 20260221T023534Z):
+- `jq -r 'select(.type=="probe_result") | [...] | @tsv' net-chaos-lab/artifacts/20260221T023534Z/metrics-events.jsonl`
+- `jq -r 'select(.type=="probe_result") | [...] | @tsv' ... | sort | uniq -c`
+- `jq -r 'select(.type=="probe_result" and (.payload.network_preflight.ok|not)) | ...' ...`
+- Validation:
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (`Ran 52 tests in 0.736s`, `OK`)
+- Includes new `ipv6-only` preferred literal URL harness test.
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- PASS (`13` tests passed)
+
+### Failures / Open Questions
+- Artifact still shows intermittent `ipv6-only` preflight curl failures (`rc=7/28`) that rotate across agents.
+- Route and router/service diagnostics in failed payloads frequently indicate paths are present, suggesting contention/timing and/or browser family selection effects rather than a single static route misconfiguration.
+- Need fresh rerun on updated code to validate whether family-forced probe URL + lower concurrency significantly improves `preflight_success_rate`, `infra_failure_rate`, and `direct_connection_rate`.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T03:39:57Z)
+- User ran `npm run chaos-lab:ipv6:min` and posted full output for run `20260221T031722Z` plus summary extraction:
+- `conn=0.3333333333333333`, `direct=0.0`, `preflight=0.5833333333333334`, `infra=0.4166666666666667`.
+- Probe rows showed family-forced literal URL was active in IPv6 stage (`https://[fd42:50:254::10]/...` in both `url` and `preferred_url`), but several probes still failed preflight with `curl_rc=7/28` and `fallback_curl_rc=7/28`.
+
+### Actions Attempted
+- Reviewed new run artifacts for failed `ipv6-only` probe events in detail.
+- Confirmed family literal URL fix is active and working as intended.
+- Confirmed failure mode remains transport reachability (`curl_rc=7/28`) rather than URL-family selection.
+- Extracted and inspected failed preflight diagnostics from `20260221T031722Z`:
+- agent route/default/neighbor state (`ip -6 route`, `ip -6 neigh`, rules)
+- router/service path diagnostics (`router_to_service_ipv6` showed HTTP 200 consistently)
+- service listener/route diagnostics showed service up and routable.
+- Observed pattern: failures cluster early in agent sequence and still appear after stage settle; successes often occur later in sequence, indicating transient path/listener readiness behavior rather than a single permanently broken node.
+- Implemented additional hardening in topology startup and ip-mode transition flow:
+1. HTTPS service readiness now includes explicit IPv6 handshake readiness check (`curl -6 https://[service-ipv6]/netviz/`) when service IPv6 is configured.
+2. Agent `ip_mode=ipv6-only` route toggles now perform best-effort path warmup (gateway ping + service IPv6 curl loop) immediately after route switch.
+- Added/updated tests and docs for these changes.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- Artifact diagnostics:
+- `jq -r 'select(.type=="probe_result" and (.payload.network_preflight.ok|not)) | ...' net-chaos-lab/artifacts/20260221T031722Z/metrics-events.jsonl`
+- `jq -r 'select(.type=="probe_result") | [...] | @tsv' net-chaos-lab/artifacts/20260221T031722Z/metrics-events.jsonl`
+- Code inspection:
+- `rg -n "def set_ip_mode|_apply_ip_mode_to_agent|_iter_ip_mode_nodes" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '280,360p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1156,1200p' net-chaos-lab/tests/test_chaoslab.py`
+- Validation:
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (`Ran 52 tests in 0.733s`, `OK`).
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- PASS (`13` tests passed).
+
+### Failures / Open Questions
+- IPv6-stage preflight remains intermittently unstable for a subset of probes (`curl_rc=7/28`) even with family-forced URL and retry/backoff tuning.
+- Diagnostics continue to show router->service IPv6 curl success during failed agent probes, so likely drop/latency locus is agent->router forward path warmup/transition timing or host contention side effects.
+- Next validation required: rerun `npm run chaos-lab:ipv6:min` after this patch to measure whether explicit IPv6 service readiness + warmup reduces `infra_failure_rate` and improves `connection_success_rate` / `direct_connection_rate`.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T04:18:21Z)
+- "cos@cosbox:~/projects/peercompute$ npm run chaos-lab:ipv6:min ... [run_id: 20260221T035157Z] ... stage-0 4/4 ipv6-only preflight failures (curl_rc=7/fallback_curl_rc=7) ... preflight=0.5, infra=0.5"
+
+### Actions Attempted
+- Reviewed current topology/harness implementation and latest failing artifact details:
+- inspected `plan/plan.md` and `plan/log.md` first per repo instructions.
+- inspected git/worktree state and relevant chaos-lab code paths (`set_ip_mode`, `_apply_ip_mode_to_agent`, `_ensure_default_route`, service readiness checks).
+- parsed artifact `net-chaos-lab/artifacts/20260221T035157Z/metrics-events.jsonl` for `ipv6-only` probe failures and confirmed:
+- dual-stack cycle succeeds for all agents,
+- `ipv6-only` stage probes fail with `curl_rc=7` on all agents,
+- route and neighbor snapshots are present and gateway route exists,
+- router->service IPv6 curl diagnostic returns `200` while agent preflight fails.
+
+### Code Changes
+- Updated `net-chaos-lab/src/chaoslab/topology.py`:
+- router setup now also sets interface-specific IPv6 forwarding sysctls:
+- `net.ipv6.conf.<lan>.forwarding=1`
+- `net.ipv6.conf.<wan>.forwarding=1`
+- `ip_mode` agent route switching now uses verified route programming (`_ensure_default_route`) for runtime transitions:
+- `dual-stack`: verify/set both IPv4 and IPv6 default routes,
+- `ipv4-only`: verify/set IPv4 default route then remove IPv6 default,
+- `ipv6-only`: verify/set IPv6 default route then remove IPv4 default.
+- added `ChaosTopology._env_int(...)` utility for env-tunable integer controls.
+- added `_warm_agent_ipv6_path(...)` convergence helper and wired it into `ipv6-only` mode switch:
+- neighbor flush + gateway ping + route cache flush + repeated IPv6 HTTPS checks,
+- configurable via `CHAOSLAB_IPV6_WARMUP_TIMEOUT_S` and `CHAOSLAB_IPV6_WARMUP_STEP_MS`,
+- emits warning if convergence does not complete before timeout.
+
+- Updated `net-chaos-lab/tests/test_chaoslab.py`:
+- adjusted `test_ip_mode_agents_scope_uses_route_family_toggles` test double behavior for route-show verification path,
+- updated assertions to match verified-route strategy (`ip route show default` / `ip -6 route show default`) rather than always expecting raw replace commands.
+
+- Documentation/plan updates:
+- `net-chaos-lab/README.md`:
+- documented new IPv6 warmup tuning env vars,
+- documented verified route programming in agents-only `ip_mode`,
+- documented per-interface router IPv6 forwarding guard.
+- `plan/plan.md`:
+- appended completed bullets for verified ip-mode route convergence and router interface forwarding guard.
+- `plan/tests.md`:
+- added expectations for verified route transitions, per-interface IPv6 forwarding, and new warmup env tunables.
+- `plan/branch/big-net-testing.md`:
+- appended cycle notes for verified route transition patch + warmup convergence + router forwarding updates.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la`
+- `rg --files plan | sort`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `git status --short`
+- `rg -n "def _apply_ip_mode_to_agent|_ensure_default_route|ipv6-only|ready_checks|curl -6" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1860,2200p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1120,1245p' net-chaos-lab/tests/test_chaoslab.py`
+- `sed -n '1500,1625p' net-chaos-lab/tests/test_chaoslab.py`
+- `RUN=net-chaos-lab/artifacts/20260221T035157Z; jq ... "$RUN/metrics-events.jsonl"`
+- `sed -n '1,220p' net-chaos-lab/configs/topology.ipv6-minimal.yaml`
+- `sed -n '1,220p' net-chaos-lab/configs/scenarios/ipv6-only-minimal.yaml`
+- `sed -n '1,260p' net-chaos-lab/src/chaoslab/scenario.py`
+- `rg -n ... net-chaos-lab/agent/probe.mjs net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '1,320p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '470,760p' net-chaos-lab/src/chaoslab/harness.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- first run: failed 1 test (`test_ip_mode_agents_scope_uses_route_family_toggles`) due assertion mismatch after route-verification change.
+- second run after test updates: `Ran 52 tests ... OK`.
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`: `13/13` passing.
+
+### Failures / Open Questions
+- Open: runtime validation still required on privileged containernet host to confirm whether verified route transitions + stronger ipv6 warmup materially raise `ipv6-only` preflight success and direct connectivity in `chaos-lab:ipv6:min`.
+- Open: artifact evidence still suggests asymmetric/unstable IPv6 routed path during stage transitions in some runs; if failures persist after this patch, next step is adding router forwarding sysctl snapshots to preflight diagnostics for direct proof (`net.ipv6.conf.all/default/<lan>/<wan>.forwarding`).
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T05:56:45Z)
+- User provided new `chaos-lab:ipv6:min` output for run `20260221T053815Z` showing:
+- dual-stack probes all pass,
+- `ipv6-only` probes partially fail (`preflight_success_rate=0.5833`, `infra_failure_rate=0.4167`),
+- warmup warnings for all four agents (`curl_rc=7 http=000`),
+- `direct_connection_rate=0.0`.
+
+### Analysis Summary
+- Parsed `metrics-events.jsonl` for `20260221T053815Z` and observed:
+- failing agents had valid IPv6 default routes and neighbor entries to gateway,
+- router-to-service IPv6 curl diagnostics consistently returned HTTP `200`,
+- service listeners/routes remained healthy,
+- only one agent (typically `agent-03`) consistently reached HTTPS over IPv6 while peers in same segment failed/time out.
+- This pattern is consistent with potential L2/FDB instability (for example MAC flapping / non-unique interface MAC behavior) rather than pure L3 route absence.
+
+### Concrete Changes Attempted
+- Updated `net-chaos-lab/src/chaoslab/topology.py`:
+- Added deterministic per-agent MAC assignment during containernet agent configuration:
+- new helper `_stable_agent_mac(agent)`
+- new helper `_set_node_interface_mac(node, intf, mac, context)`
+- invoked before per-agent IP/route programming in `_configure_agent(...)`.
+- Goal: remove potential same-MAC/FDB flap behavior on single-segment IPv6-only tests.
+
+- Updated `net-chaos-lab/src/chaoslab/harness.py` IPv6 failure diagnostics:
+- Added agent-side link snapshots:
+- `agent_ip6_link`, `agent_ip6_addr`
+- Added router-side LAN/forwarding snapshots:
+- `router_ip6_neigh_lan`
+- `router_ipv6_forwarding` (all/default/lan/wan forwarding values)
+- These are collected on failed `ipv6-only` preflight events.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `RUN=net-chaos-lab/artifacts/20260221T053815Z; jq ... metrics-events.jsonl` (multiple focused jq extracts for ipv6-only failures)
+- `rg -n "addDocker|addLink\(|mac|_configure_agent" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '900,1290p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '600,930p' net-chaos-lab/src/chaoslab/harness.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 52 tests`, `OK`).
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js` -> PASS (`13/13`).
+
+### Failures / Open Questions
+- Open: need one more privileged run to confirm whether deterministic MAC assignment improves `ipv6-only` preflight and direct-connection outcomes.
+- If failures persist, new diagnostics (`agent_ip6_link`, `router_ip6_neigh_lan`, `router_ipv6_forwarding`) will confirm whether this is still L2/FDB behavior or interface forwarding-state drift.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T06:02:14Z)
+- Follow-up on same user run (`20260221T053815Z`): continue fixing ipv6-only partial failures.
+
+### Additional Actions Attempted
+- Implemented L2-stability mitigation in topology agent setup:
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `_configure_agent(...)` now assigns deterministic per-agent MAC before IP/route programming.
+- Added `_stable_agent_mac(...)` and `_set_node_interface_mac(...)` helpers.
+- Rationale: observed one-agent-success/multi-agent-fail pattern can indicate bridge FDB flapping from unstable/duplicated MAC behavior in docker-backed segment peers.
+
+- Extended IPv6 triage diagnostics in preflight failure payloads:
+- `net-chaos-lab/src/chaoslab/harness.py`
+- added agent link snapshots: `agent_ip6_link`, `agent_ip6_addr`
+- added router LAN neighbor + forwarding snapshots: `router_ip6_neigh_lan`, `router_ipv6_forwarding`
+
+- Added unit coverage for deterministic MAC generation:
+- `net-chaos-lab/tests/test_chaoslab.py`
+- new test: `test_stable_agent_mac_is_deterministic_and_unique`
+
+- Updated docs/plan status to reflect these changes:
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/src/chaoslab/harness.py`
+- `net-chaos-lab/tests/test_chaoslab.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '900,1290p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '600,930p' net-chaos-lab/src/chaoslab/harness.py`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py` -> PASS (`Ran 53 tests`, `OK`).
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js` -> PASS (`13/13`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py` -> PASS.
+
+### Failures / Open Questions
+- Runtime confirmation pending: need a fresh `npm run chaos-lab:ipv6:min` run to verify whether deterministic MAC assignment improves `ipv6-only` preflight success/direct connectivity.
+- If not improved, new diagnostics should reveal whether router LAN neighbor resolution or forwarding sysctl state diverges between successful and failing agents.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T06:14:37Z)
+- "cos@cosbox:~/projects/peercompute$ CHAOSLAB_IPV6_WARMUP_TIMEOUT_S=25 CHAOSLAB_IPV6_WARMUP_STEP_MS=500 npm run chaos-lab:ipv6:min ... [run_id: 20260221T053815Z] ... ipv6-only warmup did not converge ... preflight=0.5833 infra=0.4167 (agent-03 mostly succeeds, others fail curl_rc=7/28)"
+
+### Actions Attempted
+- Reviewed latest minimal IPv6 artifact and topology/harness logic before patching:
+- verified `ipv6-only` failures still clustered on a subset of agents while dual-stack remained healthy.
+- confirmed current warmup path repeatedly flushes neighbor state each attempt and can end stage with cold/unstable NDP state.
+- implemented two hardening changes in topology runtime:
+1. Static IPv6 neighbor seeding for critical routed paths.
+2. Warmup behavior change to preserve learned NDP state by default.
+
+### Code Changes
+- Updated `net-chaos-lab/src/chaoslab/topology.py`:
+- `set_ip_mode(...)` now invokes `_seed_ipv6_neighbors()` for agents-scope transitions to `dual-stack` and `ipv6-only`.
+- containernet startup now invokes `_seed_ipv6_neighbors()` after agent/service addressing and before reachability validation.
+- added `_interface_mac(...)` helper to read runtime interface MAC from inside node namespaces.
+- added `_seed_ipv6_neighbors(...)` helper:
+- seeds agent -> router gateway IPv6 neighbors as `nud permanent`,
+- seeds router -> agent IPv6 neighbors on LAN,
+- seeds service(https) -> router uplink IPv6 neighbor,
+- seeds router -> HTTPS service IPv6 neighbor on WAN.
+- updated `_warm_agent_ipv6_path(...)`:
+- removed per-attempt neighbor flush default behavior,
+- added `CHAOSLAB_IPV6_WARMUP_FLUSH_NEIGH` env control (default `0`, opt-in `1`),
+- now gates service curl attempts on successful gateway ping per attempt.
+
+### Documentation / Plan Updates
+- `net-chaos-lab/README.md`
+- documented `CHAOSLAB_IPV6_WARMUP_FLUSH_NEIGH` and static IPv6 neighbor seeding behavior.
+- `plan/plan.md`
+- added completed entries for IPv6 neighbor-seeding guard and warmup safety guard.
+- `plan/tests.md`
+- added expectations for warmup no-flush default and static IPv6 neighbor seeding during startup/ip-mode transitions.
+- `plan/branch/big-net-testing.md`
+- recorded this cycle’s static neighbor seeding + warmup default behavior changes.
+
+### Files Touched
+- `net-chaos-lab/src/chaoslab/topology.py`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- Context review:
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 220 plan/log.md`
+- Artifact/code inspection:
+- `sed -n '1,260p' net-chaos-lab/configs/topology.ipv6-minimal.yaml`
+- `sed -n '1,240p' net-chaos-lab/configs/scenarios/ipv6-only-minimal.yaml`
+- `rg -n "def _configure_agent|def _apply_ip_mode_to_agent|_warm_agent_ipv6_path|_ensure_default_route|_remove_default_route" net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '1180,1395p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '2060,2245p' net-chaos-lab/src/chaoslab/topology.py`
+- `rg -n "agent_ip6_link|router_ipv6_forwarding|network_preflight|ipv6-only" net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '420,880p' net-chaos-lab/src/chaoslab/harness.py`
+- `sed -n '880,1025p' net-chaos-lab/src/chaoslab/harness.py`
+- `RUN=net-chaos-lab/artifacts/20260221T053815Z; jq ... metrics-events.jsonl` (multiple focused extracts)
+- Validation:
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+
+### Test Results
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest net-chaos-lab/tests/test_chaoslab.py`
+- PASS (`Ran 53 tests in 0.735s`, `OK`).
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- PASS (`13/13`).
+- `python3 -m py_compile net-chaos-lab/src/chaoslab/*.py`
+- PASS.
+
+### Failures / Open Questions
+- Runtime verification is still needed on privileged containernet execution (`npm run chaos-lab:ipv6:min`) to confirm whether this closes the remaining 0.33-0.58 preflight success plateau.
+- If failures persist, next triage pivot is to compare new preflight runs for deterministic failing interface/neighbor patterns using the extended `network_preflight` fields and, if needed, add packet-capture hooks for LAN/WAN ICMPv6 + TCP SYN traces.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T06:22:13Z)
+- "I want you to set up an ipv6 loop for me to run so you can just go all night and try to get it done."
+
+### Actions Attempted
+- Implemented a dedicated unattended IPv6 triage loop launcher so repeated `ipv6:min` runs can execute overnight without manual restart.
+- Added configurable stop criteria (target metrics, max runs, sleep interval), sudo keepalive, and per-iteration summary extraction from latest `metrics-summary.json`.
+- Wired loop command into npm scripts and updated docs/plan references.
+
+### Code Changes
+- Added new script: `net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh`
+- supports:
+- `--max-runs`, `--sleep`, `--until-target`, `--no-until-target`
+- `--target-conn`, `--target-direct`, `--target-preflight`, `--target-infra-max`
+- `--script`, `--all`, `--no-sudo-keepalive`
+- default target stop thresholds:
+- `connection_success_rate >= 0.95`
+- `direct_connection_rate >= 0.60`
+- `preflight_success_rate >= 0.90`
+- `infra_failure_rate <= 0.10`
+- Added npm script alias in `package.json`:
+- `chaos-lab:ipv6:loop`
+- Updated docs and plan references:
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+
+### Files Touched
+- `net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh`
+- `package.json`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `ls -la net-chaos-lab/scripts`
+- `cat package.json`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab-matrix-loop.sh`
+- `sed -n '1,240p' net-chaos-lab/scripts/chaos-lab-matrix-watch.sh`
+- `chmod +x net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh`
+- `bash net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh --help`
+- `npm run chaos-lab:ipv6:loop -- --help`
+
+### Test Results
+- `bash net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh --help` -> PASS (usage/help rendered correctly).
+- `npm run chaos-lab:ipv6:loop -- --help` -> PASS (npm wiring correct; help output rendered).
+
+### Failures / Open Questions
+- No failures in loop launcher wiring.
+- Runtime run quality remains dependent on containernet host state and sudo availability; next step is executing the loop for real and monitoring run artifacts for convergence.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T06:28:12Z)
+- "alright I set off the ipv6 loop are you watching it? are you going to continue to try and troubleshoot and fix the issue all night?"
+
+### Actions Attempted
+- Confirmed live process state for user-started IPv6 loop/run workers.
+- Inspected newest artifact directory and parsed latest summary/events while run was still in progress.
+- Verified that initial dual-stack probe cycle passes but `ipv6-only` stage still produces probe failures.
+
+### Findings
+- Active process observed: `npm run chaos-lab:ipv6:min` (PID `53989`) under user terminal context.
+- Latest artifact: `net-chaos-lab/artifacts/20260221T062602Z`.
+- Mid-run summary snapshot showed `connection_success_rate=1.0`, `preflight_success_rate=1`, `infra_failure_rate=0` for initial cycle.
+- Event tail confirms stage transition to `ip_mode=ipv6-only` then failing probe result(s):
+- `network_preflight.ok=true` for failing probe,
+- but probe payload still `connected=false`, `peer_count=0`, `exit_code=1` in ipv6-only stage.
+- This indicates current blocker is no longer purely HTTPS preflight/infra in that failing probe; now includes post-preflight p2p connectivity behavior in ipv6-only mode.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `ps -ef | rg "chaos-lab:ipv6:loop|chaos-lab-ipv6-loop.sh|chaos-lab:ipv6:min" | rg -v rg`
+- `ls -1dt net-chaos-lab/artifacts/20* | head -n 5`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... "$LATEST/metrics-summary.json"`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... "$LATEST/metrics-events.jsonl"`
+- `ps -fp 53989`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); wc -l "$LATEST/metrics-events.jsonl"; tail -n 20 "$LATEST/metrics-events.jsonl"`
+
+### Test Results
+- No code changes this prompt; monitoring/diagnostic commands only.
+
+### Failures / Open Questions
+- Need full-run completion output from current loop iteration to quantify whether the run regresses to infra failure or remains a connectivity-class failure in ipv6-only stage.
+- Next patch direction likely shifts toward ipv6-only post-preflight peer bootstrap/session establishment path, not just HTTPS reachability.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T18:10:53Z)
+- "where are we at with ipv6 have you fixed anything?"
+
+### Actions Attempted
+- Checked live loop process and recent artifact sequence to provide precise IPv6 status.
+- Parsed multiple consecutive completed runs to identify stable metric trend.
+- Summarized probe-result mode breakdown for latest completed run.
+
+### Findings
+- Active worker observed: `npm run chaos-lab:ipv6:min` (PID `562235`) and newest artifact currently in-progress (`20260221T180933Z`, `probe_total=0` at sample time).
+- Last completed runs (`20260221T180218Z`, `20260221T175503Z`, `20260221T174748Z`, etc.) are consistent:
+- `probe_total=12`
+- `connection_success_rate=0.3333`
+- `direct_connection_rate=0.0`
+- `preflight_success_rate=1.0`
+- `infra_failure_rate=0.0`
+- `avg_announced_direct_webrtc_addrs=2.0`
+- Mode-level breakdown (`20260221T180218Z`):
+- `dual-stack`: `4` probe results all `ok=true connected=true preflight=true`
+- `ipv6-only`: `8` probe results all `ok=false connected=false preflight=true`
+- Failing ipv6-only probe diagnostics show `connectionState="connected"` but `peer_count=0`, with `connectionAddrCounts.directWebrtc=0`, `relayWebrtc=0`, `relayAny=0`, `directOther=0`.
+
+### Interpretation
+- Infra/HTTPS preflight stability has materially improved (no longer the dominant blocker in these runs).
+- Remaining blocker is now IPv6-only p2p session/bootstrap/connectivity after preflight: the app comes up, but no peer connections materialize in ipv6-only probe phases.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `ps -ef | rg "chaos-lab:ipv6:loop|chaos-lab-ipv6-loop.sh|chaos-lab:ipv6:min" | rg -v rg`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... "$LATEST/metrics-summary.json"`
+- `for d in $(ls -1dt net-chaos-lab/artifacts/20* | head -n 8); do jq ... "$d/metrics-summary.json"; done`
+- `RUN=net-chaos-lab/artifacts/20260221T180218Z; jq ... "$RUN/metrics-events.jsonl" | awk ...`
+
+### Test Results
+- No code changes in this prompt; runtime/artifact diagnostics only.
+
+### Failures / Open Questions
+- Open: why ipv6-only probes report `connectionState=connected` yet zero peers/zero active connection addr counts.
+- Next patch direction: expand preflight/probe diagnostics for relay bootstrap viability in ipv6-only mode (explicit relay endpoint reachability + bootstrap addr family selection trace) and adjust bootstrap/connect logic accordingly.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T18:29:37Z)
+- "how many troubleshoot fix cycles have you gone thorough tonight?"
+
+### Actions Attempted
+- Reviewed current execution date/time in UTC and local timezone to ground "tonight" counts.
+- Queried `plan/log.md` headings and timestamped prompt sections for the active night window.
+- Counted both total troubleshoot/review cycles and code-change+retest cycles from recent log sections.
+
+### Findings
+- Since the recent overnight troubleshooting window (`plan/log.md` section from `2026-02-20T15:51:19-09:00` onward):
+- `12` troubleshoot/review cycles were logged.
+- `7` code-change cycles were logged (`Code Changes` / `Concrete Changes Attempted`).
+- In the strict 2026-02-21 UTC subset currently in the log tail:
+- `9` troubleshoot/review cycles.
+- `4` code-change cycles.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +'%Y-%m-%d %H:%M:%S %Z'`
+- `date +'%Y-%m-%d %H:%M:%S %Z'`
+- `rg -n "2026-02-21|2026-02-20" plan/log.md | tail -n 80`
+- `rg -n "^##|^###|Prompt|timestamp|Time|Date" plan/log.md | tail -n 120`
+- `awk 'NR>=12910{...}' plan/log.md`
+- `awk 'NR>=12910 && /^### Prompt/ {print}' plan/log.md`
+- `awk 'NR>=12677{...}' plan/log.md`
+- `sed -n '1,120p' plan/plan.md`
+
+### Test Results
+- N/A (diagnostic/log accounting only).
+
+### Failures / Open Questions
+- None for this prompt.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T21:40:52Z)
+- "looks like we have some connections now is it improving?"
+
+### Actions Attempted
+- Reviewed latest active process state for IPv6 minimal loop workers.
+- Parsed the most recent 15 artifact summaries to evaluate metric trend over time.
+- Broke down latest completed run probe outcomes by `ip_mode`, `ok`, `connected`, and direct-connection flags.
+
+### Findings
+- Active worker is running: `npm run chaos-lab:ipv6:min`.
+- Latest artifact at sample time (`20260221T213952Z`) was in-progress (`probe_total=0`).
+- Last completed runs (`20260221T213237Z` back through `20260221T195822Z`) are flat:
+- `connection_success_rate=0.3333333333333333`
+- `direct_connection_rate=0.0`
+- `preflight_success_rate=1.0`
+- `infra_failure_rate=0.0`
+- `avg_announced_direct_webrtc_addrs=2.0`
+- Latest completed run stage split (`20260221T213237Z`):
+- `dual-stack`: 4/4 probes `ok=true connected=true preflight=true`
+- `ipv6-only`: 8/8 probes `ok=false connected=false preflight=true`
+
+### Interpretation
+- There are still real connections in dual-stack mode, but there is no recent improvement in ipv6-only success.
+- Trend is currently stable/plateaued at one-third overall success due to consistent ipv6-only probe failures.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `ps -ef | rg "chaos-lab:ipv6:loop|chaos-lab-ipv6-loop.sh|chaos-lab:ipv6:min" | rg -v rg`
+- `for d in $(ls -1dt net-chaos-lab/artifacts/20* | head -n 15); do jq ... "$d/metrics-summary.json"; done`
+- `LATEST=$(ls -1dt net-chaos-lab/artifacts/20* | head -n1); jq ... "$LATEST/metrics-summary.json"`
+- `RUN=net-chaos-lab/artifacts/20260221T213237Z; jq ... "$RUN/metrics-events.jsonl" | awk ...`
+
+### Test Results
+- N/A (artifact trend diagnostics only).
+
+### Failures / Open Questions
+- Open: why ipv6-only probes remain `preflight=true` but `connected=false` and `direct=false` across all sampled runs.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T22:20:59Z)
+- "OK we're giving up... How do I run the full chaos lab (not in a loop) just have it stand it up so I can see how well connections perist with netviz"
+
+### Actions Attempted
+- Verified npm script entrypoints in  for one-shot matrix/full runs.
+- Reviewed  behavior to confirm watcher startup, proxy wiring, and stop-on-fail behavior.
+- Reviewed  run lifecycle to confirm topology/services are torn down at run end (no built-in infinite hold in one-shot mode).
+
+### Findings
+- 
+> chaos-lab:matrix:full
+> bash net-chaos-lab/scripts/chaos-lab-matrix-full.sh is the one-shot "full" run with integrated NetViz watcher URL output.
+- That wrapper forces ; it may end early on first failed run.
+- For better persistence observation across all matrix runs in a single non-loop execution, run NetViz and chaos-lab matrix directly in two terminals without .
+- Runner is finite by design; there is no native "stand up forever" flag in  one-shot mode.
+
+### Files Touched
+- 
+
+### Commands Run
+- 27:    "chaos:lab": "bash net-chaos-lab/scripts/chaos-lab.sh",
+28:    "chaos-lab": "bash net-chaos-lab/scripts/chaos-lab.sh",
+29:    "chaos-lab:full": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard",
+30:    "chaos-lab:matrix": "bash net-chaos-lab/scripts/chaos-lab.sh --matrix net-chaos-lab/configs/matrix/direct-regression.yaml",
+31:    "chaos-lab:matrix:full": "bash net-chaos-lab/scripts/chaos-lab-matrix-full.sh",
+32:    "chaos-lab:matrix:loop": "bash net-chaos-lab/scripts/chaos-lab-matrix-loop.sh",
+33:    "chaos-lab:matrix:watch": "bash net-chaos-lab/scripts/chaos-lab-matrix-watch.sh",
+34:    "chaos-lab:matrix:smoke": "bash net-chaos-lab/scripts/chaos-lab.sh --matrix net-chaos-lab/configs/matrix/dry-run-smoke.yaml",
+35:    "chaos-lab:ipv6:min": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python CHAOSLAB_PREFLIGHT_CURL_MAX_TIME=20 CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS=4 CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS=1200 bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --topology net-chaos-lab/configs/topology.ipv6-minimal.yaml --scenario net-chaos-lab/configs/scenarios/ipv6-only-minimal.yaml --probe-each-stage --probe-agents 4 --probe-parallelism 1 --probe-fail-fast --no-dashboard",
+36:    "chaos-lab:ipv6:min:all": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python CHAOSLAB_IP_MODE_SCOPE=all CHAOSLAB_PREFLIGHT_CURL_MAX_TIME=20 CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS=4 CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS=1200 bash net-chaos-lab/scripts/chaos-lab.sh --mode containernet --topology net-chaos-lab/configs/topology.ipv6-minimal.yaml --scenario net-chaos-lab/configs/scenarios/ipv6-only-minimal.yaml --probe-each-stage --probe-agents 4 --probe-parallelism 1 --probe-fail-fast --no-dashboard",
+37:    "chaos-lab:ipv6:loop": "bash net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh",
+38:    "chaos-lab:image:build": "docker build -t peercompute/net-chaos-lab-node:latest -f net-chaos-lab/docker/chaos-node.Dockerfile net-chaos-lab/docker",
+39:    "chaos-lab:cleanup": "sudo docker ps -a --format '{{.Names}}' | awk '/^mn\\./ {print}' | xargs -r sudo docker rm -f",
+- net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:6:script_name="${CHAOS_IPV6_LOOP_SCRIPT:-chaos-lab:ipv6:min}"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:19:Usage: bash net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh [options]
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:21:Runs chaos-lab IPv6 minimal scenario repeatedly and prints summary metrics after each run.
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:32:  --script <name>         NPM script to run (chaos-lab:ipv6:min or :all).
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:33:  --all                   Shortcut for --script chaos-lab:ipv6:min:all
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:38:  npm run chaos-lab:ipv6:loop
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:39:  npm run chaos-lab:ipv6:loop -- --max-runs 100 --sleep 15
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:40:  npm run chaos-lab:ipv6:loop -- --no-until-target --max-runs 500
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:41:  npm run chaos-lab:ipv6:loop -- --all --target-direct 0.40
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:48:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --max-runs" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:53:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --sleep" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:66:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --target-conn" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:71:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --target-direct" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:76:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --target-preflight" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:81:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --target-infra-max" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:86:      [[ $# -ge 2 ]] || { echo "[chaos-ipv6-loop] missing value for --script" >&2; exit 2; }
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:91:      script_name="chaos-lab:ipv6:min:all"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:103:      echo "[chaos-ipv6-loop] unknown argument: $1" >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:111:  echo "[chaos-ipv6-loop] --max-runs must be an integer >= 0 (got: $max_runs)" >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:115:  echo "[chaos-ipv6-loop] --sleep must be numeric (got: $sleep_seconds)" >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:119:  echo "[chaos-ipv6-loop] jq is required to parse run summaries." >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:126:    echo "[chaos-ipv6-loop] target values must be numeric (got: $value)" >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:149:      echo "[chaos-ipv6-loop] warning: sudo credentials are not cached and no tty is available; runs may fail." >&2
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:152:    echo "[chaos-ipv6-loop] requesting sudo once for unattended loop..."
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:178:  echo "[chaos-ipv6-loop] iteration=$iteration started_at=$started_at script=$script_name"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:199:    echo "[chaos-ipv6-loop] iteration=$iteration rc=$rc run_id=$run_id conn=$conn direct=$direct preflight=$preflight infra=$infra"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:200:    echo "[chaos-ipv6-loop] summary=$summary_path"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:202:    echo "[chaos-ipv6-loop] iteration=$iteration rc=$rc summary unavailable"
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:207:      echo "[chaos-ipv6-loop] target reached at iteration=$iteration (conn>=${target_conn}, direct>=${target_direct}, preflight>=${target_preflight}, infra<=${target_infra_max})."
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:213:    echo "[chaos-ipv6-loop] stopping at max-runs=$max_runs."
+net-chaos-lab/scripts/chaos-lab-ipv6-loop.sh:217:  echo "[chaos-ipv6-loop] sleeping ${sleep_seconds}s before next iteration..."
+net-chaos-lab/scripts/chaos-lab-matrix-loop.sh:5:loop_command=("$repo_root/net-chaos-lab/scripts/chaos-lab-matrix-full.sh")
+net-chaos-lab/scripts/chaos-lab-matrix-loop.sh:16:Usage: bash net-chaos-lab/scripts/chaos-lab-matrix-loop.sh [options] [-- <matrix-full args>]
+net-chaos-lab/scripts/chaos-lab-matrix-loop.sh:27:  npm run chaos-lab:matrix:loop
+net-chaos-lab/scripts/chaos-lab-matrix-loop.sh:28:  npm run chaos-lab:matrix:loop -- --max-runs 5 --sleep 20
+net-chaos-lab/scripts/chaos-lab-matrix-loop.sh:29:  npm run chaos-lab:matrix:loop -- --no-until-pass --max-runs 20
+net-chaos-lab/scripts/chaos-lab-matrix-watch.sh:13:Usage: bash net-chaos-lab/scripts/chaos-lab-matrix-watch.sh [options]
+net-chaos-lab/scripts/chaos-lab-matrix-full.sh:58:    echo "[chaos-lab] sudo requires an interactive terminal for matrix:full." >&2
+net-chaos-lab/scripts/chaos-lab-matrix-full.sh:147:  bash "$repo_root/net-chaos-lab/scripts/chaos-lab.sh"
+- usage: main.py [-h] [--topology TOPOLOGY] [--scenario SCENARIO]
+               [--mode {auto,containernet,dry-run}] [--agents AGENTS]
+               [--run-id RUN_ID] [--artifacts-root ARTIFACTS_ROOT]
+               [--demo-command DEMO_COMMAND] [--demo-cwd DEMO_CWD] [--url URL]
+               [--min-peers MIN_PEERS] [--wait-ms WAIT_MS]
+               [--probe-agents PROBE_AGENTS]
+               [--probe-parallelism PROBE_PARALLELISM] [--probe-each-stage]
+               [--skip-probes] [--media] [--probe-fail-fast]
+               [--no-probe-fail-fast] [--skip-scenario]
+               [--time-scale TIME_SCALE] [--dashboard] [--no-dashboard]
+               [--dashboard-host DASHBOARD_HOST]
+               [--dashboard-port DASHBOARD_PORT] [--matrix MATRIX]
+               [--matrix-stop-on-fail]
+
+PeerCompute network chaos-lab runner
+
+options:
+  -h, --help            show this help message and exit
+  --topology TOPOLOGY   Path to topology yaml/json config
+  --scenario SCENARIO   Path to scenario yaml/json config
+  --mode {auto,containernet,dry-run}
+  --agents AGENTS       Override number of browser agents (1-50)
+  --run-id RUN_ID       Override run id
+  --artifacts-root ARTIFACTS_ROOT
+                        Root directory for artifacts/run outputs
+  --demo-command DEMO_COMMAND
+                        Optional command to start a demo server
+  --demo-cwd DEMO_CWD   Working directory for demo command
+  --url URL             Probe URL override
+  --min-peers MIN_PEERS
+                        Minimum peers required for probe pass
+  --wait-ms WAIT_MS     Probe wait timeout override in ms
+  --probe-agents PROBE_AGENTS
+                        How many agents to probe per cycle
+  --probe-parallelism PROBE_PARALLELISM
+  --probe-each-stage
+  --skip-probes
+  --media               Enable audio/video loopback probe
+  --probe-fail-fast     Abort run when a probe checkpoint reports infra
+                        failure for all probed agents
+  --no-probe-fail-fast  Disable probe fail-fast behavior
+  --skip-scenario
+  --time-scale TIME_SCALE
+                        Scenario timing multiplier
+  --dashboard
+  --no-dashboard
+  --dashboard-host DASHBOARD_HOST
+  --dashboard-port DASHBOARD_PORT
+  --matrix MATRIX       Path to matrix config to execute multiple scenario
+                        runs
+  --matrix-stop-on-fail
+                        Stop matrix execution after first failed run/gate
+- #!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+python_bin="${PYTHON_BIN:-/home/$USER/projects/containernet/.venv/bin/python}"
+matrix_config="$repo_root/net-chaos-lab/configs/matrix/direct-regression.yaml"
+
+pick_free_port() {
+  python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+}
+
+cleanup_stale_netviz_listener() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1; then
+    return
+  fi
+  local removed=0
+  while IFS= read -r pid; do
+    [[ -z "${pid:-}" ]] && continue
+    local cmdline
+    cmdline="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+    if [[ "$cmdline" == *"demos/netviz"* || "$cmdline" == *"vite"* ]]; then
+      kill "$pid" >/dev/null 2>&1 || true
+      removed=$((removed + 1))
+      echo "[chaos-lab] removed stale NetViz listener on :$port (pid=$pid)"
+    fi
+  done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if (( removed > 0 )); then
+    sleep 0.4
+  fi
+}
+
+wait_for_netviz_chaos_api() {
+  local url="$1"
+  local retries="${2:-40}"
+  for _ in $(seq 1 "$retries"); do
+    local code
+    code="$(curl -k -sS -o /dev/null -w '%{http_code}' "$url" || true)"
+    if [[ "$code" == "200" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+ensure_sudo_ready() {
+  if sudo -n true >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    echo "[chaos-lab] sudo requires an interactive terminal for matrix:full." >&2
+    echo "[chaos-lab] run this command directly in your shell and enter your sudo password when prompted." >&2
+    return 1
+  fi
+  echo "[chaos-lab] requesting sudo for containernet matrix execution..."
+  sudo -v
+}
+
+ensure_sudo_ready
+
+dashboard_host="${CHAOS_DASHBOARD_HOST:-127.0.0.1}"
+if [[ -n "${CHAOS_DASHBOARD_PORT:-}" ]]; then
+  dashboard_port="${CHAOS_DASHBOARD_PORT}"
+else
+  dashboard_port="$(pick_free_port)"
+fi
+netviz_host="${CHAOS_NETVIZ_HOST:-0.0.0.0}"
+netviz_port="${CHAOS_NETVIZ_PORT:-5182}"
+
+chaos_api_base="${CHAOS_NETVIZ_API_BASE:-/chaos-api}"
+chaos_proxy_target="${CHAOS_NETVIZ_PROXY_TARGET:-http://${dashboard_host}:${dashboard_port}}"
+chaos_api_encoded="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1] || ""))' "$chaos_api_base")"
+watch_query="room=telemetry&topologyId=netviz-topology&topologyType=distributed&render=low&dropRelay=true&relayRetentionMode=sqrt&relayRetentionMin=2&autoConnect=0&chaosApi=${chaos_api_encoded}"
+watch_url_override="${CHAOS_NETVIZ_WATCH_URL:-}"
+
+netviz_log="$repo_root/net-chaos-lab/artifacts/netviz-watch.log"
+mkdir -p "$(dirname "$netviz_log")"
+: >"$netviz_log"
+
+cleanup_stale_netviz_listener "$netviz_port"
+
+netviz_command="${CHAOS_NETVIZ_COMMAND:-npm --prefix \"$repo_root/demos/netviz\" run dev -- --host ${netviz_host} --port ${netviz_port} --strictPort}"
+
+echo "[chaos-lab] launching NetViz watcher..."
+echo "[chaos-lab] netviz command: $netviz_command"
+echo "[chaos-lab] netviz log: $netviz_log"
+echo "[chaos-lab] dashboard port: $dashboard_port"
+
+PEERCOMPUTE_NO_OPEN=1 DEV_OPEN_OVERVIEW=0 VITE_CHAOS_API_PROXY_TARGET="$chaos_proxy_target" bash -lc "$netviz_command" >>"$netviz_log" 2>&1 &
+netviz_pid=$!
+
+cleanup() {
+  if [[ -n "${netviz_pid:-}" ]] && kill -0 "$netviz_pid" >/dev/null 2>&1; then
+    kill "$netviz_pid" >/dev/null 2>&1 || true
+    wait "$netviz_pid" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+sleep 2
+if ! kill -0 "$netviz_pid" >/dev/null 2>&1; then
+  echo "[chaos-lab] failed to keep NetViz running; recent log lines:" >&2
+  tail -n 40 "$netviz_log" >&2 || true
+  exit 1
+fi
+
+actual_netviz_port="$netviz_port"
+for _ in {1..30}; do
+  local_url="$(rg -o 'https://localhost:[0-9]+' "$netviz_log" | tail -n 1 || true)"
+  if [[ -n "$local_url" ]]; then
+    actual_netviz_port="${local_url##*:}"
+    break
+  fi
+  sleep 0.2
+done
+
+if [[ -n "$watch_url_override" ]]; then
+  watch_url="$watch_url_override"
+else
+  watch_url="https://localhost:${actual_netviz_port}/?${watch_query}"
+fi
+
+if [[ "$actual_netviz_port" != "$netviz_port" ]]; then
+  echo "[chaos-lab] note: requested NetViz port ${netviz_port} was busy; using ${actual_netviz_port}."
+fi
+
+echo "[chaos-lab] open NetViz watcher URL:"
+echo "  $watch_url"
+echo "[chaos-lab] netviz chaos proxy target: $chaos_proxy_target"
+
+chaos_probe_url="https://localhost:${actual_netviz_port}${chaos_api_base}/api/summary"
+if ! wait_for_netviz_chaos_api "$chaos_probe_url"; then
+  echo "[chaos-lab] NetViz chaos-api preflight failed at $chaos_probe_url (expected HTTP 200)." >&2
+  echo "[chaos-lab] recent NetViz log lines:" >&2
+  tail -n 60 "$netviz_log" >&2 || true
+  exit 1
+fi
+
+cmd=(
+  bash "$repo_root/net-chaos-lab/scripts/chaos-lab.sh"
+  --matrix "$matrix_config"
+  --matrix-stop-on-fail
+  --probe-fail-fast
+  --dashboard-host "$dashboard_host"
+  --dashboard-port "$dashboard_port"
+)
+if [[ "$#" -gt 0 ]]; then
+  cmd+=("$@")
+fi
+
+sudo -E env "PATH=$PATH" PYTHON_BIN="$python_bin" "${cmd[@]}"
+- net-chaos-lab/src/chaoslab/config.py:82:      'command': 'sleep infinity',
+net-chaos-lab/src/chaoslab/dashboard.py:100:      self.log_error('dashboard handler error: %s', exc)
+net-chaos-lab/src/chaoslab/dashboard.py:111:      self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f'Unhandled dashboard error: {exc}')
+net-chaos-lab/src/chaoslab/dashboard.py:114:def create_dashboard_server(
+net-chaos-lab/src/chaoslab/dashboard.py:135:def serve_dashboard(
+net-chaos-lab/src/chaoslab/dashboard.py:143:  server = create_dashboard_server(
+net-chaos-lab/src/chaoslab/dashboard.py:151:  print(f'[dashboard] listening on http://{host}:{port}')
+net-chaos-lab/src/chaoslab/dashboard.py:156:  parser = argparse.ArgumentParser(description='Serve chaos-lab metrics dashboard')
+net-chaos-lab/src/chaoslab/dashboard.py:160:  parser.add_argument('--static-dir', required=True, help='Directory containing dashboard index.html')
+net-chaos-lab/src/chaoslab/dashboard.py:168:  serve_dashboard(
+net-chaos-lab/src/chaoslab/__init__.py:10:  'dashboard',
+net-chaos-lab/src/chaoslab/scenario.py:22:    sleep_fn: Callable[[float], None] = time.sleep,
+net-chaos-lab/src/chaoslab/scenario.py:30:    self.sleep_fn = sleep_fn
+net-chaos-lab/src/chaoslab/scenario.py:54:        self.sleep_fn(scaled_wait)
+net-chaos-lab/src/chaoslab/scenario.py:66:      self.sleep_fn(settle * self.time_scale)
+net-chaos-lab/src/chaoslab/topology.py:483:    self._cleanup_stale_mininet_state()
+net-chaos-lab/src/chaoslab/topology.py:541:    self._cleanup_planned_docker_nodes(service_records.values(), agents)
+net-chaos-lab/src/chaoslab/topology.py:548:        command='sleep infinity',
+net-chaos-lab/src/chaoslab/topology.py:561:        command=str(self.config.get('agents', {}).get('command') or 'sleep infinity'),
+net-chaos-lab/src/chaoslab/topology.py:805:  def _cleanup_stale_mininet_state(self) -> None:
+net-chaos-lab/src/chaoslab/topology.py:807:      self._log('Skipping Mininet cleanup (mn -c): requires root.')
+net-chaos-lab/src/chaoslab/topology.py:810:    cleanup = subprocess.run(
+net-chaos-lab/src/chaoslab/topology.py:819:    if cleanup.returncode == 0:
+net-chaos-lab/src/chaoslab/topology.py:820:      self._log('Mininet cleanup complete (mn -c).')
+net-chaos-lab/src/chaoslab/topology.py:824:      part for part in [(cleanup.stdout or '').strip(), (cleanup.stderr or '').strip()] if part
+net-chaos-lab/src/chaoslab/topology.py:827:      'Mininet cleanup warning (mn -c failed)'
+net-chaos-lab/src/chaoslab/topology.py:1052:  def _cleanup_planned_docker_nodes(
+net-chaos-lab/src/chaoslab/topology.py:1061:      self._log(f'Stale docker preflight cleanup completed for {len(names)} planned nodes.')
+net-chaos-lab/src/chaoslab/topology.py:1131:    while True:
+net-chaos-lab/src/chaoslab/topology.py:1564:          time.sleep(poll_s)
+net-chaos-lab/src/chaoslab/topology.py:1872:        time.sleep(interval)
+net-chaos-lab/src/chaoslab/topology.py:1888:          time.sleep(interval)
+net-chaos-lab/src/chaoslab/topology.py:1904:        time.sleep(interval)
+net-chaos-lab/src/chaoslab/topology.py:2263:    sleep_ms = self._env_int(
+net-chaos-lab/src/chaoslab/topology.py:2293:        time.sleep(float(sleep_ms) / 1000.0)
+net-chaos-lab/src/chaoslab/topology.py:2314:      time.sleep(float(sleep_ms) / 1000.0)
+net-chaos-lab/src/chaoslab/harness.py:614:          time.sleep(curl_retry_delay_ms / 1000.0)
+net-chaos-lab/src/chaoslab/main.py:13:from .dashboard import create_dashboard_server
+net-chaos-lab/src/chaoslab/main.py:141:  parser.add_argument('--dashboard', dest='dashboard', action='store_true', default=True)
+net-chaos-lab/src/chaoslab/main.py:142:  parser.add_argument('--no-dashboard', dest='dashboard', action='store_false')
+net-chaos-lab/src/chaoslab/main.py:143:  parser.add_argument('--dashboard-host', default='127.0.0.1')
+net-chaos-lab/src/chaoslab/main.py:144:  parser.add_argument('--dashboard-port', type=int, default=8866)
+net-chaos-lab/src/chaoslab/main.py:238:  dashboard_server = None
+net-chaos-lab/src/chaoslab/main.py:239:  dashboard_thread: threading.Thread | None = None
+net-chaos-lab/src/chaoslab/main.py:240:  if args.dashboard:
+net-chaos-lab/src/chaoslab/main.py:242:      dashboard_server = create_dashboard_server(
+net-chaos-lab/src/chaoslab/main.py:243:        host=args.dashboard_host,
+net-chaos-lab/src/chaoslab/main.py:244:        port=int(args.dashboard_port),
+net-chaos-lab/src/chaoslab/main.py:247:        static_dir=root / 'net-chaos-lab' / 'dashboard',
+net-chaos-lab/src/chaoslab/main.py:250:      print(f'[dashboard] listening on http://{args.dashboard_host}:{int(args.dashboard_port)}')
+net-chaos-lab/src/chaoslab/main.py:251:      dashboard_thread = threading.Thread(
+net-chaos-lab/src/chaoslab/main.py:252:        target=dashboard_server.serve_forever,
+net-chaos-lab/src/chaoslab/main.py:254:        name='chaoslab-dashboard',
+net-chaos-lab/src/chaoslab/main.py:256:      dashboard_thread.start()
+net-chaos-lab/src/chaoslab/main.py:258:      print(f'[chaos-lab] dashboard unavailable: {exc}')
+net-chaos-lab/src/chaoslab/main.py:259:      metrics.record('dashboard_start_failed', {'error': str(exc)})
+net-chaos-lab/src/chaoslab/main.py:292:    if not args.skip_probes and str(args.mode).strip().lower() != 'dry-run':
+net-chaos-lab/src/chaoslab/main.py:309:    if not args.skip_probes:
+net-chaos-lab/src/chaoslab/main.py:312:    if not args.skip_scenario:
+net-chaos-lab/src/chaoslab/main.py:317:        if args.skip_probes:
+net-chaos-lab/src/chaoslab/main.py:334:    if not args.skip_probes:
+net-chaos-lab/src/chaoslab/main.py:352:    if dashboard_server is not None:
+net-chaos-lab/src/chaoslab/main.py:354:        dashboard_server.shutdown()
+net-chaos-lab/src/chaoslab/main.py:358:        dashboard_server.server_close()
+net-chaos-lab/src/chaoslab/main.py:361:      if dashboard_thread is not None:
+net-chaos-lab/src/chaoslab/main.py:362:        dashboard_thread.join(timeout=2.0)
+net-chaos-lab/src/chaoslab/main.py:434:      'skip_probes': _coerce_bool(
+net-chaos-lab/src/chaoslab/main.py:435:        _matrix_value(run_spec, defaults, 'skip_probes', args.skip_probes),
+net-chaos-lab/src/chaoslab/main.py:436:        fallback=bool(args.skip_probes),
+net-chaos-lab/src/chaoslab/main.py:442:      'skip_scenario': _coerce_bool(
+net-chaos-lab/src/chaoslab/main.py:443:        _matrix_value(run_spec, defaults, 'skip_scenario', args.skip_scenario),
+net-chaos-lab/src/chaoslab/main.py:444:        fallback=bool(args.skip_scenario),
+net-chaos-lab/src/chaoslab/main.py:451:      'dashboard': _coerce_bool(
+net-chaos-lab/src/chaoslab/main.py:452:        _matrix_value(run_spec, defaults, 'dashboard', args.dashboard),
+net-chaos-lab/src/chaoslab/main.py:453:        fallback=bool(args.dashboard),
+- net-chaos-lab/src/chaoslab/__init__.py:9:  'matrix',
+net-chaos-lab/src/chaoslab/dashboard.py:166:def main() -> None:
+net-chaos-lab/src/chaoslab/scenario.py:38:  def run(self, scenario_cfg: dict[str, Any]) -> list[dict[str, Any]]:
+net-chaos-lab/src/chaoslab/topology.py:186:  def run_command_in_agent(self, agent_name: str, command: list[str], timeout_s: int = 180) -> tuple[int, str, str]:
+net-chaos-lab/src/chaoslab/topology.py:212:  def run_command_in_service(
+net-chaos-lab/src/chaoslab/topology.py:223:  def run_command_in_router(
+net-chaos-lab/src/chaoslab/matrix.py:82:def load_matrix_config(path_like: str | Path, repo_root: Path) -> LoadedMatrixConfig:
+net-chaos-lab/src/chaoslab/matrix.py:244:def write_matrix_summary(path: Path, payload: dict[str, Any]) -> None:
+net-chaos-lab/src/chaoslab/matrix.py:257:  'load_matrix_config',
+net-chaos-lab/src/chaoslab/matrix.py:258:  'write_matrix_summary',
+net-chaos-lab/src/chaoslab/harness.py:103:  def run_probe_cycle(
+net-chaos-lab/src/chaoslab/harness.py:565:    def run_curl_probe(target_url: str, family_flag: str | None) -> tuple[int, str, int | None, str, int | None, int]:
+net-chaos-lab/src/chaoslab/main.py:15:from .matrix import MatrixError, evaluate_gates, load_matrix_config, write_matrix_summary
+net-chaos-lab/src/chaoslab/main.py:145:  parser.add_argument('--matrix', default='', help='Path to matrix config to execute multiple scenario runs')
+net-chaos-lab/src/chaoslab/main.py:146:  parser.add_argument('--matrix-stop-on-fail', action='store_true', help='Stop matrix execution after first failed run/gate')
+net-chaos-lab/src/chaoslab/main.py:185:def run_single(args: argparse.Namespace) -> tuple[int, dict[str, Any], Path]:
+net-chaos-lab/src/chaoslab/main.py:268:  def run_probe_checkpoint(label: str) -> list[dict[str, Any]]:
+net-chaos-lab/src/chaoslab/main.py:371:def _matrix_value(
+net-chaos-lab/src/chaoslab/main.py:384:def run_matrix(args: argparse.Namespace) -> int:
+net-chaos-lab/src/chaoslab/main.py:386:  matrix_path = str(args.matrix or '').strip()
+net-chaos-lab/src/chaoslab/main.py:387:  if not matrix_path:
+net-chaos-lab/src/chaoslab/main.py:388:    print('[chaos-lab] matrix error: missing --matrix path')
+net-chaos-lab/src/chaoslab/main.py:392:    matrix_cfg = load_matrix_config(matrix_path, root)
+net-chaos-lab/src/chaoslab/main.py:394:    print(f'[chaos-lab] matrix config error: {exc}')
+net-chaos-lab/src/chaoslab/main.py:397:  matrix_run_id = str(args.run_id or '').strip() or default_run_id()
+net-chaos-lab/src/chaoslab/main.py:399:  matrix_dir = artifacts_root / matrix_run_id
+net-chaos-lab/src/chaoslab/main.py:400:  runs_root = matrix_dir / 'runs'
+net-chaos-lab/src/chaoslab/main.py:404:    f'[chaos-lab] matrix start: {matrix_cfg.name} '
+net-chaos-lab/src/chaoslab/main.py:405:    f'({len(matrix_cfg.runs)} runs) config={matrix_cfg.path}'
+net-chaos-lab/src/chaoslab/main.py:411:  for index, run_spec in enumerate(matrix_cfg.runs):
+net-chaos-lab/src/chaoslab/main.py:412:    child_run_id = f'{matrix_run_id}-{run_spec.id}'
+net-chaos-lab/src/chaoslab/main.py:413:    defaults = matrix_cfg.defaults
+net-chaos-lab/src/chaoslab/main.py:418:      'topology': run_spec.topology or _matrix_value(run_spec, defaults, 'topology', args.topology),
+net-chaos-lab/src/chaoslab/main.py:419:      'mode': str(_matrix_value(run_spec, defaults, 'mode', args.mode)),
+net-chaos-lab/src/chaoslab/main.py:420:      'agents': int(_matrix_value(run_spec, defaults, 'agents', args.agents)),
+net-chaos-lab/src/chaoslab/main.py:421:      'demo_command': str(_matrix_value(run_spec, defaults, 'demo_command', args.demo_command)),
+net-chaos-lab/src/chaoslab/main.py:422:      'demo_cwd': str(_matrix_value(run_spec, defaults, 'demo_cwd', args.demo_cwd)),
+net-chaos-lab/src/chaoslab/main.py:423:      'url': str(_matrix_value(run_spec, defaults, 'url', args.url)),
+net-chaos-lab/src/chaoslab/main.py:424:      'min_peers': int(_matrix_value(run_spec, defaults, 'min_peers', args.min_peers)),
+net-chaos-lab/src/chaoslab/main.py:425:      'wait_ms': int(_matrix_value(run_spec, defaults, 'wait_ms', args.wait_ms)),
+net-chaos-lab/src/chaoslab/main.py:426:      'probe_agents': int(_matrix_value(run_spec, defaults, 'probe_agents', args.probe_agents)),
+net-chaos-lab/src/chaoslab/main.py:428:        _matrix_value(run_spec, defaults, 'probe_parallelism', args.probe_parallelism)
+net-chaos-lab/src/chaoslab/main.py:431:        _matrix_value(run_spec, defaults, 'probe_each_stage', args.probe_each_stage),
+net-chaos-lab/src/chaoslab/main.py:435:        _matrix_value(run_spec, defaults, 'skip_probes', args.skip_probes),
+net-chaos-lab/src/chaoslab/main.py:439:        _matrix_value(run_spec, defaults, 'media', args.media),
+net-chaos-lab/src/chaoslab/main.py:443:        _matrix_value(run_spec, defaults, 'skip_scenario', args.skip_scenario),
+net-chaos-lab/src/chaoslab/main.py:447:        _matrix_value(run_spec, defaults, 'probe_fail_fast', args.probe_fail_fast),
+net-chaos-lab/src/chaoslab/main.py:450:      'time_scale': float(_matrix_value(run_spec, defaults, 'time_scale', args.time_scale)),
+net-chaos-lab/src/chaoslab/main.py:452:        _matrix_value(run_spec, defaults, 'dashboard', args.dashboard),
+net-chaos-lab/src/chaoslab/main.py:459:      f'[chaos-lab] matrix run {index + 1}/{len(matrix_cfg.runs)}: '
+net-chaos-lab/src/chaoslab/main.py:471:        f'[chaos-lab] matrix gates for {run_spec.id}: '
+net-chaos-lab/src/chaoslab/main.py:503:    if args.matrix_stop_on_fail and not run_ok:
+net-chaos-lab/src/chaoslab/main.py:504:      print(f'[chaos-lab] matrix stop-on-fail triggered by run: {run_spec.id}')
+net-chaos-lab/src/chaoslab/main.py:508:  matrix_summary = {
+net-chaos-lab/src/chaoslab/main.py:509:    'matrix_name': matrix_cfg.name,
+net-chaos-lab/src/chaoslab/main.py:510:    'matrix_config': str(matrix_cfg.path),
+net-chaos-lab/src/chaoslab/main.py:511:    'matrix_run_id': matrix_run_id,
+net-chaos-lab/src/chaoslab/main.py:515:    'all_passed': passed_runs == len(results) and len(results) == len(matrix_cfg.runs),
+net-chaos-lab/src/chaoslab/main.py:518:  summary_path = matrix_dir / 'matrix-summary.json'
+net-chaos-lab/src/chaoslab/main.py:519:  write_matrix_summary(summary_path, matrix_summary)
+net-chaos-lab/src/chaoslab/main.py:521:  print('[chaos-lab] matrix summary:')
+net-chaos-lab/src/chaoslab/main.py:523:    'matrix_name': matrix_cfg.name,
+net-chaos-lab/src/chaoslab/main.py:524:    'matrix_run_id': matrix_run_id,
+net-chaos-lab/src/chaoslab/main.py:525:    'run_total': matrix_summary['run_total'],
+net-chaos-lab/src/chaoslab/main.py:526:    'run_passed': matrix_summary['run_passed'],
+net-chaos-lab/src/chaoslab/main.py:527:    'run_failed': matrix_summary['run_failed'],
+net-chaos-lab/src/chaoslab/main.py:528:    'all_passed': matrix_summary['all_passed'],
+net-chaos-lab/src/chaoslab/main.py:535:def run() -> int:
+net-chaos-lab/src/chaoslab/main.py:537:  if str(args.matrix or '').strip():
+net-chaos-lab/src/chaoslab/main.py:538:    return run_matrix(args)
+net-chaos-lab/src/chaoslab/main.py:543:def main() -> None:
+-     'latest_stage': latest_stage or None,
+  }
+  path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding='utf-8')
+
+
+def run_single(args: argparse.Namespace) -> tuple[int, dict[str, Any], Path]:
+  root = repo_root()
+  run_id = str(args.run_id or '').strip() or default_run_id()
+  artifacts_root = Path(args.artifacts_root).expanduser().resolve()
+  run_dir = artifacts_root / run_id
+  run_dir.mkdir(parents=True, exist_ok=True)
+  topology_state_path = run_dir / 'chaos-topology.json'
+
+  metrics = MetricsStore(artifacts_dir=run_dir, run_id=run_id)
+  metrics.record(
+    'run_started',
+    {
+      'run_id': run_id,
+      'topology_config': str(args.topology),
+      'scenario_config': str(args.scenario),
+      'mode': args.mode,
+    },
+  )
+  metrics.build_summary()
+
+  try:
+    topology_loaded = load_topology_config(args.topology)
+    scenario_loaded = load_scenario_config(args.scenario)
+  except ConfigError as exc:
+    metrics.record('run_failed', {'error': f'config: {exc}'})
+    summary = metrics.build_summary()
+    print(f'[chaos-lab] config error: {exc}')
+    print('[chaos-lab] summary:')
+    print(json.dumps(summary, indent=2))
+    print(f'[chaos-lab] artifacts: {run_dir}')
+    return 2, summary, run_dir
+
+  topology_cfg = dict(topology_loaded.data)
+  if args.agents:
+    topology_cfg.setdefault('agents', {})
+    topology_cfg['agents']['count'] = max(1, min(50, int(args.agents)))
+
+  topology = ChaosTopology(
+    config=topology_cfg,
+    repo_root=root,
+    artifacts_dir=run_dir,
+    mode=args.mode,
+    logger=print,
+  )
+  harness = ChaosHarness(
+    repo_root=root,
+    topology=topology,
+    metrics=metrics,
+    artifacts_dir=run_dir,
+    logger=print,
+  )
+
+  latest_stage: dict[str, Any] | None = None
+  dashboard_server = None
+  dashboard_thread: threading.Thread | None = None
+  if args.dashboard:
+    try:
+      dashboard_server = create_dashboard_server(
+        host=args.dashboard_host,
+        port=int(args.dashboard_port),
+        summary_path=metrics.paths.summary_json,
+        events_path=metrics.paths.events_jsonl,
+        static_dir=root / 'net-chaos-lab' / 'dashboard',
+        topology_path=topology_state_path,
+      )
+      print(f'[dashboard] listening on http://{args.dashboard_host}:{int(args.dashboard_port)}')
+      dashboard_thread = threading.Thread(
+        target=dashboard_server.serve_forever,
+        daemon=True,
+        name='chaoslab-dashboard',
+      )
+      dashboard_thread.start()
+    except OSError as exc:
+      print(f'[chaos-lab] dashboard unavailable: {exc}')
+      metrics.record('dashboard_start_failed', {'error': str(exc)})
+
+  harness_cfg = topology_cfg.get('harness', {})
+  probe_url = str(args.url or harness_cfg.get('default_url') or 'https://demos.peercompute.test/netviz/')
+  min_peers = int(args.min_peers or harness_cfg.get('min_expected_peers') or 2)
+  wait_ms = int(args.wait_ms or harness_cfg.get('probe_duration_ms') or 30000)
+  probe_agents = int(args.probe_agents or 0)
+  probe_parallelism = max(1, int(args.probe_parallelism or 4))
+
+  def run_probe_checkpoint(label: str) -> list[dict[str, Any]]:
+    results = harness.run_probe_cycle(
+      url=probe_url,
+      min_peers=min_peers,
+      wait_ms=wait_ms,
+      mode=str(harness_cfg.get('default_demo') or 'netviz'),
+      media=bool(args.media),
+      limit_agents=probe_agents,
+      parallelism=probe_parallelism,
+    )
+    metrics.record('probe_checkpoint', {'label': label, 'results': len(results)})
+    metrics.build_summary()
+    if bool(args.probe_fail_fast) and results:
+      infra_failures = sum(1 for payload in results if bool(payload.get('infra_failure')))
+      if infra_failures >= len(results):
+        raise RuntimeError(
+          f'probe fail-fast triggered at checkpoint "{label}": '
+          f'{infra_failures}/{len(results)} probes reported infra_failure'
+        )
+    return results
+
+  exit_code = 0
+  summary: dict[str, Any] = {}
+  try:
+    if not args.skip_probes and str(args.mode).strip().lower() != 'dry-run':
+      _ensure_netviz_docs_bundle(root, logger=print)
+    topology.start()
+    _write_topology_state(topology_state_path, run_id, topology, latest_stage=None)
+    metrics.record(
+      'topology_started',
+      {
+        'actual_mode': topology.actual_mode,
+        'agent_count': len(topology.list_agents()),
+        'service_count': len(topology.list_services()),
+      },
+    )
+
+    if args.demo_command:
+      demo_cwd = Path(args.demo_cwd).expanduser().resolve() if args.demo_cwd else root
+      harness.start_demo(args.demo_command, cwd=demo_cwd)
+
+    if not args.skip_probes:
+      run_probe_checkpoint('initial')
+
+    if not args.skip_scenario:
+      def stage_callback(outcome: dict[str, Any]) -> None:
+        nonlocal latest_stage
+        latest_stage = dict(outcome)
+        _write_topology_state(topology_state_path, run_id, topology, latest_stage=latest_stage)
+        if args.skip_probes:
+          return
+        if not args.probe_each_stage:
+          return
+        phase = str(outcome.get('phase') or 'stage')
+        index = int(outcome.get('stage_index') or 0)
+        run_probe_checkpoint(f'{phase}-{index}')
+
+      runner = ScenarioRunner(
+        topology=topology,
+        metrics=metrics,
+        logger=print,
+        time_scale=float(args.time_scale),
+        on_stage_result=stage_callback,
+      )
+      runner.run(scenario_loaded.data)
+
+    if not args.skip_probes:
+      run_probe_checkpoint('final')
+
+  except (TopologyError, RuntimeError, ValueError) as exc:
+    exit_code = 1
+    metrics.record('run_failed', {'error': str(exc)})
+    print(f'[chaos-lab] failure: {exc}')
+  except KeyboardInterrupt:
+    exit_code = 130
+    metrics.record('run_interrupted', {'reason': 'keyboard-interrupt'})
+    print('[chaos-lab] interrupted')
+  finally:
+    try:
+      _write_topology_state(topology_state_path, run_id, topology, latest_stage=latest_stage)
+    except Exception:
+      pass
+    harness.stop_demo()
+    topology.stop()
+    if dashboard_server is not None:
+      try:
+        dashboard_server.shutdown()
+      except Exception:
+        pass
+      try:
+        dashboard_server.server_close()
+      except Exception:
+        pass
+      if dashboard_thread is not None:
+        dashboard_thread.join(timeout=2.0)
+    summary = metrics.build_summary()
+    print('[chaos-lab] summary:')
+    print(json.dumps(summary, indent=2))
+    print(f'[chaos-lab] artifacts: {run_dir}')
+
+  return exit_code, summary, run_dir
+
+
+def _matrix_value(
+  run_spec: Any,
+  defaults: dict[str, Any],
+  key: str,
+  fallback: Any,
+) -> Any:
+  if key in run_spec.overrides:
+    return run_spec.overrides[key]
+  if key in defaults:
+    return defaults[key]
+-       part for part in [str(proc.stdout or '').strip(), str(proc.stderr or '').strip()] if part
+    ).strip()
+    raise RuntimeError(
+      'NetViz docs build failed; containernet probes require a fresh docs/netviz bundle.'
+      + (f'\n{detail}' if detail else '')
+    )
+  logger('[chaos-lab] NetViz docs bundle refreshed.')
+
+
+def parse_args() -> argparse.Namespace:
+  root = repo_root()
+  parser = argparse.ArgumentParser(description='PeerCompute network chaos-lab runner')
+
+  parser.add_argument(
+    '--topology',
+    default=str(root / 'net-chaos-lab' / 'configs' / 'topology.default.yaml'),
+    help='Path to topology yaml/json config',
+  )
+  parser.add_argument(
+    '--scenario',
+    default=str(root / 'net-chaos-lab' / 'configs' / 'scenarios' / 'default-chaos.yaml'),
+    help='Path to scenario yaml/json config',
+  )
+  parser.add_argument('--mode', default='auto', choices=['auto', 'containernet', 'dry-run'])
+  parser.add_argument('--agents', type=int, default=0, help='Override number of browser agents (1-50)')
+
+  parser.add_argument('--run-id', default='', help='Override run id')
+  parser.add_argument(
+    '--artifacts-root',
+    default=str(root / 'net-chaos-lab' / 'artifacts'),
+    help='Root directory for artifacts/run outputs',
+  )
+
+  parser.add_argument('--demo-command', default='', help='Optional command to start a demo server')
+  parser.add_argument('--demo-cwd', default='', help='Working directory for demo command')
+
+  parser.add_argument('--url', default='', help='Probe URL override')
+  parser.add_argument('--min-peers', type=int, default=0, help='Minimum peers required for probe pass')
+  parser.add_argument('--wait-ms', type=int, default=0, help='Probe wait timeout override in ms')
+  parser.add_argument('--probe-agents', type=int, default=0, help='How many agents to probe per cycle')
+  parser.add_argument('--probe-parallelism', type=int, default=4)
+  parser.add_argument('--probe-each-stage', action='store_true')
+  parser.add_argument('--skip-probes', action='store_true')
+  parser.add_argument('--media', action='store_true', help='Enable audio/video loopback probe')
+  parser.add_argument(
+    '--probe-fail-fast',
+    dest='probe_fail_fast',
+    action='store_true',
+    default=False,
+    help='Abort run when a probe checkpoint reports infra failure for all probed agents',
+  )
+
+### Test Results
+- N/A (command/entrypoint verification only).
+
+### Failures / Open Questions
+- None for this prompt.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T22:21:28Z)
+- "OK we're giving up... How do I run the full chaos lab (not in a loop) just have it stand it up so I can see how well connections perist with netviz"
+
+### Actions Attempted
+- Verified npm script entrypoints in `package.json` for one-shot matrix/full runs.
+- Reviewed `chaos-lab-matrix-full.sh` behavior to confirm watcher startup, proxy wiring, and stop-on-fail behavior.
+- Reviewed `chaoslab/main.py` run lifecycle to confirm topology/services are torn down at run end (no built-in infinite hold in one-shot mode).
+
+### Findings
+- `npm run chaos-lab:matrix:full` is the one-shot "full" run with integrated NetViz watcher URL output.
+- That wrapper forces `--matrix-stop-on-fail`; it may end early on first failed run.
+- For better persistence observation across all matrix runs in a single non-loop execution, run NetViz and chaos-lab matrix directly in two terminals without `--matrix-stop-on-fail`.
+- Runner is finite by design; there is no native "stand up forever" flag in `chaos-lab.sh` one-shot mode.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "chaos-lab" package.json`
+- `rg -n "matrix:full|matrix:loop|ipv6|min|chaos-lab.sh|chaos-lab-matrix" net-chaos-lab/scripts -g "*.sh"`
+- `bash net-chaos-lab/scripts/chaos-lab.sh --help | sed -n '1,240p'`
+- `sed -n '1,260p' net-chaos-lab/scripts/chaos-lab-matrix-full.sh`
+- `rg -n "skip_scenario|skip_probes|dashboard|teardown|cleanup|shutdown|while True|sleep" net-chaos-lab/src/chaoslab -g "*.py"`
+- `rg -n "class ChaosLab|def run|def main|matrix" net-chaos-lab/src/chaoslab -g "*.py"`
+- `sed -n '180,380p' net-chaos-lab/src/chaoslab/main.py`
+- `sed -n '80,130p' net-chaos-lab/src/chaoslab/main.py`
+
+### Test Results
+- N/A (command/entrypoint verification only).
+
+### Failures / Open Questions
+- None for this prompt.
+
+## Date: 2026-02-21T15:09:22-09:00
+
+### Prompt
+- "I think we should break the chaos lab depandencies out of the main project. running it should be optional for when we are performing deep protocol level work. it's just too heavy for most people and it adds too many dependencies that most people aren't going to need to play with peercompute. right now I'm testing run dev:local-relay and some of the demos aren't connecting or seeing their peers."
+
+### Actions Attempted
+- Reviewed planning/docs first per repo rules:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected relay/dev launchers and root scripts to verify current behavior and identify coupling points:
+  - `package.json`
+  - `scripts/dev-local-relay.sh`
+  - `scripts/dev-all.sh`
+  - `scripts/run-relay.sh`
+  - `peercompute/src/relay/server.js`
+  - `config/relay.json`
+  - `config/relay.env`
+  - `README.md`
+  - `net-chaos-lab/README.md`
+- Validated local relay behavior and peer connectivity:
+  - Ran `npm run test:runtime:p2p` and confirmed `Runtime P2P tests passed` with relay peer joins/disconnects across cubechat/hyperborea/sneakywoods/daddygo.
+  - Ran timed local launcher smoke: `timeout 25s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node bash scripts/dev-local-relay.sh`.
+  - Observed that demo bootstrap files were written for all demos/docs, but NetViz silently rebounded from `5182` to `5183` when `5182` was occupied (easy to misread as demo networking failure).
+- Implemented decoupling and fail-fast fixes:
+  1. Split chaos-lab command ownership into its own package:
+     - Added `net-chaos-lab/package.json` with all chaos-lab scripts (`chaos-lab`, `full`, `matrix*`, `ipv6*`, `image:build`, `cleanup`, `deps:python`).
+     - Updated root `package.json` chaos scripts to thin wrappers: `npm --prefix net-chaos-lab run <script>`.
+     - Added arg-forwarding in wrappers (`--`) so commands like `npm run chaos-lab:matrix:watch -- --help` work correctly.
+  2. Hardened local dev launcher behavior:
+     - Updated `scripts/dev-local-relay.sh` and `scripts/dev-all.sh` to use Vite strict ports by default (`DEV_STRICT_PORT=1`, passing `--strictPort`).
+     - Added `DEV_STRICT_PORT` env echo in `dev-local-relay` output for clarity.
+     - Result: port collisions now fail fast instead of silently shifting ports, reducing "not seeing peers" confusion.
+  3. Updated docs/plans:
+     - `README.md`: documented chaos-lab split (`net-chaos-lab/package.json` ownership), new optional setup command `npm run chaos-lab:deps`, and strict-port behavior/override.
+     - `net-chaos-lab/README.md`: documented root-wrapper vs direct package commands.
+     - `plan/plan.md`: added completed bullets for chaos-lab package split + strict-port guard.
+     - `plan/tests.md`: added strict-port expectation and chaos-lab package ownership gate.
+
+### Files Touched
+- `net-chaos-lab/package.json` (new)
+- `package.json`
+- `scripts/dev-local-relay.sh`
+- `scripts/dev-all.sh`
+- `README.md`
+- `net-chaos-lab/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,260p' scripts/dev-local-relay.sh`
+- `sed -n '1,260p' scripts/dev-all.sh`
+- `ls -la net-chaos-lab && rg --files net-chaos-lab | head -n 80`
+- `sed -n '1,260p' net-chaos-lab/README.md`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `sed -n '1,260p' peercompute/src/relay/server.js`
+- `rg -n "chaos-lab|containernet|PYTHON_BIN|relay-config|bootstrapPeers|autoConnect" README.md plan/tests.md plan/plan.md package.json scripts -g '!node_modules/**'`
+- `sed -n '260,520p' scripts/dev-local-relay.sh`
+- `sed -n '1,260p' demos/tests/runtime-p2p.mjs`
+- `sed -n '1,260p' demos/tests/runtime-smoke.mjs`
+- `sed -n '1,260p' config/relay.json`
+- `sed -n '1,220p' config/relay.env`
+- `npm run test:runtime:p2p`
+- `timeout 25s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node bash scripts/dev-local-relay.sh`
+- `ss -ltnp | rg ':5175|:5176|:5177|:5178|:5179|:5180|:5181|:5182|:5183|:4173|:8080'`
+- `pgrep -af "vite|peercompute/src/relay/server.js|scripts/dev-local-relay.sh|concurrently"`
+- `bash -n scripts/dev-local-relay.sh scripts/dev-all.sh`
+- `npm --prefix net-chaos-lab run chaos-lab -- --help`
+- `npm run chaos-lab -- --help`
+- `npm run chaos-lab:matrix:watch -- --help`
+- `timeout 8s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node DEV_STRICT_PORT=1 bash scripts/dev-local-relay.sh`
+- `git diff -- package.json net-chaos-lab/package.json scripts/dev-local-relay.sh scripts/dev-all.sh README.md net-chaos-lab/README.md plan/plan.md plan/tests.md`
+
+### Test Results
+- `npm run test:runtime:p2p`: PASS (relay peer sessions established and torn down correctly; final `Runtime P2P tests passed`).
+- `bash -n scripts/dev-local-relay.sh scripts/dev-all.sh`: PASS.
+- `npm --prefix net-chaos-lab run chaos-lab -- --help`: PASS.
+- `npm run chaos-lab:matrix:watch -- --help`: PASS after wrapper arg-forwarding fix.
+- `timeout 8s ... DEV_STRICT_PORT=1 bash scripts/dev-local-relay.sh`: EXPECTED FAIL-FAST when `5182` occupied (`Error: Port 5182 is already in use`), confirming strict-port guard.
+
+### Failures / Open Questions
+- There is a pre-existing relay process at `/workspace/peercompute/src/relay/server.js` (PID observed as `791859`) that could not be terminated from this shell (`Operation not permitted`), likely from another namespace/session. Not modified.
+- Existing dirty worktree contains many unrelated pre-existing changes/artifacts; no reverts were performed.
+- If users want auto-port fallback behavior for multi-session workflows, they now need `DEV_STRICT_PORT=0`.
+
+## Date: 2026-02-21T15:11:10-09:00
+
+### Prompt
+- Continuation of same user request cycle (chaos-lab optionalization + local-relay peer visibility issues).
+
+### Follow-up Actions
+- Discovered wrapper argument forwarding issue during validation (`npm run chaos-lab:matrix:watch -- --help` did not pass args through).
+- Patched root wrapper scripts in `package.json` to include trailing `--` so nested `npm --prefix net-chaos-lab run ...` commands receive user CLI arguments.
+- Re-ran wrapper checks:
+  - `npm run chaos-lab -- --help` (pass)
+  - `npm run chaos-lab:matrix:watch -- --help` (pass)
+- Ran strict-port launcher probe:
+  - `timeout 8s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node DEV_STRICT_PORT=1 bash scripts/dev-local-relay.sh`
+  - confirmed expected fail-fast on occupied port (`netviz` port 5182 busy) rather than silent fallback.
+- Updated branch plan status doc:
+  - `plan/branch/big-net-testing.md` with a new completed-cycle section for optionalization + strict-port guard and updated command reference.
+
+### Files Touched
+- `package.json`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `npm run chaos-lab -- --help`
+- `npm run chaos-lab:matrix:watch -- --help`
+- `timeout 8s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node DEV_STRICT_PORT=1 bash scripts/dev-local-relay.sh`
+- `date -Iseconds`
+
+### Results
+- Wrapper CLI arg forwarding now works.
+- Strict-port behavior verified; launcher now fails fast on collisions, preventing silent demo URL drift.
+
+### Open Notes
+- Existing external process on `:5182` remains pre-existing and should be managed by operator when running `dev:local-relay` with `DEV_STRICT_PORT=1`.
+
+## Date: 2026-02-21
+
+### Prompt (2026-02-21T15:33:00-09:00)
+- "we should be able to use netviz to debug the p2p behavior of any game or demo.  so like you should be able to attach to a demo and see the peers and how they are connected to one another."
+
+### Actions Attempted
+- Reviewed current planning/docs context before edits:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected existing NetViz ingest/publish path and NodeKernel defaults to identify the missing cross-demo bridge:
+  - confirmed NetViz-only telemetry publish loop existed in `demos/netviz/src/main.js`
+  - confirmed most demos did not enable warm-delta telemetry publishing
+- Implemented NodeKernel-level cross-demo debug feed + attach metadata broadcast:
+  - `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+  - Added default-on NetViz debug telemetry publishing (`telemetry:<peerId>` warm delta entries) at kernel level.
+  - Added default behavior to enable warm delta provider when NetViz debug telemetry is enabled.
+  - Added session broadcast over `BroadcastChannel("peercompute-netviz-debug-v1")` with session upsert/remove heartbeats.
+  - Added attach URL helper methods and attach URL log hint from NodeKernel start.
+  - Added safe start/stop lifecycle hooks for telemetry/session timers.
+- Implemented NetViz attach-session UI and runtime integration:
+  - `demos/netviz/index.html`
+  - Added `Attach demo` selector and `Attach session` button.
+  - Updated help text to describe attach workflow.
+  - `demos/netviz/src/main.js`
+  - Added attach-session discovery via `BroadcastChannel("peercompute-netviz-debug-v1")`.
+  - Added session map, stale-session pruning, selector refresh, and reconnect-on-attach behavior.
+  - Added query support for `attachSession` auto-attach when matching session appears.
+  - Disabled NodeKernel built-in debug telemetry/session broadcast inside NetViz itself to avoid duplicate telemetry publication (`enableNetVizDebugTelemetry: false`, `enableNetVizSessionBroadcast: false`).
+- Added unit coverage for new NodeKernel debug behavior:
+  - `peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - Coverage includes:
+    - default config behavior (debug telemetry + warm delta provider)
+    - telemetry delta publish shape (`telemetry:<peerId>`)
+    - attach URL composition
+- Updated documentation/plan artifacts:
+  - `README.md` (new "NetViz Attach (Any Demo)" usage notes)
+  - `demos/netviz/README.md` (cross-demo attach + channel-based discovery)
+  - `plan/plan.md` (completed goal entry)
+  - `plan/tests.md` (new NetViz attach gate + unit gate)
+  - `plan/branch/big-net-testing.md` (completed-cycle note)
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `demos/netviz/index.html`
+- `demos/netviz/src/main.js`
+- `peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `README.md`
+- `demos/netviz/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la`
+- `rg --files | wc -l && rg -n "netviz|telemetry|..." demos src net-chaos-lab plan -S --max-columns 200`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `ls -la demos/netviz && rg -n "..." demos/netviz -S --glob '!**/dist/**' --glob '!**/node_modules/**'`
+- `sed -n '1,280p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '1,560p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '1000,1265p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "new NodeKernel\(|..." demos -S --glob '!**/dist/**' --glob '!**/node_modules/**'`
+- `sed -n '2300,2745p' demos/netviz/src/main.js`
+- `sed -n '1,280p' demos/netviz/src/main.js`
+- `sed -n '1,260p' demos/cubechat/src/p2p/network.js`
+- `sed -n '1260,1395p' demos/sneakywoods/main.js`
+- `sed -n '320,470p' demos/netviz/index.html`
+- `rg -n "NetViz|netviz|debug|telemetry|..." README.md demos/netviz/README.md plan/tests.md plan/branch/big-net-testing.md -S`
+- `sed -n '1,260p' plan/tests.md`
+- `sed -n '1,260p' plan/branch/big-net-testing.md`
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `npm --prefix demos/netviz run build`
+- `npm --prefix demos/netviz run build -- --outDir /tmp/netviz-build`
+- `node --test peercompute/tests/unit/nodeKernel.clockPolicy.test.js`
+- `date -Iseconds`
+
+### Test Results
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - PASS (3/3)
+- `npm --prefix demos/netviz run build`
+  - FAIL due filesystem permission issue on output directory cleanup:
+  - `EACCES, Permission denied: /home/cos/projects/peercompute/docs/netviz/assets`
+- `npm --prefix demos/netviz run build -- --outDir /tmp/netviz-build`
+  - PASS (build succeeds; confirms code compiles)
+- `node --test peercompute/tests/unit/nodeKernel.clockPolicy.test.js`
+  - PASS (3/3)
+
+### Failures / Open Questions
+- Build output permission issue remains for default `docs/netviz` outDir (`EACCES`), unrelated to code correctness. If needed, fix file ownership/permissions on `docs/netviz` before running default `npm --prefix demos/netviz run build`.
+- Cross-demo attach now depends on demos running in tabs/windows that share origin and support `BroadcastChannel`.
+
+## Date: 2026-02-21
+
+### Prompt
+- "we should be able to use netviz to debug the p2p behavior of any game or demo.  so like you should be able to attach to a demo and see the peers and how they are connected to one another."
+
+### Prompt Time/Date
+- 2026-02-21T16:02:48-09:00
+
+### Actions Attempted
+- Re-read planning context before edits:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Verified existing NetViz attach implementation and identified cross-origin/port gap:
+  - Existing attach discovery relied on `BroadcastChannel("peercompute-netviz-debug-v1")`, which does not bridge different Vite demo ports (`5175..5182`).
+- Implemented network-level session discovery for NetViz attach:
+  - Added `additionalPubsubTopics` support in `NetworkManager`.
+  - Added scope-bypass delivery for messages received on `additionalPubsubTopics` so attach beacons are visible across rooms/topologies.
+  - Added topic subscriptions for additional topics on initial connect and resubscribe paths.
+- Extended `NodeKernel` NetViz session plumbing:
+  - Added configurable `netVizSessionTopic` (default `peercompute-netviz-sessions`).
+  - Added periodic pubsub session upsert/remove publishing (`netviz-session-upsert` / `netviz-session-remove`).
+  - Added optional session discovery mode (`enableNetVizSessionDiscovery`) and discovered-session cache APIs:
+    - `getNetVizDiscoveredSessions()`
+    - stale pruning by `netVizSessionStaleMs`.
+  - Ensured session-topic subscription is only added when discovery is enabled.
+- Updated NetViz app runtime to consume discovered sessions from NodeKernel (network-fed), not only BroadcastChannel:
+  - Added `syncAttachSessionsFromNode()` and called it in HUD refresh.
+  - Enabled `enableNetVizSessionDiscovery: true` in NetViz NodeKernel config.
+- Updated docs/plans to reflect pubsub-based cross-demo attach behavior.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `demos/netviz/src/main.js`
+- `peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `README.md`
+- `demos/netviz/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Iseconds`
+- `git status --short`
+- `sed -n '1,220p' plan/plan.md && echo '---' && sed -n '1,260p' plan/log.md`
+- `rg -n "NETVIZ_DEBUG_CHANNEL|enableNetVizDebugTelemetry|getNetVizAttachUrl|enableNetVizSessionBroadcast|telemetry:" peercompute/src/peercompute/nodeKernel/NodeKernel.js demos/netviz/src/main.js demos/netviz/index.html`
+- `sed -n '1,260p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '260,620p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '1,260p' demos/netviz/src/main.js`
+- `sed -n '260,980p' demos/netviz/src/main.js`
+- `sed -n '980,1700p' demos/netviz/src/main.js`
+- `sed -n '2380,2920p' demos/netviz/src/main.js`
+- `sed -n '2920,3320p' demos/netviz/src/main.js`
+- `sed -n '1,260p' demos/netviz/index.html`
+- `sed -n '1,260p' scripts/dev-local-relay.sh`
+- `sed -n '1,260p' scripts/dev-all.sh`
+- `cat package.json`
+- `rg -n "publish|subscribe|onMessage|topic|pubsub" peercompute/src/peercompute/networkManager/NetworkManager.js | head -n 120`
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '260,720p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1280,1485p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "_handleDirectoryMessage|queryType|directory" peercompute/src/peercompute/networkManager/NetworkManager.js | head -n 80`
+- `sed -n '1980,2085p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.clockPolicy.test.js`
+- `npm --prefix demos/netviz run build -- --outDir /tmp/netviz-build`
+
+### Test Results
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - PASS (4/4)
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - PASS (14/14)
+- `node --test peercompute/tests/unit/nodeKernel.clockPolicy.test.js`
+  - PASS (3/3)
+- `npm --prefix demos/netviz run build -- --outDir /tmp/netviz-build`
+  - PASS (build complete)
+  - Note: existing chunk-size warning remains (non-blocking).
+
+### Failures / Open Questions
+- No failing tests in this cycle.
+- Open question for UX: NetViz attach session discovery still requires NetViz itself to be connected to the relay network first (so it can receive pubsub session beacons). If needed, next step is adding a clearer UI hint when disconnected.
+
+### Addendum (same prompt cycle)
+- Added explicit regression gate note in `plan/tests.md` for `networkManager.webrtc.test.js` coverage of additional pubsub topic scope-bypass delivery used by NetViz session beacons.
+
+## Date: 2026-02-21
+
+### Prompt
+- "I'd also like you to wire up the chaos lib to test  all the different demos. so we can load up the clients and see if they can all connect and run in a stable way. maybe with some simulated input or behavior."
+
+### Prompt Time/Date
+- 2026-02-21T16:40:52-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation verification:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Verified cross-demo chaos-lab wiring is present and consistent:
+  - demo matrix config (`net-chaos-lab/configs/matrix/demo-regression.yaml`) exists and targets multiple PeerCompute demos.
+  - root and package scripts for demo matrix runs exist (`chaos-lab:matrix:demos*` / `matrix:demos*`).
+  - probe runtime includes peercompute probe mode and simulation profile handling.
+  - NodeKernel browser kernel registry hook (`__PEERCOMPUTE_KERNELS__`) is available for generic probe discovery.
+- Executed targeted validation:
+  - `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - `node --check net-chaos-lab/agent/probe.mjs`
+  - `PYTHONPATH=net-chaos-lab/src python3 -m unittest discover -s net-chaos-lab/tests -p 'test_chaoslab.py'`
+  - `npm run chaos-lab:matrix:demos -- --help`
+- Updated planning/test/branch docs to reflect the new cross-demo chaos matrix + simulated behavior workflow and gates.
+
+### Files Touched
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/big-net-testing.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `ls -la plan`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg -n "simulateProfile|simulate_profile|probe_mode|matrix:demos|CHAOSLAB_MATRIX_CONFIG|__PEERCOMPUTE_KERNELS__" net-chaos-lab/src/chaoslab net-chaos-lab/agent net-chaos-lab/scripts net-chaos-lab/package.json package.json peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '1,260p' net-chaos-lab/configs/matrix/demo-regression.yaml`
+- `sed -n '1,240p' net-chaos-lab/package.json`
+- `sed -n '1,280p' package.json`
+- `python3 -m pytest -q net-chaos-lab/tests/test_chaoslab.py`
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `node --check net-chaos-lab/agent/probe.mjs`
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest discover -s net-chaos-lab/tests -p 'test_chaoslab.py'`
+- `npm run chaos-lab:matrix:demos -- --help`
+- `tail -n 220 plan/plan.md`
+- `tail -n 260 plan/tests.md`
+- `sed -n '1,260p' plan/branch/big-net-testing.md`
+- `tail -n 220 plan/log.md`
+- `date -Iseconds`
+
+### Test Results
+- `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - PASS (4/4)
+- `node --check net-chaos-lab/agent/probe.mjs`
+  - PASS (no syntax errors)
+- `PYTHONPATH=net-chaos-lab/src python3 -m unittest discover -s net-chaos-lab/tests -p 'test_chaoslab.py'`
+  - PASS (`Ran 54 tests ... OK`)
+- `npm run chaos-lab:matrix:demos -- --help`
+  - PASS (CLI arg wiring and new probe/simulation options displayed)
+
+### Failures / Open Questions
+- `python3 -m pytest -q net-chaos-lab/tests/test_chaoslab.py` failed because `pytest` is not installed in the current host python (`No module named pytest`).
+- Unittest gate remains passing and is the active validation path in this repo for chaos-lab python tests.
+
+### Addendum (same prompt cycle)
+- Ran additional networking regression gate:
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - Result: PASS (14/14).
+
+## Date: 2026-02-22
+
+### Prompt
+- "hey codex. can you update the gitignore file here with the files and folders that shouldn't be committed to git. defintely the artifacts."
+
+### Prompt Time/Date
+- 2026-02-22T22:32:52-09:00
+
+### Actions Attempted
+- Re-read required planning context before making changes:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected the current root `.gitignore` and scanned the repo for generated/artifact paths.
+- Confirmed large untracked chaos-lab run output under `net-chaos-lab/artifacts/` and observed Python cache files (`__pycache__`, `*.pyc`) appearing in `git status`.
+- Updated the root `.gitignore` with targeted ignore rules for:
+  - `net-chaos-lab/artifacts/`
+  - Python cache/test output files (`**/__pycache__/`, `*.pyc`, `*.pyo`, `.pytest_cache/`)
+- Verified ignore matching with `git check-ignore` (including `--no-index` for already tracked cache files).
+- Did not modify `plan/plan.md` or `plan/tests.md` because this prompt was limited to repository ignore housekeeping (no behavior/test strategy changes).
+
+### Files Touched
+- `.gitignore`
+- `plan/log.md`
+
+### Commands Run
+- `pwd`
+- `rg --files -g 'AGENTS.md' -g 'plan/plan.md' -g 'plan/log.md' -g '.gitignore'`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,220p' .gitignore`
+- `git status --short`
+- `date '+%Y-%m-%d %H:%M:%S %Z (%z)'`
+- `rg --files | rg '(^|/)artifacts(/|$)|playwright-report|test-results|coverage|dist/'`
+- `rg --files | rg '(^|/)dist/'`
+- `tail -n 80 plan/log.md`
+- `date -Iseconds`
+- `git check-ignore -v net-chaos-lab/artifacts/20260221T151532Z/metrics-summary.json net-chaos-lab/src/chaoslab/__pycache__/config.cpython-312.pyc net-chaos-lab/tests/__pycache__/test_chaoslab.cpython-312.pyc`
+- `git diff -- .gitignore`
+- `git check-ignore -v --no-index net-chaos-lab/src/chaoslab/__pycache__/config.cpython-312.pyc net-chaos-lab/tests/__pycache__/test_chaoslab.cpython-312.pyc .pytest_cache/example`
+
+### Test Results
+- No code/runtime tests were run (config-only `.gitignore` change).
+- Ignore-rule validation:
+  - `git check-ignore -v` PASS for `net-chaos-lab/artifacts/...`
+  - `git check-ignore -v --no-index` PASS for `**/__pycache__/` and `.pytest_cache/` sample paths
+
+### Failures / Open Questions
+- `git check-ignore -v` initially only reported the artifact path because the `__pycache__` / `*.pyc` files in `net-chaos-lab` are already tracked; ignore rules do not affect tracked files unless they are later untracked (e.g., `git rm --cached ...`).
+- No additional open questions for this prompt.

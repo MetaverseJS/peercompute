@@ -2,10 +2,11 @@ network:
   name: peercompute-chaos-lab
   dual_stack: true
   core_switch: core
+  ip_mode_scope: agents
 
 agents:
   count: 12
-  image: mcr.microsoft.com/playwright:v1.56.1-noble
+  image: peercompute/net-chaos-lab-node:latest
   command: sleep infinity
   cpu_shares: 512
   memory: 1g
@@ -21,7 +22,7 @@ segments:
       enabled: true
       type: full-cone
       uplink_ipv4: 10.40.1.10/24
-      uplink_ipv6: fd42:40:1:10::1/64
+      uplink_ipv6: fd42:40:254::110/64
   - id: lan_b
     ipv4_subnet: 10.40.20.0/24
     ipv6_subnet: fd42:40:20::/64
@@ -31,7 +32,7 @@ segments:
       enabled: true
       type: symmetric
       uplink_ipv4: 10.40.1.20/24
-      uplink_ipv6: fd42:40:1:20::1/64
+      uplink_ipv6: fd42:40:254::120/64
   - id: lan_c
     ipv4_subnet: 10.40.30.0/24
     ipv6_subnet: fd42:40:30::/64
@@ -41,7 +42,7 @@ segments:
       enabled: true
       type: port-restricted
       uplink_ipv4: 10.40.1.30/24
-      uplink_ipv6: fd42:40:1:30::1/64
+      uplink_ipv6: fd42:40:254::130/64
 
 core_services:
   subnet_ipv4: 10.40.254.0/24
@@ -50,22 +51,22 @@ core_services:
     host: dns.peercompute.test
     ipv4: 10.40.254.2/24
     ipv6: fd42:40:254::2/64
-    image: node:24-bookworm
+    image: peercompute/net-chaos-lab-node:latest
   https:
     host: demos.peercompute.test
     ipv4: 10.40.254.10/24
     ipv6: fd42:40:254::10/64
-    image: node:24-bookworm
+    image: peercompute/net-chaos-lab-node:latest
   relay:
     host: relay.peercompute.test
     ipv4: 10.40.254.20/24
     ipv6: fd42:40:254::20/64
-    image: node:24-bookworm
+    image: peercompute/net-chaos-lab-node:latest
   turn:
     host: turn.peercompute.test
     ipv4: 10.40.254.30/24
     ipv6: fd42:40:254::30/64
-    image: node:24-bookworm
+    image: peercompute/net-chaos-lab-node:latest
 
 links:
   defaults:

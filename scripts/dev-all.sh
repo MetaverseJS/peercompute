@@ -55,6 +55,25 @@ to_url_host() {
   fi
 }
 
+dev_expose_lan=0
+case "${RELAY_DEV_EXPOSE_LAN:-0}" in
+  1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+    dev_expose_lan=1
+    ;;
+esac
+
+if [[ "$dev_expose_lan" != "1" ]]; then
+  # Default local dev to loopback to avoid TLS SAN/certificate mismatches on LAN/IPv6 hosts.
+  if [[ -n "${RELAY_PUBLIC_HOST:-}" ]] && ! is_loopback_host "${RELAY_PUBLIC_HOST:-}"; then
+    echo "[dev] overriding RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST} -> localhost (set RELAY_DEV_EXPOSE_LAN=1 to keep LAN host)"
+  fi
+  RELAY_PUBLIC_HOST="localhost"
+  if [[ -z "${RELAY_LISTEN_HOST:-}" || "${RELAY_LISTEN_HOST}" == "0.0.0.0" || "${RELAY_LISTEN_HOST}" == "::" ]]; then
+    RELAY_LISTEN_HOST="127.0.0.1"
+  fi
+  RELAY_PREFER_IPV6=0
+fi
+
 prefer_ipv6=0
 case "${RELAY_PREFER_IPV6:-}" in
   1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
@@ -64,9 +83,13 @@ esac
 RELAY_LISTEN_HOST="${RELAY_LISTEN_HOST:-0.0.0.0}"
 resolved_public_host=""
 if is_loopback_host "${RELAY_PUBLIC_HOST:-}"; then
-  resolved_public_host="$(node "$repo_root/scripts/get-local-ip.mjs" || true)"
-  if [[ -n "$resolved_public_host" ]]; then
-    RELAY_PUBLIC_HOST="$resolved_public_host"
+  if [[ "$dev_expose_lan" == "1" ]]; then
+    resolved_public_host="$(node "$repo_root/scripts/get-local-ip.mjs" || true)"
+    if [[ -n "$resolved_public_host" ]]; then
+      RELAY_PUBLIC_HOST="$resolved_public_host"
+    fi
+  else
+    RELAY_PUBLIC_HOST="localhost"
   fi
 fi
 
@@ -86,7 +109,28 @@ if [[ -z "${RELAY_SSL_KEY:-}" ]]; then
   RELAY_SSL_KEY="$repo_root/certs/dev-key.pem"
 fi
 if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
-  RELAY_CONFIG_DIRS="$repo_root/demos/hyperborea/public,$repo_root/demos/cubechat/public,$repo_root/demos/sneakywoods/public,$repo_root/demos/daddygo/public,$repo_root/demos/netviz/public,$repo_root/docs/hyperborea,$repo_root/docs/cubechat,$repo_root/docs/sneakywoods,$repo_root/docs/daddygo,$repo_root/docs/netviz"
+  relay_config_dirs=(
+    "$repo_root/demos/hyperborea/public"
+    "$repo_root/demos/cubechat/public"
+    "$repo_root/demos/planetgen/public"
+    "$repo_root/demos/universes/public"
+    "$repo_root/demos/webgpuphys/public"
+    "$repo_root/demos/sneakywoods/public"
+    "$repo_root/demos/daddygo/public"
+    "$repo_root/demos/netviz/public"
+    "$repo_root/docs/hyperborea"
+    "$repo_root/docs/cubechat"
+    "$repo_root/docs/planetgen"
+    "$repo_root/docs/universes"
+    "$repo_root/docs/webgpuphys"
+    "$repo_root/docs/sneakywoods"
+    "$repo_root/docs/daddygo"
+    "$repo_root/docs/netviz"
+  )
+  RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
+else
+  IFS=',' read -r -a relay_config_dirs <<< "$RELAY_CONFIG_DIRS"
+  RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
 fi
 if [[ -z "${RELAY_GOSSIPSUB_CONFIG:-}" ]]; then
   RELAY_GOSSIPSUB_CONFIG='{"D":8,"Dhi":16,"Dout":1,"scoreParams":{"IPColocationFactorWeight":0,"behaviourPenaltyWeight":0,"topics":{"__default":{"meshMessageDeliveriesWeight":0,"meshMessageDeliveriesThreshold":0,"meshFailurePenaltyWeight":0}}}}'
@@ -99,10 +143,19 @@ export RELAY_PUBLIC_PROTOCOL
 export RELAY_LISTEN_HOST
 export RELAY_LISTEN_PORT
 export RELAY_PREFER_IPV6
+export RELAY_DEV_EXPOSE_LAN
 export RELAY_SSL_CERT
 export RELAY_SSL_KEY
 export RELAY_CONFIG_DIRS
 export RELAY_GOSSIPSUB_CONFIG
+
+for dir in "${relay_config_dirs[@]}"; do
+  rm -f \
+    "$dir/relay-config-source.json" \
+    "$dir/.relay-config-source.json" \
+    "$dir/relay-config.json" \
+    "$dir/.relay-config.json"
+done
 
 overview_host="localhost"
 if ! is_loopback_host "${RELAY_PUBLIC_HOST:-}"; then
@@ -112,6 +165,10 @@ fi
 vite_host_args="--host"
 if is_ipv6_host "${overview_host:-}"; then
   vite_host_args="--host ::"
+fi
+vite_extra_args="$vite_host_args"
+if [[ "${DEV_STRICT_PORT:-1}" != "0" ]]; then
+  vite_extra_args="$vite_extra_args --strictPort"
 fi
 
 echo "Dev servers (HTTPS):"
@@ -127,11 +184,11 @@ echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
 "$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,netviz \
   "npm run dev:relay" \
-  "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_host_args" \
-  "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_host_args"
+  "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args"
