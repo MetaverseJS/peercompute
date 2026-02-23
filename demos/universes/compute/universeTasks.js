@@ -304,6 +304,16 @@ export function generateGalaxyData({
     z += Math.sin(jitterAngle) * boundaryJitter;
     y += (rand() - 0.5) * radius * 0.01 * edgeFactor;
 
+    const maxCloudRad = radius * 1.05;
+    const radialAfterJitter = Math.sqrt(x * x + z * z);
+    if (radialAfterJitter > maxCloudRad) {
+      const scale = maxCloudRad / Math.max(radialAfterJitter, 1e-6);
+      x *= scale;
+      z *= scale;
+    }
+    const maxY = radius * 0.3;
+    y = Math.max(-maxY, Math.min(maxY, y));
+
     positions[i3] = x;
     positions[i3 + 1] = y;
     positions[i3 + 2] = z;
