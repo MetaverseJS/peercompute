@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { NURBSCurve } from 'three/addons/curves/NURBSCurve.js';
 import html2canvas from 'html2canvas';
 import { ComputeManager } from '@peercompute';
-import { generateUniverseData, generateGalaxyData } from './compute/universeTasks.js';
+import { generateUniverseData, generateUniverseDensity, generateGalaxyData } from './compute/universeTasks.js';
 
 // --- Configuration ---
 const SCALES = {
@@ -17,18 +17,22 @@ const SCALES = {
 };
 
 // Quality Presets
+const DENSITY_RES_SCALE = Math.pow(10, 1 / 3);
 const QUALITY_PRESETS = {
-    LOW: { starCount: 100_000, clusterCount: 200 },
-    MED: { starCount: 250_000, clusterCount: 300 },
-    HIGH: { starCount: 500_000, clusterCount: 400 },
-    ULTRA: { starCount: 1_000_000, clusterCount: 500 }
+    LOW: { starCount: 100_000, clusterCount: 200, densityRes: 64 },
+    MED: { starCount: 250_000, clusterCount: 300, densityRes: Math.round(80 * DENSITY_RES_SCALE) },
+    HIGH: { starCount: 500_000, clusterCount: 400, densityRes: Math.round(96 * DENSITY_RES_SCALE) },
+    ULTRA: { starCount: 1_000_000, clusterCount: 500, densityRes: Math.round(128 * DENSITY_RES_SCALE) }
 };
+
+const MAX_DENSITY_RES = 320;
 
 const CONFIG = {
     starCount: QUALITY_PRESETS.HIGH.starCount, 
     clusterCount: QUALITY_PRESETS.HIGH.clusterCount,  
     filamentScatter: 0.04, 
-    seed: 1337
+    seed: 1337,
+    densityRes: QUALITY_PRESETS.HIGH.densityRes
 };
 
 const computeModuleUrl = new URL('./compute/universeTasks.js', import.meta.url).href;
