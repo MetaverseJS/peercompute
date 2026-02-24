@@ -1205,7 +1205,8 @@ function buildPostProcessing() {
             "uBHCount": blackHoleUniforms.uBHCount,
             "uBHPos": blackHoleUniforms.uBHPos,
             "uBHMass": blackHoleUniforms.uBHMass,
-            "uBHRadius": blackHoleUniforms.uBHRadius
+            "uBHRadius": blackHoleUniforms.uBHRadius,
+            "uAspect": { value: window.innerWidth / Math.max(1, window.innerHeight) }
         },
         vertexShader: `
             varying vec2 vUv;
@@ -1220,6 +1221,7 @@ function buildPostProcessing() {
             uniform vec2 uBHPos[${MAX_BLACKHOLES}];
             uniform float uBHMass[${MAX_BLACKHOLES}];
             uniform float uBHRadius[${MAX_BLACKHOLES}];
+            uniform float uAspect;
             varying vec2 vUv;
             void main() {
                 vec2 uv = vUv;
