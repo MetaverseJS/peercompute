@@ -14832,3 +14832,180 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open diagnostic question for host testing: whether Chrome/Chromium is exposing only mDNS-obfuscated host candidates in this localhost session (expected in many builds) and whether that is suppressing usable direct announce paths in libp2p.
 - If direct localhost validation is required (not just relay/relay-webrtc), next step is to inspect `chrome://webrtc-internals` selected candidate pairs and/or run with mDNS host obfuscation disabled for a targeted comparison.
+
+## Date: 2026-02-24
+
+### Prompt
+- "is my AGENTS.md file in my gitignore?"
+
+### Prompt Time/Date
+- 2026-02-24T17:13:02-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Checked Git ignore matching for `AGENTS.md` with `git check-ignore` (normal mode and `--no-index` to avoid tracked-file ambiguity).
+- Searched `.gitignore` and `.git/info/exclude` for any `AGENTS`/`AGENTS.md` entries.
+- Confirmed there is no ignore match for `AGENTS.md` in the current repo context.
+- No code or config changes were made; this prompt was informational only.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `pwd`
+- `git rev-parse --show-toplevel`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `git check-ignore -v AGENTS.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `git check-ignore -v --no-index AGENTS.md`
+- `rg -n "AGENTS\\.md|AGENTS" .gitignore .git/info/exclude 2>/dev/null`
+- `git status --short -- AGENTS.md`
+- `date -Is`
+- `tail -n 80 plan/log.md`
+
+### Test Results
+- No automated tests run (informational repo check only).
+- Ignore checks:
+  - `git check-ignore -v AGENTS.md` -> no match (not ignored in normal Git behavior)
+  - `git check-ignore -v --no-index AGENTS.md` -> no match (no ignore rule applies even if tracked)
+  - `rg -n "AGENTS\\.md|AGENTS" .gitignore .git/info/exclude` -> no entries found
+
+### Failures / Open Questions
+- No failures.
+- No open questions.
+
+## Date: 2026-02-24
+
+### Prompt
+- "we need to deploy this to my server tonight. we've made a ton of changes since we last did. I believe the server is running main. can you compare how the go realy server works in this branch to how the node relay server works in the main branch and come up with a plan to install the dependencies and deploy? will we have to update nginx?"
+
+### Prompt Time/Date
+- 2026-02-24T17:17:53-09:00
+
+### Actions Attempted
+- Re-read required planning context before analysis:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Identified current branch (`demo-fixes`) and enumerated relay/deploy/systemd/nginx-related files in the repo.
+- Compared current branch production relay launch path (`scripts/start-relay-prod.sh` -> `scripts/run-relay.sh` -> Go/Node relay) against `main` branch production launch path (direct Node relay from `scripts/start-relay-prod.sh`).
+- Inspected current branch Go relay implementation (`peercompute/src/relay-go/main.go`) and `go.mod` requirements to determine runtime/dependency needs.
+- Compared `main` branch Node relay behavior (`peercompute/src/relay/server.js` on `main`) to current Go relay behavior, focusing on:
+  - pubsub mode defaults (floodsub vs configurable gossipsub/floodsub),
+  - relay-config output payload differences (`bootstrapPeers` only vs `bootstrapPeers` + `pubsubType` + `webrtc` + optional `gossipsub`),
+  - listen address handling and IPv6 preference,
+  - identity persistence, relay address emission, and file write behavior.
+- Inspected current branch relay deploy helpers and runtime config generation:
+  - `scripts/install-relay-systemd.sh`
+  - `scripts/run-go-relay.sh`
+  - `config/relay.env`
+  - `scripts/write-prod-relay-config.mjs`
+  - `scripts/ensure-relay-config-perms.sh`
+  - `scripts/build-all.sh`
+- Reviewed README relay deployment docs and prior nginx notes in `plan/log.md` / `plan/branch/server-changes.md` to map likely nginx impact and cutover steps.
+- Prepared a deployment/cutover plan (response only; no server changes made in this prompt).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `git branch --show-current && git rev-parse --short HEAD && git rev-parse --short main`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 260 plan/log.md`
+- `rg --files | rg 'relay|nginx|systemd|deploy|pm2|service'`
+- `sed -n '1,260p' scripts/start-relay-prod.sh`
+- `sed -n '1,260p' scripts/install-relay-systemd.sh`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `sed -n '1,260p' scripts/run-go-relay.sh`
+- `sed -n '1,260p' config/relay.env`
+- `sed -n '1,260p' config/relay.json`
+- `git show main:scripts/run-relay.sh | sed -n '1,240p'`
+- `git show main:scripts/start-relay-prod.sh | sed -n '1,320p'`
+- `git show main:peercompute/src/relay/server.js | sed -n '1,320p'`
+- `sed -n '1,320p' peercompute/src/relay-go/main.go`
+- `git show main:config/relay.env | sed -n '1,240p'`
+- `git show main:config/relay.json | sed -n '1,260p'`
+- `sed -n '321,760p' peercompute/src/relay-go/main.go`
+- `sed -n '1,320p' scripts/write-prod-relay-config.mjs`
+- `sed -n '1,320p' scripts/ensure-relay-config-perms.sh`
+- `rg -n "nginx|proxy_pass|websocket|Upgrade|relay-config" -g '*.md' -g '*.conf' -g '*.sh' scripts config docs plan | head -n 200`
+- `git diff --stat main...HEAD -- scripts/start-relay-prod.sh scripts/run-relay.sh scripts/run-go-relay.sh scripts/install-relay-systemd.sh config/relay.env config/relay.json peercompute/src/relay-go/main.go peercompute/src/relay/server.js`
+- `sed -n '1,220p' peercompute/src/relay-go/go.mod`
+- `git diff main...HEAD -- scripts/start-relay-prod.sh scripts/run-relay.sh scripts/run-go-relay.sh scripts/install-relay-systemd.sh config/relay.env config/relay.json | sed -n '1,320p'`
+- `git diff main...HEAD -- peercompute/src/relay/server.js | sed -n '1,340p'`
+- `rg -n "relay|nginx|systemd|deploy" README.md | head -n 120`
+- `sed -n '1,260p' package.json`
+- `sed -n '80,190p' README.md`
+- `sed -n '1,260p' peercompute/package.json`
+- `git show main:peercompute/package.json | sed -n '1,260p'`
+- `git show main:peercompute/src/relay/server.js | rg -n "floodsub|gossipsub|RELAY_WEBRTC_CONFIG|RELAY_TOPIC_PREFIXES|relay-config.json|RELAY_CONFIG_DIRS|Relay Address"`
+- `rg -n "proxy_set_header Upgrade|proxy_http_version 1.1|/peercompute/config/relay-config.json|relay.secretworkshop.net|secretworkshop.net" plan/log.md plan/branch/server-changes.md README.md | tail -n 120`
+- `nl -ba scripts/start-relay-prod.sh | sed -n '1,240p'`
+- `nl -ba scripts/run-relay.sh | sed -n '1,200p'`
+- `nl -ba scripts/run-go-relay.sh | sed -n '1,220p'`
+- `nl -ba scripts/install-relay-systemd.sh | sed -n '1,220p'`
+- `nl -ba config/relay.env | sed -n '1,220p'`
+- `nl -ba config/relay.json | sed -n '1,260p'`
+- `rg -n "Starting PeerCompute Go Relay|RELAY_PUBSUB_TYPE|RELAY_WEBRTC_CONFIG|relayPublicHost :=|relayListenHost :=|relayTopicPrefixes|Relay pubsub:|Relay Address:|writeRelayConfigFiles|signal.Notify|loadRelayIdentity|libp2p.ListenAddrStrings" peercompute/src/relay-go/main.go`
+- `nl -ba peercompute/src/relay-go/main.go | sed -n '320,620p'`
+- `nl -ba peercompute/src/relay-go/go.mod | sed -n '1,40p'`
+- `nl -ba README.md | sed -n '84,178p'`
+- `nl -ba peercompute/package.json | sed -n '1,80p'`
+- `nl -ba scripts/build-all.sh | sed -n '1,120p'`
+- `nl -ba scripts/write-prod-relay-config.mjs | sed -n '1,260p'`
+- `nl -ba scripts/ensure-relay-config-perms.sh | sed -n '1,220p'`
+- `date -Is`
+- `git show main:peercompute/src/relay/server.js | nl -ba | sed -n '20,320p'`
+- `git show main:scripts/start-relay-prod.sh | nl -ba | sed -n '1,220p'`
+- `git show main:peercompute/package.json | nl -ba | sed -n '1,40p'`
+- `rg -n "gossipsub|RELAY_PUBSUB_TYPE|RELAY_WEBRTC_CONFIG|RELAY_CONTROL_ONLY_MODE|RELAY_ENABLE_DIRECTORY|toMultiaddrHostSegments|subscription-change|peercompute-directory|Relay Address:" peercompute/src/relay/server.js`
+
+### Test Results
+- No automated tests run (analysis/planning prompt only).
+- Static comparison/inspection only; no runtime validation performed in this prompt.
+
+### Failures / Open Questions
+- `git show main:scripts/run-relay.sh` failed because the file does not exist on `main` (new wrapper introduced on this branch).
+- `git show main:config/relay.env` failed because the file does not exist on `main` (new env-defaults file introduced on this branch).
+- Open deployment question (server-specific): whether current nginx websocket upstream points to `127.0.0.1:8080` and whether the host’s IPv6 socket behavior (`listenHost="::"` in branch config) is dual-stack; if not, either set relay listen host back to `127.0.0.1` or change nginx upstream to `[::1]:8080`.
+
+## Date: 2026-02-24
+
+### Prompt
+- "we also have a service installation script now right? is that correctly wired up to the go relay?"
+
+### Prompt Time/Date
+- 2026-02-24T17:25:32-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Re-verified the relay service installation chain with numbered file views:
+  - `scripts/install-relay-systemd.sh` (systemd unit generation)
+  - `scripts/start-relay-prod.sh` (prod env assembly + relay impl default/export)
+  - `scripts/run-relay.sh` (Go/Node dispatcher)
+- Confirmed the generated systemd unit sets `Environment=RELAY_IMPL=${RELAY_IMPL:-go}` and runs `scripts/start-relay-prod.sh`, which then defaults to `go` and dispatches through `scripts/run-relay.sh`.
+- Confirmed fallback behavior remains intact: if `RELAY_IMPL=go` but `go` is not installed, dispatcher falls back to Node and logs a warning.
+- Prepared response with a caveat for existing already-installed units (may need reinstall or manual edit if they predate the new helper).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `nl -ba scripts/install-relay-systemd.sh | sed -n '1,120p'`
+- `nl -ba scripts/start-relay-prod.sh | sed -n '110,170p'`
+- `nl -ba scripts/run-relay.sh | sed -n '1,60p'`
+- `date -Is`
+
+### Test Results
+- No automated tests run (script wiring inspection only).
+
+### Failures / Open Questions
+- No failures.
+- Open operational caveat: if the server is still using an older systemd unit created before `scripts/install-relay-systemd.sh` existed (or before it set `RELAY_IMPL=go`), reinstalling/updating the unit may still be needed to pick up the new startup path cleanly.

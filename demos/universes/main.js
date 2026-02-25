@@ -21,6 +21,15 @@ const SCALES = {
     G:              6.0,    // gravitational constant
 };
 
+// SMBH treated as a fixed-position gravitational attractor in the n-body sim.
+// At typical system-SMBH distances (10k–90k units), this causes:
+//   - subtle orbital precession for distant systems (~0.001 units/s²)
+//   - noticeable drift for systems near the galactic center (~0.02 units/s²)
+// Scale: 500k gives a_smbh ≈ 0.0012 at 50k distance — interesting but not system-destroying.
+const SMBH_PHYSICS_MASS = 500_000;
+// Softening for SMBH: clamps force for systems < 2000 units from galactic center
+const SMBH_EPS2 = (SCALES.GALAXY * 0.02) * (SCALES.GALAXY * 0.02); // 2000² = 4,000,000
+
 const TRAIL_RENDER_N = 90;          // Keplerian orbit ellipse resolution (points)
 
 // Quality Presets
@@ -1888,7 +1897,9 @@ function resetSimulation() {
     if(points) points.position.set(0,0,0);
     if (volumeMesh) {
         volumeMesh.visible = true;
+        volumeMesh.position.set(0, 0, 0);
         volumeMesh.scale.setScalar(volumeMesh.userData.baseScale || 1);
+        if (volumeMaterial?.uniforms?.uInsideView) volumeMaterial.uniforms.uInsideView.value = 0.0;
     }
     if(localGalaxy) localGalaxy.visible = false;
     if(localSystem) localSystem.visible = false;
@@ -1988,7 +1999,12 @@ function completeTransition() {
         simState.inspectingTargetPreviousPos = null;
         simState.trackingTarget = null;
     }
-    if (volumeMesh) volumeMesh.visible = level <= 1;
+    if (volumeMesh) {
+        volumeMesh.visible = level <= 2;
+        if (volumeMaterial?.uniforms?.uInsideView) {
+            volumeMaterial.uniforms.uInsideView.value = (level >= 1) ? 1.0 : 0.0;
+        }
+    }
     
     if (level > prevLevel) {
         if (simState.transitionData) {
@@ -2049,10 +2065,10 @@ function completeTransition() {
             simState.currentGalaxyType = (age < 3.0) ? 2 : (age > 10.0 ? 1 : 0);
             void generateDetailedGalaxy(simState.currentGalaxyType);
         }
-        if (localGalaxy) { localGalaxy.visible = true; if (level > prevLevel) localGalaxy.position.set(0,0,0); }
-        if (smbhGroup) { smbhGroup.visible = true; if(level > prevLevel) smbhGroup.position.set(0,0,0); }
+        if (localGalaxy) { localGalaxy.visible = true; localGalaxy.position.set(0,0,0); if (localGalaxy.material?.uniforms?.uMaxSize) localGalaxy.material.uniforms.uMaxSize.value = 6.0; }
+        if (smbhGroup) { smbhGroup.visible = true; smbhGroup.position.set(0,0,0); }
         if (smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
-        if (nebulaSystem) { nebulaSystem.visible = true; if (level > prevLevel) nebulaSystem.position.set(0,0,0); }
+        if (nebulaSystem) { nebulaSystem.visible = true; nebulaSystem.position.set(0,0,0); }
         if (prevLevel === 0) queueAutopilotGalaxyPriorityTargets();
         if (level > prevLevel) {
             if (simState.isAutopilot) {
@@ -2066,6 +2082,7 @@ function completeTransition() {
     } else if (level === 2) {
         if (smbhGroup) smbhGroup.visible = true;
         if (nebulaSystem) nebulaSystem.visible = false;
+        if (localGalaxy?.material?.uniforms?.uMaxSize) localGalaxy.material.uniforms.uMaxSize.value = 1.5;
         generateStarSystem(shift);
         if (localSystem) { localSystem.visible = true; localSystem.position.set(0,0,0); }
         if (smbhGroup && smbhGroup.children.length > 0) activeBlackHoles.push(smbhGroup.children[0]);
@@ -2160,11 +2177,22 @@ function generateComposition(seed, isStar) {
 
 function getStarSystemInfo(seed) {
     let s = seed; const rnd = () => { const x = Math.sin(s++) * 10000; return x - Math.floor(x); };
-    let initialClass = STAR_CLASSES[STAR_CLASSES.length - 2]; 
+    let initialClass = STAR_CLASSES[STAR_CLASSES.length - 2];
+    // Age-weighted star class probabilities:
+    // Young galaxies (<3 Gyr): O/B stars much more common; Old (>10 Gyr): K/M dominate
+    const galaxyAge = simState.universeSimTime;
+    const ageFactor = Math.min(1.0, Math.max(0.0, (galaxyAge - 0.5) / 12.0)); // 0→1 over Hubble time
+    const mainClasses = STAR_CLASSES.slice(0, STAR_CLASSES.length - 3);
+    const ageProbs = mainClasses.map((c, i) => {
+        if (i <= 1) return c.prob * (1.0 + (1.0 - ageFactor) * 9.0); // O/B: abundant in young
+        if (i <= 4) return c.prob;                                      // A/F/G: stable
+        return c.prob * (1.0 + ageFactor * 1.8);                       // K/M: dominant in old
+    });
+    const probSum = ageProbs.reduce((a, b) => a + b, 0);
     let cumulative = 0; const typeRoll = rnd();
-    for (let i = 0; i < STAR_CLASSES.length - 3; i++) {
-        cumulative += STAR_CLASSES[i].prob;
-        if (typeRoll < cumulative) { initialClass = STAR_CLASSES[i]; break; }
+    for (let i = 0; i < mainClasses.length; i++) {
+        cumulative += ageProbs[i] / probSum;
+        if (typeRoll < cumulative) { initialClass = mainClasses[i]; break; }
     }
     const evoData = evolveStar(initialClass, rnd() * simState.universeSimTime, simState.universeSimTime);
     const spectrum = []; for(let i=0; i<10; i++) spectrum.push({ pos: rnd() * 100, intensity: rnd() });
@@ -2366,7 +2394,8 @@ function buildUniverseVolume({ density, resolution, scale }) {
             uInvModelMatrix: { value: new THREE.Matrix4() },
             uStepSize: { value: (1.0 / resolution) * 2.2 },
             uDensityScale: { value: 0.75 },
-            uTime: { value: 0.0 }
+            uTime: { value: 0.0 },
+            uInsideView: { value: 0.0 }
         },
         vertexShader: `
             out vec3 vLocalPos;
@@ -2383,6 +2412,7 @@ function buildUniverseVolume({ density, resolution, scale }) {
             uniform float uStepSize;
             uniform float uDensityScale;
             uniform float uTime;
+            uniform float uInsideView;
             in vec3 vLocalPos;
             out vec4 fragColor;
 
@@ -2405,26 +2435,38 @@ function buildUniverseVolume({ density, resolution, scale }) {
                 vec2 hit = intersectBox(rayOrigin, rayDir);
                 if (hit.y <= hit.x) discard;
 
-                float t = max(hit.x, 0.0);
+                bool insideView = uInsideView > 0.5;
+                float tStart = max(hit.x, 0.0);
                 float tEnd = hit.y;
+                if (insideView) {
+                    // Skip to the midpoint of each ray so we only sample the FAR HALF of the
+                    // volume. This bypasses the local galaxy-cluster (always high-density at
+                    // the camera position) and instead shows the distant cosmic web structure
+                    // in the background, which is cosmically accurate and visually correct.
+                    tStart = tStart + (tEnd - tStart) * 0.5;
+                }
+                float densScale = insideView ? uDensityScale * 0.85 : uDensityScale;
+                int maxSteps = insideView ? 64 : 192;
+
+                float t = tStart;
                 vec3 color = vec3(0.0);
                 float alpha = 0.0;
 
                 for (int i = 0; i < 192; i++) {
-                    if (t > tEnd || alpha > 0.97) break;
+                    if (i >= maxSteps || t > tEnd || alpha > 0.97) break;
                     vec3 p = rayOrigin + rayDir * t;
                     vec3 texPos = p + vec3(0.5);
                     float d = texture(uDensity, texPos).r;
                     d = pow(d, 0.9);
                     d = clamp(d * 1.15, 0.0, 1.0);
-                    float a = d * uDensityScale;
+                    float a = d * densScale;
                     vec3 tint = mix(vec3(0.45, 0.6, 1.0), vec3(1.0, 0.95, 0.8), d);
                     color += (1.0 - alpha) * a * tint;
                     alpha += (1.0 - alpha) * a;
                     t += uStepSize;
                 }
 
-                if (alpha <= 0.01) discard;
+                if (alpha <= 0.002) discard;
                 fragColor = vec4(color, alpha);
             }
         `,
@@ -2845,7 +2887,8 @@ async function generateDetailedGalaxy(type = 0) {
     smbhGroup.clear();
     const pCount = CONFIG.starCount;
     const radius = SCALES.GALAXY;
-    const params = { starCount: pCount, radius, type };
+    const age = simState.universeSimTime;
+    const params = { starCount: pCount, radius, type, age };
     let data = await runComputeTask('generateGalaxyData', params);
     if (token !== galaxyGenerationToken) return;
     if (!data) data = generateGalaxyData(params);
@@ -2857,9 +2900,9 @@ async function generateDetailedGalaxy(type = 0) {
     geom.setAttribute('aOrbit', new THREE.BufferAttribute(data.orbitParams, 3));
 
     const mat = new THREE.ShaderMaterial({
-        uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uTime: { value: 0 }, uScreenHeight: { value: window.innerHeight } },
+        uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uTime: { value: 0 }, uScreenHeight: { value: window.innerHeight }, uMaxSize: { value: 6.0 }, uGalaxyAge: { value: simState.universeSimTime } },
         vertexShader: `
-            uniform float uPixelRatio; uniform float uTime; uniform float uScreenHeight;
+            uniform float uPixelRatio; uniform float uTime; uniform float uScreenHeight; uniform float uMaxSize;
             attribute float size; attribute vec3 aOrbit; varying vec3 vColor;
             #include <common>
             #include <logdepthbuf_pars_vertex>
@@ -2873,11 +2916,12 @@ async function generateDetailedGalaxy(type = 0) {
                 }
                 vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
-                gl_PointSize = clamp(size * uPixelRatio * (uScreenHeight / -mvPosition.z), 0.3, 6.0);
+                gl_PointSize = clamp(size * uPixelRatio * (uScreenHeight / -mvPosition.z), 0.3, uMaxSize);
                 #include <logdepthbuf_vertex>
             }
         `,
         fragmentShader: `
+            uniform float uGalaxyAge;
             varying vec3 vColor;
             #include <common>
             #include <logdepthbuf_pars_fragment>
@@ -2886,7 +2930,15 @@ async function generateDetailedGalaxy(type = 0) {
                 vec2 center = gl_PointCoord - vec2(0.5);
                 float d = length(center);
                 float glow = 1.0 - smoothstep(0.1, 0.5, d);
-                gl_FragColor = vec4(vColor, pow(glow, 1.5));
+                vec3 col = vColor;
+                // Young galaxies: slight blue cast; Old galaxies: warm orange cast
+                if (uGalaxyAge < 3.0) {
+                    col = mix(col, col * vec3(0.82, 0.93, 1.25), 0.35);
+                } else if (uGalaxyAge > 8.0) {
+                    float old = clamp((uGalaxyAge - 8.0) / 5.0, 0.0, 1.0);
+                    col = mix(col, col * vec3(1.25, 0.92, 0.55), old * 0.45);
+                }
+                gl_FragColor = vec4(col, pow(glow, 1.5));
             }
         `,
         depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, transparent: true
@@ -2927,11 +2979,11 @@ function generateStarSystem(seedPos) {
     coronaMeshes.length = 0;
     let seedVal = Math.abs(seedPos.x + seedPos.y + seedPos.z); const rand = () => { const x = Math.sin(seedVal++) * 10000; return x - Math.floor(x); };
     const S = SCALES.SYSTEM; const G = SCALES.G;
-    let baseStarColor = 0xffaa00; let baseStarRad = S * 0.04; let isBH = false;
+    let baseStarColor = 0xffaa00; let baseStarRad = S * 0.012; let isBH = false;
     if (simState.selectedTarget && simState.selectedTarget.data) {
          const d = simState.selectedTarget.data;
          if (d.typeObj?.color) baseStarColor = d.typeObj.color;
-         if (d.typeObj?.id === 'BH') { baseStarRad = S * 0.02; isBH = true; }
+         if (d.typeObj?.id === 'BH') { baseStarRad = S * 0.006; isBH = true; }
     }
     const numStars = isBH ? 1 : (rand() > 0.6 ? (rand() > 0.9 ? 3 : 2) : 1);
     for(let i=0; i<numStars; i++) {
@@ -3004,20 +3056,33 @@ function generateStarSystem(seedPos) {
     const totalStarMass = physicsBodies.reduce((s, b) => b.isStar ? s + b.mass : s, 0);
 
     // Planets — geometric (Titius-Bode-like) spacing
+    // Metallicity rises over galaxy age: young = volatile-rich, old = heavy-metal rocky
+    const galaxyAge = simState.universeSimTime;
+    const metallicity = Math.max(0.0, Math.min(1.0, (galaxyAge - 1.0) / 9.0)); // 0 at 1Gyr, 1 at 10Gyr
     const pCount = Math.floor(rand() * 5) + 3;
     const planetOrbits = [];
     for(let i=0; i<pCount; i++) {
         const orbitBase = (numStars > 1) ? S * 0.35 : S * 0.12;
         const dist = orbitBase * Math.pow(1.85, i) + rand() * orbitBase * 0.25;
         planetOrbits.push(dist);
-        const isGas = (i > 2 && rand() > 0.3); const isRocky = !isGas;
-        // Star = S*0.04 (40). Gas giants ~6-13x smaller; rocky ~15-40x smaller (Sun:Jupiter≈10x, Sun:Earth≈109x)
+        // Low metallicity (young): more gas giants; High metallicity (old): rocky inner worlds
+        const gasThreshold = i <= 2
+            ? 0.85 - metallicity * 0.50  // inner zone: mostly gas when young, rocky when old
+            : 0.30 - metallicity * 0.12; // outer zone: dominated by gas giants at any age
+        const isGas = rand() > gasThreshold; const isRocky = !isGas;
         const rad = isGas
-            ? S * 0.003 + rand() * S * 0.004   // gas giant: 3-7  → star ~6-13x bigger
-            : S * 0.0008 + rand() * S * 0.0012; // rocky:     0.8-2 → star ~20-50x bigger
+            ? S * 0.003 + rand() * S * 0.004
+            : S * 0.0008 + rand() * S * 0.0012;
         const mass = rad * 10.0;
         const pGeom = new THREE.SphereGeometry(rad, 64, 64);
-        const pMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(rand(), isGas ? 0.8 : 0.2, 0.5), roughness: 0.7 });
+        // Planet color by type and age: old rocky = reddish iron-rich; young rocky = icy varied
+        const rockyHue = metallicity > 0.5 ? rand() * 0.10 : rand(); // iron-rust hue when old
+        const rockySat = 0.20 + metallicity * 0.20;
+        const rockyLight = 0.50 - metallicity * 0.10;
+        const pMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(isGas ? rand() : rockyHue, isGas ? 0.75 : rockySat, isGas ? 0.50 : rockyLight),
+            roughness: 0.65 + metallicity * 0.20
+        });
 
         pMat.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
@@ -3318,50 +3383,66 @@ function buildComet(seed, rand) {
     head.add(new THREE.PointLight(0x88aaff, S * 400, S * 2.0));
 
     const tailLen = S * 0.7;
-    const tailVert = `varying vec2 vUv; #include <logdepthbuf_pars_vertex> void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); #include <logdepthbuf_vertex> }`;
-    // Inner bright core tail
-    const tailGeom = new THREE.ConeGeometry(S * 0.03, tailLen, 16, 1, true);
-    const tailMat = new THREE.ShaderMaterial({
+
+    // Particle tail: 500 points in two-cone distribution (narrow ion + wide dust)
+    const pCount = 500;
+    const pPos = new Float32Array(pCount * 3);
+    const pSz  = new Float32Array(pCount);
+    const pAl  = new Float32Array(pCount);
+    for (let i = 0; i < pCount; i++) {
+        const isDust = i > pCount * 0.40;
+        const t = Math.pow(Math.random(), isDust ? 0.65 : 0.85); // bunched toward head
+        const maxSpread = isDust ? t * S * 0.11 * (0.4 + t) : t * S * 0.028;
+        const ang = Math.random() * Math.PI * 2;
+        pPos[i*3]   = Math.cos(ang) * maxSpread * Math.random();
+        pPos[i*3+1] = t * tailLen;
+        pPos[i*3+2] = Math.sin(ang) * maxSpread * Math.random();
+        pSz[i] = (isDust ? S * 0.010 : S * 0.005) * (1.0 - t * 0.72);
+        pAl[i] = (isDust ? 0.55 : 0.9) * (1.0 - t * 0.88) + 0.02;
+    }
+    const pGeom = new THREE.BufferGeometry();
+    pGeom.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeom.setAttribute('size',     new THREE.BufferAttribute(pSz, 1));
+    pGeom.setAttribute('alpha',    new THREE.BufferAttribute(pAl, 1));
+    const pMat = new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 } },
-        transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-        vertexShader: tailVert,
-        fragmentShader: `varying vec2 vUv; uniform float uTime; #include <logdepthbuf_pars_fragment>
-        void main() {
-            float t = vUv.y;
-            float streak = sin(vUv.x * 12.0 + uTime * 3.0) * 0.15 + 0.85;
-            float a = pow(1.0 - t, 1.5) * 0.95 * streak;
-            if (a < 0.01) discard;
-            gl_FragColor = vec4(0.75, 0.9, 1.0, a);
-            #include <logdepthbuf_fragment>
-        }`
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: `
+            attribute float size; attribute float alpha;
+            varying float vAlpha; varying float vIsDust;
+            uniform float uTime;
+            #include <logdepthbuf_pars_vertex>
+            void main() {
+                float flicker = sin(alpha * 41.7 + uTime * 3.0 + position.y * 0.003) * 0.06 + 0.94;
+                vAlpha = alpha * flicker;
+                vIsDust = size > ${(S * 0.006).toFixed(4)} ? 1.0 : 0.0;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_Position = projectionMatrix * mv;
+                gl_PointSize = max(1.5, size * 350.0 / -mv.z);
+                #include <logdepthbuf_vertex>
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha; varying float vIsDust;
+            #include <logdepthbuf_pars_fragment>
+            void main() {
+                #include <logdepthbuf_fragment>
+                vec2 c = gl_PointCoord - vec2(0.5);
+                float r = dot(c, c) * 4.0;
+                if (r > 1.0) discard;
+                vec3 col = mix(vec3(0.62, 0.86, 1.0), vec3(1.0, 0.91, 0.62), vIsDust);
+                gl_FragColor = vec4(col, vAlpha * (1.0 - r));
+            }
+        `
     });
-    const tail = new THREE.Mesh(tailGeom, tailMat);
-    tail.position.y = tailLen * 0.5;
-    // Outer wide glow envelope
-    const glowGeom = new THREE.ConeGeometry(S * 0.09, tailLen * 0.8, 16, 1, true);
-    const glowMat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 } },
-        transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-        vertexShader: tailVert,
-        fragmentShader: `varying vec2 vUv; uniform float uTime; #include <logdepthbuf_pars_fragment>
-        void main() {
-            float t = vUv.y;
-            float a = pow(1.0 - t, 2.5) * 0.35;
-            if (a < 0.005) discard;
-            gl_FragColor = vec4(0.4, 0.65, 1.0, a);
-            #include <logdepthbuf_fragment>
-        }`
-    });
-    const glowTail = new THREE.Mesh(glowGeom, glowMat);
-    glowTail.position.y = tailLen * 0.4;
+    const particles = new THREE.Points(pGeom, pMat);
 
     const cometDesig = `COMET-${seed.toString(16).toUpperCase().slice(-4)}`;
     const cometGroup = new THREE.Group();
     cometGroup.userData = { type: 'COMET', designation: cometDesig };
     head.userData = { type: 'COMET', designation: cometDesig };
     cometGroup.add(head);
-    cometGroup.add(tail);
-    cometGroup.add(glowTail);
+    cometGroup.add(particles);
     localSystem.add(cometGroup);
 
     // Static orbit trail showing the full elliptical path
@@ -3386,7 +3467,7 @@ function buildComet(seed, rand) {
     localSystem.add(cometTrailLine);
 
     const period = 2 * Math.PI * Math.sqrt(Math.pow(semiMajor, 3) / (SCALES.G * 1000));
-    const body = { mesh: cometGroup, tail, glowTail, type: 'comet', semiMajor, ecc, argPeri, incl,
+    const body = { mesh: cometGroup, particles, type: 'comet', semiMajor, ecc, argPeri, incl,
                    meanAnomaly: rand() * Math.PI * 2, period };
     passiveBodies.push(body);
     cometBodies.push(body);
@@ -3485,8 +3566,7 @@ function updateMoonsCometsAsteroids(simDelta) {
             if (away.lengthSq() > 0.001) {
                 pb.mesh.quaternion.setFromUnitVectors(_cometUp, away);
             }
-            if (pb.tail.material.uniforms)     pb.tail.material.uniforms.uTime.value     += simDelta;
-            if (pb.glowTail?.material?.uniforms) pb.glowTail.material.uniforms.uTime.value += simDelta;
+            if (pb.particles?.material?.uniforms) pb.particles.material.uniforms.uTime.value += simDelta;
         }
     });
     // Advance asteroid belt particle positions along Keplerian arcs
@@ -3576,6 +3656,24 @@ function updatePhysics(dt) {
                 const fj = bi.mass * invDist3;
                 _nbodyAx[i] += dx * fi;  _nbodyAy[i] += dy * fi;  _nbodyAz[i] += dz * fi;
                 _nbodyAx[j] -= dx * fj;  _nbodyAy[j] -= dy * fj;  _nbodyAz[j] -= dz * fj;
+            }
+        }
+
+        // --- SMBH: fixed-position galactic-center attractor ---
+        // smbhGroup.position is the world position of the galactic center at system level.
+        // It never moves (the SMBH anchor is fixed), but all system bodies feel its pull.
+        if (smbhGroup?.visible && smbhGroup.children.length > 0) {
+            const sx = smbhGroup.position.x, sy = smbhGroup.position.y, sz = smbhGroup.position.z;
+            for (let i = 0; i < n; i++) {
+                const bi = physicsBodies[i];
+                const dx = sx - bi.mesh.position.x;
+                const dy = sy - bi.mesh.position.y;
+                const dz = sz - bi.mesh.position.z;
+                const distSq = dx*dx + dy*dy + dz*dz + SMBH_EPS2;
+                const f = SMBH_PHYSICS_MASS * SCALES.G / (distSq * Math.sqrt(distSq));
+                _nbodyAx[i] += dx * f;
+                _nbodyAy[i] += dy * f;
+                _nbodyAz[i] += dz * f;
             }
         }
 
@@ -3945,7 +4043,7 @@ function onPointerUp(event) {
             }
         }
 
-        raycaster.params.Points.threshold = 50000;
+        raycaster.params.Points.threshold = 2000;
         const intersects = raycaster.intersectObject(localGalaxy);
         if (intersects.length > 0) {
             disableAutopilot();

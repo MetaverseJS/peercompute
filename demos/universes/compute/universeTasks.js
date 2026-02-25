@@ -207,8 +207,11 @@ export function generateUniverseDensity({
 export function generateGalaxyData({
   starCount = 250000,
   radius = 1000000,
-  type = 0
+  type = 0,
+  age = 6.0
 } = {}) {
+  // ageFactor: 0 = young (<1 Gyr), 1 = old (~13.8 Gyr)
+  const ageFactor = Math.min(1.0, Math.max(0.0, (age - 0.5) / 12.0));
   const rand = Math.random;
   const positions = new Float32Array(starCount * 3);
   const colors = new Float32Array(starCount * 3);
@@ -253,13 +256,17 @@ export function generateGalaxyData({
         z = Math.sin(spiralAngle) * r + (rand() - 0.5) * radius * 0.1;
         y = (rand() - 0.5) * radius * 0.02 * (1.0 + r / radius);
         speed = Math.sqrt(1.0 / (r / radius + 0.1));
-        if (rand() > 0.3) {
+        // Young spirals: mostly hot blue/white arm stars; Old: yellower/warmer
+        const blueProb = Math.max(0.05, 0.70 - ageFactor * 0.55);
+        if (rand() > blueProb) {
+          // warm arm star — gets more yellow-orange in old galaxies
+          const warmness = 0.60 + ageFactor * 0.30;
+          colors[i3] = 1.0;
+          colors[i3 + 1] = warmness;
+          colors[i3 + 2] = Math.max(0.1, 0.55 - ageFactor * 0.40);
+        } else {
           colors[i3] = 0.6;
           colors[i3 + 1] = 0.7;
-          colors[i3 + 2] = 1.0;
-        } else {
-          colors[i3] = 1.0;
-          colors[i3 + 1] = 1.0;
           colors[i3 + 2] = 1.0;
         }
       }
@@ -270,9 +277,10 @@ export function generateGalaxyData({
       y = p.y * 0.6;
       z = p.z * 0.8;
       speed = 0.1;
+      // Old ellipticals: redder; less old: more yellow
       colors[i3] = 1.0;
-      colors[i3 + 1] = 0.7;
-      colors[i3 + 2] = 0.3;
+      colors[i3 + 1] = Math.max(0.45, 0.78 - ageFactor * 0.18);
+      colors[i3 + 2] = Math.max(0.10, 0.38 - ageFactor * 0.22);
     } else {
       const attr = irregularAttractors[i % irregularAttractors.length];
       const locR = rand() * radius * 0.3;
