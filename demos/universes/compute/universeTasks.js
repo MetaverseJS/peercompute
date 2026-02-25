@@ -1,7 +1,7 @@
 const COLOR_A = [0x44 / 255, 0x88 / 255, 0xff / 255];
 const COLOR_B = [0xff / 255, 0xaa / 255, 0xee / 255];
 const COLOR_C = [0xff / 255, 0xdd / 255, 0xaa / 255];
-const GALAXY_POINT_SCALE = 0.125;
+const GALAXY_POINT_SCALE = 0.0625; // 50% smaller motes
 const MAX_DENSITY_RES = 320;
 
 const lerp = (a, b, t) => a + (b - a) * t;
