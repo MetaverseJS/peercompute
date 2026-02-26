@@ -44,11 +44,12 @@ const QUALITY_PRESETS = {
 const MAX_DENSITY_RES = 320;
 
 const CONFIG = {
-    starCount: QUALITY_PRESETS.HIGH.starCount, 
-    clusterCount: QUALITY_PRESETS.HIGH.clusterCount,  
-    filamentScatter: 0.04, 
+    starCount: QUALITY_PRESETS.HIGH.starCount,
+    clusterCount: QUALITY_PRESETS.HIGH.clusterCount,
+    filamentScatter: 0.04,
     seed: 1337,
-    densityRes: QUALITY_PRESETS.HIGH.densityRes
+    densityRes: QUALITY_PRESETS.HIGH.densityRes,
+    showOrbitPaths: true
 };
 
 const computeModuleUrl = new URL('./compute/universeTasks.js', import.meta.url).href;
@@ -83,13 +84,13 @@ async function runComputeTask(exportName, data) {
 
 // --- Astrophysics Data ---
 const STAR_CLASSES = [
-    { id: 'O', prob: 0.0001, color: 0x9999ff, temp: '30,000+', mass: 60, rad: 8, lum: '30,000+', lifespan: 0.01 },
-    { id: 'B', prob: 0.0013, color: 0xaaaaff, temp: '10,000-30,000', mass: 10, rad: 5, lum: '25-30,000', lifespan: 0.1 },
-    { id: 'A', prob: 0.006,  color: 0xffffff, temp: '7,500-10,000', mass: 3, rad: 2.5, lum: '5-25', lifespan: 1.0 },
-    { id: 'F', prob: 0.03,   color: 0xffffee, temp: '6,000-7,500', mass: 1.5, rad: 1.3, lum: '1.5-5', lifespan: 4.0 },
-    { id: 'G', prob: 0.076,  color: 0xffdd00, temp: '5,200-6,000', mass: 1.0, rad: 1.0, lum: '0.6-1.5', lifespan: 10.0 },
-    { id: 'K', prob: 0.121,  color: 0xffaa22, temp: '3,700-5,200', mass: 0.7, rad: 0.8, lum: '0.08-0.6', lifespan: 30.0 },
-    { id: 'M', prob: 0.7645, color: 0xff3300, temp: '2,400-3,700', mass: 0.3, rad: 0.4, lum: '< 0.08', lifespan: 1000.0 },
+    { id: 'O', prob: 0.0001, color: 0xaac0ff, temp: '30,000+', mass: 60, rad: 8, lum: '30,000+', lifespan: 0.01 },
+    { id: 'B', prob: 0.0013, color: 0xbbd0ff, temp: '10,000-30,000', mass: 10, rad: 5, lum: '25-30,000', lifespan: 0.1 },
+    { id: 'A', prob: 0.006,  color: 0xeef2ff, temp: '7,500-10,000', mass: 3, rad: 2.5, lum: '5-25', lifespan: 1.0 },
+    { id: 'F', prob: 0.03,   color: 0xfff8e8, temp: '6,000-7,500', mass: 1.5, rad: 1.3, lum: '1.5-5', lifespan: 4.0 },
+    { id: 'G', prob: 0.076,  color: 0xfff4cc, temp: '5,200-6,000', mass: 1.0, rad: 1.0, lum: '0.6-1.5', lifespan: 10.0 },
+    { id: 'K', prob: 0.121,  color: 0xffcc88, temp: '3,700-5,200', mass: 0.7, rad: 0.8, lum: '0.08-0.6', lifespan: 30.0 },
+    { id: 'M', prob: 0.7645, color: 0xff8855, temp: '2,400-3,700', mass: 0.3, rad: 0.4, lum: '< 0.08', lifespan: 1000.0 },
     { id: 'BH', prob: 0, color: 0x000000, temp: 'UNDEFINED', mass: 20, rad: 0.05, lum: '0', lifespan: 9999 }, 
     { id: 'N', prob: 0, color: 0x00ffff, temp: '600,000', mass: 2.5, rad: 0.02, lum: '0.001', lifespan: 9999 },
     { id: 'WD', prob: 0, color: 0xbbffff, temp: '100,000', mass: 0.9, rad: 0.1, lum: '0.01', lifespan: 9999 } 
@@ -478,6 +479,11 @@ let surfaceSystem = null;
 let surfacePlanetMesh = null;
 let tinyControls = null;
 let asteroidBelt = null;
+let asteroidBeltRing = null;
+let kuiperBelt = null;
+let kuiperBeltRing = null;
+let oortCloud = null;
+let oortCloudShell = null;
 let cometBodies = []; 
 
 let simState = {
@@ -516,6 +522,8 @@ let simState = {
     useSchwarzschildLensing: true,
     surfaceSimTime: 0,
     landedPlanet: null,
+    landedOnComet: false,
+    activeSurfaceRadius: SCALES.SURFACE,
 };
 
 // --- Elements ---
@@ -1813,6 +1821,22 @@ function setupUIEvents() {
             if (lensingPass) lensingPass.enabled = simState.useSchwarzschildLensing;
         };
     }
+    const elOrbitPathsToggle = document.getElementById('orbit-paths-toggle');
+    if (elOrbitPathsToggle) {
+        elOrbitPathsToggle.checked = CONFIG.showOrbitPaths;
+        elOrbitPathsToggle.onchange = (e) => {
+            CONFIG.showOrbitPaths = e.target.checked;
+            const v = CONFIG.showOrbitPaths;
+            physicsBodies.forEach(b => {
+                if (b.orbitTrailLine) b.orbitTrailLine.visible = v;
+                if (b.moonTrailLine)  b.moonTrailLine.visible  = v;
+            });
+            passiveBodies.forEach(b => { if (b.orbitTrailLine) b.orbitTrailLine.visible = v; });
+            [asteroidBelt, asteroidBeltRing, kuiperBelt, kuiperBeltRing, oortCloud, oortCloudShell].forEach(obj => {
+                if (obj) obj.visible = v;
+            });
+        };
+    }
     
     elAutopilotToggle.onchange = (e) => {
         simState.isAutopilot = e.target.checked;
@@ -1869,8 +1893,9 @@ function resetCamera(level) {
         camera.near = 0.005; camera.far = 5e6;
         elBackBtn.disabled = false; elBackBtn.textContent = "BACK TO GALAXY";
     } else if (level === 3) {
-        camera.near = 0.0001; camera.far = SCALES.SURFACE * 3000;
-        elBackBtn.disabled = false; elBackBtn.textContent = "LIFT OFF";
+        const sR = simState.activeSurfaceRadius || SCALES.SURFACE;
+        camera.near = sR * 0.000001; camera.far = sR * 3000;
+        elBackBtn.disabled = false; elBackBtn.textContent = simState.landedOnComet ? "LAUNCH FROM SURFACE" : "LIFT OFF";
     }
     camera.updateProjectionMatrix();
 }
@@ -1886,13 +1911,14 @@ function resetSimulation() {
     
     physicsBodies = []; passiveBodies = []; activeCMEs = [];
     activeBlackHoles = []; blackHoleUniforms.uBHCount.value = 0;
-    cometBodies = []; asteroidBelt = null;
+    cometBodies = []; asteroidBelt = null; asteroidBeltRing = null;
+    kuiperBelt = null; kuiperBeltRing = null; oortCloud = null; oortCloudShell = null;
     if (tinyControls?.enabled) tinyControls.exit();
     if (surfaceSystem) {
         surfaceSystem.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
         scene.remove(surfaceSystem); surfaceSystem = null; surfacePlanetMesh = null;
     }
-    simState.surfaceSimTime = 0; simState.landedPlanet = null;
+    simState.surfaceSimTime = 0; simState.landedPlanet = null; simState.landedOnComet = false; simState.activeSurfaceRadius = SCALES.SURFACE;
     elLocBtn.style.display = 'block';
     if(points) points.position.set(0,0,0);
     if (volumeMesh) {
@@ -1945,6 +1971,8 @@ function ejectView() {
     if (simState.viewLevel === 3) {
         if (tinyControls?.enabled) tinyControls.exit();
         simState.viewLevel = 2;
+        if (simState.landedPlanet) { simState.landedPlanet.mesh.visible = true; simState.landedPlanet = null; }
+        simState.landedOnComet = false; simState.activeSurfaceRadius = SCALES.SURFACE;
         if (surfaceSystem) surfaceSystem.visible = false;
         if (localSystem) localSystem.visible = true;
         controls.enabled = true;
@@ -1976,7 +2004,11 @@ function startTransition(targetPoint, level, isBackingOut = false) {
         const id = Math.floor(Math.abs(targetPoint.x + targetPoint.y)).toString(16).toUpperCase();
         if (level === 1) { elAlertTitle.innerText = "APPROACHING GALAXY"; elAlertMsg.innerText = `SECTOR ${id} :: HYPERDRIVE ENGAGED`; }
         else if (level === 2) { elAlertTitle.innerText = "APPROACHING SYSTEM"; elAlertMsg.innerText = `STAR ${id} :: ORBITAL INSERTION`; }
-        else if (level === 3) { elAlertTitle.innerText = "ATMOSPHERIC ENTRY"; elAlertMsg.innerText = `SURFACE ${id} :: DEPLOYING LANDING GEAR`; }
+        else if (level === 3) {
+            const isComet = simState.selectedTarget?.data?.type === 'COMET';
+            elAlertTitle.innerText = isComet ? "RENDEZVOUS APPROACH" : "ATMOSPHERIC ENTRY";
+            elAlertMsg.innerText = isComet ? `COMET ${id} :: MATCHING ORBIT VELOCITY` : `SURFACE ${id} :: DEPLOYING LANDING GEAR`;
+        }
     }
 }
 
@@ -2114,21 +2146,24 @@ function completeTransition() {
         controls.target.set(0,0,0);
         resetCamera(2); elAlertMsg.innerText = "SYSTEM ORBIT STABLE";
     } else if (level === 3) {
-        // Landing on a planet surface
-        if (localSystem) localSystem.visible = false;
+        // Landing on a planet or comet — keep localSystem visible so star/planets appear in sky
         if (surfaceSystem) surfaceSystem.visible = false;
-        const landTarget = simState.selectedTarget?.object
-            ? physicsBodies.find(b => b.mesh === simState.selectedTarget.object) || null
+        const selObj = simState.selectedTarget?.object;
+        const landTarget = selObj
+            ? (physicsBodies.find(b => b.mesh === selObj) ||
+               passiveBodies.find(b => b.mesh === selObj || b.mesh.children.includes(selObj)))
             : null;
         simState.landedPlanet = landTarget;
+        simState.landedOnComet = landTarget?.type === 'comet';
         generatePlanetSurface(landTarget);
         controls.enabled = false;
         resetCamera(3);
-        elAlertMsg.innerText = "SURFACE CONTACT";
+        elAlertMsg.innerText = simState.landedOnComet ? "NUCLEUS CONTACT — MAGNETS ENGAGED" : "SURFACE CONTACT";
     }
 
     // Back out from surface — restore system visibility
     if (level === 2 && prevLevel === 3) {
+        if (simState.landedPlanet) { simState.landedPlanet.mesh.visible = true; simState.landedPlanet = null; }
         if (surfaceSystem) surfaceSystem.visible = false;
         if (localSystem) { localSystem.visible = true; localSystem.position.set(0, 0, 0); }
         controls.enabled = true;
@@ -2251,8 +2286,13 @@ function updateTargetPanel(data, readOnly = false) {
     }
     const elLandBtn = document.getElementById('land-btn');
     if (elLandBtn) {
-        const isPlanet = data.type === 'ROCKY' || data.type === 'GAS GIANT';
-        elLandBtn.style.display = (!readOnly && simState.viewLevel === 2 && isPlanet) ? 'block' : 'none';
+        const isLandable = data.type === 'ROCKY' || data.type === 'COMET' || data.type === 'MOON' || data.type === 'ASTEROID' || data.type === 'KUIPER';
+        elLandBtn.style.display = (!readOnly && simState.viewLevel === 2 && isLandable) ? 'block' : 'none';
+        elLandBtn.textContent = data.type === 'COMET'    ? 'LAND ON NUCLEUS'
+                              : data.type === 'MOON'     ? 'LAND ON MOON'
+                              : data.type === 'ASTEROID' ? 'LAND ON ASTEROID'
+                              : data.type === 'KUIPER'   ? 'LAND ON KBO'
+                              : 'LAND ON SURFACE';
     }
     if (simState.isAutopilot && simState.autopilotPanelHidden) elTargetPanel.style.display = 'none';
     else elTargetPanel.style.display = 'flex';
@@ -2283,11 +2323,14 @@ function createBlackHole(radius, x, y, z) {
         vertexShader: `
             varying vec3 vWorldPos;
             varying vec3 vBhPos;
+            #include <common>
+            #include <logdepthbuf_pars_vertex>
             void main() {
                 vec4 world = modelMatrix * vec4(position, 1.0);
                 vWorldPos = world.xyz;
                 vBhPos = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
                 gl_Position = projectionMatrix * viewMatrix * world;
+                #include <logdepthbuf_vertex>
             }
         `,
         fragmentShader: `
@@ -2297,6 +2340,7 @@ function createBlackHole(radius, x, y, z) {
             uniform float uOuterRadius;
             varying vec3 vWorldPos;
             varying vec3 vBhPos;
+            #include <logdepthbuf_pars_fragment>
             ${NOISE_GLSL}
             void main() {
                 vec3 rel = vWorldPos - vBhPos;
@@ -2340,6 +2384,7 @@ function createBlackHole(radius, x, y, z) {
                 float alpha = ring * intensity * 0.85;
                 if (alpha < 0.02) discard;
 
+                #include <logdepthbuf_fragment>
                 gl_FragColor = vec4(diskColor, alpha);
             }
         `
@@ -2970,11 +3015,63 @@ async function generateDetailedGalaxy(type = 0) {
     }
     const bh = createBlackHole(radius * 0.005, 0, 0, 0);
     smbhGroup.add(bh);
+
+    // Quasar / AGN jets — intensity scales with galaxy youth (young = more active nucleus)
+    const ageFactor = Math.max(0, 1.0 - simState.universeSimTime / 5.0);
+    if (ageFactor > 0.05) addQuasarJets(smbhGroup, radius * 0.005, ageFactor);
+
     smbhGroup.visible = simState.viewLevel !== 0;
+}
+
+function addQuasarJets(targetGroup, bhRadius, intensity) {
+    const jetLen = bhRadius * (60 + intensity * 180);
+    const jetRad = bhRadius * (1.5 + intensity * 3.0);
+    for (const sign of [1, -1]) {
+        const cGeom = new THREE.ConeGeometry(jetRad, jetLen, 20, 1, true);
+        const cMat  = new THREE.ShaderMaterial({
+            uniforms: { uIntensity: { value: intensity }, uTime: { value: 0 } },
+            transparent: true, side: THREE.DoubleSide, depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `
+                uniform float uIntensity; uniform float uTime; varying vec2 vUv;
+                void main() {
+                    float t = vUv.y;                          // 0 = base (near BH), 1 = tip
+                    float rim = 1.0 - abs(vUv.x * 2.0 - 1.0);
+                    float pulse = 0.85 + 0.15 * sin(t * 18.0 - uTime * 4.0);
+                    float fade = pow(1.0 - t, 1.2) * pulse;
+                    float alpha = fade * rim * rim * uIntensity * 0.65;
+                    if (alpha < 0.004) discard;
+                    vec3 inner = vec3(1.0, 0.97, 0.9);
+                    vec3 outer = vec3(0.25, 0.55, 1.0);
+                    gl_FragColor = vec4(mix(inner, outer, t * 0.7 + rim * 0.3), alpha);
+                }
+            `
+        });
+        const cone = new THREE.Mesh(cGeom, cMat);
+        cone.position.y = sign * jetLen * 0.5;
+        if (sign < 0) cone.rotation.z = Math.PI;
+        cone.userData.isQuasarJet = true;
+        targetGroup.add(cone);
+    }
+    // Halo around BH core — extra bright ring for quasar
+    const haloGeom = new THREE.SphereGeometry(bhRadius * 3.5, 32, 16);
+    const haloMat  = new THREE.ShaderMaterial({
+        uniforms: { uIntensity: { value: intensity } },
+        transparent: true, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: `varying vec3 vNorm; void main() { vNorm = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `uniform float uIntensity; varying vec3 vNorm; void main() {
+            float rim = pow(1.0 - abs(dot(vNorm, vec3(0,0,1))), 2.5);
+            gl_FragColor = vec4(0.4, 0.7, 1.0, rim * uIntensity * 0.55);
+        }`
+    });
+    targetGroup.add(new THREE.Mesh(haloGeom, haloMat));
 }
 
 function generateStarSystem(seedPos) {
     physicsBodies = []; passiveBodies = []; activeCMEs = [];
+    asteroidBelt = null; asteroidBeltRing = null;
+    kuiperBelt = null; kuiperBeltRing = null; oortCloud = null; oortCloudShell = null;
     while(localSystem.children.length > 0){ const c = localSystem.children[0]; if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose(); localSystem.remove(c); }
     coronaMeshes.length = 0;
     let seedVal = Math.abs(seedPos.x + seedPos.y + seedPos.z); const rand = () => { const x = Math.sin(seedVal++) * 10000; return x - Math.floor(x); };
@@ -2996,7 +3093,7 @@ function generateStarSystem(seedPos) {
              mesh.add(new THREE.AmbientLight(0x222233, 0.5));
         } else {
             const geom = new THREE.SphereGeometry(rad, 64, 64);
-            const mat = new THREE.MeshStandardMaterial({ color: baseStarColor, emissive: baseStarColor, emissiveIntensity: 6.0 });
+            const mat = new THREE.MeshStandardMaterial({ color: baseStarColor, emissive: baseStarColor, emissiveIntensity: 3.0 });
             
             mat.onBeforeCompile = (shader) => {
                 shader.uniforms.uTime = { value: 0 };
@@ -3038,17 +3135,25 @@ function generateStarSystem(seedPos) {
             coronaMesh.userData.isCorona = true;
             coronaMeshes.push(coronaMesh);
             mesh.add(coronaMesh);
-            const starLight = new THREE.PointLight(baseStarColor, 8_000_000, SCALES.SYSTEM * 25, 2);
+            const starLight = new THREE.PointLight(baseStarColor, 4_000_000, SCALES.SYSTEM * 25, 2);
             mesh.add(starLight);
             // Ambient: faint wash tinted toward star color for fill light on planet night side
             const ambCol = new THREE.Color(baseStarColor).lerp(new THREE.Color(0x050510), 0.85);
             mesh.add(new THREE.AmbientLight(ambCol, 0.8));
         }
         localSystem.add(mesh);
-        if (numStars === 1) physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,0), isStar: true });
-        else {
-             const dist = S * 0.25; mesh.position.set((i===0?1:-1)*dist, 0, 0);
-             const v = Math.sqrt(G*mass/(2*dist)); physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,(i===0?1:-1)*v), isStar: true });
+        if (numStars === 1) {
+            physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,0), isStar: true, radius: rad });
+        } else if (numStars === 2) {
+            const dist = S * 0.25; mesh.position.set((i===0?1:-1)*dist, 0, 0);
+            const v = Math.sqrt(G*mass/(2*dist)); physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(0,0,(i===0?1:-1)*v), isStar: true, radius: rad });
+        } else {
+            // Trinary: equilateral triangle — each star at 120° separation
+            const dist = S * 0.25;
+            const ang = (i / 3) * Math.PI * 2;
+            mesh.position.set(Math.cos(ang)*dist, 0, Math.sin(ang)*dist);
+            const v = Math.sqrt(G*mass/(2*dist));
+            physicsBodies.push({ mesh: mesh, mass: mass, velocity: new THREE.Vector3(-Math.sin(ang)*v, 0, Math.cos(ang)*v), isStar: true, radius: rad });
         }
     }
 
@@ -3106,7 +3211,9 @@ function generateStarSystem(seedPos) {
             pMat.userData.shader = shader;
         };
         const planet = new THREE.Mesh(pGeom, pMat);
-        const ang = rand() * Math.PI * 2; planet.position.set(Math.cos(ang)*dist, 0, Math.sin(ang)*dist);
+        const ang = rand() * Math.PI * 2;
+        const yOff = (rand() - 0.5) * dist * 0.05;
+        planet.position.set(Math.cos(ang)*dist, yOff, Math.sin(ang)*dist);
 
         const aGeom = new THREE.SphereGeometry(rad * 1.1, 32, 32);
         const aMat = new THREE.ShaderMaterial({
@@ -3127,7 +3234,7 @@ function generateStarSystem(seedPos) {
         localSystem.add(planet);
         const planetBodyIndex = physicsBodies.length;
         const vOrb = Math.sqrt(G * totalStarMass / dist);
-        physicsBodies.push({ mesh: planet, mass: mass, velocity: new THREE.Vector3(-Math.sin(ang)*vOrb, 0, Math.cos(ang)*vOrb), isStar: false });
+        physicsBodies.push({ mesh: planet, mass: mass, velocity: new THREE.Vector3(-Math.sin(ang)*vOrb, 0, Math.cos(ang)*vOrb), isStar: false, radius: rad });
 
         // Orbit trail: CatmullRom through sampled past positions + analytic future arc
         { const initPts = new Float32Array(TRAIL_RENDER_N * 3);
@@ -3141,9 +3248,12 @@ function generateStarSystem(seedPos) {
               resolution: new THREE.Vector2(window.innerWidth, window.innerHeight) });
           const trailLine = new Line2(trailGeom, trailMat);
           trailLine.renderOrder = 1; trailLine.frustumCulled = false;
+          trailLine.visible = CONFIG.showOrbitPaths;
           localSystem.add(trailLine);
           const pb = physicsBodies[physicsBodies.length - 1];
           pb.orbitTrailGeom = trailGeom;
+          pb.orbitTrailMat = trailMat;
+          pb.orbitTrailLine = trailLine;
         }
 
         // Rings on some gas giants
@@ -3173,14 +3283,30 @@ function generateStarSystem(seedPos) {
                 type: 'MOON', isMoon: true
             };
             localSystem.add(moon);
-            passiveBodies.push({
-                type: 'moon',
-                mesh: moon,
-                parentBody: physicsBodies[planetBodyIndex],
-                orbitRadius: moonOrbit,
-                orbitAngle: moonAng,
-                angularSpeed: Math.sqrt(G * mass / (moonOrbit * moonOrbit * moonOrbit))
-            });
+            // Moon as full n-body participant: parent velocity + tangential circular orbit velocity
+            const vMoon = Math.sqrt(G * mass / moonOrbit);
+            const parentVel = physicsBodies[planetBodyIndex].velocity;
+            const moonVel = new THREE.Vector3(
+                parentVel.x - Math.sin(moonAng) * vMoon,
+                parentVel.y,
+                parentVel.z + Math.cos(moonAng) * vMoon
+            );
+            // Moon orbit trail — static circle that tracks parent planet each frame
+            const moonCirclePts = new Float32Array(65 * 3);
+            for (let k = 0; k <= 64; k++) {
+                const a = (k / 64) * Math.PI * 2;
+                moonCirclePts[k*3]   = planet.position.x + Math.cos(a) * moonOrbit;
+                moonCirclePts[k*3+1] = planet.position.y;
+                moonCirclePts[k*3+2] = planet.position.z + Math.sin(a) * moonOrbit;
+            }
+            const moonCircleGeom = new THREE.BufferGeometry();
+            moonCircleGeom.setAttribute('position', new THREE.BufferAttribute(moonCirclePts, 3));
+            const moonTrailLine = new THREE.LineLoop(moonCircleGeom,
+                new THREE.LineBasicMaterial({ color: 0x6699bb, transparent: true, opacity: 0.4, depthWrite: false }));
+            moonTrailLine.visible = CONFIG.showOrbitPaths;
+            localSystem.add(moonTrailLine);
+            physicsBodies.push({ mesh: moon, mass: moonRad * 5.0, velocity: moonVel, isStar: false, isMoon: true, radius: moonRad,
+                parentPlanetBody: physicsBodies[planetBodyIndex], moonTrailLine, moonOrbit, moonCircleGeom });
         }
     }
 
@@ -3195,6 +3321,13 @@ function generateStarSystem(seedPos) {
     cometBodies = [];
     const numComets = 2 + Math.floor(rand() * 2);
     for (let c = 0; c < numComets; c++) buildComet(seedVal + c * 9999, rand);
+
+    // Kuiper belt — beyond outermost planet
+    const outerOrbit = planetOrbits[pCount - 1];
+    buildKuiperBelt(outerOrbit * 1.45, outerOrbit * 2.8);
+
+    // Oort cloud — distant spherical shell
+    buildOortCloud(outerOrbit * 7.0);
 }
 
 function generatePlanetSurface(sourcePlanetBody) {
@@ -3206,56 +3339,86 @@ function generatePlanetSurface(sourcePlanetBody) {
         surfaceSystem.remove(c);
     }
 
-    const R = SCALES.SURFACE;
+    const isComet    = sourcePlanetBody?.type === 'comet';
+    const isMoon     = sourcePlanetBody?.isMoon === true;
+    const selType    = simState.selectedTarget?.data?.type;
+    const isAsteroid = selType === 'ASTEROID' || selType === 'KUIPER';
+    // Scale R to match the body class
+    const R = isComet    ? SCALES.SYSTEM * 0.005
+            : isAsteroid ? SCALES.SURFACE * 0.08
+            : isMoon     ? SCALES.SURFACE * 0.30
+            : SCALES.SURFACE;
+    simState.activeSurfaceRadius = R;
+
     const seedBase = sourcePlanetBody
         ? Math.abs(Math.floor(sourcePlanetBody.mesh.position.x * 7 + sourcePlanetBody.mesh.position.z * 13)) % 99991
         : 42;
     let sv = seedBase;
     const rnd = () => { const x = Math.sin(sv++) * 10000; return x - Math.floor(x); };
 
-    // Planet sphere with vertex-color terrain
-    const geom = new THREE.IcosahedronGeometry(R, 5);
+    // Surface sphere with vertex-color terrain
+    // Fixed per-body phase offsets — no sv increments inside the vertex loop (ensures continuity)
+    const isSmallBody = isComet || isAsteroid;
+    const detail = isSmallBody ? 4 : 5;
+    const geom = new THREE.IcosahedronGeometry(R, detail);
     const positions = geom.attributes.position;
     const colArr = [];
-    const isOcean = rnd() < 0.6;
+    const isOcean = !isSmallBody && !isMoon && rnd() < 0.6;
     const landHue = rnd();
+    const phase1 = rnd() * 6.283;
+    const phase2 = rnd() * 6.283;
+    const phase3 = rnd() * 6.283;
+    const heightScale = isComet ? 0.18 : isAsteroid ? 0.22 : isMoon ? 0.10 : 0.05;
     for (let i = 0; i < positions.count; i++) {
         const vx = positions.getX(i), vy = positions.getY(i), vz = positions.getZ(i);
         const len = Math.sqrt(vx*vx + vy*vy + vz*vz);
         const nx = vx/len, ny = vy/len, nz = vz/len;
-        // 3-octave height
-        const h1 = (Math.sin(nx*7+sv)*Math.cos(ny*5) + Math.sin(nz*6+sv*0.3)) * 0.5;
-        const h2 = (Math.sin(nx*15+sv*1.3)*Math.sin(nz*13)) * 0.25;
-        const h3 = (Math.cos(ny*30+sv*0.7)*Math.sin(nx*28)) * 0.1;
-        sv += 0.001;
-        const h = (h1 + h2 + h3) * 0.05;
-        const newR = R * (1 + h);
+        const h1 = (Math.sin(nx*7.3 + phase1)*Math.cos(ny*5.1 + phase2) + Math.sin(nz*6.7 + phase3)) * 0.5;
+        const h2 = (Math.sin(nx*15.2 + ny*8.3 + phase1*1.3)*Math.sin(nz*13.1 + phase2*0.9)) * 0.25;
+        const h3 = (Math.cos(ny*30.1 + phase3*0.7)*Math.sin(nx*28.3 + nz*12.7)) * 0.1;
+        const h = (h1 + h2 + h3) * heightScale;
+        const newR = R * (1.0 + h);
         positions.setXYZ(i, nx * newR, ny * newR, nz * newR);
-        const elev = h * 20; // -1..1 range
-        if (isOcean && elev < 0) {
-            colArr.push(0.08, 0.25 + rnd()*0.08, 0.58);
-        } else if (elev < 0.1) {
-            colArr.push(0.7 + rnd()*0.1, 0.65, 0.45); // beach
+        const elev = h / heightScale;
+        if (isComet) {
+            const darkness = 0.06 + Math.abs(h1) * 0.06;
+            const iceBlend = Math.max(0.0, -elev * 0.4);
+            colArr.push(darkness + iceBlend * 0.7, darkness + iceBlend * 0.72, darkness + iceBlend * 0.75);
+        } else if (isAsteroid) {
+            // Rocky grey-brown — carbonaceous chondrite look
+            const base = 0.14 + Math.abs(h1) * 0.10;
+            colArr.push(base + 0.04, base + 0.02, base);
+        } else if (isMoon) {
+            // Grey cratered surface, faint bluish in deep craters
+            const base = 0.22 + elev * 0.12;
+            const crater = Math.max(0, -elev * 0.15);
+            colArr.push(base, base, base + crater);
+        } else if (isOcean && elev < -0.05) {
+            colArr.push(0.07, 0.22 + Math.abs(nx)*0.06, 0.55 + Math.abs(ny)*0.05);
+        } else if (elev < 0.08) {
+            colArr.push(0.72, 0.63, 0.42);
         } else {
-            const g = 0.3 + elev * 0.2;
-            colArr.push(landHue * 0.2 + 0.05, g, 0.08 + (1-elev)*0.1);
+            const g = Math.min(0.72, 0.28 + elev * 0.35);
+            colArr.push(landHue * 0.18 + 0.04, g, Math.max(0.03, 0.12 - elev * 0.08));
         }
     }
     geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colArr), 3));
     geom.computeVertexNormals();
 
-    const planetMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    const planetMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: isSmallBody ? 0.97 : isMoon ? 0.95 : 0.85 });
     surfacePlanetMesh = new THREE.Mesh(geom, planetMat);
     surfaceSystem.add(surfacePlanetMesh);
 
-    // Thin atmosphere rim
-    const atmoMat = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(isOcean ? 0x4499ff : 0xffbb88) } },
-        transparent: true, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending,
-        vertexShader: `varying vec3 vNorm; void main() { vNorm = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-        fragmentShader: `uniform vec3 uColor; varying vec3 vNorm; void main() { float rim = pow(1.0 - abs(dot(vNorm, vec3(0,0,1))), 3.0); gl_FragColor = vec4(uColor, rim * 0.45); }`
-    });
-    surfaceSystem.add(new THREE.Mesh(new THREE.SphereGeometry(R * 1.03, 64, 32), atmoMat));
+    if (!isSmallBody && !isMoon) {
+        // Thin atmosphere rim — only rocky/ocean planets have atmospheres
+        const atmoMat = new THREE.ShaderMaterial({
+            uniforms: { uColor: { value: new THREE.Color(isOcean ? 0x4499ff : 0xffbb88) } },
+            transparent: true, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending,
+            vertexShader: `varying vec3 vNorm; void main() { vNorm = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+            fragmentShader: `uniform vec3 uColor; varying vec3 vNorm; void main() { float rim = pow(1.0 - abs(dot(vNorm, vec3(0,0,1))), 3.0); gl_FragColor = vec4(uColor, rim * 0.45); }`
+        });
+        surfaceSystem.add(new THREE.Mesh(new THREE.SphereGeometry(R * 1.03, 64, 32), atmoMat));
+    }
 
     // Lighting
     const sunLight = new THREE.DirectionalLight(0xfff0cc, 2.5);
@@ -3278,19 +3441,35 @@ function generatePlanetSurface(sourcePlanetBody) {
     starGeom.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     surfaceSystem.add(new THREE.Points(starGeom, new THREE.PointsMaterial({ color: 0xffffff, size: R * 0.4, sizeAttenuation: true })));
 
+    // Position surface group at the planet's actual physics location so other system
+    // bodies (star, other planets) remain visible in the sky at correct distances.
+    if (sourcePlanetBody) {
+        surfaceSystem.position.copy(sourcePlanetBody.mesh.position);
+        // Hide the physics-level planet mesh to avoid z-fighting with the surface sphere
+        sourcePlanetBody.mesh.visible = false;
+        // Orient sunlight from the primary star's actual direction
+        const primaryStar = physicsBodies.find(b => b.isStar);
+        if (primaryStar) {
+            const sunDir = new THREE.Vector3()
+                .subVectors(primaryStar.mesh.position, sourcePlanetBody.mesh.position)
+                .normalize();
+            sunLight.position.copy(sunDir.multiplyScalar(R * 400));
+        }
+    }
     surfaceSystem.visible = true;
 
-    // Configure TinyPlanetControls for this planet's scale
+    // Configure TinyPlanetControls — comets have very low gravity and no atmosphere
     tinyControls.planetRadius = R;
-    tinyControls.walkSpeed    = R * 0.003;
-    tinyControls.runSpeed     = R * 0.007;
-    tinyControls.flySpeed     = R * 0.04;
-    tinyControls.jumpForce    = R * 0.012;
-    tinyControls.gravity      = R * 0.28;
+    tinyControls.walkSpeed    = R * (isSmallBody ? 0.006 : 0.003);
+    tinyControls.runSpeed     = R * (isSmallBody ? 0.015 : 0.007);
+    tinyControls.flySpeed     = R * (isSmallBody ? 0.10 : 0.04);
+    tinyControls.jumpForce    = R * (isSmallBody ? 0.08 : isMoon ? 0.04 : 0.012);
+    tinyControls.gravity      = R * (isSmallBody ? 0.015 : isMoon ? 0.08 : 0.28);
     tinyControls.playerHeight = R * 0.002;
 
-    // Spawn on north pole surface
-    const spawnWorld = new THREE.Vector3(0, R * 1.05, 0);
+    // Spawn on the sunward pole so the sun is immediately visible
+    const spawnDir = sunLight.position.clone().normalize();
+    const spawnWorld = surfaceSystem.position.clone().addScaledVector(spawnDir, R * 1.05);
     tinyControls.enter(spawnWorld, surfacePlanetMesh, camera);
 }
 
@@ -3302,8 +3481,13 @@ function addRingSystem(planet, rad) {
         transparent: true, side: THREE.DoubleSide, depthWrite: false,
         vertexShader: `
             varying vec3 vPos;
+            #include <common>
             #include <logdepthbuf_pars_vertex>
-            void main() { vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); #include <logdepthbuf_vertex> }
+            void main() {
+                vPos = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                #include <logdepthbuf_vertex>
+            }
         `,
         fragmentShader: `
             uniform float uInner; uniform float uOuter; varying vec3 vPos;
@@ -3335,7 +3519,7 @@ function buildAsteroidBelt(inner, outer) {
         const spd = Math.sqrt(SCALES.G * 800 / (r * r));
         beltData[i*3] = ang; beltData[i*3+1] = r; beltData[i*3+2] = spd;
         positions[i*3]   = Math.cos(ang) * r;
-        positions[i*3+1] = (Math.random() - 0.5) * r * 0.03;
+        positions[i*3+1] = (Math.random() - 0.5) * r * 0.12;
         positions[i*3+2] = Math.sin(ang) * r;
     }
     const geom = new THREE.BufferGeometry();
@@ -3344,6 +3528,7 @@ function buildAsteroidBelt(inner, outer) {
         uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } },
         vertexShader: `
             uniform float uPixelRatio;
+            #include <common>
             #include <logdepthbuf_pars_vertex>
             void main() {
                 vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
@@ -3365,7 +3550,131 @@ function buildAsteroidBelt(inner, outer) {
     asteroidBelt.frustumCulled = false;
     asteroidBelt.userData.beltData = beltData;
     asteroidBelt.userData.count = count;
+    asteroidBelt.userData.type = 'ASTEROID';
+    asteroidBelt.userData.designation = 'ASTEROID BELT';
     localSystem.add(asteroidBelt);
+
+    // Orbit ring indicator
+    const meanR = (inner + outer) / 2;
+    const ringPts = new Float32Array(129 * 3);
+    for (let i = 0; i <= 128; i++) { const a = (i/128)*Math.PI*2; ringPts[i*3]=Math.cos(a)*meanR; ringPts[i*3+1]=0; ringPts[i*3+2]=Math.sin(a)*meanR; }
+    const ringGeom = new THREE.BufferGeometry();
+    ringGeom.setAttribute('position', new THREE.BufferAttribute(ringPts, 3));
+    asteroidBeltRing = new THREE.LineLoop(ringGeom, new THREE.LineBasicMaterial({ color: 0x887755, transparent: true, opacity: 0.35, depthWrite: false }));
+    asteroidBeltRing.visible = CONFIG.showOrbitPaths;
+    localSystem.add(asteroidBeltRing);
+}
+
+function buildKuiperBelt(inner, outer) {
+    const count = 2000;
+    const positions = new Float32Array(count * 3);
+    const beltData = new Float32Array(count * 3); // [angle, radius, speed]
+    for (let i = 0; i < count; i++) {
+        const ang = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 1.5;
+        const r = inner + Math.random() * (outer - inner);
+        const spd = Math.sqrt(SCALES.G * 800 / (r * r));
+        beltData[i*3] = ang; beltData[i*3+1] = r; beltData[i*3+2] = spd;
+        positions[i*3]   = Math.cos(ang) * r;
+        positions[i*3+1] = (Math.random() - 0.5) * r * 0.28;
+        positions[i*3+2] = Math.sin(ang) * r;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.ShaderMaterial({
+        uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } },
+        vertexShader: `
+            uniform float uPixelRatio;
+            #include <common>
+            #include <logdepthbuf_pars_vertex>
+            void main() {
+                vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                gl_Position = projectionMatrix * mvPos;
+                gl_PointSize = uPixelRatio * 1.8 * (300.0 / -mvPos.z);
+                #include <logdepthbuf_vertex>
+            }`,
+        fragmentShader: `
+            #include <logdepthbuf_pars_fragment>
+            void main() {
+                #include <logdepthbuf_fragment>
+                float d = length(gl_PointCoord - 0.5);
+                float a = 1.0 - smoothstep(0.2, 0.5, d);
+                gl_FragColor = vec4(0.65, 0.82, 1.0, a * 0.55);
+            }`,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    kuiperBelt = new THREE.Points(geom, mat);
+    kuiperBelt.frustumCulled = false;
+    kuiperBelt.userData.beltData = beltData;
+    kuiperBelt.userData.count = count;
+    kuiperBelt.userData.type = 'KUIPER';
+    kuiperBelt.userData.designation = 'KUIPER BELT OBJECT';
+    localSystem.add(kuiperBelt);
+
+    // Orbit ring indicator — three rings (inner/mid/outer) in a Group for easy toggling
+    kuiperBeltRing = new THREE.Group();
+    const kRingMat = new THREE.LineBasicMaterial({ color: 0x4477aa, transparent: true, opacity: 0.28, depthWrite: false });
+    for (const rr of [inner, (inner+outer)/2, outer]) {
+        const pts = new Float32Array(129 * 3);
+        for (let i = 0; i <= 128; i++) { const a=(i/128)*Math.PI*2; pts[i*3]=Math.cos(a)*rr; pts[i*3+1]=0; pts[i*3+2]=Math.sin(a)*rr; }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+        kuiperBeltRing.add(new THREE.LineLoop(g, kRingMat));
+    }
+    kuiperBeltRing.visible = CONFIG.showOrbitPaths;
+    localSystem.add(kuiperBeltRing);
+}
+
+function buildOortCloud(meanRadius) {
+    const count = 1800;
+    const positions = new Float32Array(count * 3);
+    // [theta, phi, r, speed] per particle — orbit around Y at arbitrary inclination
+    const oortData = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi   = Math.acos(2 * Math.random() - 1); // uniform on sphere
+        const r     = meanRadius * (0.65 + Math.random() * 0.7);
+        const spd   = Math.sqrt(SCALES.G * 800 / (r * r)) * 0.08; // very slow
+        oortData[i*4] = theta; oortData[i*4+1] = phi; oortData[i*4+2] = r; oortData[i*4+3] = spd;
+        positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+        positions[i*3+1] = r * Math.cos(phi);
+        positions[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.ShaderMaterial({
+        uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } },
+        vertexShader: `
+            uniform float uPixelRatio;
+            #include <common>
+            #include <logdepthbuf_pars_vertex>
+            void main() {
+                vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                gl_Position = projectionMatrix * mvPos;
+                gl_PointSize = uPixelRatio * 1.2 * (300.0 / -mvPos.z);
+                #include <logdepthbuf_vertex>
+            }`,
+        fragmentShader: `
+            #include <logdepthbuf_pars_fragment>
+            void main() {
+                #include <logdepthbuf_fragment>
+                float d = length(gl_PointCoord - 0.5);
+                float a = 1.0 - smoothstep(0.2, 0.5, d);
+                gl_FragColor = vec4(0.8, 0.9, 1.0, a * 0.35);
+            }`,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    oortCloud = new THREE.Points(geom, mat);
+    oortCloud.frustumCulled = false;
+    oortCloud.userData.oortData = oortData;
+    oortCloud.userData.count = count;
+    localSystem.add(oortCloud);
+
+    // Shell visual: wireframe sphere
+    const shellGeom = new THREE.SphereGeometry(meanRadius, 24, 12);
+    const shellWire = new THREE.WireframeGeometry(shellGeom);
+    oortCloudShell = new THREE.LineSegments(shellWire, new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.12, depthWrite: false }));
+    oortCloudShell.visible = CONFIG.showOrbitPaths;
+    localSystem.add(oortCloudShell);
+    shellGeom.dispose(); // wireframe owns the data now
 }
 
 function buildComet(seed, rand) {
@@ -3411,6 +3720,7 @@ function buildComet(seed, rand) {
             attribute float size; attribute float alpha;
             varying float vAlpha; varying float vIsDust;
             uniform float uTime;
+            #include <common>
             #include <logdepthbuf_pars_vertex>
             void main() {
                 float flicker = sin(alpha * 41.7 + uTime * 3.0 + position.y * 0.003) * 0.06 + 0.94;
@@ -3464,11 +3774,12 @@ function buildComet(seed, rand) {
         resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
     }));
     cometTrailLine.frustumCulled = false;
+    cometTrailLine.visible = CONFIG.showOrbitPaths;
     localSystem.add(cometTrailLine);
 
     const period = 2 * Math.PI * Math.sqrt(Math.pow(semiMajor, 3) / (SCALES.G * 1000));
     const body = { mesh: cometGroup, particles, type: 'comet', semiMajor, ecc, argPeri, incl,
-                   meanAnomaly: rand() * Math.PI * 2, period };
+                   meanAnomaly: rand() * Math.PI * 2, period, orbitTrailLine: cometTrailLine };
     passiveBodies.push(body);
     cometBodies.push(body);
 }
@@ -3537,15 +3848,7 @@ function updateMoonsCometsAsteroids(simDelta) {
     });
 
     passiveBodies.forEach(pb => {
-        if (pb.type === 'moon') {
-            pb.orbitAngle += pb.angularSpeed * simDelta * 5.0;
-            const pp = pb.parentBody.mesh.position;
-            pb.mesh.position.set(
-                pp.x + Math.cos(pb.orbitAngle) * pb.orbitRadius,
-                pp.y + Math.sin(pb.orbitAngle * 0.15) * pb.orbitRadius * 0.05,
-                pp.z + Math.sin(pb.orbitAngle) * pb.orbitRadius
-            );
-        } else if (pb.type === 'comet') {
+        if (pb.type === 'comet') {
             pb.meanAnomaly += (Math.PI * 2 / pb.period) * simDelta * 5.0;
             // Iterative Kepler equation solve (4 steps)
             let E = pb.meanAnomaly;
@@ -3579,6 +3882,33 @@ function updateMoonsCometsAsteroids(simDelta) {
             const ang = bd[i*3], r = bd[i*3+1];
             pos.array[i*3]   = Math.cos(ang) * r;
             pos.array[i*3+2] = Math.sin(ang) * r;
+        }
+        pos.needsUpdate = true;
+    }
+    // Kuiper belt
+    if (kuiperBelt?.userData?.beltData) {
+        const bd = kuiperBelt.userData.beltData;
+        const pos = kuiperBelt.geometry.attributes.position;
+        const cnt = kuiperBelt.userData.count;
+        for (let i = 0; i < cnt; i++) {
+            bd[i*3] += bd[i*3+2] * simDelta * 5.0;
+            const ang = bd[i*3], r = bd[i*3+1];
+            pos.array[i*3]   = Math.cos(ang) * r;
+            pos.array[i*3+2] = Math.sin(ang) * r;
+        }
+        pos.needsUpdate = true;
+    }
+    // Oort cloud — each particle drifts along its inclined orbit
+    if (oortCloud?.userData?.oortData) {
+        const od = oortCloud.userData.oortData;
+        const pos = oortCloud.geometry.attributes.position;
+        const cnt = oortCloud.userData.count;
+        for (let i = 0; i < cnt; i++) {
+            od[i*4] += od[i*4+3] * simDelta * 5.0; // advance theta
+            const th = od[i*4], ph = od[i*4+1], r = od[i*4+2];
+            pos.array[i*3]   = r * Math.sin(ph) * Math.cos(th);
+            pos.array[i*3+1] = r * Math.cos(ph);
+            pos.array[i*3+2] = r * Math.sin(ph) * Math.sin(th);
         }
         pos.needsUpdate = true;
     }
@@ -3687,7 +4017,124 @@ function updatePhysics(dt) {
             b.mesh.position.y += b.velocity.y * dtSub;
             b.mesh.position.z += b.velocity.z * dtSub;
         }
+
+        // --- Perfectly inelastic collisions ---
+        // Two bodies merge when their separation < 2/3 of their combined radius.
+        for (let i = 0; i < n - 1; i++) {
+            const bi = physicsBodies[i];
+            if (!bi.mesh.visible) continue;
+            const ri = bi.radius || 1;
+            for (let j = i + 1; j < n; j++) {
+                const bj = physicsBodies[j];
+                if (!bj.mesh.visible) continue;
+                const rj = bj.radius || 1;
+                const dx = bj.mesh.position.x - bi.mesh.position.x;
+                const dy = bj.mesh.position.y - bi.mesh.position.y;
+                const dz = bj.mesh.position.z - bi.mesh.position.z;
+                const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                if (dist >= (ri + rj) * (2.0 / 3.0)) continue;
+                // Merge — survivor is the more massive body
+                const [sv, vt] = bi.mass >= bj.mass ? [bi, bj] : [bj, bi];
+                const rSv = sv === bi ? ri : rj;
+                const rVt = sv === bi ? rj : ri;
+                const totalMass = bi.mass + bj.mass;
+                // Momentum conservation
+                sv.velocity.x = (bi.mass * bi.velocity.x + bj.mass * bj.velocity.x) / totalMass;
+                sv.velocity.y = (bi.mass * bi.velocity.y + bj.mass * bj.velocity.y) / totalMass;
+                sv.velocity.z = (bi.mass * bi.velocity.z + bj.mass * bj.velocity.z) / totalMass;
+                // Center of mass position
+                sv.mesh.position.x = (bi.mass * bi.mesh.position.x + bj.mass * bj.mesh.position.x) / totalMass;
+                sv.mesh.position.y = (bi.mass * bi.mesh.position.y + bj.mass * bj.mesh.position.y) / totalMass;
+                sv.mesh.position.z = (bi.mass * bi.mesh.position.z + bj.mass * bj.mesh.position.z) / totalMass;
+                sv.mass = totalMass;
+                // Volume-conserving radius: r_new = (rSv³ + rVt³)^(1/3)
+                const newRad = Math.pow(rSv**3 + rVt**3, 1.0 / 3.0);
+                sv.mesh.scale.multiplyScalar(newRad / rSv);
+                sv.radius = newRad;
+                // Remove victim
+                vt.mesh.visible = false;
+                if (vt.orbitTrailLine) vt.orbitTrailLine.visible = false;
+            }
+        }
     }
+}
+
+let _orbitUpdateCounter = 0;
+const _orbitPts = new Float32Array(TRAIL_RENDER_N * 3);
+
+function updateOrbitTrails() {
+    if (!CONFIG.showOrbitPaths) return;
+    if (++_orbitUpdateCounter % 15 !== 0) return;
+
+    // Stellar center of mass position and velocity
+    let totalStarMass = 0;
+    let cmx = 0, cmy = 0, cmz = 0, cmvx = 0, cmvy = 0, cmvz = 0;
+    physicsBodies.forEach(b => {
+        if (!b.isStar || !b.mesh.visible) return;
+        cmx += b.mesh.position.x * b.mass; cmy += b.mesh.position.y * b.mass; cmz += b.mesh.position.z * b.mass;
+        cmvx += b.velocity.x * b.mass;     cmvy += b.velocity.y * b.mass;     cmvz += b.velocity.z * b.mass;
+        totalStarMass += b.mass;
+    });
+    if (!totalStarMass) return;
+    cmx /= totalStarMass; cmy /= totalStarMass; cmz /= totalStarMass;
+    cmvx /= totalStarMass; cmvy /= totalStarMass; cmvz /= totalStarMass;
+    const GM = SCALES.G * totalStarMass;
+
+    physicsBodies.forEach(b => {
+        if (b.isStar || !b.orbitTrailGeom || !b.mesh.visible) return;
+
+        const rx = b.mesh.position.x - cmx, ry = b.mesh.position.y - cmy, rz = b.mesh.position.z - cmz;
+        const vx = b.velocity.x - cmvx,     vy = b.velocity.y - cmvy,     vz = b.velocity.z - cmvz;
+        const rMag = Math.sqrt(rx*rx + ry*ry + rz*rz);
+        if (rMag < 1e-8) return;
+
+        // Angular momentum h = r × v
+        const hx = ry*vz - rz*vy, hy = rz*vx - rx*vz, hz = rx*vy - ry*vx;
+        const hMag = Math.sqrt(hx*hx + hy*hy + hz*hz);
+        if (hMag < 1e-8) return;
+
+        // Specific orbital energy and eccentricity
+        const E = 0.5 * (vx*vx + vy*vy + vz*vz) - GM / rMag;
+        const vhx = vy*hz - vz*hy, vhy = vz*hx - vx*hz, vhz = vx*hy - vy*hx;
+        const ex = vhx/GM - rx/rMag, ey = vhy/GM - ry/rMag, ez = vhz/GM - rz/rMag;
+        const ecc = Math.sqrt(ex*ex + ey*ey + ez*ez);
+        const p = hMag*hMag / GM;   // semi-latus rectum
+
+        // Orbit frame
+        const hnx = hx/hMag, hny = hy/hMag, hnz = hz/hMag;
+        let pex, pey, pez;
+        if (ecc > 1e-5) { pex = ex/ecc; pey = ey/ecc; pez = ez/ecc; }
+        else             { pex = rx/rMag; pey = ry/rMag; pez = rz/rMag; }
+        const qex = hny*pez - hnz*pey, qey = hnz*pex - hnx*pez, qez = hnx*pey - hny*pex;
+
+        const isHyp = E >= 0;
+        const N = TRAIL_RENDER_N;
+        let nuMin = 0, nuMax = Math.PI * 2;
+        if (isHyp) {
+            const nuLim = ecc > 1.0 ? Math.acos(-1.0 / ecc) * 0.9 : Math.PI * 0.88;
+            nuMin = -nuLim; nuMax = nuLim;
+        }
+
+        for (let i = 0; i < N; i++) {
+            const nu = isHyp
+                ? nuMin + (i / (N - 1)) * (nuMax - nuMin)
+                : (i / N) * Math.PI * 2;  // closed: last point matches first
+            const denom = 1.0 + ecc * Math.cos(nu);
+            if (Math.abs(denom) < 1e-8 || denom < 0) {
+                _orbitPts[i*3] = cmx; _orbitPts[i*3+1] = cmy; _orbitPts[i*3+2] = cmz; continue;
+            }
+            const r = p / denom;
+            const cn = Math.cos(nu), sn = Math.sin(nu);
+            _orbitPts[i*3]   = cmx + r * (cn*pex + sn*qex);
+            _orbitPts[i*3+1] = cmy + r * (cn*pey + sn*qey);
+            _orbitPts[i*3+2] = cmz + r * (cn*pez + sn*qez);
+        }
+        // Close elliptic loop
+        if (!isHyp) { _orbitPts[(N-1)*3] = _orbitPts[0]; _orbitPts[(N-1)*3+1] = _orbitPts[1]; _orbitPts[(N-1)*3+2] = _orbitPts[2]; }
+
+        b.orbitTrailGeom.setPositions(_orbitPts);
+        if (b.orbitTrailMat) b.orbitTrailMat.color.set(isHyp ? 0xff8800 : 0x00ff44);
+    });
 }
 
 function animate() {
@@ -3744,6 +4191,7 @@ function animate() {
         }
         else if (simState.viewLevel === 2) {
             updatePhysics(simDelta * 5.0);
+            updateOrbitTrails();
             updateMoonsCometsAsteroids(simDelta);
 
             const coronaBlend = nebulaNursery ? 0.35 : 1.0;
@@ -3777,10 +4225,24 @@ function animate() {
             }
 
             physicsBodies.forEach(b => {
-                if (!b.isStar) b.mesh.rotation.y += delta * 0.1;
+                // Axial rotation — tied to sim time so it scales with time compression
+                b.mesh.rotation.y += simDelta * (b.isStar ? 0.4 : 0.8);
                 if (b.mesh.userData.aurora) b.mesh.userData.aurora.uniforms.uTime.value += delta;
                 if (b.mesh.material && b.mesh.material.userData && b.mesh.material.userData.shader) {
                     b.mesh.material.userData.shader.uniforms.uTime.value += delta;
+                }
+                // Re-centre moon orbit trail circle on parent planet's current position
+                if (b.isMoon && b.moonTrailLine && b.parentPlanetBody && CONFIG.showOrbitPaths) {
+                    const pp = b.parentPlanetBody.mesh.position;
+                    const r  = b.mesh.position.distanceTo(pp); // live orbit radius
+                    const arr = b.moonCircleGeom.attributes.position.array;
+                    for (let k = 0; k <= 64; k++) {
+                        const a = (k / 64) * Math.PI * 2;
+                        arr[k*3]   = pp.x + Math.cos(a) * r;
+                        arr[k*3+1] = pp.y;
+                        arr[k*3+2] = pp.z + Math.sin(a) * r;
+                    }
+                    b.moonCircleGeom.attributes.position.needsUpdate = true;
                 }
             });
 
@@ -3810,6 +4272,20 @@ function animate() {
         }
         else if (simState.viewLevel === 3) {
             simState.surfaceSimTime += simDelta;
+            // Keep n-body running so the system evolves while you're on the surface
+            updatePhysics(simDelta * 5.0);
+            updateMoonsCometsAsteroids(simDelta);
+            // Rotate all bodies (planets + stars) same as in level 2
+            physicsBodies.forEach(b => {
+                b.mesh.rotation.y += simDelta * (b.isStar ? 0.4 : 0.8);
+                if (b.mesh.material?.userData?.shader) {
+                    b.mesh.material.userData.shader.uniforms.uTime.value += delta;
+                }
+            });
+            // Move the surface group with the landed body as it orbits
+            if (simState.landedPlanet && surfaceSystem) {
+                surfaceSystem.position.copy(simState.landedPlanet.mesh.position);
+            }
             if (tinyControls?.enabled) tinyControls.update(Math.min(delta, 0.05));
         }
     }
@@ -4053,22 +4529,43 @@ function onPointerUp(event) {
             updateTargetPanel(data);
         }
     } else if (simState.viewLevel === 2 && localSystem) {
-         raycaster.params.Points.threshold = 1; 
-         const intersects = raycaster.intersectObjects(localSystem.children);
+         raycaster.params.Points.threshold = 10;
+         // Recursive=true so we can hit meshes inside comet/moon groups
+         const intersects = raycaster.intersectObjects(localSystem.children, true);
          if (intersects.length > 0) {
              let target = intersects[0].object;
-             if (!target.userData.type && target.parent && target.parent.userData.type) target = target.parent;
-             
+             // Walk up until we find an object with userData.type
+             let cur = target;
+             while (cur && !cur.userData?.type) cur = cur.parent;
+             if (cur?.userData?.type) target = cur;
+
              if (target.userData.type) {
                  disableAutopilot();
+                 const t = target.userData.type;
                  const data = {
                     designation: target.userData.designation,
-                    type: target.userData.type,
+                    type: t,
                     age: simState.universeSimTime.toFixed(2),
-                    mass: "0.003 M☉", radius: "0.01 R☉", lum: "0",
-                    composition: "Atmosphere: N2, O2"
+                    mass: t === 'COMET'    ? "~10¹² kg"
+                        : t === 'MOON'     ? "~10²⁰ kg"
+                        : t === 'ASTEROID' ? "~10¹⁵ kg"
+                        : t === 'KUIPER'   ? "~10¹⁹ kg"
+                        : "0.003 M☉",
+                    radius: t === 'COMET'    ? "~2 km"
+                          : t === 'MOON'     ? "~500 km"
+                          : t === 'ASTEROID' ? "~1-10 km"
+                          : t === 'KUIPER'   ? "~50-500 km"
+                          : "0.01 R☉",
+                    lum: "0",
+                    composition: t === 'COMET'    ? "H₂O ice, CO₂, silicates, organics"
+                               : t === 'MOON'     ? "Silicates, metals, ice"
+                               : t === 'ASTEROID' ? "Carbon, silicates, metals"
+                               : t === 'KUIPER'   ? "H₂O ice, CO, methanol, silicates"
+                               : "Atmosphere: N₂, O₂"
                  };
-                 simState.selectedTarget = { level: 2, object: target, position: target.position, data: data };
+                 const worldPos = new THREE.Vector3();
+                 target.getWorldPosition(worldPos);
+                 simState.selectedTarget = { level: 2, object: target, position: worldPos, data: data };
                  updateTargetPanel(data);
              }
          }

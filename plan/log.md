@@ -15009,3 +15009,43 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - No failures.
 - Open operational caveat: if the server is still using an older systemd unit created before `scripts/install-relay-systemd.sh` existed (or before it set `RELAY_IMPL=go`), reinstalling/updating the unit may still be needed to pick up the new startup path cleanly.
+
+## Date: 2026-02-26
+
+### Prompt
+- Session continuation after context compaction. Verified all previous session changes are intact.
+
+### Prompt Time/Date
+- 2026-02-26
+
+### Actions Attempted
+- Read main.js to verify state of all previous session changes.
+- Grepped for key symbols: addQuasarJets, buildKuiperBelt, buildOortCloud, oortCloudShell, moonTrailLine, isLandable, cometTrailLine, asteroidBeltRing.
+- Verified orbit paths toggle (lines 1825-1838) covers physicsBodies moonTrailLine, passiveBodies orbitTrailLine, and all belt/cloud objects.
+- Verified land button logic (lines 2287-2296): isLandable includes ROCKY/COMET/MOON/ASTEROID/KUIPER but NOT GAS GIANT; button text variants per type.
+- Verified addQuasarJets function (lines 3026-3069): two cones (AdditiveBlending, pulsing shader), halo sphere (BackSide, rim-lit).
+- Verified moon trail re-centering in animate loop (lines 4235-4246).
+
+### Files Touched
+- plan/log.md (this entry)
+
+### Summary of Previous Session Changes (now confirmed present in main.js at 4573 lines)
+1. Moons as full n-body: removed kinematic passiveBodies moon update, added to physicsBodies with proper circular orbit velocity (parentVel + tangential * sqrt(G*M/r))
+2. Trinary star equilateral triangle: ang = (i/3)*PI*2 with tangential velocity (-sin(ang)*v, 0, cos(ang)*v)
+3. Shader `isPerspectiveMatrix` fixes: added `#include <common>` before `#include <logdepthbuf_pars_vertex>` in asteroid belt, comet particle, ring system shaders
+4. BH disk logdepthbuf: full include chain in both vertex and fragment shaders; removed depthTest:false
+5. Planet y-offset spawn: yOff = (rand()-0.5)*dist*0.05; asteroid y-spread 0.03->0.12
+6. Kuiper belt (2000 icy particles, 3-ring indicator group), Oort cloud (1800 sphere particles, wireframe shell)
+7. Asteroid belt ring indicator (LineLoop), all toggled with orbit paths checkbox
+8. Comet orbitTrailLine stored in body object; passiveBodies forEach in toggle handler
+9. Moon orbit trails: LineLoop circle per moon, re-centered each frame on parent planet
+10. Asteroid/Kuiper selectability, raycaster threshold=10, click handler extended
+11. isLandable: GAS GIANT removed; MOON/ASTEROID/KUIPER added; button text variants
+12. generatePlanetSurface: isSmallBody/isMoon detection, scaled R/heightScale/gravity/colors/atmosphere
+13. addQuasarJets: age-based jets+halo at young galaxy ages (ageFactor > 0.05)
+
+### Test Results
+- All previous session changes confirmed present. No regressions detected.
+
+### Failures / Open Questions
+- Awaiting user testing of: comet trail toggling, moon orbit circles, asteroid/Kuiper/moon selection/landing, gas giant non-landability, quasar jet visuals at young galaxy ages.
