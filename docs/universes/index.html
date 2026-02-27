@@ -513,7 +513,7 @@
   }
 }
 </script>
-    <script type="module" crossorigin src="./assets/index--4FfROhz.js"></script>
+    <script type="module" crossorigin src="./assets/index-BE9gz76-.js"></script>
   </head>
   <body>
     <!-- Custom Cursor -->
@@ -568,7 +568,7 @@
           <input type="checkbox" id="autopilot-toggle" checked>
           <label for="autopilot-toggle">AUTOPILOT</label>
         </div>
-        
+
         <button id="back-btn" disabled>RETURN TO ORBIT</button>
         <button id="pause-btn">PAUSE SIM</button>
         <button id="bang-btn">BIG BANG (RESET)</button>
@@ -595,6 +595,7 @@
         <div class="data-row"><span class="data-label">LUMINOSITY:</span> <span class="data-val" id="t-lum">0.0 L☉</span></div>
         
         <button id="warp-btn">INITIATE HYPERDRIVE</button>
+        <button id="land-btn" style="display:none;margin-top:6px;width:100%">LAND ON SURFACE</button>
       </div>
 
       <!-- Config Modal (Docked Top Right) -->
@@ -620,6 +621,21 @@
         <div class="control-group left-align checkbox-group">
             <input type="checkbox" id="crt-toggle" checked>
             <label for="crt-toggle">CRT SCANLINES</label>
+        </div>
+
+        <div class="control-group left-align checkbox-group">
+            <input type="checkbox" id="bh-lens-toggle" checked>
+            <label for="bh-lens-toggle">SCHWARZSCHILD LENSING</label>
+        </div>
+
+        <div class="control-group left-align checkbox-group">
+            <input type="checkbox" id="orbit-paths-toggle" checked>
+            <label for="orbit-paths-toggle">ORBIT PATHS &amp; BELTS</label>
+        </div>
+
+        <div class="control-group left-align checkbox-group">
+            <input type="checkbox" id="path-toggle" checked>
+            <label for="path-toggle">TRAVEL PATH</label>
         </div>
 
         <div class="control-group left-align" style="flex-direction: column; align-items: flex-start;">
