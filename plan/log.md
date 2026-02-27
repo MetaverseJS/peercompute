@@ -14833,6 +14833,113 @@ def parse_args() -> argparse.Namespace:
 - Open diagnostic question for host testing: whether Chrome/Chromium is exposing only mDNS-obfuscated host candidates in this localhost session (expected in many builds) and whether that is suppressing usable direct announce paths in libp2p.
 - If direct localhost validation is required (not just relay/relay-webrtc), next step is to inspect `chrome://webrtc-internals` selected candidate pairs and/or run with mDNS host obfuscation disabled for a targeted comparison.
 
+## Date: 2026-02-23
+
+### Prompt
+- "we've got a problem with cubechat where ios and macos users can't click to dismiss the inital welcome message can you resolve that?"
+
+### Prompt Time/Date
+- 2026-02-23T09:20:28-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Searched CubeChat startup/welcome overlay handlers and found the issue in `demos/cubechat/src/main.js`:
+  - mobile path only listened for `click`,
+  - desktop path dismissed the overlay only after successful `pointerlockchange`,
+  - direct unguarded `requestPointerLock()` / `exitPointerLock()` calls could fail on Safari/WebKit variants.
+- Implemented a startup interaction hardening patch for Apple browsers:
+  - added mobile/touch detection helper that treats iPadOS desktop-mode UA (`MacIntel` + touch points) as mobile-like,
+  - added WebKit-safe pointer-lock helpers (`webkitRequestPointerLock`, `webkitExitPointerLock`, `webkitPointerLockElement` fallback),
+  - added a shared overlay start handler with `click` + `pointerdown` + `touchend` support and duplicate-trigger guard,
+  - made overlay dismissal independent from pointer-lock success so Safari/iOS users are not blocked,
+  - preserved desktop pointer-lock behavior by keeping canvas click pointer-lock requests and auto-exiting only for the initial welcome/start gesture.
+- Improved welcome overlay accessibility/interaction ergonomics:
+  - added `role="button"`, `tabindex="0"`, keyboard activation (`Enter`/`Space`),
+  - added CSS `touch-action: manipulation`, disabled tap highlight, and `user-select: none`.
+- Updated `plan/tests.md` with a CubeChat manual regression checklist for Safari/iOS startup overlay behavior.
+
+### Files Touched
+- `demos/cubechat/src/main.js`
+- `demos/cubechat/src/style.css`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md && printf '\n...\n' && tail -n 60 plan/log.md`
+- `rg -n "welcome|dismiss|overlay|tap|pointerdown|click" demos/cubechat -g '*.js' -g '*.html' -g '*.css'`
+- `sed -n '120,220p' demos/cubechat/src/main.js`
+- `rg -n "id=\"loading\"|#loading|loading" demos/cubechat -g '*.html' -g '*.css'`
+- `sed -n '1,240p' demos/cubechat/index.html`
+- `rg -n "innerHTML=.*loading|id=\\\\\"loading\\\\\"|loading'" demos/cubechat/src/main.js`
+- `sed -n '1,140p' demos/cubechat/src/main.js`
+- `rg -n "requestPointerLock|exitPointerLock|pointerlockchange" demos/cubechat/src/main.js`
+- `ls demos/cubechat/tests && rg -n "cubechat|loading|mobile" demos/cubechat/tests -g '*.js'`
+- `sed -n '840,910p' demos/cubechat/src/main.js`
+- `npm --prefix demos/cubechat run build -- --outDir /tmp/cubechat-build`
+- `PATH="/home/cos/projects/peercompute/node_modules/.bin:$PATH" npm --prefix demos/cubechat run build -- --outDir /tmp/cubechat-build`
+- `cat demos/cubechat/package.json`
+- `ls demos/cubechat | rg 'vite\\.config|index\\.html|src'`
+- `./node_modules/.bin/vite build --config demos/cubechat/vite.config.js --outDir /tmp/cubechat-build`
+- `node --check demos/cubechat/src/main.js && node --check demos/cubechat/src/style.css >/dev/null 2>&1 || true`
+- `sed -n '1,240p' plan/tests.md`
+
+### Test Results
+- `node --check demos/cubechat/src/main.js`
+  - PASS (syntax valid after patch)
+- Automated build validation
+  - FAIL in current environment: CubeChat demo `vite` binary is not available in local/root `node_modules` (`vite: not found` / `./node_modules/.bin/vite: No such file or directory`), so I could not run a full bundle build here.
+- No browser runtime test executed in this sandbox (manual Safari/iOS verification required on host devices).
+
+### Failures / Open Questions
+- Needs host/device verification on Safari macOS and iOS/iPadOS to confirm overlay dismissal and first-start settings flow after the patch.
+- The workspace currently lacks an accessible local `vite` executable for CubeChat build validation in this session; source syntax passed but bundle compilation was not verified here.
+
+## Date: 2026-02-23
+
+### Prompt
+- "for any given room in cubechat people should be able to change the theme of the world via a dropdown list in settings which changes the floor texture and skybox. (maybe other stuff too)  for now the default should be called tron, add a new one called moon that makes it look like you're on the surface of the moon."
+
+### Prompt Time/Date
+- 2026-02-23T09:35:35-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected CubeChat settings, room switching, network/state flow, and renderer scene code to identify the best room-scoped sync path.
+- Chose `StateManager` namespaced room state (per-room NodeKernel doc) for theme sync instead of ad hoc event messages so:
+  - late joiners receive the current room theme,
+  - theme remains scoped to each CubeChat room automatically via `roomId`.
+- Added a new shared theme module (`demos/cubechat/src/world/themes.js`) with:
+  - theme IDs (`tron`, `moon`)
+  - default theme (`tron`)
+  - room-state namespace/key constants
+  - theme normalization + labels
+- Implemented room-theme sync in `demos/cubechat/src/main.js`:
+  - added room theme state fields + `StateManager.observeNamespace` subscription handling
+  - seeded missing room theme to `tron`
+  - applied theme changes locally and published them to room state
+  - re-bound theme state subscription after `switchRoom()`
+  - added `World -> Theme` dropdown to settings and immediate apply-on-change behavior
+  - updated destroy cleanup to unsubscribe room theme observer
+- Implemented themeable world rendering in `demos/cubechat/src/renderer/scene.js`:
+  - added `setWorldTheme()` / `getWorldTheme()` and theme-aware floor/sky rebuild paths
+  - `tron` theme: neon grid floor + retro neon/scanline sky texture
+  - `moon` theme: procedural cratered lunar surface texture + starfield skybox
+  - theme-specific lighting/fog tuning (moon uses stronger directional “sun” and darker ambient)
+  - preserved grid expansion behavior across themes by rebuilding theme floor on expansion
+  - added material/texture disposal helpers for floor/sky rebuilds to avoid leaks during theme switching
+- Updated `plan/tests.md` with a manual CubeChat room-theme sync regression checklist.
+
+### Files Touched
+- `demos/cubechat/src/main.js`
+- `demos/cubechat/src/renderer/scene.js`
+- `demos/cubechat/src/style.css`
+- `demos/cubechat/src/world/themes.js`
+- `plan/tests.md`
 ## Date: 2026-02-24
 
 ### Prompt
@@ -14912,6 +15019,303 @@ def parse_args() -> argparse.Namespace:
 
 ### Commands Run
 - `date -Is`
+- `sed -n '1,60p' plan/plan.md >/dev/null && tail -n 60 plan/log.md`
+- `rg -n "theme|skybox|floor|ground|room|settings-menu|handleNetworkMessage|broadcast" demos/cubechat/src -g '*.js'`
+- `sed -n '1,260p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '320,520p' demos/cubechat/src/main.js`
+- `sed -n '1,260p' demos/cubechat/src/p2p/network.js`
+- `sed -n '260,620p' demos/cubechat/src/p2p/network.js`
+- `sed -n '520,1320p' demos/cubechat/src/main.js`
+- `rg -n "writeScoped|readScoped|subscribe|on\\(|watch" peercompute/src demos -g '*.js' | rg 'StateManager|stateManager|writeScoped'`
+- `rg -n "class StateManager|writeScoped\\(" peercompute/src/peercompute -g '*.js'`
+- `sed -n '300,380p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '470,540p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '1,180p' demos/cubechat/src/p2p/roomDirectory.js`
+- `sed -n '260,620p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1120,1245p' demos/cubechat/src/main.js`
+- `sed -n '620,980p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "destroy\\(" demos/cubechat/src/main.js && sed -n '1460,1545p' demos/cubechat/src/main.js`
+- `rg -n "#settings-menu input|#settings-menu button|#settings-menu label" demos/cubechat/src/style.css && sed -n '70,180p' demos/cubechat/src/style.css`
+- `node --check demos/cubechat/src/main.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/world/themes.js`
+- `git diff -- demos/cubechat/src/main.js demos/cubechat/src/renderer/scene.js demos/cubechat/src/style.css demos/cubechat/src/world/themes.js | sed -n '1,340p'`
+- `git diff -- demos/cubechat/src/main.js demos/cubechat/src/renderer/scene.js demos/cubechat/src/style.css demos/cubechat/src/world/themes.js | sed -n '341,760p'`
+- `git diff -- demos/cubechat/src/renderer/scene.js demos/cubechat/src/world/themes.js demos/cubechat/src/style.css | sed -n '760,1120p'`
+- `node --check demos/cubechat/src/main.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/world/themes.js`
+
+### Test Results
+- `node --check demos/cubechat/src/main.js`
+  - PASS (syntax valid)
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid)
+- `node --check demos/cubechat/src/world/themes.js`
+  - PASS (syntax valid)
+- No browser/runtime verification executed in this sandbox (manual multi-client room sync test required on host).
+
+### Failures / Open Questions
+- Needs manual validation on host devices/browsers to confirm:
+  - room theme sync for same-room peers,
+  - late-join theme application,
+  - visual performance/appearance of procedural moon floor/sky on lower-end devices.
+- Full CubeChat build/runtime validation was not run in this session because the workspace currently lacks an accessible local `vite` executable.
+
+### Addendum (same prompt cycle)
+- Adjusted CubeChat sky dome material to `fog: false` so theme skyboxes (especially `moon`) remain visible and are not faded by scene fog.
+- Re-ran syntax validation:
+  - `node --check demos/cubechat/src/renderer/scene.js` -> PASS.
+
+## Date: 2026-02-23
+
+### Prompt
+- "for a theme, add some simple geometry to the floor to make it a little more interesting. maybe add some rocks to the moon surface and make the crater ridges stand up a little bit.  also moving around should kick up a little dust. for tron. add a light train behind people when they move"
+
+### Prompt Time/Date
+- 2026-02-23T09:35:35-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Extended CubeChat `Moon` theme visuals in `demos/cubechat/src/renderer/scene.js`:
+  - added procedural moon terrain height sampling with crater bowls + raised rims,
+  - rebuilt moon floor as subdivided displaced geometry (instead of only flat textured plane),
+  - added moon rock decor as instanced low-poly meshes scattered across the floor,
+  - kept decor/floor rebuilds synchronized when the floor expands.
+- Added theme-specific player movement VFX in `TronScene`:
+  - `Moon`: pooled dust puff meshes emitted while players move,
+  - `Tron`: pooled additive “light train” trail segments emitted behind moving players.
+- Made movement effects theme-aware and shared across local/remote players using scene-side position tracking (no network payload changes required).
+- Added scene cleanup helpers for new resources and patched active `removePlayer()` to properly dispose player materials/geometries and theme VFX resources.
+- Fixed a decor cleanup edge case so shared moon rock geometry is not accidentally disposed when rebuilding decor.
+- Updated `plan/tests.md` CubeChat room-theme manual checklist to include moon terrain/decor and movement VFX validation.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,60p' plan/plan.md >/dev/null && tail -n 60 plan/log.md`
+- `rg -n \"^  (createPlayer|updatePlayer|removePlayer|updatePlayerColor|render|setWorldTheme)\\(\" demos/cubechat/src/renderer/scene.js`
+- `sed -n '340,620p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '620,940p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/main.js`
+- `node --check demos/cubechat/src/world/themes.js`
+- `node --check demos/cubechat/src/renderer/scene.js` (re-run after cleanup/fog fixes)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after moon geometry + VFX changes)
+- `node --check demos/cubechat/src/main.js`
+  - PASS (syntax valid; room-theme sync code remains intact after renderer integration)
+- `node --check demos/cubechat/src/world/themes.js`
+  - PASS (syntax valid)
+- No runtime/browser validation executed in this sandbox (manual host verification required for visuals/perf and multiplayer effect visibility).
+
+### Failures / Open Questions
+- Needs manual runtime validation on host to tune visual intensity/performance:
+  - moon terrain displacement amplitude / crater ridge readability,
+  - moon dust density/opacity,
+  - Tron trail brightness/length under different movement speeds.
+- Full Vite build/runtime check still unavailable in this session because local `vite` binary is not present.
+
+## Date: 2026-02-23
+
+### Prompt
+- "on the moon if you land after a jump there should be a big poof of moondust."
+
+### Prompt Time/Date
+- 2026-02-23T09:58:45-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) and inspected existing CubeChat Moon/Tron theme VFX hooks in `demos/cubechat/src/renderer/scene.js`.
+- Confirmed Moon dust effects were currently movement-only (no landing/touchdown burst).
+- Added Moon landing-poof support in `demos/cubechat/src/renderer/scene.js`:
+  - increased Moon dust puff pool size to support burst + movement dust overlap,
+  - added per-player VFX state for ground height estimate, airborne tracking, peak jump height, vertical speed, and landing-poof cooldown,
+  - added `_getMoonDustGroundY(...)` to anchor dust near player feet / visible terrain,
+  - added `_spawnMoonLandingPoof(...)` to emit a larger multi-puff touchdown burst,
+  - extended `_updatePlayerThemeEffects(dt)` to detect airborne -> grounded transitions and trigger the poof only after meaningful jump-like motion (height/time/descent thresholds).
+- Updated CubeChat manual regression checklist in `plan/tests.md` to include Moon jump-landing dust validation.
+- Updated `plan/plan.md` Completed list to reflect recent CubeChat UX/theme/VFX polish.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "_spawnMoonDust|_updatePlayerThemeEffects|_createPlayerThemeEffects|createPlayer\\(|render\\(" demos/cubechat/src/renderer/scene.js`
+- `tail -n 60 plan/log.md`
+- `rg -n "CubeChat|Moon|theme" plan/tests.md | tail -n 20`
+- `sed -n '560,860p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '860,940p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1210,1265p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1,120p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "updatePlayer\\(|localPlayerId|setLocalPlayer" demos/cubechat/src/renderer/scene.js`
+- `sed -n '980,1065p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1,220p' plan/plan.md`
+- `date -Is`
+- `rg -n "_rebuildFloor\\(|floor\\.rotation|PlaneGeometry" demos/cubechat/src/renderer/scene.js`
+- `sed -n '500,565p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "_applyMoonTerrainDisplacement|_sampleMoonHeight" demos/cubechat/src/renderer/scene.js && sed -n '120,240p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "MOON_LANDING|_spawnMoonLandingPoof|landingPoofCooldown" demos/cubechat/src/renderer/scene.js`
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Moon landing dust poof additions)
+- No runtime/browser validation executed in this sandbox (manual host verification still required for visual tuning and jump/landing threshold feel).
+
+### Failures / Open Questions
+- Landing detection is renderer-side and heuristic (derived from player position/vertical motion), not an explicit physics landing event:
+  - thresholds may need tuning for remote-player interpolation or unusually small/large jumps.
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+### Addendum (same prompt cycle)
+- Refined the landing-poof patch to avoid Moon movement dust spawning from vertical jump motion:
+  - split horizontal locomotion VFX evaluation from vertical landing detection,
+  - added a separate exact-position sample (`lastExactPosition`) so landing velocity detection stays accurate while the existing smoothed movement sampling remains stable for remote jitter.
+- Re-ran syntax validation after the follow-up patch:
+  - `node --check demos/cubechat/src/renderer/scene.js` -> PASS.
+
+## Date: 2026-02-23
+
+### Prompt
+- "also make the crater ridges a little more 3d. in the tron theme make the skybox look like a neon synthwave city with outrun style mountains and sunset."
+
+### Prompt Time/Date
+- 2026-02-23T10:06:14-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before editing.
+- Inspected CubeChat renderer theme hooks in `demos/cubechat/src/renderer/scene.js`:
+  - Moon crater generation (`_buildMoonCraterField`) and terrain sampler (`_sampleMoonHeight`)
+  - Tron/Moon sky painter (`_createSkyTexture`)
+- Increased Moon crater ridge depth/readability by tuning crater metadata and shaping math:
+  - raised crater rim amplitude range,
+  - added per-crater rim offset/width parameters for sharper ridge placement,
+  - added seeded angular ridge variation so rims are less uniformly circular,
+  - added an inner rim shoulder and stronger ejecta lift to make ridges stand up more in silhouette and shading.
+- Reworked Tron skybox canvas rendering to a synthwave/outrun visual style:
+  - sunset gradient with warm horizon colors,
+  - large striped outrun sun + glow,
+  - layered mountain silhouettes with neon ridge accents,
+  - neon city skyline silhouette with sparse lit windows and roof glows,
+  - retained subtle stars/scanlines and atmospheric neon streaks.
+- Updated CubeChat manual regression checklist in `plan/tests.md` to explicitly verify:
+  - pronounced Moon crater ridges,
+  - Tron synthwave skybox content (sunset/mountains/city).
+- Updated `plan/plan.md` CubeChat polish summary to include the new crater-ridge and synthwave skybox improvements.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `rg -n "_create.*Sky|_rebuildSky|skybox|sky dome|_sampleMoonHeight|rimHeight|crater" demos/cubechat/src/renderer/scene.js`
+- `sed -n '80,260p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '260,420p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '420,520p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "rimHeight|rimOffset|_createSkyTexture\\(|Striped outrun sun|Neon city silhouette" demos/cubechat/src/renderer/scene.js`
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Moon crater ridge + Tron synthwave skybox changes)
+- No browser/runtime validation executed in this sandbox (manual visual verification required for art direction/tuning).
+
+### Failures / Open Questions
+- Visual tuning (especially skyline density, mountain contrast, and crater rim intensity) may need one more pass after host-side viewing in motion and across device pixel ratios.
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+## Date: 2026-02-23
+
+### Prompt
+- "don't draw the video texture on the back of someone's cube, remove the arrow that points in the direction someone is facing."
+
+### Prompt Time/Date
+- 2026-02-23T10:09:11-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before edits.
+- Inspected CubeChat player rendering/video assignment code in `demos/cubechat/src/renderer/scene.js` to locate:
+  - `THREE.ArrowHelper` creation on player cubes,
+  - video texture material replacement logic that was cloning video material to all cube faces.
+- Patched `createPlayer(...)` in `demos/cubechat/src/renderer/scene.js` to remove the direction arrow helper entirely (no arrow mesh attached to players).
+- Patched `setPlayerVideoStream(...)` so only the intended front face material (face index `4`, existing convention) is replaced with the video material while other cube faces remain the normal colored `MeshPhongMaterial` faces, preventing the back face from showing the video texture.
+- Removed color-update code for the deleted `directionArrow` path.
+- Updated `plan/tests.md` CubeChat manual checks to cover:
+  - no direction arrow helper rendering,
+  - video texture appearing only on the front face (not the back face).
+- Updated `plan/plan.md` CubeChat polish summary to include the avatar visual cleanup.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,60p' plan/plan.md`
+- `tail -n 70 plan/log.md`
+- `rg -n "ArrowHelper|directionArrow|videoTexture|videoMaterial|player.material\\[4\\]" demos/cubechat/src/renderer/scene.js`
+- `sed -n '1110,1268p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1388,1425p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "CubeChat" plan/tests.md`
+- `rg -n "directionArrow|ArrowHelper|player.material\\[4\\]|front face" demos/cubechat/src/renderer/scene.js`
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after removing direction arrow and restricting video texture to the front face)
+- No browser/runtime validation executed in this sandbox (manual CubeChat check required to confirm front-face orientation matches current avatar-facing convention).
+
+### Failures / Open Questions
+- The patch keeps the existing face-index convention (`4`) for the “front” video face; if the visual front is actually a different face in current camera conventions, that index may need to be adjusted after a quick runtime check.
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+## Date: 2026-02-23
+
+### Prompt
+- "alright so the feed appears on the back of the cube. which should be kept for your own cube so you can see yourself. but for other players only show the video feed on the front of the cube (right now it's back for everybody)"
+
+### Prompt Time/Date
+- 2026-02-23T10:15:14-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before editing.
+- Inspected `demos/cubechat/src/renderer/scene.js` around `setPlayerVideoStream(...)`, `removePlayerVideoStream(...)`, and `setLocalPlayer(...)` to confirm current behavior:
+  - face index `4` was being used for all players,
+  - local player assignment happened via `setLocalPlayer(...)` with no video-face remap logic.
+- Patched CubeChat avatar video-face assignment in `demos/cubechat/src/renderer/scene.js`:
+  - added explicit local/remote face constants (`local rear = 4`, `remote front = 5`),
+  - added `_getPlayerVideoFaceIndex(id)` and `_applyPlayerVideoFaceMaterial(id)` helper methods,
+  - applied video face selection dynamically in `setPlayerVideoStream(...)`,
+  - updated `setLocalPlayer(...)` to re-apply video-face assignment for the previous and new local player when local ID is set after streams are already attached,
+  - preserved the shared `VideoTexture` when moving the video material from one face to another (avoids disposing the texture during remap).
+- Added a small refactor helper (`_createPlayerFaceMaterial`) to keep colored cube-face material creation consistent across player creation and video stream removal.
+- Updated `plan/tests.md` to reflect the new intended behavior:
+  - local cube can keep the rear-facing/self-view feed,
+  - remote cubes should display video on the front face only.
+- Updated `plan/plan.md` CubeChat polish summary to replace the earlier "front-face-only" wording with local/remote face behavior.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
 - `git branch --show-current && git rev-parse --short HEAD && git rev-parse --short main`
 - `sed -n '1,220p' plan/plan.md`
 - `tail -n 260 plan/log.md`
@@ -15233,6 +15637,398 @@ def parse_args() -> argparse.Namespace:
 
 ### Commands Run
 - `date -Is`
+- `sed -n '1,60p' plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `rg -n "setLocalPlayer\\(|setPlayerVideoStream\\(|removePlayerVideoStream\\(|localPlayerId" demos/cubechat/src/renderer/scene.js`
+- `sed -n '1436,1478p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "PLAYER_VIDEO_FACE_LOCAL_REAR|PLAYER_VIDEO_FACE_REMOTE_FRONT|_applyPlayerVideoFaceMaterial|setLocalPlayer\\(" demos/cubechat/src/renderer/scene.js`
+- `sed -n '186,205p' plan/tests.md`
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after local/remote video-face selection and remap logic)
+- No browser/runtime validation executed in this sandbox (manual host verification required to confirm remote players now show front-facing video while local self-view remains on the rear face).
+
+### Failures / Open Questions
+- Face index assumptions are now explicit (`local=4`, `remote=5`) and match the user's report; if runtime orientation still differs due to cube rotation conventions in a specific code path, the constants can be flipped/tuned quickly.
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+## Date: 2026-02-23
+
+### Prompt
+- "ok add a theme for the beach. and a theme for desert. and a theme for jungle. a theme for hyperborea. a theme for ireland (green rolling terrain, gray sky, intermittent rain)"
+
+### Prompt Time/Date
+- 2026-02-23T10:24:57-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected CubeChat theme integration points:
+  - `demos/cubechat/src/world/themes.js` (theme registry/normalization),
+  - `demos/cubechat/src/main.js` (settings dropdown + room theme sync flow),
+  - `demos/cubechat/src/renderer/scene.js` (floor/sky/lighting/theme VFX/render loop).
+- Expanded the CubeChat theme registry in `demos/cubechat/src/world/themes.js` with:
+  - `beach`, `desert`, `jungle`, `hyperborea`, `ireland` (keeping `tron` default and `moon`).
+- Updated `demos/cubechat/src/main.js` settings initialization to populate the `World -> Theme` dropdown from `WORLD_THEMES` dynamically (instead of relying only on hardcoded template options), so future theme additions stay registry-driven.
+- Extended CubeChat renderer (`demos/cubechat/src/renderer/scene.js`) for multi-biome themes:
+  - added generalized terrain height sampling and displacement pipeline (`_sampleThemeHeight`, `_applyThemeTerrainDisplacement`) with theme-specific samplers for beach/desert/jungle/hyperborea/ireland,
+  - retained Moon crater terrain path (now routed through the generalized displacement pipeline),
+  - added per-theme procedural floor textures and terrain floor materials for the new themes,
+  - expanded skybox canvas rendering with distinct sky/horizon art for `beach`, `desert`, `jungle`, `hyperborea`, and `ireland` while preserving existing Moon and Tron skyboxes,
+  - expanded lighting/fog/background tuning for all themes,
+  - updated floor rebuild logic so all non-Tron themes use displaced terrain geometry.
+- Added Ireland weather effects in `demos/cubechat/src/renderer/scene.js`:
+  - implemented a lightweight rain particle pool (`Points`) with a local-anchor update radius,
+  - added intermittent rain state (timed on/off phases with intensity lerp),
+  - wired theme setup (`_configureThemeWeather`) into `setWorldTheme(...)`,
+  - wired per-frame weather updates into `render(...)`.
+- Kept existing Moon-only dust/tron trail behavior unchanged (Moon movement/landing dust + Tron light trails remain theme-specific and disabled for other themes).
+- Updated `plan/tests.md` CubeChat room-theme manual regression checklist to cover:
+  - dropdown presence for all 7 themes,
+  - distinct floor/sky/terrain visuals across new themes,
+  - Ireland gray skies + intermittent rain.
+- Updated `plan/plan.md` CubeChat polish summary to reflect the expanded multi-biome theme set and Ireland rain weather.
+
+### Files Touched
+- `demos/cubechat/src/world/themes.js`
+- `demos/cubechat/src/main.js`
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 90 plan/log.md`
+- `sed -n '1,220p' demos/cubechat/src/world/themes.js`
+- `rg -n "World -> Theme|world-theme|theme" demos/cubechat/src/main.js`
+- `sed -n '1,220p' demos/cubechat/src/main.js`
+- `sed -n '220,320p' demos/cubechat/src/main.js`
+- `rg -n "worldThemeId === 'moon'|worldThemeId === 'tron'|setWorldTheme\\(|_updateThemeLighting\\(|_rebuildWorldDecor\\(|_spawnMoonDust|_spawnTronTrail" demos/cubechat/src/renderer/scene.js`
+- `sed -n '220,760p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '760,1185p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1,120p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "destroy\\(|dispose\\(|_clearWorldDecor\\(|_clearSky\\(|_clearFloor\\(" demos/cubechat/src/renderer/scene.js`
+- `sed -n '1660,1765p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "render\\(rotation|_updatePlayerThemeEffects|renderer.render" demos/cubechat/src/renderer/scene.js && sed -n '1560,1670p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1280,1570p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "^  _sampleMoonHeight|^  _applyMoonTerrainDisplacement|^  _createMoonSurfaceTexture|^  _createMoonFloorMaterial|^  _createSkyTexture|^  _rebuildSky|^  _updateThemeLighting|^  _rebuildFloor|^  render\\(" demos/cubechat/src/renderer/scene.js`
+- `rg -n "=== 'moon'|=== 'tron'|!== 'moon'|!== 'tron'" demos/cubechat/src/renderer/scene.js`
+- `sed -n '320,470p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '470,560p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '560,760p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '880,980p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1080,1215p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1300,1415p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/main.js`
+- `node --check demos/cubechat/src/world/themes.js`
+- `rg -n "WORLD_THEMES =|beach|desert|jungle|hyperborea|ireland" demos/cubechat/src/world/themes.js demos/cubechat/src/main.js | head -n 40`
+- `rg -n "_sampleBeachHeight|_sampleDesertHeight|_sampleJungleHeight|_sampleHyperboreaHeight|_sampleIrelandHeight|_createThemeSurfaceTexture|_updateThemeWeather|_configureThemeWeather|_getThemeBackgroundColor" demos/cubechat/src/renderer/scene.js`
+- `git diff -- demos/cubechat/src/world/themes.js demos/cubechat/src/main.js demos/cubechat/src/renderer/scene.js | sed -n '1,260p'`
+- `sed -n '186,212p' plan/tests.md`
+- `rg -n "CubeChat polish:" plan/plan.md`
+- `tail -n 70 plan/log.md`
+- `rg -n "WORLD_THEMES|worldThemeInput\\.innerHTML" demos/cubechat/src/main.js`
+- `rg -n "_createThemeSurfaceTexture|_createSkyTexture\\(|_updateThemeLighting\\(|_configureThemeWeather|_updateThemeWeather|_rebuildFloor\\(" demos/cubechat/src/renderer/scene.js`
+- `rg -n "dropdown includes|gray skies and intermittent rain" plan/tests.md`
+- `rg -n "World -> Theme\\` dropdown includes|Ireland\\` shows gray skies\" plan/tests.md` (failed due shell backtick quoting; reran without backticks)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after multi-theme terrain/sky/lighting/weather additions)
+- `node --check demos/cubechat/src/main.js`
+  - PASS (syntax valid after dynamic theme dropdown population)
+- `node --check demos/cubechat/src/world/themes.js`
+  - PASS (syntax valid after theme registry expansion)
+- No browser/runtime validation executed in this sandbox (manual host verification required for visual tuning/perf and Ireland rain cadence).
+
+### Failures / Open Questions
+- New theme visuals are procedural and likely need host-side tuning passes for art direction/performance:
+  - terrain amplitudes (especially `hyperborea` and `desert` dunes),
+  - skybox contrast/readability on different displays,
+  - Ireland rain drop density/opacity/cadence.
+- World decor remains Moon-only (rocks); new themes currently differentiate via floor terrain/textures, skybox, lighting/fog, and Ireland rain weather.
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+## Date: 2026-02-23
+
+### Prompt
+- "add some cow sprites to ireland, add some trees sprites to jungle. add querystring parameters for the room/theme so you can link somebody directly to your private room. include the password as a querystring param."
+
+### Prompt Time/Date
+- 2026-02-23T10:42:10-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected CubeChat room/theme flow in `demos/cubechat/src/main.js`:
+  - existing room create/join/switch paths,
+  - existing URL query use (only `e2e` test hook),
+  - theme state sync + settings dropdown handling.
+- Inspected CubeChat renderer decor hooks in `demos/cubechat/src/renderer/scene.js`:
+  - `_rebuildWorldDecor()` (Moon-only rocks),
+  - world decor cleanup/disposal behavior.
+- Added shareable room/theme/password query param support in `demos/cubechat/src/main.js`:
+  - added launch-time query parsing (`room`, `privacy`, `password`, `theme`) before network initialization so direct links join the intended room immediately,
+  - added URL synchronization helper to keep query params updated as room/theme changes occur,
+  - added current-room password tracking (`currentRoomPassword`) without changing room-directory announcements,
+  - updated `switchRoom(...)`, create/join handlers, and room-list join path to pass/store password and refresh link query params,
+  - updated room settings inputs to reflect parsed/query room password and current room state,
+  - ensured theme query is respected for new rooms when no room-theme state exists yet (`_initialThemeFromQuery`).
+- Added Jungle/Ireland sprite decor in `demos/cubechat/src/renderer/scene.js`:
+  - `Jungle`: procedural tree billboard sprites across terrain (`_createJungleTreeSpriteTexture`, `_rebuildJungleDecor`)
+  - `Ireland`: procedural cow billboard sprites across rolling terrain (`_createIrelandCowSpriteTexture`, `_rebuildIrelandDecor`)
+  - extended `_rebuildWorldDecor()` theme switch to use these new decor rebuilders
+  - adjusted world decor cleanup to avoid disposing shared sprite geometry (`child.isSprite` guard).
+- Added a Safari-friendly fallback for canvas rounded rectangle drawing in the cow sprite painter (avoids hard dependency on `CanvasRenderingContext2D.roundRect`).
+- Updated `plan/tests.md` manual checks to cover:
+  - Jungle tree sprites / Ireland cow sprites,
+  - private-room URL query params (`room`, `privacy`, `password`, `theme`) and shared-link verification.
+- Updated `plan/plan.md` CubeChat polish summary to include sprite decor and deep-link query support.
+
+### Files Touched
+- `demos/cubechat/src/main.js`
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,70p' plan/plan.md`
+- `tail -n 90 plan/log.md`
+- `rg -n "URLSearchParams|location\\.search|room-password|room-name|joinRoom|createRoom|currentRoom|theme" demos/cubechat/src/main.js`
+- `rg -n "_rebuildWorldDecor\\(|worldDecorGroup|moon" demos/cubechat/src/renderer/scene.js`
+- `sed -n '360,470p' demos/cubechat/src/main.js`
+- `sed -n '1180,1345p' demos/cubechat/src/main.js`
+- `sed -n '1345,1425p' demos/cubechat/src/main.js`
+- `rg -n "roomCreateButton|roomJoinButton|buildRoomId\\(|switchRoom\\(" demos/cubechat/src/main.js`
+- `sed -n '1045,1235p' demos/cubechat/src/main.js`
+- `rg -n "history\\.replaceState|pushState|location\\.search" demos/cubechat/src/main.js`
+- `sed -n '1,260p' demos/cubechat/src/p2p/roomDirectory.js`
+- `sed -n '1,190p' demos/cubechat/src/main.js`
+- `sed -n '220,760p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/main.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/world/themes.js`
+- `rg -n "_applyLaunchStateFromQuery|_updateLinkQueryParams|currentRoomPassword|password" demos/cubechat/src/main.js | head -n 40`
+- `rg -n "_rebuildJungleDecor|_rebuildIrelandDecor|_createJungleTreeSpriteTexture|_createIrelandCowSpriteTexture|_rebuildWorldDecor\\(" demos/cubechat/src/renderer/scene.js`
+- `rg -n "roundRect" demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js` (re-run after round-rect fallback patch)
+- `sed -n '186,212p' plan/tests.md`
+- `rg -n "CubeChat polish:" plan/plan.md`
+
+### Test Results
+- `node --check demos/cubechat/src/main.js`
+  - PASS (syntax valid after querystring room/theme/password deep-link support)
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after jungle/ireland sprite decor + cow sprite canvas fallback)
+- `node --check demos/cubechat/src/world/themes.js`
+  - PASS (syntax valid; theme registry unchanged this prompt but re-checked)
+- No browser/runtime validation executed in this sandbox (manual host verification required for URL deep-link behavior, private-room auto-join, and decor sprite placement/visibility).
+
+### Failures / Open Questions
+- Deep-link query params now include private room passwords by design per request; confirm you are comfortable with that tradeoff before sharing links broadly (URL history/logging/referrers can expose it depending on deployment context).
+- Sprite decor is billboard-based and lightweight, but visual density/scale may need a quick art pass after host-side viewing (especially jungle tree count and cow size/readability).
+- Full Vite/runtime validation remains unavailable in this session because the local `vite` binary is not present.
+
+### Prompt
+- "add some castles and green rolling hills to the skyline of the skybox for ireland. make the trees much taller and more frequent in jungle. canopy should cover the entire sky."
+
+### Prompt Time/Date
+- 2026-02-23T10:51:26-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected current CubeChat renderer theme decor/skybox code in `demos/cubechat/src/renderer/scene.js` to find the jungle tree sprite generator/placement and Ireland skybox painter.
+- Increased jungle tree density and scale:
+  - raised `JUNGLE_TREE_SPRITE_COUNT` from `140` to `320`,
+  - rebuilt jungle sprite art with a taller canvas/proportions,
+  - increased sprite height range substantially and narrowed width ratio for taller silhouettes,
+  - adjusted sprite vertical anchor slightly to sit better on terrain.
+- Reworked the Jungle skybox canopy to visually cover the full sky:
+  - replaced the previous top-edge-only canopy treatment with layered canopy bands spanning most of the dome,
+  - added overlapping leaf masses, branch silhouettes, and dappled light gaps to create a continuous jungle ceiling.
+- Enhanced the Ireland skybox skyline:
+  - strengthened green rolling hill layers/ridge shapes,
+  - added ridge highlight accents,
+  - added castle silhouettes (towers/keeps/battlements) along the horizon skyline.
+- Updated `plan/tests.md` with new manual visual checks for Ireland castles/rolling hills and Jungle denser/taller trees + full canopy sky coverage.
+- Updated `plan/plan.md` CubeChat polish summary line to include the new Ireland skyline and Jungle canopy/tree refinements.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,70p' plan/plan.md`
+- `tail -n 90 plan/log.md`
+- `rg -n "JUNGLE_TREE_SPRITE_COUNT|_createJungleTreeSpriteTexture|_rebuildJungleDecor|themeId === 'jungle'|themeId === 'ireland'|drawHillLayer" demos/cubechat/src/renderer/scene.js`
+- `sed -n '380,620p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1270,1535p' demos/cubechat/src/renderer/scene.js`
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "JUNGLE_TREE_SPRITE_COUNT|height = 36 \\+|Full-sky canopy ceiling|Castle silhouettes along skyline|drawHillLayer\\(horizonY - 42" demos/cubechat/src/renderer/scene.js`
+- `sed -n '1,120p' plan/plan.md`
+- `sed -n '180,240p' plan/tests.md`
+- `tail -n 80 plan/log.md`
+- `apply_patch` (update `plan/tests.md` CubeChat theme checks for Jungle canopy density + Ireland skyline castles/hills)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for latest visual refinements)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+- `node --check demos/cubechat/src/renderer/scene.js` (final re-run after doc updates / before response)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Jungle canopy/tree density/tallness changes and Ireland skyline hills/castles additions)
+- `node --check demos/cubechat/src/renderer/scene.js` (final re-run after docs)
+  - PASS (syntax still valid; docs-only follow-up changes did not affect runtime code)
+- No browser/runtime validation executed in this sandbox (manual host visual verification still required; local Vite runtime unavailable in this session).
+
+### Failures / Open Questions
+- Visual tuning remains subject to host-side review (castle silhouette density/scale and jungle canopy occlusion may need one more art pass after seeing it live).
+- The Jungle canopy is rendered as painted skybox art (not 3D geometry), which is performant but intentionally stylized.
+- Full runtime/Vite validation could not be executed in this sandbox.
+
+### Prompt
+- "trees aren't touching the ground in jungle. not seeing the castles or hills at all in ireland."
+
+### Prompt Time/Date
+- 2026-02-23T11:00:03-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before making fixes.
+- Inspected Jungle decor sprite generation/placement in `demos/cubechat/src/renderer/scene.js` and identified two likely contributors to the floating-tree look:
+  - transparent padding at the bottom of the tree sprite art (trunk stopped well above sprite bottom),
+  - jungle tree sprite anchor still using a bottom center that matched the old art proportions.
+- Patched Jungle tree sprites in `demos/cubechat/src/renderer/scene.js`:
+  - extended trunk paint to the bottom of the sprite canvas,
+  - added buttress root shapes to make the base visually read as planted,
+  - extended vine strokes toward the ground,
+  - adjusted jungle sprite anchor from `center.y = 0` to `0.06` to compensate for remaining silhouette padding and improve terrain contact.
+- Inspected Ireland skybox painter and determined skyline art was too low and too subtle for normal in-game camera pitch/haze contrast.
+- Patched Ireland skybox in `demos/cubechat/src/renderer/scene.js` to make hills/castles clearly visible:
+  - raised the skyline horizon (`horizonY`) significantly,
+  - added more/lighter far hill layers and stronger nearby layers,
+  - strengthened ridge highlight strokes,
+  - added a glow band behind the skyline for separation from gray clouds,
+  - enlarged/raised castle silhouettes, increased count, and added readability highlights/contrast.
+- Updated `plan/tests.md` to explicitly verify Jungle tree ground contact and Ireland skyline readability at normal camera pitch.
+- Updated `plan/plan.md` CubeChat polish summary line to note the visibility/readability and grounding fixes.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `rg -n "_createJungleTreeSpriteTexture|_rebuildJungleDecor|sprite.center|_sampleThemeHeight\\('jungle'|_createSkyTexture|themeId === 'ireland'|Sky" demos/cubechat/src/renderer/scene.js`
+- `sed -n '470,620p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1470,1660p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '360,470p' demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (Jungle tree sprite grounding: trunk/root/vine art and sprite anchor)
+- `apply_patch` (Ireland skyline visibility: raised horizon, stronger hills, larger/clearer castles)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (update `plan/tests.md` CubeChat theme checks for Jungle tree ground contact + Ireland skyline readability)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary with grounding/readability tuning)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Jungle grounding and Ireland skyline visibility fixes)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required).
+
+### Failures / Open Questions
+- If Jungle trees still appear offset after host validation, we may need one more tweak to sprite `center.y` or `position.y` based on actual Three.js sprite anchor behavior in this camera setup.
+- If Ireland castles are now visible but too strong, next pass should tune count/opacity rather than lowering the horizon again.
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "OK hills look great castle should be much smaller. make only one castle in the skybox. add little half cube high stone walls that separate the green field into squarish pastures."
+
+### Prompt Time/Date
+- 2026-02-23T11:05:49-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Confirmed player cube dimensions in `demos/cubechat/src/renderer/scene.js` (`6x6x6`) so “half cube high” walls could be implemented at roughly `3` units tall.
+- Patched Ireland world decor in `demos/cubechat/src/renderer/scene.js`:
+  - added `_rebuildIrelandPastureWalls()` to generate low 3D stone-wall segments (instanced box geometry) laid out as a rough orthogonal grid to create squarish pasture boundaries across the rolling field,
+  - sampled Ireland terrain height per wall segment so walls sit on the terrain,
+  - used slight per-segment jitter/variation and gaps so walls read as irregular field stone dividers,
+  - kept walls around half player-cube height using `PLAYER_HALF_HEIGHT` as the base wall-height reference,
+  - added wall mesh before cow sprites in the Ireland decor rebuild path.
+- Fixed Ireland cow placement loop accounting in `demos/cubechat/src/renderer/scene.js`:
+  - switched from `worldDecorGroup.children.length` to a dedicated `cowsPlaced` counter so adding wall meshes does not reduce cow sprite spawn count.
+- Patched Ireland skybox castle art in `demos/cubechat/src/renderer/scene.js`:
+  - reduced castle prominence (smaller scale, softer contrast/highlights),
+  - replaced the multi-castle skyline pass with a single distant castle silhouette.
+- Updated `plan/tests.md` manual checks to verify Ireland pasture walls and a single small castle silhouette in the skybox.
+- Updated `plan/plan.md` CubeChat polish summary to mention Ireland pasture walls and the single smaller skyline castle.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `rg -n "_clearWorldDecor\\(|worldDecorGroup|BoxGeometry|InstancedMesh|gridSize" demos/cubechat/src/renderer/scene.js`
+- `sed -n '260,380p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '570,700p' demos/cubechat/src/renderer/scene.js`
+- `rg -n "player.*BoxGeometry|new THREE\\.BoxGeometry\\(6, 6, 6\\)|avatar|playerMesh" demos/cubechat/src/renderer/scene.js`
+- `sed -n '2428,2508p' demos/cubechat/src/renderer/scene.js`
+- `sed -n '1,80p' demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (add Ireland pasture wall instanced decor + cow counter fix)
+- `apply_patch` (shrink Ireland castle to one small skyline castle)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (update `plan/tests.md` Ireland checks for pasture walls + single small castle)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for Ireland wall/castle tuning)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Ireland pasture wall decor and single-castle skybox tuning)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required).
+
+### Failures / Open Questions
+- Wall density/spacing may need a quick host-side art pass if the pasture grid reads too busy or too sparse from the default camera height.
+- Because pasture walls are simple box segments on rolling terrain, some segments may slightly clip or hover on steeper slopes; can be refined by shortening segments further if needed.
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "city skyline is completely below the horizon in tron. I can only see the top part of the sun with one line through it."
+
+### Prompt Time/Date
+- 2026-02-23T11:08:59-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected the Tron skybox painter branch in `demos/cubechat/src/renderer/scene.js` and confirmed the synthwave composition was painted too low in the sky texture:
+  - `horizonY` was set low enough that the city skyline base landed below the visible scene horizon,
+  - the striped sun center/radius combination placed most of the sun below the visible band of the sky dome.
+- Patched Tron skybox composition coordinates in `demos/cubechat/src/renderer/scene.js`:
+  - raised `horizonY`,
+  - moved the sun center higher and reduced sun radius slightly,
+  - lifted the city skyline base above the horizon line,
+  - expanded/shifted the horizon haze band to match the new horizon placement.
+- Updated `plan/tests.md` to explicitly check that the Tron city skyline and most/all of the striped sun are visible above the horizon at normal camera pitch.
+- Updated `plan/plan.md` CubeChat polish summary to note Tron skybox horizon/sun/city visibility tuning.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
 - `sed -n '1,80p' plan/plan.md`
 - `tail -n 80 plan/log.md`
 - `sed -n '1,240p' config/relay.json`
@@ -15436,6 +16232,96 @@ def parse_args() -> argparse.Namespace:
 
 ### Commands Run
 - `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `rg -n "themeId === 'tron'|else \\{|striped sun|outrun mountain|neon city skyline|horizonY" demos/cubechat/src/renderer/scene.js`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1640,1845p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1840,1975p'`
+- `apply_patch` (raise Tron horizon/sun/city composition and adjust haze)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `sed -n '196,214p' plan/tests.md`
+- `apply_patch` (update `plan/tests.md` Tron skybox visibility regression check)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for Tron visibility tuning)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Tron skybox horizon/sun/city visibility tuning)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required).
+
+### Failures / Open Questions
+- If the skyline is still low after host verification, the next adjustment should raise `horizonY` further or move `skylineBase` upward independently without changing mountain placement.
+- If the sun now feels too small/high, tune `sunY`/`sunRadius` only (keep the skyline/horizon fix intact).
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "fix the skybox horizon for the rest of the themes as well skyboxes are all too low now except ireland and tron."
+
+### Prompt Time/Date
+- 2026-02-23T12:06:54-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected `_createSkyTexture()` theme branches in `demos/cubechat/src/renderer/scene.js` and reviewed horizon placements across all non-Ireland/non-Tron themes.
+- Confirmed `Moon` skybox is a starfield-only branch with no painted horizon feature to reposition.
+- Patched horizon placement for remaining horizon-based skyboxes in `demos/cubechat/src/renderer/scene.js`:
+  - `Beach`: raised ocean horizon line (`horizonY`) so the waterline and silhouettes are visible above the scene horizon,
+  - `Desert`: raised dune/mesa horizon composition,
+  - `Jungle`: raised distant hill/tree-line composition,
+  - `Hyperborea`: raised ice ridge skyline.
+- Added inline comments in each adjusted branch documenting that the horizon is intentionally raised for normal camera framing visibility.
+- Updated `plan/tests.md` manual regression checks to explicitly verify horizon-feature visibility above the horizon for `Beach`, `Desert`, `Jungle`, and `Hyperborea`.
+- Updated `plan/plan.md` CubeChat polish summary to note cross-theme skybox horizon visibility tuning.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1180,1465p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1465,1645p'`
+- `apply_patch` (raise `Beach`/`Desert`/`Jungle`/`Hyperborea` skybox horizons)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (update `plan/tests.md` with cross-theme horizon visibility check)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for cross-theme horizon tuning)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after raising `Beach`/`Desert`/`Jungle`/`Hyperborea` skybox horizons)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required).
+
+### Failures / Open Questions
+- Horizon tuning values were adjusted by visual-coordinate reasoning only in this sandbox; host-side review may still want small per-theme tweaks (especially `Desert` and `Jungle`) after seeing the actual dome projection.
+- `Moon` was intentionally not changed because its skybox branch does not render a horizon line/landscape silhouette.
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "raise them considerably more. I can still only see the tip of the tree in the beach demo."
+
+### Prompt Time/Date
+- 2026-02-23T12:15:46-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Applied a stronger second-pass horizon raise for the previously adjusted non-Ireland/non-Tron horizon-based skyboxes in `demos/cubechat/src/renderer/scene.js` after host feedback showed Beach palm silhouettes were still mostly clipped:
+  - `Beach` horizon raised further (aggressive move) so palm silhouettes and ocean line are clearly visible,
+  - `Desert` horizon raised further so dunes/mesas are not tip-only,
+  - `Jungle` horizon raised further so tree-line/hills sit clearly above the scene horizon,
+  - `Hyperborea` horizon raised further so ice ridge skyline is clearly visible.
+- Updated inline comments on those horizon constants to document the stronger/aggressive second-pass visibility tuning.
+- Updated `plan/tests.md` cross-theme horizon visibility check to explicitly assert horizon features are not clipped to just tips.
+- Updated `plan/plan.md` CubeChat polish summary to note the stronger second-pass cross-theme horizon raise.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
 - `sed -n '1,220p' config/relay.env`
 - `sed -n '1,120p' config/relay.json`
 - `sed -n '1,260p' scripts/start-relay-prod.sh`
@@ -15540,6 +16426,189 @@ def parse_args() -> argparse.Namespace:
 
 ### Commands Run
 - `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 200 plan/log.md`
+- `apply_patch` (aggressive second-pass raise for `Beach`/`Desert`/`Jungle`/`Hyperborea` skybox horizons)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (update `plan/tests.md` horizon regression wording to catch tip-only clipping)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for second-pass horizon raise)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after stronger second-pass horizon raises for `Beach`/`Desert`/`Jungle`/`Hyperborea`)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required).
+
+### Failures / Open Questions
+- This is still a coordinate-only tuning pass (no live dome preview in sandbox), so one theme may still need a final micro-adjustment after host review.
+- `Moon` remains unchanged (no painted horizon feature in the skybox branch).
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "ok skyboxes look good. but these spaces are supposed to be infinite. so we need to move the skybox with the player when they move. also the object/sprite placement in all themes is wonky when you reach the end of the space. they stutter when it's regenerated. all theme object placement needs to be done procedurally with a seeded random number gen so they expand naturally and everyone sees the same thing. also the player cube should follow the contour of the ground."
+
+### Prompt Time/Date
+- 2026-02-23T13:11:37-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before implementation.
+- Inspected `demos/cubechat/src/renderer/scene.js` for:
+  - sky dome creation/update,
+  - grid expansion (`expandGrid`) and decor rebuild triggers,
+  - theme decor generators (moon rocks, jungle trees, ireland cows/walls),
+  - player update/render/camera flow.
+- Added deterministic seeded world-coordinate procgen helpers in `demos/cubechat/src/renderer/scene.js`:
+  - 32-bit hash + 2D coordinate hash (`_hashUint32`, `_hash2D`),
+  - coordinate-based seeded random helpers (`_coordRand01`, `_coordRandSigned`),
+  - decor streaming/theme helpers (`_themeHasWorldDecor`, `_getWorldDecorStreamRadius`, `_getWorldDecorBounds`, `_getWorldDecorStreamKey`, `_updateWorldDecorStreaming`, `_invalidateWorldDecorStreaming`).
+- Added infinite-sky behavior:
+  - `_updateSkyAnchor()` repositions the sky dome to follow the local player (or camera fallback),
+  - invoked after sky rebuild and every render frame.
+- Reworked world decor placement to be procedural, seeded, and expansion-stable:
+  - `Moon` rocks now spawn from deterministic world cells (hashed by integer world cell coordinates) instead of `gridSize`-scaled index loops.
+  - `Jungle` tree sprites now spawn from deterministic world cells with seeded jitter/size/tint/rotation.
+  - `Ireland` cows now spawn from deterministic world cells with seeded jitter/size/tint/orientation.
+  - `Ireland` stone walls remain procedural but now stream from a world-indexed grid window (deterministic line/segment indices) around the player instead of a fixed origin-only extent.
+  - decor generation is clipped to current floor bounds so props do not spawn beyond the currently built floor.
+- Reduced regen-induced decor stutter at expansion boundaries:
+  - `expandGrid()` now rebuilds only the floor (no immediate decor rebuild on every size increment),
+  - decor rebuilds are driven by player movement crossing decor-stream chunks (`WORLD_DECOR_STREAM_CHUNK`) rather than `gridSize` changes,
+  - decor stream key no longer includes `gridSize` bucket, preventing forced reshuffles on grid expansion.
+- Added terrain contour following for player cubes (non-`Tron` themes):
+  - `_sampleThemeNormal()` estimates terrain normals from sampled heights,
+  - `_applyPlayerGroundContour()` clamps cube height to terrain + preserves positive jump offset from incoming network/local Y (baseline `PLAYER_HALF_HEIGHT`),
+  - applies tilt/orientation to align cube up-axis with terrain normal while preserving yaw heading,
+  - `updatePlayer()` now stores `lastNetworkY` and `headingYaw`, smooths X/Z for remote players, and applies contour alignment for terrain themes,
+  - `createPlayer()` initializes and immediately contour-aligns new cubes,
+  - `setWorldTheme()` reapplies ground contour to all existing players after theme/floor rebuild,
+  - VR camera follow now uses `headingYaw` so terrain tilt does not corrupt behind-player camera yaw.
+- Updated `plan/tests.md` manual checks for:
+  - skybox follow/infinite feel,
+  - decor expansion stability + cross-client deterministic overlap,
+  - terrain-contour-following player cubes.
+- Updated `plan/plan.md` CubeChat polish summary to document:
+  - skybox anchoring,
+  - seeded decor streaming,
+  - terrain-contour-following player cubes.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,90p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "expand|gridSize|_rebuildFloor|_rebuildWorldDecor|_rebuildSky|animate\\(|render\\(|setPlayerPosition|updatePlayer|localPlayer|cameraRig|skyDome" demos/cubechat/src/renderer/scene.js`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1980,2145p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '2500,3080p'`
+- `rg -n "_rand01\\(|_sampleMoonHeight|_sampleIrelandHeight|_sampleJungleHeight|_themeUsesTerrain|_sampleThemeHeight" demos/cubechat/src/renderer/scene.js`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '80,280p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '780,870p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '300,430p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '540,760p'`
+- `apply_patch` (add decor streaming constants + renderer state scratch fields)
+- `apply_patch` (add deterministic hash helpers, decor streaming helpers, sky anchor updater, terrain normal/ground-contour helpers)
+- `apply_patch` (convert moon/jungle/ireland decor placement to world-seeded deterministic generation and anchor-window bounds)
+- `apply_patch` (wire sky anchoring + decor stream invalidation/theme apply changes + stop decor rebuild in `expandGrid`)
+- `apply_patch` (update player create/update for headingYaw/lastNetworkY + terrain contour follow; render hooks for sky/decor streaming)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '96,230p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '430,840p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '2318,2395p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '2760,3185p'`
+- `apply_patch` (update `plan/tests.md` for skybox follow/decor stability/determinism/player contour checks)
+- `apply_patch` (update `plan/plan.md` CubeChat polish summary for infinite-sky + seeded decor streaming + terrain contour follow)
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after skybox anchoring, seeded decor streaming/procgen refactor, and terrain-contour player follow changes)
+- No browser/runtime validation executed in this sandbox (manual host verification still required for decor stability across expansion, sky follow feel, and terrain contour behavior).
+
+### Failures / Open Questions
+- Decor now remains stable across expansions (world-seeded), but streaming still rebuilds the local decor window when crossing decor stream chunks; if hitching remains noticeable, next step is incremental chunk add/remove caching instead of full window rebuild.
+- Player contour-follow tilts the entire player object hierarchy (cube + glow + beam + name label). If the vertical beam or labels look odd on slopes, next step is splitting the player into a root transform + upright child attachments.
+- Jump offset preservation assumes baseline network/local ground Y is `PLAYER_HALF_HEIGHT`; if gameplay physics later changes baseline semantics, contour-follow should read an explicit jump/ground offset instead.
+- Full Vite/browser runtime validation remains unavailable in this sandbox session.
+
+### Prompt
+- "the crater texture is OK actually nevermind"
+- In-context scope carried from the immediately prior CubeChat prompt still in progress: fix Ireland pasture walls only rendering in one direction, make pastures ~4x larger, and address Moon crater shifting when crossing expansion zones (while dropping the requested crater-texture reseeding change).
+
+### Prompt Time/Date
+- 2026-02-23T15:13:39-09:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) before editing (per repo instructions).
+- Inspected `demos/cubechat/src/renderer/scene.js` for:
+  - Ireland pasture wall generation (`_rebuildIrelandPastureWalls`),
+  - Moon crater heightfield generation (`_buildMoonCraterField`, `_sampleMoonHeight`),
+  - Moon floor texture generation (`_createMoonSurfaceTexture`),
+  - floor rebuild path (`_rebuildFloor`) to identify expansion-related visual shifts.
+- Confirmed the likely cause of the “Moon crater shift” report during expansion was texture phase movement (Moon floor texture repeat scales with `gridSize`, but texture offset was not compensated for the centered floor), while Moon crater heightfield sampling itself remains deterministic/world-position-based.
+- Patched Ireland pasture walls in `demos/cubechat/src/renderer/scene.js`:
+  - increased pasture line spacing from `92` to `92 * 4` for much larger squarish fields,
+  - increased instanced wall capacity (`maxSegments`) to preserve coverage with larger streaming bounds,
+  - made `addWallSegment()` return placement success,
+  - added per-axis placement budgets so both wall directions render (preventing one axis from consuming the whole pool before the other axis runs).
+- Patched Moon surface texture anchoring in `demos/cubechat/src/renderer/scene.js`:
+  - preserved existing texture style (per user follow-up “nevermind” on crater texture reseeding),
+  - kept repeat scaling behavior,
+  - added a repeat-derived texture offset so the centered floor expansion does not phase-shift crater/grain markings across grid rebuilds.
+- Performed a follow-up correction after initial patch review:
+  - removed an initial Ireland wall “backfill” pass that could duplicate deterministic segments on the same axis,
+  - retained the two-axis budgeted generation approach (now without duplicate overlap risk).
+- Updated `plan/tests.md` with manual regression checks for:
+  - Ireland walls rendering in both directions with larger pasture cells,
+  - Moon crater/grain floor markings staying visually stable across grid expansion.
+- Updated `plan/plan.md` CubeChat polish summary to document the two-axis/larger-spacing Ireland walls and world-anchored Moon floor texture phase fix.
+
+### Files Touched
+- `demos/cubechat/src/renderer/scene.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "_rebuildIrelandPastureWalls|_sampleMoonHeight|_moonCrater|_createMoon|moon" demos/cubechat/src/renderer/scene.js`
+- `date -Is`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '780,940p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '260,360p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1160,1275p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1,120p'`
+- `rg -n "_rand01\\(|randomSeed|_rebuildFloor\\(|gridSize" demos/cubechat/src/renderer/scene.js`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '1380,1705p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '220,260p'`
+- `nl -ba demos/cubechat/src/renderer/scene.js | sed -n '2288,2348p'`
+- `apply_patch` (Ireland pasture wall spacing + two-axis budgeted generation; Moon texture offset anchoring)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n "CubeChat|Ireland|Moon|pasture|skybox follow|decor" plan/tests.md | tail -n 40`
+- `rg -n "CubeChat polish" plan/plan.md`
+- `apply_patch` (update `plan/tests.md` checks)
+- `apply_patch` (update `plan/plan.md` summary)
+- `date -Is`
+- `cat <<'EOF' >> plan/log.md` (append this log entry)
+- `apply_patch` (remove Ireland wall backfill duplicate-risk; keep two-axis budgeting)
+- `node --check demos/cubechat/src/renderer/scene.js`
+- `rg -n \"per-axis placement budgets plus a controlled backfill pass|axisBudget = Math\\.floor\\(maxSegments \\* 0\\.5\\)\" plan/log.md demos/cubechat/src/renderer/scene.js`
+- `apply_patch` (correct log wording to remove obsolete backfill mention)
+- `apply_patch` (append this follow-up correction note and extra commands/tests)
+
+### Test Results
+- `node --check demos/cubechat/src/renderer/scene.js`
+  - PASS (syntax valid after Ireland pasture wall generator changes and Moon floor texture anchoring adjustment)
+- `node --check demos/cubechat/src/renderer/scene.js` (re-run after removing Ireland wall backfill pass)
+  - PASS (syntax valid after duplicate-risk cleanup)
+- No browser/runtime validation executed in this sandbox (host-side visual verification still required for Ireland wall layout and Moon expansion stability).
+
+### Failures / Open Questions
+- The Moon fix targets crater/grain texture phase sliding during floor expansion; if the user still observes crater shape/ridge motion after this, the next likely cause is terrain mesh re-tessellation at constant segment count (`MOON_FLOOR_SEGMENTS`) as `gridSize` grows, which would require chunked terrain or resolution-scaling changes.
+- Ireland wall density/segment breakup was preserved while spacing increased ~4x; host-side visual tuning may still want slightly longer segments or lower gate frequency depending on the desired pasture look.
 - `sed -n '1,60p' plan/plan.md`
 - `tail -n 80 plan/log.md`
 - escalated: `ss -lnpt4 '( sport = :8080 )' ; echo '---' ; ss -lnpt6 '( sport = :8080 )' ; echo '---' ; curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,25p'`
