@@ -182,3 +182,39 @@
 : clicking P2P nodes/edges shows connection mode, bandwidth/rates, and address-family hints.
 : clicking IP-topology nodes/edges shows segment/NAT/link-profile metadata.
 - Record findings and commands in `plan/log.md`.
+
+### CubeChat startup overlay manual regression check
+- Run `npm run dev:local-relay` (or `npm --prefix demos/cubechat run dev`) and open CubeChat on Safari/macOS plus iOS/iPadOS.
+- Verify the initial welcome overlay dismisses on tap/click even when pointer lock is unavailable or denied.
+- Verify first-start settings menu still appears once and gameplay remains usable after closing it.
+- Verify desktop users can still re-enter pointer lock by clicking the canvas after the overlay is dismissed.
+- Verify player cubes do not render a direction arrow helper above them.
+- Verify the local player's cube shows their video feed on the rear-facing face (visible from the default behind-camera view).
+- Verify remote players' cubes show video only on the front-facing face (not on the back face).
+
+### CubeChat room-theme sync manual regression check
+- In CubeChat settings, verify the `World -> Theme` dropdown includes `Tron`, `Moon`, `Beach`, `Desert`, `Jungle`, `Hyperborea`, and `Ireland`.
+- Change `World -> Theme` across multiple options (at minimum `Tron`, `Moon`, `Beach`, `Ireland`, and `Hyperborea`).
+- Verify the floor appearance and skybox update immediately on the local client.
+- Move long distances in each theme and verify the skybox follows the player/camera position (no visible “reaching the edge of the sky dome” effect).
+- Move far enough to trigger grid expansion and verify theme decor (rocks/trees/cows/walls) expands naturally without reshuffling previously seen nearby placements.
+- Open two clients in the same area and verify overlapping theme decor placements match (seeded/procedural consistency).
+- Verify `Moon` theme includes visible raised terrain variation with pronounced crater rims/ridges and scattered rock geometry.
+- Move far enough in `Moon` to trigger grid expansion and verify crater/grain floor markings do not visibly slide/phase-shift relative to nearby terrain after expansion.
+- Verify movement in `Moon` theme emits small dust puffs near moving players and stops when stationary.
+- Verify landing after a jump in `Moon` emits a larger touchdown dust poof near the player.
+- Verify `Beach`, `Desert`, `Jungle`, `Hyperborea`, and `Ireland` all show distinct floor textures/terrain shaping and skyboxes.
+- Verify `Beach`, `Desert`, `Jungle`, and `Hyperborea` skybox horizon features (ocean/dunes-jagged mesas/jungle tree-line or hills/ice ridge skyline) are clearly visible above the horizon at normal camera pitch (not clipped to just tips).
+- Verify `Jungle` includes dense, tall tree sprites with a canopy that visually covers the sky, and confirm tree trunks visually touch the terrain (no floating gap).
+- Verify `Ireland` includes visible cow sprites placed on terrain and low stone-wall pasture dividers (about half player-cube height) across the field.
+- Verify `Ireland` pasture walls run in both axis directions (forming squarish fields, not single-direction stripes) with noticeably larger pasture cells than earlier passes (about 4x spacing).
+- Verify `Tron` theme skybox shows a neon synthwave sunset with outrun-style mountains/city silhouette, and confirm the city skyline plus most/all of the striped sun are visible above the horizon at normal camera pitch.
+- Verify `Tron` theme emits a visible light-train trail behind moving players.
+- Verify `Ireland` skybox clearly shows green rolling hills plus a single small distant castle silhouette on the skyline (readable at normal camera pitch), along with gray skies and intermittent rain bursts that start/stop over time.
+- Open a second client in the same room and verify it receives the current theme (including late-join after a theme change).
+- Verify remote players also show theme-specific movement effects (moon dust / Tron trail) while moving.
+- Verify player cubes follow terrain contours in non-`Tron` themes (height conforms to terrain and cubes tilt to slopes rather than floating flat).
+- Change theme from one client and verify the other clients in the same room update without changing rooms.
+- Switch to a different room and verify the theme is room-scoped (defaults to `Tron` until changed in that room).
+- Create/join a private room and verify the browser URL includes `room`, `privacy`, `password`, and `theme` query params.
+- Open that URL in a second client and verify it lands in the same private room/theme without manual re-entry.

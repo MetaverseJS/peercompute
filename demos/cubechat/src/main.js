@@ -5,6 +5,14 @@ import { RoomDirectory, buildRoomId, normalizeRoomName } from './p2p/roomDirecto
 import { TronScene } from './renderer/scene.js';
 import { PlayerController } from './controls/input.js';
 import { PhysicsWorld } from './physics/world.js';
+import {
+  DEFAULT_WORLD_THEME,
+  WORLD_THEME_KEY,
+  WORLD_THEME_NAMESPACE,
+  WORLD_THEMES,
+  getWorldThemeLabel,
+  normalizeWorldTheme
+} from './world/themes.js';
 
 class CubeChat {
   constructor() {
@@ -21,13 +29,229 @@ class CubeChat {
     this.screenBillboardBody = null;
     this.roomDirectory = null;
     this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
+    this.currentRoomPassword = '';
+    this.worldTheme = DEFAULT_WORLD_THEME;
+    this.worldThemeStateUnsubscribe = null;
+    this._initialThemeFromQuery = null;
+  }
+
+  _isMobileLikeDevice() {
+    const userAgent = navigator.userAgent || '';
+    const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    const iPadDesktopMode = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    const coarsePointer = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(pointer: coarse)').matches
+      : false;
+    return mobileUserAgent || iPadDesktopMode || coarsePointer;
+  }
+
+  _getPointerLockElement() {
+    return document.pointerLockElement || document.webkitPointerLockElement || null;
+  }
+
+  _requestPointerLock(element) {
+    if (!element) return false;
+    const requestPointerLock = element.requestPointerLock || element.webkitRequestPointerLock;
+    if (typeof requestPointerLock !== 'function') {
+      return false;
+    }
+    try {
+      const result = requestPointerLock.call(element);
+      if (result && typeof result.catch === 'function') {
+        result.catch((err) => {
+          console.warn('[CubeChat] Pointer lock request failed:', err?.message || err);
+        });
+      }
+      return true;
+    } catch (err) {
+      console.warn('[CubeChat] Pointer lock request threw:', err?.message || err);
+      return false;
+    }
+  }
+
+  _exitPointerLock() {
+    const exitPointerLock = document.exitPointerLock || document.webkitExitPointerLock;
+    if (typeof exitPointerLock !== 'function') return;
+    try {
+      exitPointerLock.call(document);
+    } catch (err) {
+      console.warn('[CubeChat] Pointer lock exit failed:', err?.message || err);
+    }
+  }
+
+  _showSettingsOnce() {
+    if (this.settingsShownOnce) return;
+    const settingsMenu = document.getElementById('settings-menu');
+    if (settingsMenu) {
+      settingsMenu.style.display = 'block';
+    }
+    this.settingsShownOnce = true;
+  }
+
+  _getWorldThemeSelect() {
+    return document.getElementById('world-theme');
+  }
+
+  _readLinkQueryParams() {
+    try {
+      return new URLSearchParams(window.location.search || '');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _applyLaunchStateFromQuery() {
+    const params = this._readLinkQueryParams();
+    if (!params) return;
+
+    const queryTheme = params.get('theme');
+    if (queryTheme) {
+      const normalizedTheme = normalizeWorldTheme(queryTheme);
+      this.worldTheme = normalizedTheme;
+      this._initialThemeFromQuery = normalizedTheme;
+    }
+
+    const roomName = params.get('room');
+    const password = params.get('password') || '';
+    const privacyParam = String(params.get('privacy') || '').trim().toLowerCase();
+    const visibility = privacyParam === 'private' || (password && privacyParam !== 'public')
+      ? 'private'
+      : 'public';
+
+    if (!roomName) return;
+
+    const name = String(roomName).trim() || 'global';
+    const normalizedName = normalizeRoomName(name);
+    const roomId = buildRoomId({ name: normalizedName, visibility, password });
+    this.currentRoom = { name, visibility, roomId };
+    this.currentRoomPassword = visibility === 'private' ? password : '';
+  }
+
+  _updateLinkQueryParams() {
+    if (typeof window === 'undefined' || !window.location || !window.history) return;
+    try {
+      const url = new URL(window.location.href);
+      const params = url.searchParams;
+      const roomName = this.currentRoom?.name || 'global';
+      const visibility = this.currentRoom?.visibility || 'public';
+      const themeId = normalizeWorldTheme(this.worldTheme);
+      const password = visibility === 'private' ? (this.currentRoomPassword || '') : '';
+
+      params.set('room', roomName);
+      params.set('privacy', visibility);
+      params.set('theme', themeId);
+      if (password) {
+        params.set('password', password);
+      } else {
+        params.delete('password');
+      }
+
+      const nextUrl = `${url.pathname}?${params.toString()}${url.hash || ''}`;
+      window.history.replaceState(null, '', nextUrl);
+    } catch (err) {
+      console.warn('[CubeChat] Failed to update link query params:', err?.message || err);
+    }
+  }
+
+  _syncRoomInputs() {
+    const roomNameInput = document.getElementById('room-name');
+    const roomPrivacyInput = document.getElementById('room-privacy');
+    const roomPasswordInput = document.getElementById('room-password');
+    if (roomNameInput) roomNameInput.value = this.currentRoom?.name || 'global';
+    if (roomPrivacyInput) roomPrivacyInput.value = this.currentRoom?.visibility || 'public';
+    if (roomPasswordInput) {
+      roomPasswordInput.value = (this.currentRoom?.visibility === 'private' ? this.currentRoomPassword : '') || '';
+    }
+  }
+
+  _setWorldThemeLocal(themeId, { updateSelect = true } = {}) {
+    const nextTheme = normalizeWorldTheme(themeId);
+    const changed = this.worldTheme !== nextTheme;
+    this.worldTheme = nextTheme;
+    this.scene?.setWorldTheme(nextTheme);
+    if (updateSelect) {
+      const select = this._getWorldThemeSelect();
+      if (select && select.value !== nextTheme) {
+        select.value = nextTheme;
+      }
+    }
+    if (changed) {
+      this._updateLinkQueryParams();
+    }
+    return changed;
+  }
+
+  _writeRoomThemeState(themeId) {
+    const stateManager = this.network?.stateManager;
+    if (!stateManager?.writeScoped) return;
+    const normalizedTheme = normalizeWorldTheme(themeId);
+    stateManager.writeScoped(WORLD_THEME_NAMESPACE, WORLD_THEME_KEY, {
+      id: normalizedTheme,
+      updatedAt: Date.now(),
+      updatedBy: this.network?.peerId || null
+    });
+  }
+
+  _bindRoomThemeState() {
+    if (this.worldThemeStateUnsubscribe) {
+      try {
+        this.worldThemeStateUnsubscribe();
+      } catch (_) {
+        // ignore stale unsubscribe failures
+      }
+      this.worldThemeStateUnsubscribe = null;
+    }
+
+    const stateManager = this.network?.stateManager;
+    if (!stateManager?.observeNamespace) {
+      this._setWorldThemeLocal(DEFAULT_WORLD_THEME);
+      return;
+    }
+
+    const applyThemeValue = (value) => {
+      const nextTheme = typeof value === 'string'
+        ? normalizeWorldTheme(value)
+        : normalizeWorldTheme(value?.id);
+      return this._setWorldThemeLocal(nextTheme);
+    };
+
+    this.worldThemeStateUnsubscribe = stateManager.observeNamespace(WORLD_THEME_NAMESPACE, (value, key) => {
+      if (key !== WORLD_THEME_KEY) return;
+      const changed = applyThemeValue(value);
+      if (changed) {
+        this.logEvent(`World theme: ${getWorldThemeLabel(value?.id ?? value)}`, 'info');
+      }
+    });
+
+    const currentValue = stateManager.readScoped?.(WORLD_THEME_NAMESPACE, WORLD_THEME_KEY);
+    if (currentValue) {
+      applyThemeValue(currentValue);
+    } else {
+      const initialTheme = normalizeWorldTheme(this._initialThemeFromQuery || DEFAULT_WORLD_THEME);
+      this._initialThemeFromQuery = null;
+      this._setWorldThemeLocal(initialTheme);
+      this._writeRoomThemeState(initialTheme);
+    }
+  }
+
+  setRoomTheme(themeId, { announce = true } = {}) {
+    const normalizedTheme = normalizeWorldTheme(themeId);
+    const changed = this._setWorldThemeLocal(normalizedTheme);
+    if (announce) {
+      this._writeRoomThemeState(normalizedTheme);
+    }
+    if (changed) {
+      this.logEvent(`World theme: ${getWorldThemeLabel(normalizedTheme)}`, 'info');
+    }
   }
 
   async init() {
+    this._applyLaunchStateFromQuery();
+
     // Show loading message
     const app = document.querySelector('#app');
     app.innerHTML = `
-      <div id="loading">
+      <div id="loading" role="button" tabindex="0" aria-label="Start CubeChat">
         <h1>CubeChat</h1>
         <p>Initializing P2P Network...</p>
         <p style="font-size: 0.9em; color: #00ffff;">Click to start</p>
@@ -89,6 +313,19 @@ class CubeChat {
           <div id="room-status"></div>
         </div>
         <div class="settings-section">
+          <h4>World</h4>
+          <label>
+            Theme:
+            <select id="world-theme">
+              <option value="tron">Tron</option>
+              <option value="moon">Moon</option>
+            </select>
+          </label>
+          <div style="font-size: 0.8em; color: #00cccc; margin-top: 6px;">
+            Theme is shared with everyone in the current room.
+          </div>
+        </div>
+        <div class="settings-section">
           <h4>Screen Share</h4>
           <div style="margin-top: 10px;">
             <button id="screen-share-toggle" style="width: 100%; margin-bottom: 5px;">Share Screen</button>
@@ -123,6 +360,8 @@ class CubeChat {
       // Initialize Three.js scene
       const container = document.querySelector('#scene-container');
       this.scene = new TronScene(container);
+      this._bindRoomThemeState();
+      this._updateLinkQueryParams();
 
       // Create local player in scene
       this.scene.createPlayer(
@@ -154,48 +393,81 @@ class CubeChat {
         this.handleNetworkMessage(message);
       });
 
-      // Detect mobile device
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      // Detect mobile/touch devices (includes iPadOS desktop-mode UA on Safari)
+      const isMobile = this._isMobileLikeDevice();
       
       const loadingDiv = document.querySelector('#loading');
       const canvas = this.scene.renderer.domElement;
+      let loadingStarted = false;
+      let pendingInitialPointerUnlock = false;
+
+      const dismissLoading = ({ mobileMode = false } = {}) => {
+        if (!loadingDiv || loadingDiv.style.display === 'none') return;
+        loadingDiv.style.display = 'none';
+        if (mobileMode) {
+          this.controller.setMobileMode(true);
+        }
+        this._showSettingsOnce();
+      };
+
+      const startFromLoading = (event) => {
+        if (loadingStarted) return;
+        loadingStarted = true;
+        if (event?.type === 'touchend' || event?.type === 'pointerdown') {
+          event.preventDefault();
+        }
+        if (isMobile) {
+          dismissLoading({ mobileMode: true });
+          return;
+        }
+        const pointerLockRequested = this._requestPointerLock(canvas);
+        if (pointerLockRequested) {
+          pendingInitialPointerUnlock = true;
+          setTimeout(() => {
+            pendingInitialPointerUnlock = false;
+          }, 1500);
+        }
+        // Do not block startup on pointer lock success; Safari/iPadOS may reject or not support it.
+        dismissLoading();
+        if (!pointerLockRequested) {
+          console.info('[CubeChat] Pointer lock unavailable; continuing without pointer lock');
+        }
+      };
       
       if (isMobile) {
         // Mobile: just tap to start, no pointer lock
         loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', () => {
-          loadingDiv.style.display = 'none';
-          this.controller.setMobileMode(true);
-          // Show settings menu only the first time after loading screen closes
-          if (!this.settingsShownOnce) {
-            document.getElementById('settings-menu').style.display = 'block';
-            this.settingsShownOnce = true;
-          }
-        });
+        loadingDiv.addEventListener('click', startFromLoading);
+        loadingDiv.addEventListener('touchend', startFromLoading, { passive: false });
+        loadingDiv.addEventListener('pointerdown', startFromLoading);
       } else {
         // Desktop: use pointer lock
         canvas.addEventListener('click', () => {
-          canvas.requestPointerLock();
+          this._requestPointerLock(canvas);
         });
 
         loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', () => {
-          canvas.requestPointerLock();
+        loadingDiv.addEventListener('click', startFromLoading);
+        loadingDiv.addEventListener('pointerdown', startFromLoading);
+        loadingDiv.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          startFromLoading(event);
         });
 
         // Remove loading screen when pointer is locked
-        document.addEventListener('pointerlockchange', () => {
-          if (document.pointerLockElement) {
-            loadingDiv.style.display = 'none';
-            // Show settings menu only the first time after loading screen closes
-            if (!this.settingsShownOnce) {
-              document.getElementById('settings-menu').style.display = 'block';
-              this.settingsShownOnce = true;
-              // Release pointer lock when showing settings
-              document.exitPointerLock();
+        const handlePointerLockChange = () => {
+          if (this._getPointerLockElement()) {
+            dismissLoading();
+            if (pendingInitialPointerUnlock) {
+              pendingInitialPointerUnlock = false;
+              this._exitPointerLock();
             }
+          } else {
+            pendingInitialPointerUnlock = false;
           }
-        });
+        };
+        document.addEventListener('pointerlockchange', handlePointerLockChange);
+        document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
       }
 
       // Initialize settings
@@ -819,6 +1091,12 @@ class CubeChat {
     const roomListClose = document.getElementById('room-list-close');
     const roomListRefresh = document.getElementById('room-list-refresh');
     const roomListItems = document.getElementById('room-list-items');
+    const worldThemeInput = document.getElementById('world-theme');
+    if (worldThemeInput) {
+      worldThemeInput.innerHTML = WORLD_THEMES
+        .map((theme) => `<option value="${theme.id}">${theme.label}</option>`)
+        .join('');
+    }
 
     // Load saved settings
     const savedName = localStorage.getItem('playerName') || '';
@@ -840,8 +1118,14 @@ class CubeChat {
     if (roomPrivacyInput) {
       roomPrivacyInput.value = savedRoomPrivacy;
     }
+    if (roomPasswordInput) {
+      roomPasswordInput.value = this.currentRoom.visibility === 'private' ? (this.currentRoomPassword || '') : '';
+    }
     if (roomStatus) {
       roomStatus.textContent = `Current room: ${this.currentRoom.name} (${this.currentRoom.visibility})`;
+    }
+    if (worldThemeInput) {
+      worldThemeInput.value = normalizeWorldTheme(this.worldTheme);
     }
     
     // Apply saved settings
@@ -869,8 +1153,8 @@ class CubeChat {
       settingsMenu.style.display = isShowing ? 'block' : 'none';
       
       // Release pointer lock when showing settings
-      if (isShowing && document.pointerLockElement) {
-        document.exitPointerLock();
+      if (isShowing && this._getPointerLockElement()) {
+        this._exitPointerLock();
       }
     });
 
@@ -943,7 +1227,7 @@ class CubeChat {
       const normalizedName = normalizeRoomName(name);
       const roomId = buildRoomId({ name: normalizedName, visibility, password });
       updateRoomStatus('Switching rooms...');
-      await this.switchRoom({ name, visibility, roomId });
+      await this.switchRoom({ name, visibility, roomId, password });
       localStorage.setItem('cubechatRoomName', name);
       localStorage.setItem('cubechatRoomPrivacy', visibility);
       updateRoomStatus(`Current room: ${name} (${visibility})`);
@@ -977,6 +1261,12 @@ class CubeChat {
     if (roomListRefresh) {
       roomListRefresh.addEventListener('click', () => {
         this.renderRoomList();
+      });
+    }
+
+    if (worldThemeInput) {
+      worldThemeInput.addEventListener('change', () => {
+        this.setRoomTheme(worldThemeInput.value, { announce: true });
       });
     }
 
@@ -1040,7 +1330,7 @@ class CubeChat {
     }
   }
 
-  async switchRoom({ name, visibility, roomId }) {
+  async switchRoom({ name, visibility, roomId, password = '' }) {
     if (!roomId || roomId === this.currentRoom.roomId) return;
     this.setRoomStatus('Switching rooms...');
     this.stopScreenShare();
@@ -1058,9 +1348,13 @@ class CubeChat {
     if (this.network.getLocalStream()) {
       this.scene.setPlayerVideoStream(localPlayer.id, this.network.getLocalStream());
     }
+    this._bindRoomThemeState();
     this.network.broadcastPlayerState();
     this.currentRoom = { name, visibility, roomId };
+    this.currentRoomPassword = visibility === 'private' ? String(password || '') : '';
     this.roomDirectory?.announceRoom(this.currentRoom);
+    this._syncRoomInputs();
+    this._updateLinkQueryParams();
     this.setRoomStatus(`Current room: ${name} (${visibility})`);
   }
 
@@ -1102,13 +1396,17 @@ class CubeChat {
         const roomId = visibility === 'private'
           ? buildRoomId({ name: normalizeRoomName(name), visibility, password })
           : (room.roomId || buildRoomId({ name: normalizeRoomName(name), visibility }));
-        await this.switchRoom({ name, visibility, roomId });
+        await this.switchRoom({ name, visibility, roomId, password });
         const roomList = document.getElementById('room-list');
         if (roomList) roomList.style.display = 'none';
         const roomNameInput = document.getElementById('room-name');
         const roomPrivacyInput = document.getElementById('room-privacy');
+        const roomPasswordInput = document.getElementById('room-password');
         if (roomNameInput) roomNameInput.value = name;
         if (roomPrivacyInput) roomPrivacyInput.value = visibility;
+        if (roomPasswordInput) {
+          roomPasswordInput.value = visibility === 'private' ? password : '';
+        }
         localStorage.setItem('cubechatRoomName', name);
         localStorage.setItem('cubechatRoomPrivacy', visibility);
       });
@@ -1419,6 +1717,14 @@ class CubeChat {
   // Clean up on page unload
   destroy() {
     this.stopScreenShare();
+    if (this.worldThemeStateUnsubscribe) {
+      try {
+        this.worldThemeStateUnsubscribe();
+      } catch (_) {
+        // ignore
+      }
+      this.worldThemeStateUnsubscribe = null;
+    }
     if (this.network) {
       this.network.stop();
     }

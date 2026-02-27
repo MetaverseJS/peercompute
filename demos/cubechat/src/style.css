@@ -31,6 +31,9 @@ body {
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
   max-width: 90%;
   width: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 
 #loading h1 {
@@ -160,7 +163,8 @@ body {
   font-size: 1rem;
 }
 
-#settings-menu input {
+#settings-menu input,
+#settings-menu select {
   display: block;
   width: 100%;
   margin-top: 0.5rem;
@@ -173,7 +177,8 @@ body {
   font-size: 1rem;
 }
 
-#settings-menu input:focus {
+#settings-menu input:focus,
+#settings-menu select:focus {
   outline: none;
   border-color: #00ffff;
   box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
