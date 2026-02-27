@@ -11,6 +11,17 @@
 - Expectation: launcher uses strict ports by default (`DEV_STRICT_PORT=1`) so demo port conflicts fail fast instead of silently rebinding to alternate ports.
 - Gate: run when changing relay/dev launcher scripts (`scripts/dev-local-relay.sh`, `scripts/dev-all.sh`).
 
+### Overview link-mode check
+- Command: `npm run build && rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
+- Purpose: verify demo overview links are production-folder based by default and only switch to dev-port routing on docs dev port `4173` (or explicit query override).
+- Expectation: production deploys use folder routes like `./<demo>/...`; local docs dev keeps port-based navigation.
+- Gate: run when changing `docs/index.html` demo-card link wiring or overview link-generation logic.
+
+### Overview tile order check
+- Command: `node -e "const fs=require('fs'); const html=fs.readFileSync('docs/index.html','utf8'); const names=[...html.matchAll(/<h2>([^<]+)<\\/h2>/g)].map((m)=>m[1]); const expected=['PeerCompute (GitHub)','CubeChat','Universes','PlanetGen','NetViz','SneakyWoods','Daddy Go!','Dynamics (WebGpuPhys)','MPM Visual (WebGpuPhys)','PPF Contact Solver (WebGpuPhys)','Hyperborea']; if (!expected.every((label, i) => names[i]===label)) { console.error('Tile order mismatch:', names.slice(0, expected.length)); process.exit(1);} console.log('Overview tile order OK');"`
+- Purpose: ensure the overview cards in `docs/index.html` remain in the expected user-facing sequence.
+- Gate: run whenever adding/removing/reordering overview cards.
+
 ### Direct-path runtime check
 - Command: `npm --prefix peercompute run test:direct-path`
 - Purpose: verify payload flow survives relay disruption and confirms relay-independent peer path.

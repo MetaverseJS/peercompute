@@ -81,6 +81,9 @@ npm run build
 npm run docs:preview
 ```
 
+- The overview page (`docs/index.html`) now defaults to production folder links (`./hyperborea/`, `./cubechat/`, etc.), so GitHub Pages-style deploys work under nested paths like `https://MetaverseJS.github.io/<repo>/`.
+- When the overview is served from local docs dev port `4173`, links automatically switch to local demo ports for dev workflows. Use `?prod=1` to force production links locally.
+
 ### Go Relay (Optional)
 By default `npm run dev` and `npm run dev:local-relay` launch the Node relay. To use the Go relay, install Go 1.24+ and set `RELAY_IMPL=go`:
 

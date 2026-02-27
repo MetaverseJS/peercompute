@@ -125,3 +125,4 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 ## Progress
 - Done (baseline): NetViz (network telemetry + minimal visualizer demo scaffolded).
 - Done: NetViz upgrades (RTT/throughput telemetry, NURBS edges, node/edge inspection).
+- Done (2026-02-27): Overview tile order updated to `GitHub -> CubeChat -> Universes -> PlanetGen -> NetViz -> SneakyWoods -> Daddy Go -> Dynamics -> MPM -> PPF -> Hyperborea`.

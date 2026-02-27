@@ -14940,6 +14940,81 @@ def parse_args() -> argparse.Namespace:
 - `demos/cubechat/src/style.css`
 - `demos/cubechat/src/world/themes.js`
 - `plan/tests.md`
+## Date: 2026-02-24
+
+### Prompt
+- "is my AGENTS.md file in my gitignore?"
+
+### Prompt Time/Date
+- 2026-02-24T17:13:02-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Checked Git ignore matching for `AGENTS.md` with `git check-ignore` (normal mode and `--no-index` to avoid tracked-file ambiguity).
+- Searched `.gitignore` and `.git/info/exclude` for any `AGENTS`/`AGENTS.md` entries.
+- Confirmed there is no ignore match for `AGENTS.md` in the current repo context.
+- No code or config changes were made; this prompt was informational only.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `pwd`
+- `git rev-parse --show-toplevel`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `git check-ignore -v AGENTS.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `git check-ignore -v --no-index AGENTS.md`
+- `rg -n "AGENTS\\.md|AGENTS" .gitignore .git/info/exclude 2>/dev/null`
+- `git status --short -- AGENTS.md`
+- `date -Is`
+- `tail -n 80 plan/log.md`
+
+### Test Results
+- No automated tests run (informational repo check only).
+- Ignore checks:
+  - `git check-ignore -v AGENTS.md` -> no match (not ignored in normal Git behavior)
+  - `git check-ignore -v --no-index AGENTS.md` -> no match (no ignore rule applies even if tracked)
+  - `rg -n "AGENTS\\.md|AGENTS" .gitignore .git/info/exclude` -> no entries found
+
+### Failures / Open Questions
+- No failures.
+- No open questions.
+
+## Date: 2026-02-24
+
+### Prompt
+- "we need to deploy this to my server tonight. we've made a ton of changes since we last did. I believe the server is running main. can you compare how the go realy server works in this branch to how the node relay server works in the main branch and come up with a plan to install the dependencies and deploy? will we have to update nginx?"
+
+### Prompt Time/Date
+- 2026-02-24T17:17:53-09:00
+
+### Actions Attempted
+- Re-read required planning context before analysis:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Identified current branch (`demo-fixes`) and enumerated relay/deploy/systemd/nginx-related files in the repo.
+- Compared current branch production relay launch path (`scripts/start-relay-prod.sh` -> `scripts/run-relay.sh` -> Go/Node relay) against `main` branch production launch path (direct Node relay from `scripts/start-relay-prod.sh`).
+- Inspected current branch Go relay implementation (`peercompute/src/relay-go/main.go`) and `go.mod` requirements to determine runtime/dependency needs.
+- Compared `main` branch Node relay behavior (`peercompute/src/relay/server.js` on `main`) to current Go relay behavior, focusing on:
+  - pubsub mode defaults (floodsub vs configurable gossipsub/floodsub),
+  - relay-config output payload differences (`bootstrapPeers` only vs `bootstrapPeers` + `pubsubType` + `webrtc` + optional `gossipsub`),
+  - listen address handling and IPv6 preference,
+  - identity persistence, relay address emission, and file write behavior.
+- Inspected current branch relay deploy helpers and runtime config generation:
+  - `scripts/install-relay-systemd.sh`
+  - `scripts/run-go-relay.sh`
+  - `config/relay.env`
+  - `scripts/write-prod-relay-config.mjs`
+  - `scripts/ensure-relay-config-perms.sh`
+  - `scripts/build-all.sh`
+- Reviewed README relay deployment docs and prior nginx notes in `plan/log.md` / `plan/branch/server-changes.md` to map likely nginx impact and cutover steps.
+- Prepared a deployment/cutover plan (response only; no server changes made in this prompt).
+
+### Files Touched
 - `plan/log.md`
 
 ### Commands Run
@@ -15241,6 +15316,323 @@ def parse_args() -> argparse.Namespace:
 - `demos/cubechat/src/renderer/scene.js`
 - `plan/tests.md`
 - `plan/plan.md`
+- `git branch --show-current && git rev-parse --short HEAD && git rev-parse --short main`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 260 plan/log.md`
+- `rg --files | rg 'relay|nginx|systemd|deploy|pm2|service'`
+- `sed -n '1,260p' scripts/start-relay-prod.sh`
+- `sed -n '1,260p' scripts/install-relay-systemd.sh`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `sed -n '1,260p' scripts/run-go-relay.sh`
+- `sed -n '1,260p' config/relay.env`
+- `sed -n '1,260p' config/relay.json`
+- `git show main:scripts/run-relay.sh | sed -n '1,240p'`
+- `git show main:scripts/start-relay-prod.sh | sed -n '1,320p'`
+- `git show main:peercompute/src/relay/server.js | sed -n '1,320p'`
+- `sed -n '1,320p' peercompute/src/relay-go/main.go`
+- `git show main:config/relay.env | sed -n '1,240p'`
+- `git show main:config/relay.json | sed -n '1,260p'`
+- `sed -n '321,760p' peercompute/src/relay-go/main.go`
+- `sed -n '1,320p' scripts/write-prod-relay-config.mjs`
+- `sed -n '1,320p' scripts/ensure-relay-config-perms.sh`
+- `rg -n "nginx|proxy_pass|websocket|Upgrade|relay-config" -g '*.md' -g '*.conf' -g '*.sh' scripts config docs plan | head -n 200`
+- `git diff --stat main...HEAD -- scripts/start-relay-prod.sh scripts/run-relay.sh scripts/run-go-relay.sh scripts/install-relay-systemd.sh config/relay.env config/relay.json peercompute/src/relay-go/main.go peercompute/src/relay/server.js`
+- `sed -n '1,220p' peercompute/src/relay-go/go.mod`
+- `git diff main...HEAD -- scripts/start-relay-prod.sh scripts/run-relay.sh scripts/run-go-relay.sh scripts/install-relay-systemd.sh config/relay.env config/relay.json | sed -n '1,320p'`
+- `git diff main...HEAD -- peercompute/src/relay/server.js | sed -n '1,340p'`
+- `rg -n "relay|nginx|systemd|deploy" README.md | head -n 120`
+- `sed -n '1,260p' package.json`
+- `sed -n '80,190p' README.md`
+- `sed -n '1,260p' peercompute/package.json`
+- `git show main:peercompute/package.json | sed -n '1,260p'`
+- `git show main:peercompute/src/relay/server.js | rg -n "floodsub|gossipsub|RELAY_WEBRTC_CONFIG|RELAY_TOPIC_PREFIXES|relay-config.json|RELAY_CONFIG_DIRS|Relay Address"`
+- `rg -n "proxy_set_header Upgrade|proxy_http_version 1.1|/peercompute/config/relay-config.json|relay.secretworkshop.net|secretworkshop.net" plan/log.md plan/branch/server-changes.md README.md | tail -n 120`
+- `nl -ba scripts/start-relay-prod.sh | sed -n '1,240p'`
+- `nl -ba scripts/run-relay.sh | sed -n '1,200p'`
+- `nl -ba scripts/run-go-relay.sh | sed -n '1,220p'`
+- `nl -ba scripts/install-relay-systemd.sh | sed -n '1,220p'`
+- `nl -ba config/relay.env | sed -n '1,220p'`
+- `nl -ba config/relay.json | sed -n '1,260p'`
+- `rg -n "Starting PeerCompute Go Relay|RELAY_PUBSUB_TYPE|RELAY_WEBRTC_CONFIG|relayPublicHost :=|relayListenHost :=|relayTopicPrefixes|Relay pubsub:|Relay Address:|writeRelayConfigFiles|signal.Notify|loadRelayIdentity|libp2p.ListenAddrStrings" peercompute/src/relay-go/main.go`
+- `nl -ba peercompute/src/relay-go/main.go | sed -n '320,620p'`
+- `nl -ba peercompute/src/relay-go/go.mod | sed -n '1,40p'`
+- `nl -ba README.md | sed -n '84,178p'`
+- `nl -ba peercompute/package.json | sed -n '1,80p'`
+- `nl -ba scripts/build-all.sh | sed -n '1,120p'`
+- `nl -ba scripts/write-prod-relay-config.mjs | sed -n '1,260p'`
+- `nl -ba scripts/ensure-relay-config-perms.sh | sed -n '1,220p'`
+- `date -Is`
+- `git show main:peercompute/src/relay/server.js | nl -ba | sed -n '20,320p'`
+- `git show main:scripts/start-relay-prod.sh | nl -ba | sed -n '1,220p'`
+- `git show main:peercompute/package.json | nl -ba | sed -n '1,40p'`
+- `rg -n "gossipsub|RELAY_PUBSUB_TYPE|RELAY_WEBRTC_CONFIG|RELAY_CONTROL_ONLY_MODE|RELAY_ENABLE_DIRECTORY|toMultiaddrHostSegments|subscription-change|peercompute-directory|Relay Address:" peercompute/src/relay/server.js`
+
+### Test Results
+- No automated tests run (analysis/planning prompt only).
+- Static comparison/inspection only; no runtime validation performed in this prompt.
+
+### Failures / Open Questions
+- `git show main:scripts/run-relay.sh` failed because the file does not exist on `main` (new wrapper introduced on this branch).
+- `git show main:config/relay.env` failed because the file does not exist on `main` (new env-defaults file introduced on this branch).
+- Open deployment question (server-specific): whether current nginx websocket upstream points to `127.0.0.1:8080` and whether the host’s IPv6 socket behavior (`listenHost="::"` in branch config) is dual-stack; if not, either set relay listen host back to `127.0.0.1` or change nginx upstream to `[::1]:8080`.
+
+## Date: 2026-02-24
+
+### Prompt
+- "we also have a service installation script now right? is that correctly wired up to the go relay?"
+
+### Prompt Time/Date
+- 2026-02-24T17:25:32-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Re-verified the relay service installation chain with numbered file views:
+  - `scripts/install-relay-systemd.sh` (systemd unit generation)
+  - `scripts/start-relay-prod.sh` (prod env assembly + relay impl default/export)
+  - `scripts/run-relay.sh` (Go/Node dispatcher)
+- Confirmed the generated systemd unit sets `Environment=RELAY_IMPL=${RELAY_IMPL:-go}` and runs `scripts/start-relay-prod.sh`, which then defaults to `go` and dispatches through `scripts/run-relay.sh`.
+- Confirmed fallback behavior remains intact: if `RELAY_IMPL=go` but `go` is not installed, dispatcher falls back to Node and logs a warning.
+- Prepared response with a caveat for existing already-installed units (may need reinstall or manual edit if they predate the new helper).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `nl -ba scripts/install-relay-systemd.sh | sed -n '1,120p'`
+- `nl -ba scripts/start-relay-prod.sh | sed -n '110,170p'`
+- `nl -ba scripts/run-relay.sh | sed -n '1,60p'`
+- `date -Is`
+
+### Test Results
+- No automated tests run (script wiring inspection only).
+
+### Failures / Open Questions
+- No failures.
+- Open operational caveat: if the server is still using an older systemd unit created before `scripts/install-relay-systemd.sh` existed (or before it set `RELAY_IMPL=go`), reinstalling/updating the unit may still be needed to pick up the new startup path cleanly.
+
+## Date: 2026-02-26
+
+### Prompt
+- Session continuation after context compaction. Verified all previous session changes are intact.
+
+### Prompt Time/Date
+- 2026-02-26
+
+### Actions Attempted
+- Read main.js to verify state of all previous session changes.
+- Grepped for key symbols: addQuasarJets, buildKuiperBelt, buildOortCloud, oortCloudShell, moonTrailLine, isLandable, cometTrailLine, asteroidBeltRing.
+- Verified orbit paths toggle (lines 1825-1838) covers physicsBodies moonTrailLine, passiveBodies orbitTrailLine, and all belt/cloud objects.
+- Verified land button logic (lines 2287-2296): isLandable includes ROCKY/COMET/MOON/ASTEROID/KUIPER but NOT GAS GIANT; button text variants per type.
+- Verified addQuasarJets function (lines 3026-3069): two cones (AdditiveBlending, pulsing shader), halo sphere (BackSide, rim-lit).
+- Verified moon trail re-centering in animate loop (lines 4235-4246).
+
+### Files Touched
+- plan/log.md (this entry)
+
+### Summary of Previous Session Changes (now confirmed present in main.js at 4573 lines)
+1. Moons as full n-body: removed kinematic passiveBodies moon update, added to physicsBodies with proper circular orbit velocity (parentVel + tangential * sqrt(G*M/r))
+2. Trinary star equilateral triangle: ang = (i/3)*PI*2 with tangential velocity (-sin(ang)*v, 0, cos(ang)*v)
+3. Shader `isPerspectiveMatrix` fixes: added `#include <common>` before `#include <logdepthbuf_pars_vertex>` in asteroid belt, comet particle, ring system shaders
+4. BH disk logdepthbuf: full include chain in both vertex and fragment shaders; removed depthTest:false
+5. Planet y-offset spawn: yOff = (rand()-0.5)*dist*0.05; asteroid y-spread 0.03->0.12
+6. Kuiper belt (2000 icy particles, 3-ring indicator group), Oort cloud (1800 sphere particles, wireframe shell)
+7. Asteroid belt ring indicator (LineLoop), all toggled with orbit paths checkbox
+8. Comet orbitTrailLine stored in body object; passiveBodies forEach in toggle handler
+9. Moon orbit trails: LineLoop circle per moon, re-centered each frame on parent planet
+10. Asteroid/Kuiper selectability, raycaster threshold=10, click handler extended
+11. isLandable: GAS GIANT removed; MOON/ASTEROID/KUIPER added; button text variants
+12. generatePlanetSurface: isSmallBody/isMoon detection, scaled R/heightScale/gravity/colors/atmosphere
+13. addQuasarJets: age-based jets+halo at young galaxy ages (ageFactor > 0.05)
+
+### Test Results
+- All previous session changes confirmed present. No regressions detected.
+
+### Failures / Open Questions
+- Awaiting user testing of: comet trail toggling, moon orbit circles, asteroid/Kuiper/moon selection/landing, gas giant non-landability, quasar jet visuals at young galaxy ages.
+
+## Date: 2026-02-27
+
+### Prompt
+- "How do I build this project for prod. so the overview page links point at MetaverseJS.github.io/peercomput/demofolder/"
+
+### Prompt Time/Date
+- 2026-02-27T12:12:57-09:00
+
+### Actions Attempted
+- Re-read required planning context before changes:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected build/deploy/linking context:
+  - root/workspace scripts in `package.json`
+  - docs Vite config (`vite.docs.config.mjs`)
+  - build pipeline (`scripts/build-all.sh`)
+  - relay build writer (`scripts/write-prod-relay-config.mjs`)
+  - all demo Vite configs
+  - current overview link logic in `docs/index.html`
+- Identified root cause: overview cards were always runtime-rewritten to dev ports (`5175`-`5182`/`5179`) via `data-demo-port`, which breaks production static hosting paths.
+- Implemented overview link-mode split in `docs/index.html`:
+  - Added explicit production hrefs + `data-demo-dir` for each demo card.
+  - Kept dev-port routing for local docs workflow when served on port `4173`.
+  - Added `?prod=1` override to force production links and `?dev=1` to force dev links.
+  - Preserved query-string passthrough to demo targets.
+- Updated documentation:
+  - `README.md` docs build section now explains production-folder links and local dev-port behavior.
+  - `plan/tests.md` now includes an overview link-mode validation gate.
+- Ran full production build to verify no regressions in pipeline behavior.
+
+### Files Touched
+- `docs/index.html`
+- `README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,260p' package.json`
+- `rg --files | rg 'vite(\.|.*config|.*\.config).*|index\.html$|overview|demofolder|relay-config|prod-config'`
+- `sed -n '1,260p' vite.docs.config.mjs`
+- `sed -n '1,260p' docs/index.html`
+- `sed -n '1,260p' scripts/build-all.sh`
+- `sed -n '1,320p' scripts/write-prod-relay-config.mjs`
+- `for f in demos/*/vite.config.*; do echo '---' $f; sed -n '1,220p' $f; done`
+- `rg -n "href=|data-demo|demo|overview|Metaverse|github" docs/index.html`
+- `sed -n '260,520p' docs/index.html`
+- `sed -n '520,860p' docs/index.html`
+- `rg -n "github\.io|GitHub Pages|overview|docs/index|build:all|build:demos|MetaverseJS|relay-config|prod-config|base" README.md plan -g '*.md'`
+- `sed -n '1,260p' README.md`
+- `ls -la config && sed -n '1,220p' config/relay.json`
+- `node -v && npm -v`
+- `date -Is`
+- `nl -ba docs/index.html | sed -n '440,640p'`
+- `npm run build`
+- `sed -n '1,260p' plan/tests.md`
+- `rg -n "Docs Build / Preview|docs:preview|overview|4173|dev-local-relay" README.md`
+- `nl -ba README.md | sed -n '64,110p'`
+- `rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
+
+### Test Results
+- `npm run build` -> pass.
+- Build outputs regenerated for peercompute + all demos into `docs/*`.
+- `rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html` -> pass (expected link-mode markers found).
+- Observed non-blocking warnings only:
+  - large bundle/chunk size warnings across several demos.
+  - `demos/planetgen/src/SceneManager.js` warning about `WebGL1Renderer` export from `three.module.js` (did not fail build).
+
+### Failures / Open Questions
+- No blocking failures.
+- Open naming confirmation: prompt used `MetaverseJS.github.io/peercomput/...` (missing trailing `e`). If your GitHub repo path is actually `peercompute`, the production base URL should be `https://MetaverseJS.github.io/peercompute/`.
+
+- we're trying to get the go relay server deployed can you look at the nginx configuration in /etc/ and figure out how to wire up the certificate so we run the relay server with wss?
+
+### Prompt Time/Date
+- 2026-02-27T21:50:08+00:00
+
+### Actions Attempted
+- Re-read required planning context before starting implementation/deployment analysis:
+  - `plan/plan.md`
+  - `plan/log.md`
+  - `plan/tests.md`
+- Inspected host nginx layout and active site symlink state under `/etc/nginx` to confirm which config is live.
+- Inspected active nginx vhost contents with line numbers (`/etc/nginx/sites-available/secretworkshop.net`) to trace websocket upgrade routing, TLS cert paths, and relay-config alias routes.
+- Inspected relay deployment scripts/config in repo to verify how Go relay is launched in prod and how public/listen addresses are derived:
+  - `scripts/run-go-relay.sh`
+  - `scripts/run-relay.sh`
+  - `scripts/start-relay-prod.sh`
+  - `scripts/install-relay-systemd.sh`
+  - `scripts/ensure-relay-config-perms.sh`
+  - `scripts/write-prod-relay-config.mjs`
+  - `config/relay.env`
+  - `config/relay.json`
+  - `config/relay-config.json`
+  - `peercompute/src/relay-go/main.go`
+- Confirmed current wiring model:
+  - nginx terminates TLS on `443` with LetsEncrypt cert paths.
+  - nginx proxies websocket traffic to local relay on `127.0.0.1:8080`/`localhost:8080`.
+  - Go relay can run plain `ws` behind nginx TLS termination (no direct cert/key required in relay env when nginx fronts it).
+- Attempted privileged verification (`nginx -t` + certificate SAN inspection) using escalated execution request.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is && pwd && ls -la`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,220p' plan/tests.md`
+- `ls -la /etc/nginx && ls -la /etc/nginx/sites-available && ls -la /etc/nginx/sites-enabled`
+- `rg -n "secretworkshop|ssl_certificate|listen 443|listen 8080|relay|wss|proxy_pass|server_name" /etc/nginx -S`
+- `rg --files | rg "relay-config|prod-config|run-go-relay|go-relay|relay"`
+- `sed -n '1,240p' scripts/run-go-relay.sh`
+- `nl -ba /etc/nginx/sites-available/secretworkshop.net | sed -n '1,260p'`
+- `sed -n '1,220p' config/relay.env`
+- `sed -n '1,260p' config/relay.json`
+- `sed -n '1,260p' scripts/start-relay-prod.sh`
+- `sed -n '1,260p' scripts/write-prod-relay-config.mjs`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `sed -n '1,340p' peercompute/src/relay-go/main.go`
+- `sed -n '1,260p' scripts/install-relay-systemd.sh`
+- `sed -n '1,260p' README.md`
+- `nl -ba peercompute/src/relay-go/main.go | sed -n '300,720p'`
+- `sed -n '1,260p' scripts/ensure-relay-config-perms.sh`
+- `sed -n '1,220p' config/relay-config.json`
+- `sed -n '1,220p' docs/netviz/relay-config.json`
+- `grep -n '^user' /etc/nginx/nginx.conf && nginx -t 2>&1 | sed -n '1,140p'`
+- `ls -la /etc/letsencrypt/live/secretworkshop.net 2>&1 | sed -n '1,120p'`
+- `git branch --show-current && git status --short`
+- `ls -la plan/branch && rg -n "server-changes|relay|wss|nginx|secretworkshop" plan/branch -S`
+- `sed -n '1,260p' plan/branch/current-branch.md`
+- `sed -n '1,260p' plan/branch/server-changes.md`
+- escalated request (user-aborted): `nginx -t && openssl x509 -in /etc/letsencrypt/live/secretworkshop.net/fullchain.pem -noout -subject -issuer -dates -ext subjectAltName`
+
+### Test Results
+- No automated test suite executed (deployment/config inspection prompt).
+- Manual static validation only.
+
+### Failures / Open Questions
+- Non-root `nginx -t` cannot complete due private cert path permission (`/etc/letsencrypt/live/...`), so root-level syntax+cert verification is still pending.
+- Escalated root verification request was interrupted/aborted by user before execution.
+- Certificate SAN coverage for `relay.secretworkshop.net` remains unconfirmed from this prompt.
+
+## Date: 2026-02-27
+
+### Prompt
+- "does the production run also point at secretworkshop.net for the relay server?"
+
+### Prompt Time/Date
+- 2026-02-27T12:17:25-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Checked current relay production config source in `config/relay.json`.
+- Verified runtime relay-config resolution order from source (`demos/netviz/src/relayConfig.js`):
+  1. query override (`relayConfigUrl` / `relayConfig`)
+  2. `relay-config-source.json` URL fetch
+  3. local `relay-config.json` fallback.
+- Verified built production artifacts currently generated in `docs/netviz/`:
+  - `relay-config-source.json` points to `https://secretworkshop.net/peercompute/config/relay-config.json`.
+  - local `relay-config.json` fallback currently has empty `bootstrapPeers`.
+- Derived answer: production build is wired to pull relay config from `secretworkshop.net` by default, with an important fallback caveat if that URL is unavailable.
+
+- I don't think the cert does cover the wildcard. isn't there a config entry for secretworkshop.net:<some port> that is used for wss relay server?
+
+### Prompt Time/Date
+- 2026-02-27T21:53:53+00:00
+
+### Actions Attempted
+- Re-opened active nginx config with line numbers to answer exact host/port/path behavior for apex-domain websocket relay routing.
+- Verified apex-domain `443` TLS server block has websocket-upgrade conditional proxy to local relay on `127.0.0.1:8080`.
+- Prepared response plan: use apex host (`secretworkshop.net:443`) for wss bootstrap if wildcard/subdomain cert is unavailable.
+
+### Files Touched
 - `plan/log.md`
 
 ### Commands Run
@@ -15637,6 +16029,205 @@ def parse_args() -> argparse.Namespace:
 - `demos/cubechat/src/renderer/scene.js`
 - `plan/tests.md`
 - `plan/plan.md`
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `sed -n '1,240p' config/relay.json`
+- `rg -n "relay-config-source|relayConfigUrl|resolve.*relay|bootstrapPeers" demos -g '*.js' -g '*.html' | head -n 120`
+- `sed -n '1,220p' demos/netviz/src/relayConfig.js`
+- `sed -n '1,120p' docs/netviz/relay-config-source.json`
+- `sed -n '1,180p' docs/netviz/relay-config.json`
+
+### Test Results
+- No automated tests run (configuration and runtime-resolution inspection only).
+- Verification results:
+  - `docs/netviz/relay-config-source.json` contains `"relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json"`.
+  - `docs/netviz/relay-config.json` fallback contains `"bootstrapPeers": []`.
+
+### Failures / Open Questions
+- No failures.
+- Open operational caveat: because local fallback `bootstrapPeers` are empty in the generated docs artifact, relay bootstrap depends on successful fetch of the remote source URL unless query override is used.
+
+- `tail -n 140 plan/log.md`
+- `nl -ba /etc/nginx/sites-available/secretworkshop.net | sed -n '1,170p'`
+
+### Test Results
+- No tests run (question response based on config inspection).
+
+### Failures / Open Questions
+- Still pending root-level cert SAN check to definitively confirm wildcard/subdomain coverage.
+
+## Date: 2026-02-27
+
+### Prompt
+- "how is go currently installed on this system"
+
+### Prompt Time/Date
+- 2026-02-27T12:25:05-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Queried the active Go executable path and resolved symlink target.
+- Collected Go runtime metadata (`go version`, `go env`) to confirm active toolchain details.
+- Checked Debian package ownership for the active `go` binary (`dpkg -S`).
+- Queried apt package policy for `golang-go`, `golang-1.24-go`, and `golang-1.25-go` to identify package source/repository and installed versions.
+- Derived installation summary: apt-managed Go from the `longsleep/golang-backports` PPA, with `/bin/go` symlinked to `/usr/lib/go-1.25/bin/go`.
+
+- any idea what's wrong here? there's the console output from sneakywoods running from github.io ...
+
+### Prompt Time/Date
+- 2026-02-27T22:07:45+00:00
+
+### Actions Attempted
+- Re-read required planning context before diagnosis:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Correlated reported browser errors (`WebSocket connection to 'wss://secretworkshop.net/' failed`) with host runtime state.
+- Checked local listening sockets and service availability:
+  - observed `:443` and `:8080` listeners.
+  - observed relay process bound only on IPv6 socket `[::]:8080` (`peercompute-rel...`).
+- Executed privileged local nginx probes with `--resolve` to bypass external DNS dependency and isolate server-side routing behavior:
+  - plain HTTPS request to apex host returns `301` to GitHub Pages as expected.
+  - websocket-upgrade request to apex host returns `502 Bad Gateway`.
+  - websocket-upgrade request to `relay.secretworkshop.net` returns `101 Switching Protocols`.
+- Conclusion from probes:
+  - apex websocket route (`secretworkshop.net` block) proxies to `127.0.0.1:8080` and fails.
+  - relay is IPv6-only on loopback/any (`[::]:8080`), so apex IPv4 upstream target is mismatched.
+  - this explains repeated browser websocket dial failures and `Relay reservations ... 0`.
+- Attempted to inspect cert SAN coverage directly from LetsEncrypt cert file; blocked by file permissions/sudo password in this environment.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `date -Is`
+- `command -v go || true`
+- `go version`
+- `readlink -f "$(command -v go)"`
+- `ls -l "$(command -v go)"`
+- `go env GOROOT GOPATH GOVERSION GOTOOLDIR`
+- `dpkg -S "$(readlink -f "$(command -v go)")"`
+- `apt-cache policy golang-go golang-1.24-go golang-1.25-go`
+
+### Test Results
+- No project tests run (environment/package inspection only).
+- Toolchain/package checks:
+  - `go version`: `go1.25.6 linux/amd64`
+  - `command -v go`: `/bin/go`
+  - resolved binary: `/usr/lib/go-1.25/bin/go`
+  - package owner: `golang-1.25-go`
+  - `golang-go` metapackage installed from `https://ppa.launchpadcontent.net/longsleep/golang-backports/ubuntu` (`2:1.25~0longsleep1`)
+
+### Failures / Open Questions
+- No failures affecting Go inspection.
+- `apt-cache policy` emitted unrelated duplicate-source warnings for Google Earth list files in `/etc/apt/sources.list.d`; not related to Go installation path.
+
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `ss -lntp | rg ':8080\\b|:443\\b' || true`
+- `systemctl status peercompute-relay --no-pager -n 80 2>&1 | sed -n '1,160p'`
+- `curl -k -I -sS -D - https://secretworkshop.net/ -o /dev/null | sed -n '1,40p'` (failed: DNS unavailable in sandbox)
+- `curl -k -sS -D - -o /dev/null https://secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,80p'` (failed: DNS unavailable in sandbox)
+- `ls -la /var/log/nginx 2>&1 | sed -n '1,80p'`
+- `tail -n 120 /var/log/nginx/error.log 2>&1 | sed -n '1,120p'` (permission denied)
+- `tail -n 120 /var/log/nginx/access.log 2>&1 | sed -n '1,120p'` (permission denied)
+- `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ | sed -n '1,40p'` (sandbox: connect blocked)
+- `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,80p'` (sandbox: connect blocked)
+- escalated: `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ ...` (plain + websocket probe; got 301 then 502)
+- escalated: `ss -lntp '( sport = :8080 )' ; echo '---'; ss -lnpt6 '( sport = :8080 )' ; echo '---'; ss -lnpt4 '( sport = :8080 )'`
+- escalated: `curl -k -sS -D - -o /dev/null --resolve relay.secretworkshop.net:443:127.0.0.1 https://relay.secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,80p'` (got 101)
+- escalated: `openssl x509 -in /etc/letsencrypt/live/secretworkshop.net/fullchain.pem -noout -subject -issuer -dates -ext subjectAltName` (permission denied)
+- escalated: `sudo openssl x509 -in /etc/letsencrypt/live/secretworkshop.net/fullchain.pem -noout -subject -issuer -dates -ext subjectAltName` (failed: sudo password required)
+
+### Test Results
+- Apex host probe:
+  - `GET /` => `301 Moved Permanently` (expected redirect path).
+  - websocket upgrade => `502 Bad Gateway` (failure path reproduces browser issue).
+- Relay subdomain probe:
+  - websocket upgrade => `101 Switching Protocols` (upstream path healthy there).
+- Socket family check:
+  - relay listens on `[::]:8080` only; no IPv4 `127.0.0.1:8080` listener.
+
+### Failures / Open Questions
+- Direct cert SAN verification remains open due permission/sudo constraints in this session.
+- Next deployment action required on host config:
+  - either route apex websocket upstream to IPv6 loopback (`[::1]:8080`) or
+  - make relay also bind IPv4 loopback (`127.0.0.1`) to satisfy current apex proxy target.
+
+## Date: 2026-02-27
+
+### Prompt
+- "are some of the files in the scripts folder ignored by git?"
+
+### Prompt Time/Date
+- 2026-02-27T12:29:48-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected root `.gitignore` for patterns that could match `scripts/*`.
+- Enumerated all files under `scripts/`.
+- Ran Git ignore checks for the `scripts/` path:
+  - `git ls-files -i -o --exclude-standard -- scripts`
+  - `git check-ignore -v --no-index` against `scripts/*`
+- Checked `.git/info/exclude` and global excludes config (`core.excludesfile`) for any script-matching patterns.
+- Confirmed there are currently no ignore rules matching files under `scripts/`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `date -Is`
+- `sed -n '1,260p' .gitignore`
+- `rg -n "scripts|\\.sh$|\\.mjs$|\\*\\*|\\*\\." .gitignore`
+- `find scripts -type f | sort`
+- `git ls-files -i -o --exclude-standard -- scripts`
+- `find scripts -type f -print0 | xargs -0 git check-ignore -v --no-index`
+- `git check-ignore -v --no-index scripts/* scripts/*.* || true`
+- `sed -n '1,200p' .git/info/exclude`
+- `git config --get core.excludesfile || true`
+- `global_excludes="$(git config --get core.excludesfile || true)"; if [ -n "$global_excludes" ] && [ -f "$global_excludes" ]; then sed -n '1,200p' "$global_excludes"; fi`
+
+### Test Results
+- No project tests run (ignore-rule inspection only).
+- Ignore checks:
+  - `git ls-files -i -o --exclude-standard -- scripts` -> no output.
+  - `git check-ignore -v --no-index scripts/* scripts/*.*` -> no matches.
+  - `.git/info/exclude` contains only default comments; no script rules.
+  - `core.excludesfile` not set in this repo context.
+
+### Failures / Open Questions
+- `find scripts -type f -print0 | xargs -0 git check-ignore -v --no-index` exited non-zero (`123`) because `git check-ignore` returns non-zero when there are no matches; this was expected behavior, not a functional failure.
+- No open questions.
+
+- change it so it listens on ipv4
+
+### Prompt Time/Date
+- 2026-02-27T22:15:06+00:00
+
+### Actions Attempted
+- Re-read required planning context:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Confirmed the current startup path and values causing IPv6-only relay binding:
+  - `config/relay.env` had `RELAY_PREFER_IPV6=1`.
+  - `config/relay.json` had `listenHost` set to `::`.
+  - `scripts/start-relay-prod.sh` applies IPv6 preference when enabled.
+- Applied configuration changes to force IPv4 listening:
+  - set `RELAY_PREFER_IPV6` default to `0` in `config/relay.env`.
+  - set `listenHost` to `127.0.0.1` in `config/relay.json`.
+- Attempted to restart relay service and verify socket/handshake path in one command.
+
+### Files Touched
+- `config/relay.env`
+- `config/relay.json`
 - `plan/log.md`
 
 ### Commands Run
@@ -15731,6 +16322,106 @@ def parse_args() -> argparse.Namespace:
 - `demos/cubechat/src/renderer/scene.js`
 - `plan/tests.md`
 - `plan/plan.md`
+- `sed -n '1,220p' config/relay.env`
+- `sed -n '1,120p' config/relay.json`
+- `sed -n '1,260p' scripts/start-relay-prod.sh`
+- `tail -n 120 plan/log.md`
+- `systemctl restart peercompute-relay && sleep 1 && ss -lnpt4 '( sport = :8080 )' && echo '---' && ss -lnpt6 '( sport = :8080 )' && echo '---' && curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,40p'` (escalated; restart blocked by interactive auth)
+
+### Test Results
+- Static config validation: updated files now request IPv4 relay listen behavior.
+- Runtime verification pending restart of `peercompute-relay` service.
+
+### Failures / Open Questions
+- Service restart failed in this environment: `Failed to restart peercompute-relay.service: Interactive authentication required.`
+- After host-side restart, expected behavior is:
+  - relay listens on IPv4 `127.0.0.1:8080`
+  - apex websocket upgrades (`wss://secretworkshop.net/`) stop returning `502`.
+
+## Date: 2026-02-27
+
+### Prompt
+- "I want you to rearrange the tiles on the overview page. it should go github, cubechat, universes, planetgen, netviz, sneakywoods, daddy go, Dynamics,MPM, and PPF, and lastly hyperborea."
+
+### Prompt Time/Date
+- 2026-02-27T13:00:07-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Located overview tile markup in `docs/index.html` by searching for tile labels and inspecting the card section.
+- Reordered the overview card blocks to match the requested sequence exactly:
+  - GitHub, CubeChat, Universes, PlanetGen, NetViz, SneakyWoods, Daddy Go, Dynamics, MPM, PPF, Hyperborea.
+- Normalized card animation indices (`--i`) to match the new display order.
+- Updated branch tracking in `plan/branch/demo-fixes.md` with the new overview-order task completion.
+- Updated test strategy in `plan/tests.md` by adding an executable headless tile-order check command.
+- Ran the new tile-order validation command and confirmed pass.
+
+### Files Touched
+- `docs/index.html`
+- `plan/tests.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `ls -la && rg --files`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `git branch --show-current && git status --short`
+- `sed -n '1,260p' docs/index.html`
+- `sed -n '1,280p' AGENTS.md`
+- `node -v`
+- `rg -n "github|cubechat|universes|planetgen|netviz|sneakywoods|daddy|dynamics|MPM|PPF|hyperborea" docs/index.html README.md`
+- `sed -n '260,760p' docs/index.html`
+- `sed -n '1,260p' plan/branch/demo-fixes.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `node -e "const fs=require('fs'); const html=fs.readFileSync('docs/index.html','utf8'); const names=[...html.matchAll(/<h2>([^<]+)<\\/h2>/g)].map((m)=>m[1]); const expected=['PeerCompute (GitHub)','CubeChat','Universes','PlanetGen','NetViz','SneakyWoods','Daddy Go!','Dynamics (WebGpuPhys)','MPM Visual (WebGpuPhys)','PPF Contact Solver (WebGpuPhys)','Hyperborea']; if (!expected.every((label, i) => names[i]===label)) { console.error('Tile order mismatch:', names.slice(0, expected.length)); process.exit(1);} console.log('Overview tile order OK');"`
+- `rg -n "<h2>" docs/index.html | sed -n '1,20p'`
+
+### Test Results
+- Headless tile order test:
+  - Command: `node -e "const fs=require('fs'); ..."`
+  - Result: `Overview tile order OK` (pass).
+- Manual source verification:
+  - `rg -n "<h2>" docs/index.html` output confirms top-to-bottom card heading order matches requested sequence.
+
+### Failures / Open Questions
+- No failures.
+- No open questions.
+
+- OK I restarted it.
+
+### Prompt Time/Date
+- 2026-02-27T22:18:17+00:00
+
+### Actions Attempted
+- Re-read required planning context:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Ran post-restart runtime verification for relay bind family + apex websocket upgrade path.
+- Observed no active listener on `:8080` and continued apex websocket `502`, then inspected relay service state.
+- Diagnosed service crash-loop:
+  - `peercompute-relay.service` repeatedly exited with code `127`.
+  - journal showed `scripts/start-relay-prod.sh: line 33: node: command not found`.
+- Root cause:
+  - systemd environment PATH does not include nvm-managed Node binary, but startup scripts used `node` unconditionally for JSON parsing.
+- Implemented robust startup fix:
+  - updated `scripts/start-relay-prod.sh` to resolve Node via:
+    1) `command -v node`
+    2) latest `${NVM_DIR:-$HOME/.nvm}/versions/node/*/bin/node`
+  - updated `scripts/ensure-relay-config-perms.sh` with the same Node resolver fallback.
+  - both scripts now fail with explicit error if Node is unavailable.
+- Kept prior IPv4 relay changes in place:
+  - `config/relay.json` `listenHost=127.0.0.1`
+  - `config/relay.env` `RELAY_PREFER_IPV6=0`
+- Validated startup scripts in a systemd-like minimal PATH (`/usr/sbin:/usr/bin:/sbin:/bin`) using timeout-run smoke test.
+
+### Files Touched
+- `config/relay.env`
+- `config/relay.json`
+- `scripts/start-relay-prod.sh`
+- `scripts/ensure-relay-config-perms.sh`
 - `plan/log.md`
 
 ### Commands Run
@@ -15918,3 +16609,150 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - The Moon fix targets crater/grain texture phase sliding during floor expansion; if the user still observes crater shape/ridge motion after this, the next likely cause is terrain mesh re-tessellation at constant segment count (`MOON_FLOOR_SEGMENTS`) as `gridSize` grows, which would require chunked terrain or resolution-scaling changes.
 - Ireland wall density/segment breakup was preserved while spacing increased ~4x; host-side visual tuning may still want slightly longer segments or lower gate frequency depending on the desired pasture look.
+- `sed -n '1,60p' plan/plan.md`
+- `tail -n 80 plan/log.md`
+- escalated: `ss -lnpt4 '( sport = :8080 )' ; echo '---' ; ss -lnpt6 '( sport = :8080 )' ; echo '---' ; curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/ -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' | sed -n '1,25p'`
+- escalated: `systemctl status peercompute-relay --no-pager -n 120`
+- escalated: `journalctl -u peercompute-relay -n 200 --no-pager | tail -n 140`
+- `command -v jq || true; command -v node || true` (non-login shell)
+- `nl -ba scripts/start-relay-prod.sh | sed -n '1,220p'`
+- `PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v node || true; PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v go || true; PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v bash || true`
+- `bash -n scripts/start-relay-prod.sh`
+- `bash -n scripts/ensure-relay-config-perms.sh && bash -n scripts/start-relay-prod.sh`
+- `timeout 6s env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/cos bash scripts/start-relay-prod.sh`
+- `git status --short`
+
+### Test Results
+- Live checks before script fix:
+  - apex websocket upgrade still returned `502 Bad Gateway`.
+  - no active `:8080` listener while service crash-looped.
+- Service diagnosis:
+  - `systemctl status` -> `status=127`.
+  - journal repeatedly: `node: command not found` from startup scripts.
+- Post-fix script smoke test under minimal PATH:
+  - startup proceeds and logs:
+    - `RELAY_LISTEN_HOST=127.0.0.1`
+    - `RELAY_LISTEN_PORT=8080`
+  - process ran until killed by `timeout` (expected), confirming no immediate `node` lookup failure.
+
+### Failures / Open Questions
+- Could not restart `peercompute-relay` from this environment due interactive auth restrictions.
+- Host-side action still required: restart service once more so new script fixes are loaded.
+- Note: pre-existing unrelated modified file remains in worktree (`peercompute/src/relay-go/config/relay-config.json`).
+
+## Date: 2026-02-27
+
+### Prompt
+- `OK I restarted it.` (included status/output showing relay active, ipv4 listener on `127.0.0.1:8080`, and apex websocket `101`), then:
+- `we've been struggling to make this work with nginx. currently getting a 403 when retrieving the relay config. read everything in plan and advise on next steps.`
+
+### Prompt Time/Date
+- 2026-02-27T22:18:17+00:00 (restart confirmation)
+- 2026-02-27T22:23:01+00:00 (403 + next-steps request)
+
+### Actions Attempted
+- Re-read required top-level plan files and scanned relay/nginx references:
+  - `plan/plan.md`
+  - `plan/tests.md`
+  - `plan/log.md`
+  - `rg` scan over `plan/**` for `nginx`, `relay-config`, `wss`, `permission`, `www-data`, etc.
+- Validated live relay-config endpoint access and filesystem permissions:
+  - checked perms/ACLs on `/home/cos/projects/peercompute/config/relay-config.json` and parent dirs.
+  - confirmed `www-data` ACL read/execute access exists on target file and traversal path.
+- Probed endpoint status directly:
+  - `https://secretworkshop.net/peercompute/config/relay-config.json` => `200 OK`
+  - `https://relay.secretworkshop.net/peercompute/config/relay-config.json` => `200 OK`
+  - with `Origin: https://metaversejs.github.io` => still `200 OK`
+  - preflight `OPTIONS` => `405 Not Allowed` (not fatal for simple GET but relevant if any client forces preflight)
+- Confirmed relay+nginx mismatch risk discovered during checks:
+  - root `config/relay-config.json` remained stale (`mtime 21:14`, old peerId) despite relay logs saying "wrote relay-config.json".
+  - discovered Go relay was writing under `peercompute/src/relay-go/config/relay-config.json` and loading identity from `peercompute/src/relay-go/config/relay-peer-id.json` due `run-go-relay.sh` `cd` into relay module + relative paths in env.
+- Implemented startup-path fix:
+  - patched `scripts/start-relay-prod.sh` to normalize relative `RELAY_IDENTITY_FILE`, `RELAY_CONFIG_FILE`, `RELAY_SSL_CERT`, `RELAY_SSL_KEY` against `repo_root` before launching relay.
+  - validated via `bash -x` smoke run that env now exports absolute paths under `/home/cos/projects/peercompute/config/...`.
+- Revalidated startup scripts under minimal/systemd-like PATH.
+
+### Files Touched
+- `scripts/start-relay-prod.sh`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is && ls -la plan && ls -1 plan/*.md`
+- `sed -n '1,260p' plan/plan.md`
+- `sed -n '1,260p' plan/tests.md`
+- `rg -n "nginx|relay-config|403|permission|wss|secretworkshop|apparmor|acl|www-data" plan -S | sed -n '1,260p'`
+- `ls -ld /home /home/cos /home/cos/projects /home/cos/projects/peercompute /home/cos/projects/peercompute/config && ls -l /home/cos/projects/peercompute/config/relay-config.json`
+- `getfacl -p /home/cos/projects/peercompute/config/relay-config.json /home/cos/projects/peercompute/config /home/cos/projects/peercompute /home/cos/projects /home/cos`
+- escalated: `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/peercompute/config/relay-config.json`
+- escalated: `curl -k -sS -D - -o /dev/null --resolve relay.secretworkshop.net:443:127.0.0.1 https://relay.secretworkshop.net/peercompute/config/relay-config.json`
+- escalated: `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 https://secretworkshop.net/relay-config.json`
+- `sed -n '1,120p' demos/sneakywoods/public/relay-config-source.json`
+- `sed -n '1,120p' docs/sneakywoods/relay-config-source.json`
+- `rg -n "relay-config-source|relayConfigUrl|peercompute/config/relay-config.json|relay-config.json" demos/sneakywoods docs/sneakywoods -S`
+- escalated: `curl -k -sS -D - -o /dev/null --resolve secretworkshop.net:443:127.0.0.1 -X OPTIONS https://secretworkshop.net/peercompute/config/relay-config.json -H 'Origin: https://metaversejs.github.io' -H 'Access-Control-Request-Method: GET'`
+- `rg -n "relayConfigUrl" demos docs -g 'relay-config-source.json' -S`
+- `cat config/relay-config.json`
+- `stat -c '%y %s %n' config/relay-config.json config/relay-peer-id.json`
+- `node -e "... read root and relay-go identity peerIds ..."`
+- `cat /home/cos/projects/peercompute/peercompute/src/relay-go/config/relay-config.json`
+- `bash -n scripts/start-relay-prod.sh && bash -n scripts/ensure-relay-config-perms.sh`
+- `timeout 8s env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/cos bash scripts/start-relay-prod.sh`
+- `timeout 4s env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/cos bash -x scripts/start-relay-prod.sh 2>&1 | rg -n "RELAY_IDENTITY_FILE|RELAY_CONFIG_FILE|to_abs_path|RELAY_LISTEN_HOST" -S`
+- `git status --short`
+
+### Test Results
+- Endpoint checks:
+  - relay-config GET on apex + relay subdomain returned `200`.
+  - cross-origin GET simulation returned `200`.
+  - websocket upgrade on apex previously verified as `101`.
+- Script checks:
+  - `bash -n` passed for modified startup/perms scripts.
+  - minimal-PATH smoke run showed startup now succeeds and prints expected host/port.
+  - trace output confirmed absolute path normalization:
+    - `RELAY_IDENTITY_FILE=/home/cos/projects/peercompute/config/relay-peer-id.json`
+    - `RELAY_CONFIG_FILE=/home/cos/projects/peercompute/config/relay-config.json`
+
+### Failures / Open Questions
+- `OPTIONS` preflight on relay-config currently returns `405`; simple GET fetches still work. If any client or middleware triggers preflight, nginx needs explicit OPTIONS handling.
+- The root `config/relay-config.json` remained stale until service restart with the new path fix; verify it now updates with the running relay peerId after restart.
+- Live GitHub Pages URLs used in prior assumptions (`metaversejs.github.io/sneakywoods/...`, `ubernaut.github.io/secret-workshop/sneakywoods/...`) returned `404` from this environment, so exact deployed demo URL being tested should be reconfirmed when reproducing 403.
+
+## Date: 2026-02-27
+
+### Prompt
+- fix the merge conflict in plan/log.md
+
+### Prompt Time/Date
+- 2026-02-27T22:47:24+00:00
+
+### Actions Attempted
+- Re-read required planning context before edits:
+  - `plan/plan.md`
+  - merge-conflicted `plan/log.md`
+- Located merge conflict markers in `plan/log.md` and inspected the conflicted region.
+- Resolved the conflict by removing all Git conflict markers and preserving both sides of each conflicted block.
+- Marked `plan/log.md` as resolved in Git index.
+- Re-checked for remaining conflict markers and verified Git no longer reports unmerged paths.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md`
+- `rg -n "^(<<<<<<<|=======|>>>>>>>)" plan/log.md -n -S`
+- `git status --short`
+- `nl -ba plan/log.md | sed -n '14980,15740p'`
+- `awk '...conflict-resolution script...' plan/log.md > plan/log.md.resolved && mv plan/log.md.resolved plan/log.md`
+- `rg -n "^(<<<<<<<|=======|>>>>>>>)" plan/log.md -S`
+- `nl -ba plan/log.md | sed -n '15040,15740p'`
+- `git add plan/log.md`
+- `git status --short | sed -n '1,20p'`
+
+### Test Results
+- Conflict marker scan on `plan/log.md`: no matches.
+- Git state: `plan/log.md` is now a normal modified file (`M`), not unmerged (`UU`).
+
+### Failures / Open Questions
+- No failures.
+- Conflict content was preserved from both sides; no open questions.

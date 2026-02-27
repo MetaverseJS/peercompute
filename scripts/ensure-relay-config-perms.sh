@@ -13,7 +13,36 @@ if [[ ! -f "$relay_cfg_json" ]]; then
   exit 0
 fi
 
-relay_config_file="$(node -e "const fs=require('fs');const p='$relay_cfg_json';const cfg=JSON.parse(fs.readFileSync(p,'utf8'));if(cfg.relayConfigFile)process.stdout.write(String(cfg.relayConfigFile));")"
+resolve_node_bin() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  local nvm_dir="${NVM_DIR:-${HOME:-}/.nvm}"
+  local versions_dir="$nvm_dir/versions/node"
+  if [[ -d "$versions_dir" ]]; then
+    local latest_version=""
+    latest_version="$(ls -1 "$versions_dir" 2>/dev/null | sort -V | tail -n1 || true)"
+    if [[ -n "$latest_version" ]]; then
+      local candidate="$versions_dir/$latest_version/bin/node"
+      if [[ -x "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+      fi
+    fi
+  fi
+  return 1
+}
+
+node_bin="${NODE_BIN:-}"
+if [[ -z "$node_bin" ]]; then
+  if ! node_bin="$(resolve_node_bin)"; then
+    echo "[relay-perms] Node.js not found; unable to parse $relay_cfg_json." >&2
+    exit 127
+  fi
+fi
+
+relay_config_file="$("$node_bin" -e "const fs=require('fs');const p='$relay_cfg_json';const cfg=JSON.parse(fs.readFileSync(p,'utf8'));if(cfg.relayConfigFile)process.stdout.write(String(cfg.relayConfigFile));")"
 
 if [[ -z "$relay_config_file" ]]; then
   echo "[relay-perms] relayConfigFile not set in config/relay.json; nothing to update." >&2
