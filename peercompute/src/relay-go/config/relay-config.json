@@ -1,6 +1,6 @@
 {
   "bootstrapPeers": [
-    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
+    "/dns4/secretworkshop.net/tcp/443/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
   ],
   "pubsubType": "gossipsub",
   "webrtc": {
@@ -12,21 +12,5 @@
         ]
       }
     ]
-  },
-  "gossipsub": {
-    "D": 8,
-    "Dhi": 16,
-    "Dout": 1,
-    "scoreParams": {
-      "IPColocationFactorWeight": 0,
-      "behaviourPenaltyWeight": 0,
-      "topics": {
-        "__default": {
-          "meshMessageDeliveriesWeight": 0,
-          "meshMessageDeliveriesThreshold": 0,
-          "meshFailurePenaltyWeight": 0
-        }
-      }
-    }
   }
 }

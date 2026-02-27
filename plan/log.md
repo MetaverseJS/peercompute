@@ -15049,3 +15049,270 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Awaiting user testing of: comet trail toggling, moon orbit circles, asteroid/Kuiper/moon selection/landing, gas giant non-landability, quasar jet visuals at young galaxy ages.
+
+## Date: 2026-02-27
+
+### Prompt
+- "How do I build this project for prod. so the overview page links point at MetaverseJS.github.io/peercomput/demofolder/"
+
+### Prompt Time/Date
+- 2026-02-27T12:12:57-09:00
+
+### Actions Attempted
+- Re-read required planning context before changes:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected build/deploy/linking context:
+  - root/workspace scripts in `package.json`
+  - docs Vite config (`vite.docs.config.mjs`)
+  - build pipeline (`scripts/build-all.sh`)
+  - relay build writer (`scripts/write-prod-relay-config.mjs`)
+  - all demo Vite configs
+  - current overview link logic in `docs/index.html`
+- Identified root cause: overview cards were always runtime-rewritten to dev ports (`5175`-`5182`/`5179`) via `data-demo-port`, which breaks production static hosting paths.
+- Implemented overview link-mode split in `docs/index.html`:
+  - Added explicit production hrefs + `data-demo-dir` for each demo card.
+  - Kept dev-port routing for local docs workflow when served on port `4173`.
+  - Added `?prod=1` override to force production links and `?dev=1` to force dev links.
+  - Preserved query-string passthrough to demo targets.
+- Updated documentation:
+  - `README.md` docs build section now explains production-folder links and local dev-port behavior.
+  - `plan/tests.md` now includes an overview link-mode validation gate.
+- Ran full production build to verify no regressions in pipeline behavior.
+
+### Files Touched
+- `docs/index.html`
+- `README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,260p' package.json`
+- `rg --files | rg 'vite(\.|.*config|.*\.config).*|index\.html$|overview|demofolder|relay-config|prod-config'`
+- `sed -n '1,260p' vite.docs.config.mjs`
+- `sed -n '1,260p' docs/index.html`
+- `sed -n '1,260p' scripts/build-all.sh`
+- `sed -n '1,320p' scripts/write-prod-relay-config.mjs`
+- `for f in demos/*/vite.config.*; do echo '---' $f; sed -n '1,220p' $f; done`
+- `rg -n "href=|data-demo|demo|overview|Metaverse|github" docs/index.html`
+- `sed -n '260,520p' docs/index.html`
+- `sed -n '520,860p' docs/index.html`
+- `rg -n "github\.io|GitHub Pages|overview|docs/index|build:all|build:demos|MetaverseJS|relay-config|prod-config|base" README.md plan -g '*.md'`
+- `sed -n '1,260p' README.md`
+- `ls -la config && sed -n '1,220p' config/relay.json`
+- `node -v && npm -v`
+- `date -Is`
+- `nl -ba docs/index.html | sed -n '440,640p'`
+- `npm run build`
+- `sed -n '1,260p' plan/tests.md`
+- `rg -n "Docs Build / Preview|docs:preview|overview|4173|dev-local-relay" README.md`
+- `nl -ba README.md | sed -n '64,110p'`
+- `rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
+
+### Test Results
+- `npm run build` -> pass.
+- Build outputs regenerated for peercompute + all demos into `docs/*`.
+- `rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html` -> pass (expected link-mode markers found).
+- Observed non-blocking warnings only:
+  - large bundle/chunk size warnings across several demos.
+  - `demos/planetgen/src/SceneManager.js` warning about `WebGL1Renderer` export from `three.module.js` (did not fail build).
+
+### Failures / Open Questions
+- No blocking failures.
+- Open naming confirmation: prompt used `MetaverseJS.github.io/peercomput/...` (missing trailing `e`). If your GitHub repo path is actually `peercompute`, the production base URL should be `https://MetaverseJS.github.io/peercompute/`.
+
+## Date: 2026-02-27
+
+### Prompt
+- "does the production run also point at secretworkshop.net for the relay server?"
+
+### Prompt Time/Date
+- 2026-02-27T12:17:25-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Checked current relay production config source in `config/relay.json`.
+- Verified runtime relay-config resolution order from source (`demos/netviz/src/relayConfig.js`):
+  1. query override (`relayConfigUrl` / `relayConfig`)
+  2. `relay-config-source.json` URL fetch
+  3. local `relay-config.json` fallback.
+- Verified built production artifacts currently generated in `docs/netviz/`:
+  - `relay-config-source.json` points to `https://secretworkshop.net/peercompute/config/relay-config.json`.
+  - local `relay-config.json` fallback currently has empty `bootstrapPeers`.
+- Derived answer: production build is wired to pull relay config from `secretworkshop.net` by default, with an important fallback caveat if that URL is unavailable.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `sed -n '1,240p' config/relay.json`
+- `rg -n "relay-config-source|relayConfigUrl|resolve.*relay|bootstrapPeers" demos -g '*.js' -g '*.html' | head -n 120`
+- `sed -n '1,220p' demos/netviz/src/relayConfig.js`
+- `sed -n '1,120p' docs/netviz/relay-config-source.json`
+- `sed -n '1,180p' docs/netviz/relay-config.json`
+
+### Test Results
+- No automated tests run (configuration and runtime-resolution inspection only).
+- Verification results:
+  - `docs/netviz/relay-config-source.json` contains `"relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json"`.
+  - `docs/netviz/relay-config.json` fallback contains `"bootstrapPeers": []`.
+
+### Failures / Open Questions
+- No failures.
+- Open operational caveat: because local fallback `bootstrapPeers` are empty in the generated docs artifact, relay bootstrap depends on successful fetch of the remote source URL unless query override is used.
+
+## Date: 2026-02-27
+
+### Prompt
+- "how is go currently installed on this system"
+
+### Prompt Time/Date
+- 2026-02-27T12:25:05-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Queried the active Go executable path and resolved symlink target.
+- Collected Go runtime metadata (`go version`, `go env`) to confirm active toolchain details.
+- Checked Debian package ownership for the active `go` binary (`dpkg -S`).
+- Queried apt package policy for `golang-go`, `golang-1.24-go`, and `golang-1.25-go` to identify package source/repository and installed versions.
+- Derived installation summary: apt-managed Go from the `longsleep/golang-backports` PPA, with `/bin/go` symlinked to `/usr/lib/go-1.25/bin/go`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `date -Is`
+- `command -v go || true`
+- `go version`
+- `readlink -f "$(command -v go)"`
+- `ls -l "$(command -v go)"`
+- `go env GOROOT GOPATH GOVERSION GOTOOLDIR`
+- `dpkg -S "$(readlink -f "$(command -v go)")"`
+- `apt-cache policy golang-go golang-1.24-go golang-1.25-go`
+
+### Test Results
+- No project tests run (environment/package inspection only).
+- Toolchain/package checks:
+  - `go version`: `go1.25.6 linux/amd64`
+  - `command -v go`: `/bin/go`
+  - resolved binary: `/usr/lib/go-1.25/bin/go`
+  - package owner: `golang-1.25-go`
+  - `golang-go` metapackage installed from `https://ppa.launchpadcontent.net/longsleep/golang-backports/ubuntu` (`2:1.25~0longsleep1`)
+
+### Failures / Open Questions
+- No failures affecting Go inspection.
+- `apt-cache policy` emitted unrelated duplicate-source warnings for Google Earth list files in `/etc/apt/sources.list.d`; not related to Go installation path.
+
+## Date: 2026-02-27
+
+### Prompt
+- "are some of the files in the scripts folder ignored by git?"
+
+### Prompt Time/Date
+- 2026-02-27T12:29:48-09:00
+
+### Actions Attempted
+- Re-read required planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected root `.gitignore` for patterns that could match `scripts/*`.
+- Enumerated all files under `scripts/`.
+- Ran Git ignore checks for the `scripts/` path:
+  - `git ls-files -i -o --exclude-standard -- scripts`
+  - `git check-ignore -v --no-index` against `scripts/*`
+- Checked `.git/info/exclude` and global excludes config (`core.excludesfile`) for any script-matching patterns.
+- Confirmed there are currently no ignore rules matching files under `scripts/`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,80p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `date -Is`
+- `sed -n '1,260p' .gitignore`
+- `rg -n "scripts|\\.sh$|\\.mjs$|\\*\\*|\\*\\." .gitignore`
+- `find scripts -type f | sort`
+- `git ls-files -i -o --exclude-standard -- scripts`
+- `find scripts -type f -print0 | xargs -0 git check-ignore -v --no-index`
+- `git check-ignore -v --no-index scripts/* scripts/*.* || true`
+- `sed -n '1,200p' .git/info/exclude`
+- `git config --get core.excludesfile || true`
+- `global_excludes="$(git config --get core.excludesfile || true)"; if [ -n "$global_excludes" ] && [ -f "$global_excludes" ]; then sed -n '1,200p' "$global_excludes"; fi`
+
+### Test Results
+- No project tests run (ignore-rule inspection only).
+- Ignore checks:
+  - `git ls-files -i -o --exclude-standard -- scripts` -> no output.
+  - `git check-ignore -v --no-index scripts/* scripts/*.*` -> no matches.
+  - `.git/info/exclude` contains only default comments; no script rules.
+  - `core.excludesfile` not set in this repo context.
+
+### Failures / Open Questions
+- `find scripts -type f -print0 | xargs -0 git check-ignore -v --no-index` exited non-zero (`123`) because `git check-ignore` returns non-zero when there are no matches; this was expected behavior, not a functional failure.
+- No open questions.
+
+## Date: 2026-02-27
+
+### Prompt
+- "I want you to rearrange the tiles on the overview page. it should go github, cubechat, universes, planetgen, netviz, sneakywoods, daddy go, Dynamics,MPM, and PPF, and lastly hyperborea."
+
+### Prompt Time/Date
+- 2026-02-27T13:00:07-09:00
+
+### Actions Attempted
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Located overview tile markup in `docs/index.html` by searching for tile labels and inspecting the card section.
+- Reordered the overview card blocks to match the requested sequence exactly:
+  - GitHub, CubeChat, Universes, PlanetGen, NetViz, SneakyWoods, Daddy Go, Dynamics, MPM, PPF, Hyperborea.
+- Normalized card animation indices (`--i`) to match the new display order.
+- Updated branch tracking in `plan/branch/demo-fixes.md` with the new overview-order task completion.
+- Updated test strategy in `plan/tests.md` by adding an executable headless tile-order check command.
+- Ran the new tile-order validation command and confirmed pass.
+
+### Files Touched
+- `docs/index.html`
+- `plan/tests.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `ls -la && rg --files`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `git branch --show-current && git status --short`
+- `sed -n '1,260p' docs/index.html`
+- `sed -n '1,280p' AGENTS.md`
+- `node -v`
+- `rg -n "github|cubechat|universes|planetgen|netviz|sneakywoods|daddy|dynamics|MPM|PPF|hyperborea" docs/index.html README.md`
+- `sed -n '260,760p' docs/index.html`
+- `sed -n '1,260p' plan/branch/demo-fixes.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `node -e "const fs=require('fs'); const html=fs.readFileSync('docs/index.html','utf8'); const names=[...html.matchAll(/<h2>([^<]+)<\\/h2>/g)].map((m)=>m[1]); const expected=['PeerCompute (GitHub)','CubeChat','Universes','PlanetGen','NetViz','SneakyWoods','Daddy Go!','Dynamics (WebGpuPhys)','MPM Visual (WebGpuPhys)','PPF Contact Solver (WebGpuPhys)','Hyperborea']; if (!expected.every((label, i) => names[i]===label)) { console.error('Tile order mismatch:', names.slice(0, expected.length)); process.exit(1);} console.log('Overview tile order OK');"`
+- `rg -n "<h2>" docs/index.html | sed -n '1,20p'`
+
+### Test Results
+- Headless tile order test:
+  - Command: `node -e "const fs=require('fs'); ..."`
+  - Result: `Overview tile order OK` (pass).
+- Manual source verification:
+  - `rg -n "<h2>" docs/index.html` output confirms top-to-bottom card heading order matches requested sequence.
+
+### Failures / Open Questions
+- No failures.
+- No open questions.
