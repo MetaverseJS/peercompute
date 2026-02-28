@@ -205,6 +205,33 @@ test('NetworkManager does not redial relay-webrtc when already relayed and no tr
   assert.equal(dialed.length, 0);
 });
 
+test('NetworkManager prefers remembered direct /webrtc targets after prior direct hint', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const targetPeerId = 'peer-direct';
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [{
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/p2p/peer-direct'),
+      status: 'open'
+    }],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+    }
+  };
+
+  manager.directWebrtcPeerHints.add(targetPeerId);
+  manager._rememberDialTargets(targetPeerId, [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+  ], { synthesizeDirect: true });
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+  ]);
+
+  assert.equal(dialed[0], '/webrtc/p2p/peer-direct');
+});
+
 test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
   const manager = new NetworkManager({ maxDialPeers: 1, enforceRoomIsolation: false });
   manager.bootstrapPeerIds = new Set(['relay-peer']);

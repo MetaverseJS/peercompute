@@ -28,6 +28,7 @@ const DEFAULT_PRESENCE_TOPIC = 'peercompute-presence';
 const DEFAULT_TOPIC_PREFIX = 'pc';
 const PEER_DIAL_THROTTLE_MS = 5000;
 const DEFAULT_MAX_DIAL_PEERS = 16;
+const REMEMBERED_DIAL_ADDR_TTL_MS = 10 * 60 * 1000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -474,6 +475,8 @@ export class NetworkManager {
     this.lastWebrtcAnnounceWarnAt = 0;
     this.relayTransport = null;
     this.relayReservationPeers = new Set();
+    this.peerDialAddrCache = new Map();
+    this.directWebrtcPeerHints = new Set();
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -1255,6 +1258,10 @@ export class NetworkManager {
       if (!peerId) return;
       const remoteAddr = toAddrString(conn?.remoteAddr);
       const kind = getConnectionKind(remoteAddr);
+      this._rememberDialTargets(peerId, [remoteAddr], { synthesizeDirect: kind !== 'webrtc' });
+      if (kind === 'webrtc') {
+        this.directWebrtcPeerHints.add(peerId);
+      }
       const prevKind = this.peers.get(peerId)?.via || null;
       if (prevKind && ['relay', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
         console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
@@ -2870,6 +2877,19 @@ export class NetworkManager {
           // ignore peerStore lookup failures
         }
       }
+      if (directTargets.length === 0) {
+        const rememberedTargets = this._getRememberedDialTargets(peerId);
+        if (rememberedTargets.length > 0) {
+          const split = splitTargets(rememberedTargets);
+          directTargets = split.directTargets;
+          if (relayWebrtcTargets.length === 0) {
+            relayWebrtcTargets = split.relayWebrtcTargets;
+          }
+          if (relayTargets.length === 0) {
+            relayTargets = split.relayTargets;
+          }
+        }
+      }
     }
 
     let orderedTargets = [];
@@ -3025,7 +3045,7 @@ export class NetworkManager {
     if (preferDirect && !addrs.some((addr) => addr.includes('/webrtc'))) {
       const now = Date.now();
       if (!this.lastWebrtcAnnounceWarnAt || now - this.lastWebrtcAnnounceWarnAt > 60000) {
-        console.info('[NetworkManager] No local /webrtc addrs to announce; direct WebRTC dials will be skipped.');
+        console.info('[NetworkManager] No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.');
         this.lastWebrtcAnnounceWarnAt = now;
       }
     }
@@ -3112,8 +3132,9 @@ export class NetworkManager {
   }
 
   _rememberPeerAddresses(peerId, addrs) {
-    if (!this.libp2p?.peerStore?.merge) return;
     if (!Array.isArray(addrs) || addrs.length === 0) return;
+    this._rememberDialTargets(peerId, addrs, { synthesizeDirect: true });
+    if (!this.libp2p?.peerStore?.merge) return;
     let peer;
     try {
       peer = peerIdFromString(peerId);
@@ -3123,5 +3144,57 @@ export class NetworkManager {
     const multiaddrs = addrs.map(toPeerMultiaddr).filter(Boolean);
     if (multiaddrs.length === 0) return;
     this.libp2p.peerStore.merge(peer, { multiaddrs }).catch(() => {});
+  }
+
+  _rememberDialTargets(peerId, addrs, options = {}) {
+    if (!peerId || !Array.isArray(addrs) || addrs.length === 0) return;
+    const now = Date.now();
+    const current = this.peerDialAddrCache.get(peerId) || { addrs: new Set(), updatedAt: now };
+    const allowSynthetic = options.synthesizeDirect === true && this.directWebrtcPeerHints.has(peerId);
+    let changed = false;
+    addrs.forEach((value) => {
+      const addr = ensurePeerIdSuffix(toAddrString(value), peerId);
+      if (!addr) return;
+      const parsed = toPeerMultiaddr(addr);
+      if (parsed) {
+        const normalized = parsed.toString();
+        if (!current.addrs.has(normalized)) {
+          current.addrs.add(normalized);
+          changed = true;
+        }
+      }
+      if (!allowSynthetic || !isRelayWebRTCAddr(addr)) return;
+      const synthetic = toPeerMultiaddr(`/webrtc/p2p/${peerId}`);
+      if (!synthetic) return;
+      const syntheticAddr = synthetic.toString();
+      if (!current.addrs.has(syntheticAddr)) {
+        current.addrs.add(syntheticAddr);
+        changed = true;
+      }
+    });
+    if (!changed && !this.peerDialAddrCache.has(peerId)) return;
+    current.updatedAt = now;
+    this.peerDialAddrCache.set(peerId, current);
+    this._pruneRememberedDialTargets(now);
+  }
+
+  _getRememberedDialTargets(peerId, now = Date.now()) {
+    const cached = this.peerDialAddrCache.get(peerId);
+    if (!cached || !(cached.addrs instanceof Set)) return [];
+    if (now - (cached.updatedAt || 0) > REMEMBERED_DIAL_ADDR_TTL_MS) {
+      this.peerDialAddrCache.delete(peerId);
+      return [];
+    }
+    return Array.from(cached.addrs)
+      .map((addr) => toPeerMultiaddr(addr))
+      .filter(Boolean);
+  }
+
+  _pruneRememberedDialTargets(now = Date.now()) {
+    for (const [peerId, entry] of this.peerDialAddrCache.entries()) {
+      if (now - (entry?.updatedAt || 0) > REMEMBERED_DIAL_ADDR_TTL_MS) {
+        this.peerDialAddrCache.delete(peerId);
+      }
+    }
   }
 }

@@ -50,6 +50,8 @@
 - Interpretation: nodes are not publishing dialable direct `/webrtc` addresses; only relay-circuit paths are advertised.
 - Secondary signal: ICE candidates are host-only (`*.local`) and not exposed as stable direct multiaddrs.
 - Working hypothesis: "upgraded webrtc" links are mostly relay-signaled `/p2p-circuit/webrtc` paths, not stable direct peer-to-peer addresses.
+- Mitigation in progress: `NetworkManager` now caches observed direct `/webrtc` dial targets per peer (TTL-based) and reuses them when subsequent presence payloads are relay-scoped.
+- Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`.
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`

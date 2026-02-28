@@ -17438,3 +17438,84 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open: why local node keeps reporting no local `/webrtc` announce addrs (likely transport/address advertisement constraints), causing fallback to relay-webrtc for many peers.
 - Open: intermittent stream closure errors in prior logs may still require robustness handling in send queue, but not a deployment-blocking config issue.
+
+## Date: 2026-02-28
+
+### Prompt
+- go ahead
+
+### Prompt Time/Date
+- 2026-02-28T01:16:35+00:00
+
+### Actions Attempted
+- Re-read required planning context before coding:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Investigated direct-WebRTC discovery path in `NetworkManager` for the runtime signal:
+  - `No local /webrtc addrs to announce; direct WebRTC dials will be skipped.`
+- Traced call flow and target selection behavior:
+  - presence payload -> `_rememberPeerAddresses(...)` / `_maybeDialPeer(...)`
+  - `_maybeDialPeer` target split/order logic (direct vs relay-webrtc vs relay)
+  - `_getAnnounceAddrs` local/relay-scoped announce generation.
+- Implemented a direct redial-target cache in `NetworkManager` to reduce relay-only re-dial loops after peers have previously established true direct WebRTC:
+  - added TTL cache (`REMEMBERED_DIAL_ADDR_TTL_MS`) and state (`peerDialAddrCache`, `directWebrtcPeerHints`),
+  - on `connection:open`, records observed remote dial addresses and marks peers that have achieved `kind === 'webrtc'`,
+  - when presence/directory/peerStore data is relay-scoped, `_maybeDialPeer` now also considers remembered direct targets,
+  - for peers with prior direct hint, relay-webrtc addresses can synthesize a direct candidate `/webrtc/p2p/<peerId>` into cache,
+  - updated log wording to avoid false implication that all direct dials are impossible when only local `/webrtc` listen addrs are absent.
+- Added targeted unit test:
+  - `NetworkManager prefers remembered direct /webrtc targets after prior direct hint` in `peercompute/tests/unit/networkManager.webrtc.test.js`.
+- Updated plan docs to reflect change:
+  - `plan/plan.md` completed-item entry for direct-redial hint cache.
+  - `plan/tests.md` direct-connection diagnosis section with mitigation + targeted unit check note.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,140p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "No local /webrtc addrs to announce|No direct targets, using relay-webrtc|relay-webrtc|Local webrtc addrs|announce addrs" peercompute -S`
+- `rg -n "class NetworkManager|webrtc|announce|dial|bootstrap" peercompute/src -S`
+- `sed -n '2960,3145p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2760,2955p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,240p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "_rememberPeerAddresses\(|rememberPeerAddresses|announceAddrs|peer\.addrs|multiaddrs" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '1160,1565p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1940,2095p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,180p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '300,560p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "function ensurePeerIdSuffix|const ensurePeerIdSuffix|getPeerIdFromAddr|normalizeBootstrapAddr|toPeerMultiaddr" peercompute/src/peercompute/networkManager/NetworkManager.js -n -S`
+- `sed -n '220,320p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '620,830p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` (NetworkManager direct-target cache + selection/log updates)
+- `apply_patch` (unit test addition)
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `command -v node || true; command -v npm || true; ls -la /home/cos/.nvm 2>/dev/null | head -n 5 || true`
+- escalated: `/bin/bash -lc "export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 >/dev/null && node -v && npm -v"`
+- `sed -n '1,220p' plan/tests.md`
+- `apply_patch` (`plan/plan.md` completed bullet)
+- `apply_patch` (`plan/tests.md` diagnosis mitigation notes)
+- `git diff -- peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/tests/unit/networkManager.webrtc.test.js | sed -n '1,280p'`
+- `bash -n scripts/start-relay-prod.sh && bash -n scripts/run-relay.sh && bash -n scripts/run-go-relay.sh`
+- `rg -n "NetworkManager prefers remembered direct /webrtc targets after prior direct hint|_rememberDialTargets|No local /webrtc addrs to announce; using relay-scoped" peercompute/tests/unit/networkManager.webrtc.test.js peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `git status --short`
+- `date -Is`
+
+### Test Results
+- Script syntax checks:
+  - `bash -n scripts/start-relay-prod.sh` PASS
+  - `bash -n scripts/run-relay.sh` PASS
+  - `bash -n scripts/run-go-relay.sh` PASS
+- Unit tests:
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js` FAILED in this environment (`node: command not found`).
+  - Attempted Node 24 via nvm in elevated shell FAILED (`/home/cos/.nvm/nvm.sh: Permission denied` in this sandbox).
+
+### Failures / Open Questions
+- Could not execute JS unit tests in this sandbox due missing `node` binary and blocked access to user nvm path.
+- Runtime host validation remains pending: confirm this cache path reduces `relay-webrtc` redial churn and increases pure `webrtc` reconnect rates in live NetViz logs.
