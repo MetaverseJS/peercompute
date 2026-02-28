@@ -205,6 +205,32 @@ test('NetworkManager does not redial relay-webrtc when already relayed and no tr
   assert.equal(dialed.length, 0);
 });
 
+test('NetworkManager attempts relay-webrtc upgrade when only plain relay is active', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [{
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/p2p/peer-a'),
+      status: 'open'
+    }],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('dial failed');
+    }
+  };
+
+  await manager._maybeDialPeer('peer-a', 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+  ]);
+
+  assert.equal(dialed.length, 1);
+  assert.equal(
+    dialed[0],
+    '/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-a'
+  );
+});
+
 test('NetworkManager prefers remembered direct /webrtc targets after prior direct hint', async () => {
   const manager = new NetworkManager({ webrtc: { preferDirect: true } });
   manager.bootstrapPeerIds = new Set();

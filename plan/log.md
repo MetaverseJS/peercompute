@@ -17963,3 +17963,129 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open: host-side runtime confirmation still needed after deploy/build refresh to verify remote non-local direct edges stop regressing green due stale telemetry.
 - Open: if a remote edge remains non-amber after this patch, inspect live telemetry payload ordering (`ts`) and per-edge `via` on both endpoints in NetViz inspector/status to confirm whether the network state itself is mixed vs visualization stale.
+
+## Date: 2026-02-28
+
+### Prompt
+- why is the bahavior so much different than in the chaos lab?
+
+### Prompt Time/Date
+- 2026-02-28T21:32:55+00:00
+
+### Actions Attempted
+- Compared production/default relay policy and NetViz overrides against chaos-lab harness/topology config.
+- Verified current relay defaults:
+  - `config/relay.json` has `webrtc.dropRelayBootstrapOnDirect: false` by default, plus `relayRetention` enabled (`mode: logn, min: 2, max: 10`).
+- Verified runtime drop logic in `NetworkManager`:
+  - bootstrap relay links are only closed when `dropRelayBootstrapOnDirect=true` and `_shouldKeepRelayBootstrapConnection()` returns false.
+  - retention gate includes `minCandidates = max(keepCount * 2, min)`, which keeps relay in small-peer populations.
+- Verified chaos-lab matrix/topology defaults:
+  - chaos-lab primarily validates direct-path metrics and stability (including RTC candidate-pair evidence), not strict “all relays dropped” behavior.
+  - harness default URL normalization injects topology/room/autoconnect params but does not inject relay-drop query overrides by default.
+- Confirmed additional behavior delta:
+  - `_shouldElectRelayRedial()` can intentionally redial/bootstrap relay when no peer advertises relay-connected status, so relay presence can reappear even after drops.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "dropRelayBootstrapOnDirect|relayRetention|iceServers|reconnectOnDialFailure|autoDropRelayAfterDialMs|preferDirect|webrtc" net-chaos-lab/configs net-chaos-lab/src demos/netviz/src/main.js config/relay.json config/relay.env -S`
+- `sed -n '1858,1928p' demos/netviz/src/main.js`
+- `sed -n '2968,3045p' demos/netviz/src/main.js`
+- `rg -n "dropRelay|relayRetention|relay_retention|drop_relay|autoConnect|attachSession|topologyType|room=|topologyId|default_url|probe_url|netviz" net-chaos-lab/src/chaoslab net-chaos-lab/agent -S`
+- `sed -n '1,220p' net-chaos-lab/configs/matrix/direct-regression.yaml`
+- `sed -n '1,220p' net-chaos-lab/configs/topology.default.yaml`
+- `sed -n '1680,1835p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '430,570p' net-chaos-lab/src/chaoslab/harness.py`
+- `awk` line reads of relay-drop/retention logic in `peercompute/src/peercompute/networkManager/NetworkManager.js` (ranges around 1603-1670 and 1941-1981)
+
+### Test Results
+- Diagnostic-only prompt; no runtime tests executed.
+
+### Failures / Open Questions
+- Open: if desired behavior is “drop relay aggressively in small rooms,” current `relayRetention` formula and defaults are intentionally conservative and should be tuned/disabled for production NetViz sessions.
+
+## Date: 2026-02-28
+
+### Prompt
+- chaos lab was able to achieve log n relay connections and tons of direct connections. yet we have been unable to replicate that.
+
+### Prompt Time/Date
+- 2026-02-28T21:32:55+00:00
+
+### Actions Attempted
+- Rechecked runtime relay-drop gates in `NetworkManager` for small-room scenarios.
+- Verified this key blocker: `_shouldKeepRelayBootstrapConnection()` keeps relay whenever `activeConnections < targetConnections`, even if direct links exist.
+  - In NetViz defaults, `maxConnections` and `targetConnections` often default to `5`; with 3-node tests, peers rarely satisfy this gate.
+- Confirmed retention interaction:
+  - With log/sqrt retention enabled, additional `minCandidates` guard keeps relay until enough scoped peers are seen (`minCandidates = max(keepCount*2, min)`).
+- Compared with chaos-lab topology defaults:
+  - matrix runs typically use larger agent counts (for example 12), so target and candidate thresholds are easier to satisfy.
+  - chaos-lab “direct” success metrics also rely on selected RTC candidate-pair evidence, which is not the same as bootstrap relay-drop eligibility.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `cat config/relay.json`
+- `rg -n "dropRelayBootstrapOnDirect|relayRetention|_shouldKeepRelayBootstrapConnection|_maybeUpdateBootstrapRelayConnections|_hasDirectPeerConnections" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `awk` reads around relay-drop gates:
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js` lines ~1603-1670 and ~1941-1981
+- `sed -n '2968,3045p' demos/netviz/src/main.js`
+- `sed -n '1,220p' net-chaos-lab/configs/matrix/direct-regression.yaml`
+
+### Test Results
+- Diagnostic-only prompt; no runtime tests executed.
+
+### Failures / Open Questions
+- Open: whether production/test URLs are consistently overriding `targetConnections` down for small-room experiments.
+- Open: whether to patch NetViz defaults or add small-room override logic so relay-drop behavior matches chaos-lab expectations at low peer counts.
+
+## Date: 2026-02-28
+
+### Prompt
+- We maintain full relay connections even when I have 8 peers ... now we're not seeing any direct connections [runtime log]
+
+### Prompt Time/Date
+- 2026-02-28T22:35:20+00:00
+
+### Actions Attempted
+- Reviewed provided runtime log in detail:
+  - confirmed `hasDirectPeerConnections:false`,
+  - confirmed repeated `No local /webrtc addrs to announce`,
+  - confirmed fallback behavior `No direct targets, using relay-webrtc ...` from relay-circuit addresses,
+  - confirmed retention debug still keeps bootstrap relay (`shouldKeepRelay:true`).
+- Re-read `_maybeDialPeer` flow and identified an upgrade suppression edge:
+  - when a plain relay connection exists, relay-webrtc upgrade attempts could be under-attempted depending on active-state ordering.
+- Implemented upgrade retry fix in `NetworkManager`:
+  - allow relay-webrtc dial attempts whenever `directTargets` are absent and relay-webrtc is not already active, even if plain relay is already active.
+  - still avoid redundant redial when relay-webrtc is already open.
+- Added unit coverage for this path:
+  - new test verifies relay-webrtc upgrade dial is attempted when only plain relay exists.
+- Updated planning docs to capture this behavior change and validation expectation.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '2720,3068p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "No direct targets, using relay-webrtc|WebRTC progress|Connection upgraded|webrtc-relay|direct targets|relay-webrtc|signal timed out|NO_RESERVATION|reuse-relay-connection" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '1,220p' peercompute/src/relay/server.js`
+- `cat config/relay.json`
+- `date -Is`
+- `apply_patch` edits for files listed above.
+
+### Test Results
+- Static validation: PASS
+  - confirmed `_maybeDialPeer` now permits relay-webrtc upgrade attempts from existing plain relay links when no direct targets are known.
+  - confirmed new unit test asserts expected dial attempt.
+- Runtime/build validation: NOT RUN in this environment
+  - local node/npm tooling unavailable in sandboxed runner.
+
+### Failures / Open Questions
+- Open: direct connectivity still depends on ICE/NAT path success; this patch increases upgrade attempts but cannot create direct paths if STUN/TURN or client NAT behavior prevents them.
+- Open: if post-deploy logs still show no `WebRTC progress` events, we need browser-side `webrtc-internals` candidate-pair snapshots to confirm whether the dial is stalling at signaling vs candidate gathering vs connectivity checks.

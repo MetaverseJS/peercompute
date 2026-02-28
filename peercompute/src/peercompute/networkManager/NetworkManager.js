@@ -2810,6 +2810,7 @@ export class NetworkManager {
     const active = this._getConnectionsForPeer(peerId);
     const hasDirect = active.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
+    const hasRelayWebrtc = active.some((conn) => isRelayWebRTCAddr(conn?.remoteAddr));
     const preferDirect = this.config.webrtc?.preferDirect !== false;
     if (hasDirect) return;
     if (!preferDirect && active.length > 0) return;
@@ -2902,7 +2903,8 @@ export class NetworkManager {
     if (preferDirect) {
       if (directTargets.length > 0) {
         orderedTargets = orderDialTargets(directTargets, preferIpv6);
-      } else if (!hasRelay && relayWebrtcTargets.length > 0) {
+      } else if (relayWebrtcTargets.length > 0 && !hasRelayWebrtc) {
+        // Keep attempting relay-webrtc upgrades while only plain relay is present.
         orderedTargets = relayWebrtcTargets;
       } else if (!hasRelay && relayTargets.length > 0) {
         orderedTargets = relayTargets;

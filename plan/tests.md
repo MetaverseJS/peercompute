@@ -56,6 +56,7 @@
 - Visualization expectation: edge transport selection should prefer aggregated peer telemetry (`via`) across both edge directions, so direct links observed by remote peers are still reflected when the local browser lacks a direct socket for that edge.
 - Telemetry classification expectation: `NetworkManager` should preserve relay-scoped WebRTC links as `via=relay-webrtc` (not `webrtc`) while `_hasDirectPeerConnections()` remains false unless a true non-relay direct address is present.
 - Remote-edge truth expectation: NetViz `TelemetryStore` should ignore older telemetry snapshots (`ts` monotonic) so remote edge color does not regress from direct (`webrtc`) to relay due out-of-order delta arrival.
+- Upgrade-attempt expectation: when a peer only has plain relay (`/p2p-circuit/p2p/...`) and no direct targets, `NetworkManager` should still attempt relay-webrtc upgrade dials (`/p2p-circuit/webrtc/p2p/...`) instead of suppressing attempts solely because relay is already present.
 - Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`.
 
 ### Internet chaos lab (new)
