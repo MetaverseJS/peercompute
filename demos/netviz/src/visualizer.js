@@ -816,23 +816,31 @@ export class NetworkVisualizer {
       const lastRxAt = Number(entry?.lastRxAt) || null;
       const lastTxAt = Number(entry?.lastTxAt) || null;
       const via = entry?.via || null;
+      const signalingPath = entry?.signalingPath || null;
+      const mediaPath = String(entry?.mediaPath || '').trim().toLowerCase()
+        || (
+          via === 'webrtc' || via === 'direct'
+            ? 'direct'
+            : via === 'relay'
+              ? 'turn-relay'
+              : via === 'relay-webrtc'
+                ? 'unknown'
+                : 'unknown'
+        );
       const relayPeerId = entry?.relayPeerId || null;
       const errorActive = Boolean(entry?.errorActive);
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
-      const isWebRTC = via === 'webrtc' || via === 'direct';
-      const isRelayWebrtc = via === 'relay-webrtc';
-      const isRelay = via === 'relay';
+      const isDirectMedia = mediaPath === 'direct';
+      const isRelayMedia = mediaPath === 'turn-relay';
       const edgeColor = errorActive
         ? COLORS.edgeError
-        : isWebRTC
+        : isDirectMedia
           ? COLORS.edge
-          : isRelayWebrtc
-            ? COLORS.edgeRelayWebrtc
-            : isRelay
-              ? COLORS.edgeRelay
-              : COLORS.edgeUnknown;
+          : isRelayMedia
+            ? COLORS.edgeRelay
+            : COLORS.edgeUnknown;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {
@@ -846,6 +854,8 @@ export class NetworkVisualizer {
           to,
           radius,
           via,
+          signalingPath,
+          mediaPath,
           relayPeerId,
           rxBps,
           txBps,
@@ -869,6 +879,8 @@ export class NetworkVisualizer {
         edgeData.to = to;
         edgeData.radius = radius;
         edgeData.via = via;
+        edgeData.signalingPath = signalingPath;
+        edgeData.mediaPath = mediaPath;
         edgeData.relayPeerId = relayPeerId;
         edgeData.rxBps = rxBps;
         edgeData.txBps = txBps;
@@ -882,7 +894,7 @@ export class NetworkVisualizer {
       edgeData.mesh.material.color.set(edgeColor);
 
       const relayPos = relayPeerId ? positions.get(relayPeerId) : null;
-      const isRelayed = (via === 'relay' || via === 'relay-webrtc') && relayPos;
+      const isRelayed = (signalingPath === 'relay-scoped' || via === 'relay' || via === 'relay-webrtc') && relayPos;
       if (isRelayed) {
         curve.getPointAt(0.5, this.midpointVector);
         const relayCurve = this._buildCurve(this.midpointVector, relayPos);

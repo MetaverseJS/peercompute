@@ -240,6 +240,40 @@ const normalizeTransportVia = (value) => {
   return raw;
 };
 
+const signalingPathFromVia = (value) => {
+  const via = normalizeTransportVia(value);
+  if (!via) return null;
+  if (via === 'webrtc' || via === 'direct') return 'direct';
+  if (via === 'relay' || via === 'relay-webrtc') return 'relay-scoped';
+  return null;
+};
+
+const normalizeSignalingPath = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'direct') return 'direct';
+  if (raw === 'relay-scoped') return 'relay-scoped';
+  return null;
+};
+
+const mediaPathFromVia = (value) => {
+  const via = normalizeTransportVia(value);
+  if (!via) return null;
+  if (via === 'webrtc' || via === 'direct') return 'direct';
+  if (via === 'relay') return 'turn-relay';
+  if (via === 'relay-webrtc') return 'unknown';
+  return null;
+};
+
+const normalizeMediaPath = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'direct') return 'direct';
+  if (raw === 'turn-relay' || raw === 'relay') return 'turn-relay';
+  if (raw === 'unknown') return 'unknown';
+  return null;
+};
+
 const isDirectTransportVia = (value) => {
   const via = normalizeTransportVia(value);
   return via === 'webrtc' || via === 'direct';
@@ -249,6 +283,8 @@ const isRelayedTransportVia = (value) => {
   const via = normalizeTransportVia(value);
   return via === 'relay' || via === 'relay-webrtc';
 };
+
+const isDirectMediaPath = (value) => normalizeMediaPath(value) === 'direct';
 
 const getViaPriority = (value) => {
   const via = normalizeTransportVia(value);
@@ -265,6 +301,41 @@ const preferStrongerVia = (current, next) => {
   if (!nextVia) return currentVia;
   if (!currentVia) return nextVia;
   return getViaPriority(nextVia) > getViaPriority(currentVia) ? nextVia : currentVia;
+};
+
+const getSignalingPathPriority = (value) => {
+  const signalingPath = normalizeSignalingPath(value);
+  if (signalingPath === 'direct') return 2;
+  if (signalingPath === 'relay-scoped') return 1;
+  return 0;
+};
+
+const preferStrongerSignalingPath = (current, next) => {
+  const currentPath = normalizeSignalingPath(current);
+  const nextPath = normalizeSignalingPath(next);
+  if (!nextPath) return currentPath;
+  if (!currentPath) return nextPath;
+  return getSignalingPathPriority(nextPath) > getSignalingPathPriority(currentPath)
+    ? nextPath
+    : currentPath;
+};
+
+const getMediaPathPriority = (value) => {
+  const mediaPath = normalizeMediaPath(value);
+  if (mediaPath === 'direct') return 3;
+  if (mediaPath === 'turn-relay') return 2;
+  if (mediaPath === 'unknown') return 1;
+  return 0;
+};
+
+const preferStrongerMediaPath = (current, next) => {
+  const currentPath = normalizeMediaPath(current);
+  const nextPath = normalizeMediaPath(next);
+  if (!nextPath) return currentPath;
+  if (!currentPath) return nextPath;
+  return getMediaPathPriority(nextPath) > getMediaPathPriority(currentPath)
+    ? nextPath
+    : currentPath;
 };
 
 const normalizeRtcType = (value) => String(value || '').trim().toLowerCase();
@@ -1523,6 +1594,10 @@ const buildChaosP2POverlay = (topology = null) => {
     }
     const merged = { ...current };
     merged.via = preferStrongerVia(merged.via, next.via);
+    merged.signalingPath = preferStrongerSignalingPath(merged.signalingPath, next.signalingPath)
+      || signalingPathFromVia(merged.via);
+    merged.mediaPath = preferStrongerMediaPath(merged.mediaPath, next.mediaPath)
+      || mediaPathFromVia(merged.via);
     merged.rxBps = Math.max(Number(merged.rxBps) || 0, Number(next.rxBps) || 0);
     merged.txBps = Math.max(Number(merged.txBps) || 0, Number(next.txBps) || 0);
     merged.rxCount = Math.max(Number(merged.rxCount) || 0, Number(next.rxCount) || 0);
@@ -1612,11 +1687,15 @@ const buildChaosP2POverlay = (topology = null) => {
       const viaRaw = String(neighbor.via || '').trim().toLowerCase();
       const via = normalizeTransportVia(viaRaw);
       if (!via) return;
+      const signalingPath = normalizeSignalingPath(neighbor?.signalingPath) || signalingPathFromVia(via);
+      const mediaPath = normalizeMediaPath(neighbor?.mediaPath) || mediaPathFromVia(via);
       mergeEdge({
         from: localPeerId,
         to: peerId,
         source: 'chaos-p2p',
         via,
+        signalingPath,
+        mediaPath,
         rxBps: Number(neighbor.rxBps) || 0,
         txBps: Number(neighbor.txBps) || 0,
         rxCount: Number(neighbor.rxCount) || 0,
@@ -1631,6 +1710,8 @@ const buildChaosP2POverlay = (topology = null) => {
         source: 'chaos-p2p',
         agentName,
         via: viaRaw || 'unknown',
+        signalingPath: signalingPath || 'unknown',
+        mediaPath: mediaPath || 'unknown',
         fromPeerId: localPeerId,
         toPeerId: peerId,
         rxBps: Number(neighbor.rxBps) || 0,
@@ -1832,7 +1913,10 @@ const isActiveNeighbor = (neighbor) => {
   if (!neighbor) return false;
   if (Number.isFinite(neighbor.connectedAt)) return true;
   const via = neighbor.via;
-  return Boolean(via && via !== 'presence');
+  if (via && via !== 'presence') return true;
+  if (normalizeSignalingPath(neighbor.signalingPath)) return true;
+  if (normalizeMediaPath(neighbor.mediaPath)) return true;
+  return false;
 };
 
 const getLocalRelayPeerId = () => {
@@ -2172,14 +2256,18 @@ const updateHierarchicalRelayPolicy = () => {
   const localView = lastPeerView.find((peer) => peer.peerId === localPeerId);
   const isHost = localView?.isHost || localView?.role === 'host';
   const connectedPeers = networkManager.getConnectedPeers();
-  const hasNonRelay = connectedPeers.some((peer) => peer?.peerId && isDirectTransportVia(peer?.via));
+  const isDirectCapablePeer = (peer) => (
+    Boolean(peer?.peerId)
+    && (isDirectMediaPath(peer?.mediaPath) || isDirectTransportVia(peer?.via))
+  );
+  const hasNonRelay = connectedPeers.some((peer) => isDirectCapablePeer(peer));
   const hostId = localView?.hostId || null;
   const backupHostId = localView?.backupHostId || null;
   const hasHostDirect = hostId
-    ? connectedPeers.some((peer) => peer?.peerId === hostId && isDirectTransportVia(peer?.via))
+    ? connectedPeers.some((peer) => peer?.peerId === hostId && isDirectCapablePeer(peer))
     : false;
   const hasBackupDirect = backupHostId
-    ? connectedPeers.some((peer) => peer?.peerId === backupHostId && isDirectTransportVia(peer?.via))
+    ? connectedPeers.some((peer) => peer?.peerId === backupHostId && isDirectCapablePeer(peer))
     : true;
   const keepRelay = Boolean(
     isHost
@@ -2198,6 +2286,8 @@ const buildEdges = (peers, localId, relayState = null) => {
   const connectionSnapshot = localId ? getConnectionAddressSnapshot() : null;
   const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
   const telemetryViaByEdge = new Map();
+  const telemetrySignalingPathByEdge = new Map();
+  const telemetryMediaPathByEdge = new Map();
   peers.forEach((peer) => {
     const from = peer?.peerId;
     if (!from) return;
@@ -2208,8 +2298,19 @@ const buildEdges = (peers, localId, relayState = null) => {
       if (!to || to === from) return;
       const key = buildEdgeKey(from, to);
       const via = normalizeTransportVia(neighbor?.via);
-      if (!via) return;
-      telemetryViaByEdge.set(key, preferStrongerVia(telemetryViaByEdge.get(key), via));
+      const signalingPath = normalizeSignalingPath(neighbor?.signalingPath) || signalingPathFromVia(via);
+      const mediaPath = normalizeMediaPath(neighbor?.mediaPath) || mediaPathFromVia(via);
+      if (via) {
+        telemetryViaByEdge.set(key, preferStrongerVia(telemetryViaByEdge.get(key), via));
+      }
+      telemetrySignalingPathByEdge.set(
+        key,
+        preferStrongerSignalingPath(telemetrySignalingPathByEdge.get(key), signalingPath)
+      );
+      telemetryMediaPathByEdge.set(
+        key,
+        preferStrongerMediaPath(telemetryMediaPathByEdge.get(key), mediaPath)
+      );
     });
   });
   const resolveLiveViaForEdge = (from, to) => {
@@ -2232,8 +2333,32 @@ const buildEdges = (peers, localId, relayState = null) => {
     }
     return null;
   };
-  const resolveRelayForEdge = (from, to, via) => {
-    if (!isRelayedTransportVia(via)) return null;
+  const resolveLiveSignalingPathForEdge = (from, to) => {
+    return signalingPathFromVia(resolveLiveViaForEdge(from, to));
+  };
+  const resolveLiveMediaPathForEdge = (from, to) => {
+    if (!connectionSnapshot || !localId) return null;
+    const remotePeerId = from === localId ? to : to === localId ? from : null;
+    if (!remotePeerId) return null;
+    const liveConnections = connectionSnapshot.byPeer.get(remotePeerId) || [];
+    if (!Array.isArray(liveConnections) || liveConnections.length === 0) return null;
+    if (liveConnections.some((conn) => conn?.kind === 'webrtc-direct' || conn?.kind === 'direct' || conn?.kind === 'direct-websocket')) {
+      return 'direct';
+    }
+    if (liveConnections.some((conn) => conn?.kind === 'relay')) {
+      return 'turn-relay';
+    }
+    if (liveConnections.some((conn) => conn?.kind === 'relay-webrtc')) {
+      if (rtcPathState?.hasDirectPair && !rtcPathState?.hasRelayPair) return 'direct';
+      if (rtcPathState?.hasRelayPair && !rtcPathState?.hasDirectPair) return 'turn-relay';
+      return 'unknown';
+    }
+    return null;
+  };
+  const resolveRelayForEdge = (from, to, signalingPath, via) => {
+    const relayed = normalizeSignalingPath(signalingPath) === 'relay-scoped'
+      || isRelayedTransportVia(via);
+    if (!relayed) return null;
     const peerRelayMap = relayState?.peerRelayMap;
     const fromRelay = peerRelayMap?.get(from) || null;
     const toRelay = peerRelayMap?.get(to) || null;
@@ -2268,13 +2393,33 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextRxCount = Number(metrics?.rxCount) || 0;
     const nextTxCount = Number(metrics?.txCount) || 0;
     const rawVia = normalizeTransportVia(metrics?.via);
+    const rawSignalingPath = normalizeSignalingPath(metrics?.signalingPath) || signalingPathFromVia(rawVia);
+    const rawMediaPath = normalizeMediaPath(metrics?.mediaPath) || mediaPathFromVia(rawVia);
     const liveVia = resolveLiveViaForEdge(from, to);
+    const liveSignalingPath = resolveLiveSignalingPathForEdge(from, to);
+    const liveMediaPath = resolveLiveMediaPathForEdge(from, to);
     const telemetryVia = telemetryViaByEdge.get(key) || null;
+    const telemetrySignalingPath = telemetrySignalingPathByEdge.get(key) || null;
+    const telemetryMediaPath = telemetryMediaPathByEdge.get(key) || null;
     const via = preferStrongerVia(preferStrongerVia(rawVia, telemetryVia), liveVia) || 'unknown';
-    const relayPeerId = resolveRelayForEdge(from, to, via);
+    const signalingPath = preferStrongerSignalingPath(
+      preferStrongerSignalingPath(rawSignalingPath, telemetrySignalingPath),
+      liveSignalingPath
+    ) || signalingPathFromVia(via) || 'unknown';
+    const mediaPath = preferStrongerMediaPath(
+      preferStrongerMediaPath(rawMediaPath, telemetryMediaPath),
+      liveMediaPath
+    ) || mediaPathFromVia(via) || 'unknown';
+    const relayPeerId = resolveRelayForEdge(from, to, signalingPath, via);
     const existing = edgeMap.get(key);
     if (existing) {
       existing.via = preferStrongerVia(existing.via, via) || existing.via || via;
+      existing.signalingPath = preferStrongerSignalingPath(existing.signalingPath, signalingPath)
+        || existing.signalingPath
+        || signalingPath;
+      existing.mediaPath = preferStrongerMediaPath(existing.mediaPath, mediaPath)
+        || existing.mediaPath
+        || mediaPath;
       if (!existing.relayPeerId && relayPeerId) {
         existing.relayPeerId = relayPeerId;
       }
@@ -2310,6 +2455,8 @@ const buildEdges = (peers, localId, relayState = null) => {
       lastRxAt: Number.isFinite(lastRxAt) ? lastRxAt : null,
       lastTxAt: Number.isFinite(lastTxAt) ? lastTxAt : null,
       via,
+      signalingPath,
+      mediaPath,
       relayPeerId
     });
   };
@@ -2614,6 +2761,20 @@ const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
   const rxCount = Number.isFinite(edgeMeta?.rxCount) ? edgeMeta.rxCount : (Number.isFinite(fromMetrics?.rxCount) ? fromMetrics.rxCount : 0);
   const txCount = Number.isFinite(edgeMeta?.txCount) ? edgeMeta.txCount : (Number.isFinite(fromMetrics?.txCount) ? fromMetrics.txCount : 0);
   const via = edgeType === 'pubsub' ? 'pubsub' : (edgeMeta?.via || fromMetrics?.via || toMetrics?.via || 'unknown');
+  const signalingPath = edgeType === 'pubsub'
+    ? 'pubsub'
+    : (edgeMeta?.signalingPath
+      || fromMetrics?.signalingPath
+      || toMetrics?.signalingPath
+      || signalingPathFromVia(via)
+      || 'unknown');
+  const mediaPath = edgeType === 'pubsub'
+    ? 'pubsub'
+    : (edgeMeta?.mediaPath
+      || fromMetrics?.mediaPath
+      || toMetrics?.mediaPath
+      || mediaPathFromVia(via)
+      || 'unknown');
   const relayPeerId = edgeMeta?.relayPeerId || null;
   const lastRxAt = Number.isFinite(edgeMeta?.lastRxAt) ? edgeMeta.lastRxAt : fromMetrics?.lastRxAt;
   const lastTxAt = Number.isFinite(edgeMeta?.lastTxAt) ? edgeMeta.lastTxAt : fromMetrics?.lastTxAt;
@@ -2628,7 +2789,9 @@ const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
     lines: [
       `From: ${fromId}`,
       `To: ${toId}`,
-      `Transport: ${via}`,
+      `Signaling path: ${signalingPath}`,
+      `Media path: ${mediaPath}`,
+      `Transport key: ${via}`,
       relayPeerId ? `Relay peer: ${relayPeerId}` : 'Relay peer: --',
       `RTT: ${formatMs(rttMs)}`,
       `Rx rate: ${formatRate(rxBps)} (${rxCount} msgs)`,

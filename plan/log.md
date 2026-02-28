@@ -18089,3 +18089,132 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open: direct connectivity still depends on ICE/NAT path success; this patch increases upgrade attempts but cannot create direct paths if STUN/TURN or client NAT behavior prevents them.
 - Open: if post-deploy logs still show no `WebRTC progress` events, we need browser-side `webrtc-internals` candidate-pair snapshots to confirm whether the dial is stalling at signaling vs candidate gathering vs connectivity checks.
+
+## Date: 2026-02-28
+
+### Prompt
+- OK I pushed those changes. it looks like the stuff in /peercompute/ wasn't getting rebuilt so that may have caused issues. I want you to think very deeply here. go through the log very closely and I want you to tell me what was the entire point of relay scaling and the month of work we spent on the chaos lab.
+
+### Prompt Time/Date
+- 2026-02-28T22:41:48+00:00
+
+### Actions Attempted
+- Re-read planning context before answering:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Performed targeted extraction of relay-scaling and chaos-lab history from `plan/log.md`:
+  - original relay scaling objective and phases,
+  - runtime/headless findings around direct-vs-relay behavior,
+  - chaos-lab branch intent and instrumentation outcomes,
+  - production rollout/debug deltas (`secretworkshop.net`, TURN wiring, stale config/rebuild concerns).
+- Re-reviewed branch docs to align historical intent with explicit branch goals:
+  - `plan/branch/relay-scaling.md`
+  - `plan/branch/big-net-testing.md`
+  - `plan/branch/topologies.md`
+- Prepared retrospective summary framing:
+  - why relay scaling existed (capacity + reliability + discovery),
+  - why chaos-lab existed (reproducible proof/measurement under controlled NAT/topology conditions),
+  - what value remains even when production rollout had config/build drift.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `wc -l plan/log.md plan/plan.md plan/tests.md`
+- `ls -la plan`
+- `rg -n "chaos|Chaos" plan/log.md | head -n 120`
+- `rg -n "relay scaling|logn|log n|relay retention|dropRelay|direct connection|webrtc" plan/log.md | head -n 200`
+- `rg -n "^## Date" plan/log.md | tail -n 80`
+- `ls -la plan/branch && rg -n "relay|chaos|webrtc|scal|logn|sqrt" plan/branch/*.md`
+- `sed -n '3540,4120p' plan/log.md`
+- `sed -n '7060,7660p' plan/log.md`
+- `tail -n 520 plan/log.md`
+- `rg -n "peercompute/ wasn't getting rebuilt|not getting rebuilt|production|secretworkshop|coturn|stun|turn|rebuild|deployed|NetViz" plan/log.md | tail -n 220`
+- `date -Is`
+- `tail -n 80 plan/log.md`
+
+### Test Results
+- Not run (analysis/documentation prompt).
+
+### Failures / Open Questions
+- None in code for this prompt.
+
+## Date: 2026-02-28
+
+### Prompt
+- so how do we fix the production behavior so it matches chaos lab AND netviz shows the truth?
+
+### Prompt Time/Date
+- 2026-02-28T22:58:39+00:00
+
+### Actions Attempted
+- Reviewed latest log context and synthesized a production parity plan focused on:
+  - deployment/config parity (served relay-config + TURN/firewall reachability),
+  - relay-drop policy parity with chaos-lab expectations,
+  - transport-truth telemetry parity (separating signaling path vs media path),
+  - NetViz edge-color truth sourced from shared direct-path classifier semantics.
+- Prepared concrete remediation sequence and validation gates for production rollouts.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `tail -n 40 plan/log.md`
+
+### Test Results
+- Not run (analysis/planning response prompt).
+
+### Failures / Open Questions
+- Open: whether user wants immediate implementation of telemetry schema + NetViz renderer updates in this branch now, or first a no-code production config/policy verification pass.
+
+## Date: 2026-02-28
+
+### Prompt
+- ok do it.
+
+### Prompt Time/Date
+- 2026-02-28T23:24:39+00:00
+
+### Actions Attempted
+- Resumed the production-parity implementation path and validated all in-progress source edits for:
+  - transport truth separation (`signalingPath` vs `mediaPath`) in `NetworkManager` and NetViz,
+  - relay-retention/drop behavior tuned for small-room parity with chaos-lab intent,
+  - production relay defaults (`config/relay.json` + `config/relay.env`) aligned to STUN/TURN + logN retention/drop flags,
+  - unit tests added/updated for relay-webrtc direct-capability and target-connection retention behavior.
+- Per AGENTS requirements, updated planning docs to reflect the implemented behavior and validation expectations:
+  - appended completed-items notes in `plan/plan.md`,
+  - added test expectations in `plan/tests.md` for path-truth rendering and small-room relay-retention behavior.
+- Re-checked local environment capability for runtime validation; confirmed `node`/`npm` are unavailable in this sandbox runner and nvm sourcing at `/home/cos/.nvm/nvm.sh` is not accessible here.
+
+### Files Touched
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `/bin/bash -lc 'export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node -v && npm -v'`
+- `/bin/bash -lc 'ls -la /home/cos/.nvm/versions/node 2>/dev/null || true; find /home/cos/.nvm/versions/node -maxdepth 3 -type f -name node 2>/dev/null || true'`
+- `which node || true && node -v || true && which npm || true && npm -v || true`
+- `git diff -- peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/tests/unit/networkManager.webrtc.test.js demos/netviz/src/main.js demos/netviz/src/visualizer.js config/relay.json config/relay.env README.md`
+- `sed -n '2160,2415p' demos/netviz/src/main.js`
+- `rg -n "rtcPathState" demos/netviz/src/main.js`
+- `rg -n "_countDialedPeers|_getActiveDialedPeerCount|countRelayWebrtcAsDirectCapable|_getPreferredConnectionMeta|signalingPath|mediaPath" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1600,1695p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,260p' plan/tests.md`
+- `date -Is`
+- `sed -n '64,96p' plan/plan.md && sed -n '70,130p' plan/tests.md`
+- `apply_patch` updates to `plan/plan.md` and `plan/tests.md`
+
+### Test Results
+- Static/source validation: PASS
+  - verified code-paths reflect requested production behavior changes and NetViz transport-truth rendering design.
+- Runtime/build validation: BLOCKED in this execution environment
+  - `node`/`npm` are not available (`command not found`), and nvm bootstrap path is inaccessible here.
+
+### Failures / Open Questions
+- Open: host-side validation is still required to confirm end-to-end behavior after deploy (`node --test ...` and NetViz build/run).
+- Open: if any peers still report persistent relay in production after deploy, next evidence needed is browser `webrtc-internals` selected candidate-pair data and live relay reservation state per peer.

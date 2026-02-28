@@ -60,6 +60,21 @@ const isRelayOnlyAddr = (addr) => isRelayAddr(addr) && !isWebRTCAddr(addr);
 const isRelayWebRTCAddr = (addr) => isRelayAddr(addr) && isWebRTCAddr(addr);
 const isTrulyDirectAddr = (addr) => !isRelayAddr(addr);
 const isDirectAddr = (addr) => isTrulyDirectAddr(addr);
+const normalizeSignalingPath = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'direct') return 'direct';
+  if (raw === 'relay-scoped') return 'relay-scoped';
+  return null;
+};
+const normalizeMediaPath = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'direct') return 'direct';
+  if (raw === 'turn-relay' || raw === 'relay') return 'turn-relay';
+  if (raw === 'unknown') return 'unknown';
+  return null;
+};
 const getConnectionKind = (addr) => {
   if (isRelayWebRTCAddr(addr)) return 'relay-webrtc';
   if (isWebRTCAddr(addr)) return 'webrtc';
@@ -74,6 +89,19 @@ const isDirectPeerVia = (via) => {
 const isRelayPeerVia = (via) => {
   const normalized = normalizePeerVia(via);
   return normalized === 'relay' || normalized === 'relay-webrtc' || normalized === 'webrtc-relay';
+};
+const deriveTransportPaths = (via) => {
+  const normalized = normalizePeerVia(via);
+  if (normalized === 'webrtc' || normalized === 'webrtc-direct' || normalized === 'direct') {
+    return { signalingPath: 'direct', mediaPath: 'direct' };
+  }
+  if (normalized === 'relay') {
+    return { signalingPath: 'relay-scoped', mediaPath: 'turn-relay' };
+  }
+  if (normalized === 'relay-webrtc' || normalized === 'webrtc-relay') {
+    return { signalingPath: 'relay-scoped', mediaPath: 'unknown' };
+  }
+  return { signalingPath: null, mediaPath: null };
 };
 const getDialKind = (addr) => {
   if (isWebRTCAddr(addr) && isRelayAddr(addr)) return 'webrtc-relay';
@@ -210,6 +238,8 @@ const normalizeWebRTCConfig = (config = {}) => {
   const dropRelayOnDirect = raw.dropRelayOnDirect ?? config.dropRelayOnDirect ?? true;
   const dropRelayBootstrapOnDirect =
     raw.dropRelayBootstrapOnDirect ?? config.dropRelayBootstrapOnDirect ?? false;
+  const countRelayWebrtcAsDirectCapable =
+    raw.countRelayWebrtcAsDirectCapable ?? config.countRelayWebrtcAsDirectCapable ?? true;
   const relayRetention = normalizeRelayRetention(
     raw.relayRetention ?? config.relayRetention
   );
@@ -234,6 +264,7 @@ const normalizeWebRTCConfig = (config = {}) => {
     preferDirect,
     dropRelayOnDirect,
     dropRelayBootstrapOnDirect,
+    countRelayWebrtcAsDirectCapable,
     relayRetention,
     reconnectOnDialFailure,
     reconnectThrottleMs,
@@ -1100,6 +1131,8 @@ export class NetworkManager {
       lastRttAt: peer.lastRttAt || null,
       rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null,
       via: peer.via || null,
+      signalingPath: normalizeSignalingPath(peer.signalingPath) || null,
+      mediaPath: normalizeMediaPath(peer.mediaPath) || null,
       topologyId: peer.topologyId || null,
       shardId: peer.shardId || null,
       metric: peer.metric || null,
@@ -1273,9 +1306,9 @@ export class NetworkManager {
       } else {
         console.info('[NetworkManager] Connection open', peerId, kind, remoteAddr);
       }
-      const via = this._getPreferredConnectionType(peerId);
-      if (via) {
-        this._touchPeer(peerId, { via });
+      const meta = this._getPreferredConnectionMeta(peerId);
+      if (meta) {
+        this._touchPeer(peerId, meta);
       }
       this._maybePruneRelayConnections(peerId);
       this._maybeUpdateBootstrapRelayConnections();
@@ -1287,9 +1320,9 @@ export class NetworkManager {
       if (!peerId) return;
       const remoteAddr = toAddrString(conn?.remoteAddr);
       const kind = getConnectionKind(remoteAddr);
-      const via = this._getPreferredConnectionType(peerId);
-      if (via) {
-        this._touchPeer(peerId, { via });
+      const meta = this._getPreferredConnectionMeta(peerId);
+      if (meta) {
+        this._touchPeer(peerId, meta);
       }
       const closeError = conn?.stat?.timeline?.close?.error
         || conn?.stat?.timeline?.close?.cause
@@ -1327,17 +1360,25 @@ export class NetworkManager {
       const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
       if (!peerId) return;
       const isNewPeer = !this.peers.has(peerId);
-      const preferredVia = this._getPreferredConnectionType(peerId);
+      const preferredMeta = this._getPreferredConnectionMeta(peerId);
+      const preferredVia = preferredMeta?.via || null;
       const existingVia = this.peers.get(peerId)?.via || null;
       const existingJoinedAt = this.peers.get(peerId)?.joinedAt;
       if (this.bootstrapPeerIds.has(peerId)) {
         this._reserveRelayForPeer(peerId, 'bootstrap-connect').catch(() => {});
       }
-      this._touchPeer(peerId, {
+      const peerUpdates = {
         connectedAt: Date.now(),
         joinedAt: Number.isFinite(existingJoinedAt) ? existingJoinedAt : Date.now(),
         via: preferredVia || existingVia || 'connection'
-      });
+      };
+      if (preferredMeta?.signalingPath) {
+        peerUpdates.signalingPath = preferredMeta.signalingPath;
+      }
+      if (preferredMeta?.mediaPath) {
+        peerUpdates.mediaPath = preferredMeta.mediaPath;
+      }
+      this._touchPeer(peerId, peerUpdates);
       if (isNewPeer) {
         this.onPeerConnect(peerId);
       }
@@ -1569,10 +1610,13 @@ export class NetworkManager {
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) continue;
       const meta = this.peers.get(peerId) || {};
+      const derivedPaths = deriveTransportPaths(meta.via);
       byId.set(peerId, {
         peerId,
         ...meta,
-        via: meta.via || 'connection'
+        via: meta.via || 'connection',
+        signalingPath: normalizeSignalingPath(meta.signalingPath) || normalizeSignalingPath(derivedPaths.signalingPath),
+        mediaPath: normalizeMediaPath(meta.mediaPath) || normalizeMediaPath(derivedPaths.mediaPath)
       });
     }
     return Array.from(byId.values());
@@ -1601,12 +1645,28 @@ export class NetworkManager {
   }
 
   _hasDirectPeerConnections() {
+    const countRelayWebrtcAsDirectCapable =
+      this.config.webrtc?.countRelayWebrtcAsDirectCapable !== false;
     const connectionList = this._getConnections();
     return connectionList.some((conn) => {
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
-      return isDirectAddr(conn?.remoteAddr);
+      if (isDirectAddr(conn?.remoteAddr)) return true;
+      if (countRelayWebrtcAsDirectCapable && isRelayWebRTCAddr(conn?.remoteAddr)) return true;
+      return false;
     });
+  }
+
+  _getActiveDialedPeerCount() {
+    const activePeers = new Set();
+    const connectionList = this._getConnections();
+    for (const conn of connectionList) {
+      if (!isConnectionOpen(conn)) continue;
+      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      if (!peerId || this.bootstrapPeerIds.has(peerId)) continue;
+      activePeers.add(peerId);
+    }
+    return activePeers.size;
   }
 
   _hasBootstrapRelayConnections() {
@@ -1850,7 +1910,23 @@ export class NetworkManager {
 
   _touchPeer(peerId, updates) {
     const existing = this.peers.get(peerId) || {};
-    this.peers.set(peerId, { ...existing, ...updates });
+    const next = { ...existing, ...updates };
+    const hasExplicitSignaling = Object.prototype.hasOwnProperty.call(updates, 'signalingPath');
+    const hasExplicitMedia = Object.prototype.hasOwnProperty.call(updates, 'mediaPath');
+    const derivedPaths = deriveTransportPaths(next.via);
+    if (hasExplicitSignaling) {
+      next.signalingPath = normalizeSignalingPath(next.signalingPath);
+    } else {
+      const derivedSignaling = normalizeSignalingPath(next.signalingPath) || normalizeSignalingPath(derivedPaths.signalingPath);
+      if (derivedSignaling) next.signalingPath = derivedSignaling;
+    }
+    if (hasExplicitMedia) {
+      next.mediaPath = normalizeMediaPath(next.mediaPath);
+    } else {
+      const derivedMedia = normalizeMediaPath(next.mediaPath) || normalizeMediaPath(derivedPaths.mediaPath);
+      if (derivedMedia) next.mediaPath = derivedMedia;
+    }
+    this.peers.set(peerId, next);
   }
 
   _recordRx(peerId, byteLength) {
@@ -1945,8 +2021,19 @@ export class NetworkManager {
       ? this.config.targetConnections
       : null;
     if (Number.isFinite(targetConnections)) {
-      const activeConnections = this._getActiveConnectionCount();
-      if (activeConnections < targetConnections) return true;
+      const scopedDialablePeers = this._getScopedPeers()
+        .filter((peer) => peer?.peerId && peer.peerId !== this.peerId && !this.bootstrapPeerIds.has(peer.peerId))
+        .length;
+      const observedDialablePeers = Math.max(
+        this._getActiveDialedPeerCount(),
+        this._countDialedPeers()
+      );
+      const knownDialablePeers = Math.max(scopedDialablePeers, observedDialablePeers);
+      const desiredConnections = knownDialablePeers > 0
+        ? Math.min(targetConnections, knownDialablePeers)
+        : targetConnections;
+      const activeDialedPeers = this._getActiveDialedPeerCount();
+      if (activeDialedPeers < desiredConnections) return true;
     }
     const retention = this._getRelayRetentionConfig();
     if (!retention) {
@@ -1964,7 +2051,7 @@ export class NetworkManager {
       return false;
     }
     // Don't drop relay until we know about enough peers to make a stable retention decision
-    const minCandidates = retention.minCandidates ?? Math.max(keepCount * 2, retention.min ?? 1);
+    const minCandidates = retention.minCandidates ?? Math.max(keepCount + 1, retention.min ?? 1);
     if (candidates.length < minCandidates) {
       debugLog('[NetworkManager] Not enough candidates:', candidates.length, '<', minCandidates);
       return true;
@@ -3089,21 +3176,25 @@ export class NetworkManager {
     return [];
   }
 
-  _getPreferredConnectionType(peerId) {
+  _getPreferredConnectionMeta(peerId) {
     const connections = this._getConnectionsForPeer(peerId);
     if (connections.some((conn) => isWebRTCAddr(conn?.remoteAddr) && !isRelayAddr(conn?.remoteAddr))) {
-      return 'webrtc';
+      return { via: 'webrtc', signalingPath: 'direct', mediaPath: 'direct' };
     }
     if (connections.some((conn) => isDirectAddr(conn?.remoteAddr) && !isWebRTCAddr(conn?.remoteAddr))) {
-      return 'direct';
+      return { via: 'direct', signalingPath: 'direct', mediaPath: 'direct' };
     }
     if (connections.some((conn) => isRelayWebRTCAddr(conn?.remoteAddr))) {
-      return 'relay-webrtc';
+      return { via: 'relay-webrtc', signalingPath: 'relay-scoped', mediaPath: 'unknown' };
     }
     if (connections.some((conn) => isRelayOnlyAddr(conn?.remoteAddr))) {
-      return 'relay';
+      return { via: 'relay', signalingPath: 'relay-scoped', mediaPath: 'turn-relay' };
     }
     return null;
+  }
+
+  _getPreferredConnectionType(peerId) {
+    return this._getPreferredConnectionMeta(peerId)?.via || null;
   }
 
   _maybePruneRelayConnections(peerId) {

@@ -23,11 +23,13 @@
       }
     ],
     "preferDirect": true,
-    "dropRelayOnDirect": false,
-    "dropRelayBootstrapOnDirect": false,
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "countRelayWebrtcAsDirectCapable": true,
     "relayRetention": {
-      "mode": "sqrt",
-      "min": 1
+      "mode": "logn",
+      "min": 1,
+      "max": 10
     }
   },
   "publicHost": "2605:59c0:2c05:c108:c95c:4e95:717:86d1",

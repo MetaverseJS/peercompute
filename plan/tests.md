@@ -55,9 +55,14 @@
 - Validation expectation: `window.__NETVIZ__?.getStatus?.().rtcPath.peerConnectionCount` should be non-zero during active WebRTC sessions; if zero while `Connection upgraded ... -> webrtc` logs are present, the diagnostics hook path is still incomplete.
 - Visualization expectation: edge transport selection should prefer aggregated peer telemetry (`via`) across both edge directions, so direct links observed by remote peers are still reflected when the local browser lacks a direct socket for that edge.
 - Telemetry classification expectation: `NetworkManager` should preserve relay-scoped WebRTC links as `via=relay-webrtc` (not `webrtc`) while `_hasDirectPeerConnections()` remains false unless a true non-relay direct address is present.
+- Path-truth expectation: NetViz edges should treat `signalingPath` and `mediaPath` independently so relay-scoped signaling can still render amber when media is direct, and plain relay can render green even if signaling metadata is missing.
 - Remote-edge truth expectation: NetViz `TelemetryStore` should ignore older telemetry snapshots (`ts` monotonic) so remote edge color does not regress from direct (`webrtc`) to relay due out-of-order delta arrival.
+- Relay-retention small-room expectation: bootstrap relay drop should not be blocked solely by unreachable `targetConnections` when observed dialable peers are fewer; retention should converge toward `logn` keep-count in small swarms.
 - Upgrade-attempt expectation: when a peer only has plain relay (`/p2p-circuit/p2p/...`) and no direct targets, `NetworkManager` should still attempt relay-webrtc upgrade dials (`/p2p-circuit/webrtc/p2p/...`) instead of suppressing attempts solely because relay is already present.
-- Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`.
+- Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include:
+: `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`
+: `NetworkManager counts relay-webrtc as direct-capable by default`
+: `NetworkManager does not block relay drop on unreachable targetConnections in small rooms`
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`

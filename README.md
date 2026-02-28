@@ -137,7 +137,15 @@ Use `config/relay.json` as the single source of truth for dev + prod relay setti
         "username": "peer",
         "credential": "compute"
       }
-    ]
+    ],
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "countRelayWebrtcAsDirectCapable": true,
+    "relayRetention": {
+      "mode": "logn",
+      "min": 1,
+      "max": 10
+    }
   },
   "listenHost": "127.0.0.1",
   "listenPort": "8080",
