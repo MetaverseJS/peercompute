@@ -17105,3 +17105,336 @@ def parse_args() -> argparse.Namespace:
 - No execution failures.
 - Installer script has not been executed against host `systemd` in this sandbox; real host run is still required (`sudo -E bash scripts/install-coturn-systemd.sh`).
 - Current default TURN auth is static user/pass (`peer`/`compute`) to match relay config defaults; consider auth-secret/ephemeral credential flow for stronger production posture.
+
+## Date: 2026-02-28
+
+### Prompt
+- ok can you confirm the firewall stuff? and is it using the secretworkshop domain? do we need to fix nginx?
+
+### Prompt Time/Date
+- 2026-02-28T00:46:33+00:00
+
+### Actions Attempted
+- Re-read required planning context (`plan/plan.md`, `plan/log.md`) and current relay/nginx files.
+- Verified domain/ICE wiring from repo configs:
+  - `config/relay.json` uses `secretworkshop.net` and TURN URLs `turn:secretworkshop.net:3478` (udp/tcp).
+  - `config/relay.env` defaults `RELAY_TURN_HOST=secretworkshop.net` and composes matching `RELAY_WEBRTC_CONFIG`.
+- Reviewed nginx config file `secretworkshop.net`:
+  - relay vhost proxies websocket traffic to `localhost:8080` and serves `config/relay-config.json` with CORS.
+  - apex vhost also has websocket-upgrade path to relay and CORS alias for relay-config.
+- Attempted live host verification for firewall/listeners/services:
+  - `ufw`, `ss`, `systemctl`, `iptables`, `ip6tables`, and `nginx -t` checks.
+- Confirmed execution-environment limits block host-level verification here:
+  - `/usr/bin/ss`, `/usr/bin/systemctl`, `/usr/sbin/iptables`, `/usr/sbin/ip6tables` all returned `Permission denied` even with escalated mode.
+  - `ufw` and `nginx` binaries were unavailable in this execution environment.
+  - DNS resolution check succeeded for `secretworkshop.net` and `relay.secretworkshop.net`.
+
+### Determination
+- Configs are currently using `secretworkshop.net` for TURN + relay-config defaults.
+- Based on checked nginx file, no new nginx changes are required for TURN itself (coturn should run directly on `3478` TCP/UDP; nginx is only for HTTPS/WSS web traffic and relay-config hosting).
+- Live firewall state could not be confirmed from this sandbox due host command restrictions; host-side checks are still required.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md && tail -n 120 plan/log.md`
+- `cat -n config/relay.json && echo '---' && cat -n config/relay.env`
+- `cat -n secretworkshop.net | sed -n '1,280p'`
+- `rg -n "firewall|ufw|3478|turn|coturn|relay-config|secretworkshop" README.md plan/tests.md -S`
+- `ufw status verbose || true`
+- `ss -lntu | rg -n ":(443|8080|3478|49152)" -n || true`
+- `ss -lnup | rg -n ":(3478|49152|65535)" -n || true`
+- `getent hosts secretworkshop.net || true && getent hosts relay.secretworkshop.net || true`
+- escalated: `ufw status verbose 2>/dev/null || echo 'ufw unavailable'; echo '---'; ss -lntu 2>/dev/null | (rg -n ":(443|8080|3478|49152|65535)" -n || true); echo '---'; ss -lnup 2>/dev/null | (rg -n ":(3478|49152|65535)" -n || true); echo '---'; getent hosts secretworkshop.net || true; getent hosts relay.secretworkshop.net || true`
+- escalated: `echo 'TCP/UDP listeners:'; ss -lntu; echo '---'; echo 'UDP listeners with process:'; ss -lnup; echo '---'; echo 'TCP listeners with process:'; ss -lntp`
+- escalated: `systemctl is-active peercompute-relay || true; systemctl is-enabled peercompute-relay || true; echo '---'; systemctl is-active peercompute-coturn || true; systemctl is-enabled peercompute-coturn || true; echo '---'; systemctl status peercompute-relay --no-pager -n 40 || true; echo '---'; systemctl status peercompute-coturn --no-pager -n 40 || true`
+- `nft list ruleset 2>/dev/null | sed -n '1,120p' || echo 'nft unavailable or no permission'; echo '---'; iptables -S 2>/dev/null | sed -n '1,120p' || echo 'iptables unavailable or no permission'; echo '---'; ip6tables -S 2>/dev/null | sed -n '1,120p' || echo 'ip6tables unavailable or no permission'`
+- `command -v nft || echo 'nft not found'; command -v iptables || echo 'iptables not found'; command -v ip6tables || echo 'ip6tables not found'`
+- escalated: `iptables -S; echo '---'; ip6tables -S`
+- `nginx -t 2>&1 | sed -n '1,120p' || true`
+- `date -Is`
+
+### Test Results
+- Config/domain checks:
+  - PASS: `config/relay.json` and `config/relay.env` are set to `secretworkshop.net` for TURN host defaults.
+- DNS checks:
+  - PASS: `getent hosts` resolved `secretworkshop.net` and `relay.secretworkshop.net`.
+- Host firewall/service/listener checks:
+  - BLOCKED: `ss`, `systemctl`, `iptables`, `ip6tables` all denied in this environment.
+  - UNAVAILABLE: `ufw`, `nginx` binaries not present in this environment.
+
+### Failures / Open Questions
+- Could not directly confirm live firewall rules/listening sockets/service states from this sandbox.
+- Host-side verification still required for open ports (`3478/tcp`, `3478/udp`, `49152-65535/udp`) and service activity (`peercompute-relay`, `peercompute-coturn`).
+
+## Date: 2026-02-28
+
+### Prompt
+- ok can you confirm the firewall stuff? and is it using the secretworkshop domain? do we need to fix nginx?
+- (follow-up with host command output including `systemctl status`, `ss -lntu`, and `iptables -S`/`ip6tables -S`)
+
+### Prompt Time/Date
+- 2026-02-28T00:53:48+00:00
+
+### Actions Attempted
+- Reviewed the user-provided host outputs (authoritative runtime data) for:
+  - relay/coturn service health,
+  - socket listeners,
+  - firewall chain policies.
+- Validated relay service output details:
+  - relay active and listening on `127.0.0.1:8080/ws`,
+  - public advertised relay address is `/dns4/secretworkshop.net/tcp/443/wss/...`,
+  - relay-config file is being written in expected location.
+- Validated coturn service output details:
+  - coturn active via `/usr/bin/turnserver -c /etc/turnserver.conf --no-cli`,
+  - relay ports initialized and auth DB opened.
+- Interpreted listener output from `ss -lntu`:
+  - public `:443` listeners exist (nginx),
+  - relay local-only `127.0.0.1:8080` listener exists,
+  - coturn listening on public IPv4/IPv6 and `:3478` TCP/UDP.
+- Interpreted firewall output from `iptables -S` and `ip6tables -S`:
+  - `INPUT ACCEPT` on both IPv4 and IPv6, so host firewall is not blocking inbound currently,
+  - `FORWARD` is `DROP` in IPv4 but that does not block host INPUT for relay/TURN listeners.
+- Cross-checked against repo config expectations:
+  - `config/relay.json` and `config/relay.env` default TURN host/domain is `secretworkshop.net` and TURN URLs target `3478` UDP/TCP.
+
+### Determination
+- Firewall: host-level iptables/ip6tables currently allow inbound (`INPUT ACCEPT`), so no immediate host firewall block is visible for relay/TURN.
+- Domain usage: yes, runtime is using `secretworkshop.net` exactly as intended (relay advertises `/dns4/secretworkshop.net/tcp/443/wss/...`; TURN config defaults target `turn:secretworkshop.net:3478`).
+- Nginx: no required fix for current architecture.
+  - Relay path is correct: public `443` -> nginx -> local relay `127.0.0.1:8080`.
+  - TURN does not need nginx in this setup; coturn should stay direct on `3478` TCP/UDP.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+
+### User-Provided Host Commands Reviewed
+- `sudo systemctl status peercompute-relay peercompute-coturn --no-pager`
+- `sudo ss -lntu | rg ':(8080|443|3478|49152|65535)'`
+- `sudo iptables -S && sudo ip6tables -S`
+
+### Test Results
+- Service status checks (user-provided): PASS (`peercompute-relay` active, `peercompute-coturn` active).
+- Listener checks (user-provided): PASS (`443`, `127.0.0.1:8080`, `3478 tcp/udp` present).
+- Firewall policy checks (user-provided): PASS for host INPUT path (`INPUT ACCEPT` on IPv4/IPv6).
+
+### Failures / Open Questions
+- Not yet confirmed from provided output whether cloud-provider external firewall/security-group rules are also open for `3478/tcp` + `3478/udp` + TURN relay UDP range (`49152-65535/udp`).
+- Optional hardening follow-up: consider restricting host `INPUT` from broad `ACCEPT` to explicit allow rules once baseline connectivity is validated.
+
+## Date: 2026-02-28
+
+### Prompt
+- do I need to deploy anything else to github pages for this to start working? will netviz show direct connections with amber lines?
+
+### Prompt Time/Date
+- 2026-02-28T00:57:20+00:00
+
+### Actions Attempted
+- Re-read required planning context before responding:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Verified NetViz direct-connection classification and color mapping in source:
+  - `demos/netviz/src/main.js` classifies connection kinds including `webrtc-direct` and `relay-webrtc`.
+  - `demos/netviz/src/visualizer.js` colors `via === 'webrtc'` edges with `COLORS.edge` (amber tone `0xffb13b`) and relay edges with `COLORS.edgeRelay` (green).
+- Verified NetViz relay-config runtime resolution order and GitHub Pages source file:
+  - `demos/netviz/src/relayConfig.js` loads relay config from query override, then `relay-config-source.json` URL, then local fallback.
+  - `docs/netviz/relay-config-source.json` points to `https://secretworkshop.net/peercompute/config/relay-config.json`.
+- Verified build-time behavior for production relay config generation:
+  - `scripts/build-all.sh` runs `scripts/write-prod-relay-config.mjs` before demo builds.
+  - `scripts/write-prod-relay-config.mjs` writes both `relay-config.json` and `relay-config-source.json` into each demo `public/` directory.
+- Confirmed current repo docs/netviz artifacts include the source URL file, supporting runtime fetch from `secretworkshop.net` without changing bundle code for ICE tweaks.
+
+### Determination
+- For ICE/server-side changes (Google STUN + coturn), GitHub Pages does not need additional assets beyond the existing NetViz/static site as long as deployed `docs/netviz/relay-config-source.json` already points to the production relay-config URL.
+- NetViz is wired to render direct WebRTC edges in amber (`0xffb13b`) when connection `via` resolves to `webrtc`; relay paths render green.
+- If the currently published GitHub Pages site predates this `relay-config-source.json`/NetViz code state, one fresh docs deploy is required to pick up those files.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "COLORS|edgeRelay|via === 'webrtc'|via === \"webrtc\"|webrtc-direct|relay-webrtc" demos/netviz/src/visualizer.js demos/netviz/src/main.js demos/netviz/src/relayConfig.js docs/netviz/relay-config-source.json`
+- `sed -n '1,220p' demos/netviz/src/visualizer.js`
+- `sed -n '1,260p' demos/netviz/src/main.js`
+- `sed -n '1,260p' demos/netviz/src/relayConfig.js`
+- `cat docs/netviz/relay-config-source.json`
+- `cat demos/netviz/public/relay-config-source.json 2>/dev/null || true; echo '---'; cat demos/netviz/public/relay-config.json 2>/dev/null || true; echo '---'; cat docs/netviz/relay-config.json 2>/dev/null || true`
+- `cat package.json`
+- `rg -n "github|gh-pages|docs/netviz|relay-config-source|build:docs|vite build|netviz" -S scripts package.json README.md`
+- `ls -la scripts && rg -n "relay-config-source|docs/netviz|demos/netviz/public|copy|sync|build" scripts -S`
+- `sed -n '1,280p' scripts/write-prod-relay-config.mjs`
+- `cat vite.docs.config.mjs`
+- `cat demos/netviz/package.json`
+- `cat scripts/build-all.sh`
+- `sed -n '132,210p' README.md`
+- `sed -n '1180,1288p' demos/netviz/src/main.js`
+- `sed -n '1938,2008p' demos/netviz/src/main.js`
+- `sed -n '792,916p' demos/netviz/src/visualizer.js`
+- `rg -n "webrtc-direct|relay-webrtc|relay-config-source|0xffb13b|edgeRelay|p2p-topology" docs/netviz -S`
+- `date -Is`
+
+### Test Results
+- Static verification only (no runtime browser test in this prompt).
+- PASS: source-level direct-vs-relay classification and color mapping confirms amber for `via='webrtc'`.
+- PASS: docs netviz source file points to production relay config URL on `secretworkshop.net`.
+
+### Failures / Open Questions
+- No live GitHub Pages fetch validation was run from this sandbox, so remote published content recency still depends on whether latest docs artifacts were pushed.
+- Amber line display depends on actual direct candidate selection at runtime; if peers remain TURN-relayed, links remain relay-colored.
+
+## Date: 2026-02-28
+
+### Prompt
+- here's the netviz output  [NetViz] Relay drop config: {"iceServers":[{"urls":["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}],"dropRelayBootstrapOnDirect":true,"relayRetention":{"mode":"logn","min":2,"max":10}} ... [extensive runtime logs]
+
+### Prompt Time/Date
+- 2026-02-28T00:59:52+00:00
+
+### Actions Attempted
+- Parsed the provided NetViz/browser logs for effective runtime ICE config and connection mode transitions.
+- Identified that runtime `Relay drop config` is still STUN-only (`stun.l.google.com` + `stun.cloudflare.com`) and does not include TURN entries.
+- Verified in-repo file state to reconcile expected vs observed behavior:
+  - `config/relay.json` contains desired Google STUN + TURN (`turn:secretworkshop.net:3478` UDP/TCP with creds).
+  - `config/relay-config.json` currently contains stale STUN-only config (matches browser log).
+- Reviewed nginx mapping file `secretworkshop.net` and confirmed `https://secretworkshop.net/peercompute/config/relay-config.json` aliases to `/home/cos/projects/peercompute/config/relay-config.json`; therefore stale file content directly explains stale NetViz runtime config.
+- Reviewed relay launcher scripts:
+  - `scripts/start-relay-prod.sh` merges `config/relay.env` + `config/relay.json` and exports `RELAY_WEBRTC_CONFIG`.
+  - provided host status earlier showed relay service process as `go run .` directly, indicating service likely bypasses `start-relay-prod.sh` and may not apply current env/config merge defaults.
+- Interpreted connection logs:
+  - observed both `relay -> webrtc` and `Connection open ... webrtc /webrtc/p2p/...` transitions (direct WebRTC paths do occur).
+  - also observed `relay -> relay-webrtc` plus frequent disconnect/reconnect churn and signaling timeouts (`signal timed out`, `Unexpected EOF`, `StreamStateError`), consistent with unstable relay signaling sessions and aggressive churn.
+
+### Determination
+- Core mismatch: served relay config is stale (`config/relay-config.json` STUN-only), so clients are not receiving intended TURN config.
+- Nginx alias path is correct; nginx itself is not the primary issue here.
+- Direct WebRTC is partially working (webrtc opens/upgrades present), so amber links should appear for pure `webrtc` edges; `relay-webrtc` paths may still be treated/visualized as relayed or mixed.
+- Most immediate fix is to regenerate and serve updated `config/relay-config.json` and ensure `peercompute-relay` systemd unit runs through `scripts/start-relay-prod.sh` (or equivalent env-aware wrapper), not raw `go run .`.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `cat config/relay-config.json 2>/dev/null || echo 'no config/relay-config.json'`
+- `cat config/relay.json`
+- `sed -n '1,260p' secretworkshop.net`
+- `cat config/relay.env`
+- `cat /etc/systemd/system/peercompute-relay.service 2>/dev/null || echo 'service file not readable in sandbox'`
+- `cat scripts/start-relay-prod.sh | sed -n '1,260p'`
+
+### Test Results
+- Static verification only.
+- PASS: stale-vs-desired config discrepancy reproduced locally (`config/relay-config.json` != `config/relay.json` webrtc config).
+- PASS: nginx alias confirms served URL points at stale local file path.
+
+### Failures / Open Questions
+- Could not read host `/etc/systemd/system/peercompute-relay.service` in sandbox; exact live unit definition still needs host-side confirmation (expected to show direct `go run .` based on earlier `systemctl status` output).
+- StreamStateError noise likely requires code-level guard/handling in send queue, but this prompt focused on runtime config/root-cause triage.
+
+## Date: 2026-02-28
+
+### Prompt
+- cos@p2p:~/projects/peercompute$ curl -s https://secretworkshop.net/peercompute/config/relay-config.json | jq '.webrtc.iceServers'
+- [returned STUN-only google+cloudflare]
+- cos@p2p:~/projects/peercompute$ sudo systemctl cat peercompute-relay
+- [unit shows ExecStart=/usr/bin/env bash /home/cos/projects/peercompute/scripts/start-relay-prod.sh]
+
+### Prompt Time/Date
+- 2026-02-28T01:06:16+00:00
+
+### Actions Attempted
+- Consumed user-provided host outputs to validate two hypotheses:
+  1. whether served relay-config is stale,
+  2. whether systemd unit bypasses env-aware startup wrapper.
+- Confirmed from user output:
+  - `https://secretworkshop.net/peercompute/config/relay-config.json` is still STUN-only (google+cloudflare), no TURN entries.
+  - `peercompute-relay.service` correctly executes `scripts/start-relay-prod.sh` (unit wiring is correct).
+- Performed local repo inspection for relay write path and env precedence:
+  - `peercompute/src/relay-go/main.go` writes relay-config from `RELAY_WEBRTC_CONFIG` into `RELAY_CONFIG_FILE` (or configured dirs).
+  - `scripts/start-relay-prod.sh` sources `config/relay.env`, parses `config/relay.json`, and exports `RELAY_WEBRTC_CONFIG`.
+  - `scripts/run-relay.sh` -> `scripts/run-go-relay.sh` -> `go run .` path confirmed.
+- Determined root cause likely runtime staleness (service has not rewritten `config/relay-config.json` with new TURN config yet, or effective runtime env/config still old when service started).
+
+### Determination
+- Systemd unit definition is correct.
+- Served relay config remains stale STUN-only and is the immediate blocker for TURN usage in clients.
+- Next required action is a controlled relay restart plus immediate post-restart verification of served `relay-config.json` content and startup log line showing relay-config rewrite.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `rg -n "relay-config.json|RELAY_CONFIG_FILE|Wrote relay-config|iceServers|RELAY_WEBRTC_CONFIG" peercompute/src/relay-go -S`
+- `cat scripts/run-relay.sh`
+- `cat scripts/run-go-relay.sh`
+- `sed -n '300,640p' peercompute/src/relay-go/main.go`
+
+### Test Results
+- Static verification only.
+- PASS: startup/writer code path confirms relay config file should be rewritten from runtime env on relay startup.
+
+### Failures / Open Questions
+- Open: need host-side post-restart proof that `relay-config.json` now contains TURN entries and that relay logs show `Wrote relay-config.json -> /home/cos/projects/peercompute/config/relay-config.json` after restart.
+
+## Date: 2026-02-28
+
+### Prompt
+- [User provided updated NetViz/runtime logs + host command outputs showing restart and post-restart relay-config verification]
+
+### Prompt Time/Date
+- 2026-02-28T01:14:05+00:00
+
+### Actions Attempted
+- Reviewed the provided browser/runtime logs and host command outputs end-to-end.
+- Verified effective NetViz runtime config now includes TURN:
+  - `[NetViz] Relay drop config` contains `turn:secretworkshop.net:3478` UDP/TCP with credentials.
+- Verified host-side config state before/after restart from user-provided commands:
+  - before restart, served URL returned STUN-only;
+  - after `sudo systemctl restart peercompute-relay`, journal shows relay rewrote `config/relay-config.json`;
+  - local file and public URL now both return TURN-enabled ICE server list.
+- Interpreted current connection behavior from logs:
+  - still sees `No local /webrtc addrs to announce; direct WebRTC dials will be skipped.`
+  - peers connect as relay then upgrade mostly to `relay-webrtc` (circuit-assisted WebRTC) rather than pure direct `/webrtc`.
+
+### Determination
+- Primary deployment/config issue is resolved:
+  - runtime clients now receive TURN + STUN as intended.
+- Remaining behavior (`relay-webrtc` predominance) is expected when direct targets are unavailable/unanounced in multiaddrs, even though ICE/TURN is configured.
+- Amber-link expectation should be scoped:
+  - pure `webrtc` edges can show amber;
+  - `relay-webrtc` edges indicate relay-assisted signaling/path and may not present as pure direct depending on edge classification.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+
+### User-Provided Commands/Outputs Reviewed
+- NetViz/browser logs (showing TURN in relay drop config + relay->relay-webrtc transitions).
+- `curl -s https://secretworkshop.net/peercompute/config/relay-config.json | jq '.webrtc.iceServers'` (pre-restart STUN-only).
+- `jq '.webrtc.iceServers' config/relay.json`.
+- `grep -n 'RELAY_WEBRTC_CONFIG\|RELAY_TURN_' config/relay.env`.
+- `sudo systemctl restart peercompute-relay`.
+- `sudo journalctl -u peercompute-relay -n 120 --no-pager | grep -E 'Wrote relay-config|Failed to parse RELAY_WEBRTC_CONFIG|  Relay Address'`.
+- `jq '.webrtc.iceServers' config/relay-config.json`.
+- `curl -s "https://secretworkshop.net/peercompute/config/relay-config.json?t=$(date +%s)" | jq '.webrtc.iceServers'` (post-restart TURN present).
+
+### Test Results
+- PASS: relay service rewrites relay-config on restart.
+- PASS: served relay-config now includes TURN entries.
+- PASS: NetViz runtime reports TURN-enabled ICE config.
+
+### Failures / Open Questions
+- Open: why local node keeps reporting no local `/webrtc` announce addrs (likely transport/address advertisement constraints), causing fallback to relay-webrtc for many peers.
+- Open: intermittent stream closure errors in prior logs may still require robustness handling in send queue, but not a deployment-blocking config issue.
