@@ -16756,3 +16756,215 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - No failures.
 - Conflict content was preserved from both sides; no open questions.
+
+## Date: 2026-02-27
+
+### Prompt
+- review the log and determine if we need anything other than the relay server to get direct webrtc connections working.
+
+### Prompt Time/Date
+- 2026-02-27T23:22:34+00:00
+
+### Actions Attempted
+- Re-read required planning context before analysis:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Reviewed WebRTC-related history and diagnostics in `plan/log.md` and `plan/tests.md`.
+- Inspected active implementation paths in:
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js`
+  - `peercompute/src/relay/server.js`
+  - `config/relay.json`
+  - `scripts/dev-local-relay.sh`
+- Verified from code that direct WebRTC depends on ICE config (`webrtc.iceServers`) and not just relay availability, and that bootstrap/redial/retention logic is explicitly designed around relay rendezvous + direct upgrade.
+- Verified from prior runtime logs that direct announce addresses are often missing (`No local /webrtc addrs to announce; direct WebRTC dials will be skipped.`), with many links upgrading only to relay-scoped `relay-webrtc` paths.
+
+### Determination
+- Relay server alone is **not** sufficient for reliable direct WebRTC in this project.
+- Additional requirements indicated by existing logs/tests/code:
+  - working ICE configuration (at minimum STUN; TURN recommended/required for restrictive NAT/firewall cases),
+  - usable direct candidate visibility/pathing (UDP + candidate availability; not only relay-scoped addresses),
+  - bootstrap/rendezvous path correctness (relay reservation + presence/pubsub signaling flow),
+  - environment/browser conditions that permit non-relay direct candidate success.
+- The current configuration includes public STUN defaults (`stun.l.google.com`, `stun.cloudflare.com`) but no default TURN in `config/relay.json`; prior logs note host-only candidates and missing direct announce addrs in several sessions.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `pwd && ls -la && rg --files plan | sort`
+- `sed -n '1,260p' AGENTS.md`
+- `sed -n '1,260p' plan/plan.md`
+- `sed -n '1,320p' plan/log.md`
+- `rg -n "direct|WebRTC|webrtc|relay|TURN|STUN|ICE|hole|candidate|NAT|bootstrap|signal|signaling" plan/log.md | head -n 220`
+- `tail -n 260 plan/log.md`
+- `rg -n "webrtc|iceServers|stun|turn|dropRelay|bootstrap|signaling|relay retention|relayRetention" peercompute/src demos scripts config -S | head -n 280`
+- `sed -n '1,260p' config/relay.json`
+- `sed -n '1,340p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "createLibp2p|transports|webRTC\(|bootstrap\(|pubsubPeerDiscovery|circuitRelayTransport|dropRelay|reconnect|NO_RESERVATION|presence|dial" peercompute/src/peercompute/networkManager/NetworkManager.js -S | head -n 260`
+- `sed -n '660,920p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1600,1860p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2640,3035p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `cat -n peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '700,840p'`
+- `cat -n peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1608,1815p'`
+- `cat -n peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '2680,3020p'`
+- `sed -n '1,340p' peercompute/src/relay/server.js`
+- `sed -n '340,760p' peercompute/src/relay/server.js`
+- `cat -n scripts/dev-local-relay.sh | sed -n '1,320p'`
+- `rg -n "webrtc|direct|relay retention|NO_RESERVATION|ice|stun|turn|bootstrap|presence" plan/tests.md peercompute/tests -S | head -n 320`
+- `sed -n '1,260p' plan/tests.md`
+- `cat -n peercompute/tests/runtime/webrtc-config.smoke.js | sed -n '1,260p'`
+- `rg -n "No local /webrtc addrs|NO_RESERVATION|Relay ICE expectation|turn\.peercompute\.test|relay-signaled|relay-webrtc|direct WebRTC dials will be skipped|stun|turn|mDNS|WebRtcHideLocalIpsWithMdns" plan/log.md plan/tests.md -S`
+- `cat -n plan/log.md | sed -n '1768,1852p'`
+- `cat -n plan/log.md | sed -n '1308,1368p'`
+- `cat -n plan/log.md | sed -n '4988,5038p'`
+- `cat -n plan/log.md | sed -n '5528,5578p'`
+- `cat -n plan/log.md | sed -n '14794,14842p'`
+- `date -Is && git status --short`
+
+### Test Results
+- No tests run (analysis-only prompt).
+
+### Failures / Open Questions
+- No execution failures.
+- Open verification item for host runtime: confirm whether selected ICE candidate pairs include non-relay `host/srflx/prflx` paths in `chrome://webrtc-internals`; if not, add TURN and/or adjust LAN/browser/network constraints.
+
+## Date: 2026-02-27
+
+### Prompt
+- how did we resolve this in chaos lab?
+
+### Prompt Time/Date
+- 2026-02-27T23:36:40+00:00
+
+### Actions Attempted
+- Re-read required planning context before response:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Reviewed chaos-lab summary entries and implementation references for WebRTC direct-path recovery.
+- Inspected concrete implementation points in:
+  - `net-chaos-lab/src/chaoslab/topology.py` (relay startup + in-lab ICE injection + relay-config readiness checks)
+  - `net-chaos-lab/agent/probe.mjs` (mDNS disable launch arg + RTC selected-candidate fallback classification)
+  - `plan/tests.md` (explicit relay ICE + mDNS + direct-classification expectations)
+- Reviewed matrix outcomes in log to confirm whether fixes only changed observability or also cleared direct-path gates.
+
+### Determination (Chaos-Lab Resolution)
+- In chaos-lab, direct-path reliability was addressed by combining environment fixes and measurement fixes:
+  - relay config was generated with in-lab TURN/STUN (`turn.peercompute.test`) and served over `wss`;
+  - probe Chromium disabled mDNS host obfuscation (`WebRtcHideLocalIpsWithMdns`) for measurable host candidates;
+  - direct-connection classification added RTC selected-candidate fallback (`host/srflx/prflx`) when libp2p addrs remained relay-scoped;
+  - diagnostics switched from local addrs to announce addrs for accurate WebRTC announce metrics;
+  - stale docs bundle guard ensured probes actually ran updated NetViz code.
+- Outcome captured in logs: `direct_connection_rate` gates that were previously stuck at `0.0` began passing in `direct-diagnostics` and `ipv4-only` runs (e.g. `0.625`, `0.90625`, later `1.0` for direct-diagnostics), while remaining instability shifted primarily to `ipv6-only` preflight/reliability.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 240 plan/log.md`
+- `rg -n "chaos-lab|ICE guard|turn\.peercompute\.test|WebRtcHideLocalIpsWithMdns|direct-path classification|relay-webrtc|announce|webrtc\.iceServers|ipv6-only|minimal" plan/plan.md plan/log.md plan/tests.md -S | head -n 320`
+- `rg -n "iceServers|turn\.peercompute\.test|relay-config|bootstrapPeers|dns4|dns6|wss|RELAY_WEBRTC_CONFIG|webrtc" net-chaos-lab/src/chaoslab/topology.py -S`
+- `rg -n "WebRtcHideLocalIpsWithMdns|disable-features|candidate|selectedCandidatePair|host|srflx|prflx|relay-webrtc|direct" net-chaos-lab/agent/probe.mjs -S`
+- `rg -n "direct_connection_rate|direct_announce_rate|relay_webrtc|selected candidate|candidate pairs|classif|direct" net-chaos-lab/src/chaoslab/metrics.py net-chaos-lab/src/chaoslab/harness.py -S`
+- `cat -n net-chaos-lab/src/chaoslab/topology.py | sed -n '1740,1838p'`
+- `cat -n net-chaos-lab/agent/probe.mjs | sed -n '640,735p'`
+- `cat -n net-chaos-lab/agent/probe.mjs | sed -n '892,930p'`
+- `cat -n plan/log.md | sed -n '10880,10920p'`
+- `cat -n plan/log.md | sed -n '10920,10980p'`
+- `cat -n plan/tests.md | sed -n '165,176p'`
+- `rg -n "direct_connection_rate|avg_announced_direct_webrtc_addrs|connection_success_rate" plan/log.md -S | tail -n 80`
+- `rg -n "chaos-lab.*summary|direct-diagnostics|all_passed|matrix:full|probe_result" plan/log.md -S | tail -n 120`
+- `cat -n plan/log.md | sed -n '11284,11312p'`
+- `cat -n plan/log.md | sed -n '11508,11522p'`
+- `date -Is`
+
+### Test Results
+- No tests executed in this prompt (analysis-only).
+
+### Failures / Open Questions
+- No execution failures.
+- Remaining known unresolved area in chaos-lab is `ipv6-only` run reliability/preflight consistency; direct-path improvements are validated in `direct-diagnostics` and `ipv4-only` metrics.
+
+## Date: 2026-02-27
+
+### Prompt
+- would we be able to stand all that stuff up on this server for our production instance?
+
+### Prompt Time/Date
+- 2026-02-27T23:36:40+00:00
+
+### Actions Attempted
+- Re-read required planning context before responding:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Reviewed production relay/docs/scripts for server readiness:
+  - `scripts/start-relay-prod.sh`
+  - `README.md` relay + systemd sections
+  - `config/relay.json` / `config/relay.env` references
+- Reviewed chaos-lab docs to distinguish lab-only infrastructure from production-required components.
+- Verified chaos-lab direct-path fixes map to production-feasible subset:
+  - relay `wss` bootstrap,
+  - ICE config (`webrtc.iceServers`) including TURN,
+  - TURN service availability,
+  - correct relay-config serving/CORS.
+
+### Determination
+- Yes, this server can host the production-relevant stack used by chaos-lab direct-path fixes (relay + TURN + HTTPS relay-config endpoint).
+- Full chaos-lab stack itself (containernet/mininet multi-container simulation harness) is not required for production runtime and is typically not advisable on the same production host.
+- Practical production target is:
+  - PeerCompute relay service (already supported by `start-relay-prod.sh` + systemd helper),
+  - coturn service (separate systemd/nginx firewall setup),
+  - relay-config generation/serving with `webrtc.iceServers` pointing at your TURN.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 240 plan/log.md`
+- `rg -n "chaos-lab|ICE guard|turn\.peercompute\.test|WebRtcHideLocalIpsWithMdns|direct-path classification|relay-webrtc|announce|webrtc\.iceServers|ipv6-only|minimal" plan/plan.md plan/log.md plan/tests.md -S | head -n 320`
+- `rg -n "turn|coturn|RELAY_WEBRTC_CONFIG|start-relay-prod|systemd|relay-config" scripts config README.md net-chaos-lab/README.md -S | head -n 260`
+- `cat -n scripts/start-relay-prod.sh | sed -n '1,260p'`
+- `cat -n README.md | sed -n '1,320p'`
+
+### Test Results
+- No tests run (advisory/feasibility response).
+
+### Failures / Open Questions
+- No command failures.
+- Open decision: whether you want only production relay+TURN deployment guidance, or also to co-locate optional chaos-lab tooling (Docker/Containernet) on the same host despite operational overhead and risk.
+
+## Date: 2026-02-27
+
+### Prompt
+- are there public ones we can use like vdoninja or from google?
+
+### Prompt Time/Date
+- 2026-02-27T23:47:25+00:00
+
+### Actions Attempted
+- Reviewed external references for publicly available STUN/TURN options relevant to WebRTC production deployment.
+- Checked VDO.Ninja docs references surfaced by search for guidance on public TURN usage and constraints.
+- Cross-checked repository production defaults (`config/relay.json`, `config/relay.env`) to confirm current baseline is STUN-only unless TURN is explicitly configured.
+
+### Determination
+- Public STUN endpoints (e.g., Google/Cloudflare) are commonly usable for discovery, but public TURN for production reliability is generally not a safe dependency.
+- VDO.Ninja documents include STUN/TURN references but are not an SLA-backed production relay service for arbitrary third-party workloads.
+- Recommended production path remains: run your own TURN (or paid TURN provider) and advertise it via `webrtc.iceServers` in relay-config.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+
+### External lookups
+- `web.search_query`: `VDO.Ninja turn server public`, `VDO.Ninja TURN`, `Google WebRTC STUN server`, `Google public TURN server`, `VDO Ninja docs turn`
+- `web.search_query`: `Google TURN server public WebRTC`, `stun.l.google.com 19302 official`
+
+### Test Results
+- No local tests run (advisory prompt).
+
+### Failures / Open Questions
+- No command failures.
+- Open decision: self-host TURN vs managed TURN provider selection for production SLO/SLA needs.
