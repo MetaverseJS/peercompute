@@ -17647,3 +17647,60 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Remaining runtime issue is not synthetic dialing logic anymore; current behavior still depends on peers actually providing/retaining real direct dialable `/webrtc` paths.
 - Need host-side runtime logs from updated build to confirm whether direct address reuse occurs when genuine direct paths are observed.
+
+## Date: 2026-02-28
+
+### Prompt
+- look through the log we were able to get direct connections working in our chaos lab behind nat. what are we doing wrong with our config?
+
+### Prompt Time/Date
+- 2026-02-28T20:07:43+00:00
+
+### Actions Attempted
+- Re-read planning context before diagnosis:
+  - `plan/plan.md`
+  - `plan/log.md` (recent WebRTC/relay entries)
+- Searched chaos-lab notes and source for conditions that correlated with NAT direct-path success:
+  - mDNS handling (`WebRtcHideLocalIpsWithMdns`),
+  - ICE server wiring,
+  - direct/relay classification logic,
+  - selected-candidate-pair fallback metrics.
+- Reviewed containernet relay/TURN startup code and probe launch args:
+  - `net-chaos-lab/src/chaoslab/topology.py`
+  - `net-chaos-lab/agent/probe.mjs`
+- Reviewed historical findings in `plan/log.md` around webrtc-internals and direct-path matrix results:
+  - entries showing selected host/srflx candidate-pair evidence,
+  - entries where direct rate began passing after candidate-pair fallback + mDNS-observability adjustments.
+- Compared with current production runtime symptoms from recent logs:
+  - `No local /webrtc addrs to announce...`
+  - connections predominantly `relay-webrtc` and `hasDirectPeerConnections=false` in NetViz debug.
+
+### Determination
+- Primary mismatch is not just TURN/STUN presence; it is how “direct” is detected and what candidates are visible:
+  - In chaos-lab, direct success reporting switched to RTC selected candidate-pair evidence (`host/srflx/prflx`) even when libp2p multiaddrs stayed relay-scoped.
+  - Probe Chromium explicitly disabled mDNS host obfuscation (`WebRtcHideLocalIpsWithMdns`) for observability.
+- In production, NetViz/manager diagnostics still rely heavily on libp2p announce/addrs and relay-webrtc classification, so direct media paths can exist without appearing as pure `/webrtc` in those logs.
+- Config-risk likely still present in production compared with lab assumptions:
+  - TURN relay UDP range openness at provider firewall/security-group layer (`49152-65535/udp`) is still not evidenced in prior host checks.
+  - If this range is blocked externally, relay-webrtc/TURN paths churn or fail intermittently even with correct `3478` listeners.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "WebRtcHideLocalIpsWithMdns|mdns|direct_connection_rate|relay-webrtc|iceServers|turn:|stun:|direct-path|candidate pair|preflight" plan/log.md plan/plan.md net-chaos-lab -S`
+- `rg -n "webrtc\.iceServers|relayRetention|dropRelayBootstrapOnDirect|dropRelayOnDirect|preferDirect" net-chaos-lab/configs -S`
+- `rg -n "--disable-features=WebRtcHideLocalIpsWithMdns|WebRtcHideLocalIpsWithMdns|webrtc|candidate|relay-webrtc|direct" net-chaos-lab/src net-chaos-lab/scripts -S` (pattern parse error due leading `--`)
+- `sed -n '1740,1835p' net-chaos-lab/src/chaoslab/topology.py`
+- `sed -n '860,945p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '5900,6025p' plan/log.md`
+- `sed -n '4240,4325p' plan/log.md`
+- `rg -n -- "No local /webrtc addrs to announce|relay-webrtc|direct_connection_rate|host-host|selected candidate pair|webrtc-internals|mDNS|WebRtcHideLocalIpsWithMdns" plan/log.md`
+- `date -Is`
+
+### Test Results
+- Diagnostic-only prompt; no runtime tests executed.
+
+### Failures / Open Questions
+- Open: production `chrome://webrtc-internals` selected candidate pair data for the latest failing session is still needed to prove whether media path is actually direct while multiaddr remains relay-scoped.
+- Open: provider-level firewall/security-group status for TURN relay UDP range remains unverified from available logs.
