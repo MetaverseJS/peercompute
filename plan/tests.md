@@ -52,6 +52,8 @@
 - Working hypothesis: "upgraded webrtc" links are mostly relay-signaled `/p2p-circuit/webrtc` paths, not stable direct peer-to-peer addresses.
 - Mitigation in progress: `NetworkManager` now caches observed direct `/webrtc` dial targets per peer (TTL-based) and reuses them when subsequent presence payloads are relay-scoped.
 - Mitigation in progress: NetViz now samples selected RTC candidate-pair stats and surfaces direct-vs-relay evidence in node diagnostics (`RTC path evidence`) so relay-scoped multiaddrs do not hide successful direct ICE pairs.
+- Validation expectation: `window.__NETVIZ__?.getStatus?.().rtcPath.peerConnectionCount` should be non-zero during active WebRTC sessions; if zero while `Connection upgraded ... -> webrtc` logs are present, the diagnostics hook path is still incomplete.
+- Visualization expectation: edge transport selection should prefer aggregated peer telemetry (`via`) across both edge directions, so direct links observed by remote peers are still reflected when the local browser lacks a direct socket for that edge.
 - Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`.
 
 ### Internet chaos lab (new)

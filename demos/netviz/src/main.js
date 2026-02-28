@@ -65,6 +65,7 @@ const ATTACH_SESSION_STALE_MS = 12000;
 const RTC_DIAGNOSTICS_INTERVAL_MS = 2000;
 const RTC_DIRECT_CANDIDATE_TYPES = new Set(['host', 'srflx', 'prflx']);
 const RTC_ACTIVE_PAIR_STATES = new Set(['succeeded', 'in-progress']);
+const RTC_TRACKED_METHOD_FLAG = '__netvizRtcMethodWrapped__';
 const CONNECTION_STATE = Object.freeze({
   DISCONNECTED: 'disconnected',
   CONNECTING: 'connecting',
@@ -249,18 +250,70 @@ const toPlainRtcCandidate = (candidate) => {
 const ensureRtcDiagnosticsTracker = () => {
   if (typeof window === 'undefined') return;
   if (window.__NETVIZ_RTC_TRACKER__?.collect) return;
-  const NativePc = window.RTCPeerConnection;
+  const NativePc = window.RTCPeerConnection || globalThis.RTCPeerConnection;
   if (!NativePc) return;
 
   const tracked = new Set();
+  const markTracked = (pc) => {
+    if (pc && typeof pc.getStats === 'function') tracked.add(pc);
+  };
+  const patchPrototypeMethod = (proto, methodName) => {
+    const original = proto?.[methodName];
+    if (typeof original !== 'function') return;
+    if (original[RTC_TRACKED_METHOD_FLAG]) return;
+    const wrapped = function wrappedRtcMethod(...args) {
+      markTracked(this);
+      return original.apply(this, args);
+    };
+    Object.defineProperty(wrapped, RTC_TRACKED_METHOD_FLAG, {
+      value: true,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+    proto[methodName] = wrapped;
+  };
+
+  const proto = NativePc.prototype;
+  [
+    'createOffer',
+    'createAnswer',
+    'setLocalDescription',
+    'setRemoteDescription',
+    'addIceCandidate',
+    'addTrack',
+    'createDataChannel',
+    'getStats'
+  ].forEach((methodName) => patchPrototypeMethod(proto, methodName));
+  const closeOriginal = proto?.close;
+  if (typeof closeOriginal === 'function' && !closeOriginal[RTC_TRACKED_METHOD_FLAG]) {
+    const wrappedClose = function wrappedRtcClose(...args) {
+      tracked.delete(this);
+      return closeOriginal.apply(this, args);
+    };
+    Object.defineProperty(wrappedClose, RTC_TRACKED_METHOD_FLAG, {
+      value: true,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+    proto.close = wrappedClose;
+  }
+
   class TrackedPc extends NativePc {
     constructor(...args) {
       super(...args);
-      tracked.add(this);
+      markTracked(this);
     }
   }
 
-  window.RTCPeerConnection = TrackedPc;
+  if (window.RTCPeerConnection === NativePc) {
+    window.RTCPeerConnection = TrackedPc;
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.RTCPeerConnection === NativePc) {
+    globalThis.RTCPeerConnection = TrackedPc;
+  }
+
   window.__NETVIZ_RTC_TRACKER__ = {
     async collect() {
       const pairs = [];
@@ -2109,6 +2162,27 @@ const buildEdges = (peers, localId, relayState = null) => {
   const relayIds = new Set(relayState?.activeRelayIds || []);
   const connectionSnapshot = localId ? getConnectionAddressSnapshot() : null;
   const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
+  const telemetryViaByEdge = new Map();
+  peers.forEach((peer) => {
+    const from = peer?.peerId;
+    if (!from) return;
+    const snapshot = telemetryStore.get(from);
+    const neighbors = Array.isArray(snapshot?.peers) ? snapshot.peers : [];
+    neighbors.forEach((neighbor) => {
+      const to = neighbor?.peerId || neighbor?.id || null;
+      if (!to || to === from) return;
+      const key = buildEdgeKey(from, to);
+      const rawVia = String(neighbor?.via || '').trim().toLowerCase();
+      if (!rawVia) return;
+      if (rawVia === 'webrtc') {
+        telemetryViaByEdge.set(key, 'webrtc');
+        return;
+      }
+      if (!telemetryViaByEdge.has(key) && rawVia === 'relay') {
+        telemetryViaByEdge.set(key, 'relay');
+      }
+    });
+  });
   const resolveLiveViaForEdge = (from, to) => {
     if (!connectionSnapshot || !localId) return null;
     const remotePeerId = from === localId ? to : to === localId ? from : null;
@@ -2160,7 +2234,8 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextTxCount = Number(metrics?.txCount) || 0;
     const rawVia = metrics?.via || null;
     const liveVia = resolveLiveViaForEdge(from, to);
-    const via = liveVia || (rawVia === 'webrtc' ? 'webrtc' : 'relay');
+    const telemetryVia = telemetryViaByEdge.get(key) || null;
+    const via = liveVia || telemetryVia || (rawVia === 'webrtc' ? 'webrtc' : 'relay');
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
     if (existing) {

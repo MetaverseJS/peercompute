@@ -17774,3 +17774,65 @@ def parse_args() -> argparse.Namespace:
     - local upgraded `relay-webrtc` links render as WebRTC transport (amber),
     - direct evidence flips true when candidate-pair types show non-relay (`host`/`srflx`/`prflx`).
 - This change fixes observability/classification mismatch; it does not fabricate direct dials and does not replace TURN/firewall prerequisites for true direct-media success.
+
+## Date: 2026-02-28
+
+### Prompt
+- yes do that. will that fix the problem where each peer shows direct connections locally but does not show them for peers that have them?
+
+### Prompt Time/Date
+- 2026-02-28T20:54:57+00:00
+
+### Actions Attempted
+- Re-read `plan/plan.md` and recent `plan/log.md` before implementing.
+- Inspected current NetViz RTC tracker implementation and confirmed the root cause of `rtcPath.peerConnectionCount=0`:
+  - tracker only observed instances created through replaced `window.RTCPeerConnection` constructor.
+  - libp2p can use a cached constructor reference, bypassing constructor-only wrapping.
+- Hardened NetViz RTC tracking in `demos/netviz/src/main.js`:
+  - added prototype-method patching (`createOffer`, `createAnswer`, `setLocalDescription`, `setRemoteDescription`, `addIceCandidate`, `addTrack`, `createDataChannel`, `getStats`) to mark peer connections as tracked even when constructor replacement is bypassed.
+  - added wrapped `close()` tracking cleanup for tracked set hygiene.
+  - kept constructor replacement for normal browser-created paths; now tracker works for both paths.
+- Addressed cross-peer direct-link visibility drift in edge rendering:
+  - `buildEdges` now pre-aggregates per-edge `via` evidence from all peer telemetry snapshots in `telemetryStore`.
+  - edge transport selection now prefers:
+    1) live local libp2p evidence,
+    2) aggregated per-edge telemetry evidence,
+    3) local metric fallback.
+  - this improves cases where each peer knows its own link is direct but another observer previously rendered relay due one-sided/local-only connection table visibility.
+- Updated docs/plans:
+  - `demos/netviz/README.md` UI notes now mention aggregated edge-via behavior.
+  - `plan/plan.md` completed section updated with tracker hardening + edge-via aggregation.
+  - `plan/tests.md` diagnosis section updated with expected `rtcPath.peerConnectionCount` behavior and cross-peer edge-via expectation.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `demos/netviz/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `awk 'NR>=1 && NR<=180 ...' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `awk 'NR>=220 && NR<=420 ...' demos/netviz/src/main.js`
+- `apply_patch` (RTC tracker prototype-method instrumentation + cleanup)
+- `apply_patch` (edge `via` aggregation across peer telemetry)
+- `awk 'NR>=2088 && NR<=2205 ...' demos/netviz/src/main.js`
+- `awk 'NR>=236 && NR<=360 ...' demos/netviz/src/main.js`
+- `apply_patch` (`plan/plan.md` completed bullet)
+- `apply_patch` (`plan/tests.md` diagnosis expectations)
+- `apply_patch` (`demos/netviz/README.md` UI note)
+- `date -Is`
+- `git diff --name-only`
+
+### Test Results
+- Runtime/build tests not executed in this environment (Node/NPM unavailable in this runner from earlier prompts).
+- Static verification completed via targeted source inspection of patched sections:
+  - tracker patch present and guards duplicate wrapping via `RTC_TRACKED_METHOD_FLAG`.
+  - edge-via aggregation map present in `buildEdges` and used in `via` resolution.
+
+### Failures / Open Questions
+- Need host/browser validation after deploy:
+  - `window.__NETVIZ__?.getStatus?.().rtcPath.peerConnectionCount` should become > 0 during active WebRTC sessions.
+  - remote-peer edges should retain `webrtc` transport more consistently when peers report direct `via` on either side.
+- This improves observability/rendering consistency; it does not by itself change NAT traversal success rates.
