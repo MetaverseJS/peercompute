@@ -24,5 +24,6 @@ NetViz connects when you click the "Connect" button (after selecting topology, t
 - Use the "Hide ghosts" toggle to hide inferred nodes that have no telemetry yet.
 - Orbit controls are enabled for pan/zoom; optional auto-rotate can be toggled on.
 - NURBS links thicken with higher bandwidth and animate pulses when traffic is flowing.
+- Local-node inspector now shows `RTC path evidence` (selected candidate-pair summary) so direct ICE success can be detected even when libp2p addresses remain relay-scoped.
 - Add `?chaosApi=/chaos-api` (or `?chaosApi=http://127.0.0.1:8866`) to show live chaos-lab topology + scenario behavior in the NetViz console and 3D graph overlay.
 - Add `&autoConnect=0` to watch chaos-lab without immediately dialing relay bootstrap endpoints.

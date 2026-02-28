@@ -62,6 +62,9 @@ const CHAOS_POLL_MS = 2000;
 const CHAOS_NODE_PREFIX = 'chaos:';
 const NETVIZ_DEBUG_CHANNEL = 'peercompute-netviz-debug-v1';
 const ATTACH_SESSION_STALE_MS = 12000;
+const RTC_DIAGNOSTICS_INTERVAL_MS = 2000;
+const RTC_DIRECT_CANDIDATE_TYPES = new Set(['host', 'srflx', 'prflx']);
+const RTC_ACTIVE_PAIR_STATES = new Set(['succeeded', 'in-progress']);
 const CONNECTION_STATE = Object.freeze({
   DISCONNECTED: 'disconnected',
   CONNECTING: 'connecting',
@@ -144,6 +147,18 @@ let lastChaosOverlay = {
 const attachSessions = new Map();
 let attachSessionChannel = null;
 let pendingAttachSessionId = null;
+let rtcDiagnosticsTimer = null;
+let rtcDiagnosticsInFlight = false;
+let rtcPathState = {
+  updatedAt: 0,
+  peerConnectionCount: 0,
+  pairCount: 0,
+  hasDirectPair: false,
+  hasRelayPair: false,
+  localCandidateTypes: {},
+  remoteCandidateTypes: {},
+  selectedPairStates: {}
+};
 
 const formatPeerId = (peerId) => {
   if (!peerId) return 'unknown';
@@ -213,6 +228,174 @@ const classifyConnectionKind = (remoteAddr) => {
   return 'direct';
 };
 
+const normalizeRtcType = (value) => String(value || '').trim().toLowerCase();
+
+const incrementCount = (target, key) => {
+  const normalized = normalizeRtcType(key) || 'unknown';
+  target[normalized] = Number(target[normalized] || 0) + 1;
+};
+
+const toPlainRtcCandidate = (candidate) => {
+  if (!candidate) return null;
+  return {
+    id: candidate.id || null,
+    type: candidate.candidateType || null,
+    protocol: candidate.protocol || null,
+    address: candidate.address || null,
+    port: candidate.port || null
+  };
+};
+
+const ensureRtcDiagnosticsTracker = () => {
+  if (typeof window === 'undefined') return;
+  if (window.__NETVIZ_RTC_TRACKER__?.collect) return;
+  const NativePc = window.RTCPeerConnection;
+  if (!NativePc) return;
+
+  const tracked = new Set();
+  class TrackedPc extends NativePc {
+    constructor(...args) {
+      super(...args);
+      tracked.add(this);
+    }
+  }
+
+  window.RTCPeerConnection = TrackedPc;
+  window.__NETVIZ_RTC_TRACKER__ = {
+    async collect() {
+      const pairs = [];
+      for (const pc of Array.from(tracked)) {
+        if (!pc || pc.signalingState === 'closed' || pc.connectionState === 'closed') {
+          tracked.delete(pc);
+          continue;
+        }
+        let selectedPair = null;
+        let localCandidate = null;
+        let remoteCandidate = null;
+        try {
+          const stats = await pc.getStats();
+          for (const report of stats.values()) {
+            if (report.type === 'transport' && report.selectedCandidatePairId) {
+              selectedPair = stats.get(report.selectedCandidatePairId) || null;
+              break;
+            }
+          }
+          if (!selectedPair) {
+            for (const report of stats.values()) {
+              if (report.type === 'candidate-pair' && report.nominated && report.state === 'succeeded') {
+                selectedPair = report;
+                break;
+              }
+            }
+          }
+          if (selectedPair) {
+            localCandidate = stats.get(selectedPair.localCandidateId) || null;
+            remoteCandidate = stats.get(selectedPair.remoteCandidateId) || null;
+          }
+        } catch (_) {
+          // Ignore transient getStats failures from closing peer connections.
+        }
+        pairs.push({
+          selectedPairState: selectedPair?.state || null,
+          localCandidate: toPlainRtcCandidate(localCandidate),
+          remoteCandidate: toPlainRtcCandidate(remoteCandidate),
+          bytesSent: Number.isFinite(selectedPair?.bytesSent) ? selectedPair.bytesSent : 0,
+          bytesReceived: Number.isFinite(selectedPair?.bytesReceived) ? selectedPair.bytesReceived : 0
+        });
+      }
+      return pairs;
+    }
+  };
+};
+
+const summarizeRtcPairs = (pairs = []) => {
+  const localCandidateTypes = {};
+  const remoteCandidateTypes = {};
+  const selectedPairStates = {};
+  let hasDirectPair = false;
+  let hasRelayPair = false;
+
+  pairs.forEach((pair) => {
+    const state = normalizeRtcType(pair?.selectedPairState);
+    const localType = normalizeRtcType(pair?.localCandidate?.type);
+    const remoteType = normalizeRtcType(pair?.remoteCandidate?.type);
+    const bytesSent = Number(pair?.bytesSent || 0);
+    const bytesReceived = Number(pair?.bytesReceived || 0);
+
+    incrementCount(localCandidateTypes, localType || 'unknown');
+    incrementCount(remoteCandidateTypes, remoteType || 'unknown');
+    incrementCount(selectedPairStates, state || 'none');
+
+    if (localType === 'relay' || remoteType === 'relay') {
+      hasRelayPair = true;
+    }
+
+    if (state && !RTC_ACTIVE_PAIR_STATES.has(state)) return;
+    if (!(state === 'succeeded' || bytesSent > 0 || bytesReceived > 0)) return;
+    if (!RTC_DIRECT_CANDIDATE_TYPES.has(localType)) return;
+    if (!RTC_DIRECT_CANDIDATE_TYPES.has(remoteType)) return;
+    hasDirectPair = true;
+  });
+
+  return {
+    updatedAt: Date.now(),
+    pairCount: pairs.length,
+    hasDirectPair,
+    hasRelayPair,
+    localCandidateTypes,
+    remoteCandidateTypes,
+    selectedPairStates
+  };
+};
+
+const updateRtcPathState = async () => {
+  if (rtcDiagnosticsInFlight) return;
+  if (typeof window === 'undefined') return;
+  const collect = window.__NETVIZ_RTC_TRACKER__?.collect;
+  if (typeof collect !== 'function') return;
+  rtcDiagnosticsInFlight = true;
+  try {
+    const pairs = await collect();
+    const summary = summarizeRtcPairs(Array.isArray(pairs) ? pairs : []);
+    rtcPathState = {
+      ...rtcPathState,
+      ...summary,
+      peerConnectionCount: Array.isArray(pairs) ? pairs.length : 0
+    };
+  } catch (_) {
+    // Ignore diagnostics read errors to keep rendering loop stable.
+  } finally {
+    rtcDiagnosticsInFlight = false;
+  }
+};
+
+const startRtcDiagnosticsLoop = () => {
+  ensureRtcDiagnosticsTracker();
+  if (rtcDiagnosticsTimer) return;
+  updateRtcPathState().catch(() => {});
+  rtcDiagnosticsTimer = setInterval(() => {
+    updateRtcPathState().catch(() => {});
+  }, RTC_DIAGNOSTICS_INTERVAL_MS);
+};
+
+const stopRtcDiagnosticsLoop = () => {
+  if (rtcDiagnosticsTimer) {
+    clearInterval(rtcDiagnosticsTimer);
+    rtcDiagnosticsTimer = null;
+  }
+  rtcDiagnosticsInFlight = false;
+  rtcPathState = {
+    updatedAt: 0,
+    peerConnectionCount: 0,
+    pairCount: 0,
+    hasDirectPair: false,
+    hasRelayPair: false,
+    localCandidateTypes: {},
+    remoteCandidateTypes: {},
+    selectedPairStates: {}
+  };
+};
+
 const summarizeConnectionKinds = (connections = []) => {
   if (!Array.isArray(connections) || connections.length === 0) return 'none';
   const counts = connections.reduce((acc, conn) => {
@@ -265,14 +448,14 @@ const getConnectionAddressSnapshot = () => {
   const localAddrs = networkManager?.getLibp2pNode?.()?.getMultiaddrs?.()
     ?.map((addr) => addr.toString?.() || String(addr))
     ?.filter(Boolean) || [];
-  return { byPeer, all, localAddrs };
+  return { byPeer, all, localAddrs, rtcPath: rtcPathState };
 };
 
 const guessNatStatus = (connections = []) => {
   if (!Array.isArray(connections) || connections.length === 0) return 'unknown';
   const hasDirectWebrtc = connections.some((conn) => conn?.kind === 'webrtc-direct');
   const hasRelayOnly = connections.every((conn) => ['relay', 'relay-webrtc'].includes(conn?.kind));
-  if (hasDirectWebrtc) return 'direct-capable';
+  if (hasDirectWebrtc || rtcPathState.hasDirectPair) return 'direct-capable';
   if (hasRelayOnly) return 'relay-dependent';
   return 'mixed/unknown';
 };
@@ -1924,7 +2107,22 @@ const buildEdges = (peers, localId, relayState = null) => {
   const edgeMap = new Map();
   const knownIds = new Set(peers.map((peer) => peer?.peerId).filter(Boolean));
   const relayIds = new Set(relayState?.activeRelayIds || []);
+  const connectionSnapshot = localId ? getConnectionAddressSnapshot() : null;
   const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
+  const resolveLiveViaForEdge = (from, to) => {
+    if (!connectionSnapshot || !localId) return null;
+    const remotePeerId = from === localId ? to : to === localId ? from : null;
+    if (!remotePeerId) return null;
+    const liveConnections = connectionSnapshot.byPeer.get(remotePeerId) || [];
+    if (!Array.isArray(liveConnections) || liveConnections.length === 0) return null;
+    if (liveConnections.some((conn) => conn?.kind === 'webrtc-direct' || conn?.kind === 'relay-webrtc')) {
+      return 'webrtc';
+    }
+    if (liveConnections.some((conn) => conn?.kind === 'relay')) {
+      return 'relay';
+    }
+    return null;
+  };
   const resolveRelayForEdge = (from, to, via) => {
     if (via !== 'relay') return null;
     const peerRelayMap = relayState?.peerRelayMap;
@@ -1961,7 +2159,8 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextRxCount = Number(metrics?.rxCount) || 0;
     const nextTxCount = Number(metrics?.txCount) || 0;
     const rawVia = metrics?.via || null;
-    const via = rawVia === 'webrtc' ? 'webrtc' : 'relay';
+    const liveVia = resolveLiveViaForEdge(from, to);
+    const via = liveVia || (rawVia === 'webrtc' ? 'webrtc' : 'relay');
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
     if (existing) {
@@ -2221,6 +2420,7 @@ const buildNodeInfo = (peerId) => {
   const localRelayAddrs = peerId === localPeerId
     ? localAddrSummary.filter((addr) => String(addr).includes('/p2p-circuit'))
     : [];
+  const rtcPath = connectionSnapshot.rtcPath || rtcPathState;
   const lines = [
     `Peer ID: ${peerId}`,
     `Role: ${role}`,
@@ -2243,6 +2443,9 @@ const buildNodeInfo = (peerId) => {
   ];
   if (peerId === localPeerId) {
     lines.push(`Announce addrs: total ${localAddrSummary.length} | webrtc ${localWebrtcAddrs.length} | relay ${localRelayAddrs.length}`);
+    lines.push(
+      `RTC path evidence: direct=${rtcPath?.hasDirectPair ? 'yes' : 'no'} | relay=${rtcPath?.hasRelayPair ? 'yes' : 'no'} | pairs=${rtcPath?.pairCount ?? 0}`
+    );
     lines.push(`Local addrs: ${formatCompactList(localAddrSummary, 2)}`);
   } else {
     const liveAddrs = uniqueList(liveConnections.map((entry) => entry.remoteAddr));
@@ -2521,6 +2724,7 @@ const handleSnapshot = (_peerId, message) => {
 
 const startTelemetryLoop = () => {
   if (!networkManager || !stateManager) return;
+  startRtcDiagnosticsLoop();
 
   const publish = () => {
     const snapshot = networkManager.getTelemetrySnapshot();
@@ -2548,6 +2752,7 @@ const stopTelemetryLoop = () => {
     clearInterval(uiTimer);
     uiTimer = null;
   }
+  stopRtcDiagnosticsLoop();
 };
 
 const stopDebugLoop = () => {
@@ -2640,6 +2845,7 @@ const disconnect = async ({ reason = 'manual' } = {}) => {
 
 const connect = async () => {
   if (connectionState !== CONNECTION_STATE.DISCONNECTED) return;
+  ensureRtcDiagnosticsTracker();
   setConnectionState(CONNECTION_STATE.CONNECTING);
   setConfigInputsDisabled(true);
   syncQueryParams(readUrlInputState());
@@ -2774,26 +2980,27 @@ const connect = async () => {
       debugLogTimer = setInterval(() => {
         const debug = window.__NETVIZ__?.getStatus?.().relayRetentionDebug || null;
         console.log('[NetViz] Relay retention debug:', debug ? JSON.stringify(debug) : 'n/a');
-        try {
-          const libp2p = networkManager?.getLibp2pNode?.();
-          const addrs = libp2p?.getMultiaddrs?.().map((addr) => addr.toString()) || [];
-          const connections = libp2p?.getConnections?.() || [];
-          const summarized = Array.isArray(connections)
-            ? connections.map((conn) => {
-                const remoteAddr = conn?.remoteAddr?.toString?.() || '';
-                return {
-                  peerId: conn?.remotePeer?.toString?.() || '',
-                  remoteAddr,
-                  isRelay: remoteAddr.includes('/p2p-circuit'),
-                  isWebRTC: remoteAddr.includes('/webrtc')
-                };
-              })
-            : [];
-          console.log('[NetViz] Libp2p addrs:', addrs);
-          console.log('[NetViz] Connections:', summarized);
-        } catch (err) {
-          console.warn('[NetViz] Libp2p debug failed:', err?.message || err);
-        }
+          try {
+            const libp2p = networkManager?.getLibp2pNode?.();
+            const addrs = libp2p?.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+            const connections = libp2p?.getConnections?.() || [];
+            const summarized = Array.isArray(connections)
+              ? connections.map((conn) => {
+                  const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+                  return {
+                    peerId: conn?.remotePeer?.toString?.() || '',
+                    remoteAddr,
+                    kind: classifyConnectionKind(remoteAddr),
+                    isRelay: remoteAddr.includes('/p2p-circuit'),
+                    isWebRTC: remoteAddr.includes('/webrtc')
+                  };
+                })
+              : [];
+            console.log('[NetViz] Libp2p addrs:', addrs);
+            console.log('[NetViz] Connections:', summarized);
+          } catch (err) {
+            console.warn('[NetViz] Libp2p debug failed:', err?.message || err);
+          }
       }, 60000);
     }
     syncQueryParams(readUrlInputState());
@@ -2820,21 +3027,22 @@ const attachDebugHandles = () => {
     try {
       const libp2p = networkManager?.getLibp2pNode?.();
       if (!libp2p) return { addrs: [], announceAddrs: [], connections: [] };
-      const addrs = libp2p.getMultiaddrs?.().map((addr) => addr.toString()) || [];
-      const announceAddrs = networkManager?.getAnnounceAddrs?.() || addrs;
-      const connections = libp2p.getConnections?.() || [];
-      const summarized = Array.isArray(connections)
-        ? connections.map((conn) => {
-            const remoteAddr = conn?.remoteAddr?.toString?.() || '';
-            return {
-              peerId: conn?.remotePeer?.toString?.() || '',
-              remoteAddr,
-              isRelay: remoteAddr.includes('/p2p-circuit'),
-              isWebRTC: remoteAddr.includes('/webrtc')
-            };
-          })
-        : [];
-      return { addrs, announceAddrs, connections: summarized };
+        const addrs = libp2p.getMultiaddrs?.().map((addr) => addr.toString()) || [];
+        const announceAddrs = networkManager?.getAnnounceAddrs?.() || addrs;
+        const connections = libp2p.getConnections?.() || [];
+        const summarized = Array.isArray(connections)
+          ? connections.map((conn) => {
+              const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+              return {
+                peerId: conn?.remotePeer?.toString?.() || '',
+                remoteAddr,
+                kind: classifyConnectionKind(remoteAddr),
+                isRelay: remoteAddr.includes('/p2p-circuit'),
+                isWebRTC: remoteAddr.includes('/webrtc')
+              };
+            })
+          : [];
+        return { addrs, announceAddrs, connections: summarized };
     } catch (_) {
       return { addrs: [], announceAddrs: [], connections: [] };
     }
@@ -2855,6 +3063,7 @@ const attachDebugHandles = () => {
       chaosApiBase,
       chaosFeed,
       attachSessions: Array.from(attachSessions.values()),
+      rtcPath: { ...rtcPathState },
       relayRetentionDebug: networkManager ? {
         dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
         relayRetention: networkManager.config?.webrtc?.relayRetention,

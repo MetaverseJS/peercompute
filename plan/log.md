@@ -17704,3 +17704,73 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open: production `chrome://webrtc-internals` selected candidate pair data for the latest failing session is still needed to prove whether media path is actually direct while multiaddr remains relay-scoped.
 - Open: provider-level firewall/security-group status for TURN relay UDP range remains unverified from available logs.
+
+## Date: 2026-02-28
+
+### Prompt
+- can you fix it?
+
+### Prompt Time/Date
+- 2026-02-28T20:29:38+00:00
+
+### Actions Attempted
+- Re-read `plan/plan.md`, `plan/log.md`, and `plan/tests.md` before edits.
+- Compared current NetViz/runtime behavior against chaos-lab direct-path handling (selected RTC candidate-pair fallback) to avoid synthetic/direct-address fabrication.
+- Implemented a real RTC diagnostics path in `demos/netviz/src/main.js`:
+  - added browser RTCPeerConnection tracking (`window.__NETVIZ_RTC_TRACKER__`) and selected candidate-pair collection (state + local/remote candidate types + byte activity).
+  - added `rtcPathState` summarization (`hasDirectPair`, `hasRelayPair`, candidate-type counters) using the same direct criteria used in chaos-lab (`host`/`srflx`/`prflx` + active pair states).
+  - wired a periodic diagnostics loop into NetViz lifecycle (`startTelemetryLoop` / `stopTelemetryLoop`).
+  - ensured tracker installs before connect/start so newly created peer connections are observable.
+- Updated NetViz transport rendering behavior without fake direct addresses:
+  - `buildEdges` now checks live local libp2p connection kinds and upgrades local edge rendering to `webrtc` when the live connection is `relay-webrtc` or `webrtc-direct`.
+  - this fixes the case where telemetry `via` stays `relay` even after runtime WebRTC upgrade.
+- Extended NetViz debug/inspector observability:
+  - `getConnectionAddressSnapshot` now includes `rtcPath`.
+  - node inspector now shows `RTC path evidence: direct=... | relay=... | pairs=...` for the local node.
+  - `window.__NETVIZ__.getStatus()` now exposes `rtcPath`.
+  - libp2p debug summaries now include normalized `kind` (`relay`, `relay-webrtc`, `webrtc-direct`, etc.).
+- Updated docs/plans for traceability:
+  - added completed item in `plan/plan.md` for NetViz RTC path diagnostics.
+  - updated `plan/tests.md` diagnosis section with RTC candidate-pair mitigation note.
+  - updated `demos/netviz/README.md` UI notes with `RTC path evidence` inspector behavior.
+
+### Files Touched
+- `demos/netviz/src/main.js`
+- `demos/netviz/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd && git status --short`
+- `rg -n "No local /webrtc addrs|relay-scoped|direct targets|webrtc-relay|_maybeDialPeer|_rememberDialTargets|peerDialAddrCache|connection upgraded|directWebrtc|relayWebrtc|hasDirectPeerConnections" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `rg -n "direct_connection_rate|selected RTC candidate|candidate-pair|has_direct_connection|relay-webrtc|directWebrtc|connectionAddrCounts|announce" net-chaos-lab/src net-chaos-lab/README.md demos/netviz -S`
+- `awk`/`sed` reads of:
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js`
+  - `demos/netviz/src/main.js`
+  - `net-chaos-lab/agent/probe.mjs`
+  - `plan/plan.md`, `plan/log.md`, `plan/tests.md`, `demos/netviz/README.md`
+- `apply_patch` edits for `demos/netviz/src/main.js`, `demos/netviz/README.md`, `plan/plan.md`, `plan/tests.md`
+- Validation attempts:
+  - `command -v node || true; command -v npm || true`
+  - `/bin/bash -lc "export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node -v && npm -v && npm --prefix demos/netviz run build"` (sandbox + escalated)
+  - `ls -ld /home/cos/.nvm /home/cos/.nvm/nvm.sh; id`
+  - `ls -la /home/cos/.nvm/versions/node ...; find /home/cos/.nvm/versions/node ... -name node`
+- `date -Is`
+
+### Test Results
+- Runtime/build validation in this session: BLOCKED.
+  - `node`/`npm` are not available in this execution environment.
+  - sourcing `/home/cos/.nvm/nvm.sh` returned `Permission denied` in both sandbox and escalated runs.
+  - no local Node binary was found under `/home/cos/.nvm/versions/node`.
+- Static verification completed:
+  - confirmed new RTC diagnostics hooks and edge-via override are present via `rg` + `git diff` review.
+
+### Failures / Open Questions
+- Need host-side validation on your server/workstation (outside this restricted runner):
+  - `npm --prefix demos/netviz run build`
+  - then open NetViz and confirm:
+    - local inspector shows `RTC path evidence` updates,
+    - local upgraded `relay-webrtc` links render as WebRTC transport (amber),
+    - direct evidence flips true when candidate-pair types show non-relay (`host`/`srflx`/`prflx`).
+- This change fixes observability/classification mismatch; it does not fabricate direct dials and does not replace TURN/firewall prerequisites for true direct-media success.
