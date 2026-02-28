@@ -17519,3 +17519,131 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Could not execute JS unit tests in this sandbox due missing `node` binary and blocked access to user nvm path.
 - Runtime host validation remains pending: confirm this cache path reduces `relay-webrtc` redial churn and increases pure `webrtc` reconnect rates in live NetViz logs.
+
+## Date: 2026-02-28
+
+### Prompt
+- I think we're on the new version but still no dice [updated NetViz logs showing relay-webrtc only + no local /webrtc addrs]
+
+### Prompt Time/Date
+- 2026-02-28T01:47:31+00:00
+
+### Actions Attempted
+- Reviewed provided runtime logs and confirmed patch was deployed (new log text present):
+  - `No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.`
+- Diagnosed why behavior still persisted:
+  - peers were reaching `relay -> relay-webrtc` but never reaching pure `webrtc`;
+  - first patch's remembered-direct flow depends on prior direct target availability or remembered direct hints;
+  - in this run, no peer established a pure direct path first, so fallback remained relay-webrtc-only.
+- Implemented second-stage dialing fallback in `NetworkManager`:
+  - within `_maybeDialPeer`, when `preferDirect` is enabled and direct targets are empty but relay-webrtc targets exist, synthesize a direct dial target `/webrtc/p2p/<peerId>` and attempt it before relay-only fallback.
+  - preserves existing relay/webrtc target handling and throttle behavior.
+- Updated unit tests to align with new behavior:
+  - changed existing relay-only no-redial test to use pure relay target case (still no redial),
+  - kept remembered-direct test but made it explicitly validate cache usage without explicit presence targets,
+  - added new test: `NetworkManager synthesizes direct target from relay-webrtc candidates`.
+- Updated plan docs:
+  - `plan/tests.md` direct-diagnosis section now notes synthetic direct-target mitigation.
+  - `plan/plan.md` completed section now includes synthetic direct fallback change.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `sed -n '1,140p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "No local /webrtc addrs to announce|No direct targets, using relay-webrtc|relay-webrtc|Local webrtc addrs|announce addrs" peercompute -S`
+- `rg -n "class NetworkManager|webrtc|announce|dial|bootstrap" peercompute/src -S`
+- `sed -n '2960,3145p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2760,2955p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,240p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "_rememberPeerAddresses\(|rememberPeerAddresses|announceAddrs|peer\.addrs|multiaddrs" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '1160,1565p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1940,2095p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,180p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '300,560p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "function ensurePeerIdSuffix|const ensurePeerIdSuffix|getPeerIdFromAddr|normalizeBootstrapAddr|toPeerMultiaddr" peercompute/src/peercompute/networkManager/NetworkManager.js -n -S`
+- `sed -n '220,320p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '620,830p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` (add synthetic direct target generation path in `_maybeDialPeer`)
+- `apply_patch` (update/add unit tests for synthetic direct + relay-only no-redial)
+- `apply_patch` (`plan/tests.md` mitigation note update)
+- `apply_patch` (`plan/plan.md` completed note update)
+- `rg -n "synthesizes direct target from relay-webrtc candidates|does not redial when already relayed and only relay targets exist|prefers remembered direct /webrtc targets" peercompute/tests/unit/networkManager.webrtc.test.js -S`
+- `rg -n "getSyntheticDirectTarget|directTargets.length === 0 && relayWebrtcTargets.length > 0|No local /webrtc addrs to announce; using relay-scoped" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `date -Is && git status --short`
+
+### Test Results
+- Static verification:
+  - PASS: new synthetic target branch present in `_maybeDialPeer`.
+  - PASS: unit tests updated to reflect new flow and regression guard rails.
+- Runtime unit execution:
+  - Not run in this sandbox due unavailable `node` binary / blocked nvm path access from earlier prompts.
+
+### Failures / Open Questions
+- Host-side runtime validation still needed to confirm new synthetic direct attempts increase pure `webrtc` openings in production logs.
+- If synthetic `/webrtc/p2p/<peerId>` attempts still fail consistently, next likely bottleneck is cross-client connectivity/NAT symmetry rather than target selection logic.
+
+## Date: 2026-02-28
+
+### Prompt
+- wait you're FAKING a direct dial? why on earth do you think that would be acceptable?
+- I was running a build. go ahead and make your changes in demos
+
+### Prompt Time/Date
+- 2026-02-28T01:53:08+00:00
+
+### Actions Attempted
+- Acknowledged user concern and agreed to remove all synthetic direct dial behavior.
+- Detected unrelated `docs/*` changes in git status and paused per repo rules; user confirmed those were expected from a running build and approved proceeding.
+- Reverted synthetic dial behavior in `NetworkManager`:
+  - removed synthetic direct-target generation branch in `_maybeDialPeer`.
+  - removed synthetic-address injection from `_rememberDialTargets`.
+  - removed `directWebrtcPeerHints` state and associated `connection:open` logic.
+  - kept only real observed-address caching (`peerDialAddrCache`) for direct target reuse.
+- Updated unit tests to match non-synthetic behavior:
+  - restored relay-webrtc no-redial regression semantics.
+  - kept remembered-direct test but now seeded only with an explicit real direct address (`/webrtc/p2p/peer-direct`) and no synthetic hints/options.
+  - removed synthetic direct-target test case.
+- Updated plan docs to remove synthetic-mitigation language and align current diagnosis log message wording.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `rg -n "getSyntheticDirectTarget|synthesizes direct target|synthetic direct|relay-webrtc candidates" peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/tests/unit/networkManager.webrtc.test.js plan/plan.md plan/tests.md -S`
+- `git status --short`
+- `sed -n '460,520p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1248,1288p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2838,2920p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3128,3198p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '176,270p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '64,80p' plan/plan.md; sed -n '46,62p' plan/tests.md`
+- `apply_patch` (remove synthetic dial logic + hint state from NetworkManager)
+- `rg -n "directWebrtcPeerHints|getSyntheticDirectTarget|synthesizeDirect|synthetic" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `apply_patch` (restore tests to non-synthetic behavior)
+- `apply_patch` (update plan/tests diagnosis wording + remove synthetic mitigation line)
+- `rg -n "synthetic direct|synthesizes direct target|synthesizeDirect|getSyntheticDirectTarget|/webrtc/p2p/<peerId>" peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/tests/unit/networkManager.webrtc.test.js plan/plan.md plan/tests.md -S || true`
+- `git diff -- peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/tests/unit/networkManager.webrtc.test.js plan/plan.md plan/tests.md | sed -n '1,320p'`
+- `date -Is`
+- `git status --short`
+
+### Test Results
+- Static verification:
+  - PASS: synthetic code paths removed from `NetworkManager`.
+  - PASS: synthetic test removed; remembered-direct test now uses explicit real direct address input.
+- Runtime unit execution:
+  - Not run in this sandbox (Node runtime unavailable / nvm access denied in this environment from earlier prompts).
+
+### Failures / Open Questions
+- Remaining runtime issue is not synthetic dialing logic anymore; current behavior still depends on peers actually providing/retaining real direct dialable `/webrtc` paths.
+- Need host-side runtime logs from updated build to confirm whether direct address reuse occurs when genuine direct paths are observed.

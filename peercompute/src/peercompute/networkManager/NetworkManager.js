@@ -476,7 +476,6 @@ export class NetworkManager {
     this.relayTransport = null;
     this.relayReservationPeers = new Set();
     this.peerDialAddrCache = new Map();
-    this.directWebrtcPeerHints = new Set();
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -1258,10 +1257,7 @@ export class NetworkManager {
       if (!peerId) return;
       const remoteAddr = toAddrString(conn?.remoteAddr);
       const kind = getConnectionKind(remoteAddr);
-      this._rememberDialTargets(peerId, [remoteAddr], { synthesizeDirect: kind !== 'webrtc' });
-      if (kind === 'webrtc') {
-        this.directWebrtcPeerHints.add(peerId);
-      }
+      this._rememberDialTargets(peerId, [remoteAddr]);
       const prevKind = this.peers.get(peerId)?.via || null;
       if (prevKind && ['relay', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
         console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
@@ -3133,7 +3129,7 @@ export class NetworkManager {
 
   _rememberPeerAddresses(peerId, addrs) {
     if (!Array.isArray(addrs) || addrs.length === 0) return;
-    this._rememberDialTargets(peerId, addrs, { synthesizeDirect: true });
+    this._rememberDialTargets(peerId, addrs);
     if (!this.libp2p?.peerStore?.merge) return;
     let peer;
     try {
@@ -3146,11 +3142,10 @@ export class NetworkManager {
     this.libp2p.peerStore.merge(peer, { multiaddrs }).catch(() => {});
   }
 
-  _rememberDialTargets(peerId, addrs, options = {}) {
+  _rememberDialTargets(peerId, addrs) {
     if (!peerId || !Array.isArray(addrs) || addrs.length === 0) return;
     const now = Date.now();
     const current = this.peerDialAddrCache.get(peerId) || { addrs: new Set(), updatedAt: now };
-    const allowSynthetic = options.synthesizeDirect === true && this.directWebrtcPeerHints.has(peerId);
     let changed = false;
     addrs.forEach((value) => {
       const addr = ensurePeerIdSuffix(toAddrString(value), peerId);
@@ -3162,14 +3157,6 @@ export class NetworkManager {
           current.addrs.add(normalized);
           changed = true;
         }
-      }
-      if (!allowSynthetic || !isRelayWebRTCAddr(addr)) return;
-      const synthetic = toPeerMultiaddr(`/webrtc/p2p/${peerId}`);
-      if (!synthetic) return;
-      const syntheticAddr = synthetic.toString();
-      if (!current.addrs.has(syntheticAddr)) {
-        current.addrs.add(syntheticAddr);
-        changed = true;
       }
     });
     if (!changed && !this.peerDialAddrCache.has(peerId)) return;

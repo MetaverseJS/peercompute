@@ -220,14 +220,11 @@ test('NetworkManager prefers remembered direct /webrtc targets after prior direc
     }
   };
 
-  manager.directWebrtcPeerHints.add(targetPeerId);
   manager._rememberDialTargets(targetPeerId, [
-    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
-  ], { synthesizeDirect: true });
-
-  await manager._maybeDialPeer(targetPeerId, 'presence', [
-    buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay/p2p-circuit/webrtc')
+    buildAddr('/webrtc/p2p/peer-direct')
   ]);
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', []);
 
   assert.equal(dialed[0], '/webrtc/p2p/peer-direct');
 });

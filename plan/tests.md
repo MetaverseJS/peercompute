@@ -46,7 +46,7 @@
 
 ### Current direct-connection diagnosis target
 - Symptom: peers upgrade from relay to `webrtc`, then churn/disconnect and re-dial relay.
-- Key signal from logs: `No local /webrtc addrs to announce; direct WebRTC dials will be skipped.`
+- Key signal from logs: `No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.`
 - Interpretation: nodes are not publishing dialable direct `/webrtc` addresses; only relay-circuit paths are advertised.
 - Secondary signal: ICE candidates are host-only (`*.local`) and not exposed as stable direct multiaddrs.
 - Working hypothesis: "upgraded webrtc" links are mostly relay-signaled `/p2p-circuit/webrtc` paths, not stable direct peer-to-peer addresses.
