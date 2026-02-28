@@ -11,10 +11,15 @@
   "webrtc": {
     "iceServers": [
       {
+        "urls": "stun:stun.l.google.com:19302"
+      },
+      {
         "urls": [
-          "stun:stun.l.google.com:19302",
-          "stun:stun.cloudflare.com:3478"
-        ]
+          "turn:secretworkshop.net:3478?transport=udp",
+          "turn:secretworkshop.net:3478?transport=tcp"
+        ],
+        "username": "peer",
+        "credential": "compute"
       }
     ],
     "preferDirect": true,

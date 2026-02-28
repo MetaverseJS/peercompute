@@ -124,6 +124,21 @@ Use `config/relay.json` as the single source of truth for dev + prod relay setti
   "relayIdentityFile": "config/relay-peer-id.json",
   "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": "stun:stun.l.google.com:19302"
+      },
+      {
+        "urls": [
+          "turn:secretworkshop.net:3478?transport=udp",
+          "turn:secretworkshop.net:3478?transport=tcp"
+        ],
+        "username": "peer",
+        "credential": "compute"
+      }
+    ]
+  },
   "listenHost": "127.0.0.1",
   "listenPort": "8080",
   "publicHost": "",
@@ -172,6 +187,74 @@ sudo -E bash scripts/install-relay-systemd.sh
 
 The service runs `scripts/start-relay-prod.sh`, so it reads `config/relay.json` and the same env overrides.
 Use `systemctl status peercompute-relay` (or your custom name) to verify it is running.
+
+### Production ICE (Google STUN + Coturn)
+Current defaults are configured for Google STUN plus your own coturn:
+- `stun:stun.l.google.com:19302`
+- `turn:secretworkshop.net:3478?transport=udp`
+- `turn:secretworkshop.net:3478?transport=tcp`
+
+You can override coturn host/credentials in `config/relay.env`:
+
+```bash
+RELAY_TURN_HOST=secretworkshop.net
+RELAY_TURN_PORT=3478
+RELAY_TURN_USERNAME=peer
+RELAY_TURN_CREDENTIAL=compute
+```
+
+Minimal coturn config example (`/etc/turnserver.conf`):
+
+```ini
+listening-port=3478
+fingerprint
+lt-cred-mech
+user=peer:compute
+realm=secretworkshop.net
+stale-nonce
+no-loopback-peers
+no-multicast-peers
+min-port=49152
+max-port=65535
+total-quota=200
+bps-capacity=0
+```
+
+If you use special characters in TURN credentials, set `RELAY_WEBRTC_CONFIG` directly with a full JSON string instead of composing it via per-field env vars.
+
+### Coturn as a systemd Service
+Install coturn and create your config first:
+
+```bash
+sudo apt update
+sudo apt install -y coturn
+sudoedit /etc/turnserver.conf
+```
+
+Then install and start the hardened systemd unit with the repo helper:
+
+```bash
+sudo -E bash scripts/install-coturn-systemd.sh
+```
+
+Optional overrides:
+
+```bash
+COTURN_SERVICE_NAME=peercompute-coturn \
+COTURN_SERVICE_USER=turnserver \
+COTURN_SERVICE_GROUP=turnserver \
+COTURN_CONFIG_FILE=/etc/turnserver.conf \
+sudo -E bash scripts/install-coturn-systemd.sh
+```
+
+The helper writes `/etc/systemd/system/<service>.service`, enables it, starts it, and prints `systemctl status`.
+
+### Coturn Hardening Checklist
+- Use long random TURN credentials and rotate them regularly.
+- Keep `stale-nonce`, `no-loopback-peers`, and `no-multicast-peers` enabled.
+- Open firewall for `3478/tcp`, `3478/udp`, and relay RTP/RTCP UDP range (`49152-65535/udp`).
+- If your server is behind NAT, set coturn `external-ip` and `relay-ip` explicitly.
+- Keep relay `webrtc.iceServers` aligned with coturn host/port and credentials.
 
 ## Demo Gallery
 See `docs/index.html` for the full demo index.

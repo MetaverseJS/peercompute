@@ -16968,3 +16968,140 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - No command failures.
 - Open decision: self-host TURN vs managed TURN provider selection for production SLO/SLA needs.
+
+## Date: 2026-02-28
+
+### Prompt
+- OK resume what you were doing
+
+### Prompt Time/Date
+- 2026-02-28T00:19:35+00:00
+
+### Actions Attempted
+- Resumed the in-flight configuration task from prior prompts: set production defaults to use Google STUN + self-hosted coturn.
+- Re-read required planning context before edits:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Verified current relay/doc/test files (`config/relay.json`, `config/relay.env`, `README.md`, `plan/tests.md`).
+- Updated production relay defaults in `config/relay.json`:
+  - changed `webrtc.iceServers` from STUN-only (`google+cloudflare`) to:
+    - `stun:stun.l.google.com:19302`
+    - `turn:secretworkshop.net:3478?transport=udp`
+    - `turn:secretworkshop.net:3478?transport=tcp`
+    - static credentials (`peer` / `compute`) for baseline wiring.
+- Updated `config/relay.env` defaults:
+  - added configurable TURN env vars (`RELAY_TURN_HOST`, `RELAY_TURN_PORT`, `RELAY_TURN_USERNAME`, `RELAY_TURN_CREDENTIAL`),
+  - changed default `RELAY_WEBRTC_CONFIG` composition to emit Google STUN + TURN UDP/TCP entries.
+- Updated `README.md`:
+  - expanded relay config JSON example to include `webrtc.iceServers` with Google STUN + coturn,
+  - added a new "Production ICE (Google STUN + Coturn)" section with override env vars and minimal `turnserver.conf` example.
+- Updated `plan/tests.md` testing strategy:
+  - added `Relay ICE config sanity check` gate using `rg` against `config/relay.json` for Google STUN + TURN entries.
+- Ran headless validations available in this environment (`bash -n`, `jq`, `rg`) and inspected diff output.
+
+### Files Touched
+- `config/relay.json`
+- `config/relay.env`
+- `README.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `sed -n '1,80p' plan/plan.md && tail -n 80 plan/log.md`
+- `cat -n config/relay.json && echo '---' && cat -n config/relay.env && echo '---' && cat -n plan/tests.md | sed -n '1,120p' && echo '---' && cat -n README.md | sed -n '110,220p'`
+- `bash -n config/relay.env && echo 'relay.env syntax OK'`
+- `if command -v jq >/dev/null 2>&1; then jq . config/relay.json >/tmp/relay-json-check.out && echo 'relay.json parse OK'; else echo 'jq not found'; fi`
+- `rg -n "stun:stun\.l\.google\.com:19302|turn:secretworkshop\.net:3478\?transport=(udp|tcp)" config/relay.json`
+- `git status --short && echo '---' && git diff -- config/relay.json config/relay.env README.md plan/tests.md | sed -n '1,260p'`
+- `date -Is`
+
+### Earlier Environment Commands During Resume (Node 24 check)
+- `source ~/.nvm/nvm.sh && nvm use 24 && node -v && npm -v && npm install` (failed: nvm path missing in sandbox HOME)
+- `ls -la /home/cos/.nvm || true && ls -la ~/.nvm || true && command -v node || true && echo $HOME`
+- escalated: `export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node -v && npm -v && npm install` (failed: permission denied to `/home/cos/.nvm/nvm.sh` in this execution environment)
+
+### Test Results
+- `bash -n config/relay.env`:
+  - PASS (`relay.env syntax OK`)
+- `jq . config/relay.json`:
+  - PASS (`relay.json parse OK`)
+- `rg -n "stun:...|turn:..." config/relay.json`:
+  - PASS (matched Google STUN + TURN UDP/TCP entries)
+
+### Failures / Open Questions
+- Node/NPM runtime validation was not executable in this sandbox due home-directory access restrictions to user nvm (`/home/cos/.nvm` permission denied), so no Node-based tests were run in this prompt.
+- TURN credential mode is currently static user/pass in defaults (`peer`/`compute`) for immediate wiring; production hardening may want credential rotation or auth-secret flow.
+
+## Date: 2026-02-28
+
+### Prompt
+- proceed with 1
+
+### Prompt Time/Date
+- 2026-02-28T00:30:14+00:00
+
+### Actions Attempted
+- Continued from prior prompt where production relay defaults were switched to Google STUN + coturn.
+- Re-read required planning context before implementation:
+  - `plan/plan.md`
+  - `plan/log.md`
+- Inspected existing relay installer pattern:
+  - `scripts/install-relay-systemd.sh`
+  - existing README systemd sections for style/placement.
+- Implemented coturn service automation:
+  - Added new helper `scripts/install-coturn-systemd.sh`.
+  - Script behavior:
+    - requires bash + root,
+    - validates `turnserver` binary and config file presence,
+    - validates target service user exists,
+    - writes `/etc/systemd/system/<service>.service`,
+    - enables/starts service and prints status.
+  - Service hardening in unit template includes `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem`, `ProtectHome`, kernel/control-group protections, capability bounding for bind service, and raised `LimitNOFILE`.
+- Updated `README.md` with production deployment docs:
+  - Added `Coturn as a systemd Service` section with install commands and override examples.
+  - Added `Coturn Hardening Checklist` (credentials rotation, peer restrictions, firewall ports, NAT notes, ICE alignment).
+  - Enhanced coturn config example with `stale-nonce`, `no-loopback-peers`, `no-multicast-peers`, and relay port range.
+- Updated planning/docs alignment:
+  - `plan/tests.md`: added `Coturn installer script sanity check` gate (`bash -n scripts/install-coturn-systemd.sh`).
+  - `plan/plan.md`: appended completed-item note covering production relay ICE defaults + coturn installer helper.
+- Set executable bit on new installer script.
+- Ran headless validations (syntax/grep checks) and captured pass results.
+
+### Files Touched
+- `scripts/install-coturn-systemd.sh` (new)
+- `README.md`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,120p' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `cat -n scripts/install-relay-systemd.sh | sed -n '1,260p'`
+- `rg -n "coturn|turnserver|systemd|install-.*systemd" README.md scripts -S`
+- `apply_patch` (add `scripts/install-coturn-systemd.sh`)
+- `apply_patch` (update `README.md` with coturn systemd + hardening sections)
+- `apply_patch` (update `plan/tests.md` with coturn script sanity gate)
+- `apply_patch` (update `plan/plan.md` completed bullet for production ICE/coturn installer)
+- `chmod +x scripts/install-coturn-systemd.sh && ls -l scripts/install-coturn-systemd.sh`
+- `bash -n scripts/install-coturn-systemd.sh && echo 'install-coturn-systemd.sh syntax OK'`
+- `rg -n "stun:stun\.l\.google\.com:19302|turn:secretworkshop\.net:3478\?transport=(udp|tcp)" config/relay.json`
+- `rg -n "Coturn as a systemd Service|Coturn Hardening Checklist|install-coturn-systemd\.sh" README.md`
+- `rg -n "Coturn installer script sanity check" plan/tests.md`
+- `rg -n "Production relay ICE defaults" plan/plan.md`
+- `date -Is && git status --short`
+
+### Test Results
+- `bash -n scripts/install-coturn-systemd.sh`
+  - PASS (`install-coturn-systemd.sh syntax OK`)
+- Content sanity checks:
+  - PASS: Google STUN + TURN UDP/TCP entries present in `config/relay.json`.
+  - PASS: new README coturn deployment/hardening sections present.
+  - PASS: new `plan/tests.md` coturn script gate present.
+  - PASS: new `plan/plan.md` completed bullet present.
+
+### Failures / Open Questions
+- No execution failures.
+- Installer script has not been executed against host `systemd` in this sandbox; real host run is still required (`sudo -E bash scripts/install-coturn-systemd.sh`).
+- Current default TURN auth is static user/pass (`peer`/`compute`) to match relay config defaults; consider auth-secret/ephemeral credential flow for stronger production posture.

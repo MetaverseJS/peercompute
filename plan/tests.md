@@ -11,6 +11,16 @@
 - Expectation: launcher uses strict ports by default (`DEV_STRICT_PORT=1`) so demo port conflicts fail fast instead of silently rebinding to alternate ports.
 - Gate: run when changing relay/dev launcher scripts (`scripts/dev-local-relay.sh`, `scripts/dev-all.sh`).
 
+### Relay ICE config sanity check
+- Command: `rg -n "stun:stun\\.l\\.google\\.com:19302|turn:secretworkshop\\.net:3478\\?transport=(udp|tcp)" config/relay.json`
+- Purpose: verify production relay defaults include Google STUN and coturn UDP/TCP URLs in `webrtc.iceServers`.
+- Gate: run when changing `config/relay.json`, `config/relay.env`, or relay config generation scripts.
+
+### Coturn installer script sanity check
+- Command: `bash -n scripts/install-coturn-systemd.sh`
+- Purpose: verify coturn systemd installer script stays syntactically valid.
+- Gate: run when changing coturn service install automation or related README deployment steps.
+
 ### Overview link-mode check
 - Command: `npm run build && rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
 - Purpose: verify demo overview links are production-folder based by default and only switch to dev-port routing on docs dev port `4173` (or explicit query override).
