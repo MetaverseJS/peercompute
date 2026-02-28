@@ -229,6 +229,44 @@ const classifyConnectionKind = (remoteAddr) => {
   return 'direct';
 };
 
+const normalizeTransportVia = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'webrtc' || raw === 'webrtc-direct') return 'webrtc';
+  if (raw === 'relay-webrtc' || raw === 'webrtc-relay') return 'relay-webrtc';
+  if (raw === 'relay') return 'relay';
+  if (raw === 'direct' || raw === 'direct-websocket') return 'direct';
+  if (raw === 'presence' || raw === 'connection') return null;
+  return raw;
+};
+
+const isDirectTransportVia = (value) => {
+  const via = normalizeTransportVia(value);
+  return via === 'webrtc' || via === 'direct';
+};
+
+const isRelayedTransportVia = (value) => {
+  const via = normalizeTransportVia(value);
+  return via === 'relay' || via === 'relay-webrtc';
+};
+
+const getViaPriority = (value) => {
+  const via = normalizeTransportVia(value);
+  if (via === 'webrtc') return 4;
+  if (via === 'direct') return 3;
+  if (via === 'relay-webrtc') return 2;
+  if (via === 'relay') return 1;
+  return 0;
+};
+
+const preferStrongerVia = (current, next) => {
+  const currentVia = normalizeTransportVia(current);
+  const nextVia = normalizeTransportVia(next);
+  if (!nextVia) return currentVia;
+  if (!currentVia) return nextVia;
+  return getViaPriority(nextVia) > getViaPriority(currentVia) ? nextVia : currentVia;
+};
+
 const normalizeRtcType = (value) => String(value || '').trim().toLowerCase();
 
 const incrementCount = (target, key) => {
@@ -1484,11 +1522,7 @@ const buildChaosP2POverlay = (topology = null) => {
       return;
     }
     const merged = { ...current };
-    if (next.via === 'webrtc') {
-      merged.via = 'webrtc';
-    } else if (!merged.via && next.via) {
-      merged.via = next.via;
-    }
+    merged.via = preferStrongerVia(merged.via, next.via);
     merged.rxBps = Math.max(Number(merged.rxBps) || 0, Number(next.rxBps) || 0);
     merged.txBps = Math.max(Number(merged.txBps) || 0, Number(next.txBps) || 0);
     merged.rxCount = Math.max(Number(merged.rxCount) || 0, Number(next.rxCount) || 0);
@@ -1576,7 +1610,8 @@ const buildChaosP2POverlay = (topology = null) => {
       }
 
       const viaRaw = String(neighbor.via || '').trim().toLowerCase();
-      const via = viaRaw === 'relay' ? 'relay' : 'webrtc';
+      const via = normalizeTransportVia(viaRaw);
+      if (!via) return;
       mergeEdge({
         from: localPeerId,
         to: peerId,
@@ -2137,14 +2172,14 @@ const updateHierarchicalRelayPolicy = () => {
   const localView = lastPeerView.find((peer) => peer.peerId === localPeerId);
   const isHost = localView?.isHost || localView?.role === 'host';
   const connectedPeers = networkManager.getConnectedPeers();
-  const hasNonRelay = connectedPeers.some((peer) => peer?.peerId && peer.via && peer.via !== 'relay');
+  const hasNonRelay = connectedPeers.some((peer) => peer?.peerId && isDirectTransportVia(peer?.via));
   const hostId = localView?.hostId || null;
   const backupHostId = localView?.backupHostId || null;
   const hasHostDirect = hostId
-    ? connectedPeers.some((peer) => peer?.peerId === hostId && peer.via && peer.via !== 'relay')
+    ? connectedPeers.some((peer) => peer?.peerId === hostId && isDirectTransportVia(peer?.via))
     : false;
   const hasBackupDirect = backupHostId
-    ? connectedPeers.some((peer) => peer?.peerId === backupHostId && peer.via && peer.via !== 'relay')
+    ? connectedPeers.some((peer) => peer?.peerId === backupHostId && isDirectTransportVia(peer?.via))
     : true;
   const keepRelay = Boolean(
     isHost
@@ -2172,15 +2207,9 @@ const buildEdges = (peers, localId, relayState = null) => {
       const to = neighbor?.peerId || neighbor?.id || null;
       if (!to || to === from) return;
       const key = buildEdgeKey(from, to);
-      const rawVia = String(neighbor?.via || '').trim().toLowerCase();
-      if (!rawVia) return;
-      if (rawVia === 'webrtc') {
-        telemetryViaByEdge.set(key, 'webrtc');
-        return;
-      }
-      if (!telemetryViaByEdge.has(key) && rawVia === 'relay') {
-        telemetryViaByEdge.set(key, 'relay');
-      }
+      const via = normalizeTransportVia(neighbor?.via);
+      if (!via) return;
+      telemetryViaByEdge.set(key, preferStrongerVia(telemetryViaByEdge.get(key), via));
     });
   });
   const resolveLiveViaForEdge = (from, to) => {
@@ -2189,16 +2218,22 @@ const buildEdges = (peers, localId, relayState = null) => {
     if (!remotePeerId) return null;
     const liveConnections = connectionSnapshot.byPeer.get(remotePeerId) || [];
     if (!Array.isArray(liveConnections) || liveConnections.length === 0) return null;
-    if (liveConnections.some((conn) => conn?.kind === 'webrtc-direct' || conn?.kind === 'relay-webrtc')) {
+    if (liveConnections.some((conn) => conn?.kind === 'webrtc-direct')) {
       return 'webrtc';
+    }
+    if (liveConnections.some((conn) => conn?.kind === 'relay-webrtc')) {
+      return 'relay-webrtc';
     }
     if (liveConnections.some((conn) => conn?.kind === 'relay')) {
       return 'relay';
     }
+    if (liveConnections.some((conn) => conn?.kind === 'direct' || conn?.kind === 'direct-websocket')) {
+      return 'direct';
+    }
     return null;
   };
   const resolveRelayForEdge = (from, to, via) => {
-    if (via !== 'relay') return null;
+    if (!isRelayedTransportVia(via)) return null;
     const peerRelayMap = relayState?.peerRelayMap;
     const fromRelay = peerRelayMap?.get(from) || null;
     const toRelay = peerRelayMap?.get(to) || null;
@@ -2232,20 +2267,14 @@ const buildEdges = (peers, localId, relayState = null) => {
     const nextTxBps = Number(metrics?.txBps) || 0;
     const nextRxCount = Number(metrics?.rxCount) || 0;
     const nextTxCount = Number(metrics?.txCount) || 0;
-    const rawVia = metrics?.via || null;
+    const rawVia = normalizeTransportVia(metrics?.via);
     const liveVia = resolveLiveViaForEdge(from, to);
     const telemetryVia = telemetryViaByEdge.get(key) || null;
-    const via = liveVia || telemetryVia || (rawVia === 'webrtc' ? 'webrtc' : 'relay');
+    const via = preferStrongerVia(preferStrongerVia(rawVia, telemetryVia), liveVia) || 'unknown';
     const relayPeerId = resolveRelayForEdge(from, to, via);
     const existing = edgeMap.get(key);
     if (existing) {
-      if (existing.via !== 'webrtc') {
-        if (via === 'webrtc') {
-          existing.via = 'webrtc';
-        } else if (!existing.via && via) {
-          existing.via = via;
-        }
-      }
+      existing.via = preferStrongerVia(existing.via, via) || existing.via || via;
       if (!existing.relayPeerId && relayPeerId) {
         existing.relayPeerId = relayPeerId;
       }

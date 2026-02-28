@@ -66,6 +66,15 @@ const getConnectionKind = (addr) => {
   if (isRelayAddr(addr)) return 'relay';
   return 'direct';
 };
+const normalizePeerVia = (via) => String(via || '').trim().toLowerCase();
+const isDirectPeerVia = (via) => {
+  const normalized = normalizePeerVia(via);
+  return normalized === 'direct' || normalized === 'webrtc' || normalized === 'webrtc-direct';
+};
+const isRelayPeerVia = (via) => {
+  const normalized = normalizePeerVia(via);
+  return normalized === 'relay' || normalized === 'relay-webrtc' || normalized === 'webrtc-relay';
+};
 const getDialKind = (addr) => {
   if (isWebRTCAddr(addr) && isRelayAddr(addr)) return 'webrtc-relay';
   if (isWebRTCAddr(addr)) return 'webrtc-direct';
@@ -1259,7 +1268,7 @@ export class NetworkManager {
       const kind = getConnectionKind(remoteAddr);
       this._rememberDialTargets(peerId, [remoteAddr]);
       const prevKind = this.peers.get(peerId)?.via || null;
-      if (prevKind && ['relay', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
+      if (prevKind && ['relay', 'relay-webrtc', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
         console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
       } else {
         console.info('[NetworkManager] Connection open', peerId, kind, remoteAddr);
@@ -2183,7 +2192,7 @@ export class NetworkManager {
     if (connected.length === 0) return;
     const connectedIds = new Set(connected.map((peer) => peer.peerId));
     const allowRelayWhenIsolated = this.config.allowRelayWhenIsolated !== false;
-    const hasNonRelay = connected.some((peer) => peer.via && peer.via !== 'relay');
+    const hasNonRelay = connected.some((peer) => isDirectPeerVia(peer?.via));
     if (allowRelayWhenIsolated && !hasNonRelay) return;
 
     const toPriority = (peerId, peer) => {
@@ -2244,7 +2253,7 @@ export class NetworkManager {
       .filter((peer) => peer?.peerId)
       .filter((peer) => !desiredPeers.has(peer.peerId))
       .filter((peer) => !protectedIds.has(peer.peerId))
-      .filter((peer) => !(allowRelayWhenIsolated && peer.via === 'relay' && !hasNonRelay))
+      .filter((peer) => !(allowRelayWhenIsolated && isRelayPeerVia(peer?.via) && !hasNonRelay))
       .map((peer) => toPriority(peer.peerId, peer));
 
     if (dropCandidates.length === 0) return;
@@ -2350,7 +2359,7 @@ export class NetworkManager {
           const connected = this._getConnectionPeers()
             .filter((peer) => peer?.peerId && !this.bootstrapPeerIds.has(peer.peerId));
           const allowRelayWhenIsolated = this.config.allowRelayWhenIsolated !== false;
-          const hasNonRelay = connected.some((peer) => peer.via && peer.via !== 'relay');
+          const hasNonRelay = connected.some((peer) => isDirectPeerVia(peer?.via));
           if (!(allowRelayWhenIsolated && !hasNonRelay) && connected.length > 0) {
             const protectedIds = new Set(this.bootstrapPeerIds);
             if (this.topologyController.longRangePeers) {
@@ -2382,7 +2391,7 @@ export class NetworkManager {
             const dropCandidates = connected
               .filter((peer) => peer?.peerId)
               .filter((peer) => !protectedIds.has(peer.peerId))
-              .filter((peer) => !(allowRelayWhenIsolated && peer.via === 'relay' && !hasNonRelay))
+              .filter((peer) => !(allowRelayWhenIsolated && isRelayPeerVia(peer?.via) && !hasNonRelay))
               .map((peer) => ({
                 peer,
                 distance: this.topologyController.getPeerDistance(peer)
@@ -3083,10 +3092,13 @@ export class NetworkManager {
     if (connections.some((conn) => isWebRTCAddr(conn?.remoteAddr) && !isRelayAddr(conn?.remoteAddr))) {
       return 'webrtc';
     }
-    if (connections.some((conn) => isDirectAddr(conn?.remoteAddr))) {
+    if (connections.some((conn) => isDirectAddr(conn?.remoteAddr) && !isWebRTCAddr(conn?.remoteAddr))) {
       return 'direct';
     }
-    if (connections.some((conn) => isRelayAddr(conn?.remoteAddr))) {
+    if (connections.some((conn) => isRelayWebRTCAddr(conn?.remoteAddr))) {
+      return 'relay-webrtc';
+    }
+    if (connections.some((conn) => isRelayOnlyAddr(conn?.remoteAddr))) {
       return 'relay';
     }
     return null;

@@ -54,6 +54,8 @@
 - Mitigation in progress: NetViz now samples selected RTC candidate-pair stats and surfaces direct-vs-relay evidence in node diagnostics (`RTC path evidence`) so relay-scoped multiaddrs do not hide successful direct ICE pairs.
 - Validation expectation: `window.__NETVIZ__?.getStatus?.().rtcPath.peerConnectionCount` should be non-zero during active WebRTC sessions; if zero while `Connection upgraded ... -> webrtc` logs are present, the diagnostics hook path is still incomplete.
 - Visualization expectation: edge transport selection should prefer aggregated peer telemetry (`via`) across both edge directions, so direct links observed by remote peers are still reflected when the local browser lacks a direct socket for that edge.
+- Telemetry classification expectation: `NetworkManager` should preserve relay-scoped WebRTC links as `via=relay-webrtc` (not `webrtc`) while `_hasDirectPeerConnections()` remains false unless a true non-relay direct address is present.
+- Remote-edge truth expectation: NetViz `TelemetryStore` should ignore older telemetry snapshots (`ts` monotonic) so remote edge color does not regress from direct (`webrtc`) to relay due out-of-order delta arrival.
 - Targeted unit check: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` should include `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`.
 
 ### Internet chaos lab (new)

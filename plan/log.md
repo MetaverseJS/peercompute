@@ -17836,3 +17836,130 @@ def parse_args() -> argparse.Namespace:
   - `window.__NETVIZ__?.getStatus?.().rtcPath.peerConnectionCount` should become > 0 during active WebRTC sessions.
   - remote-peer edges should retain `webrtc` transport more consistently when peers report direct `via` on either side.
 - This improves observability/rendering consistency; it does not by itself change NAT traversal success rates.
+
+## Date: 2026-02-28
+
+### Prompt
+- [runtime logs] remote connections still aren't showing as amber
+
+### Prompt Time/Date
+- 2026-02-28T21:10:33+00:00
+
+### Actions Attempted
+- Reviewed latest runtime logs and validated two key points:
+  - NetViz RTC diagnostics hook now works (`rtcPath.peerConnectionCount: 1`, `hasDirectPair: true`).
+  - Remaining amber-gap aligns with transport classification drift in peer telemetry (`relay-webrtc` still surfaced as `via=relay` remotely).
+- Identified root cause in `NetworkManager`:
+  - `_getPreferredConnectionType` only returned `webrtc` for non-relay WebRTC addrs.
+  - relay-scoped WebRTC (`/p2p-circuit/webrtc`) therefore reported as `relay` in peer telemetry, causing NetViz remote edges to stay non-amber.
+- Implemented classification fix:
+  - `_getPreferredConnectionType` now treats any WebRTC addr (including relay-scoped WebRTC) as transport `webrtc` for telemetry.
+  - directness gates remain unchanged (`_hasDirectPeerConnections()` still depends on true non-relay direct addrs), preserving relay-retention behavior.
+- Updated unit coverage expectation:
+  - renamed and updated test assertion to verify relay-webrtc reports `webrtc` transport while still not counting as direct.
+- Updated planning docs (`plan/plan.md`, `plan/tests.md`) with the classification behavior and expectations.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "_getPreferredConnectionType\(|isWebRTCAddr\(conn\?\.remoteAddr\)" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `rg -n "relay-webrtc as webrtc transport|_getPreferredConnectionType\('peer-a'\), 'webrtc'" peercompute/tests/unit/networkManager.webrtc.test.js -S`
+- `date -Is`
+- `git diff --name-only`
+
+### Test Results
+- Static verification:
+  - PASS: `_getPreferredConnectionType` now classifies relay-webrtc as `webrtc` transport.
+  - PASS: unit test updated to assert `webrtc` transport classification and unchanged non-direct behavior.
+- Runtime unit execution:
+  - Not executed in this environment (Node/NPM unavailable in runner).
+
+### Failures / Open Questions
+- Need host-side runtime confirmation that remote edges now render amber when peers advertise relay-webrtc/webrtc transport via telemetry.
+- Remaining churn (`RTCErrorEvent ... User-Initiated Abort`, reconnect loops) indicates ongoing transport instability unrelated to edge-color classification; that is a separate reliability issue.
+
+## Date: 2026-02-28
+
+### Prompt
+- so why are non local links still showing up as green. when they are amber when viewed locally on that node... (A/B/C fully connected; remote edge remains green)
+
+### Prompt Time/Date
+- 2026-02-28T21:32:55+00:00
+
+### Actions Attempted
+- Re-read `plan/plan.md` and recent `plan/log.md` before changes.
+- Traced edge-color derivation end-to-end (`NetworkManager` peer `via` -> telemetry snapshots -> NetViz edge merge -> `visualizer` edge color).
+- Identified two concrete truth-drift causes:
+  - out-of-order telemetry snapshots could overwrite newer transport state with older state (`TelemetryStore` had no timestamp ordering guard),
+  - unknown/partial edge transport defaulted to `relay`, forcing green even when evidence was missing/incomplete.
+- Implemented transport-truth fixes:
+  - `demos/netviz/src/telemetryStore.js`:
+    - added monotonic snapshot replacement guard using payload `ts`,
+    - added `_upsert` path shared by warm-delta and local updates,
+    - rejects stale incoming telemetry for an existing peer.
+  - `demos/netviz/src/main.js`:
+    - preserved distinct transport values (`webrtc`, `relay-webrtc`, `relay`, `direct`, `unknown`) through edge aggregation,
+    - removed fallback coercion from unknown->relay (`via` now falls back to `unknown`),
+    - kept per-edge strongest-via merge (`preferStrongerVia`) for bidirectional evidence.
+  - `demos/netviz/src/visualizer.js`:
+    - added explicit unknown edge color (`edgeUnknown`) so unknown links are not rendered as relay,
+    - relay green now applies only to confirmed `via=relay`,
+    - relay-webrtc remains a separate color path.
+- Restored truthful `NetworkManager` transport classification from previous coercion work:
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js` now reports:
+    - `webrtc` for non-relay `/webrtc`,
+    - `direct` for non-webrtc non-relay,
+    - `relay-webrtc` for `/p2p-circuit/webrtc`,
+    - `relay` for relay-only.
+  - updated topology relay-avoidance checks to treat only true direct states as non-relay.
+- Updated unit expectation:
+  - `peercompute/tests/unit/networkManager.webrtc.test.js` now asserts relay-scoped WebRTC reports `relay-webrtc` (not `webrtc`) and still does not count as true direct.
+- Updated planning/docs to match truth model:
+  - `plan/plan.md` completed bullets now describe transport-truth guard + telemetry ordering guard,
+  - `plan/tests.md` diagnosis expectations now require `relay-webrtc` preservation and monotonic telemetry behavior,
+  - `demos/netviz/README.md` now states that edge colors reflect truthful per-link transport, including `unknown`.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `demos/netviz/src/main.js`
+- `demos/netviz/src/telemetryStore.js`
+- `demos/netviz/src/visualizer.js`
+- `demos/netviz/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 200 plan/log.md`
+- `rg -n "getConnectedPeers|_snapshotTelemetry|telemetry|peers:\\s|via:\\s|_touchPeer|_getPreferredConnectionType" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `rg -n "buildEdges|telemetryViaByEdge|via|edgeColor|relay-webrtc|webrtc|isWebRTC" demos/netviz/src/main.js demos/netviz/src/visualizer.js -S`
+- `sed -n '980,1165p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1498,1605p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1200,1365p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2190,2335p' demos/netviz/src/main.js`
+- `sed -n '792,900p' demos/netviz/src/visualizer.js`
+- `sed -n '1,180p' demos/netviz/src/telemetryStore.js`
+- `git status --short`
+- `git diff --name-only`
+- `rg -n "_getPreferredConnectionType|relay-webrtc|normalizeTransportVia|preferStrongerVia|unknown'|edgeUnknown|_shouldReplace|_upsert" ... -S`
+- `date -Is`
+- `apply_patch` edits for all files above.
+
+### Test Results
+- Static validation: PASS
+  - confirmed transport-specific edge mapping and unknown fallback path via source inspection/`rg`.
+  - confirmed unit expectation now enforces truthful `relay-webrtc` classification.
+- Runtime/build validation: BLOCKED in this execution environment
+  - `node`/`npm` unavailable, and host nvm sourcing is permission-restricted in sandbox.
+  - prior escalated validation request was user-aborted mid-turn.
+
+### Failures / Open Questions
+- Open: host-side runtime confirmation still needed after deploy/build refresh to verify remote non-local direct edges stop regressing green due stale telemetry.
+- Open: if a remote edge remains non-amber after this patch, inspect live telemetry payload ordering (`ts`) and per-edge `via` on both endpoints in NetViz inspector/status to confirm whether the network state itself is mixed vs visualization stale.

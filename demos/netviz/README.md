@@ -26,5 +26,6 @@ NetViz connects when you click the "Connect" button (after selecting topology, t
 - NURBS links thicken with higher bandwidth and animate pulses when traffic is flowing.
 - Local-node inspector now shows `RTC path evidence` (selected candidate-pair summary) so direct ICE success can be detected even when libp2p addresses remain relay-scoped.
 - Edge transport rendering now also aggregates peer telemetry `via` from both edge directions, so remote direct links do not depend solely on the local browser's current connection table.
+- Edge colors reflect transport truth per link (`webrtc` direct, `relay-webrtc`, `relay`, `unknown`) and avoid coercing unknown or relay-scoped states into direct.
 - Add `?chaosApi=/chaos-api` (or `?chaosApi=http://127.0.0.1:8866`) to show live chaos-lab topology + scenario behavior in the NetViz console and 3D graph overlay.
 - Add `&autoConnect=0` to watch chaos-lab without immediately dialing relay bootstrap endpoints.

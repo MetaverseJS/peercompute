@@ -311,7 +311,7 @@ test('NetworkManager falls back to dns4 bootstrap address for circuit dials when
   );
 });
 
-test('NetworkManager does not treat relay-webrtc connections as direct peers', () => {
+test('NetworkManager reports relay-webrtc transport truthfully without marking peers as direct', () => {
   const manager = new NetworkManager({
     webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
   });
@@ -348,7 +348,7 @@ test('NetworkManager does not treat relay-webrtc connections as direct peers', (
     }
   };
 
-  assert.equal(manager._getPreferredConnectionType('peer-a'), 'relay');
+  assert.equal(manager._getPreferredConnectionType('peer-a'), 'relay-webrtc');
   assert.equal(manager._hasDirectPeerConnections(), false);
   assert.equal(manager._shouldKeepRelayBootstrapConnection(), true);
 });

@@ -11,6 +11,8 @@ const COLORS = {
   root: 0xff4fb3,
   edge: 0xffb13b,
   edgeRelay: 0x00ff6a,
+  edgeRelayWebrtc: 0x66d9ff,
+  edgeUnknown: 0x7f8c8d,
   edgeError: 0xff2d2d,
   pubsub: 0xcaf6ff,
   grid: 0x00ff6a,
@@ -819,12 +821,18 @@ export class NetworkVisualizer {
       const radius = this._getEdgeRadius(rxBps + txBps);
       const curve = this._buildCurve(fromPos, toPos);
       const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
-      const isWebRTC = via === 'webrtc';
+      const isWebRTC = via === 'webrtc' || via === 'direct';
+      const isRelayWebrtc = via === 'relay-webrtc';
+      const isRelay = via === 'relay';
       const edgeColor = errorActive
         ? COLORS.edgeError
         : isWebRTC
           ? COLORS.edge
-          : COLORS.edgeRelay;
+          : isRelayWebrtc
+            ? COLORS.edgeRelayWebrtc
+            : isRelay
+              ? COLORS.edgeRelay
+              : COLORS.edgeUnknown;
 
       let edgeData = this.edgeMeshes.get(edgeKey);
       if (!edgeData) {
@@ -874,7 +882,7 @@ export class NetworkVisualizer {
       edgeData.mesh.material.color.set(edgeColor);
 
       const relayPos = relayPeerId ? positions.get(relayPeerId) : null;
-      const isRelayed = via === 'relay' && relayPos;
+      const isRelayed = (via === 'relay' || via === 'relay-webrtc') && relayPos;
       if (isRelayed) {
         curve.getPointAt(0.5, this.midpointVector);
         const relayCurve = this._buildCurve(this.midpointVector, relayPos);
