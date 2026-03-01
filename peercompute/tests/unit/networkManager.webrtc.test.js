@@ -300,6 +300,126 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
   assert.equal(relayClosed, true);
 });
 
+test('NetworkManager requests relay assist only once per throttle window', async () => {
+  const manager = new NetworkManager({
+    webrtc: {
+      enableRelayAssist: true,
+      relayAssistRequestThrottleMs: 60000
+    }
+  });
+  manager.peerId = 'peer-self';
+  const sent = [];
+  manager.sendToPeer = async (peerId, payload) => {
+    sent.push({ peerId, payload });
+  };
+
+  const first = await manager._requestRelayAssist('peer-a', 'no-reservation');
+  const second = await manager._requestRelayAssist('peer-a', 'no-reservation');
+
+  assert.equal(first, true);
+  assert.equal(second, false);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].peerId, 'peer-a');
+  assert.equal(sent[0].payload.type, 'relay-assist-request');
+  manager._clearRelayAssistState();
+});
+
+test('NetworkManager handles relay-assist-request by reacquiring relay and replying ready', async () => {
+  const relayPeerId = '12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1';
+  const manager = new NetworkManager({
+    bootstrapPeers: [`/dns4/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}`],
+    webrtc: { enableRelayAssist: true }
+  });
+  manager.peerId = 'peer-self';
+
+  let hasRelay = false;
+  manager._hasBootstrapRelayConnections = () => hasRelay;
+  manager._dialBootstrapPeers = async () => {
+    hasRelay = true;
+  };
+  manager._reserveBootstrapRelayAddrs = async () => {};
+  manager._getAnnounceAddrs = () => [
+    `/dns4/relay.peercompute.test/tcp/8080/wss/p2p/${relayPeerId}/p2p-circuit/webrtc/p2p/peer-self`
+  ];
+
+  const sent = [];
+  manager.sendToPeer = async (peerId, payload) => {
+    sent.push({ peerId, payload });
+  };
+
+  let publishedPresence = false;
+  manager._publishPresenceNow = async () => {
+    publishedPresence = true;
+  };
+  let scheduledDrop = false;
+  manager._scheduleAutoRelayDrop = () => {
+    scheduledDrop = true;
+  };
+
+  await manager._handleRelayAssistRequest('peer-a', { reason: 'no-reservation' });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].peerId, 'peer-a');
+  assert.equal(sent[0].payload.type, 'relay-assist-ready');
+  assert.equal(Array.isArray(sent[0].payload.multiaddrs), true);
+  assert.equal(publishedPresence, true);
+  assert.equal(scheduledDrop, true);
+});
+
+test('NetworkManager handles relay-assist-ready by forcing immediate redial', async () => {
+  const manager = new NetworkManager();
+  const timeoutId = setTimeout(() => {}, 10000);
+  manager.relayAssistState.pendingReadyTimeouts.set('peer-a', timeoutId);
+
+  let dialArgs = null;
+  manager._maybeDialPeer = async (...args) => {
+    dialArgs = args;
+  };
+
+  await manager._handleRelayAssistReady('peer-a', {
+    multiaddrs: ['/webrtc/p2p/peer-a']
+  });
+
+  assert.equal(manager.relayAssistState.pendingReadyTimeouts.has('peer-a'), false);
+  assert.equal(dialArgs[0], 'peer-a');
+  assert.equal(dialArgs[1], 'relay-assist-ready');
+  assert.deepEqual(dialArgs[3], { force: true });
+});
+
+test('NetworkManager requests relay assist on relay-webrtc NO_RESERVATION dial failure', async () => {
+  const relayPeerId = '12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1';
+  const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';
+  const manager = new NetworkManager({
+    webrtc: {
+      preferDirect: true,
+      enableRelayAssist: true
+    }
+  });
+  manager.peerId = 'peer-self';
+  manager.bootstrapPeerIds = new Set();
+
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async () => {
+      throw new Error('failed to connect via relay with status NO_RESERVATION');
+    }
+  };
+
+  const requests = [];
+  manager._requestRelayAssist = async (peerId, reason) => {
+    requests.push({ peerId, reason });
+    return true;
+  };
+
+  await manager._maybeDialPeer(targetPeerId, 'presence', [
+    buildAddr(`/ip4/1.2.3.4/tcp/8080/wss/p2p/${relayPeerId}/p2p-circuit/webrtc`)
+  ], { force: true });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].peerId, targetPeerId);
+  assert.equal(requests[0].reason, 'no-reservation:presence');
+});
+
 test('NetworkManager prefers dns6 bootstrap address for circuit dials when local IPv6 is available', () => {
   const relayPeerId = '12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1';
   const targetPeerId = '12D3KooWSQZTN9jEtytwpumPbtBQ6s6vDeo96gG8mSknyxKML2JW';

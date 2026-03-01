@@ -29,6 +29,8 @@ const DEFAULT_TOPIC_PREFIX = 'pc';
 const PEER_DIAL_THROTTLE_MS = 5000;
 const DEFAULT_MAX_DIAL_PEERS = 16;
 const REMEMBERED_DIAL_ADDR_TTL_MS = 10 * 60 * 1000;
+const RELAY_ASSIST_REQUEST_THROTTLE_MS = 10000;
+const RELAY_ASSIST_READY_TIMEOUT_MS = 15000;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -251,6 +253,17 @@ const normalizeWebRTCConfig = (config = {}) => {
   const autoDropRelayAfterDialMs = Number.isFinite(raw.autoDropRelayAfterDialMs)
     ? Math.max(0, raw.autoDropRelayAfterDialMs)
     : (Number.isFinite(config.autoDropRelayAfterDialMs) ? Math.max(0, config.autoDropRelayAfterDialMs) : 60000);
+  const enableRelayAssist = raw.enableRelayAssist ?? config.enableRelayAssist ?? true;
+  const relayAssistRequestThrottleMs = Number.isFinite(raw.relayAssistRequestThrottleMs)
+    ? Math.max(1000, raw.relayAssistRequestThrottleMs)
+    : (Number.isFinite(config.relayAssistRequestThrottleMs)
+      ? Math.max(1000, config.relayAssistRequestThrottleMs)
+      : RELAY_ASSIST_REQUEST_THROTTLE_MS);
+  const relayAssistReadyTimeoutMs = Number.isFinite(raw.relayAssistReadyTimeoutMs)
+    ? Math.max(1000, raw.relayAssistReadyTimeoutMs)
+    : (Number.isFinite(config.relayAssistReadyTimeoutMs)
+      ? Math.max(1000, config.relayAssistReadyTimeoutMs)
+      : RELAY_ASSIST_READY_TIMEOUT_MS);
   const iceServers = normalizeIceServers(
     raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
   );
@@ -269,6 +282,9 @@ const normalizeWebRTCConfig = (config = {}) => {
     reconnectOnDialFailure,
     reconnectThrottleMs,
     autoDropRelayAfterDialMs,
+    enableRelayAssist,
+    relayAssistRequestThrottleMs,
+    relayAssistReadyTimeoutMs,
     iceServers,
     rtcConfiguration
   };
@@ -524,6 +540,11 @@ export class NetworkManager {
       lastReconnectAt: 0,
       pendingDialsNeedingRelay: new Set(),
       autoDisconnectTimer: null
+    };
+    this.relayAssistState = {
+      lastRequestAt: new Map(),
+      pendingReadyTimeouts: new Map(),
+      inboundRequestAt: new Map()
     };
     // Phase 5: Peer directory query state
     this.pendingDirectoryQueries = new Map();
@@ -951,6 +972,7 @@ export class NetworkManager {
     }
 
     this.peers.clear();
+    this._clearRelayAssistState();
     this.peerId = null;
   }
 
@@ -1438,6 +1460,9 @@ export class NetworkManager {
       if (!bypassScope && !this._matchesScope(parsed)) return;
 
       const payload = parsed?.payload ?? parsed;
+      if (this._handleRelayAssistMessage(payload, parsed)) {
+        return;
+      }
       if (this._handleTopologyMessage(payload, parsed)) {
         return;
       }
@@ -1758,6 +1783,118 @@ export class NetworkManager {
       debugWarn('[NetworkManager] Relay reconnect failed:', err?.message || err);
       return false;
     }
+  }
+
+  _isRelayReservationError(err) {
+    const message = String(err?.message || err || '');
+    if (!message) return false;
+    return message.includes('NO_RESERVATION') || /reservation/i.test(message);
+  }
+
+  _clearRelayAssistState() {
+    const timeouts = this.relayAssistState?.pendingReadyTimeouts;
+    if (timeouts && typeof timeouts.forEach === 'function') {
+      timeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+      timeouts.clear();
+    }
+    this.relayAssistState?.lastRequestAt?.clear?.();
+    this.relayAssistState?.inboundRequestAt?.clear?.();
+  }
+
+  async _requestRelayAssist(peerId, reason = 'dial-failed') {
+    if (!peerId || peerId === this.peerId) return false;
+    if (this.config.webrtc?.enableRelayAssist === false) return false;
+    const now = Date.now();
+    const throttleMs = this.config.webrtc?.relayAssistRequestThrottleMs ?? RELAY_ASSIST_REQUEST_THROTTLE_MS;
+    const lastRequestAt = this.relayAssistState.lastRequestAt.get(peerId) || 0;
+    if (now - lastRequestAt < throttleMs) return false;
+
+    this.relayAssistState.lastRequestAt.set(peerId, now);
+    const priorTimeout = this.relayAssistState.pendingReadyTimeouts.get(peerId);
+    if (priorTimeout) {
+      clearTimeout(priorTimeout);
+      this.relayAssistState.pendingReadyTimeouts.delete(peerId);
+    }
+    const timeoutMs = this.config.webrtc?.relayAssistReadyTimeoutMs ?? RELAY_ASSIST_READY_TIMEOUT_MS;
+    const timeoutId = setTimeout(() => {
+      this.relayAssistState.pendingReadyTimeouts.delete(peerId);
+    }, timeoutMs);
+    this.relayAssistState.pendingReadyTimeouts.set(peerId, timeoutId);
+
+    try {
+      await this.sendToPeer(peerId, {
+        type: 'relay-assist-request',
+        reason,
+        requestedAt: now
+      });
+      debugLog('[NetworkManager] Relay assist requested', peerId, reason);
+      return true;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      this.relayAssistState.pendingReadyTimeouts.delete(peerId);
+      debugWarn('[NetworkManager] Relay assist request failed', peerId, err?.message || err);
+      return false;
+    }
+  }
+
+  _handleRelayAssistMessage(payload, envelope) {
+    if (!payload || typeof payload !== 'object') return false;
+    const type = String(payload.type || '').trim().toLowerCase();
+    if (type !== 'relay-assist-request' && type !== 'relay-assist-ready') return false;
+    const from = envelope?.from || payload?.from || null;
+    if (!from || from === this.peerId) return true;
+    if (type === 'relay-assist-request') {
+      this._handleRelayAssistRequest(from, payload).catch(() => {});
+      return true;
+    }
+    if (type === 'relay-assist-ready') {
+      this._handleRelayAssistReady(from, payload).catch(() => {});
+      return true;
+    }
+    return true;
+  }
+
+  async _handleRelayAssistRequest(from, payload = {}) {
+    if (this.config.webrtc?.enableRelayAssist === false) return;
+    if (!this.config.bootstrapPeers?.length) return;
+    const now = Date.now();
+    const inboundThrottleMs = 2000;
+    const lastInboundAt = this.relayAssistState.inboundRequestAt.get(from) || 0;
+    if (now - lastInboundAt < inboundThrottleMs) {
+      return;
+    }
+    this.relayAssistState.inboundRequestAt.set(from, now);
+
+    if (!this._hasBootstrapRelayConnections()) {
+      try {
+        await this._dialBootstrapPeers();
+        await this._reserveBootstrapRelayAddrs();
+      } catch (_) {
+        return;
+      }
+    }
+    if (!this._hasBootstrapRelayConnections()) return;
+
+    const announceAddrs = this._getAnnounceAddrs().filter((addr) => addr.includes('/p2p-circuit'));
+    await this.sendToPeer(from, {
+      type: 'relay-assist-ready',
+      readyAt: Date.now(),
+      multiaddrs: announceAddrs
+    });
+    this._publishPresenceNow().catch(() => {});
+    this._scheduleAutoRelayDrop();
+  }
+
+  async _handleRelayAssistReady(from, payload = {}) {
+    const pendingTimeout = this.relayAssistState.pendingReadyTimeouts.get(from);
+    if (pendingTimeout) {
+      clearTimeout(pendingTimeout);
+      this.relayAssistState.pendingReadyTimeouts.delete(from);
+    }
+    if (Array.isArray(payload.multiaddrs) && payload.multiaddrs.length > 0) {
+      this._rememberPeerAddresses(from, payload.multiaddrs);
+    }
+    await this._maybeDialPeer(from, 'relay-assist-ready', payload.multiaddrs || null, { force: true });
   }
 
   _buildCircuitAddr(peerId) {
@@ -2891,7 +3028,7 @@ export class NetworkManager {
     }
   }
 
-  async _maybeDialPeer(peerId, source, addrs = null) {
+  async _maybeDialPeer(peerId, source, addrs = null, options = {}) {
     if (!this.libp2p || !peerId || peerId === this.peerId) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
     const active = this._getConnectionsForPeer(peerId);
@@ -2899,11 +3036,12 @@ export class NetworkManager {
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
     const hasRelayWebrtc = active.some((conn) => isRelayWebRTCAddr(conn?.remoteAddr));
     const preferDirect = this.config.webrtc?.preferDirect !== false;
+    const forceDial = options?.force === true;
     if (hasDirect) return;
-    if (!preferDirect && active.length > 0) return;
+    if (!preferDirect && active.length > 0 && !forceDial) return;
     const now = Date.now();
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
-    if (now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
+    if (!forceDial && now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
     this.recentDialAttempts.set(peerId, now);
     const ensurePeerIdForAddr = (addr) => {
       if (!peerId) return addr;
@@ -3000,6 +3138,7 @@ export class NetworkManager {
       orderedTargets = maybeDialTargets.length > 0 ? maybeDialTargets : relayTargets;
     }
 
+    let sawRelayNoReservation = false;
     if (orderedTargets.length > 0) {
       if (preferDirect) {
         if (directTargets.length > 0) {
@@ -3058,6 +3197,9 @@ export class NetworkManager {
           debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
           return;
         } catch (err) {
+          if (kind === 'webrtc-relay' && this._isRelayReservationError(err)) {
+            sawRelayNoReservation = true;
+          }
           if (kind !== 'relay') {
             console.warn('[NetworkManager] Dial failed', peerId, kind, addrStr, err?.message || err);
           } else {
@@ -3072,6 +3214,10 @@ export class NetworkManager {
           });
         }
       }
+    }
+    if (sawRelayNoReservation) {
+      const requested = await this._requestRelayAssist(peerId, `no-reservation:${source || 'dial'}`);
+      if (requested) return;
     }
     // Phase 4: Try relay reconnection if all direct addresses failed
     if (orderedTargets.length > 0 && !this._hasBootstrapRelayConnections()) {

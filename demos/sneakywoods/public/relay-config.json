@@ -15,11 +15,13 @@
       }
     ],
     "preferDirect": true,
-    "dropRelayOnDirect": false,
-    "dropRelayBootstrapOnDirect": false,
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "countRelayWebrtcAsDirectCapable": true,
     "relayRetention": {
-      "mode": "sqrt",
-      "min": 1
+      "mode": "logn",
+      "min": 1,
+      "max": 10
     }
   },
   "pubsubType": "gossipsub"

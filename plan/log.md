@@ -18218,3 +18218,182 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Open: host-side validation is still required to confirm end-to-end behavior after deploy (`node --test ...` and NetViz build/run).
 - Open: if any peers still report persistent relay in production after deploy, next evidence needed is browser `webrtc-internals` selected candidate-pair data and live relay reservation state per peer.
+
+## Date: 2026-03-01
+
+### Prompt
+- OK I think it's working. but occasionally we get isolated peers does this log help? [provided bootstrap flap log]
+
+### Prompt Time/Date
+- 2026-03-01T00:19:45+00:00
+
+### Actions Attempted
+- Performed log triage on the provided client output for intermittent isolation.
+- Confirmed repeated rapid connect/disconnect cycles are against the bootstrap relay peer (`12D3KooWN8Po...`) over WSS (`/dns4/secretworkshop.net/tcp/443/wss/...`), not random remote peers.
+- Confirmed each disconnect is followed by `redial-bootstrap` state with only relay-scoped announce addrs and empty local webrtc/multiaddr sets.
+- Confirmed retention debug snapshots indicate bootstrap drop policy is active while direct-capable state is true (`dropRelayBootstrapOnDirect:true`, `hasDirectPeerConnections:true`, `shouldKeepRelay:false`) during flapping periods.
+- Re-checked `NetworkManager` bootstrap control paths to map likely loop points:
+  - `_maybeUpdateBootstrapRelayConnections`
+  - `_shouldKeepRelayBootstrapConnection`
+  - `_shouldElectRelayRedial`
+  - `_maybeRedialBootstrapPeers`
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+- `rg -n "_maybeUpdateBootstrapRelayConnections|_shouldKeepRelayBootstrapConnection|_maybeRedialBootstrapPeers|_shouldElectRelayRedial|dropRelayBootstrapOnDirect" peercompute/src/peercompute/networkManager/NetworkManager.js`
+
+### Test Results
+- Diagnostic-only prompt; no runtime tests executed.
+
+### Failures / Open Questions
+- Open: need server-side relay/nginx close evidence (close codes/timeouts/upstream resets) to distinguish policy-driven bootstrap close from transport/proxy close.
+- Open: production mitigation choice pending (keep one persistent bootstrap control-plane link vs add drop/redial hysteresis first).
+
+## Date: 2026-03-01
+
+### Prompt
+- I think you're wrong. I thought gossipsub or another mechanism enabled peer discovery through the mesh. please look
+
+### Prompt Time/Date
+- 2026-03-01T00:19:45+00:00
+
+### Actions Attempted
+- Re-verified mesh discovery implementation paths in source:
+  - `pubsubPeerDiscovery` registration in libp2p peer discovery list.
+  - `peer:discovery` event handling and `_maybeDialPeer(...)` invocation.
+  - presence payload/handling (`multiaddrs`, `relayConnected`) and dial trigger.
+- Confirmed discovery transport constraints:
+  - discovery provides peer IDs/events but re-dial still requires usable addresses or routable peerstore state.
+  - presence advertises `multiaddrs` from `_getAnnounceAddrs()`, which can be relay-scoped when local direct `/webrtc` addrs are unavailable.
+- Confirmed additional dial gate:
+  - `_shouldDialDiscoveredPeer(...)` blocks unknown discovered peers unless room/isolation policy allows it (`allowDiscoveryDialWhenIsolated` is false by default).
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "pubsubPeerDiscovery|peer.?discovery|gossipsub|identify|bootstrap|announce|peerStore|discovery" peercompute/src demos/netviz/src -S`
+- `sed -n '1,220p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "No local /webrtc addrs to announce|Announce addrs|relay-scoped WebRTC|Direct dial targets|No direct targets|webRTC|webrtc" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '720,870p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1328,1415p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2890,3065p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1415,1605p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3065,3265p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "presence|_handlePresence|_publishPresence|discoveryTopic|pubsubPeerDiscovery|announceAddrs|netviz" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '2060,2135p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1728,1910p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '330,525p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "_dropPubsubPeer|addPeer\(|removePeer\(|directPeers" peercompute/src/peercompute/networkManager/NetworkManager.js -S`
+- `sed -n '1170,1235p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `date -Is`
+
+### Test Results
+- Diagnostic/source inspection only; no runtime tests executed.
+
+### Failures / Open Questions
+- Open: whether to relax discovered-peer dial gating in production (`allowDiscoveryDialWhenIsolated`) to reduce isolation risk when bootstrap relay flaps.
+- Open: whether to make bootstrap retention sticky (at least one control-plane relay link) to preserve pubsub discovery continuity under relay instability.
+
+## Date: 2026-03-01
+
+### Prompt
+- won't 1 defeat the entire purpose and degrade to N relay connections for N peers? ... should reacquire relay on demand via mesh signaling
+
+### Prompt Time/Date
+- 2026-03-01T00:32:21+00:00
+
+### Actions Attempted
+- Evaluated user-proposed architecture against current relay-scaling goals.
+- Clarified control-plane vs data-plane relay accounting for scaling semantics.
+- Prepared recommendation for on-demand relay reacquisition protocol with mesh-trigger + fallback behavior.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -Is`
+
+### Test Results
+- N/A (design discussion prompt).
+
+### Failures / Open Questions
+- Open: choose operating mode for production:
+  - sticky control-plane relay per node,
+  - or mesh-signaled on-demand reacquire with periodic fallback.
+
+## Date: 2026-03-01
+
+### Prompt
+- do it.
+
+### Prompt Time/Date
+- 2026-03-01T00:39:33+00:00
+
+### Actions Attempted
+- Implemented on-demand relay-assist signaling in `NetworkManager` so peers can request temporary relay reacquisition when relay-webrtc dialing fails with `NO_RESERVATION`.
+- Added new WebRTC config normalization knobs:
+  - `enableRelayAssist`
+  - `relayAssistRequestThrottleMs`
+  - `relayAssistReadyTimeoutMs`
+- Added relay-assist runtime state management:
+  - outbound request throttling
+  - pending-ready timeout tracking
+  - inbound request dedupe/throttling
+  - disconnect-time cleanup for pending timers/maps.
+- Added targeted control-message handling on the direct topic:
+  - `relay-assist-request`
+  - `relay-assist-ready`
+- Added request-side behavior:
+  - after relay-webrtc dial failures containing reservation errors, request relay assist (`_requestRelayAssist`) instead of immediately falling back to noisy repeated peerId dial attempts.
+- Added receiver-side behavior:
+  - on `relay-assist-request`, reacquire bootstrap relay (`_dialBootstrapPeers` + `_reserveBootstrapRelayAddrs`), send `relay-assist-ready` with current relay-scoped announce addrs, republish presence, and schedule relay auto-drop.
+- Added ready-side behavior:
+  - on `relay-assist-ready`, clear pending timeout, cache provided multiaddrs, and force an immediate redial attempt (`_maybeDialPeer(..., { force: true })`).
+- Extended unit coverage in `peercompute/tests/unit/networkManager.webrtc.test.js` for relay-assist request throttling, request handling, ready handling, and NO_RESERVATION-triggered request path.
+- Updated planning docs to reflect the new behavior and expected unit checks (`plan/plan.md`, `plan/tests.md`).
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Iseconds`
+- `git status --short`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "relay-assist|assist|_maybeUpdateBootstrapRelayConnections|_reconnectRelayForDial|_maybeDialPeer|_handleDirectMessage|directTopic|presence" peercompute/src/peercompute/networkManager/NetworkManager.js -n`
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '260,560p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '560,980p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '980,1520p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1520,1960p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1960,2360p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2360,2760p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2760,3360p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,320p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '320,760p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `apply_patch` on `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `/bin/bash -lc 'export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node --test peercompute/tests/unit/networkManager.webrtc.test.js'`
+- `/bin/bash -lc 'ls -la /home/cos/.nvm/versions/node 2>/dev/null || true; find /home/cos/.nvm/versions/node -maxdepth 3 -type f -name node 2>/dev/null || true'`
+- `sed -n '1,260p' plan/tests.md`
+- `git status --short`
+- `tail -n 120 plan/log.md`
+
+### Test Results
+- Unit test execution: BLOCKED in this environment.
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js` -> `/bin/bash: node: command not found`
+  - Node 24 attempt via nvm bootstrap blocked: `/home/cos/.nvm/nvm.sh: Permission denied`
+- Static/source validation: PASS (manual review of inserted control-path logic and test coverage additions).
+
+### Failures / Open Questions
+- Runtime verification remains pending on host where Node 24 tooling is accessible.
+- Need live swarm validation that `relay-assist-request` / `relay-assist-ready` reduces isolation events without reintroducing persistent full relay mesh.

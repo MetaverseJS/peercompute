@@ -63,6 +63,10 @@
 : `NetworkManager prefers remembered direct /webrtc targets after prior direct hint`
 : `NetworkManager counts relay-webrtc as direct-capable by default`
 : `NetworkManager does not block relay drop on unreachable targetConnections in small rooms`
+: `NetworkManager requests relay assist only once per throttle window`
+: `NetworkManager handles relay-assist-request by reacquiring relay and replying ready`
+: `NetworkManager handles relay-assist-ready by forcing immediate redial`
+: `NetworkManager requests relay assist on relay-webrtc NO_RESERVATION dial failure`
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`
