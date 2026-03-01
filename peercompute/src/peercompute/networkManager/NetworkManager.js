@@ -21,6 +21,7 @@ import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@lib
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
+import { isDebugOutputEnabled } from '../utils/debugOutput.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
 const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
@@ -606,6 +607,9 @@ export class NetworkManager {
       allowLocalDial,
       webrtc: webrtcConfig
     };
+    this.debugOutput = typeof this.config.debugOutput === 'boolean'
+      ? this.config.debugOutput
+      : isDebugOutputEnabled();
     this.bootstrapPeerIds = new Set(
       normalizedBootstrapPeers.map(getPeerIdFromAddr).filter(Boolean)
     );
@@ -726,6 +730,12 @@ export class NetworkManager {
 
   addMessageHandler(handler) {
     this.messageHandlers.push(handler);
+  }
+
+  _infoLog(...args) {
+    if (this.debugOutput) {
+      console.info(...args);
+    }
   }
 
   configureScheduler(profile = {}) {
@@ -1427,9 +1437,9 @@ export class NetworkManager {
       this._clearDialFailureBackoff(peerId);
       const prevKind = this.peers.get(peerId)?.via || null;
       if (prevKind && ['relay', 'relay-webrtc', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
-        console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
+        this._infoLog('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
       } else {
-        console.info('[NetworkManager] Connection open', peerId, kind, remoteAddr);
+        this._infoLog('[NetworkManager] Connection open', peerId, kind, remoteAddr);
       }
       if (this.bootstrapPeerIds.has(peerId) && !Number.isFinite(this.relayBootstrapConnectedAt)) {
         this.relayBootstrapConnectedAt = now;
@@ -1478,7 +1488,7 @@ export class NetworkManager {
         });
       }
       const remaining = this._getConnectionsForPeer(peerId).filter(isConnectionOpen).length;
-      console.info('[NetworkManager] Connection closed', peerId, kind, remoteAddr, 'reason:', formatCloseReason(closeError), 'remaining:', remaining);
+      this._infoLog('[NetworkManager] Connection closed', peerId, kind, remoteAddr, 'reason:', formatCloseReason(closeError), 'remaining:', remaining);
       const active = this._getConnectionsForPeer(peerId).filter((entry) => entry?.status === 'open');
       if (this.bootstrapPeerIds.has(peerId) && active.length === 0 && !this._hasBootstrapRelayConnections()) {
         this.relayBootstrapConnectedAt = null;
@@ -3228,7 +3238,7 @@ export class NetworkManager {
     try {
       await reservationStore.addRelay(peerId, 'configured');
       this.relayReservationPeers.add(peerIdStr);
-      console.info('[NetworkManager] Relay reservation created', peerIdStr, source);
+      this._infoLog('[NetworkManager] Relay reservation created', peerIdStr, source);
       return true;
     } catch (err) {
       debugWarn('[NetworkManager] Relay reservation failed', peerIdStr, source, err?.message || err);
@@ -3248,13 +3258,13 @@ export class NetworkManager {
     const announceAddrs = this._getAnnounceAddrs();
     const webrtcAddrs = addrs.filter((addr) => addr.includes('/webrtc'));
     const relayAddrs = addrs.filter((addr) => addr.includes('/p2p-circuit'));
-    console.info(`[NetworkManager] Local multiaddrs (${label})`, JSON.stringify(addrs));
-    console.info(`[NetworkManager] Local webrtc addrs (${label})`, JSON.stringify(webrtcAddrs));
-    console.info(`[NetworkManager] Local relay addrs (${label})`, JSON.stringify(relayAddrs));
-    console.info(`[NetworkManager] Announce addrs (${label})`, JSON.stringify(announceAddrs));
+    this._infoLog(`[NetworkManager] Local multiaddrs (${label})`, JSON.stringify(addrs));
+    this._infoLog(`[NetworkManager] Local webrtc addrs (${label})`, JSON.stringify(webrtcAddrs));
+    this._infoLog(`[NetworkManager] Local relay addrs (${label})`, JSON.stringify(relayAddrs));
+    this._infoLog(`[NetworkManager] Announce addrs (${label})`, JSON.stringify(announceAddrs));
     const reservationStore = this.relayTransport?.reservationStore;
     if (reservationStore?.reservationCount) {
-      console.info(`[NetworkManager] Relay reservations (${label})`, {
+      this._infoLog(`[NetworkManager] Relay reservations (${label})`, {
         total: reservationStore.reservationCount(),
         configured: reservationStore.reservationCount('configured'),
         discovered: reservationStore.reservationCount('discovered')
@@ -3267,7 +3277,7 @@ export class NetworkManager {
       const storeAddrs = (entry?.addresses || [])
         .map((addr) => addr?.multiaddr?.toString?.())
         .filter(Boolean);
-      console.info(`[NetworkManager] PeerStore addrs (${label})`, JSON.stringify(storeAddrs));
+      this._infoLog(`[NetworkManager] PeerStore addrs (${label})`, JSON.stringify(storeAddrs));
     } catch (err) {
       debugWarn('[NetworkManager] Failed to read peerStore addrs', err?.message || err);
     }
@@ -3391,13 +3401,13 @@ export class NetworkManager {
     if (orderedTargets.length > 0) {
       if (preferDirect) {
         if (directTargets.length > 0) {
-          console.info('[NetworkManager] Direct dial targets', peerId, formatDialTargets(orderedTargets));
+          this._infoLog('[NetworkManager] Direct dial targets', peerId, formatDialTargets(orderedTargets));
         } else if (relayWebrtcTargets.length > 0) {
-          console.info('[NetworkManager] No direct targets, using relay-webrtc', peerId, formatDialTargets(orderedTargets));
+          this._infoLog('[NetworkManager] No direct targets, using relay-webrtc', peerId, formatDialTargets(orderedTargets));
         } else if (relayTargets.length > 0) {
-          console.info('[NetworkManager] No direct targets, using relay', peerId, formatDialTargets(orderedTargets));
+          this._infoLog('[NetworkManager] No direct targets, using relay', peerId, formatDialTargets(orderedTargets));
           if (peerStoreAddrs && peerStoreAddrs.length > 0) {
-            console.info('[NetworkManager] PeerStore addrs', peerId, peerStoreAddrs);
+            this._infoLog('[NetworkManager] PeerStore addrs', peerId, peerStoreAddrs);
           }
         }
       }
@@ -3419,7 +3429,7 @@ export class NetworkManager {
                   candidateCounts.set(key, count + 1);
                   const logKey = `ice:${key}`;
                   if (!seenEvents.has(logKey)) {
-                    console.info('[NetworkManager] ICE candidate', peerId, key, info.protocol, info.address);
+                    this._infoLog('[NetworkManager] ICE candidate', peerId, key, info.protocol, info.address);
                     seenEvents.add(logKey);
                   }
                   return;
@@ -3428,18 +3438,18 @@ export class NetworkManager {
                   const summary = Array.from(candidateCounts.entries())
                     .map(([key, count]) => `${key}=${count}`)
                     .join(', ') || 'none';
-                  console.info('[NetworkManager] ICE gathering done', peerId, summary);
+                  this._infoLog('[NetworkManager] ICE gathering done', peerId, summary);
                   return;
                 }
                 if (!seenEvents.has(eventType)) {
-                  console.info('[NetworkManager] WebRTC progress', peerId, eventType, addrStr);
+                  this._infoLog('[NetworkManager] WebRTC progress', peerId, eventType, addrStr);
                   seenEvents.add(eventType);
                 }
               };
             })()
           : null;
         if (kind !== 'relay') {
-          console.info('[NetworkManager] Dial attempt', peerId, kind, addrStr);
+          this._infoLog('[NetworkManager] Dial attempt', peerId, kind, addrStr);
         }
         try {
           await this.libp2p.dial(addr, progressLogger ? { onProgress: progressLogger } : undefined);
@@ -3540,7 +3550,7 @@ export class NetworkManager {
     if (preferDirect && !addrs.some((addr) => addr.includes('/webrtc'))) {
       const now = Date.now();
       if (!this.lastWebrtcAnnounceWarnAt || now - this.lastWebrtcAnnounceWarnAt > 60000) {
-        console.info('[NetworkManager] No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.');
+        this._infoLog('[NetworkManager] No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.');
         this.lastWebrtcAnnounceWarnAt = now;
       }
     }

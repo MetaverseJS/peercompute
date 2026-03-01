@@ -19237,3 +19237,57 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - No execution blockers remain for running Node-based tests in this session (`node v24.14.0` detected).
 - Live relay/browser behavior (including `wss` runtime and relay-config fetch path) still needs runtime verification separately from unit/demo tests.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 22:39:26 UTC)
+- User provided a short console sample with heavy spam (`[NodeKernel] Message from ... yjs-update/state-set`, repeated `NetworkManager` dial-target info) and asked to gate this output behind URL param `?debugoutput=true`.
+
+### Actions
+- Reviewed `plan/plan.md` and latest `plan/log.md` entries before editing.
+- Located noisy emit sites in runtime code:
+  - `NodeKernel._handleNetworkMessage()` per-message console output.
+  - `NetworkManager` info-level dial/progress/snapshot logs (`Direct dial targets`, `Dial attempt`, `No local /webrtc addrs ...`, ICE progress, connection/reservation/snapshot info).
+- Added a new browser-safe utility `utils/debugOutput.js` to read `debugoutput` from URL query (`true/1/yes/on` supported) with defensive fallback for non-browser/test contexts.
+- Wired `NodeKernel` to derive `debugOutput` once at construction time (or via explicit config override) and gate high-frequency message/peer-event/compute-task logs.
+- Wired `NodeKernel` to pass `debugOutput` down into `NetworkManager` config.
+- Added `NetworkManager` instance-level `_infoLog()` helper and switched all `console.info(...)` runtime status logs to `_infoLog(...)`, making them visible only when `debugOutput` is enabled.
+- Left warnings/errors unchanged so actionable failures still surface without debug flag.
+
+### Files Touched
+- `peercompute/src/peercompute/utils/debugOutput.js` (new)
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 260 plan/log.md`
+- `rg -n "Message from|Direct dial targets|Dial attempt|No local /webrtc addrs|debugoutput|URLSearchParams|console\.log\(" peercompute/src demos/sneakywoods --glob '!**/dist/**'`
+- `ls -la peercompute/src/peercompute/utils`
+- `sed -n '1,220p' peercompute/src/peercompute/utils/Utils.js`
+- `sed -n '1,220p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3360,3575p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,260p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '760,980p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `rg -n "class NetworkManager|constructor\(" peercompute/src/peercompute/networkManager/NetworkManager.js | head -n 20`
+- `sed -n '240,460p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '460,760p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "console\.info\(" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `npm --prefix peercompute run test:unit`
+- `node --test demos/tests/*.test.js`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- `npm --prefix peercompute run test:unit`
+  - PASS: `14`
+  - FAIL: `0`
+  - Duration: `40731.556806ms`
+- `node --test demos/tests/*.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+  - Duration: `262.87177ms`
+
+### Failures / Open Questions
+- The `[DOM] Password field is not contained in a form` warning shown in user sample is browser HTML validation noise and is unrelated to this debug-output gate.
+- Open follow-up: decide whether additional non-info `console.log` startup/status lines should also be hidden by default, or only high-frequency networking logs (current behavior).

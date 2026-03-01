@@ -9,6 +9,7 @@ import { StateManager } from '../stateManager/StateManager.js';
 import { ComputeManager } from '../computeManager/ComputeManager.js';
 import { GPUHubManager } from '../gpu/GPUHubManager.js';
 import { generateId } from '../utils/Utils.js';
+import { isDebugOutputEnabled } from '../utils/debugOutput.js';
 
 const NETVIZ_DEBUG_CHANNEL = 'peercompute-netviz-debug-v1';
 const NETVIZ_DEBUG_TELEMETRY_PREFIX = 'telemetry:';
@@ -46,6 +47,7 @@ export class NodeKernel {
    * @param {boolean} config.enableNetVizSessionBroadcast - Broadcast active demo session metadata for NetViz attach picker
    * @param {boolean} config.enableNetVizSessionDiscovery - Listen for active NetViz session metadata over pubsub
    * @param {string} config.netVizSessionTopic - Cross-demo pubsub topic used for NetViz session discovery
+   * @param {boolean} config.debugOutput - Emit verbose network debug logs (or enable via URL `?debugoutput=true`)
    */
   constructor(config = {}) {
     const clockPolicy = this._normalizeClockPolicy(config.clockPolicy);
@@ -72,6 +74,9 @@ export class NodeKernel {
         : NETVIZ_SESSION_TOPIC;
     const enableNetVizSessionBroadcast = config.enableNetVizSessionBroadcast !== false;
     const enableNetVizSessionDiscovery = config.enableNetVizSessionDiscovery === true;
+    const debugOutput = typeof config.debugOutput === 'boolean'
+      ? config.debugOutput
+      : isDebugOutputEnabled();
     const netVizSessionStaleMs = Number.isFinite(config.netVizSessionStaleMs)
       ? Math.max(5000, config.netVizSessionStaleMs)
       : 15000;
@@ -103,6 +108,7 @@ export class NodeKernel {
       netVizDebugTelemetryTaskPrefix,
       enableNetVizSessionBroadcast,
       enableNetVizSessionDiscovery,
+      debugOutput,
       netVizSessionTopic,
       netVizSessionStaleMs,
       netVizDebugSessionIntervalMs,
@@ -155,6 +161,7 @@ export class NodeKernel {
     this.isInitialized = false;
     this.isStarted = false;
     this.nodeId = null;
+    this.debugOutputEnabled = this.config.debugOutput === true;
     this.kernelClockTimer = null;
     this.netVizDebugTelemetryTimer = null;
     this.netVizDebugSessionTimer = null;
@@ -226,6 +233,7 @@ export class NodeKernel {
         dialTimeoutMs: this.config.dialTimeoutMs ?? this.config.dialTimeout,
         pubsubType: this.config.pubsubType,
         gossipsub: this.config.gossipsub,
+        debugOutput: this.config.debugOutput,
         schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
         schedulerProfile: this.config.clockPolicy.networkProfile,
         onPublishError: this.config.onPublishError,
@@ -807,7 +815,9 @@ export class NodeKernel {
    * @param {Object} message - Message data
    */
   _handleNetworkMessage(peerId, message) {
-    console.log(`[NodeKernel] Message from ${peerId}:`, message.type);
+    if (this.debugOutputEnabled) {
+      console.log(`[NodeKernel] Message from ${peerId}:`, message.type);
+    }
     
     // Route messages based on type
     switch (message.type) {
@@ -868,7 +878,9 @@ export class NodeKernel {
    * @param {string} peerId - Connected peer ID
    */
   _handlePeerConnect(peerId) {
-    console.log(`[NodeKernel] Peer connected: ${peerId}`);
+    if (this.debugOutputEnabled) {
+      console.log(`[NodeKernel] Peer connected: ${peerId}`);
+    }
     
     // Update state with connected peer
     const peers = this.stateManager.read('connectedPeers') || [];
@@ -884,7 +896,9 @@ export class NodeKernel {
    * @param {string} peerId - Disconnected peer ID
    */
   _handlePeerDisconnect(peerId) {
-    console.log(`[NodeKernel] Peer disconnected: ${peerId}`);
+    if (this.debugOutputEnabled) {
+      console.log(`[NodeKernel] Peer disconnected: ${peerId}`);
+    }
     
     // Update state
     const peers = this.stateManager.read('connectedPeers') || [];
@@ -915,7 +929,9 @@ export class NodeKernel {
    * @param {Object} task - Task data
    */
   async _handleComputeTask(peerId, task) {
-    console.log(`[NodeKernel] Compute task from ${peerId}: TODO`);
+    if (this.debugOutputEnabled) {
+      console.log(`[NodeKernel] Compute task from ${peerId}: TODO`);
+    }
     // TODO: Route to ComputeManager when implemented
   }
 
