@@ -1758,30 +1758,38 @@ export class NetworkManager {
 
   _maybeUpdateBootstrapRelayConnections() {
     if (!this.libp2p) return;
+    const now = Date.now();
+    const hasBootstrapRelayConnections = this._hasBootstrapRelayConnections();
+    const isRelayElectionKeeper = this._shouldElectRelayRedial(now, {
+      allowWithBootstrap: true
+    });
     if (this.config.bootstrapPeers?.length) {
       const activeConnections = this._getActiveConnectionCount();
-      if (activeConnections === 0 && !this._hasBootstrapRelayConnections()) {
+      if (activeConnections === 0 && !hasBootstrapRelayConnections) {
         this._maybeRedialBootstrapPeers();
         return;
       }
     }
-    if (this._shouldElectRelayRedial()) {
+    if (!hasBootstrapRelayConnections && isRelayElectionKeeper) {
       this._maybeRedialBootstrapPeers();
       return;
     }
+    if (hasBootstrapRelayConnections && isRelayElectionKeeper) {
+      return;
+    }
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) {
-      if (!this._hasBootstrapRelayConnections()) {
+      if (!hasBootstrapRelayConnections) {
         this._maybeRedialBootstrapPeers();
       }
       return;
     }
     if (this._shouldKeepRelayBootstrapConnection()) {
-      if (!this._hasBootstrapRelayConnections()) {
+      if (!hasBootstrapRelayConnections) {
         this._maybeRedialBootstrapPeers();
       }
       return;
     }
-    if (this._hasBootstrapRelayConnections()) {
+    if (hasBootstrapRelayConnections) {
       this._closeBootstrapRelayConnections();
     }
   }
@@ -1967,10 +1975,11 @@ export class NetworkManager {
     }, delay);
   }
 
-  _shouldElectRelayRedial(now = Date.now()) {
+  _shouldElectRelayRedial(now = Date.now(), options = {}) {
+    const allowWithBootstrap = options?.allowWithBootstrap === true;
     if (!this.peerId) return false;
     if (!this.config.bootstrapPeers?.length) return false;
-    if (this._hasBootstrapRelayConnections()) return false;
+    if (!allowWithBootstrap && this._hasBootstrapRelayConnections()) return false;
     const presenceInterval = Number.isFinite(this.config.presenceIntervalMs)
       ? this.config.presenceIntervalMs
       : 3000;

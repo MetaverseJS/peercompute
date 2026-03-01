@@ -357,6 +357,46 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
   assert.equal(relayClosed, true);
 });
 
+test('NetworkManager keeps bootstrap relay when elected keeper even with direct peers', () => {
+  const manager = new NetworkManager({
+    targetConnections: 1,
+    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+  });
+  manager.peerId = 'peer-self';
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+
+  let relayClosed = false;
+  let redialed = false;
+  const bootstrapConn = {
+    remotePeer: { toString: () => 'relay-peer' },
+    remoteAddr: buildAddr('/dns4/relay.example/tcp/443/wss/p2p/relay-peer'),
+    status: 'open',
+    close: async () => {
+      relayClosed = true;
+    }
+  };
+  const directConn = {
+    remotePeer: { toString: () => 'peer-a' },
+    remoteAddr: buildAddr('/webrtc/p2p/peer-a'),
+    status: 'open'
+  };
+
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'relay-peer') return [bootstrapConn];
+      return [bootstrapConn, directConn];
+    }
+  };
+  manager._maybeRedialBootstrapPeers = () => {
+    redialed = true;
+  };
+
+  manager._maybeUpdateBootstrapRelayConnections();
+
+  assert.equal(relayClosed, false);
+  assert.equal(redialed, false);
+});
+
 test('NetworkManager requests relay assist only once per throttle window', async () => {
   const manager = new NetworkManager({
     webrtc: {

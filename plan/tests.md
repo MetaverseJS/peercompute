@@ -72,6 +72,7 @@
 : `NetworkManager setConnectionLimits updates connection manager using transport max`
 : `NetworkManager presence payload reports non-bootstrap active peers`
 : `NetworkManager ignores closed connections for direct/drop decisions`
+: `NetworkManager keeps bootstrap relay when elected keeper even with direct peers`
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`

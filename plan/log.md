@@ -18742,3 +18742,84 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - No immediate unit-test failures remain for `networkManager.webrtc.test.js`.
 - Runtime collapse monitoring remains ongoing under live swarm churn.
+
+## Date: 2026-03-01
+
+### Prompt
+- User reported runtime still has occasional isolation/collapse and supplied long logs showing:
+  - bootstrap peer open/close flapping (`12D3KooWN8...`),
+  - repeated `redial-bootstrap` snapshots,
+  - relay reservations oscillating to zero,
+  - frequent relay-webrtc dial failures (`NO_RESERVATION`, `Remote closed connection during opening`),
+  - and uncaught `StreamStateError` traces during stream close/reset.
+
+### Prompt Time/Date
+- 2026-03-01T04:02:58Z
+
+### Actions Attempted
+- Analyzed relay control flow and identified a logic conflict between:
+  - relay redial election (`_shouldElectRelayRedial`) and
+  - drop policy (`dropRelayBootstrapOnDirect` + `_shouldKeepRelayBootstrapConnection`).
+- Root cause:
+  - elected node can redial bootstrap when disconnected,
+  - then immediately drop bootstrap on the next tick because drop policy executes without honoring election keeper role,
+  - producing open/close ping-pong and unstable reservation state.
+- Implemented fix:
+  - `_maybeUpdateBootstrapRelayConnections` now computes bootstrap state + election once per tick.
+  - if elected keeper and bootstrap is absent -> redial.
+  - if elected keeper and bootstrap is present -> keep it (do not drop).
+  - drop-policy path now only executes when node is not elected keeper.
+  - `_shouldElectRelayRedial` extended with `allowWithBootstrap` option to support keeper decision while connected.
+- Added unit regression coverage:
+  - `NetworkManager keeps bootstrap relay when elected keeper even with direct peers`.
+- Updated test strategy checklist to include the new test.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `apply_patch` on `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `apply_patch` on `plan/tests.md`
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- append entry to `plan/log.md`
+
+### Test Results
+- Runtime/unit execution pending in host environment (this environment cannot run Node 24 test flow reliably via nvm sandbox).
+
+### Failures / Open Questions
+- Need host-side re-run to verify bootstrap flapping reduction:
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - optionally targeted keeper test via name-pattern.
+- Remaining `StreamStateError` uncaught traces may still contribute to churn and should be addressed separately if collapse persists after this keeper/election fix.
+
+## Date: 2026-03-01
+
+### Prompt
+- User observation/question:
+  - With ~10 tabs open, about 3 peers appear isolated at any point.
+  - Asked whether forcing bootstrap keep would cause N relay connections.
+
+### Prompt Time/Date
+- 2026-03-01T04:10:54Z
+
+### Actions Attempted
+- Analyzed reported behavior against current relay policy semantics (`dropRelayBootstrapOnDirect=true`, `relayRetention=logn(min=2,max=10)`, keeper-election guard patch).
+- Prepared direct clarification on expected scaling behavior and tradeoff boundaries:
+  - global forced keep (`dropRelayBootstrapOnDirect=false`) vs conditional keeper/retention keep.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- append entry to `plan/log.md`
+
+### Test Results
+- No new test execution for this prompt (analysis-only question).
+
+### Failures / Open Questions
+- Open runtime tuning question: for 10 peers, whether retention floor should be raised above current effective keepers to reduce isolation under bootstrap flapping.
