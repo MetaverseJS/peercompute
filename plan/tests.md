@@ -68,6 +68,7 @@
 : `NetworkManager handles relay-assist-ready by forcing immediate redial`
 : `NetworkManager requests relay assist on relay-webrtc NO_RESERVATION dial failure`
 : `NetworkManager uses relay-scaling topology defaults`
+: `NetworkManager uses lightweight defaults for room-directory nodes`
 : `NetworkManager computes transport connection max with bootstrap headroom`
 : `NetworkManager setConnectionLimits updates connection manager using transport max`
 : `NetworkManager presence payload reports non-bootstrap active peers`

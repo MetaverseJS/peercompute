@@ -19058,3 +19058,182 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Open: runtime browser sessions still report occasional network collapse and bootstrap direct flapping (`reason: unknown`) despite unit-suite pass; next step is targeted runtime instrumentation around bootstrap disconnect causes and stream-close error paths.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 21:15:36 UTC)
+- "I changed your permissions so you should be able to run your own tests now. can you look at all the demos and see if the networking behavior should be improved or fixed?"
+
+### Actions
+- Audited all demos for PeerCompute networking usage and NodeKernel instantiation paths.
+- Confirmed networking-enabled demos are `cubechat`, `daddygo`, `hyperborea`, `netviz`, and `sneakywoods`; `planetgen`, `universes`, and `webgpuphys` do not instantiate `NodeKernel` for p2p mesh behavior.
+- Inspected per-demo WebRTC normalization and relay-config wiring to ensure no demo strips `webrtc` policy keys from `relay-config.json`.
+- Identified cross-demo churn risk: room-directory nodes (`roomId='__rooms__'`) were inheriting full gameplay connection/dial defaults, causing extra dial pressure because each tab can run both gameplay + directory nodes.
+- Implemented core `NetworkManager` default tuning to make directory nodes lightweight and reduced global default dial fanout.
+- Added/updated unit coverage to assert new defaults.
+- Updated `plan/tests.md` targeted checklist for new room-directory default test.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/tests.md`
+- `plan/log.md` (this entry)
+
+### Commands Run
+- `ls -1 demos`
+- `rg -n "NodeKernel|NetworkManager|relay-config|dropRelayBootstrapOnDirect|relayRetention|targetConnections|maxConnections|connectionRadius|maxDialPeers|webrtc" demos --glob '!**/dist/**'`
+- `rg -n "peercompute-netviz-sessions|telemetry|autoConnect|attachSession" demos --glob '!**/dist/**'`
+- `cat package.json`
+- `rg -n "@peercompute|peercompute" demos --glob '!**/dist/**' --glob '!**/node_modules/**'`
+- `ls -la demos/tests`
+- `cat peercompute/package.json`
+- `sed -n ...` inspections for:
+  - `demos/cubechat/src/p2p/network.js`
+  - `demos/cubechat/src/p2p/roomDirectory.js`
+  - `demos/daddygo/src/main.js`
+  - `demos/hyperborea/src/game/Game.js`
+  - `demos/hyperborea/src/game/roomDirectory.js`
+  - `demos/netviz/src/main.js`
+  - `demos/sneakywoods/main.js`
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js`
+  - `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `for f in demos/*/public/relay-config.json; do jq ...; done`
+- Attempted tests:
+  - `node --test demos/tests/*.test.js` (failed: `node` not found)
+  - `source /home/cos/.nvm/nvm.sh && nvm use 24 ...` (failed: permission denied to source nvm script in this agent runtime)
+
+### Tests Run / Results
+- Could not execute Node-based tests in this agent runtime due missing `node` binary on PATH and inability to source `/home/cos/.nvm/nvm.sh` from this execution context.
+- Added test assertions (to be run in your shell):
+  - `NetworkManager uses relay-scaling topology defaults` now checks `maxDialPeers=8`.
+  - New test: `NetworkManager uses lightweight defaults for room-directory nodes`.
+
+### Failures / Open Questions
+- Open: validate runtime impact in browser swarms (10+ tabs) after directory-node budget tuning; specifically whether bootstrap direct flapping frequency drops and isolated peers decrease.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 21:23:54 UTC)
+- "go ahead and run the tests. but you should first up the max connections to 10 for cubechat and sneakywoods."
+- Follow-up: "why did you set the connection radius to 0? what does that do?" and "no that's ok."
+
+### Actions
+- Updated CubeChat gameplay NodeKernel config to set `maxConnections: 10`.
+- Updated SneakyWoods gameplay NodeKernel config to set `maxConnections: 10`.
+- Confirmed room-directory `connectionRadius: 0` change remains scoped to `roomId='__rooms__'` defaults in `NetworkManager` (not gameplay nodes).
+- Attempted to execute requested Node-based tests from this runtime; blocked by environment constraints (no executable `node` path available in this agent context and restricted access to `.nvm` node version directory contents).
+
+### Files Touched
+- `demos/cubechat/src/p2p/network.js`
+- `demos/sneakywoods/main.js`
+- `plan/log.md` (this entry)
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `git status --short`
+- `apply_patch` on:
+  - `demos/cubechat/src/p2p/network.js`
+  - `demos/sneakywoods/main.js`
+- Runtime/user-shell diagnostics:
+  - `whoami && id && echo $HOME && pwd` (failed: `/usr/bin/whoami: Permission denied`)
+  - `command -v node || true; node -v ...` (no node found)
+  - `sudo -u cos -H bash -lc '... node -v ...'` (no output/command unavailable in context)
+  - `echo USER=$USER HOME=$HOME SHELL=$SHELL; umask; pwd`
+  - `ls -la /home/cos ...`
+  - `ls -ld /home/cos/.nvm /home/cos/.nvm/versions /home/cos/.nvm/versions/node`
+  - `ls -la /home/cos/.nvm/versions/node` (failed: permission denied)
+  - `find /usr /opt /snap /home/cos/.local /home/cos/projects/peercompute ... -name node` (no usable node binary found)
+
+### Tests Run / Results
+- Requested tests could not be executed from this runtime due missing/inaccessible Node binary in agent context.
+- No test pass/fail results produced in this turn.
+
+### Failures / Open Questions
+- Open: this execution context appears to block access to executable Node runtime paths (`node` absent on PATH and restricted `.nvm` directory traversal), so user-shell execution remains required for test commands.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 21:26:07 UTC)
+- "why can't you run them? you have full access?"
+
+### Actions
+- Clarified execution-context limitation: current Codex runtime can edit workspace files with full access policy but still lacks a runnable Node binary in PATH and cannot read/execute host `.nvm` Node installation paths due runtime-level restrictions.
+- Prepared explanation and workaround options for user-run test execution.
+
+### Files Touched
+- `plan/log.md` (this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- None (explanation-only prompt).
+
+### Failures / Open Questions
+- Open: expose an executable Node 24 path to this agent runtime if direct in-agent test execution is required.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 21:27:22 UTC)
+- "should I restart from my home dir?"
+
+### Actions
+- Confirmed the issue is not working directory but runtime HOME/session context mismatch (`/home/cos/snap/codex/13` vs `/home/cos`) affecting Node visibility.
+- Prepared restart guidance to relaunch Codex from a normal login shell with Node 24 loaded.
+
+### Files Touched
+- `plan/log.md` (this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- None.
+
+### Failures / Open Questions
+- Open: verify whether relaunching Codex from a shell with `HOME=/home/cos` and `nvm use 24` propagates Node into this runtime.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 21:46:05 UTC)
+- "looks like we lost some context. can you check the last 20 or so log entries and see if you can run tests yet?"
+
+### Actions
+- Reviewed `plan/plan.md`, `plan/log.md`, and `plan/tests.md` to restore task context.
+- Extracted the most recent log section range and reconstructed the last ~20 entries (`## Date` entries 456-475).
+- Confirmed recent log history focus: relay/bootstrap churn diagnosis, `NetworkManager` stabilization patches and associated unit-test updates, demo connection-limit tuning (`cubechat`/`sneakywoods`), and earlier environment/runtime blockers preventing in-agent Node execution.
+- Re-checked current runtime Node availability and executed tests directly from this session.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,260p' plan/plan.md`
+- `tail -n 520 plan/log.md`
+- `sed -n '1,260p' plan/tests.md`
+- `rg -n '^## Date:' plan/log.md | tail -n 30`
+- `rg -n '^### Prompt|^### Prompt \(' plan/log.md | tail -n 80`
+- `rg -n '^### Test Results|^### Tests Run / Results' plan/log.md | tail -n 40`
+- `sed -n '18820,19380p' plan/log.md`
+- `awk '/^## Date:/ {c++; printf "%d\t%d\t%s\\n", c, NR, $0}' plan/log.md | tail -n 30`
+- `sed -n '18530,18840p' plan/log.md`
+- `echo "HOME=$HOME" && command -v node || true && node -v && npm -v`
+- `npm --prefix peercompute run test:unit`
+- `node --test demos/tests/*.test.js`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- `npm --prefix peercompute run test:unit`
+  - PASS: `14`
+  - FAIL: `0`
+  - Duration: `41073.661128ms`
+  - Includes passing `tests/unit/networkManager.webrtc.test.js`.
+- `node --test demos/tests/*.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+  - Duration: `171.732393ms`
+
+### Failures / Open Questions
+- No execution blockers remain for running Node-based tests in this session (`node v24.14.0` detected).
+- Live relay/browser behavior (including `wss` runtime and relay-config fetch path) still needs runtime verification separately from unit/demo tests.

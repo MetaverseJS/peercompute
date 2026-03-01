@@ -30,8 +30,20 @@ test('NetworkManager uses relay-scaling topology defaults', () => {
   assert.equal(manager.config.connectionRadius, 1);
   assert.equal(manager.config.maxConnections, 4);
   assert.equal(manager.config.targetConnections, 3);
+  assert.equal(manager.config.maxDialPeers, 8);
   assert.equal(manager.config.webrtc.dropRelayBootstrapOnDirect, true);
   assert.equal(manager.config.webrtc.relayRetention?.mode, 'logn');
+});
+
+test('NetworkManager uses lightweight defaults for room-directory nodes', () => {
+  const manager = new NetworkManager({ roomId: '__rooms__' });
+
+  assert.equal(manager.config.maxConnections, 2);
+  assert.equal(manager.config.targetConnections, 1);
+  assert.equal(manager.config.connectionRadius, 0);
+  assert.equal(manager.config.longRangeCount, 0);
+  assert.equal(manager.config.isolationMinConnections, 1);
+  assert.equal(manager.config.maxDialPeers, 4);
 });
 
 test('NetworkManager delivers additional pubsub topics even when scope differs', () => {

@@ -160,6 +160,7 @@ export class P2PNetwork {
       enablePersistence: false,
       gameId: 'cubechat',
       roomId: this.roomId,
+      maxConnections: 10,
       ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
       ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})

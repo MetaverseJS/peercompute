@@ -27,7 +27,7 @@ const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
 const DEFAULT_PRESENCE_TOPIC = 'peercompute-presence';
 const DEFAULT_TOPIC_PREFIX = 'pc';
 const PEER_DIAL_THROTTLE_MS = 5000;
-const DEFAULT_MAX_DIAL_PEERS = 16;
+const DEFAULT_MAX_DIAL_PEERS = 8;
 const REMEMBERED_DIAL_ADDR_TTL_MS = 10 * 60 * 1000;
 const RELAY_ASSIST_REQUEST_THROTTLE_MS = 10000;
 const RELAY_ASSIST_READY_TIMEOUT_MS = 15000;
@@ -445,6 +445,8 @@ const normalizeTopicList = (input) => {
 export class NetworkManager {
   constructor(config = {}) {
     const webrtcConfig = normalizeWebRTCConfig(config);
+    const roomId = config.roomId || 'default-room';
+    const isRoomDirectoryNode = roomId === '__rooms__';
     const telemetrySampleMs = Number.isFinite(config.telemetrySampleMs)
       ? Math.max(250, config.telemetrySampleMs)
       : 1000;
@@ -456,7 +458,7 @@ export class NetworkManager {
       : 3000;
     const maxConnections = Number.isFinite(config.maxConnections)
       ? Math.max(1, config.maxConnections)
-      : 4;
+      : (isRoomDirectoryNode ? 2 : 4);
     const transportConnectionHeadroom = Number.isFinite(config.transportConnectionHeadroom)
       ? Math.max(0, Math.trunc(config.transportConnectionHeadroom))
       : 3;
@@ -484,7 +486,7 @@ export class NetworkManager {
       const value = config.maxDialPeers;
       if (value === null || value === Infinity) return null;
       if (Number.isFinite(value)) return Math.max(0, value);
-      return DEFAULT_MAX_DIAL_PEERS;
+      return isRoomDirectoryNode ? 4 : DEFAULT_MAX_DIAL_PEERS;
     })();
     const bootstrapDialThrottleMs = Number.isFinite(config.bootstrapDialThrottleMs)
       ? Math.max(0, config.bootstrapDialThrottleMs)
@@ -507,7 +509,6 @@ export class NetworkManager {
 
     const topologyType = config.topologyType || config.topology || 'distributed';
     const topologyId = config.topologyId || config.topologyKey || config.topologyName || config.gameId || 'default-topology';
-    const roomId = config.roomId || 'default-room';
     const topicPrefix = config.topicPrefix || config.topicBase || DEFAULT_TOPIC_PREFIX;
     const useScopedTopics = config.useScopedTopics !== false;
     const scopedPubsubTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'state');
@@ -545,14 +546,16 @@ export class NetworkManager {
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
       targetConnections: Number.isFinite(config.targetConnections)
         ? Math.max(1, config.targetConnections)
-        : Math.min(maxConnections, 3),
+        : (isRoomDirectoryNode ? 1 : Math.min(maxConnections, 3)),
       connectionRadius: Number.isFinite(config.connectionRadius)
         ? Math.max(0, config.connectionRadius)
-        : 1,
+        : (isRoomDirectoryNode ? 0 : 1),
       isolationMinConnections: Number.isFinite(config.isolationMinConnections)
         ? Math.max(1, config.isolationMinConnections)
-        : 2,
-      longRangeCount: Number.isFinite(config.longRangeCount) ? Math.max(0, config.longRangeCount) : 1,
+        : (isRoomDirectoryNode ? 1 : 2),
+      longRangeCount: Number.isFinite(config.longRangeCount)
+        ? Math.max(0, config.longRangeCount)
+        : (isRoomDirectoryNode ? 0 : 1),
       longRangeRefreshMs: Number.isFinite(config.longRangeRefreshMs)
         ? Math.max(1000, config.longRangeRefreshMs)
         : 15000,

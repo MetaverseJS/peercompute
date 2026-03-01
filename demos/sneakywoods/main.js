@@ -1310,6 +1310,7 @@ import { NodeKernel } from '@peercompute';
                     enablePersistence: false,
                     gameId: 'sneakywoods',
                     roomId: roomId || 'global',
+                    maxConnections: 10,
                     ...(pubsubType ? { pubsubType } : {}),
                     ...(gossipsubConfig ? { gossipsub: gossipsubConfig } : {}),
                     ...(webrtcConfig ? { webrtc: webrtcConfig } : {})
