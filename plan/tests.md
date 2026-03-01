@@ -73,6 +73,9 @@
 : `NetworkManager presence payload reports non-bootstrap active peers`
 : `NetworkManager ignores closed connections for direct/drop decisions`
 : `NetworkManager keeps bootstrap relay when elected keeper even with direct peers`
+: `NetworkManager keeps bootstrap relay during direct stability hysteresis window`
+: `NetworkManager delays relay prune until direct upgrade grace window passes`
+: `NetworkManager applies dial backoff after transient webrtc-relay failures`
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`

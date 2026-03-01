@@ -31,6 +31,25 @@ const DEFAULT_MAX_DIAL_PEERS = 16;
 const REMEMBERED_DIAL_ADDR_TTL_MS = 10 * 60 * 1000;
 const RELAY_ASSIST_REQUEST_THROTTLE_MS = 10000;
 const RELAY_ASSIST_READY_TIMEOUT_MS = 15000;
+const DEFAULT_RELAY_DROP_MIN_DIRECT_MS = 15000;
+const DEFAULT_DIRECT_UPGRADE_GRACE_MS = 10000;
+const DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS = 30000;
+const DEFAULT_RELAY_ELECTION_STICKY_MS = 30000;
+const DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS = 1500;
+const DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS = 30000;
+const TRANSIENT_DIAL_FAILURE_PATTERNS = [
+  'no_reservation',
+  'reservation',
+  'unexpected eof',
+  'remote closed connection during opening',
+  'stream has been reset',
+  'signal timed out',
+  'connection_failed',
+  'connection failed',
+  'user-initiated abort',
+  'cannot write to a stream that is closed',
+  'cannot write to a stream that is closing'
+];
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -121,6 +140,31 @@ const isConnectionOpen = (conn) => {
   const closed = conn?.stat?.timeline?.close || conn?.timeline?.close;
   if (closed) return false;
   return true;
+};
+const asTimestamp = (value) => {
+  if (value instanceof Date) return value.getTime();
+  if (Number.isFinite(value)) return Number(value);
+  if (value && typeof value === 'object') {
+    const nested = value.timestamp ?? value.time ?? value.at ?? value.value;
+    if (Number.isFinite(nested)) return Number(nested);
+    if (nested instanceof Date) return nested.getTime();
+  }
+  return null;
+};
+const getConnectionOpenAt = (conn) => {
+  if (!conn) return null;
+  return (
+    asTimestamp(conn?.stat?.timeline?.open) ??
+    asTimestamp(conn?.stat?.timeline?.open?.timestamp) ??
+    asTimestamp(conn?.timeline?.open) ??
+    asTimestamp(conn?.timeline?.open?.timestamp) ??
+    null
+  );
+};
+const isTransientDialFailureMessage = (err) => {
+  const message = String(err?.message || err || '').toLowerCase();
+  if (!message) return false;
+  return TRANSIENT_DIAL_FAILURE_PATTERNS.some((pattern) => message.includes(pattern));
 };
 const formatCloseReason = (err) => {
   if (!err) return 'unknown';
@@ -264,6 +308,36 @@ const normalizeWebRTCConfig = (config = {}) => {
     : (Number.isFinite(config.relayAssistReadyTimeoutMs)
       ? Math.max(1000, config.relayAssistReadyTimeoutMs)
       : RELAY_ASSIST_READY_TIMEOUT_MS);
+  const relayDropMinDirectMs = Number.isFinite(raw.relayDropMinDirectMs)
+    ? Math.max(0, raw.relayDropMinDirectMs)
+    : (Number.isFinite(config.relayDropMinDirectMs)
+      ? Math.max(0, config.relayDropMinDirectMs)
+      : DEFAULT_RELAY_DROP_MIN_DIRECT_MS);
+  const directUpgradeGraceMs = Number.isFinite(raw.directUpgradeGraceMs)
+    ? Math.max(0, raw.directUpgradeGraceMs)
+    : (Number.isFinite(config.directUpgradeGraceMs)
+      ? Math.max(0, config.directUpgradeGraceMs)
+      : DEFAULT_DIRECT_UPGRADE_GRACE_MS);
+  const relayBootstrapMinHoldMs = Number.isFinite(raw.relayBootstrapMinHoldMs)
+    ? Math.max(0, raw.relayBootstrapMinHoldMs)
+    : (Number.isFinite(config.relayBootstrapMinHoldMs)
+      ? Math.max(0, config.relayBootstrapMinHoldMs)
+      : DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS);
+  const relayElectionStickyMs = Number.isFinite(raw.relayElectionStickyMs)
+    ? Math.max(0, raw.relayElectionStickyMs)
+    : (Number.isFinite(config.relayElectionStickyMs)
+      ? Math.max(0, config.relayElectionStickyMs)
+      : DEFAULT_RELAY_ELECTION_STICKY_MS);
+  const dialFailureBackoffBaseMs = Number.isFinite(raw.dialFailureBackoffBaseMs)
+    ? Math.max(250, raw.dialFailureBackoffBaseMs)
+    : (Number.isFinite(config.dialFailureBackoffBaseMs)
+      ? Math.max(250, config.dialFailureBackoffBaseMs)
+      : DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS);
+  const dialFailureBackoffMaxMs = Number.isFinite(raw.dialFailureBackoffMaxMs)
+    ? Math.max(dialFailureBackoffBaseMs, raw.dialFailureBackoffMaxMs)
+    : (Number.isFinite(config.dialFailureBackoffMaxMs)
+      ? Math.max(dialFailureBackoffBaseMs, config.dialFailureBackoffMaxMs)
+      : DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS);
   const iceServers = normalizeIceServers(
     raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
   );
@@ -285,6 +359,12 @@ const normalizeWebRTCConfig = (config = {}) => {
     enableRelayAssist,
     relayAssistRequestThrottleMs,
     relayAssistReadyTimeoutMs,
+    relayDropMinDirectMs,
+    directUpgradeGraceMs,
+    relayBootstrapMinHoldMs,
+    relayElectionStickyMs,
+    dialFailureBackoffBaseMs,
+    dialFailureBackoffMaxMs,
     iceServers,
     rtcConfiguration
   };
@@ -537,9 +617,12 @@ export class NetworkManager {
     this.lastBootstrapDialAt = 0;
     this.isolationReconnectTimer = null;
     this.lastWebrtcAnnounceWarnAt = 0;
+    this.relayBootstrapConnectedAt = null;
+    this.relayKeeperUntil = 0;
     this.relayTransport = null;
     this.relayReservationPeers = new Set();
     this.peerDialAddrCache = new Map();
+    this.peerDialBackoff = new Map();
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -1334,18 +1417,28 @@ export class NetworkManager {
       const conn = evt.detail;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) return;
+      const now = Date.now();
       const remoteAddr = toAddrString(conn?.remoteAddr);
       const kind = getConnectionKind(remoteAddr);
       this._rememberDialTargets(peerId, [remoteAddr]);
+      this._clearDialFailureBackoff(peerId);
       const prevKind = this.peers.get(peerId)?.via || null;
       if (prevKind && ['relay', 'relay-webrtc', 'direct', 'webrtc'].includes(prevKind) && prevKind !== kind) {
         console.info('[NetworkManager] Connection upgraded', peerId, `${prevKind} -> ${kind}`, remoteAddr);
       } else {
         console.info('[NetworkManager] Connection open', peerId, kind, remoteAddr);
       }
+      if (this.bootstrapPeerIds.has(peerId) && !Number.isFinite(this.relayBootstrapConnectedAt)) {
+        this.relayBootstrapConnectedAt = now;
+      }
       const meta = this._getPreferredConnectionMeta(peerId);
       if (meta) {
-        this._touchPeer(peerId, meta);
+        const updates = { ...meta };
+        if (this._isDirectCapableConnection(conn) && !this.bootstrapPeerIds.has(peerId)) {
+          const existingSince = Number(this.peers.get(peerId)?.directCandidateSince);
+          updates.directCandidateSince = Number.isFinite(existingSince) ? existingSince : now;
+        }
+        this._touchPeer(peerId, updates);
       }
       this._maybePruneRelayConnections(peerId);
       this._maybeUpdateBootstrapRelayConnections();
@@ -1359,7 +1452,12 @@ export class NetworkManager {
       const kind = getConnectionKind(remoteAddr);
       const meta = this._getPreferredConnectionMeta(peerId);
       if (meta) {
-        this._touchPeer(peerId, meta);
+        this._touchPeer(peerId, {
+          ...meta,
+          ...(this._hasDirectCapableConnectionForPeer(peerId) ? {} : { directCandidateSince: null })
+        });
+      } else if (!this._hasDirectCapableConnectionForPeer(peerId)) {
+        this._touchPeer(peerId, { directCandidateSince: null });
       }
       const closeError = conn?.stat?.timeline?.close?.error
         || conn?.stat?.timeline?.close?.cause
@@ -1379,6 +1477,9 @@ export class NetworkManager {
       const remaining = this._getConnectionsForPeer(peerId).filter(isConnectionOpen).length;
       console.info('[NetworkManager] Connection closed', peerId, kind, remoteAddr, 'reason:', formatCloseReason(closeError), 'remaining:', remaining);
       const active = this._getConnectionsForPeer(peerId).filter((entry) => entry?.status === 'open');
+      if (this.bootstrapPeerIds.has(peerId) && active.length === 0 && !this._hasBootstrapRelayConnections()) {
+        this.relayBootstrapConnectedAt = null;
+      }
       if (active.length === 0) {
         this._dropPubsubPeer(peerId);
       }
@@ -1426,6 +1527,10 @@ export class NetworkManager {
       if (!peerId) return;
       this._dropPubsubPeer(peerId);
       this.peers.delete(peerId);
+      this.peerDialBackoff.delete(peerId);
+      if (this.bootstrapPeerIds.has(peerId) && !this._hasBootstrapRelayConnections()) {
+        this.relayBootstrapConnectedAt = null;
+      }
       this.onPeerDisconnect(peerId);
       this._maybeUpdateBootstrapRelayConnections();
     });
@@ -1686,17 +1791,46 @@ export class NetworkManager {
     return dialed.size;
   }
 
-  _hasDirectPeerConnections() {
+  _isDirectCapableConnection(conn) {
+    if (!conn) return false;
+    if (isDirectAddr(conn?.remoteAddr)) return true;
     const countRelayWebrtcAsDirectCapable =
       this.config.webrtc?.countRelayWebrtcAsDirectCapable !== false;
+    return countRelayWebrtcAsDirectCapable && isRelayWebRTCAddr(conn?.remoteAddr);
+  }
+
+  _getDirectStableSince(peerId, conn) {
+    const peerMeta = this.peers.get(peerId);
+    const peerSince = Number(peerMeta?.directCandidateSince);
+    if (Number.isFinite(peerSince)) return peerSince;
+    const openedAt = getConnectionOpenAt(conn);
+    if (Number.isFinite(openedAt)) return openedAt;
+    return null;
+  }
+
+  _hasDirectCapableConnectionForPeer(peerId) {
+    const connections = this._getConnectionsForPeer(peerId);
+    return connections.some((conn) => isConnectionOpen(conn) && this._isDirectCapableConnection(conn));
+  }
+
+  _hasDirectPeerConnections() {
+    const minStableMs = Number.isFinite(this.config.webrtc?.relayDropMinDirectMs)
+      ? Math.max(0, this.config.webrtc.relayDropMinDirectMs)
+      : 0;
+    const now = Date.now();
     const connectionList = this._getConnections();
     return connectionList.some((conn) => {
       if (!isConnectionOpen(conn)) return false;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
-      if (isDirectAddr(conn?.remoteAddr)) return true;
-      if (countRelayWebrtcAsDirectCapable && isRelayWebRTCAddr(conn?.remoteAddr)) return true;
-      return false;
+      if (!this._isDirectCapableConnection(conn)) return false;
+      if (minStableMs <= 0) return true;
+      const stableSince = this._getDirectStableSince(peerId, conn);
+      if (!Number.isFinite(stableSince)) {
+        // If a direct timestamp is unavailable, avoid treating this as unstable forever.
+        return true;
+      }
+      return now - stableSince >= minStableMs;
     });
   }
 
@@ -1760,6 +1894,13 @@ export class NetworkManager {
     if (!this.libp2p) return;
     const now = Date.now();
     const hasBootstrapRelayConnections = this._hasBootstrapRelayConnections();
+    if (hasBootstrapRelayConnections) {
+      if (!Number.isFinite(this.relayBootstrapConnectedAt)) {
+        this.relayBootstrapConnectedAt = now;
+      }
+    } else {
+      this.relayBootstrapConnectedAt = null;
+    }
     const isRelayElectionKeeper = this._shouldElectRelayRedial(now, {
       allowWithBootstrap: true
     });
@@ -1975,8 +2116,49 @@ export class NetworkManager {
     }, delay);
   }
 
+  _getDialBackoffEntry(peerId, now = Date.now()) {
+    const entry = this.peerDialBackoff.get(peerId);
+    if (!entry) return null;
+    if (entry.until <= now) {
+      this.peerDialBackoff.delete(peerId);
+      return null;
+    }
+    return entry;
+  }
+
+  _recordDialFailureBackoff(peerId, kind, err) {
+    if (!peerId) return;
+    const now = Date.now();
+    const existing = this._getDialBackoffEntry(peerId, now);
+    const transient = isTransientDialFailureMessage(err) || kind === 'webrtc-relay';
+    const baseMs = Number.isFinite(this.config.webrtc?.dialFailureBackoffBaseMs)
+      ? this.config.webrtc.dialFailureBackoffBaseMs
+      : DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS;
+    const maxMs = Number.isFinite(this.config.webrtc?.dialFailureBackoffMaxMs)
+      ? Math.max(baseMs, this.config.webrtc.dialFailureBackoffMaxMs)
+      : DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS;
+    const attempts = transient
+      ? Math.min((existing?.attempts || 0) + 1, 8)
+      : 1;
+    const delayMs = transient
+      ? Math.min(maxMs, baseMs * (2 ** (attempts - 1)))
+      : Math.min(maxMs, Math.max(baseMs, 5000));
+    this.peerDialBackoff.set(peerId, {
+      attempts,
+      until: now + delayMs,
+      transient,
+      reason: String(err?.message || err || '')
+    });
+  }
+
+  _clearDialFailureBackoff(peerId) {
+    if (!peerId) return;
+    this.peerDialBackoff.delete(peerId);
+  }
+
   _shouldElectRelayRedial(now = Date.now(), options = {}) {
     const allowWithBootstrap = options?.allowWithBootstrap === true;
+    if (now < this.relayKeeperUntil) return true;
     if (!this.peerId) return false;
     if (!this.config.bootstrapPeers?.length) return false;
     if (!allowWithBootstrap && this._hasBootstrapRelayConnections()) return false;
@@ -2006,7 +2188,14 @@ export class NetworkManager {
       }
       return String(a.peerId).localeCompare(String(b.peerId));
     });
-    return candidates[0]?.peerId === this.peerId;
+    const isWinner = candidates[0]?.peerId === this.peerId;
+    if (isWinner) {
+      const stickyMs = Number.isFinite(this.config.webrtc?.relayElectionStickyMs)
+        ? Math.max(0, this.config.webrtc.relayElectionStickyMs)
+        : DEFAULT_RELAY_ELECTION_STICKY_MS;
+      this.relayKeeperUntil = now + stickyMs;
+    }
+    return isWinner;
   }
 
   _scheduleIsolationRelayRedial() {
@@ -2082,6 +2271,7 @@ export class NetworkManager {
       this.peers.delete(peerId);
       this._dropPubsubPeer(peerId);
       this.recentDialAttempts.delete(peerId);
+      this.peerDialBackoff.delete(peerId);
       this.pendingTopologyRequests.delete(peerId);
     }
   }
@@ -2194,6 +2384,16 @@ export class NetworkManager {
 
   _shouldKeepRelayBootstrapConnection() {
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) return true;
+    if (this._hasBootstrapRelayConnections()) {
+      const holdMs = Number.isFinite(this.config.webrtc?.relayBootstrapMinHoldMs)
+        ? Math.max(0, this.config.webrtc.relayBootstrapMinHoldMs)
+        : DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS;
+      if (holdMs > 0 && Number.isFinite(this.relayBootstrapConnectedAt)) {
+        if (Date.now() - this.relayBootstrapConnectedAt < holdMs) {
+          return true;
+        }
+      }
+    }
     if (!this._hasDirectPeerConnections()) return true;
     const targetConnections = Number.isFinite(this.config.targetConnections)
       ? this.config.targetConnections
@@ -3082,6 +3282,10 @@ export class NetworkManager {
     if (hasDirect) return;
     if (!preferDirect && active.length > 0 && !forceDial) return;
     const now = Date.now();
+    if (!forceDial) {
+      const backoff = this._getDialBackoffEntry(peerId, now);
+      if (backoff) return;
+    }
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
     if (!forceDial && now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
     this.recentDialAttempts.set(peerId, now);
@@ -3236,9 +3440,11 @@ export class NetworkManager {
         }
         try {
           await this.libp2p.dial(addr, progressLogger ? { onProgress: progressLogger } : undefined);
+          this._clearDialFailureBackoff(peerId);
           debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '', addr.toString());
           return;
         } catch (err) {
+          this._recordDialFailureBackoff(peerId, kind, err);
           if (kind === 'webrtc-relay' && this._isRelayReservationError(err)) {
             sawRelayNoReservation = true;
           }
@@ -3269,10 +3475,12 @@ export class NetworkManager {
         if (circuitAddr) {
           try {
             await this.libp2p.dial(circuitAddr);
+            this._clearDialFailureBackoff(peerId);
             debugLog('[NetworkManager] Dialed via relay circuit after reconnect:', peerId);
             this._scheduleAutoRelayDrop();
             return;
           } catch (err) {
+            this._recordDialFailureBackoff(peerId, 'relay', err);
             debugWarn('[NetworkManager] Circuit dial failed after reconnect:', peerId, err?.message || err);
             this._emitConnectionFailure({
               peerId,
@@ -3294,8 +3502,10 @@ export class NetworkManager {
     }
     try {
       await this.libp2p.dial(target);
+      this._clearDialFailureBackoff(peerId);
       debugLog('[NetworkManager] Dialed discovered peer', peerId, source ? `(${source})` : '');
     } catch (err) {
+      this._recordDialFailureBackoff(peerId, 'peerId', err);
       console.warn('[NetworkManager] Dial failed', peerId, 'peerId', err?.message || err);
       this._emitConnectionFailure({
         peerId,
@@ -3391,8 +3601,22 @@ export class NetworkManager {
     if (this.config.webrtc?.dropRelayOnDirect === false) return;
     const connections = this._getConnectionsForPeer(peerId);
     if (connections.length === 0) return;
-    const hasDirect = connections.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
+    const directConnections = connections.filter((conn) => isConnectionOpen(conn) && isTrulyDirectAddr(conn?.remoteAddr));
+    const hasDirect = directConnections.length > 0;
     if (!hasDirect) return;
+    const graceMs = Number.isFinite(this.config.webrtc?.directUpgradeGraceMs)
+      ? Math.max(0, this.config.webrtc.directUpgradeGraceMs)
+      : DEFAULT_DIRECT_UPGRADE_GRACE_MS;
+    if (graceMs > 0) {
+      const now = Date.now();
+      const stableSinceValues = directConnections
+        .map((conn) => this._getDirectStableSince(peerId, conn))
+        .filter((value) => Number.isFinite(value));
+      if (stableSinceValues.length > 0) {
+        const directStableForMs = now - Math.min(...stableSinceValues);
+        if (directStableForMs < graceMs) return;
+      }
+    }
     const relayed = connections.filter((conn) => isRelayOnlyAddr(conn?.remoteAddr));
     relayed.forEach((conn) => {
       if (conn?.status && conn.status !== 'open') return;

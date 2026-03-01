@@ -328,7 +328,11 @@ test('NetworkManager ignores closed connections for direct/drop decisions', () =
 test('NetworkManager drops bootstrap relay connections when direct peers exist at target', () => {
   const manager = new NetworkManager({
     targetConnections: 2,
-    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+    webrtc: {
+      dropRelayBootstrapOnDirect: true,
+      relayRetention: null,
+      relayBootstrapMinHoldMs: 0
+    }
   });
   manager.bootstrapPeerIds = new Set(['relay-peer']);
   let relayClosed = false;
@@ -753,7 +757,8 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
     targetConnections: 1,
     webrtc: {
       dropRelayBootstrapOnDirect: true,
-      relayRetention: { mode: 'sqrt', min: 1 }
+      relayRetention: { mode: 'sqrt', min: 1 },
+      relayBootstrapMinHoldMs: 0
     }
   });
   manager.peerId = 'peer-self';
@@ -805,6 +810,112 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
   // Self joined late, should not be among the earliest sqrt(N)=3 keepers.
   manager._maybeUpdateBootstrapRelayConnections();
   assert.equal(relayClosed, true);
+});
+
+test('NetworkManager keeps bootstrap relay during direct stability hysteresis window', () => {
+  const now = Date.now();
+  const manager = new NetworkManager({
+    targetConnections: 1,
+    webrtc: {
+      dropRelayBootstrapOnDirect: true,
+      relayRetention: null,
+      relayDropMinDirectMs: 20000,
+      relayBootstrapMinHoldMs: 0
+    }
+  });
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  manager.peers.set('peer-a', {
+    directCandidateSince: now - 5000
+  });
+
+  const bootstrapConn = {
+    remotePeer: { toString: () => 'relay-peer' },
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+    status: 'open'
+  };
+  const directConn = {
+    remotePeer: { toString: () => 'peer-a' },
+    remoteAddr: buildAddr('/webrtc/p2p/peer-a'),
+    status: 'open'
+  };
+
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'relay-peer') return [bootstrapConn];
+      return [bootstrapConn, directConn];
+    }
+  };
+
+  assert.equal(manager._hasDirectPeerConnections(), false);
+  assert.equal(manager._shouldKeepRelayBootstrapConnection(), true);
+});
+
+test('NetworkManager delays relay prune until direct upgrade grace window passes', () => {
+  const now = Date.now();
+  const manager = new NetworkManager({
+    webrtc: { dropRelayOnDirect: true, directUpgradeGraceMs: 10000 }
+  });
+  manager.bootstrapPeerIds = new Set();
+  manager.peers.set('peer-a', { directCandidateSince: now - 1000 });
+
+  let relayClosed = false;
+  const relayConn = {
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/p2p/peer-a'),
+    status: 'open',
+    close: async () => {
+      relayClosed = true;
+    }
+  };
+  const directConn = {
+    remoteAddr: buildAddr('/webrtc/p2p/peer-a'),
+    status: 'open',
+    close: async () => {}
+  };
+
+  manager.libp2p = {
+    getConnections: () => [relayConn, directConn]
+  };
+
+  manager._maybePruneRelayConnections('peer-a');
+  assert.equal(relayClosed, false);
+
+  manager.peers.set('peer-a', { directCandidateSince: now - 20000 });
+  manager._maybePruneRelayConnections('peer-a');
+  assert.equal(relayClosed, true);
+});
+
+test('NetworkManager applies dial backoff after transient webrtc-relay failures', async () => {
+  const manager = new NetworkManager({
+    webrtc: {
+      preferDirect: true,
+      dialFailureBackoffBaseMs: 2000,
+      dialFailureBackoffMaxMs: 20000
+    }
+  });
+  manager.bootstrapPeerIds = new Set();
+
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [],
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+      throw new Error('Remote closed connection during opening');
+    }
+  };
+
+  const targetPeerId = 'peer-a';
+  await manager._maybeDialPeer(targetPeerId, 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/webrtc')
+  ], { force: true });
+
+  assert.equal(manager.peerDialBackoff.has(targetPeerId), true);
+  const firstDialCount = dialed.length;
+  manager.recentDialAttempts.set(targetPeerId, 0);
+  await manager._maybeDialPeer(targetPeerId, 'presence', [
+    buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/webrtc')
+  ]);
+
+  assert.equal(dialed.length, firstDialCount);
 });
 
 test('NetworkManager computes transport connection max with bootstrap headroom', () => {

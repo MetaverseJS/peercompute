@@ -18823,3 +18823,238 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Open runtime tuning question: for 10 peers, whether retention floor should be raised above current effective keepers to reduce isolation under bootstrap flapping.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 06:14:54 UTC)
+- "so performance seems a little worse in cubechat. why do you think that is? don't fix just explain"
+
+### Actions
+- Reviewed previously captured runtime logs showing repeated bootstrap connection churn, relay<->webrtc upgrades/downgrades, repeated redial attempts, and stream state errors (`StreamStateError: Cannot write to a stream that is closing/closed`).
+- Correlated behavior with current network policy defaults (relay drop enabled, logN relay retention, relay-webrtc upgrade retries, assist signaling).
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (explanation-only request).
+
+### Failures / Open Questions
+- Open: quantify whether performance regression is mostly CPU (connection churn + retries) vs media quality adaptation (WebRTC renegotiation and packet loss) in CubeChat sessions.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 06:14:54 UTC)
+- "why can't the connections persist?"
+
+### Actions
+- Analyzed the previously shared runtime logs for persistence failure patterns in bootstrap, relay reservation, relay-webrtc upgrade, and stream lifecycle.
+- Correlated symptoms: bootstrap flapping, zero reservations, relay-webrtc dial failures, and stream state exceptions.
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (explanation-only request).
+
+### Failures / Open Questions
+- Open: exact server-side bootstrap close reason remains unknown without relay/proxy logs.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 19:35:19 UTC)
+- "I thought we had a signaling path through the network via p2p"
+
+### Actions
+- Prepared conceptual clarification of libp2p behavior: difference between existing pubsub mesh paths and transport dial/signaling requirements for disconnected peers.
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (explanation-only request).
+
+### Failures / Open Questions
+- Open: whether to implement a durable mesh-assisted rendezvous service with authenticated broker peers for relay re-acquire.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 19:38:18 UTC)
+- "is there a connection upper bound for cubechat or can they connect to as many peers as they want?"
+
+### Actions
+- Inspected CubeChat networking bootstrap/config path and NodeKernel construction to determine whether explicit connection caps are set by the demo.
+- Inspected NetworkManager defaults and connection budget logic for inherited limits (`maxConnections`, `targetConnections`, `connectionRadius`, `maxDialPeers`, transport max/headroom).
+- Verified CubeChat does not override `maxConnections` in its `NodeKernel` config and therefore inherits core defaults.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `rg -n "maxConnections|maxDialPeers|targetConnections|connectionRadius|topology|setConnectionLimits|transportConnectionHeadroom|transportMaxConnections|maxPeers" demos/cubechat peercompute/src --glob '!**/dist/**'`
+- `sed -n '1,280p' demos/cubechat/src/p2p/network.js`
+- `sed -n '1,260p' demos/cubechat/public/relay-config.json`
+- `sed -n '1,220p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '340,560p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '760,860p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "DEFAULT_MAX_DIAL_PEERS|const DEFAULT_MAX_DIAL_PEERS|_getTransportMaxConnections\(" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,140p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1690,1765p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+
+### Tests Run / Results
+- None (question-only).
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 19:42:42 UTC)
+- "how do I connect to cubechat with netviz to observe behavior of the mesh?"
+
+### Actions
+- Verified root scripts and per-demo Vite configs to confirm launch commands and ports for CubeChat and NetViz.
+- Verified recommended unified launcher (`dev:local-relay`) that rewrites/refreshes relay configs for demos.
+- Prepared step-by-step attach flow (Attach Demo/session URL/manual topology-room connect) for observing CubeChat mesh behavior in NetViz.
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `cat package.json`
+- `cat demos/netviz/package.json`
+- `cat demos/cubechat/package.json`
+- `sed -n '1,220p' demos/cubechat/vite.config.js`
+- `sed -n '1,220p' demos/netviz/vite.config.js`
+- `sed -n '1,260p' scripts/dev-local-relay.sh`
+- `sed -n '1,280p' scripts/dev-all.sh`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (how-to request).
+
+### Failures / Open Questions
+- None.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 19:54:11 UTC)
+- "I'm only seeing the relay."
+
+### Actions
+- Prepared diagnosis guidance for NetViz showing only relay links despite expected direct upgrades.
+- Mapped likely causes to observed runtime behavior: relay-scoped signaling dominance, short-lived direct upgrades, ICE path constraints, and telemetry interpretation.
+- No code edits requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (runtime observation guidance only).
+
+### Failures / Open Questions
+- Open: whether direct links are failing to establish at transport layer vs establishing briefly then dropping before telemetry snapshots persist.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 19:58:25 UTC)
+- "why are the webrtc connections getting closed?"
+
+### Actions
+- Analyzed the shared runtime log signatures associated with WebRTC closure and dial failure events.
+- Correlated repeated close causes: relay reservation loss, relay signaling stream interruptions, ICE negotiation aborts, and stream state race errors.
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (explanation-only).
+
+### Failures / Open Questions
+- Open: need relay-side/proxy close codes and browser `getStats()` snapshots at failure time to isolate primary vs secondary close trigger.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 20:01:08 UTC)
+- "how can we fix this and retain our original goals of relay scaling?"
+
+### Actions
+- Inspected `NetworkManager` relay/upgrade/dial logic around bootstrap relay retention and redial election.
+- Identified churn-prone behavior: `_maybeUpdateBootstrapRelayConnections()` can close bootstrap relay immediately after transient direct signals, and is invoked on frequent lifecycle events.
+- Reviewed assist and NO_RESERVATION handling paths (`_requestRelayAssist`, `_handleRelayAssistRequest`, `_handleRelayAssistReady`, `_isRelayReservationError`).
+- Reviewed dial loop and progress logging to map recurring runtime failures to policy behavior (`_maybeDialPeer`, fallback peerId dial, reconnect-on-dial path).
+- No code changes requested or applied.
+
+### Files Touched
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `rg -n "relayRetention|dropRelayBootstrapOnDirect|NO_RESERVATION|relay-assist|_maybeUpdateBootstrapRelayConnections|_shouldElectRelayRedial|webrtc:|Connection upgraded|StreamStateError|close-signaling-stream|_maybeDialPeer" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2140,2365p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2920,3360p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1728,2065p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1200,1425p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `cat <<'EOF' >> plan/log.md ... EOF`
+
+### Tests Run / Results
+- None (architecture/strategy response requested).
+
+### Failures / Open Questions
+- Open: best hysteresis window values for relay drop and redial cooldown under your room sizes (5–15 tabs) to avoid churn while preserving low relay cost.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 20:19:18 UTC)
+- "here's the output" (user-provided run of `node --test peercompute/tests/unit/networkManager.webrtc.test.js`)
+
+### Actions
+- Reviewed the full user-provided unit-test output for `NetworkManager` WebRTC policy and stabilization coverage.
+- Confirmed the current patchset passes all WebRTC unit tests in the user's environment (`32/32` passing, `0` failing).
+- Updated `plan/tests.md` targeted-unit checklist to include the three newly added stabilization tests (relay hysteresis, relay-prune grace, transient dial backoff).
+
+### Files Touched
+- `plan/tests.md` (added three targeted WebRTC unit assertions)
+- `plan/log.md` (appended this entry)
+
+### Commands Run
+- `sed -n '1,260p' plan/tests.md`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `apply_patch` on `plan/tests.md`
+
+### Tests Run / Results
+- User-ran: `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- Result: `pass 32`, `fail 0`, duration ~`35924ms`.
+- Notable passing additions:
+  - `NetworkManager keeps bootstrap relay during direct stability hysteresis window`
+  - `NetworkManager delays relay prune until direct upgrade grace window passes`
+  - `NetworkManager applies dial backoff after transient webrtc-relay failures`
+
+### Failures / Open Questions
+- Open: runtime browser sessions still report occasional network collapse and bootstrap direct flapping (`reason: unknown`) despite unit-suite pass; next step is targeted runtime instrumentation around bootstrap disconnect causes and stream-close error paths.
