@@ -239,11 +239,11 @@ const normalizeWebRTCConfig = (config = {}) => {
   const preferDirect = raw.preferDirect ?? config.preferDirect ?? true;
   const dropRelayOnDirect = raw.dropRelayOnDirect ?? config.dropRelayOnDirect ?? true;
   const dropRelayBootstrapOnDirect =
-    raw.dropRelayBootstrapOnDirect ?? config.dropRelayBootstrapOnDirect ?? false;
+    raw.dropRelayBootstrapOnDirect ?? config.dropRelayBootstrapOnDirect ?? true;
   const countRelayWebrtcAsDirectCapable =
     raw.countRelayWebrtcAsDirectCapable ?? config.countRelayWebrtcAsDirectCapable ?? true;
   const relayRetention = normalizeRelayRetention(
-    raw.relayRetention ?? config.relayRetention
+    raw.relayRetention ?? config.relayRetention ?? true
   );
   // Phase 4: Reconnect-on-demand config
   const reconnectOnDialFailure = raw.reconnectOnDialFailure ?? config.reconnectOnDialFailure ?? true;
@@ -376,7 +376,13 @@ export class NetworkManager {
       : 3000;
     const maxConnections = Number.isFinite(config.maxConnections)
       ? Math.max(1, config.maxConnections)
-      : 200;
+      : 4;
+    const transportConnectionHeadroom = Number.isFinite(config.transportConnectionHeadroom)
+      ? Math.max(0, Math.trunc(config.transportConnectionHeadroom))
+      : 3;
+    const transportMaxConnections = Number.isFinite(config.transportMaxConnections)
+      ? Math.max(1, Math.trunc(config.transportMaxConnections))
+      : undefined;
     const maxIncomingPendingConnections = Number.isFinite(config.maxIncomingPendingConnections)
       ? Math.max(1, config.maxIncomingPendingConnections)
       : 100;
@@ -459,10 +465,10 @@ export class NetworkManager {
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
       targetConnections: Number.isFinite(config.targetConnections)
         ? Math.max(1, config.targetConnections)
-        : Math.min(maxConnections, 4),
+        : Math.min(maxConnections, 3),
       connectionRadius: Number.isFinite(config.connectionRadius)
         ? Math.max(0, config.connectionRadius)
-        : 6,
+        : 1,
       isolationMinConnections: Number.isFinite(config.isolationMinConnections)
         ? Math.max(1, config.isolationMinConnections)
         : 2,
@@ -478,6 +484,8 @@ export class NetworkManager {
       telemetryPingMs,
       presenceIntervalMs,
       maxConnections,
+      transportConnectionHeadroom,
+      transportMaxConnections,
       maxIncomingPendingConnections,
       maxParallelDials,
       maxDialQueueLength,
@@ -786,7 +794,7 @@ export class NetworkManager {
 
     const connectionManagerConfig = {
       minConnections: 0,
-      maxConnections: this.config.maxConnections ?? 200,
+      maxConnections: this._getTransportMaxConnections(this.config.maxConnections ?? 4),
       inboundConnectionThreshold: Infinity,
       maxIncomingPendingConnections: this.config.maxIncomingPendingConnections ?? 100
     };
@@ -1013,14 +1021,15 @@ export class NetworkManager {
     const changed = nextTarget !== this.config.targetConnections || nextMax !== this.config.maxConnections;
     this.config.targetConnections = nextTarget;
     this.config.maxConnections = nextMax;
+    const nextTransportMax = this._getTransportMaxConnections(nextMax);
     const connectionManager =
       this.libp2p?.services?.connectionManager || this.libp2p?.connectionManager;
     if (connectionManager) {
       try {
         if (typeof connectionManager.setMaxConnections === 'function') {
-          connectionManager.setMaxConnections(nextMax);
+          connectionManager.setMaxConnections(nextTransportMax);
         } else if (typeof connectionManager.maxConnections === 'number') {
-          connectionManager.maxConnections = nextMax;
+          connectionManager.maxConnections = nextTransportMax;
         }
       } catch (err) {
         debugWarn('[NetworkManager] Failed to update connection manager limits', err?.message || err);
@@ -1060,7 +1069,8 @@ export class NetworkManager {
       shardId: this.topologyShardId,
       metric: { ...this.topologyMetric },
       targetConnections: this.config.targetConnections,
-      maxConnections: this.config.maxConnections
+      maxConnections: this.config.maxConnections,
+      transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections)
     };
   }
 
@@ -1093,6 +1103,10 @@ export class NetworkManager {
         ? connectionManager.maxConnections
         : null;
     return {
+      logicalMaxConnections: Number.isFinite(this.config.maxConnections)
+        ? this.config.maxConnections
+        : null,
+      configuredTransportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
       maxConnections,
       maxIncomingPendingConnections: Number.isFinite(connectionManager.maxIncomingPendingConnections)
         ? connectionManager.maxIncomingPendingConnections
@@ -1134,6 +1148,7 @@ export class NetworkManager {
       connections: connectionCount,
       targetConnections: this.config.targetConnections,
       maxConnections: this.config.maxConnections,
+      transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
       connectionManager: this._getConnectionManagerStats()
     };
   }
@@ -1694,6 +1709,20 @@ export class NetworkManager {
     return activePeers.size;
   }
 
+  _getTransportMaxConnections(logicalMax = this.config.maxConnections) {
+    if (Number.isFinite(this.config.transportMaxConnections)) {
+      return Math.max(1, Math.trunc(this.config.transportMaxConnections));
+    }
+    const logicalLimit = Number.isFinite(logicalMax)
+      ? Math.max(1, Math.trunc(logicalMax))
+      : 1;
+    const bootstrapHeadroom = this.bootstrapPeerIds.size > 0 ? 1 : 0;
+    const upgradeHeadroom = Number.isFinite(this.config.transportConnectionHeadroom)
+      ? Math.max(0, Math.trunc(this.config.transportConnectionHeadroom))
+      : 0;
+    return logicalLimit + bootstrapHeadroom + upgradeHeadroom;
+  }
+
   _hasBootstrapRelayConnections() {
     if (!this.libp2p || this.bootstrapPeerIds.size === 0) return false;
     for (const peerId of this.bootstrapPeerIds) {
@@ -2013,7 +2042,7 @@ export class NetworkManager {
     const targetConnections = Number.isFinite(this.config.targetConnections)
       ? this.config.targetConnections
       : null;
-    const activeConnections = this._getActiveConnectionCount();
+    const activeConnections = this._getActiveDialedPeerCount();
     const underTarget = Number.isFinite(targetConnections) && activeConnections < targetConnections;
     if (this.topologyController && !underTarget && !this.topologyController.shouldDialPeer(peerId)) {
       return false;
@@ -2220,7 +2249,7 @@ export class NetworkManager {
 
   _buildPresencePayload() {
     if (!this.peerId) return null;
-    const activeConnections = this._getActiveConnectionCount();
+    const activeConnections = this._getActiveDialedPeerCount();
     return {
       type: 'presence',
       from: this.peerId,
@@ -2234,6 +2263,7 @@ export class NetworkManager {
       joinedAt: this.joinedAt,
       targetConnections: this.config.targetConnections,
       maxConnections: this.config.maxConnections,
+      transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
       activeConnections,
       relayConnected: this._hasBootstrapRelayConnections(),
       multiaddrs: this._getAnnounceAddrs()
@@ -2404,7 +2434,7 @@ export class NetworkManager {
     if (this.config.topology !== 'distributed') return;
     const maxConnections = this.config.maxConnections;
     if (!Number.isFinite(maxConnections) || maxConnections <= 0) return;
-    if (this._getActiveConnectionCount() < maxConnections) return;
+    if (this._getActiveDialedPeerCount() < maxConnections) return;
     if (!desiredPeers || desiredPeers.size === 0) return;
 
     const peerById = new Map();
@@ -2566,7 +2596,7 @@ export class NetworkManager {
 
   _handleTopologyConnectRequest(peerId, payload = {}) {
     if (!peerId) return;
-    const activeConnections = this._getActiveConnectionCount();
+    const activeConnections = this._getActiveDialedPeerCount();
     const capacity = this.config.maxConnections || 0;
     if (capacity > 0 && activeConnections >= capacity) {
       if (this.topologyController) {

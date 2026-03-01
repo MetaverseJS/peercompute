@@ -18397,3 +18397,220 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - Runtime verification remains pending on host where Node 24 tooling is accessible.
 - Need live swarm validation that `relay-assist-request` / `relay-assist-ready` reduces isolation events without reintroducing persistent full relay mesh.
+
+## Date: 2026-03-01
+
+### Prompt
+- change the default radius to 1 max to 4 target to 3 drop relay by default with log n retention.
+
+### Prompt Time/Date
+- 2026-03-01T01:00:38+00:00
+
+### Actions Attempted
+- Updated `NetworkManager` defaults to match requested relay-scaling profile:
+  - `connectionRadius` default changed from `6` to `1`.
+  - `maxConnections` default changed from `200` to `4`.
+  - `targetConnections` default changed from `min(maxConnections, 4)` to `min(maxConnections, 3)`.
+  - `dropRelayBootstrapOnDirect` default changed from `false` to `true`.
+  - `relayRetention` default changed from unset (`null`) to enabled logN retention (via `normalizeRelayRetention(... ?? true)`).
+  - connection-manager fallback max updated from `200` to `4` for consistency.
+- Added a unit test asserting new defaults (`NetworkManager uses relay-scaling topology defaults`).
+- Updated plan docs to reflect the new default behavior and test coverage expectations.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date -Iseconds`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `apply_patch` on `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "dropRelayBootstrapOnDirect|relayRetention|maxConnections|targetConnections|connectionRadius" peercompute/src/peercompute/networkManager/NetworkManager.js | head -n 40`
+- `rg -n "relay-scaling topology defaults|connectionRadius|maxConnections|targetConnections" peercompute/tests/unit/networkManager.webrtc.test.js`
+- `apply_patch` on `plan/tests.md`
+- `apply_patch` on `plan/plan.md`
+- `date -Iseconds`
+- `git status --short`
+
+### Test Results
+- Runtime tests not executed in this environment (Node toolchain unavailable in sandbox).
+- Static/source verification completed for requested defaults and new unit coverage.
+
+### Failures / Open Questions
+- Open: run `node --test peercompute/tests/unit/networkManager.webrtc.test.js` on host Node 24 environment to validate runtime behavior.
+
+## Date: 2026-03-01
+
+### Prompt
+- we are seeing fewer connections upgrade to direct. so no peer ever obtains all direct connections and can't drop the relay. (included a very large `NetworkManager`/`NetViz` runtime log excerpt with repeated relay-webrtc dial failures, relay/bootstrap churn, and stream-state errors)
+- that' won't succeed in this env
+
+### Prompt Time/Date
+- 2026-03-01T01:33:27Z
+
+### Actions Attempted
+- Re-read planning context before implementation (`plan/plan.md` and `plan/log.md`) and reviewed current `NetworkManager` + unit tests.
+- Investigated relay/direct churn path in `NetworkManager` and confirmed transport and topology limits were both pinned to `maxConnections` (4), which can starve bootstrap/control signaling and upgrade dials.
+- Implemented transport-limit decoupling in `NetworkManager`:
+  - added config defaults `transportConnectionHeadroom` (default `3`) and optional `transportMaxConnections` override.
+  - added `_getTransportMaxConnections(logicalMax)` helper.
+  - switched libp2p `connectionManager.maxConnections` to transport max (`logical + bootstrap headroom + upgrade headroom`) instead of raw topology max.
+  - updated `setConnectionLimits(...)` to apply transport max to connection manager while preserving logical topology max.
+- Corrected logical peer-capacity accounting to ignore bootstrap/control links in topology decisions:
+  - `_shouldDialDiscoveredPeer` now uses `_getActiveDialedPeerCount()`.
+  - `_buildPresencePayload` now publishes non-bootstrap `activeConnections` count.
+  - `_maybeSwapTopologyConnections` now compares `maxConnections` against dialed peer count.
+  - `_handleTopologyConnectRequest` capacity check now uses dialed peer count.
+- Added observability fields:
+  - `transportMaxConnections` added to topology/network status payloads.
+  - connection-manager stats now include `logicalMaxConnections` and `configuredTransportMaxConnections`.
+- Added/updated unit tests in `peercompute/tests/unit/networkManager.webrtc.test.js`:
+  - `NetworkManager computes transport connection max with bootstrap headroom`
+  - `NetworkManager honors explicit transport max connection override`
+  - `NetworkManager setConnectionLimits updates connection manager using transport max`
+  - `NetworkManager presence payload reports non-bootstrap active peers`
+- Updated planning docs:
+  - `plan/plan.md` completed-item update for transport-limit decoupling.
+  - `plan/tests.md` targeted unit checklist updated with the new transport/capacity tests.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '260,620p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '620,940p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '940,1260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1260,1620p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1628,2075p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2180,2275p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2280,2680p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2680,3120p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3120,3480p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,220p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `tail -n 180 peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/tests.md`
+- `tail -n 120 plan/log.md`
+- `rg -n "connectionManager|setConnectionLimits|getNetworkStats|maxConnections" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "transportConnectionHeadroom|transportMaxConnections|_getTransportMaxConnections|_getActiveDialedPeerCount\(\) < maxConnections|activeConnections = this\._getActiveDialedPeerCount\(\)" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "transport connection max|setConnectionLimits updates connection manager using transport max|presence payload reports non-bootstrap" peercompute/tests/unit/networkManager.webrtc.test.js`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `apply_patch` on `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `apply_patch` on `plan/plan.md`
+- `apply_patch` on `plan/tests.md`
+- `/bin/bash -lc "export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node --test peercompute/tests/unit/networkManager.webrtc.test.js"` (failed in sandbox: permission denied to source nvm)
+- same command re-issued with `sandbox_permissions=require_escalated` (user aborted / declined due environment constraints)
+
+### Test Results
+- Runtime unit tests: not executable in this environment.
+  - sandbox attempt failed: `/home/cos/.nvm/nvm.sh: Permission denied`.
+  - escalated attempt was intentionally aborted per user (`that' won't succeed in this env`).
+- Static verification: PASS via targeted `rg` checks confirming all expected code paths and tests were updated.
+
+### Failures / Open Questions
+- Need host environment validation on Node 24 to confirm improved direct-upgrade stability under real churn (`node --test peercompute/tests/unit/networkManager.webrtc.test.js` plus multi-peer runtime run).
+- If churn persists after this transport-headroom fix, next likely hotspot is bootstrap WSS instability itself (independent of topology caps), visible in repeated `Connection closed ... direct ... reason: unknown` for the bootstrap peer.
+
+### Addendum (2026-03-01T01:33:27Z)
+- Verified branch-level status tracking aligns with the above implementation:
+  - `plan/branch/current-branch.md` progress section already includes the 2026-03-01 transport-limit decoupling and bootstrap-excluded active-connection accounting update.
+- Additional verification commands run after the main entry:
+  - `git status --short`
+  - `git diff -- peercompute/src/peercompute/networkManager/NetworkManager.js | sed -n '1,260p'`
+  - `git diff -- peercompute/tests/unit/networkManager.webrtc.test.js | sed -n '1,260p'`
+  - `git diff -- plan/plan.md plan/tests.md plan/branch/current-branch.md | sed -n '1,260p'`
+  - `sed -n '120,136p' plan/branch/current-branch.md`
+  - `git diff -- plan/branch/current-branch.md | sed -n '1,80p'`
+  - `sed -n '52,86p' plan/tests.md`
+  - `tail -n 140 plan/log.md`
+
+## Date: 2026-03-01
+
+### Prompt
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js` (full TAP output pasted)
+  - Failures reported by user run:
+    - `NetworkManager dial gate respects maxDialPeers for discovery` (`line 278`)
+    - `NetworkManager caps relay keepers at sqrt(N)` (`line 720`)
+
+### Prompt Time/Date
+- 2026-03-01T01:39:24Z
+
+### Actions Attempted
+- Analyzed failing assertions against updated relay-scaling semantics from the prior change.
+- Confirmed failure #1 cause:
+  - test relied on bootstrap dial always allowed even when defaults now set `dropRelayBootstrapOnDirect=true`.
+  - fixture connection lacked explicit `remoteAddr`, which can be inferred as non-relay by helper logic and trip direct-peer guard path.
+- Confirmed failure #2 cause:
+  - sqrt-retention test now hits pre-retention `targetConnections` gate introduced by dialed-peer accounting changes; with `targetConnections=2` and only one non-bootstrap peer connected, relay correctly stays.
+- Updated tests to match current intended behavior while preserving original coverage intent:
+  - `NetworkManager dial gate respects maxDialPeers for discovery`:
+    - set `webrtc.dropRelayBootstrapOnDirect=false` in test config.
+    - added explicit relay-scoped `remoteAddr` fixture.
+  - `NetworkManager caps relay keepers at sqrt(N)`:
+    - changed `targetConnections` from `2` to `1` so test exercises retention path (sqrt keeper election) rather than pre-retention target gate.
+
+### Files Touched
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/log.md`
+
+### Commands Run
+- `awk 'NR>=240 && NR<=320 {printf "%5d  %s\\n", NR, $0}' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `awk 'NR>=680 && NR<=740 {printf "%5d  %s\\n", NR, $0}' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `awk 'NR>=2008 && NR<=2065 {printf "%5d  %s\\n", NR, $0}' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `awk 'NR>=2140 && NR<=2228 {printf "%5d  %s\\n", NR, $0}' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `awk 'NR>=264 && NR<=292 {printf "%5d  %s\\n", NR, $0} NR>=662 && NR<=708 {printf "%5d  %s\\n", NR, $0}' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- Test execution command was run by user externally and reported in prompt.
+- Before patch: 25 passing / 2 failing (`dial gate respects maxDialPeers`, `caps relay keepers at sqrt(N)`).
+- After patch: pending re-run by user in host environment.
+
+### Failures / Open Questions
+- Open: re-run `node --test peercompute/tests/unit/networkManager.webrtc.test.js` to confirm suite is fully green after test fixture updates.
+
+## Date: 2026-03-01
+
+### Prompt
+- Re-ran `node --test peercompute/tests/unit/networkManager.webrtc.test.js` after prior fix; now only one failing test remains:
+  - `NetworkManager dial gate respects maxDialPeers for discovery` (`line 285`, expected false but got true)
+
+### Prompt Time/Date
+- 2026-03-01T02:22:13Z
+
+### Actions Attempted
+- Root-caused the remaining failure to a test fixture issue (not production logic):
+  - the test mock for `libp2p.getConnections(peerId)` ignored the `peerId` argument and always returned peer-a’s relay-scoped connection.
+  - this made `_getConnectionsForPeer('peer-b')` incorrectly appear relay-only and triggered the `hasRelayOnly` early-return path before `maxDialPeers` gating.
+- Updated the test fixture in `NetworkManager dial gate respects maxDialPeers for discovery`:
+  - introduced a `peerAConnection` constant.
+  - changed mock to return `[peerAConnection]` only when `peerId` is omitted (global list) or equals `'peer-a'`.
+  - return `[]` for other peer IDs, including `'peer-b'`.
+
+### Files Touched
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/log.md`
+
+### Commands Run
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `awk 'NR>=268 && NR<=296 {printf "%5d  %s\\n", NR, $0}' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- External user-run (before this patch): 26 passing / 1 failing (`dial gate respects maxDialPeers for discovery`).
+- After this patch: pending re-run in host environment.
+
+### Failures / Open Questions
+- Open: re-run `node --test peercompute/tests/unit/networkManager.webrtc.test.js` to confirm full green suite.

@@ -24,6 +24,16 @@ test('NetworkManager normalizes WebRTC config and ice servers', () => {
   assert.deepEqual(manager.config.webrtc.rtcConfiguration.iceServers, [{ urls: 'stun:example.com:3478' }]);
 });
 
+test('NetworkManager uses relay-scaling topology defaults', () => {
+  const manager = new NetworkManager();
+
+  assert.equal(manager.config.connectionRadius, 1);
+  assert.equal(manager.config.maxConnections, 4);
+  assert.equal(manager.config.targetConnections, 3);
+  assert.equal(manager.config.webrtc.dropRelayBootstrapOnDirect, true);
+  assert.equal(manager.config.webrtc.relayRetention?.mode, 'logn');
+});
+
 test('NetworkManager delivers additional pubsub topics even when scope differs', () => {
   const manager = new NetworkManager({
     gameId: 'game-a',
@@ -256,12 +266,22 @@ test('NetworkManager prefers remembered direct /webrtc targets after prior direc
 });
 
 test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
-  const manager = new NetworkManager({ maxDialPeers: 1, enforceRoomIsolation: false });
+  const manager = new NetworkManager({
+    maxDialPeers: 1,
+    enforceRoomIsolation: false,
+    webrtc: { dropRelayBootstrapOnDirect: false }
+  });
   manager.bootstrapPeerIds = new Set(['relay-peer']);
+  const peerAConnection = {
+    remotePeer: { toString: () => 'peer-a' },
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/ws/p2p/relay-peer/p2p-circuit/p2p/peer-a'),
+    status: 'open'
+  };
   manager.libp2p = {
-    getConnections: () => [
-      { remotePeer: { toString: () => 'peer-a' } }
-    ]
+    getConnections: (peerId) => {
+      if (!peerId || peerId === 'peer-a') return [peerAConnection];
+      return [];
+    }
   };
 
   assert.equal(manager._shouldDialDiscoveredPeer('peer-b'), false);
@@ -653,7 +673,7 @@ test('NetworkManager keeps relay for longest-connected logN peers', () => {
 
 test('NetworkManager caps relay keepers at sqrt(N)', () => {
   const manager = new NetworkManager({
-    targetConnections: 2,
+    targetConnections: 1,
     webrtc: {
       dropRelayBootstrapOnDirect: true,
       relayRetention: { mode: 'sqrt', min: 1 }
@@ -708,4 +728,83 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
   // Self joined late, should not be among the earliest sqrt(N)=3 keepers.
   manager._maybeUpdateBootstrapRelayConnections();
   assert.equal(relayClosed, true);
+});
+
+test('NetworkManager computes transport connection max with bootstrap headroom', () => {
+  const manager = new NetworkManager({
+    maxConnections: 4,
+    bootstrapPeers: [
+      '/dns4/example.com/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs'
+    ]
+  });
+
+  assert.equal(manager._getTransportMaxConnections(4), 8);
+});
+
+test('NetworkManager honors explicit transport max connection override', () => {
+  const manager = new NetworkManager({
+    maxConnections: 4,
+    transportConnectionHeadroom: 10,
+    transportMaxConnections: 5
+  });
+
+  assert.equal(manager._getTransportMaxConnections(4), 5);
+});
+
+test('NetworkManager setConnectionLimits updates connection manager using transport max', () => {
+  const manager = new NetworkManager({
+    maxConnections: 4,
+    transportConnectionHeadroom: 2,
+    bootstrapPeers: [
+      '/dns4/example.com/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs'
+    ]
+  });
+  let updatedMax = null;
+  manager.libp2p = {
+    services: {
+      connectionManager: {
+        setMaxConnections: (value) => {
+          updatedMax = value;
+        }
+      }
+    }
+  };
+
+  manager.setConnectionLimits({ targetConnections: 3, maxConnections: 6 });
+
+  assert.equal(manager.config.targetConnections, 3);
+  assert.equal(manager.config.maxConnections, 6);
+  assert.equal(updatedMax, 9);
+});
+
+test('NetworkManager presence payload reports non-bootstrap active peers', () => {
+  const manager = new NetworkManager({
+    bootstrapPeers: [
+      '/dns4/example.com/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs'
+    ]
+  });
+  manager.peerId = 'peer-self';
+  manager.libp2p = {
+    getConnections: () => [
+      {
+        remotePeer: { toString: () => '12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs' },
+        remoteAddr: buildAddr('/dns4/example.com/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs'),
+        status: 'open'
+      },
+      {
+        remotePeer: { toString: () => 'peer-a' },
+        remoteAddr: buildAddr('/ip4/1.2.3.4/udp/9999/webrtc'),
+        status: 'open'
+      },
+      {
+        remotePeer: { toString: () => 'peer-b' },
+        remoteAddr: buildAddr('/ip4/5.6.7.8/udp/9999/webrtc'),
+        status: 'open'
+      }
+    ]
+  };
+
+  const payload = manager._buildPresencePayload();
+
+  assert.equal(payload.activeConnections, 2);
 });

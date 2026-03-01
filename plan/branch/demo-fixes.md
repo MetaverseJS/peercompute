@@ -126,3 +126,4 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 - Done (baseline): NetViz (network telemetry + minimal visualizer demo scaffolded).
 - Done: NetViz upgrades (RTT/throughput telemetry, NURBS edges, node/edge inspection).
 - Done (2026-02-27): Overview tile order updated to `GitHub -> CubeChat -> Universes -> PlanetGen -> NetViz -> SneakyWoods -> Daddy Go -> Dynamics -> MPM -> PPF -> Hyperborea`.
+- Done (2026-03-01): NetworkManager transport-limit decoupling landed (`logical maxConnections` vs `transport maxConnections` with bootstrap/upgrade headroom), and topology/presence active-connection accounting now excludes bootstrap links to reduce relay-webrtc upgrade churn under low logical caps (static checks complete in constrained env).
