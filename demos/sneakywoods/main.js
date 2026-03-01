@@ -1309,7 +1309,6 @@ import { NodeKernel } from '@peercompute';
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
-                    disableStateBroadcast: true,
                     gameId: 'sneakywoods',
                     roomId: roomId || 'global',
                     maxConnections: 10,

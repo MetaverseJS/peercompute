@@ -19452,3 +19452,37 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Hidden-sender behavior still intentionally uses 1 Hz heartbeat path; if full-rate background simulation is desired for local multi-tab load tests, a separate config switch is still needed.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 23:30:02 UTC)
+- User reported regression after prior change: players no longer see each other (everyone appears alone).
+
+### Actions
+- Identified regression source as prior SneakyWoods gameplay config change setting `disableStateBroadcast: true`.
+- Reverted `disableStateBroadcast: true` for gameplay `NodeKernel` instantiation to restore dual-path state propagation behavior.
+- Kept the separate 10 Hz timer-based publish-cadence fix intact.
+- Re-ran demo + unit tests after revert.
+
+### Files Touched
+- `demos/sneakywoods/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `apply_patch` on `demos/sneakywoods/main.js`
+- `node --test demos/tests/*.test.js`
+- `npm --prefix peercompute run test:unit`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- `node --test demos/tests/*.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+  - Duration: `256.701903ms`
+- `npm --prefix peercompute run test:unit`
+  - PASS: `14`
+  - FAIL: `0`
+  - Duration: `40873.481407ms`
+
+### Failures / Open Questions
+- Open: focused-tab ~1 Hz symptom still needs additional runtime instrumentation to distinguish sender-side visibility throttling vs transport/publish backpressure vs receive/render cadence.
