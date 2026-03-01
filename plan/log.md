@@ -18614,3 +18614,131 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Open: re-run `node --test peercompute/tests/unit/networkManager.webrtc.test.js` to confirm full green suite.
+
+## Date: 2026-03-01
+
+### Prompt
+- "for some reason. I don't think we changed anything. but we're seeing some unrecoverable network collapses again." (user provided long runtime log showing relay/bootstrap churn, repeated bootstrap direct connect/disconnect loops, `NO_RESERVATION` relay-webrtc failures, and `StreamStateError`-style uncaught send traces).
+- Follow-up: "you can't do it from your environment give me the command to run"
+
+### Prompt Time/Date
+- 2026-03-01T03:29:20Z
+
+### Actions Attempted
+- Reviewed current `NetworkManager` relay/drop/dial logic against the provided trace and identified a concrete regression path:
+  - stale closed connections were still counted as active direct/dialed peers in key policy methods.
+  - this could force `dropRelayBootstrapOnDirect` decisions while real direct connectivity had already collapsed, producing bootstrap open/close flapping and unrecoverable isolation patterns.
+- Implemented code fix in `NetworkManager`:
+  - `_getConnectionPeers()` now ignores non-open connections.
+  - `_countDialedPeers()` now ignores non-open connections.
+  - `_hasDirectPeerConnections()` now ignores non-open connections.
+- Added a targeted regression unit test to lock behavior:
+  - `NetworkManager ignores closed connections for direct/drop decisions`
+- Updated test strategy docs to include the new regression test in the targeted unit checklist.
+- Attempted to run Node 24 unit test suite locally; sandbox blocked `nvm` sourcing.
+- Attempted escalated run, but user rejected/aborted escalation and requested runnable command output instead.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `rg -n "Relay reservation created|redial-bootstrap|No local /webrtc addrs|Dial failed|Connection closed|Connection upgraded|relayRetention|dropRelayBootstrapOnDirect|NO_RESERVATION|relay-assist|webrtc:open-signaling-stream|_maybeDialPeer|_onConnection|redial" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1280,1448p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2960,3348p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1680,2228p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '888,1128p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2228,2368p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,360p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "maxConnections|targetConnections|connectionRadius|transportConnectionHeadroom|relayRetention|dropRelayBootstrapOnDirect|countRelayWebrtcAsDirectCapable|enableRelayAssist|reconnectOnDialFailure|maxDialPeers" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '360,540p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2860,3048p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "StreamStateError|pubsubStream|_handlePubsubStreamError|publishBlockedUntil|unhandledrejection|window\.addEventListener\('error'|Cannot write to a stream" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1208,1298p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2368,2748p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `rg -n "_getConnections\(|_getActiveConnectionCount\(|_countDialedPeers\(|_getConnectionPeers\(|relayReservationPeers|reservationStore|_closeBootstrapRelayConnections|_maybePruneRelayConnections" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1608,1698p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3368,3448p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,260p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '260,560p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '560,860p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `apply_patch` on `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `/bin/bash -lc "export HOME=/home/cos && source /home/cos/.nvm/nvm.sh && nvm use 24 && node --test /home/cos/projects/peercompute/peercompute/tests/unit/networkManager.webrtc.test.js"` (sandbox failure)
+- same command with `sandbox_permissions=require_escalated` (rejected/aborted)
+- `tail -n 120 plan/log.md`
+- `sed -n '1,240p' plan/tests.md`
+- `apply_patch` on `plan/tests.md`
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+
+### Test Results
+- Automated run in this environment: blocked.
+  - Failure: `/home/cos/.nvm/nvm.sh: Permission denied` (sandbox).
+  - Escalated attempt: rejected/aborted by user.
+- Test suite status in host environment: pending user run after this patch.
+
+### Failures / Open Questions
+- Need host-side validation of the patched behavior to confirm bootstrap no longer flaps due to closed-connection misclassification.
+- Remaining runtime instability (if any) may still involve relay reservation churn independent of stale-connection counting; this patch specifically addresses false-positive direct/dialed state.
+
+## Date: 2026-03-01
+
+### Prompt
+- User ran requested commands and reported results:
+  - `node --test peercompute/tests/unit/networkManager.webrtc.test.js` -> PASS (1 file, 0 failures).
+  - `node --test --test-name-pattern="ignores closed connections" ...` -> `node: bad option: --test-name-pattern=...`.
+
+### Prompt Time/Date
+- 2026-03-01T03:40:34Z
+
+### Actions Attempted
+- Interpreted host-side test output and confirmed full unit file now passes after stale-connection filtering patch.
+- Identified that the host node binary does not accept `--test-name-pattern` in the provided form/version.
+- Prepared corrected guidance: prefer `nvm use 24` and use `--test-name-pattern "..."` (space form) if supported; otherwise rely on full-file run.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- append entry to `plan/log.md`
+
+### Test Results
+- Host run: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` passed.
+- Host run: `--test-name-pattern` unsupported in current node invocation (option error).
+
+### Failures / Open Questions
+- Open: confirm active node version/path in shell (`node -v`, `which node`) to ensure Node 24 from `nvm` is used when optional name-pattern filtering is needed.
+
+## Date: 2026-03-01
+
+### Prompt
+- User reran targeted test command and reported success:
+  - `node --test --test-name-pattern="ignores closed connections" peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Prompt Time/Date
+- 2026-03-01T03:44:58Z
+
+### Actions Attempted
+- Verified user output indicates the newly added regression test executes and passes in host environment.
+- Confirmed both full-file suite and targeted regression are now green.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- append entry to `plan/log.md`
+
+### Test Results
+- Host targeted run: PASS
+  - `✔ NetworkManager ignores closed connections for direct/drop decisions`
+  - pass 1 / fail 0
+
+### Failures / Open Questions
+- No immediate unit-test failures remain for `networkManager.webrtc.test.js`.
+- Runtime collapse monitoring remains ongoing under live swarm churn.

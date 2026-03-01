@@ -288,6 +288,43 @@ test('NetworkManager dial gate respects maxDialPeers for discovery', () => {
   assert.equal(manager._shouldDialDiscoveredPeer('relay-peer'), true);
 });
 
+test('NetworkManager ignores closed connections for direct/drop decisions', () => {
+  const manager = new NetworkManager({
+    targetConnections: 1,
+    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+  });
+  manager.peerId = 'peer-self';
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  const closedDirect = {
+    remotePeer: { toString: () => 'peer-direct-closed' },
+    remoteAddr: buildAddr('/webrtc/ip4/1.2.3.4'),
+    status: 'closed'
+  };
+  const openRelayPeer = {
+    remotePeer: { toString: () => 'peer-relay-open' },
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer/p2p-circuit/p2p/peer-relay-open'),
+    status: 'open'
+  };
+  const openBootstrap = {
+    remotePeer: { toString: () => 'relay-peer' },
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+    status: 'open'
+  };
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (peerId === 'relay-peer') return [openBootstrap];
+      if (peerId === 'peer-direct-closed') return [closedDirect];
+      if (peerId === 'peer-relay-open') return [openRelayPeer];
+      return [openBootstrap, closedDirect, openRelayPeer];
+    }
+  };
+
+  assert.equal(manager._countDialedPeers(), 1);
+  assert.equal(manager._hasDirectPeerConnections(), false);
+  assert.equal(manager._getConnectionPeers().length, 2);
+  assert.equal(manager._shouldKeepRelayBootstrapConnection(), true);
+});
+
 test('NetworkManager drops bootstrap relay connections when direct peers exist at target', () => {
   const manager = new NetworkManager({
     targetConnections: 2,

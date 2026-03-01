@@ -1647,6 +1647,7 @@ export class NetworkManager {
     const byId = new Map();
     const connectionList = this._getConnections();
     for (const conn of connectionList) {
+      if (!isConnectionOpen(conn)) continue;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) continue;
       const meta = this.peers.get(peerId) || {};
@@ -1676,6 +1677,7 @@ export class NetworkManager {
     const dialed = new Set();
     const connectionList = this._getConnections();
     for (const conn of connectionList) {
+      if (!isConnectionOpen(conn)) continue;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId) continue;
       if (this.bootstrapPeerIds.has(peerId)) continue;
@@ -1689,6 +1691,7 @@ export class NetworkManager {
       this.config.webrtc?.countRelayWebrtcAsDirectCapable !== false;
     const connectionList = this._getConnections();
     return connectionList.some((conn) => {
+      if (!isConnectionOpen(conn)) return false;
       const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
       if (isDirectAddr(conn?.remoteAddr)) return true;

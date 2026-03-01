@@ -71,6 +71,7 @@
 : `NetworkManager computes transport connection max with bootstrap headroom`
 : `NetworkManager setConnectionLimits updates connection manager using transport max`
 : `NetworkManager presence payload reports non-bootstrap active peers`
+: `NetworkManager ignores closed connections for direct/drop decisions`
 
 ### Internet chaos lab (new)
 - Root: `net-chaos-lab/`
