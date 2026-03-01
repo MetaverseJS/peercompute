@@ -19291,3 +19291,164 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - The `[DOM] Password field is not contained in a form` warning shown in user sample is browser HTML validation noise and is unrelated to this debug-output gate.
 - Open follow-up: decide whether additional non-info `console.log` startup/status lines should also be hidden by default, or only high-frequency networking logs (current behavior).
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 22:45:34 UTC)
+- User asked whether Yjs message volume can be limited (targeting ~10 Hz for transform updates plus event-style messages for attack/jump).
+
+### Actions
+- Reviewed current SneakyWoods sync path and verified movement publish cadence.
+- Confirmed `broadcastPosition()` is already rate-limited by `POSITION_BROADCAST_MS = 250` (4 Hz) in `demos/sneakywoods/main.js`.
+- Confirmed attack is already event-style via `attack-<peerId>` writes.
+- Confirmed there is no explicit jump event pipeline currently.
+- Reviewed `StateManager.writeScoped()` + `PeerComputeProvider` behavior and confirmed each local write currently emits:
+  1) Yjs doc update (`yjs-update`) and
+  2) opportunistic direct pubsub (`state-set`).
+- Identified this dual-path behavior as likely source of apparent duplicate message spam per state write.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `rg -n "state-set|yjs-update|write\(|set\(|player|position|rotation|orientation|jump|attack|sendToPeer|broadcast" demos/sneakywoods peercompute/src --glob '!**/dist/**'`
+- `sed -n '1360,1460p' demos/sneakywoods/main.js`
+- `sed -n '1460,1565p' demos/sneakywoods/main.js`
+- `sed -n '286,370p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '370,430p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '1,120p' peercompute/src/peercompute/stateManager/PeerComputeProvider.js`
+- `sed -n '1260,1385p' demos/sneakywoods/main.js`
+- `rg -n "jump|air|ground|gravity|vertical" demos/sneakywoods/main.js`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- None (analysis-only prompt).
+
+### Failures / Open Questions
+- Open design choice: keep dual-path (`yjs-update` + `state-set`) for resilience, or disable opportunistic `state-set` for high-rate gameplay namespaces to reduce network/message volume.
+- Open gameplay feature gap: jump event channel not implemented yet in SneakyWoods.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 22:53:31 UTC)
+- User asked whether peer updates should be 10 Hz, how often `writeScoped` currently runs, and why each action appears as two messages (`yjs-update` + `state-set`).
+
+### Actions
+- Re-verified SneakyWoods publish cadence and visibility/background behavior.
+- Confirmed movement state writes are driven by `broadcastPosition()` with `POSITION_BROADCAST_MS = 250` (4 Hz while tab visible).
+- Confirmed hidden-tab heartbeat writes at 1 Hz.
+- Confirmed attack writes are event-based via `attack-<peerId>` key.
+- Re-verified duplicate message path in core state stack:
+  - Yjs provider emits `yjs-update` on every document mutation.
+  - `StateManager.writeScoped()` additionally emits opportunistic `state-set` broadcast for the same mutation.
+- Concluded double message type is current intended architecture (redundancy/fallback), not an accidental one-line bug.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '960,1020p' demos/sneakywoods/main.js`
+- `sed -n '1400,1455p' demos/sneakywoods/main.js`
+- `sed -n '300,350p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '20,80p' peercompute/src/peercompute/stateManager/PeerComputeProvider.js`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- None (analysis-only prompt).
+
+### Failures / Open Questions
+- Open architecture decision: keep dual-path broadcasts for gameplay namespaces or disable `state-set` mirror on high-frequency state to reduce traffic/message count.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 23:08:15 UTC)
+- User reported suspected bug: even with active tabs, remote player updates appear around ~1 Hz. Asked for close investigation.
+
+### Actions
+- Audited SneakyWoods publish loop and confirmed movement state emission was tied to `requestAnimationFrame` (`broadcastPosition()`), not an independent timer.
+- Confirmed this can collapse effective network publish rate under browser frame throttling/low-FPS conditions even when intended interval logic is 250 ms.
+- Implemented network-cadence decoupling + requested 10 Hz movement updates:
+  - Added dedicated `positionBroadcastTimer` state.
+  - Replaced RAF-based `broadcastPosition()` with `startPositionBroadcast()`/`stopPositionBroadcast()` interval logic.
+  - Set `POSITION_BROADCAST_MS = 100` (10 Hz target).
+  - Guarded position timer while hidden (`document.hidden`) and retained hidden-tab heartbeat path.
+  - Wired lifecycle: `setupP2P()` now starts position timer; `stopP2P()` now stops it.
+- Re-ran demo + unit tests.
+
+### Files Touched
+- `demos/sneakywoods/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '980,1165p' demos/sneakywoods/main.js`
+- `sed -n '1165,1365p' demos/sneakywoods/main.js`
+- `rg -n "broadcastPosition\(|POSITION_BROADCAST_MS|requestAnimationFrame\(broadcastPosition|visibilitychange|startBackgroundHeartbeat|stopBackgroundHeartbeat" demos/sneakywoods/main.js`
+- `rg -n "roomDirectoryNode|backgroundHeartbeat|POSITION_BROADCAST_MS|broadcastPosition|startBackgroundHeartbeat" demos/sneakywoods/main.js`
+- `sed -n '130,210p' demos/sneakywoods/main.js`
+- `sed -n '1390,1465p' demos/sneakywoods/main.js`
+- `apply_patch` on `demos/sneakywoods/main.js`
+- `rg -n "broadcastPosition\(|startPositionBroadcast\(|stopPositionBroadcast\(|POSITION_BROADCAST_MS" demos/sneakywoods/main.js`
+- `node --test demos/tests/*.test.js`
+- `npm --prefix peercompute run test:unit`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- `node --test demos/tests/*.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+  - Duration: `275.017445ms`
+- `npm --prefix peercompute run test:unit`
+  - PASS: `14`
+  - FAIL: `0`
+  - Duration: `40888.346269ms`
+
+### Failures / Open Questions
+- Remaining architecture question unchanged: each `writeScoped` still emits both `yjs-update` and `state-set` pathways by design; if needed for bandwidth reduction, gameplay namespace can be made single-path in a follow-up.
+
+## Date: 2026-03-01
+
+### Prompt (2026-03-01 23:12:27 UTC)
+- User reported issue persists: remote updates appear ~1 Hz even when focused window is active.
+
+### Actions
+- Re-inspected publish path end-to-end after 10 Hz timer change.
+- Confirmed focused observer does not imply focused sender tabs; hidden senders remain on heartbeat path by design.
+- Identified second likely throughput limiter for gameplay writes: each `writeScoped` emits both Yjs provider update (`yjs-update`) and opportunistic mirror (`state-set`), doubling per-write pubsub traffic and increasing chance of publish backpressure.
+- Applied targeted SneakyWoods gameplay change to reduce duplicate traffic:
+  - set `disableStateBroadcast: true` on main gameplay `NodeKernel` instance (Yjs-only sync path for gameplay state).
+  - left room-directory node behavior unchanged.
+- Re-ran demo and unit tests.
+
+### Files Touched
+- `demos/sneakywoods/main.js`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '980,1165p' demos/sneakywoods/main.js`
+- `sed -n '1165,1365p' demos/sneakywoods/main.js`
+- `rg -n "broadcastPosition\(|POSITION_BROADCAST_MS|requestAnimationFrame\(broadcastPosition|visibilitychange|startBackgroundHeartbeat|stopBackgroundHeartbeat" demos/sneakywoods/main.js`
+- `rg -n "_safeSetMap|observeNamespace|applyRemoteUpdate|state-set|writeScoped|publishBlocked|throttle|debounce|lastSeen|ts" peercompute/src/peercompute/stateManager/StateManager.js peercompute/src/peercompute/stateManager/PeerComputeProvider.js demos/sneakywoods/main.js`
+- `sed -n '1,220p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '220,520p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '520,610p' peercompute/src/peercompute/stateManager/StateManager.js`
+- `sed -n '1060,1215p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3090,3215p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `apply_patch` on `demos/sneakywoods/main.js`
+- `node --test demos/tests/*.test.js`
+- `npm --prefix peercompute run test:unit`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+
+### Tests Run / Results
+- `node --test demos/tests/*.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+  - Duration: `276.092026ms`
+- `npm --prefix peercompute run test:unit`
+  - PASS: `14`
+  - FAIL: `0`
+  - Duration: `40826.981088ms`
+
+### Failures / Open Questions
+- Hidden-sender behavior still intentionally uses 1 Hz heartbeat path; if full-rate background simulation is desired for local multi-tab load tests, a separate config switch is still needed.

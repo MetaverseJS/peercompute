@@ -161,6 +161,7 @@ import { NodeKernel } from '@peercompute';
         let playerLabel = null;
         const log = (...args) => console.log('[sneakywoods]', ...args);
         let backgroundHeartbeat = null;
+        let positionBroadcastTimer = null;
         let peerCleanupInterval = null;
         let beforeUnloadHandler = null;
         let currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
@@ -1308,6 +1309,7 @@ import { NodeKernel } from '@peercompute';
                 node = new NodeKernel({
                     bootstrapPeers,
                     enablePersistence: false,
+                    disableStateBroadcast: true,
                     gameId: 'sneakywoods',
                     roomId: roomId || 'global',
                     maxConnections: 10,
@@ -1351,7 +1353,7 @@ import { NodeKernel } from '@peercompute';
 
                 // Publish our initial state and kick off heartbeats
                 publishPlayerState();
-                broadcastPosition(); // will repeat via requestAnimationFrame below
+                startPositionBroadcast();
                 if (!beforeUnloadHandler) {
                     beforeUnloadHandler = () => {
                         if (stateManager && myPeerId) {
@@ -1369,6 +1371,7 @@ import { NodeKernel } from '@peercompute';
 
         async function stopP2P() {
             stopRoomAnnouncements();
+            stopPositionBroadcast();
             stopBackgroundHeartbeat();
             if (peerCleanupInterval) {
                 clearInterval(peerCleanupInterval);
@@ -1405,7 +1408,7 @@ import { NodeKernel } from '@peercompute';
             // Intentionally empty; state sync handled via Yjs/state-set
         }
 
-        const POSITION_BROADCAST_MS = 250;
+        const POSITION_BROADCAST_MS = 100;
         let lastPositionBroadcast = 0;
 
         function publishPlayerState() {
@@ -1421,13 +1424,23 @@ import { NodeKernel } from '@peercompute';
             stateManager.writeScoped(gameNamespace, `player-${myPeerId}`, payload);
         }
 
-        function broadcastPosition() {
-            const now = performance.now();
-            if (now - lastPositionBroadcast >= POSITION_BROADCAST_MS) {
-                lastPositionBroadcast = now;
-                publishPlayerState();
+        function startPositionBroadcast() {
+            if (positionBroadcastTimer) return;
+            positionBroadcastTimer = setInterval(() => {
+                if (document.hidden) return;
+                const now = performance.now();
+                if (now - lastPositionBroadcast >= POSITION_BROADCAST_MS) {
+                    lastPositionBroadcast = now;
+                    publishPlayerState();
+                }
+            }, POSITION_BROADCAST_MS);
+        }
+
+        function stopPositionBroadcast() {
+            if (positionBroadcastTimer) {
+                clearInterval(positionBroadcastTimer);
+                positionBroadcastTimer = null;
             }
-            requestAnimationFrame(broadcastPosition);
         }
 
         function startBackgroundHeartbeat() {
