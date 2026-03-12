@@ -10,6 +10,8 @@
 
 - WASM support for compute workloads
 - REAL distributed compute workload examples. 
+- Chemistry demo: retro-terminal `Fano Reactor` that turns the sedenion chemistry paper into an interactive reaction chamber and distributed pair-compute workload.
+- Details: plan/branch/chem.md.
 - Demos for each network topology
 
 - shared 3d editing environment based on https://threejs.org/editor/ where users can make 3d models together github https://github.com/mrdoob/three.js/tree/master/editor
@@ -30,17 +32,19 @@
 ## Branch Goal
 Use the demo suite to prove the PeerCompute architecture end-to-end: layered DataState, NetworkScheduler profiles/topologies, ComputeManager (CPU/GPU/WASM), and GPU hub interop. The demos should double as validation tools for the distributed compute roadmap.
 
-## Status Snapshot (2026-01-04)
+## Status Snapshot (2026-03-12)
 
 ### In Progress
-- Phase 2: WebRTC direct-first + relay pruning (partial; still relying on relay in some flows).
+- Phase 2b: WebRTC direct connection stability root-cause analysis complete; implementation planned (see Phase 2b section below).
 
 ### Recently Updated
 - Node relay remains the default in dev scripts; prod/systemd now respects `RELAY_IMPL`.
 - Go relay now joins pubsub topics with relay participation to forward traffic.
 - Dev gossipsub defaults tuned for testing (neutral scoring + wider mesh bounds).
+- Fano Reactor demo scaffolded with exact sedenion algebra, bond-lab UI, and headless chemistry tests.
 
 ### Next Up
+- Implement Phase 2b fixes (direct-drop recovery, relay safety window, election broadcast, reservation pruning).
 - Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
 - Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
 - Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
@@ -59,6 +63,62 @@ Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the mai
 ### Phase 2: WebRTC direct-first + relay pruning (in progress)
 - Prefer direct `/webrtc` dialing and drop relayed connections once direct is established.
 - Confirm pubsub traffic flows peer-to-peer over direct links.
+
+### Phase 2b: WebRTC Direct Connection Stability (planned)
+
+**Root causes of direct connections not staying connected:**
+
+1. **Relay pruned before direct is truly stable.** `_maybePruneRelayConnections` (NM:3611) closes relay connections after `directUpgradeGraceMs` (default 10 s). Once the relay is gone there is no fallback if ICE later fails (NAT rebind, DTLS timeout, etc.).
+
+2. **No targeted redial scheduled on direct drop.** When `connection:close` fires for a direct WebRTC connection, only two things happen: `_scheduleIsolationRelayRedial` (fires only when ALL active connections reach zero) and `_maybeUpdateBootstrapRelayConnections` (fixes bootstrap only). Neither schedules a redial to the specific lost peer. Recovery depends entirely on the next presence tick (default every 3 s).
+
+3. **Dial throttle blocks fast reconnect.** `recentDialAttempts` still holds the peer's last dial time at the moment of drop. `_maybeDialPeer` (NM:3302) skips the peer for up to `PEER_DIAL_THROTTLE_MS` (5 s) even after the connection has fully closed. Combined with the presence interval, worst-case reconnect window is ~8 s.
+
+4. **`dropRelayBootstrapOnDirect` burns the relay bridge.** When this flag (default `true`) prunes the bootstrap relay because direct connections exist, and those direct connections then drop, reconnection requires a fresh bootstrap dial. The relay reconnect path in `_reconnectRelayForDial` (NM:1968) checks `_hasBootstrapRelayConnections()` and bails early if the relay is mid-close, creating a race.
+
+5. **Election race: multiple peers can simultaneously be relay keepers.** `_shouldElectRelayRedial` (NM:2172) reads `_getScopedPeers()` and elects the peer with fewest connections, but winner status is set only in local state (`relayKeeperUntil`). No presence broadcast is forced after winning, so other peers remain unaware for up to one full presence interval. With symmetric load, two peers can both win at the same time.
+
+6. **`relayReservationPeers` Set never pruned.** Peer IDs are added to the Set in `_reserveRelayForPeer` (NM:3240) but never removed on peer disconnect or stale-peer pruning → unbounded growth at scale.
+
+7. **Duplicate `toString()` copy-paste.** NM:1462, 1504, 1769, 1800, 1837, 1855: both sides of the `||` call the same method, e.g. `conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.()`. The apparent intent is a fallback (likely `remotePeer?.toString?.() || remotePeer?.toString?.()` vs `remotePeer?.peerId?.toString?.()`), so the real fallback is silently missing.
+
+**Implementation plan (ordered by impact):**
+
+- **Fix A – On direct-drop, clear dial throttle and schedule immediate relay-via-redial.**
+  In the `connection:close` handler (NM:1460): if the closing connection is a direct WebRTC link and no direct connections remain for that peer, delete `recentDialAttempts[peerId]` (clear throttle) then call `_maybeDialPeer(peerId, 'direct-drop-recovery')` asynchronously. This collapses the worst-case 8 s window to near-instant.
+
+- **Fix B – "Relay safety window" after first direct upgrade.**
+  After `_maybePruneRelayConnections` decides to drop relay, keep the bootstrap relay alive for an extra configurable `relayPostDirectHoldMs` (suggest 60 s default) before fully closing it. This gives ICE-flapping connections a fast fallback path without holding the relay for ever.
+
+- **Fix C – Force presence broadcast after winning relay election.**
+  In `_shouldElectRelayRedial` (NM:2205), when `isWinner` is set, call `_publishPresenceNow()` immediately to propagate `relayConnected: true`. Prevents double-election race.
+
+- **Fix D – Prune `relayReservationPeers` on peer disconnect and in `_pruneStalePeers`.**
+  In the `peer:disconnect` handler (NM:1538): `this.relayReservationPeers.delete(peerId)`.
+  In `_pruneStalePeers` (NM:2267): delete from `relayReservationPeers` alongside the other per-peer cleanup.
+
+- **Fix E – Prune `relayAssistState` Maps in `_pruneStalePeers`.**
+  In `_pruneStalePeers`, clear `lastRequestAt`, `inboundRequestAt`, and cancel/delete `pendingReadyTimeouts` for stale peers.
+
+- **Fix F – Cancel `autoDisconnectTimer` in `stop()`.**
+  Add `clearTimeout(this.relayReconnectState.autoDisconnectTimer)` to the `stop()` / teardown path so it cannot fire after the instance is destroyed.
+
+- **Fix G – Repair duplicate `toString()` fallbacks.**
+  Replace every instance of `conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.()` with the correct fallback `conn?.remotePeer?.toString?.() || conn?.remotePeer?.peerId?.toString?.()` (or whichever field is the real fallback in each context).
+
+**Testing plan:**
+
+- *Headless unit tests* (`demos/tests/`):
+  - Simulate peer connect → direct upgrade → relay prune → direct drop → assert reconnect fires within 1 s.
+  - Assert `relayReservationPeers` size stays bounded when peers join and leave.
+  - Assert duplicate relay election doesn't fire when `relayConnected: true` is present in peer list.
+
+- *Chaos lab scenarios* (add to `net-chaos-lab/configs/`):
+  - `webrtc-flap`: NAT rebind mid-session, verify reconnect < 5 s and connection type returns to `webrtc` after relay assist.
+  - `relay-drop-rejoin`: Bootstrap relay drops and re-appears; verify clients redial within 2 presence ticks.
+  - `direct-churn`: 10-peer room, random ICE failures every 30 s for 5 min; check no peer count decay.
+
+- *NetViz manual smoke*: Open two tabs on the same room, observe connection badge transitions `relay → webrtc → relay → webrtc` after simulating a tab background (visibility-throttled ICE). Confirm no stuck `disconnected` state.
 
 ### Phase 3: Gossipsub rollout (next)
 - Switch browsers + relay to gossipsub; keep floodsub as fallback until stable.
@@ -127,3 +187,5 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 - Done: NetViz upgrades (RTT/throughput telemetry, NURBS edges, node/edge inspection).
 - Done (2026-02-27): Overview tile order updated to `GitHub -> CubeChat -> Universes -> PlanetGen -> NetViz -> SneakyWoods -> Daddy Go -> Dynamics -> MPM -> PPF -> Hyperborea`.
 - Done (2026-03-01): NetworkManager transport-limit decoupling landed (`logical maxConnections` vs `transport maxConnections` with bootstrap/upgrade headroom), and topology/presence active-connection accounting now excludes bootstrap links to reduce relay-webrtc upgrade churn under low logical caps (static checks complete in constrained env).
+- Done (2026-03-10): `Fano Reactor` scaffold landed with exact sedenion algebra, a retro-terminal `bond-lab` + `fano-map`, docs/build wiring, and headless chemistry invariants tests.
+- Done (2026-03-12): Phase 2b relay scaling fixes implemented (Fixes A–G): direct-drop recovery redial, relay safety window (`relayPostDirectHoldMs` 60 s), election presence broadcast, `relayReservationPeers`/`relayAssistState` pruning, `autoDisconnectTimer` cleanup in `disconnect()`, duplicate `toString()` removal. 9 new headless tests in `demos/tests/relay-scaling.test.mjs`. All 37 tests pass.

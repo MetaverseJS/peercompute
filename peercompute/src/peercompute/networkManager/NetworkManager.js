@@ -35,6 +35,7 @@ const RELAY_ASSIST_READY_TIMEOUT_MS = 15000;
 const DEFAULT_RELAY_DROP_MIN_DIRECT_MS = 15000;
 const DEFAULT_DIRECT_UPGRADE_GRACE_MS = 10000;
 const DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS = 30000;
+const DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 60000;
 const DEFAULT_RELAY_ELECTION_STICKY_MS = 30000;
 const DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS = 1500;
 const DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS = 30000;
@@ -324,6 +325,11 @@ const normalizeWebRTCConfig = (config = {}) => {
     : (Number.isFinite(config.relayBootstrapMinHoldMs)
       ? Math.max(0, config.relayBootstrapMinHoldMs)
       : DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS);
+  const relayPostDirectHoldMs = Number.isFinite(raw.relayPostDirectHoldMs)
+    ? Math.max(0, raw.relayPostDirectHoldMs)
+    : (Number.isFinite(config.relayPostDirectHoldMs)
+      ? Math.max(0, config.relayPostDirectHoldMs)
+      : DEFAULT_RELAY_POST_DIRECT_HOLD_MS);
   const relayElectionStickyMs = Number.isFinite(raw.relayElectionStickyMs)
     ? Math.max(0, raw.relayElectionStickyMs)
     : (Number.isFinite(config.relayElectionStickyMs)
@@ -363,6 +369,7 @@ const normalizeWebRTCConfig = (config = {}) => {
     relayDropMinDirectMs,
     directUpgradeGraceMs,
     relayBootstrapMinHoldMs,
+    relayPostDirectHoldMs,
     relayElectionStickyMs,
     dialFailureBackoffBaseMs,
     dialFailureBackoffMaxMs,
@@ -626,6 +633,7 @@ export class NetworkManager {
     this.lastWebrtcAnnounceWarnAt = 0;
     this.relayBootstrapConnectedAt = null;
     this.relayKeeperUntil = 0;
+    this.firstDirectUpgradeAt = null;
     this.relayTransport = null;
     this.relayReservationPeers = new Set();
     this.peerDialAddrCache = new Map();
@@ -1070,6 +1078,12 @@ export class NetworkManager {
     }
     this._stopTelemetrySampler();
     this._stopTopologyController();
+    // Fix F: Cancel pending relay auto-disconnect timer so it can't fire on a
+    // destroyed instance.
+    if (this.relayReconnectState?.autoDisconnectTimer) {
+      clearTimeout(this.relayReconnectState.autoDisconnectTimer);
+      this.relayReconnectState.autoDisconnectTimer = null;
+    }
 
     if (this.libp2p) {
       await this.libp2p.stop();
@@ -1077,6 +1091,8 @@ export class NetworkManager {
 
     this.peers.clear();
     this._clearRelayAssistState();
+    this.relayReservationPeers.clear();
+    this.firstDirectUpgradeAt = null;
     this.peerId = null;
   }
 
@@ -1428,7 +1444,7 @@ export class NetworkManager {
 
     this.libp2p.addEventListener('connection:open', (evt) => {
       const conn = evt.detail;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) return;
       const now = Date.now();
       const remoteAddr = toAddrString(conn?.remoteAddr);
@@ -1450,6 +1466,10 @@ export class NetworkManager {
         if (this._isDirectCapableConnection(conn) && !this.bootstrapPeerIds.has(peerId)) {
           const existingSince = Number(this.peers.get(peerId)?.directCandidateSince);
           updates.directCandidateSince = Number.isFinite(existingSince) ? existingSince : now;
+          // Fix B: Track when we first got any direct connection for the relay safety window
+          if (!Number.isFinite(this.firstDirectUpgradeAt)) {
+            this.firstDirectUpgradeAt = now;
+          }
         }
         this._touchPeer(peerId, updates);
       }
@@ -1459,7 +1479,7 @@ export class NetworkManager {
 
     this.libp2p.addEventListener('connection:close', (evt) => {
       const conn = evt.detail;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) return;
       const remoteAddr = toAddrString(conn?.remoteAddr);
       const kind = getConnectionKind(remoteAddr);
@@ -1496,12 +1516,25 @@ export class NetworkManager {
       if (active.length === 0) {
         this._dropPubsubPeer(peerId);
       }
+      // Fix A: If a direct WebRTC link closed and no direct connections remain
+      // for this peer, clear the dial throttle and schedule an immediate redial
+      // so recovery doesn't wait for the next presence tick (up to 8 s).
+      if (!this.bootstrapPeerIds.has(peerId) && isTrulyDirectAddr(remoteAddr)) {
+        const stillHasDirect = this._getConnectionsForPeer(peerId)
+          .some((c) => isConnectionOpen(c) && isTrulyDirectAddr(c?.remoteAddr));
+        if (!stillHasDirect) {
+          this.recentDialAttempts.delete(peerId);
+          this._clearDialFailureBackoff(peerId);
+          this._infoLog('[NetworkManager] Direct connection lost, scheduling recovery redial', peerId);
+          this._maybeDialPeer(peerId, 'direct-drop-recovery').catch(() => {});
+        }
+      }
       this._scheduleIsolationRelayRedial();
       this._maybeUpdateBootstrapRelayConnections();
     });
 
     this.libp2p.addEventListener('peer:discovery', (evt) => {
-      const peerId = evt.detail?.id?.toString?.() || evt.detail?.id?.toString?.();
+      const peerId = evt.detail?.id?.toString?.();
       if (!peerId || peerId === this.peerId) return;
       if (!this._shouldDialDiscoveredPeer(peerId)) return;
       this._maybeDialPeer(peerId, 'discovery').catch(() => {});
@@ -1541,6 +1574,8 @@ export class NetworkManager {
       this._dropPubsubPeer(peerId);
       this.peers.delete(peerId);
       this.peerDialBackoff.delete(peerId);
+      // Fix D: Clean up relay reservation state for disconnected peer
+      this.relayReservationPeers.delete(peerId);
       if (this.bootstrapPeerIds.has(peerId) && !this._hasBootstrapRelayConnections()) {
         this.relayBootstrapConnectedAt = null;
       }
@@ -1766,7 +1801,7 @@ export class NetworkManager {
     const connectionList = this._getConnections();
     for (const conn of connectionList) {
       if (!isConnectionOpen(conn)) continue;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) continue;
       const meta = this.peers.get(peerId) || {};
       const derivedPaths = deriveTransportPaths(meta.via);
@@ -1796,7 +1831,7 @@ export class NetworkManager {
     const connectionList = this._getConnections();
     for (const conn of connectionList) {
       if (!isConnectionOpen(conn)) continue;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) continue;
       if (this.bootstrapPeerIds.has(peerId)) continue;
       dialed.add(peerId);
@@ -1834,7 +1869,7 @@ export class NetworkManager {
     const connectionList = this._getConnections();
     return connectionList.some((conn) => {
       if (!isConnectionOpen(conn)) return false;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) return false;
       if (!this._isDirectCapableConnection(conn)) return false;
       if (minStableMs <= 0) return true;
@@ -1852,7 +1887,7 @@ export class NetworkManager {
     const connectionList = this._getConnections();
     for (const conn of connectionList) {
       if (!isConnectionOpen(conn)) continue;
-      const peerId = conn?.remotePeer?.toString?.() || conn?.remotePeer?.toString?.();
+      const peerId = conn?.remotePeer?.toString?.();
       if (!peerId || this.bootstrapPeerIds.has(peerId)) continue;
       activePeers.add(peerId);
     }
@@ -2207,6 +2242,9 @@ export class NetworkManager {
         ? Math.max(0, this.config.webrtc.relayElectionStickyMs)
         : DEFAULT_RELAY_ELECTION_STICKY_MS;
       this.relayKeeperUntil = now + stickyMs;
+      // Fix C: Broadcast presence immediately so other peers see relayConnected=true
+      // and don't try to win the election simultaneously.
+      this._publishPresenceNow().catch(() => {});
     }
     return isWinner;
   }
@@ -2286,6 +2324,16 @@ export class NetworkManager {
       this.recentDialAttempts.delete(peerId);
       this.peerDialBackoff.delete(peerId);
       this.pendingTopologyRequests.delete(peerId);
+      // Fix D: Clean up relay reservation for stale peer
+      this.relayReservationPeers.delete(peerId);
+      // Fix E: Clean up relayAssistState Maps for stale peer
+      this.relayAssistState?.lastRequestAt?.delete?.(peerId);
+      this.relayAssistState?.inboundRequestAt?.delete?.(peerId);
+      const pendingTimeout = this.relayAssistState?.pendingReadyTimeouts?.get?.(peerId);
+      if (pendingTimeout) {
+        clearTimeout(pendingTimeout);
+        this.relayAssistState.pendingReadyTimeouts.delete(peerId);
+      }
     }
   }
 
@@ -2408,6 +2456,16 @@ export class NetworkManager {
       }
     }
     if (!this._hasDirectPeerConnections()) return true;
+    // Fix B: Keep relay alive for a safety window after the first direct upgrade
+    // so flapping ICE connections have a fast fallback path.
+    const postDirectHoldMs = Number.isFinite(this.config.webrtc?.relayPostDirectHoldMs)
+      ? Math.max(0, this.config.webrtc.relayPostDirectHoldMs)
+      : DEFAULT_RELAY_POST_DIRECT_HOLD_MS;
+    if (postDirectHoldMs > 0 && Number.isFinite(this.firstDirectUpgradeAt)) {
+      if (Date.now() - this.firstDirectUpgradeAt < postDirectHoldMs) {
+        return true;
+      }
+    }
     const targetConnections = Number.isFinite(this.config.targetConnections)
       ? this.config.targetConnections
       : null;

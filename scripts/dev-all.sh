@@ -117,6 +117,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/webgpuphys/public"
     "$repo_root/demos/sneakywoods/public"
     "$repo_root/demos/daddygo/public"
+    "$repo_root/demos/fano-reactor/public"
     "$repo_root/demos/netviz/public"
     "$repo_root/docs/hyperborea"
     "$repo_root/docs/cubechat"
@@ -125,6 +126,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/docs/webgpuphys"
     "$repo_root/docs/sneakywoods"
     "$repo_root/docs/daddygo"
+    "$repo_root/docs/fano-reactor"
     "$repo_root/docs/netviz"
   )
   RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
@@ -180,9 +182,10 @@ echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
 echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
 echo "  sneakywoods: https://$(to_url_host "$overview_host"):5180/"
 echo "  daddygo:    https://$(to_url_host "$overview_host"):5181/"
+echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,netviz \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,fano,netviz \
   "npm run dev:relay" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
@@ -191,4 +194,5 @@ echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
   "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/fano-reactor\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args"

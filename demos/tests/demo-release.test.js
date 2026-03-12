@@ -36,6 +36,7 @@ test('docs index includes all demos and screenshots', () => {
     './cubechat/',
     './sneakywoods/',
     './daddygo/',
+    './fano-reactor/',
     './planetgen/',
     './universes/',
     './webgpuphys/'
@@ -47,6 +48,7 @@ test('docs index includes all demos and screenshots', () => {
     './assets/hyperborea.png',
     './assets/cubechat.png',
     './assets/sneakywoods.png',
+    './assets/fano-reactor.svg',
     './assets/planetgen.png',
     './assets/webgpuphys.png'
   ];
@@ -111,4 +113,5 @@ test('root README includes relay config instructions', () => {
   const readme = read('README.md');
   assert.ok(readme.includes('config/relay.json'), 'README missing relay config section');
   assert.ok(readme.includes('npm run dev'), 'README missing npm run dev instruction');
+  assert.ok(readme.includes('Fano Reactor'), 'README missing Fano Reactor mention');
 });

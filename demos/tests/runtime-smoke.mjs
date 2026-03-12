@@ -20,6 +20,7 @@ const demos = [
   { name: 'daddygo', path: '/daddygo/' },
   { name: 'planetgen', path: '/planetgen/', waitMs: 9000 },
   { name: 'universes', path: '/universes/', waitMs: 9000 },
+  { name: 'fano-reactor', path: '/fano-reactor/', waitMs: 3000 },
   { name: 'webgpuphys', path: '/webgpuphys/demos/toychest.html', waitMs: 9000 }
 ];
 

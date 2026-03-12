@@ -28,6 +28,11 @@ const demoSpecs = [
     entryCandidates: ['index.html', 'daddyGo.html']
   },
   {
+    name: 'fano-reactor',
+    requiresRelayConfig: true,
+    entryCandidates: ['index.html']
+  },
+  {
     name: 'planetgen',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']
@@ -101,4 +106,18 @@ test('webgpuphys headless uses isolated compute tasks', () => {
   const headlessContent = fs.readFileSync(path.join(demosRoot, 'webgpuphys', 'demos', 'mpm-headless.js'), 'utf8');
   assert.ok(headlessContent.includes('ComputeManager'), 'webgpuphys headless ComputeManager usage missing');
   assert.ok(headlessContent.includes('mpmComputeTasks'), 'webgpuphys compute module wiring missing');
+});
+
+test('fano-reactor ships sedenion chemistry model modules', () => {
+  const mainPath = path.join(demosRoot, 'fano-reactor', 'src', 'main.js');
+  const chemistryPath = path.join(demosRoot, 'fano-reactor', 'src', 'model', 'chemistry.js');
+  const algebraPath = path.join(demosRoot, 'fano-reactor', 'src', 'algebra', 'sedenion.js');
+  assert.ok(exists(mainPath), 'fano-reactor main.js missing');
+  assert.ok(exists(chemistryPath), 'fano-reactor chemistry model missing');
+  assert.ok(exists(algebraPath), 'fano-reactor sedenion algebra missing');
+  const main = fs.readFileSync(mainPath, 'utf8');
+  const chemistry = fs.readFileSync(chemistryPath, 'utf8');
+  assert.ok(main.includes('bond-lab'), 'fano-reactor bond-lab UI missing');
+  assert.ok(main.includes('fano-map'), 'fano-reactor fano-map UI missing');
+  assert.ok(chemistry.includes('summarizeInteraction'), 'fano-reactor interaction summarizer missing');
 });

@@ -13,6 +13,7 @@ The Keystone demo (planned) will visualize this reconfiguration live with select
 - **NetworkScheduler** for decoupled network cadence (snapshots/events/commands).
 - **Room + game scoping** so different sessions do not collide.
 - **LAN-friendly relay config** via `relay-config.json`.
+- **Fano Reactor demo scaffold** for exact sedenion bond classification and Fano-plane chemistry exploration.
 
 ## Architecture Overview
 
@@ -66,6 +67,7 @@ Dev servers:
 - `https://localhost:5179/` (WebGPUPhys)
 - `https://localhost:5180/` (SneakyWoods)
 - `https://localhost:5181/` (Daddy Go!)
+- `https://localhost:5183/` (Fano Reactor)
 - `https://localhost:5182/` (NetViz)
 
 ### NetViz Attach (Any Demo)

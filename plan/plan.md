@@ -95,6 +95,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Finish ComputeManager scheduling + GPU hub runtime integration.
 - Wire warm DataState deltas into netman publishing end-to-end.
 - Implement explicit topology selection (topologyId + topologyType) and sharded state/interest management.
+- Chemistry demo (`plan/branch/chem.md`): build a distributed "Fano Reactor" / zero-divisor chemistry sandbox around the sedenion periodic-table paper.
 - Keep plan/ and log aligned with ongoing changes.
 - Demo release polish: room system for multiplayer demos, DaddyGo high score sync, and docs/README refresh.
 - Keystone demo: flagship visualization of self-organizing topology + workload placement.

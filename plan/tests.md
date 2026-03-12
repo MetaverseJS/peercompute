@@ -1,5 +1,12 @@
 ## PeerCompute Test Strategy
 
+### Chemistry demo planning gate
+- Before any chemistry demo visual polish, lock a deterministic algebra/model suite around the paper invariants: inert CD partner pairs, reactive lower-to-S-layer channels, atomic norm defects limited to `{-4, 0, +4}`, sigma-conjugate sign flips swapping attractive vs anti-bond outcomes, and a sampled `8 -> 2 -> 0` reactivity cascade.
+- Command: `node --test demos/tests/fano-reactor.test.mjs`
+- Purpose: verify exact sedenion counts, noble-gas inertness, sigma-conjugate bond flips, and the scaffold's reference cascade sample.
+- Secondary gate: `npm --prefix demos/fano-reactor run build`
+- Purpose: verify the standalone Vite demo still builds into `docs/fano-reactor`.
+
 ### Baseline unit suite
 - Command: `npm --prefix peercompute run test:unit`
 - Purpose: guard core `NetworkManager`, scheduler, topology, and NodeKernel policy behavior.
@@ -28,7 +35,7 @@
 - Gate: run when changing `docs/index.html` demo-card link wiring or overview link-generation logic.
 
 ### Overview tile order check
-- Command: `node -e "const fs=require('fs'); const html=fs.readFileSync('docs/index.html','utf8'); const names=[...html.matchAll(/<h2>([^<]+)<\\/h2>/g)].map((m)=>m[1]); const expected=['PeerCompute (GitHub)','CubeChat','Universes','PlanetGen','NetViz','SneakyWoods','Daddy Go!','Dynamics (WebGpuPhys)','MPM Visual (WebGpuPhys)','PPF Contact Solver (WebGpuPhys)','Hyperborea']; if (!expected.every((label, i) => names[i]===label)) { console.error('Tile order mismatch:', names.slice(0, expected.length)); process.exit(1);} console.log('Overview tile order OK');"`
+- Command: `node -e "const fs=require('fs'); const html=fs.readFileSync('docs/index.html','utf8'); const names=[...html.matchAll(/<h2>([^<]+)<\\/h2>/g)].map((m)=>m[1]); const expected=['PeerCompute (GitHub)','CubeChat','Universes','PlanetGen','NetViz','Fano Reactor','SneakyWoods','Daddy Go!','Dynamics (WebGpuPhys)','MPM Visual (WebGpuPhys)','PPF Contact Solver (WebGpuPhys)','Hyperborea']; if (!expected.every((label, i) => names[i]===label)) { console.error('Tile order mismatch:', names.slice(0, expected.length)); process.exit(1);} console.log('Overview tile order OK');"`
 - Purpose: ensure the overview cards in `docs/index.html` remain in the expected user-facing sequence.
 - Gate: run whenever adding/removing/reordering overview cards.
 

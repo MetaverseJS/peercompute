@@ -19486,3 +19486,242 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - Open: focused-tab ~1 Hz symptom still needs additional runtime instrumentation to distinguish sender-side visibility throttling vs transport/publish backpressure vs receive/render cadence.
+
+## Date: 2026-03-10
+
+### Prompt (2026-03-10 22:58:03 UTC)
+- hey codex. I just added a pdf about a new algebraic language for chemistry to plan/refs take a look and come up with an idea for a chemistry demo using the discoveries in that paper.
+
+### Actions
+- Reviewed the required planning context before starting: `plan/plan.md`, `plan/log.md`, `plan/tests.md`, `plan/refs/refs.md`, and current branch planning notes.
+- Confirmed the active git branch is `chem` and identified the newly added reference as `plan/refs/sedenion periodic table.pdf`.
+- Extracted the paper text with `pdftotext` and reviewed the main computed claims relevant to a demo:
+- 7 Fano-governed period families.
+- 7 inert Cayley-Dickson partner pairs (noble-gas analogue).
+- 3 bond classes from the composition norm defect `Delta in {-4, 0, +4}`.
+- sign-dependent targeting / `sigma`-conjugate ion selectivity.
+- the `8 -> 2 -> 0` stability cascade from atoms to molecules to super-molecules.
+- Proposed a concrete demo concept named `Fano Reactor`: a retro-terminal chemistry sandbox that uses exact sedenion states as atoms, maps reactions to the paper's bond rules, and can later shard pairwise interaction work across peers as a real PeerCompute workload.
+- Added a dedicated branch plan at `plan/branch/chem.md` covering purpose, user story, visual direction, modes, architecture mapping, milestones, validation, and open questions.
+- Updated roadmap/docs references so the chemistry demo is tracked in the main plan, current branch notes, test strategy, and reference index.
+
+### Files Touched
+- `plan/branch/chem.md`
+- `plan/branch/current-branch.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/refs/refs.md`
+- `plan/log.md`
+
+### Commands Run
+- `pwd`
+- `rg --files plan branch README* AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `git branch --show-current`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,220p' plan/tests.md`
+- `ls -lt plan/refs`
+- `sed -n '1,240p' plan/branch/demo-fixes.md`
+- `sed -n '1,220p' plan/refs/refs.md`
+- `pdftotext -layout 'plan/refs/sedenion periodic table.pdf' - | sed -n '1,220p'`
+- `pdftotext -layout 'plan/refs/sedenion periodic table.pdf' - | sed -n '220,520p'`
+- `pdftotext -layout 'plan/refs/sedenion periodic table.pdf' - | sed -n '520,920p'`
+- `sed -n '1,260p' plan/branch/current-branch.md`
+- `ls demos`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `sed -n '1,260p' plan/branch/distributed-compute.md`
+- `sed -n '1,260p' plan/branch/keystone-demo.md`
+- `apply_patch` on planning docs listed above
+- `sed -n '1,260p' plan/branch/chem.md`
+- `sed -n '1,220p' plan/tests.md`
+- `git diff --check`
+- `tail -n 120 plan/log.md`
+
+### Tests Run / Results
+- `git diff --check`
+  - PASS: no whitespace or patch-format issues reported.
+- No code/runtime tests were run because this prompt was planning / reference analysis only; no executable demo code was changed yet.
+
+### Failures / Open Questions
+- The paper is a computational correspondence rather than an established chemistry model, so the demo should present it as an algebraic reaction system inspired by chemistry, not as validated physical chemistry.
+- The first implementation decision is whether to start with a simpler 2D Fano-plane interface or go directly to a 3D chamber.
+
+## Date: 2026-03-10
+
+### Prompt (2026-03-10 23:18:42 UTC)
+- go ahead.
+
+### Actions
+- Reviewed the existing build/demo wiring before implementation: root `package.json`, per-demo Vite config patterns, docs overview cards, relay-config generation script, runtime smoke list, and current chemistry branch notes.
+- Implemented a new standalone Vite demo package at `demos/fano-reactor/`:
+- added `package.json`, `vite.config.js`, `index.html`, `README.md`, and relay-config placeholder files.
+- added exact Cayley-Dickson / sedenion arithmetic module in `src/algebra/sedenion.js`.
+- added deterministic chemistry catalog/model logic in `src/model/chemistry.js`, including:
+- canonical two-term state generation,
+- zero-divisor target discovery,
+- bond classification from `Delta`,
+- noble-gas CD partner inertness,
+- sigma-conjugate ionic vs anti-bond comparison,
+- and a reference cascade sample (`e1 + e10`, `e4 - e15`, `e3 - e13`) with display score `8 -> 2 -> 0`.
+- built the first UI pass in `src/main.js` + `src/style.css`:
+- retro-terminal `bond-lab`,
+- `fano-map` view,
+- exact reaction/product display,
+- valid-target picker,
+- cascade loader,
+- noble-gas guard loader,
+- and side-console output for the currently selected interaction.
+- Wired the new demo into repo tooling:
+- root workspace/scripts in `package.json`,
+- dev launchers in `scripts/dev-all.sh` and `scripts/dev-local-relay.sh`,
+- docs overview card in `docs/index.html`,
+- docs asset `docs/assets/fano-reactor.svg`,
+- runtime smoke demo list,
+- scaffold/release tests,
+- and root README dev/demo notes.
+- Added executable demo tests in `demos/tests/fano-reactor.test.mjs` covering counts, reactive targets, sigma-conjugate flipping, noble-gas inertness, and the cascade sample.
+- Updated planning docs to reflect the delivered scaffold, new chemistry test command, and overview ordering.
+- Fixed one build regression during validation: literal backticks inside the main HTML template string caused a Vite parse failure; replaced them with `<code>swarm</code>` and reran the build successfully.
+
+### Files Touched
+- `demos/fano-reactor/package.json`
+- `demos/fano-reactor/vite.config.js`
+- `demos/fano-reactor/index.html`
+- `demos/fano-reactor/public/relay-config.json`
+- `demos/fano-reactor/public/relay-config-source.json`
+- `demos/fano-reactor/README.md`
+- `demos/fano-reactor/src/algebra/sedenion.js`
+- `demos/fano-reactor/src/model/chemistry.js`
+- `demos/fano-reactor/src/main.js`
+- `demos/fano-reactor/src/style.css`
+- `docs/assets/fano-reactor.svg`
+- `docs/index.html`
+- `package.json`
+- `scripts/dev-all.sh`
+- `scripts/dev-local-relay.sh`
+- `README.md`
+- `demos/tests/fano-reactor.test.mjs`
+- `demos/tests/demo-ports.test.js`
+- `demos/tests/demo-release.test.js`
+- `demos/tests/runtime-smoke.mjs`
+- `plan/tests.md`
+- `plan/branch/chem.md`
+- `plan/branch/current-branch.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,240p' plan/plan.md`
+- `tail -n 140 plan/log.md`
+- `sed -n '1,220p' plan/branch/chem.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,260p' README.md`
+- `sed -n '1,240p' scripts/build-all.sh`
+- `sed -n '1,260p' docs/index.html`
+- `find demos/netviz -maxdepth 2 -type f | sort | sed -n '1,120p'`
+- `find demos/daddygo -maxdepth 2 -type f | sort | sed -n '1,120p'`
+- `find demos/tests -maxdepth 2 -type f | sort`
+- `sed -n '1,220p' demos/daddygo/package.json`
+- `sed -n '1,220p' demos/daddygo/vite.config.js`
+- `sed -n '1,220p' demos/daddygo/src/main.js`
+- `sed -n '1,260p' demos/tests/demo-release.test.js`
+- `rg -n "Hyperborea|CubeChat|Daddy Go|SneakyWoods|NetViz|PlanetGen|Universes|WebGpuPhys|PPF Contact Solver|Dynamics" docs/index.html`
+- `sed -n '1,260p' scripts/write-prod-relay-config.mjs`
+- `sed -n '430,550p' docs/index.html`
+- `sed -n '1,240p' demos/tests/demo-ports.test.js`
+- `rg -n "relay-config.json|public/relay-config" scripts demos -g '!**/dist/**'`
+- `node -v`
+- `sed -n '1,260p' scripts/dev-all.sh`
+- `sed -n '1,280p' scripts/dev-local-relay.sh`
+- `sed -n '1,220p' demos/netviz/src/relayConfig.js`
+- `find docs/assets -maxdepth 1 -type f | sort | sed -n '1,120p'`
+- `sed -n '1,240p' demos/tests/runtime-smoke.mjs`
+- `sed -n '1,240p' vite.docs.config.mjs`
+- `node --input-type=module -e "...CHEMISTRY_CATALOG counts..."`
+- `sed -n '1,260p' demos/fano-reactor/src/main.js`
+- `sed -n '1,260p' demos/fano-reactor/src/model/chemistry.js`
+- `node --input-type=module -e "...molecule target count distribution..."`
+- `sed -n '260,520p' demos/fano-reactor/src/main.js`
+- `node --input-type=module -e "...search superTargets === 0..."`
+- `date -u '+%Y-%m-%d %H:%M:%S UTC'`
+- `node --test demos/tests/fano-reactor.test.mjs`
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`
+- `npm --prefix demos/fano-reactor run build`
+- `git diff --check`
+- `sed -n '40,90p' demos/fano-reactor/src/main.js`
+- `npm --prefix demos/fano-reactor run build`
+- `git diff --check`
+- `bash -n scripts/dev-all.sh`
+- `bash -n scripts/dev-local-relay.sh`
+- `git diff --check`
+- `node --test demos/tests/fano-reactor.test.mjs`
+- `npm --prefix demos/fano-reactor run build`
+- `apply_patch` on all files listed above
+
+### Tests Run / Results
+- `node --test demos/tests/fano-reactor.test.mjs`
+  - PASS: `1`
+  - FAIL: `0`
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`
+  - PASS: `2`
+  - FAIL: `0`
+- `npm --prefix demos/fano-reactor run build`
+  - PASS: Vite build completed successfully and wrote `docs/fano-reactor/`.
+- `bash -n scripts/dev-all.sh`
+  - PASS: shell syntax valid.
+- `bash -n scripts/dev-local-relay.sh`
+  - PASS: shell syntax valid.
+- `git diff --check`
+  - PASS: no whitespace or patch-format issues reported.
+- `node --test demos/tests/fano-reactor.test.mjs` (after inert-bond classification patch)
+  - PASS: `1`
+  - FAIL: `0`
+- `npm --prefix demos/fano-reactor run build` (after inert-bond classification patch)
+  - PASS: Vite build completed successfully and rewrote `docs/fano-reactor/`.
+
+### Failures / Open Questions
+- The current release is intentionally 2D and local-first; PeerCompute-powered `swarm` sharding and chamber animation are still next-step work.
+- The display cascade score uses exact atomic zero-divisor targets plus composite target counts from the reduced scaffold model; it matches the intended `8 -> 2 -> 0` showcase path for the reference sample but should still be presented as a demo-facing interpretation of the paper's larger correspondence.
+
+## Date: 2026-03-12
+
+### Prompt (2026-03-12 UTC)
+- Static code review of chaos lab and relay scaling. Root-cause analysis: why WebRTC direct connections don't stay connected. Write implementation plan, then implement Phase 2b fixes.
+
+### Actions
+- Explored full codebase structure; deep-read `NetworkManager.js` focusing on relay election, relay retention, relay reservation, connection event handlers, dial throttle, and relay pruning logic.
+- Identified 7 relay scaling bugs and the primary root cause of direct connection instability: **no targeted redial when a direct WebRTC connection closes** — recovery depends entirely on next presence tick (3 s) + dial throttle (5 s) = ~8 s blind spot, compounded by relay bridge being burnt by `dropRelayBootstrapOnDirect`.
+- Wrote Phase 2b section in `plan/branch/demo-fixes.md`: 7 root causes, 7 ordered fixes (A–G), 3-tier testing plan.
+- Implemented all 7 fixes in `NetworkManager.js`:
+  - **Fix A**: `connection:close` handler now clears dial throttle and schedules immediate `direct-drop-recovery` redial when a direct WebRTC link drops.
+  - **Fix B**: New `relayPostDirectHoldMs` config (default 60 s) keeps bootstrap relay alive after first direct upgrade as a safety window for flapping ICE.
+  - **Fix C**: `_shouldElectRelayRedial` now calls `_publishPresenceNow()` immediately after winning, preventing double-election race.
+  - **Fix D**: `relayReservationPeers` pruned in `peer:disconnect` handler and `_pruneStalePeers`.
+  - **Fix E**: `relayAssistState` Maps (`lastRequestAt`, `inboundRequestAt`, `pendingReadyTimeouts`) pruned in `_pruneStalePeers`.
+  - **Fix F**: `autoDisconnectTimer` cleared in `disconnect()` method; `relayReservationPeers` and `firstDirectUpgradeAt` also reset.
+  - **Fix G**: Removed all 7 duplicate `toString()` fallback patterns (6 `conn?.remotePeer` + 1 `evt.detail?.id`).
+- Wrote 9 headless tests in `demos/tests/relay-scaling.test.mjs` validating all fixes.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `demos/tests/relay-scaling.test.mjs` (new)
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `wc -l plan/log.md`
+- `node --check peercompute/src/peercompute/networkManager/NetworkManager.js` — PASS
+- `node --test demos/tests/fano-reactor.test.mjs` — 5/5 PASS
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js` — 23/23 PASS
+- `node --test demos/tests/relay-scaling.test.mjs` — 9/9 PASS
+- Full suite: `node --test demos/tests/fano-reactor.test.mjs demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/relay-scaling.test.mjs` — 37/37 PASS
+
+### Tests Run / Results
+- `node --check NetworkManager.js` — PASS: no syntax errors.
+- `node --test demos/tests/relay-scaling.test.mjs` — 9/9 PASS.
+- Full suite 37/37 PASS — no regressions.
+
+### Failures / Open Questions
+- Fix B `relayPostDirectHoldMs` default of 60 s is a conservative estimate; needs profiling under chaos-lab `webrtc-flap` scenario to tune.
+- Fix C election broadcast could still race under split-brain if pubsub itself is delayed; may need a local election lock in addition.
+- Fix G: the duplicate `toString()` calls were simplified to single calls; if any edge case relied on a different fallback property the single call is still correct since both sides were identical anyway.

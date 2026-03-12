@@ -155,6 +155,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/cubechat/public"
     "$repo_root/demos/sneakywoods/public"
     "$repo_root/demos/daddygo/public"
+    "$repo_root/demos/fano-reactor/public"
     "$repo_root/demos/netviz/public"
     "$repo_root/demos/planetgen/public"
     "$repo_root/demos/universes/public"
@@ -163,6 +164,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/docs/cubechat"
     "$repo_root/docs/sneakywoods"
     "$repo_root/docs/daddygo"
+    "$repo_root/docs/fano-reactor"
     "$repo_root/docs/netviz"
     "$repo_root/docs/planetgen"
     "$repo_root/docs/universes"
@@ -227,6 +229,7 @@ export VITE_WEBGPUPHYS_MPM_URL="${demo_base}:5179/demos/mpm-visual.html"
 export VITE_WEBGPUPHYS_PPF_URL="${demo_base}:5179/demos/ppf-contact-solver.html"
 export VITE_SNEAKYWOODS_URL="${demo_base}:5180/"
 export VITE_DADDYGO_URL="${demo_base}:5181/"
+export VITE_FANO_REACTOR_URL="${demo_base}:5183/"
 export VITE_NETVIZ_URL="${demo_base}:5182/"
 open_overview() {
   local url="$1"
@@ -267,9 +270,10 @@ echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
 echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
 echo "  sneakywoods: https://$(to_url_host "$overview_host"):5180/"
 echo "  daddygo:    https://$(to_url_host "$overview_host"):5181/"
+echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,netviz,docs \
+"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,fano,netviz,docs \
   "npm run dev:relay" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
@@ -278,5 +282,6 @@ echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
   "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/fano-reactor\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args" \
   "npm run docs:dev -- $vite_extra_args"

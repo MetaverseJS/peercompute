@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Fano Reactor schematic</title>
+  <desc id="desc">A retro terminal style schematic showing seven Fano nodes, links, and a central reaction chamber.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#08161d" />
+      <stop offset="100%" stop-color="#03070a" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#6cf7ff" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#6cf7ff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" rx="26" fill="url(#bg)" />
+  <rect x="18" y="18" width="604" height="324" rx="18" fill="none" stroke="#72f4a1" stroke-opacity="0.28" />
+  <rect x="42" y="40" width="180" height="44" rx="12" fill="#0f241f" stroke="#72f4a1" stroke-opacity="0.35" />
+  <text x="64" y="68" fill="#d8ffe8" font-size="24" font-family="IBM Plex Mono, monospace">FANO REACTOR</text>
+  <text x="64" y="102" fill="#7effd2" font-size="14" font-family="IBM Plex Mono, monospace">DELTA = -4 / 0 / +4</text>
+  <circle cx="320" cy="198" r="92" fill="url(#glow)" />
+  <g stroke="#6cf7ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M320 76 L180 164 L460 164 Z" />
+    <path d="M180 164 L154 286 L320 318 L486 286 L460 164" />
+    <path d="M320 76 L320 318" />
+    <path d="M154 286 L486 286" />
+  </g>
+  <g fill="#08161d" stroke="#ffd166" stroke-width="3">
+    <circle cx="320" cy="76" r="24" />
+    <circle cx="180" cy="164" r="24" />
+    <circle cx="460" cy="164" r="24" />
+    <circle cx="154" cy="286" r="24" />
+    <circle cx="486" cy="286" r="24" />
+    <circle cx="320" cy="318" r="24" />
+    <circle cx="320" cy="198" r="28" stroke="#ff6f7d" />
+  </g>
+  <g fill="#d8ffe8" font-size="16" font-family="IBM Plex Mono, monospace" text-anchor="middle">
+    <text x="320" y="82">P1</text>
+    <text x="180" y="170">P2</text>
+    <text x="460" y="170">P3</text>
+    <text x="154" y="292">P4</text>
+    <text x="486" y="292">P5</text>
+    <text x="320" y="324">P6</text>
+    <text x="320" y="204">DELTA</text>
+  </g>
+  <g fill="#72f4a1" font-size="13" font-family="IBM Plex Mono, monospace">
+    <text x="376" y="118">ionic release</text>
+    <text x="84" y="230">covalent lock</text>
+    <text x="410" y="246">anti-bond push</text>
+    <text x="68" y="326">noble guard: eₙ + eₙ₊₈</text>
+  </g>
+</svg>
