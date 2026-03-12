@@ -159,4 +159,60 @@ describe('Phase 2b relay scaling fixes', () => {
       'firstDirectUpgradeAt should be set on direct upgrade'
     );
   });
+
+  it('relay excluded from gossipsub directPeers when dropRelayBootstrapOnDirect is on', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(nmPath, 'utf8');
+    // The directPeers gate should check dropRelayBootstrapOnDirect
+    assert.ok(
+      src.includes('dropRelayBootstrapOnDirect') && src.includes('wantRelayInMesh'),
+      'gossipsub directPeers should be gated on dropRelayBootstrapOnDirect'
+    );
+    // When excluded, a log message should be emitted
+    assert.ok(
+      src.includes('Relay excluded from gossipsub directPeers'),
+      'Should log when relay is excluded from directPeers'
+    );
+  });
+
+  it('_hasHealthyGossipsubMesh and _getDirectGossipsubMeshPeerCount exist', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(nmPath, 'utf8');
+    assert.ok(
+      src.includes('_getDirectGossipsubMeshPeerCount()'),
+      '_getDirectGossipsubMeshPeerCount should exist'
+    );
+    assert.ok(
+      src.includes('_hasHealthyGossipsubMesh()'),
+      '_hasHealthyGossipsubMesh should exist'
+    );
+    // getMeshPeers used for gossipsub, getPeers fallback for floodsub
+    assert.ok(
+      src.includes('getMeshPeers'),
+      'Should use gossipsub getMeshPeers API'
+    );
+  });
+
+  it('_shouldKeepRelayBootstrapConnection gates on mesh health', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(nmPath, 'utf8');
+    const keepMatch = src.match(
+      /_shouldKeepRelayBootstrapConnection\(\)\s*\{[\s\S]*?return keepSet\.has/
+    );
+    assert.ok(keepMatch, '_shouldKeepRelayBootstrapConnection should exist');
+    const body = keepMatch[0];
+    assert.ok(
+      body.includes('_hasHealthyGossipsubMesh'),
+      'Relay drop should be gated on gossipsub mesh health'
+    );
+  });
+
+  it('DEFAULT_RELAY_POST_DIRECT_HOLD_MS is 15s (reduced from 60s)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(nmPath, 'utf8');
+    assert.ok(
+      src.includes('DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 15000'),
+      'Safety window should be 15s (mesh health is primary guard)'
+    );
+  });
 });

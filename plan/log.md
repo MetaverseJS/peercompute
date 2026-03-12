@@ -19725,3 +19725,40 @@ def parse_args() -> argparse.Namespace:
 - Fix B `relayPostDirectHoldMs` default of 60 s is a conservative estimate; needs profiling under chaos-lab `webrtc-flap` scenario to tune.
 - Fix C election broadcast could still race under split-brain if pubsub itself is delayed; may need a local election lock in addition.
 - Fix G: the duplicate `toString()` calls were simplified to single calls; if any edge case relied on a different fallback property the single call is still correct since both sides were identical anyway.
+
+## Date: 2026-03-12 (continued)
+
+### Prompt (2026-03-12 UTC)
+- Light blue relay connections visible to every node in NetViz despite drop relay enabled and sqrt retention. Is this a rendering bug? Under what conditions do nodes drop?
+
+### Actions
+- Investigated NetViz rendering pipeline (`visualizer.js` color map, `main.js` edge building).
+- Identified root cause: light blue edges are **pubsub mesh edges** (`COLORS.pubsub = 0xcaf6ff`), not transport edges. The gossipsub `directPeers` feature (Phase 1, NM:1658) permanently locks the relay into the gossipsub mesh. Every time `_closeBootstrapRelayConnections()` drops the transport, gossipsub re-dials the relay because it's a directPeer. This completely undermines the relay drop logic.
+- Also identified that Fix B's 60s safety window (`relayPostDirectHoldMs`) was too aggressive — all nodes kept relay for a full minute after first direct upgrade.
+- User asked to step back and evaluate feasibility. Concluded the architecture is sound but the relay is wearing two hats (signaling server vs gossipsub mesh participant) that have opposite lifecycles. The relay drop logic and gossipsub directPeers are fundamentally fighting each other.
+- Implemented four changes:
+  1. **Relay excluded from gossipsub directPeers** when `dropRelayBootstrapOnDirect` is enabled. The `wantRelayInMesh` gate in `_buildPubsubService()` checks `!this.config.webrtc?.dropRelayBootstrapOnDirect`. When relay is signaling-only, gossipsub no longer re-dials it.
+  2. **Relay drop gated on gossipsub mesh health** — new `_getDirectGossipsubMeshPeerCount()` counts mesh peers on the main pubsub topic that have direct (non-relay) transport. `_hasHealthyGossipsubMesh()` compares against `minDirectMeshPeers` (default: min(targetConnections, 3)). `_shouldKeepRelayBootstrapConnection()` now returns true (keeps relay) until the mesh is healthy, replacing the fixed timer as primary guard.
+  3. **`relayPostDirectHoldMs` reduced from 60s to 15s** — now a short secondary safety hold. The mesh health gate is the primary guard.
+  4. **Floodsub fallback** — `_getDirectGossipsubMeshPeerCount()` gracefully degrades to `getPeers()` for floodsub (no `getMeshPeers` API).
+- Added 4 new headless tests for the new logic.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `demos/tests/relay-scaling.test.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/networkManager/NetworkManager.js` — PASS
+- `node --test demos/tests/relay-scaling.test.mjs` — 13/13 PASS
+- Full suite 41/41 PASS — no regressions.
+
+### Tests Run / Results
+- `relay-scaling.test.mjs` — 13/13 PASS (4 new: directPeers exclusion, mesh health helpers, mesh health gate in retention, 15s default).
+- Full suite — 41/41 PASS.
+
+### Failures / Open Questions
+- The `minDirectMeshPeers` default is `min(targetConnections, 3)`. With target=4 this means the relay is kept until 3 direct gossipsub mesh peers exist. This may need tuning — if mesh formation is slow, relay stays longer than desired.
+- Gossipsub `getMeshPeers(topic)` returns only peers in the mesh for a specific topic. If the main pubsub topic has low traffic, gossipsub may not form a mesh for it eagerly. The presence topic might be a better health signal since it has regular traffic.
+- When a new peer joins a mature mesh where most nodes have dropped relay, the sqrt(n) retention peers that kept relay serve as bridges. This should be validated under chaos lab with the `relay-drop-rejoin` scenario.

@@ -35,7 +35,7 @@ const RELAY_ASSIST_READY_TIMEOUT_MS = 15000;
 const DEFAULT_RELAY_DROP_MIN_DIRECT_MS = 15000;
 const DEFAULT_DIRECT_UPGRADE_GRACE_MS = 10000;
 const DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS = 30000;
-const DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 60000;
+const DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 15000;
 const DEFAULT_RELAY_ELECTION_STICKY_MS = 30000;
 const DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS = 1500;
 const DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS = 30000;
@@ -1655,23 +1655,22 @@ export class NetworkManager {
         options.allowPublishToZeroTopicPeers = configured.allowPublishToZeroPeers;
       }
 
-      // Phase 1 Relay Scaling: Add relay as directPeer to keep it in gossipsub mesh
-      // This ensures relay can forward messages between direct and relayed peers
-      if (this.config.enableRelayDirectPeers !== false && this.bootstrapPeerIds.size > 0) {
+      // Phase 1 Relay Scaling: Optionally add relay as directPeer to keep it in
+      // gossipsub mesh.  When dropRelayBootstrapOnDirect is enabled the relay's
+      // role is signaling-only — adding it as a directPeer would fight the drop
+      // logic because gossipsub re-dials directPeers unconditionally.
+      const wantRelayInMesh = this.config.enableRelayDirectPeers !== false
+        && !this.config.webrtc?.dropRelayBootstrapOnDirect;
+      if (wantRelayInMesh && this.bootstrapPeerIds.size > 0) {
         const directPeers = options.directPeers || [];
 
-        // Add each bootstrap peer (relay) as a directPeer
         for (const relayPeerIdStr of this.bootstrapPeerIds) {
           try {
-            // Convert string peer ID to PeerId object (required by gossipsub)
             const relayPeerId = peerIdFromString(relayPeerIdStr);
-
-            // Find the multiaddr for this relay
             const relayAddrs = this.config.bootstrapPeers
               .map((addr) => {
                 try {
-                  const ma = typeof addr === 'string' ? multiaddr(addr) : addr;
-                  return ma;
+                  return typeof addr === 'string' ? multiaddr(addr) : addr;
                 } catch (_) {
                   return null;
                 }
@@ -1693,6 +1692,8 @@ export class NetworkManager {
         if (directPeers.length > 0) {
           options.directPeers = directPeers;
         }
+      } else if (this.bootstrapPeerIds.size > 0) {
+        debugLog('[NetworkManager] Relay excluded from gossipsub directPeers (dropRelayBootstrapOnDirect enabled)');
       }
 
       return gossipsub(options);
@@ -1906,6 +1907,49 @@ export class NetworkManager {
       ? Math.max(0, Math.trunc(this.config.transportConnectionHeadroom))
       : 0;
     return logicalLimit + bootstrapHeadroom + upgradeHeadroom;
+  }
+
+  /**
+   * Count gossipsub mesh peers on the main pubsub topic that are connected
+   * via direct (non-relay) transport.  Used to decide when the mesh is
+   * healthy enough to drop the relay.
+   */
+  _getDirectGossipsubMeshPeerCount() {
+    const pubsub = this.libp2p?.services?.pubsub;
+    if (!pubsub || typeof pubsub.getMeshPeers !== 'function') {
+      // Floodsub — fall back to getPeers and count direct connections.
+      const peers = typeof pubsub?.getPeers === 'function' ? pubsub.getPeers() : [];
+      let direct = 0;
+      for (const peer of peers) {
+        const id = peer?.toString?.();
+        if (!id || this.bootstrapPeerIds.has(id)) continue;
+        if (this._hasDirectCapableConnectionForPeer(id)) direct += 1;
+      }
+      return direct;
+    }
+    const topic = this.config.pubsubTopic;
+    const meshPeers = pubsub.getMeshPeers(topic);
+    if (!Array.isArray(meshPeers) || meshPeers.length === 0) return 0;
+    let direct = 0;
+    for (const peer of meshPeers) {
+      const id = peer?.toString?.();
+      if (!id || this.bootstrapPeerIds.has(id)) continue;
+      if (this._hasDirectCapableConnectionForPeer(id)) direct += 1;
+    }
+    return direct;
+  }
+
+  /**
+   * The gossipsub mesh is considered healthy when the number of direct
+   * (non-relay) mesh peers on the main topic meets or exceeds the
+   * configured minimum.  When the mesh is not healthy the relay should
+   * be kept as a message-forwarding bridge.
+   */
+  _hasHealthyGossipsubMesh() {
+    const minMeshPeers = Number.isFinite(this.config.webrtc?.minDirectMeshPeers)
+      ? Math.max(1, this.config.webrtc.minDirectMeshPeers)
+      : Math.min(this.config.targetConnections || 3, 3);
+    return this._getDirectGossipsubMeshPeerCount() >= minMeshPeers;
   }
 
   _hasBootstrapRelayConnections() {
@@ -2456,8 +2500,16 @@ export class NetworkManager {
       }
     }
     if (!this._hasDirectPeerConnections()) return true;
-    // Fix B: Keep relay alive for a safety window after the first direct upgrade
-    // so flapping ICE connections have a fast fallback path.
+    // Gate relay drop on gossipsub mesh health: don't drop the relay until
+    // enough direct peers are in the gossipsub mesh to maintain healthy
+    // message routing.  This replaces the fixed-timer approach (Fix B) with
+    // an adaptive condition that responds to actual network state.
+    if (!this._hasHealthyGossipsubMesh()) {
+      return true;
+    }
+    // Short safety hold after the first direct upgrade: gives ICE a chance
+    // to stabilise before we pull the relay.  Kept short (default 15 s)
+    // because the mesh-health gate above is the primary guard.
     const postDirectHoldMs = Number.isFinite(this.config.webrtc?.relayPostDirectHoldMs)
       ? Math.max(0, this.config.webrtc.relayPostDirectHoldMs)
       : DEFAULT_RELAY_POST_DIRECT_HOLD_MS;
