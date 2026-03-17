@@ -9,6 +9,7 @@ Status: draft; GPU compute worker.
 - Initialize and manage WebGPU devices/queues.
 - Run compute pipelines and return results to ComputeManager.
 - Emit CPU-friendly deltas for DataState when running isolated workloads.
+- Cooperate with WASM host modules for hybrid `wasm-webgpu` pipelines.
 - Handle device loss and reinit when needed.
 
 ## Inputs

@@ -12,6 +12,11 @@
 - Purpose: guard core `NetworkManager`, scheduler, topology, and NodeKernel policy behavior.
 - Gate: must pass before merging networking policy changes.
 
+### ComputeManager WASM runtime gate
+- Command: `node --test peercompute/tests/unit/computeManager.wasm.test.js`
+- Purpose: verify `ComputeManager` can execute pure WASM tasks, memory-view IO, result adapters that emit `commitDelta`, and hybrid `wasm-webgpu` host modules without regressing the existing inline fallback path.
+- Gate: run when changing `peercompute/src/peercompute/computeManager/**`, new compute workload descriptors, or compute README examples.
+
 ### Local relay launcher smoke
 - Command: `timeout 20s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node bash scripts/dev-local-relay.sh`
 - Purpose: verify local dev launcher emits loopback-safe relay env (`RELAY_PUBLIC_HOST=localhost`, `RELAY_LISTEN_HOST=127.0.0.1`) and writes fresh per-demo `relay-config.json` files.
@@ -27,6 +32,11 @@
 - Command: `bash -n scripts/install-coturn-systemd.sh`
 - Purpose: verify coturn systemd installer script stays syntactically valid.
 - Gate: run when changing coturn service install automation or related README deployment steps.
+
+### Backend server regression gate
+- Command: `npm run test:backend`
+- Purpose: verify `start-turn-prod.sh` renders managed coturn config from env/config defaults, `pcserver.sh` mode selection stays correct, backend shell scripts remain syntactically valid, the relay systemd installer still targets `pcserver.sh` at `multi-user.target`, and release docs/scripts continue to reference the backend stack.
+- Gate: run when changing backend launch scripts, TURN defaults, package backend scripts, deployment docs, or relay systemd installer behavior.
 
 ### Overview link-mode check
 - Command: `npm run build && rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`

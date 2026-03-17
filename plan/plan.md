@@ -21,6 +21,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - cb time sync anchored to the first joiner.
 - Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
 - GPU hub scaffolding and warm delta provider hook.
+- ComputeManager runtime support for worker-safe WASM tasks, hybrid WASM+WebGPU tasks, and DataState commitDelta adapters.
+- Backend `pcserver.sh` launcher for relay + local TURN/STUN, with systemd wiring at the relay runlevel.
 - Network chaos-lab scaffolding (`net-chaos-lab/`) with topology config, scenario runner, metrics dashboard, and probe harness.
 - Net chaos-lab fail-fast containernet preflight checks (host tooling + Docker daemon) and service health checks (PID/port verification).
 - Net chaos-lab matrix runner with per-scenario metric gates and matrix summary artifacts (`--matrix` + `configs/matrix/direct-regression.yaml`).
@@ -109,7 +111,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 1. Hardening: relay config, WSS/HTTP parity, test automation in a real env.
 2. Scheduler adoption: migrate demos to snapshots/events; tune profiles.
 3. Scale: interest management, topology selection, sharded state, health metrics, reliability tiers.
-4. Compute: resume WebGPU workloads and worker/service-worker isolation.
+4. Compute: resume WebGPU workloads, portable WASM workloads, and worker/service-worker isolation.
 
 ## Known Issues / Blockers:
 - Playwright tests blocked in sandbox (Chromium EPERM, report port bind).
@@ -122,7 +124,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Keep clear module boundaries (input, physics, networking).
 - Prefer data/layout choices that keep buffer interop simple.
 - DataState is hierarchical and persisted in IndexedDB; state workers handle parallel access.
-- Compute runs in CPU/WebGPU workers; IO stays on the main thread.
+- Compute runs in CPU/WASM/WebGPU workers; IO stays on the main thread.
 - Shared-GPU tasks run under a main-thread GPU hub; isolated GPU tasks emit CPU deltas.
 - DataState is layered (hot GPU, warm CPU, cold IndexedDB) with explicit commit deltas.
 

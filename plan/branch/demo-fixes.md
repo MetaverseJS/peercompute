@@ -8,7 +8,7 @@
 - 3d network visualizer to view the p2p network graph and edges and data flows live (do this in a tron style grid with nodes represented as cubes and connections between nodes ans glowing nurbs curves.)
 
 
-- WASM support for compute workloads
+- WASM-backed demo workloads that exercise the new ComputeManager runtime
 - REAL distributed compute workload examples. 
 - Chemistry demo: retro-terminal `Fano Reactor` that turns the sedenion chemistry paper into an interactive reaction chamber and distributed pair-compute workload.
 - Details: plan/branch/chem.md.
@@ -152,7 +152,7 @@ Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the mai
 Goal: build shared systems that multiple demos reuse, and unblock the larger compute/topology story.
 - Input abstraction layer (keyboard/mouse/gamepad/touch/VR) with unified action mapping.
 - Physics upgrades: apply the PPF contact model to other physics demos and expose a shared physics adapter.
-- WASM compute support in ComputeManager (task type, worker instantiation, DataState commitDelta hooks).
+- WASM-backed demo integrations for ComputeManager (portable kernels, hybrid WASM+WebGPU tasks, DataState commitDelta hooks).
 - Network telemetry + metrics feed (peer graph, RTT/throughput, message counts), exposed via warm deltas.
 - 3d network visualizer core (tron grid, nodes/edges, nurbs links) built on the telemetry feed.
 - WebRTC direct-connection upgrade (relay only for bootstrap/fallback): prefer `/webrtc` addrs over `/p2p-circuit`, allow STUN/TURN config, and optionally drop relayed connections once direct links are established. Difficulty: medium (2-4 days, mostly config + dialing/connection policy + validation).
@@ -170,7 +170,7 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 
 ## Suggested order (what to do first)
 1) Network telemetry + minimal visualizer: gives visibility into peers/topology and de-risks later demos.
-2) WASM compute support: needed for portable distributed compute tasks beyond WebGPU.
+2) WASM-backed demo workloads: exercise the new portable `ComputeManager` runtimes beyond pure WebGPU.
 3) Shared procedural generation API: unlocks planetgen/universes cross-demo reuse.
 4) Input abstraction + PPF rollouts: foundation for the motorcycle game and the integrated engine demo.
 5) Distributed compute examples + topology demos: validate scheduler profiles and topology roles.
@@ -192,3 +192,4 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 - Done (2026-03-12): Relay role separation — relay excluded from gossipsub `directPeers` when `dropRelayBootstrapOnDirect` is enabled (fixes gossipsub re-dialing relay and undoing drop logic). Relay drop now gated on gossipsub mesh health (`_hasHealthyGossipsubMesh`) instead of fixed 60 s timer. `relayPostDirectHoldMs` reduced from 60 s to 15 s as secondary guard.
 - Done (2026-03-12): Restructured `_maybeUpdateBootstrapRelayConnections` — retention check now runs BEFORE the election, so the election keeper cannot override the drop decision. Election only fires as a last resort when no peer reports `relayConnected`. This was the primary cause of sticky relay: the election winner re-dialed bootstrap every 3 s tick, undoing the drop. 14 headless tests, 42 total, all pass.
 - Done (2026-03-13): Fixed empty `getMultiaddrs()` — circuit relay reservations were never picked up by the listener because `_reserveRelayForPeer` used `'configured'` type but the generic `/p2p-circuit` listener skips configured reservations. Fix: use specific bootstrap relay circuit addresses in listen config (e.g. `/dns4/localhost/tcp/8080/wss/p2p/<id>/p2p-circuit`) instead of generic `/p2p-circuit`. This triggers `CircuitListen` mode which properly calls `addedRelay()`, giving nodes externally-reachable multiaddrs so WebRTC signaling can succeed. 42 tests pass.
+- Done (2026-03-17): `ComputeManager` now supports pure WASM tasks and hybrid `wasm-webgpu` host modules, including typed memory views, worker-safe helper modules, inline fallback behavior, and `commitDelta` adapters covered by unit tests.

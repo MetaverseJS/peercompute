@@ -19867,3 +19867,302 @@ def parse_args() -> argparse.Namespace:
   1. WebRTC dials succeed (no "User-Initiated Abort")
   2. `getMultiaddrs()` stays populated
   3. Relay connections drop per `logn` retention config
+
+## Date: 2026-03-17
+
+### Prompt Times
+- 2026-03-17T14:24:09-08:00
+- 2026-03-17T14:24:57-08:00
+
+### Prompt
+- add wasm and wasm+webgpu support for computing workloads in accordance with plan documentation
+
+### Changes
+- Reviewed `AGENTS.md`, `plan/plan.md`, `plan/log.md`, `plan/tests.md`, compute architecture docs, branch docs, and the existing `ComputeManager` / worker implementation before changing code.
+- Added `peercompute/src/peercompute/computeManager/taskRuntime.js` as the shared execution dispatcher for `js`, `wasm`, and `wasm-webgpu` task payloads so inline and worker execution use the same runtime contract.
+- Added `peercompute/src/peercompute/computeManager/runtime/wasmRuntime.js` with:
+  - WASM source loading from URLs or in-memory bytes
+  - compiled-module caching for URL-based modules
+  - typed-array input/output memory view support
+  - worker-safe import/result helper module loading
+  - hybrid `wasm-webgpu` host-module execution with a worker-local WebGPU capability/request context
+- Updated `peercompute/src/peercompute/computeManager/ComputeManager.js` to validate explicit `runtime` modes, expose `wasm` / `wasmWebgpu` capabilities, pass the new payload fields through to workers, and reuse the shared runtime for inline fallback execution.
+- Updated `peercompute/src/peercompute/computeManager/computeWorker.js` to use the shared runtime dispatcher instead of the older JS-only handler path.
+- Added executable WASM fixtures and unit coverage:
+  - `peercompute/tests/fixtures/wasmFixtures.js`
+  - `peercompute/tests/fixtures/wasmCommitAdapter.js`
+  - `peercompute/tests/fixtures/wasmWebGpuTask.js`
+  - `peercompute/tests/unit/computeManager.wasm.test.js`
+- The new unit tests cover:
+  - pure WASM execution with typed memory-view IO
+  - `commitDelta` emission through a WASM result adapter module
+  - hybrid `wasm-webgpu` tasks using a JS host module plus WASM export calls
+- Updated plan/docs to reflect the supported runtimes and testing strategy:
+  - `plan/plan.md`
+  - `plan/tests.md`
+  - `plan/arch/arch.md`
+  - `plan/arch/compute-node.md`
+  - `plan/arch/compman.md`
+  - `plan/arch/wgpuworker.md`
+  - new `plan/arch/wasmworker.md`
+  - `plan/branch/distributed-compute.md`
+  - `plan/branch/keystone-demo.md`
+  - `plan/branch/demo-fixes.md`
+- Updated README examples in both `README.md` and `peercompute/README.md` to document the new WASM and hybrid WASM+WebGPU task descriptors and result-adapter pattern.
+
+### Files Touched
+- `README.md`
+- `peercompute/README.md`
+- `peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `peercompute/src/peercompute/computeManager/computeWorker.js`
+- `peercompute/src/peercompute/computeManager/taskRuntime.js`
+- `peercompute/src/peercompute/computeManager/runtime/wasmRuntime.js`
+- `peercompute/tests/fixtures/wasmFixtures.js`
+- `peercompute/tests/fixtures/wasmCommitAdapter.js`
+- `peercompute/tests/fixtures/wasmWebGpuTask.js`
+- `peercompute/tests/unit/computeManager.wasm.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/arch/arch.md`
+- `plan/arch/compute-node.md`
+- `plan/arch/compman.md`
+- `plan/arch/wgpuworker.md`
+- `plan/arch/wasmworker.md`
+- `plan/branch/distributed-compute.md`
+- `plan/branch/keystone-demo.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `date --iso-8601=seconds`
+- `git status --short`
+- `node -v`
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,260p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' plan/tests.md`
+- `rg -n "wasm|webassembly|ComputeManager|GPUHubManager|wgpuworker|cpuworker|worker" plan README.md peercompute demos -g '!docs/**'`
+- `rg --files peercompute`
+- `sed -n '1,260p' README.md`
+- `sed -n '1,260p' plan/branch/distributed-compute.md`
+- `sed -n '1,260p' plan/arch/compman.md`
+- `sed -n '1,260p' plan/arch/cpuworker.md`
+- `sed -n '1,260p' plan/arch/wgpuworker.md`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/computeWorker.js`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/compute/CPUComputeWorker.js`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/compute/WebGPUComputeWorker.js`
+- `sed -n '1,260p' peercompute/src/peercompute/index.js`
+- `sed -n '1,260p' peercompute/package.json`
+- `sed -n '340,460p' README.md`
+- `sed -n '1,220p' peercompute/tests/unit/computeManager.commitDelta.test.js`
+- `sed -n '1,260p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `rg -n "submitTask\\(|new ComputeManager|computeManager" peercompute/src demos -g '!docs/**'`
+- `sed -n '1,260p' peercompute/tests/unit/datastate.flow.test.js`
+- `sed -n '1,220p' peercompute/tests/unit/hotWarmDemo.test.js`
+- `git branch --show-current`
+- `sed -n '1,240p' plan/arch/compute-node.md`
+- `sed -n '1,240p' plan/arch/arch.md`
+- `sed -n '1,260p' peercompute/README.md`
+- `node --test peercompute/tests/unit/computeManager.wasm.test.js`
+- `node --test peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/datastate.flow.test.js peercompute/tests/computeManager.unit.test.js`
+- `npm --prefix peercompute run test:unit`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "ComputeManager|Compute Workers|Portable compute placement|scaleFieldResult" peercompute/README.md README.md`
+- `tail -n 40 plan/log.md`
+
+### Test Results
+- `node --test peercompute/tests/unit/computeManager.wasm.test.js`
+  - PASS (3/3): pure WASM IO, WASM result adapter + `commitDelta`, and hybrid `wasm-webgpu` host-module execution.
+- `node --test peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/datastate.flow.test.js peercompute/tests/computeManager.unit.test.js`
+  - PASS (5/5): legacy inline JS/module task paths and warm-layer `commitDelta` flow still work.
+- `node --test peercompute/tests/computeManager.unit.test.js`
+  - PASS (2/2): older standalone `ComputeManager` smoke file still passes.
+- `npm --prefix peercompute run test:unit`
+  - FAIL (62 pass / 6 fail), but the failures are unrelated to the WASM work and reproduce standalone in `peercompute/tests/unit/networkManager.webrtc.test.js`.
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - FAIL (27 pass / 6 fail). Failing assertions:
+    - `NetworkManager drops bootstrap relay connections when direct peers exist at target`
+    - `NetworkManager counts relay-webrtc as direct-capable by default`
+    - `NetworkManager does not block relay drop on unreachable targetConnections in small rooms`
+    - `NetworkManager caps relay keepers at sqrt(N)`
+    - `NetworkManager computes transport connection max with bootstrap headroom`
+    - `NetworkManager setConnectionLimits updates connection manager using transport max`
+
+### Failures / Open Questions
+- No browser-side worker smoke was run for the new WASM runtimes yet; validation here is Node inline fallback plus worker-safe payload structure and helper-module flow.
+- The existing `NetworkManager` relay-scaling unit expectations are currently failing independent of the WASM changes. Since the failure reproduces when the test file is run standalone, it appears to be an unrelated baseline issue rather than cross-test pollution from the new compute runtime.
+
+## Date: 2026-03-17
+
+### Prompt Time
+- 2026-03-17T14:53:57-08:00
+
+### Prompt
+- extend the local server functionality to include the stun/turn/ice services used by the chaos lab. put that behind a new backend pcserver.sh script which launches all necessary components. extend the systemd daemon to include the new services at the same runlevel as the relay.
+
+### Context / Notes
+- Workspace was already dirty from the prior WASM/compute-runtime task (`README.md`, `peercompute/README.md`, computeManager files, multiple plan docs). I left those changes intact and only layered the backend/server work on top.
+
+### Changes
+- Added `scripts/start-turn-prod.sh`:
+  - sources `config/relay.env`
+  - reads `config/relay.json` for fallback TURN defaults
+  - generates a managed coturn-compatible config file under `${PCSERVER_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}}`
+  - supports `--dry-run`
+  - launches `turnserver` in the foreground for supervisor/systemd use
+- Added `scripts/pcserver.sh`:
+  - combined backend supervisor for relay + TURN/STUN
+  - starts `scripts/start-relay-prod.sh` and `scripts/start-turn-prod.sh`
+  - supports `--dry-run`, `--relay-only`, `--turn-only`, `--no-relay`, `--no-turn`
+  - traps shutdown signals and stops sibling processes when one backend component exits
+- Updated `scripts/install-relay-systemd.sh` so the existing relay systemd installer now launches `scripts/pcserver.sh` instead of relay-only startup, while enabling both relay and TURN at `multi-user.target`.
+- Extended `config/relay.env` with backend/TURN defaults for the managed local coturn config path and launch toggles (`PCSERVER_ENABLE_RELAY`, `PCSERVER_ENABLE_TURN`, `PCSERVER_TURN_*`).
+- Added npm aliases in root `package.json`:
+  - `npm run backend`
+  - `npm run backend:dry-run`
+- Updated root deployment docs in `README.md` to document:
+  - `scripts/pcserver.sh` as the preferred backend launcher
+  - `scripts/start-relay-prod.sh` as relay-only fallback
+  - combined backend systemd behavior
+  - NAT-specific TURN overrides (`PCSERVER_TURN_EXTERNAL_IP`, `PCSERVER_TURN_RELAY_IP`)
+  - standalone coturn systemd installation as an optional separate deployment mode
+- Updated `demos/tests/demo-release.test.js` to cover backend launcher existence, package script wiring, and systemd installer backend wiring.
+- Updated plan docs:
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `plan/branch/server-changes.md`
+
+### Files Touched
+- `scripts/start-turn-prod.sh`
+- `scripts/pcserver.sh`
+- `scripts/install-relay-systemd.sh`
+- `config/relay.env`
+- `package.json`
+- `README.md`
+- `demos/tests/demo-release.test.js`
+- `plan/tests.md`
+- `plan/plan.md`
+- `plan/branch/server-changes.md`
+- `plan/log.md`
+
+### Commands Run
+- `date --iso-8601=seconds`
+- `git status --short`
+- `git branch --show-current`
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,220p' plan/log.md`
+- `rg --files scripts net-chaos-lab config plan/branch | sort`
+- `rg -n "coturn|turnserver|stun|TURN|STUN|iceServers|pcserver|systemd|relay service|install-relay-systemd|install-coturn-systemd|chaos-lab" -g '!docs/**' -g '!node_modules/**' .`
+- `sed -n '1,260p' scripts/run-relay.sh`
+- `sed -n '1,320p' scripts/start-relay-prod.sh`
+- `sed -n '1,260p' scripts/install-relay-systemd.sh`
+- `sed -n '1,260p' scripts/install-coturn-systemd.sh`
+- `sed -n '1,260p' config/relay.env`
+- `sed -n '1,260p' config/relay.json`
+- `rg -n "turnserver|coturn|iceServers|turn\\.peercompute|stun:" net-chaos-lab/src/chaoslab/topology.py net-chaos-lab/README.md net-chaos-lab/docker/chaos-node.Dockerfile`
+- `sed -n '1,220p' scripts/dev-local-relay.sh`
+- `sed -n '1760,1865p' net-chaos-lab/src/chaoslab/topology.py`
+- `rg -n "Coturn|TURN|systemd Service|install-coturn-systemd|start-relay-prod|relay as a systemd service" README.md peercompute/README.md`
+- `sed -n '140,310p' README.md`
+- `sed -n '1,220p' plan/branch/server-changes.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,260p' scripts/build-all.sh`
+- `sed -n '1,260p' scripts/write-prod-relay-config.mjs`
+- `ls -la scripts`
+- `rg -n "install-relay-systemd|install-coturn-systemd|start-relay-prod|relay-config|pcserver|turnserver.conf|COTURN|RELAY_SERVICE_NAME" demos/tests peercompute/tests scripts plan/tests.md README.md -g '!docs/**'`
+- `sed -n '1,260p' demos/tests/demo-release.test.js`
+- `rg -n "relay systemd|coturn|pcserver|backend" plan/branch/server-changes.md plan/tests.md README.md`
+- `chmod +x scripts/start-turn-prod.sh scripts/pcserver.sh`
+- `bash -n scripts/start-turn-prod.sh`
+- `bash -n scripts/pcserver.sh`
+- `bash -n scripts/install-relay-systemd.sh`
+- `bash -n scripts/install-coturn-systemd.sh`
+- `bash scripts/start-turn-prod.sh --dry-run`
+- `bash scripts/pcserver.sh --dry-run`
+- `node --test demos/tests/demo-release.test.js`
+- `git diff --stat`
+- `tail -n 60 plan/log.md`
+
+### Test Results
+- `bash -n scripts/start-turn-prod.sh`
+  - PASS
+- `bash -n scripts/pcserver.sh`
+  - PASS
+- `bash -n scripts/install-relay-systemd.sh`
+  - PASS
+- `bash -n scripts/install-coturn-systemd.sh`
+  - PASS
+- `bash scripts/start-turn-prod.sh --dry-run`
+  - PASS; rendered managed TURN config path and launch command without requiring coturn to be installed.
+- `bash scripts/pcserver.sh --dry-run`
+  - PASS; rendered relay + TURN backend startup plan without starting persistent services.
+- `node --test demos/tests/demo-release.test.js`
+  - PASS (11/11)
+
+### Failures / Open Questions
+- No live end-to-end relay+TURN session was started in this prompt, so there is still no browser/WebRTC proof yet that the managed coturn config is sufficient on the target host. Current validation is script syntax, dry-run config generation, and release wiring tests.
+- The combined backend service currently keeps the legacy service name default (`peercompute-relay`) for compatibility even though it now supervises relay + TURN/STUN together. If you want a clearer service label later, consider changing the default service name in a follow-up and updating the docs accordingly.
+
+## Date: 2026-03-17
+
+### Prompt Time
+- 2026-03-17T15:56:26-08:00
+
+### Prompt
+- can you set up tests for everythig you added?
+
+### Context / Notes
+- Interpreted this as follow-up coverage for the backend/server work added in the prior prompt (`scripts/start-turn-prod.sh`, `scripts/pcserver.sh`, `scripts/install-relay-systemd.sh`, related package/docs wiring), not the older WASM runtime work already in the dirty tree.
+- Preserved all pre-existing uncommitted changes from the prior WASM and backend prompts.
+
+### Changes
+- Added a dedicated backend regression suite in `demos/tests/backend-server.test.js` covering:
+  - managed TURN config generation via `scripts/start-turn-prod.sh --dry-run`
+  - `PCSERVER_ENABLE_TURN=0` handling
+  - `scripts/pcserver.sh` default / relay-only / turn-only / invalid-mode behavior
+  - backend shell syntax checks via `bash -n`
+  - relay systemd installer wiring assertions (`pcserver.sh`, TURN enabled, `multi-user.target`)
+- Added root script `npm run test:backend` in `package.json` to run the dedicated backend suite together with `demos/tests/demo-release.test.js`.
+- Updated `plan/tests.md` to document `npm run test:backend` as the backend regression gate.
+- Updated `plan/branch/server-changes.md` validation notes so the branch plan now explicitly calls for `demos/tests/backend-server.test.js` and the combined backend test command.
+
+### Files Touched
+- `demos/tests/backend-server.test.js`
+- `package.json`
+- `plan/tests.md`
+- `plan/branch/server-changes.md`
+- `plan/log.md`
+
+### Commands Run
+- `node -v`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' demos/tests/backend-server.test.js`
+- `node --test demos/tests/backend-server.test.js`
+- `sed -n '1,240p' plan/tests.md`
+- `sed -n '1,240p' plan/branch/server-changes.md`
+- `sed -n '1,260p' demos/tests/demo-release.test.js`
+- `sed -n '1,260p' scripts/install-relay-systemd.sh`
+- `sed -n '1,260p' scripts/pcserver.sh`
+- `sed -n '1,260p' scripts/start-turn-prod.sh`
+- `sed -n '1,220p' package.json`
+- `date --iso-8601=seconds`
+- `git status --short`
+- `tail -n 120 plan/log.md`
+- `git diff -- demos/tests/backend-server.test.js package.json plan/tests.md plan/branch/server-changes.md`
+- `npm run test:backend`
+
+### Test Results
+- `node --test demos/tests/backend-server.test.js`
+  - PASS (6/6) before the final package-script wiring step.
+- `npm run test:backend`
+  - PASS (18/18 total).
+  - Includes:
+    - dedicated backend script tests in `demos/tests/backend-server.test.js`
+    - release/backend wiring tests in `demos/tests/demo-release.test.js`
+
+### Failures / Open Questions
+- No failures in the automated backend test gate.
+- Still no live relay/TURN/browser proof in this prompt; coverage here is automated shell + release-wiring regression only.

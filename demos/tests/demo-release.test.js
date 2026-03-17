@@ -29,6 +29,18 @@ test('config/relay.json exists and build writes relay-config.json for demos', ()
   );
 });
 
+test('backend launcher and systemd wiring include relay + turn stack', () => {
+  assert.ok(exists('scripts/pcserver.sh'), 'pcserver.sh missing');
+  assert.ok(exists('scripts/start-turn-prod.sh'), 'start-turn-prod.sh missing');
+
+  const rootPackage = read('package.json');
+  assert.ok(rootPackage.includes('"backend"'), 'package.json missing backend script');
+
+  const relaySystemd = read('scripts/install-relay-systemd.sh');
+  assert.ok(relaySystemd.includes('scripts/pcserver.sh'), 'relay systemd installer does not launch pcserver.sh');
+  assert.ok(relaySystemd.includes('PCSERVER_ENABLE_TURN=1'), 'relay systemd installer does not enable TURN service');
+});
+
 test('docs index includes all demos and screenshots', () => {
   const html = read('docs/index.html');
   const requiredLinks = [
@@ -114,4 +126,5 @@ test('root README includes relay config instructions', () => {
   assert.ok(readme.includes('config/relay.json'), 'README missing relay config section');
   assert.ok(readme.includes('npm run dev'), 'README missing npm run dev instruction');
   assert.ok(readme.includes('Fano Reactor'), 'README missing Fano Reactor mention');
+  assert.ok(readme.includes('scripts/pcserver.sh'), 'README missing pcserver backend instructions');
 });

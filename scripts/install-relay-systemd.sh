@@ -20,19 +20,22 @@ fi
 
 cat > "$unit_path" <<EOF
 [Unit]
-Description=PeerCompute Relay Server
-After=network.target
+Description=PeerCompute Backend Server
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=$repo_root
-ExecStart=/usr/bin/env bash $repo_root/scripts/start-relay-prod.sh
+ExecStart=/usr/bin/env bash $repo_root/scripts/pcserver.sh
 Restart=on-failure
 RestartSec=2
 User=$service_user
 Group=$service_group
 Environment=NODE_ENV=production
 Environment=RELAY_IMPL=$relay_impl
+Environment=PCSERVER_ENABLE_RELAY=1
+Environment=PCSERVER_ENABLE_TURN=1
 
 [Install]
 WantedBy=multi-user.target

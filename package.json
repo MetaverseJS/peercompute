@@ -14,6 +14,9 @@
     "demos/sneakywoods"
   ],
   "scripts": {
+    "backend": "bash scripts/pcserver.sh",
+    "backend:dry-run": "bash scripts/pcserver.sh --dry-run",
+    "test:backend": "node --test demos/tests/backend-server.test.js demos/tests/demo-release.test.js",
     "dev:relay": "npm --prefix peercompute run relay",
     "dev:hyperborea": "npm --prefix demos/hyperborea run dev -- --host",
     "dev:cubechat": "npm --prefix demos/cubechat run dev -- --host",

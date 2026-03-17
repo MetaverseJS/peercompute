@@ -23,7 +23,7 @@ The Keystone demo (planned) will visualize this reconfiguration live with select
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
 - **StateManager**: shared state sync (Yjs + scoped namespaces).
 - **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
-- **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
+- **ComputeManager**: JS/WASM/WebGPU compute runtime with worker offload, hybrid `wasm-webgpu` tasks, and `commitDelta` support.
 - **ioManager**: controls local input/output (like threejs and your keyboard).
 - **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
@@ -169,18 +169,22 @@ Demos resolve the relay config in this order:
 2. `relay-config-source.json` (default URL from `config/relay.json`).
 3. Local `relay-config.json` fallback.
 
-To launch the relay with WSS in production, provide certs and run:
+To launch the backend stack with WSS relay plus local STUN/TURN in production, provide certs and run:
 
 ```bash
-RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash scripts/start-relay-prod.sh
+RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash scripts/pcserver.sh
 ```
+
+This starts the relay and a coturn-compatible TURN/STUN service together.
+For a headless config/render check, run `npm run backend:dry-run`.
+If you only want the relay process without TURN/STUN, run `bash scripts/start-relay-prod.sh`.
 
 If you terminate TLS in nginx, set `relayHost` to the relay subdomain, keep `relayPort` at `443`,
 and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) with empty cert fields.
 Point nginx at the on-disk `relayConfigFile` location so `/relay-config.json` is served with CORS.
 
 ### Relay as a systemd Service
-The repo includes a helper that installs and enables a systemd unit for the relay:
+The repo includes a helper that installs and enables a systemd unit for the backend stack:
 
 ```bash
 sudo -E bash scripts/install-relay-systemd.sh
@@ -195,7 +199,7 @@ RELAY_SERVICE_GROUP=$USER \
 sudo -E bash scripts/install-relay-systemd.sh
 ```
 
-The service runs `scripts/start-relay-prod.sh`, so it reads `config/relay.json` and the same env overrides.
+The service runs `scripts/pcserver.sh`, so it starts the relay and TURN/STUN together using `config/relay.json` plus the same env overrides from `config/relay.env`.
 Use `systemctl status peercompute-relay` (or your custom name) to verify it is running.
 
 ### Production ICE (Google STUN + Coturn)
@@ -211,6 +215,14 @@ RELAY_TURN_HOST=secretworkshop.net
 RELAY_TURN_PORT=3478
 RELAY_TURN_USERNAME=peer
 RELAY_TURN_CREDENTIAL=compute
+```
+
+`scripts/pcserver.sh` and `scripts/start-turn-prod.sh` use the same TURN host/port/credential values when they generate the local coturn config.
+If your TURN server is behind NAT, set:
+
+```bash
+PCSERVER_TURN_EXTERNAL_IP=<public-ip>
+PCSERVER_TURN_RELAY_IP=<local-interface-ip>
 ```
 
 Minimal coturn config example (`/etc/turnserver.conf`):
@@ -233,6 +245,8 @@ bps-capacity=0
 If you use special characters in TURN credentials, set `RELAY_WEBRTC_CONFIG` directly with a full JSON string instead of composing it via per-field env vars.
 
 ### Coturn as a systemd Service
+If you want TURN/STUN isolated from the combined backend service, you can still install coturn separately:
+
 Install coturn and create your config first:
 
 ```bash
@@ -364,7 +378,7 @@ const positionsBuffer = gpuHub.createHotBuffer(
 );
 ```
 
-### Compute Workers (CPU + isolated GPU)
+### Compute Workers (JS, WASM, isolated GPU, hybrid WASM+WebGPU)
 ```js
 // CPU task (runs in a worker when available)
 const cpuResult = await node.submitTask({
@@ -383,11 +397,41 @@ const cpuResult = await node.submitTask({
   }
 });
 
+// Pure WASM task with memory IO and a result adapter
+const wasmResult = await node.submitTask({
+  runtime: 'wasm',
+  wasm: {
+    source: '/compute/scaleField.wasm',
+    entry: 'scaleFirst',
+    args: [4],
+    inputViews: [
+      { name: 'input', dataKey: 'input', view: 'Int32Array', byteOffset: 0 }
+    ],
+    outputViews: [
+      { name: 'scaled', view: 'Int32Array', byteOffset: 0, length: 1 }
+    ],
+    resultModule: '/compute/scaleFieldResult.js',
+    resultExport: 'toCommitDelta'
+  },
+  data: { input: [7] }
+});
+
 // WebGPU task in a worker (module-based, isolated GPU)
 await node.submitTask({
   module: '/compute/stepWebGPU.js',
   exportName: 'stepWebGPU',
   data: { /* inputs */ }
+});
+
+// Hybrid task: WASM preprocessing + worker-local WebGPU orchestration
+await node.submitTask({
+  runtime: 'wasm-webgpu',
+  wasm: {
+    source: '/compute/prefixSum.wasm'
+  },
+  module: '/compute/prefixSumHybrid.js',
+  exportName: 'runPrefixSumHybrid',
+  data: { values }
 });
 ```
 
@@ -403,6 +447,21 @@ export async function stepWebGPU(input) {
       payload: { /* compact CPU delta */ }
     },
     value: { ok: true }
+  };
+}
+```
+
+```js
+// /compute/scaleFieldResult.js
+export function toCommitDelta({ outputs }) {
+  return {
+    commitDelta: {
+      taskId: 'wasm-scale',
+      scope: 'deltas',
+      version: Date.now(),
+      payload: { scaled: Array.from(outputs.scaled) }
+    },
+    value: outputs
   };
 }
 ```
@@ -513,6 +572,7 @@ peercompute/src/peercompute/
 - Authority election + snapshot ownership modes.
 - Optional binary encoding for high-throughput channels.
 - ComputeManager integration with network scheduler for distributed workloads.
+- Portable compute placement across JS, WASM, and hybrid WASM+WebGPU task descriptors.
 
 ## License
 MIT

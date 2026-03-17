@@ -1,5 +1,4 @@
 Instructions: This file contains the implementation plan for distributed compute scheduling and topology formation.
-test
 ## Goal
 Implement a self-organizing distributed compute layer that adapts topology and workload placement based on bandwidth, latency, and compute availability, aligned with the "Key Innovation" in the root README.
 
@@ -7,6 +6,7 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Nodes optimize local throughput while respecting global constraints (latency caps, fairness).
 - Topology adapts dynamically (LAN clusters vs. WAN spokes).
 - Compute placement is explicit and policy-driven (hot, warm, cold layers + GPU hub).
+- Portable runtimes matter: the same workload should be placeable as JS, WASM, or hybrid WASM+WebGPU depending on peer capability.
 - Metrics are first-class and feed scheduling decisions.
 
 ## Phase 0: Definitions + Data Model
@@ -44,7 +44,7 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 ## Phase 3: Scheduler Integration (Work Placement)
 1) Extend NetworkScheduler with placement hints:
    - `taskProfile: latencySensitive | throughput | batch`.
-   - `resourceHints: gpuRequired | cpuOnly | memoryHeavy`.
+   - `resourceHints: gpuRequired | cpuOnly | wasmPreferred | memoryHeavy`.
 2) Placement algorithm:
    - prefer local node if resources allow.
    - else choose cluster leader or best-fit peer.
@@ -78,6 +78,7 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - MetricsManager + API.
 - Cluster formation + leader election.
 - Scheduler placement hints + best-fit routing.
+- Portable task descriptors for JS, WASM, and hybrid WASM+WebGPU workloads.
 - Debug UI / log output for topology + placement.
 - Keystone demo surface that visualizes topology changes + placement outcomes.
 
