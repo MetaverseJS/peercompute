@@ -873,7 +873,23 @@ export class NetworkManager {
 
   async initialize() {
     const isBrowser = typeof window !== 'undefined';
-    const listenAddrs = isBrowser ? ['/p2p-circuit', '/webrtc'] : ['/ip4/0.0.0.0/tcp/0'];
+    // Build listen addresses.  When bootstrap peers are known, listen on
+    // their specific circuit addresses so the circuit-relay listener
+    // establishes the reservation directly (calling addedRelay internally).
+    // The generic '/p2p-circuit' search mode relies on relay discovery
+    // which skips 'configured' reservations created by _reserveRelayForPeer,
+    // leaving getMultiaddrs() empty and blocking WebRTC direct dials.
+    let listenAddrs;
+    if (isBrowser) {
+      const bootstrapCircuitAddrs = (this.config.bootstrapPeers || [])
+        .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
+        .map((addr) => `${normalizeBootstrapAddr(addr)}/p2p-circuit`);
+      listenAddrs = bootstrapCircuitAddrs.length > 0
+        ? [...bootstrapCircuitAddrs, '/webrtc']
+        : ['/p2p-circuit', '/webrtc'];
+    } else {
+      listenAddrs = ['/ip4/0.0.0.0/tcp/0'];
+    }
     const useGossipsub = this.config.pubsubType === 'gossipsub';
     const peerDiscovery = [];
 
@@ -1906,7 +1922,13 @@ export class NetworkManager {
     const upgradeHeadroom = Number.isFinite(this.config.transportConnectionHeadroom)
       ? Math.max(0, Math.trunc(this.config.transportConnectionHeadroom))
       : 0;
-    return logicalLimit + bootstrapHeadroom + upgradeHeadroom;
+    // During WebRTC upgrade, peers temporarily hold both relay-circuit AND
+    // direct WebRTC connections to the same peer.  Without extra headroom
+    // the connection manager prunes connections mid-upgrade, causing
+    // "User-Initiated Abort" errors and reservation loss.
+    // Allow up to 2× logical max for upgrade overlap, plus bootstrap.
+    const upgradeOverlapHeadroom = logicalLimit;
+    return logicalLimit + bootstrapHeadroom + upgradeHeadroom + upgradeOverlapHeadroom;
   }
 
   /**
@@ -1993,9 +2015,9 @@ export class NetworkManager {
     } else {
       this.relayBootstrapConnectedAt = null;
     }
-    const isRelayElectionKeeper = this._shouldElectRelayRedial(now, {
-      allowWithBootstrap: true
-    });
+
+    // Isolation guard: if we have zero connections at all, always redial
+    // bootstrap so we don't get stuck offline.
     if (this.config.bootstrapPeers?.length) {
       const activeConnections = this._getActiveConnectionCount();
       if (activeConnections === 0 && !hasBootstrapRelayConnections) {
@@ -2003,25 +2025,44 @@ export class NetworkManager {
         return;
       }
     }
-    if (!hasBootstrapRelayConnections && isRelayElectionKeeper) {
-      this._maybeRedialBootstrapPeers();
-      return;
-    }
-    if (hasBootstrapRelayConnections && isRelayElectionKeeper) {
-      return;
-    }
+
+    // When dropRelayBootstrapOnDirect is off, the relay stays permanently.
     if (!this.config.webrtc?.dropRelayBootstrapOnDirect) {
       if (!hasBootstrapRelayConnections) {
         this._maybeRedialBootstrapPeers();
       }
       return;
     }
-    if (this._shouldKeepRelayBootstrapConnection()) {
+
+    // --- dropRelayBootstrapOnDirect is ON from here ---
+    // Let the retention logic decide first.  This checks mesh health,
+    // the post-direct safety window, target connections, and the
+    // sqrt/logn retention keep-set.
+    const shouldKeep = this._shouldKeepRelayBootstrapConnection();
+    if (shouldKeep) {
       if (!hasBootstrapRelayConnections) {
         this._maybeRedialBootstrapPeers();
       }
       return;
     }
+
+    // Retention says this peer should NOT keep the relay.  But we still
+    // need at least one peer in the room to hold relay open so new
+    // joiners can bootstrap.  The election picks the peer with fewest
+    // connections to be that keeper — but only if NO peer currently
+    // reports relayConnected (otherwise the keeper already exists).
+    const isRelayElectionKeeper = this._shouldElectRelayRedial(now, {
+      allowWithBootstrap: true
+    });
+    if (isRelayElectionKeeper) {
+      // This peer won the election — it is the designated relay bridge.
+      if (!hasBootstrapRelayConnections) {
+        this._maybeRedialBootstrapPeers();
+      }
+      return;
+    }
+
+    // Not the keeper and retention says drop → close relay.
     if (hasBootstrapRelayConnections) {
       this._closeBootstrapRelayConnections();
     }
@@ -2574,12 +2615,45 @@ export class NetworkManager {
     const publishPresence = () => this._publishPresenceNow();
     const tick = () => {
       this._maybeUpdateBootstrapRelayConnections();
+      this._ensureRelayReservation();
       publishPresence().catch(() => {});
     };
     tick();
     this.presenceInterval = setInterval(() => {
       tick();
     }, this.config.presenceIntervalMs || 3000);
+  }
+
+  /**
+   * Ensure relay circuit addresses stay in the address manager.
+   *
+   * The circuit relay listener skips 'configured' reservations and never
+   * calls addedRelay(), so it never registers addresses with the address
+   * manager.  Even when we manually confirmObservedAddr, the address
+   * manager can drop them (observed address TTL, connection close, etc.).
+   *
+   * This method runs on every presence tick and force-confirms the
+   * expected relay circuit addresses so that getMultiaddrs() always
+   * returns them while we have a relay connection.
+   */
+  _ensureRelayReservation() {
+    if (!this.libp2p || !this.peerId) return;
+    if (!this._hasBootstrapRelayConnections()) return;
+    const addressManager = this.libp2p.components?.addressManager;
+    if (!addressManager?.confirmObservedAddr) return;
+    const selfId = this.peerId;
+    for (const bootstrapAddr of (this.config.bootstrapPeers || [])) {
+      if (typeof bootstrapAddr !== 'string' || !bootstrapAddr.includes('/p2p/')) continue;
+      const normalized = normalizeBootstrapAddr(bootstrapAddr);
+      const circuitAddr = `${normalized}/p2p-circuit/p2p/${selfId}`;
+      const webrtcAddr = `${normalized}/p2p-circuit/webrtc/p2p/${selfId}`;
+      try {
+        addressManager.confirmObservedAddr(multiaddr(circuitAddr), { type: 'transport' });
+        addressManager.confirmObservedAddr(multiaddr(webrtcAddr), { type: 'transport' });
+      } catch (_) {
+        // skip if multiaddr parsing fails
+      }
+    }
   }
 
   _buildPresencePayload() {
@@ -3344,16 +3418,34 @@ export class NetworkManager {
     } catch (_) {
       return false;
     }
-    if (reservationStore.hasReservation(peerId)) return true;
+    if (reservationStore.hasReservation(peerId)) {
+      // Reservation exists in the store but might not be reflected in
+      // getMultiaddrs() if the listener skipped addedRelay() (it ignores
+      // 'configured' type reservations).  Re-confirm addresses.
+      this._confirmRelayReservationAddrs();
+      return true;
+    }
     try {
       await reservationStore.addRelay(peerId, 'configured');
       this.relayReservationPeers.add(peerIdStr);
-      this._infoLog('[NetworkManager] Relay reservation created', peerIdStr, source);
+      // The circuit relay listener's _onAddRelayPeer skips 'configured'
+      // reservations, so the addresses are never registered with the
+      // address manager.  Confirm them manually.
+      this._confirmRelayReservationAddrs();
       return true;
     } catch (err) {
-      debugWarn('[NetworkManager] Relay reservation failed', peerIdStr, source, err?.message || err);
+      console.warn('[NetworkManager] Relay reservation failed', peerIdStr, source, err?.message || err);
       return false;
     }
+  }
+
+  /**
+   * Force-confirm relay circuit addresses in the address manager after a
+   * reservation is created.  Uses the same direct address construction
+   * as _ensureRelayReservation.
+   */
+  _confirmRelayReservationAddrs() {
+    this._ensureRelayReservation();
   }
 
   async _reserveBootstrapRelayAddrs() {

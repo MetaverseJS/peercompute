@@ -207,6 +207,24 @@ describe('Phase 2b relay scaling fixes', () => {
     );
   });
 
+  it('election runs after retention check in _maybeUpdateBootstrapRelayConnections', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(nmPath, 'utf8');
+    const updateMatch = src.match(
+      /_maybeUpdateBootstrapRelayConnections\(\)\s*\{[\s\S]*?_closeBootstrapRelayConnections/
+    );
+    assert.ok(updateMatch, '_maybeUpdateBootstrapRelayConnections should exist');
+    const body = updateMatch[0];
+    const retentionIdx = body.indexOf('_shouldKeepRelayBootstrapConnection');
+    const electionIdx = body.indexOf('_shouldElectRelayRedial');
+    assert.ok(retentionIdx > 0, 'should call _shouldKeepRelayBootstrapConnection');
+    assert.ok(electionIdx > 0, 'should call _shouldElectRelayRedial');
+    assert.ok(
+      retentionIdx < electionIdx,
+      'Retention check must run BEFORE election so the election cannot override the drop decision'
+    );
+  });
+
   it('DEFAULT_RELAY_POST_DIRECT_HOLD_MS is 15s (reduced from 60s)', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(nmPath, 'utf8');

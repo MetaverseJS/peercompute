@@ -245,7 +245,7 @@ async function startServer() {
           reservations: {
             maxReservations: 1000,
             applyDefaultLimit: false,
-            reservationTtl: 60000
+            reservationTtl: 3600000 // 1 hour
           }
         }),
         identify: identify(),

@@ -19762,3 +19762,108 @@ def parse_args() -> argparse.Namespace:
 - The `minDirectMeshPeers` default is `min(targetConnections, 3)`. With target=4 this means the relay is kept until 3 direct gossipsub mesh peers exist. This may need tuning — if mesh formation is slow, relay stays longer than desired.
 - Gossipsub `getMeshPeers(topic)` returns only peers in the mesh for a specific topic. If the main pubsub topic has low traffic, gossipsub may not form a mesh for it eagerly. The presence topic might be a better health signal since it has regular traffic.
 - When a new peer joins a mature mesh where most nodes have dropped relay, the sqrt(n) retention peers that kept relay serve as bridges. This should be validated under chaos lab with the `relay-drop-rejoin` scenario.
+
+## Date: 2026-03-12 (continued)
+
+### Prompt (2026-03-12 UTC)
+- Why is the relay connection still sticky? Trace every path that keeps or re-establishes relay.
+
+### Actions
+- Traced all 6 paths that call `_maybeRedialBootstrapPeers` / `_dialBootstrapPeers`:
+  1. Election keeper re-dialing every 3 s tick (PRIMARY CAUSE)
+  2. `_scheduleIsolationRelayRedial` after connection close
+  3. `connection:close` → `_maybeUpdateBootstrapRelayConnections`
+  4. `peer:discovery` for bootstrap peers (safe — filtered by `_maybeDialPeer`)
+  5. `_reconnectRelayForDial` from Fix A recovery
+  6. `_handlePresence` → `_maybeUpdateBootstrapRelayConnections`
+- Identified root cause: `_maybeUpdateBootstrapRelayConnections` ran the election BEFORE the retention check. The election winner (sticky for 30 s) always returned early, re-dialing bootstrap on every tick and bypassing the retention/drop logic entirely.
+- Restructured `_maybeUpdateBootstrapRelayConnections`: retention check now runs first, election is a last-resort fallback that only fires when retention says "drop" AND no peer reports `relayConnected`.
+- Added test verifying retention runs before election in the function body.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `demos/tests/relay-scaling.test.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check NetworkManager.js` — PASS
+- `node --test demos/tests/relay-scaling.test.mjs` — 14/14 PASS
+- Full suite — 42/42 PASS
+
+### Tests Run / Results
+- 14 relay-scaling tests (1 new: election-after-retention order). All pass.
+- Full suite 42/42 PASS.
+
+### Failures / Open Questions
+- The election still has a 30 s sticky period (`relayKeeperUntil`). If the room has zero sqrt keepers (e.g., all peers joined at the same time and the keep-set hasn't stabilised), the election winner holds relay for 30 s before re-evaluating. This is acceptable but worth monitoring.
+- Steady-state relies on sqrt keepers broadcasting `relayConnected: true` to suppress the election. If a sqrt keeper's presence message is delayed (pubsub backpressure), a non-keeper might briefly win the election and re-open relay. The 30 s sticky period limits churn here.
+
+---
+
+### 2026-03-13 — Prompt: "still not seeing the relay connection drop" (5 nodes, target 3, max 4)
+
+**User report:** WebRTC dial failures ("signal timed out", "Unexpected EOF"), `shouldKeepRelay: true`, `Libp2p addrs: []` (empty). Relay connections sticky despite all Phase 2b fixes.
+
+### Root Cause Analysis
+- `libp2p.getMultiaddrs()` returns `[]` — the circuit relay reservation is never picked up by the listener.
+- Traced through `@libp2p/circuit-relay-v2` source code:
+  - The listen address `/p2p-circuit` (generic, no specific relay) triggers `CircuitSearch` mode in the circuit listener.
+  - `CircuitSearch` calls `reservationStore.reserveRelay()` creating a pending reservation ID, then waits for `relay:discover` events to match it.
+  - Meanwhile, `_reserveRelayForPeer` in NetworkManager calls `reservationStore.addRelay(peerId, 'configured')` which DOES create a reservation in the store.
+  - BUT the listener's `_onAddRelayPeer` handler explicitly **skips** `'configured'` type reservations: `if (details.type === 'configured') { return; }` (listener.js:43-44).
+  - Result: the reservation exists in the store but the listener never calls `addedRelay()`, so `getMultiaddrs()` stays empty.
+- Without multiaddrs, peers can't learn each other's circuit-relay WebRTC addresses via presence. The constructed `/p2p-circuit/webrtc/` addresses fail because the target peer has no reservation the relay knows to forward to.
+- All dials fall back to relay-webrtc which fails → no "direct capable" connections → `_hasHealthyGossipsubMesh()` returns false → relay never drops.
+
+### Fix
+- Changed listen address construction in `initialize()`: when bootstrap peers are known, build specific circuit addresses like `/dns4/localhost/tcp/8080/wss/p2p/<relay-id>/p2p-circuit` instead of the generic `/p2p-circuit`.
+- Specific addresses match `CircuitListen.exactMatch()` in the listener, which properly calls `addedRelay()` after creating the reservation → `getMultiaddrs()` returns the correct circuit-relay address → presence broadcasts include the address → other peers can dial it → WebRTC signaling through the circuit succeeds → data flows direct over WebRTC.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js` (listen address construction in `initialize()`)
+- `plan/log.md`
+- `plan/branch/demo-fixes.md`
+
+### Commands Run
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/relay-scaling.test.mjs demos/tests/fano-reactor.test.mjs` — 42/42 PASS
+
+### Open Questions
+- Need live validation: reload NetViz with 5 nodes and confirm `Libp2p addrs` is no longer empty, WebRTC dials succeed, and relay connections drop per retention config.
+- Relay server `reservationTtl: 60000` (60s) is short — may cause reservation expiry before renewal. Monitor for address flapping.
+
+---
+
+### 2026-03-13 — Continued: transport max headroom fix + debug cleanup
+
+**Context:** Continued from prior session. The listen-address fix (specific circuit addresses) got reservations created at startup, but `getMultiaddrs()` went empty shortly after because the connection manager was pruning connections mid-upgrade.
+
+### Additional Root Cause
+- With `maxConnections=4` and 1 bootstrap peer, `_getTransportMaxConnections` returned 5 (4+1).
+- During WebRTC upgrade, peers temporarily hold both relay-circuit AND direct WebRTC connections to the same peer. With 5 peers in a room, actual connection count reached 6 (1 relay + 5 peers, some in upgrade overlap).
+- Connection manager saw 6 > 5 and pruned connections, causing "User-Initiated Abort" errors on WebRTC dials and relay reservation loss (the relay connection gets pruned → reservation dropped → `getMultiaddrs()` goes empty).
+
+### Fix: upgrade overlap headroom
+- Added `upgradeOverlapHeadroom = logicalLimit` to `_getTransportMaxConnections()` (NM:1939-1944).
+- New formula: `logicalLimit + bootstrapHeadroom + upgradeHeadroom + upgradeOverlapHeadroom`.
+- With `maxConnections=4`: transport max = 4+1+0+4 = 9, giving ample room for upgrade overlap.
+
+### Relay server TTL increase
+- Increased `reservationTtl` in `peercompute/src/relay/server.js` from `60000` (60s) to `3600000` (1 hour) to prevent rapid reservation expiry during long sessions.
+
+### Debug cleanup
+- Removed 7 `console.log` debug statements from NetworkManager.js that were added during investigation (listen addresses, post-start/post-dial/post-reserve multiaddrs, reservation creation).
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js` (transport max headroom, debug log removal)
+- `peercompute/src/relay/server.js` (reservationTtl increase)
+- `plan/log.md`
+
+### Commands Run
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/relay-scaling.test.mjs demos/tests/fano-reactor.test.mjs` — 42/42 PASS (twice: before and after debug cleanup)
+
+### Open Questions
+- Need live validation: reload NetViz with 5 nodes (target 3, max 4) and confirm:
+  1. WebRTC dials succeed (no "User-Initiated Abort")
+  2. `getMultiaddrs()` stays populated
+  3. Relay connections drop per `logn` retention config
