@@ -122,7 +122,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 ## Known Issues / Blockers:
 - Playwright tests blocked in sandbox (Chromium EPERM, report port bind).
 - WSS relay requires valid certs; use HTTP for local tests if needed.
-- Production browser logs still show intermittent `webrtc-relay` signal timeouts, and the new Go-relay public-address advertisement fix still needs a prod service restart plus browser re-verification to confirm `Libp2p addrs` stops coming back empty / loopback-scoped.
+- Production browser logs still show intermittent `webrtc-relay` signal timeouts. Headless Playwright checks run from the host on 2026-04-03 against both the local rebuilt NetViz and the live GitHub Pages NetViz (including the shared `room=telemetry`) now show non-empty public relay circuit addrs, so the earlier empty-`Libp2p addrs` symptom is no longer globally reproducible and likely needs browser-session/cache-specific repro data if it recurs.
 
 ## Design Principles:
 - Modular ES6 modules; managers should be worker-ready where practical.

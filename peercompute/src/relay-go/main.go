@@ -515,7 +515,9 @@ func main() {
   }
 
   resources := relay.DefaultResources()
-  resources.ReservationTTL = time.Minute
+  // Keep relay reservations stable long enough for browser circuit announce
+  // addresses to survive connect churn and match the older Node relay behavior.
+  resources.ReservationTTL = time.Hour
   resources.MaxReservations = 1000
   resources.MaxCircuits = 1000
   resources.MaxReservationsPerIP = 1000

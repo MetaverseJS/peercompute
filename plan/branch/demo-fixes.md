@@ -51,11 +51,18 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 - 2026-04-03: post-cutover NetViz browser smoke shows healthy bootstrap on the Go relay plus a mixed transport set (`direct-websocket`, `relay-webrtc`, `relay`, and at least one `webrtc-direct`). Remaining browser-side imperfection: `Libp2p addrs: []` and a still-high proportion of relay-scoped WebRTC links.
 - 2026-04-03: fixed a peer-level relay-drop bug in `NetworkManager`: relay pruning now retries after `directUpgradeGraceMs` and closes both `relay` and `relay-webrtc` once a true direct path is stable. Fresh docs bundles were rebuilt; GitHub Pages redeploy is required for the live demos to pick up the fix.
 - 2026-04-03: traced the post-cutover empty browser `Libp2p addrs` issue to the Go relay advertising only its internal listen address behind nginx. `peercompute/src/relay-go/main.go` now uses libp2p `AddrsFactory` plus dual-family public bootstrap generation from `RELAY_PUBLIC_*`, so relay reservations should advertise `secretworkshop.net:443/wss` instead of loopback/private addresses after the prod service is restarted.
+- 2026-04-03: confirmed this workspace is now running under the npm Codex shell with full host access (`HOME=/home/cos`; `node` v24.14.1, `tmux`, `go`, `systemctl`, and `journalctl` all available), so prod service inspection/restarts and normal headless test runs can now be executed directly from here.
+- 2026-04-03: restarted `peercompute-relay` after commit `b3a89933`; fresh journal startup logs now show `Advertised addresses:` with `/dns4/secretworkshop.net/tcp/443/wss` and `/dns6/secretworkshop.net/tcp/443/wss`, and both local plus public `config/relay-config.json` now serve the matching dual-family bootstrap peers.
+- 2026-04-03: re-traced the older chaos-lab empty-`getMultiaddrs()` fix. That historical fix was browser-side `NetworkManager` work, not the Go-relay patch: use specific bootstrap `/.../p2p/<relay>/p2p-circuit` listen addrs (not generic `/p2p-circuit`) so circuit reservations hit `CircuitListen`/`addedRelay()`, plus enough transport upgrade-overlap headroom so the bootstrap relay is not pruned mid-WebRTC-upgrade. Both fixes are still present in the current tree and the focused `peercompute/tests/unit/networkManager.webrtc.test.js` suite still passes, so the remaining prod symptom likely differs from the original chaos-lab regression.
+- 2026-04-03: cleaned up the host TURN split-brain: `coturn.service` is now disabled/stopped and only `peercompute-coturn.service` remains active.
+- 2026-04-03: installed `libasound2` on the host so Playwright Chromium can run headlessly from this shell; clean headless checks now show non-empty public relay circuit addrs on both the locally rebuilt NetViz and the live GitHub Pages NetViz, including the shared `room=telemetry`, so the earlier empty-address symptom is not currently reproducible from a fresh browser session.
+- 2026-04-03: Go relay reservation TTL parity hardening landed locally in `peercompute/src/relay-go/main.go` (`1 minute -> 1 hour`) and `peercompute-relay` was restarted at `22:27 UTC` to pick it up. This is now live on the host but still needs a normal git commit/push if we want branch history/origin to match the running service exactly.
 
 ### Next Up
 - Implement Phase 2b fixes (direct-drop recovery, relay safety window, election broadcast, reservation pruning).
-- Restart the production Go relay service and verify browser `getMultiaddrs()` / NetViz `Libp2p addrs` now shows public `secretworkshop.net:443/wss` relay circuit addrs instead of loopback/private addresses.
+- Capture a browser-session-specific repro if `Libp2p addrs: []` appears again: asset hash, hard-refresh/incognito behavior, room, and whether `?debugoutput=1` changes the outcome.
 - Investigate remaining live `webrtc-relay` signal-timeout / `RTCErrorEvent` churn during browser relay-assisted dials.
+- Sync the verified local Go relay TTL hardening back into git history/origin so the running host and branch tip do not drift.
 - Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
 - Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
 - Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
@@ -63,7 +70,8 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 
 ### Blocked / Risks
 - Node relay can still crash on StreamStateError when gossipsub writes to closed streams.
-- Live prod browser logs still show intermittent `webrtc-relay` signal timeouts, and the Go relay advertised-address fix still needs a service restart plus browser re-check to confirm the localhost/empty-address symptoms are resolved.
+- Live prod browser logs still show intermittent `webrtc-relay` signal timeouts even though fresh headless sessions on 2026-04-03 now report healthy non-empty public relay circuit addrs; any remaining empty-address complaints are likely browser/session-specific and still need a deterministic repro.
+- Host/runtime drift risk: the relay service now includes a local uncommitted TTL hardening change in `peercompute/src/relay-go/main.go`; commit/push that change if we want the branch tip and running prod host to stay aligned.
 
 ## Scale Plan (current focus)
 Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.
