@@ -42,15 +42,18 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 - Go relay now joins pubsub topics with relay participation to forward traffic.
 - Dev gossipsub defaults tuned for testing (neutral scoring + wider mesh bounds).
 - Fano Reactor demo scaffolded with exact sedenion algebra, bond-lab UI, and headless chemistry tests.
+- 2026-04-03: fresh `docs/*/relay-config-source.json` + prod `relay-config.json` artifacts were built locally for GitHub Pages; deploy is still pending.
 
 ### Next Up
 - Implement Phase 2b fixes (direct-drop recovery, relay safety window, election broadcast, reservation pruning).
 - Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
 - Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
 - Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
+- Rebuild/redeploy `metaversejs.github.io/peercompute/` so each demo publishes `relay-config-source.json` and stops falling back to stale localhost bootstrap peers.
 
 ### Blocked / Risks
 - Node relay can still crash on StreamStateError when gossipsub writes to closed streams.
+- Current production GitHub Pages deploy is stale: `relay-config-source.json` is missing from live demo folders, and live `relay-config.json` files still advertise `/dns4/localhost/tcp/8080/...` bootstrap peers.
 
 ## Scale Plan (current focus)
 Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.

@@ -2,12 +2,28 @@
   "relayHost": "secretworkshop.net",
   "relayPort": "443",
   "relayProtocol": "wss",
-  "relayPeerId": "",
+  "relayPeerId": "12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs",
   "relayIdentityFile": "config/relay-peer-id.json",
   "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
   "bootstrapPeers": [],
   "pubsubType": "gossipsub",
+  "gossipsub": {
+    "D": 8,
+    "Dhi": 16,
+    "Dout": 1,
+    "scoreParams": {
+      "IPColocationFactorWeight": 0,
+      "behaviourPenaltyWeight": 0,
+      "topics": {
+        "__default": {
+          "meshMessageDeliveriesWeight": 0,
+          "meshMessageDeliveriesThreshold": 0,
+          "meshFailurePenaltyWeight": 0
+        }
+      }
+    }
+  },
   "webrtc": {
     "iceServers": [
       {

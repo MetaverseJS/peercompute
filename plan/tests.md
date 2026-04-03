@@ -38,6 +38,29 @@
 - Purpose: verify `start-turn-prod.sh` renders managed coturn config from env/config defaults, `pcserver.sh` mode selection stays correct, backend shell scripts remain syntactically valid, the relay systemd installer still targets `pcserver.sh` at `multi-user.target`, and release docs/scripts continue to reference the backend stack.
 - Gate: run when changing backend launch scripts, TURN defaults, package backend scripts, deployment docs, or relay systemd installer behavior.
 
+### Production frontend relay-config freshness check
+- Command: `python3 - <<'PY'`
+- Command: `import json, ssl, urllib.request`
+- Command: `ctx = ssl.create_default_context()`
+- Command: `demos = ['netviz', 'cubechat', 'sneakywoods', 'hyperborea', 'daddygo']`
+- Command: `for demo in demos:`
+- Command: `    source_url = f'https://metaversejs.github.io/peercompute/{demo}/relay-config-source.json'`
+- Command: `    cfg_url = f'https://metaversejs.github.io/peercompute/{demo}/relay-config.json'`
+- Command: `    try:`
+- Command: `        with urllib.request.urlopen(source_url, context=ctx, timeout=10) as r:`
+- Command: `            source = json.load(r)`
+- Command: `        assert source.get('relayConfigUrl') == 'https://secretworkshop.net/peercompute/config/relay-config.json'`
+- Command: `    except Exception as exc:`
+- Command: `        raise SystemExit(f'{demo}: missing/invalid relay-config-source.json: {exc}')`
+- Command: `    with urllib.request.urlopen(cfg_url, context=ctx, timeout=10) as r:`
+- Command: `        cfg = json.load(r)`
+- Command: `    bootstrap = ' '.join(cfg.get('bootstrapPeers') or [])`
+- Command: `    assert 'localhost' not in bootstrap, f'{demo}: stale localhost bootstrap {bootstrap}'`
+- Command: `print('prod relay-config freshness OK')`
+- Command: `PY`
+- Purpose: verify the live GitHub Pages demos ship `relay-config-source.json` pointing at `https://secretworkshop.net/peercompute/config/relay-config.json` and no longer fall back to stale localhost bootstrap peers.
+- Gate: run after any GitHub Pages demo build/deploy or when debugging prod frontend connectivity against the production relay.
+
 ### Overview link-mode check
 - Command: `npm run build && rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
 - Purpose: verify demo overview links are production-folder based by default and only switch to dev-port routing on docs dev port `4173` (or explicit query override).
