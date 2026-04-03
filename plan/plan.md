@@ -23,6 +23,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - GPU hub scaffolding and warm delta provider hook.
 - ComputeManager runtime support for worker-safe WASM tasks, hybrid WASM+WebGPU tasks, and DataState commitDelta adapters.
 - Backend `pcserver.sh` launcher for relay + local TURN/STUN, with systemd wiring at the relay runlevel.
+- Production relay/demo config refresh: `npm run build` now emits GitHub Pages demo `relay-config-source.json` files that point at `https://secretworkshop.net/peercompute/config/relay-config.json`, and the live prod relay/TURN endpoints have been revalidated against `wss://secretworkshop.net/` and `secretworkshop.net:3478`.
+- Production relay runtime guard: `scripts/start-relay-prod.sh` and `scripts/install-relay-systemd.sh` now enforce Go when `RELAY_IMPL=go` so prod/systemd launchers fail closed instead of silently falling back to the Node relay.
+- Production backend installer wrapper: `scripts/install-prod-systemd-services.sh` now provides a one-command Go+systemd setup path, defaulting to split `peercompute-relay` + `peercompute-coturn` services with a `--dry-run` preview mode.
+- Production service split confirmed on host: enabled `peercompute-relay` + `peercompute-coturn` units now back the live prod stack, with `pcserver.sh` supervising the Go relay and coturn and no remaining live Node relay process.
 - Network chaos-lab scaffolding (`net-chaos-lab/`) with topology config, scenario runner, metrics dashboard, and probe harness.
 - Net chaos-lab fail-fast containernet preflight checks (host tooling + Docker daemon) and service health checks (PID/port verification).
 - Net chaos-lab matrix runner with per-scenario metric gates and matrix summary artifacts (`--matrix` + `configs/matrix/direct-regression.yaml`).
@@ -116,6 +120,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 ## Known Issues / Blockers:
 - Playwright tests blocked in sandbox (Chromium EPERM, report port bind).
 - WSS relay requires valid certs; use HTTP for local tests if needed.
+- Production browser logs still show intermittent `webrtc-relay` signal timeouts and leaked `/ip4/127.0.0.1/tcp/8080/ws/...` relay multiaddrs in announced addresses; relay address advertisement cleanup is still pending.
 
 ## Design Principles:
 - Modular ES6 modules; managers should be worker-ready where practical.

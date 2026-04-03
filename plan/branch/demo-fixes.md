@@ -42,18 +42,28 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 - Go relay now joins pubsub topics with relay participation to forward traffic.
 - Dev gossipsub defaults tuned for testing (neutral scoring + wider mesh bounds).
 - Fano Reactor demo scaffolded with exact sedenion algebra, bond-lab UI, and headless chemistry tests.
-- 2026-04-03: fresh `docs/*/relay-config-source.json` + prod `relay-config.json` artifacts were built locally for GitHub Pages; deploy is still pending.
+- 2026-04-03: fresh `docs/*/relay-config-source.json` + prod `relay-config.json` artifacts were built and deployed; live GitHub Pages demos now fetch prod relay config from `https://secretworkshop.net/peercompute/config/relay-config.json`.
+- 2026-04-03: after the old `peercompute-relay` service was stopped on the host, the production relay was relaunched successfully with the detached current Node relay on `127.0.0.1:8080`; public `wss://secretworkshop.net/` and TURN `:3478` were re-verified.
+- 2026-04-03: live NetViz browser runs now start successfully against prod; current production runtime is Node, not Go, though browser logs still show some relay-webrtc signal timeouts and a leaked `/ip4/127.0.0.1/...` relay-scoped address.
+- 2026-04-03: docs and launchers were aligned so production explicitly targets the Go relay under systemd; prod launchers now fail closed when `RELAY_IMPL=go` but `go` is unavailable.
+- 2026-04-03: added `scripts/install-prod-systemd-services.sh` as the one-command production installer; it defaults to split Go relay + coturn systemd services and supports `--dry-run` for tmux-safe copyless setup.
+- 2026-04-03: prod host now shows enabled split systemd units (`peercompute-relay`, `peercompute-coturn`); live process table shows `pcserver.sh` + `go run .` + `peercompute-relay-go` + `turnserver`, and the old Node relay process is gone.
+- 2026-04-03: post-cutover NetViz browser smoke shows healthy bootstrap on the Go relay plus a mixed transport set (`direct-websocket`, `relay-webrtc`, `relay`, and at least one `webrtc-direct`). Remaining browser-side imperfection: `Libp2p addrs: []` and a still-high proportion of relay-scoped WebRTC links.
+- 2026-04-03: fixed a peer-level relay-drop bug in `NetworkManager`: relay pruning now retries after `directUpgradeGraceMs` and closes both `relay` and `relay-webrtc` once a true direct path is stable. Fresh docs bundles were rebuilt; GitHub Pages redeploy is required for the live demos to pick up the fix.
 
 ### Next Up
 - Implement Phase 2b fixes (direct-drop recovery, relay safety window, election broadcast, reservation pruning).
+- Investigate and suppress leaked `/ip4/127.0.0.1/tcp/8080/ws/...` relay-scoped addrs from production announced addresses.
+- Investigate remaining live `webrtc-relay` signal-timeout / `RTCErrorEvent` churn during browser relay-assisted dials.
+- Investigate why post-cutover browser `getMultiaddrs()` / NetViz `Libp2p addrs` is empty even though relay/direct connectivity is functioning.
 - Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
 - Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
 - Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
-- Rebuild/redeploy `metaversejs.github.io/peercompute/` so each demo publishes `relay-config-source.json` and stops falling back to stale localhost bootstrap peers.
+- Keep `metaversejs.github.io/peercompute/` deploys in sync whenever prod relay config/bootstrap changes.
 
 ### Blocked / Risks
 - Node relay can still crash on StreamStateError when gossipsub writes to closed streams.
-- Current production GitHub Pages deploy is stale: `relay-config-source.json` is missing from live demo folders, and live `relay-config.json` files still advertise `/dns4/localhost/tcp/8080/...` bootstrap peers.
+- Live prod browser logs still show intermittent `webrtc-relay` signal timeouts and a leaked localhost relay address, which create some doomed remote dials even though `wss://secretworkshop.net/` is up.
 
 ## Scale Plan (current focus)
 Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.

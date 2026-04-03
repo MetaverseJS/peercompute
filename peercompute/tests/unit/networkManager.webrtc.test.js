@@ -896,6 +896,103 @@ test('NetworkManager delays relay prune until direct upgrade grace window passes
   assert.equal(relayClosed, true);
 });
 
+test('NetworkManager prunes relay-webrtc connections once true direct is stable', () => {
+  const now = Date.now();
+  const manager = new NetworkManager({
+    webrtc: { dropRelayOnDirect: true, directUpgradeGraceMs: 0 }
+  });
+  manager.bootstrapPeerIds = new Set();
+  manager.peers.set('peer-a', { directCandidateSince: now - 1000 });
+
+  let relayClosed = false;
+  let relayWebrtcClosed = false;
+  const relayConn = {
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/p2p/peer-a'),
+    status: 'open',
+    close: async () => {
+      relayClosed = true;
+    }
+  };
+  const relayWebrtcConn = {
+    remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/webrtc/p2p/peer-a'),
+    status: 'open',
+    close: async () => {
+      relayWebrtcClosed = true;
+    }
+  };
+  const directConn = {
+    remoteAddr: buildAddr('/webrtc/p2p/peer-a'),
+    status: 'open',
+    close: async () => {}
+  };
+
+  manager.libp2p = {
+    getConnections: () => [relayConn, relayWebrtcConn, directConn]
+  };
+
+  manager._maybePruneRelayConnections('peer-a');
+  assert.equal(relayClosed, true);
+  assert.equal(relayWebrtcClosed, true);
+});
+
+test('NetworkManager schedules delayed relay prune and retries after grace window', () => {
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  const scheduled = [];
+  global.setTimeout = (fn, delay) => {
+    const token = { fn, delay };
+    scheduled.push(token);
+    return token;
+  };
+  global.clearTimeout = () => {};
+
+  try {
+    const now = Date.now();
+    const manager = new NetworkManager({
+      webrtc: { dropRelayOnDirect: true, directUpgradeGraceMs: 10000 }
+    });
+    manager.bootstrapPeerIds = new Set();
+    manager.peers.set('peer-a', { directCandidateSince: now - 1000 });
+
+    let relayClosed = false;
+    const relayConn = {
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/p2p/peer-a'),
+      status: 'open',
+      close: async () => {
+        relayClosed = true;
+      }
+    };
+    const relayWebrtcConn = {
+      remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay/p2p-circuit/webrtc/p2p/peer-a'),
+      status: 'open',
+      close: async () => {
+        relayClosed = true;
+      }
+    };
+    const directConn = {
+      remoteAddr: buildAddr('/webrtc/p2p/peer-a'),
+      status: 'open',
+      close: async () => {}
+    };
+
+    manager.libp2p = {
+      getConnections: () => [relayConn, relayWebrtcConn, directConn]
+    };
+
+    manager._maybePruneRelayConnections('peer-a');
+    assert.equal(relayClosed, false);
+    assert.equal(scheduled.length, 1);
+    assert.ok(scheduled[0].delay > 0 && scheduled[0].delay <= 9005);
+
+    manager.peers.set('peer-a', { directCandidateSince: now - 20000 });
+    scheduled[0].fn();
+    assert.equal(relayClosed, true);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
+});
+
 test('NetworkManager applies dial backoff after transient webrtc-relay failures', async () => {
   const manager = new NetworkManager({
     webrtc: {

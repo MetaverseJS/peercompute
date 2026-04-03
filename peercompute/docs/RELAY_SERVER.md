@@ -1,9 +1,11 @@
-# libp2p Circuit Relay v2 Server (Node.js)
+# libp2p Circuit Relay v2 Server
 
 This is a local relay server for PeerCompute that enables browser-to-browser P2P connections.
 
-**Canonical runtime:** Node.js via `src/relay/server.js`.
-The Deno relay (`src/relay/server.ts`) is legacy and not used by the dev/test scripts.
+**Runtime summary:**
+- Local dev/test defaults to the Node relay via `src/relay/server.js`.
+- Production should run the Go relay via `src/relay-go/main.go`, launched through `scripts/start-relay-prod.sh` or `scripts/install-relay-systemd.sh`.
+- The Deno relay (`src/relay/server.ts`) is legacy and not used by the current scripts.
 
 ## Why Do We Need a Relay Server?
 
@@ -105,14 +107,37 @@ Edit `src/relay/server.js` to adjust:
 
 ### Running on a Server
 
-For production, you'll want to:
+For production, use the Go relay under systemd.
 
-1. **Use a process manager** (PM2, systemd, etc.):
+If you want the repo-managed one-command path, run:
+
 ```bash
-pm2 start src/relay/server.js --name peercompute-relay
+sudo -E env "PATH=$PATH" bash scripts/install-prod-systemd-services.sh
 ```
 
-2. **Use a reverse proxy** (nginx, Caddy) for SSL:
+That wrapper defaults to the split production layout:
+- `peercompute-relay.service` for the Go relay
+- `peercompute-coturn.service` for TURN/STUN
+
+1. **Install the combined backend service** (recommended):
+```bash
+sudo -E bash scripts/install-relay-systemd.sh
+```
+
+This installs `peercompute-relay.service`, which runs `scripts/pcserver.sh` and starts:
+- the Go relay (`RELAY_IMPL=go` by default)
+- the local TURN/STUN service
+
+The generated service also sets `RELAY_REQUIRE_GO=1` when `RELAY_IMPL=go`, so the production launcher fails instead of silently falling back to Node.
+The installer also records the install-time `PATH` in the unit so systemd can still find `go` when it lives outside the default service path.
+If you want relay and coturn split into separate units, install the relay service with `PCSERVER_ENABLE_TURN=0` and then install coturn with `scripts/install-coturn-systemd.sh`.
+
+2. **Or launch manually for a one-off production test**:
+```bash
+RELAY_IMPL=go RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash scripts/pcserver.sh
+```
+
+3. **Use a reverse proxy** (nginx, Caddy) for SSL termination when needed:
 ```nginx
 location /relay {
     proxy_pass http://localhost:9090;
@@ -122,11 +147,17 @@ location /relay {
 }
 ```
 
-3. **Update bootstrap addresses** to use your domain:
+4. **Update bootstrap addresses** to use your domain:
 ```javascript
 bootstrapPeers: [
   '/dns4/your-domain.com/tcp/443/wss/p2p/12D3KooW...'
 ]
+```
+
+If you want TURN/STUN isolated from the combined backend unit, install a dedicated coturn systemd unit with:
+
+```bash
+sudo -E bash scripts/install-coturn-systemd.sh
 ```
 
 ### Security Considerations

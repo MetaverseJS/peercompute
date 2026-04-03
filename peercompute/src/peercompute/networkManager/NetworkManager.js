@@ -636,6 +636,7 @@ export class NetworkManager {
     this.firstDirectUpgradeAt = null;
     this.relayTransport = null;
     this.relayReservationPeers = new Set();
+    this.relayPruneTimers = new Map();
     this.peerDialAddrCache = new Map();
     this.peerDialBackoff = new Map();
 
@@ -1099,6 +1100,10 @@ export class NetworkManager {
     if (this.relayReconnectState?.autoDisconnectTimer) {
       clearTimeout(this.relayReconnectState.autoDisconnectTimer);
       this.relayReconnectState.autoDisconnectTimer = null;
+    }
+    if (this.relayPruneTimers?.size) {
+      this.relayPruneTimers.forEach((timeoutId) => clearTimeout(timeoutId));
+      this.relayPruneTimers.clear();
     }
 
     if (this.libp2p) {
@@ -1590,6 +1595,7 @@ export class NetworkManager {
       this._dropPubsubPeer(peerId);
       this.peers.delete(peerId);
       this.peerDialBackoff.delete(peerId);
+      this._clearRelayPruneTimer(peerId);
       // Fix D: Clean up relay reservation state for disconnected peer
       this.relayReservationPeers.delete(peerId);
       if (this.bootstrapPeerIds.has(peerId) && !this._hasBootstrapRelayConnections()) {
@@ -2409,6 +2415,7 @@ export class NetworkManager {
       this.recentDialAttempts.delete(peerId);
       this.peerDialBackoff.delete(peerId);
       this.pendingTopologyRequests.delete(peerId);
+      this._clearRelayPruneTimer(peerId);
       // Fix D: Clean up relay reservation for stale peer
       this.relayReservationPeers.delete(peerId);
       // Fix E: Clean up relayAssistState Maps for stale peer
@@ -3810,15 +3817,44 @@ export class NetworkManager {
     return this._getPreferredConnectionMeta(peerId)?.via || null;
   }
 
+  _clearRelayPruneTimer(peerId) {
+    if (!peerId) return;
+    const timeoutId = this.relayPruneTimers?.get?.(peerId);
+    if (!timeoutId) return;
+    clearTimeout(timeoutId);
+    this.relayPruneTimers.delete(peerId);
+  }
+
+  _scheduleRelayPrune(peerId, delayMs) {
+    if (!peerId || !Number.isFinite(delayMs) || delayMs <= 0) return;
+    this._clearRelayPruneTimer(peerId);
+    const timeoutId = setTimeout(() => {
+      this.relayPruneTimers.delete(peerId);
+      this._maybePruneRelayConnections(peerId);
+    }, delayMs);
+    this.relayPruneTimers.set(peerId, timeoutId);
+  }
+
   _maybePruneRelayConnections(peerId) {
     if (!this.libp2p) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
     if (this.config.webrtc?.dropRelayOnDirect === false) return;
     const connections = this._getConnectionsForPeer(peerId);
-    if (connections.length === 0) return;
+    if (connections.length === 0) {
+      this._clearRelayPruneTimer(peerId);
+      return;
+    }
     const directConnections = connections.filter((conn) => isConnectionOpen(conn) && isTrulyDirectAddr(conn?.remoteAddr));
     const hasDirect = directConnections.length > 0;
-    if (!hasDirect) return;
+    if (!hasDirect) {
+      this._clearRelayPruneTimer(peerId);
+      return;
+    }
+    const relayed = connections.filter((conn) => isConnectionOpen(conn) && isRelayAddr(conn?.remoteAddr));
+    if (relayed.length === 0) {
+      this._clearRelayPruneTimer(peerId);
+      return;
+    }
     const graceMs = Number.isFinite(this.config.webrtc?.directUpgradeGraceMs)
       ? Math.max(0, this.config.webrtc.directUpgradeGraceMs)
       : DEFAULT_DIRECT_UPGRADE_GRACE_MS;
@@ -3829,10 +3865,13 @@ export class NetworkManager {
         .filter((value) => Number.isFinite(value));
       if (stableSinceValues.length > 0) {
         const directStableForMs = now - Math.min(...stableSinceValues);
-        if (directStableForMs < graceMs) return;
+        if (directStableForMs < graceMs) {
+          this._scheduleRelayPrune(peerId, graceMs - directStableForMs);
+          return;
+        }
       }
     }
-    const relayed = connections.filter((conn) => isRelayOnlyAddr(conn?.remoteAddr));
+    this._clearRelayPruneTimer(peerId);
     relayed.forEach((conn) => {
       if (conn?.status && conn.status !== 'open') return;
       conn.close?.().catch?.(() => {});

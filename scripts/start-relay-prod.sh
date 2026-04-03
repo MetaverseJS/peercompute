@@ -171,6 +171,9 @@ if [[ -n "${RELAY_SSL_KEY:-}" ]]; then
 fi
 
 RELAY_IMPL="${RELAY_IMPL:-go}"
+if [[ "$RELAY_IMPL" == "go" && -z "${RELAY_REQUIRE_GO:-}" ]]; then
+  RELAY_REQUIRE_GO=1
+fi
 
 export RELAY_PUBLIC_HOST
 export RELAY_PUBLIC_PORT
@@ -186,6 +189,7 @@ export RELAY_PUBSUB_TYPE
 export RELAY_GOSSIPSUB_CONFIG
 export RELAY_PREFER_IPV6
 export RELAY_IMPL
+export RELAY_REQUIRE_GO
 
 echo "Starting PeerCompute relay server (production)..."
 echo "  RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST:-}"
@@ -193,5 +197,7 @@ echo "  RELAY_PUBLIC_PORT=${RELAY_PUBLIC_PORT:-}"
 echo "  RELAY_PUBLIC_PROTOCOL=${RELAY_PUBLIC_PROTOCOL:-}"
 echo "  RELAY_LISTEN_HOST=${RELAY_LISTEN_HOST:-}"
 echo "  RELAY_LISTEN_PORT=${RELAY_LISTEN_PORT:-}"
+echo "  RELAY_IMPL=${RELAY_IMPL:-}"
+echo "  RELAY_REQUIRE_GO=${RELAY_REQUIRE_GO:-}"
 
 exec bash "$repo_root/scripts/run-relay.sh"

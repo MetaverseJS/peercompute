@@ -86,8 +86,11 @@ npm run docs:preview
 - The overview page (`docs/index.html`) now defaults to production folder links (`./hyperborea/`, `./cubechat/`, etc.), so GitHub Pages-style deploys work under nested paths like `https://MetaverseJS.github.io/<repo>/`.
 - When the overview is served from local docs dev port `4173`, links automatically switch to local demo ports for dev workflows. Use `?prod=1` to force production links locally.
 
-### Go Relay (Optional)
-By default `npm run dev` and `npm run dev:local-relay` launch the Node relay. To use the Go relay, install Go 1.24+ and set `RELAY_IMPL=go`:
+### Relay Runtime Selection
+For local dev, `npm run dev` and `npm run dev:local-relay` launch the Node relay by default.
+Production should run the Go relay under systemd, not a detached shell or ad hoc tmux session.
+
+To use the Go relay in dev, install Go 1.24+ and set `RELAY_IMPL=go`:
 
 ```bash
 go version
@@ -99,6 +102,8 @@ To run the relay directly without the npm wrapper:
 ```bash
 bash scripts/run-go-relay.sh
 ```
+
+For production launchers, `scripts/start-relay-prod.sh` now treats `RELAY_IMPL=go` as strict and will fail instead of silently falling back to Node when `go` is missing.
 
 `npm run dev` and `npm run dev:local-relay` now default to loopback-safe relay settings (`localhost` / `127.0.0.1`) so HTTPS/WSS certs stay valid and demos consistently discover peers.  
 If you explicitly want LAN exposure, opt in:
@@ -176,6 +181,7 @@ RELAY_SSL_CERT=/path/to/fullchain.pem RELAY_SSL_KEY=/path/to/privkey.pem bash sc
 ```
 
 This starts the relay and a coturn-compatible TURN/STUN service together.
+For production, the intended relay runtime here is Go (`RELAY_IMPL=go`), and the production launcher now fails closed if Go is unavailable.
 For a headless config/render check, run `npm run backend:dry-run`.
 If you only want the relay process without TURN/STUN, run `bash scripts/start-relay-prod.sh`.
 
@@ -184,11 +190,16 @@ and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) wit
 Point nginx at the on-disk `relayConfigFile` location so `/relay-config.json` is served with CORS.
 
 ### Relay as a systemd Service
-The repo includes a helper that installs and enables a systemd unit for the backend stack:
+The repo includes a helper that installs and enables the recommended production unit for the backend stack:
 
 ```bash
 sudo -E bash scripts/install-relay-systemd.sh
 ```
+
+That installer creates `peercompute-relay.service`, runs `scripts/pcserver.sh`, starts both relay + TURN/STUN, and defaults the service to `RELAY_IMPL=go`.
+When installed with the Go relay, the generated unit also sets `RELAY_REQUIRE_GO=1` so production cannot silently drift back to Node.
+It also writes the install-time `PATH` into the unit so a Go toolchain outside the default systemd search path still resolves correctly.
+You can install it as relay-only by passing `PCSERVER_ENABLE_TURN=0`, or leave TURN enabled for the combined backend unit.
 
 Optional overrides:
 
@@ -196,11 +207,30 @@ Optional overrides:
 RELAY_SERVICE_NAME=peercompute-relay \
 RELAY_SERVICE_USER=$USER \
 RELAY_SERVICE_GROUP=$USER \
+RELAY_IMPL=go \
+PCSERVER_ENABLE_TURN=0 \
 sudo -E bash scripts/install-relay-systemd.sh
 ```
 
 The service runs `scripts/pcserver.sh`, so it starts the relay and TURN/STUN together using `config/relay.json` plus the same env overrides from `config/relay.env`.
 Use `systemctl status peercompute-relay` (or your custom name) to verify it is running.
+
+If you want one command that installs the recommended split production layout, use:
+
+```bash
+sudo -E env "PATH=$PATH" bash scripts/install-prod-systemd-services.sh
+```
+
+That wrapper defaults to:
+- `peercompute-relay.service` as Go relay only
+- `peercompute-coturn.service` as TURN/STUN only
+
+Useful variants:
+
+```bash
+sudo -E env "PATH=$PATH" bash scripts/install-prod-systemd-services.sh --dry-run
+sudo -E env "PATH=$PATH" bash scripts/install-prod-systemd-services.sh --combined
+```
 
 ### Production ICE (Google STUN + Coturn)
 Current defaults are configured for Google STUN plus your own coturn:
@@ -245,7 +275,7 @@ bps-capacity=0
 If you use special characters in TURN credentials, set `RELAY_WEBRTC_CONFIG` directly with a full JSON string instead of composing it via per-field env vars.
 
 ### Coturn as a systemd Service
-If you want TURN/STUN isolated from the combined backend service, you can still install coturn separately:
+If you want TURN/STUN isolated from the combined backend service, you can still install coturn separately with the repo helper:
 
 Install coturn and create your config first:
 
@@ -272,6 +302,7 @@ sudo -E bash scripts/install-coturn-systemd.sh
 ```
 
 The helper writes `/etc/systemd/system/<service>.service`, enables it, starts it, and prints `systemctl status`.
+Use this together with `PCSERVER_ENABLE_TURN=0` on `scripts/install-relay-systemd.sh` when you want relay and coturn as separate systemd units.
 
 ### Coturn Hardening Checklist
 - Use long random TURN credentials and rotate them regularly.
