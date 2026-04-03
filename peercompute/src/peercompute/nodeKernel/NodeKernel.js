@@ -754,6 +754,10 @@ export class NodeKernel {
       network: {
         peerId: networkStats.peerId,
         peerCount: networkStats.peerCount,
+        logicalPeerCount: networkStats.logicalPeerCount,
+        activeDialedPeerCount: networkStats.activeDialedPeerCount,
+        bootstrapPeerCount: networkStats.bootstrapPeerCount,
+        reservedDialPeerCount: networkStats.reservedDialPeerCount,
         isConnected: networkStats.isConnected,
         connections: networkStats.connections,
         targetConnections: networkStats.targetConnections,

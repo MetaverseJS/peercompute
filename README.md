@@ -188,6 +188,8 @@ If you only want the relay process without TURN/STUN, run `bash scripts/start-re
 If you terminate TLS in nginx, set `relayHost` to the relay subdomain, keep `relayPort` at `443`,
 and set `listenHost`/`listenPort` to the local relay (e.g. `127.0.0.1:8080`) with empty cert fields.
 Point nginx at the on-disk `relayConfigFile` location so `/relay-config.json` is served with CORS.
+In that proxied setup, keep `RELAY_PUBLIC_HOST` / `RELAY_PUBLIC_PORT` / `RELAY_PUBLIC_PROTOCOL` correct in the systemd environment as well:
+the Go relay now uses them for libp2p advertised addresses and relay reservations, not just for writing `relay-config.json`.
 
 ### Relay as a systemd Service
 The repo includes a helper that installs and enables the recommended production unit for the backend stack:

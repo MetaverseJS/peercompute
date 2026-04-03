@@ -93,8 +93,12 @@ The relay server is configured in `src/relay/server.js`. It binds to a random po
 ### Environment Variables
 
 - `RELAY_PUBLIC_HOST`: Public IP/hostname to announce (e.g. `192.168.1.174`).
+- `RELAY_PUBLIC_PORT` / `RELAY_PUBLIC_PROTOCOL`: Public port/protocol to announce (`443` / `wss` when TLS is terminated upstream).
 - `RELAY_LISTEN_HOST`: Interface to bind (defaults to `127.0.0.1`, or `0.0.0.0` when `RELAY_PUBLIC_HOST` is set).
 - `RELAY_SSL_CERT` / `RELAY_SSL_KEY`: TLS certificate and key for WSS (falls back to `SSL_CERT` / `SSL_KEY`).
+
+For the Go relay, the `RELAY_PUBLIC_*` values now drive both generated `relay-config.json` output and the relay's advertised libp2p addresses.
+That matters for reverse-proxy deployments: circuit reservations inherit the public WSS addresses instead of leaking loopback/private listen addresses.
 
 ### Modify Configuration
 
@@ -146,6 +150,9 @@ location /relay {
     proxy_set_header Connection "upgrade";
 }
 ```
+
+In this setup, make sure the relay service environment still sets `RELAY_PUBLIC_HOST`, `RELAY_PUBLIC_PORT=443`, and `RELAY_PUBLIC_PROTOCOL=wss`.
+Those values must match the proxy-facing address or browser relay reservations can learn unusable local addrs.
 
 4. **Update bootstrap addresses** to use your domain:
 ```javascript

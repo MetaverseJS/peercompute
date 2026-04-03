@@ -61,6 +61,13 @@
 - Purpose: verify the live GitHub Pages demos ship `relay-config-source.json` pointing at `https://secretworkshop.net/peercompute/config/relay-config.json` and no longer fall back to stale localhost bootstrap peers.
 - Gate: run after any GitHub Pages demo build/deploy or when debugging prod frontend connectivity against the production relay.
 
+### Production Go relay advertised-address verification
+- Manual gate after any Go relay restart or `peercompute/src/relay-go/main.go` change.
+- Open deployed NetViz against prod and evaluate `window.__NETVIZ__?.getStatus?.()` in the browser console.
+- Expectation: `addrs` should include public `/dns4/secretworkshop.net/tcp/443/wss/.../p2p-circuit...` or `/dns6/...` entries, not `[]`.
+- Expectation: neither `addrs` nor `announceAddrs` should contain `/ip4/127.0.0.1`, `/dns4/localhost`, or other loopback relay addresses.
+- Expectation: after the relay-advertisement fix, browser bootstrap/reservation logs should no longer depend on synthetic fallback announce addrs just to remain dialable.
+
 ### Overview link-mode check
 - Command: `npm run build && rg -n "data-demo-dir|window\\.location\\.port === '4173'|relativeTarget" docs/index.html`
 - Purpose: verify demo overview links are production-folder based by default and only switch to dev-port routing on docs dev port `4173` (or explicit query override).
@@ -205,6 +212,7 @@
 - NetViz cross-demo attach gate: run one non-NetViz demo + NetViz on different dev ports, connect NetViz to relay network, ensure "Attach demo" lists active pubsub session beacons and auto-fills topology/room; after attach/reconnect, verify peers and link classifications appear for that demo session.
 - NodeKernel NetViz debug unit gate: `node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js` (validates default debug telemetry settings, telemetry delta publish shape, and attach URL composition).
 - NetworkManager NetViz session topic gate: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` (includes additional pubsub topic scope-bypass delivery check for `peercompute-netviz-sessions`).
+- NetworkManager logical-cap gate: `node --test peercompute/tests/unit/networkManager.webrtc.test.js` must also cover `maxConnections` reservation behavior across pending topology requests, inbound topology accepts, and in-flight new-peer dials, plus separate reporting for logical peer count vs raw transport connection totals.
 - Containernet probe preflight expectation: in matrix/full containernet runs, `preflight_probe_count` should match `probe_total` and `preflight_success_rate` should be > 0 before interpreting direct/relay metrics.
 - Containernet routing expectation: NAT routers must have reachability to `core_services.subnet_ipv4/subnet_ipv6`, and service containers must have return routes to NAT uplink subnet(s); otherwise DNS/HTTPS preflight will fail with `infra_failure_rate=1`.
 - Containernet service-return-route expectation: service containers must install explicit LAN-subnet routes via each segment router uplink gateway (`ip route ... via <uplink_ip> onlink` and IPv6 equivalent), so HTTPS replies do not blackhole when source traffic is non-SNAT or mixed-mode.
@@ -257,6 +265,7 @@
 
 ### NetViz manual diagnosis checklist
 - Confirm `Announce addrs` include non-relay `/webrtc` addresses for direct dialing.
+- Confirm `window.__NETVIZ__?.getStatus?.().addrs` is non-empty on prod and shows public relay circuit addresses rather than loopback or localhost.
 - Check whether upgraded links are `webrtc` direct vs `relay-webrtc` (`/p2p-circuit/webrtc`).
 - Confirm relay redial behavior after `remaining: 0` events.
 - Capture at least one successful direct candidate pair from WebRTC stats.

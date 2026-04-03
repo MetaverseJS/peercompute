@@ -7,6 +7,13 @@ const buildAddr = (value) => ({
   toString: () => value
 });
 
+const buildConnection = (peerId, remoteAddr) => ({
+  remotePeer: { toString: () => peerId },
+  remoteAddr: buildAddr(remoteAddr),
+  status: 'open',
+  close: async () => {}
+});
+
 test('NetworkManager normalizes WebRTC config and ice servers', () => {
   const manager = new NetworkManager({
     webrtc: {
@@ -339,11 +346,12 @@ test('NetworkManager ignores closed connections for direct/drop decisions', () =
 
 test('NetworkManager drops bootstrap relay connections when direct peers exist at target', () => {
   const manager = new NetworkManager({
-    targetConnections: 2,
+    targetConnections: 1,
     webrtc: {
       dropRelayBootstrapOnDirect: true,
-      relayRetention: null,
-      relayBootstrapMinHoldMs: 0
+      relayRetention: false,
+      relayBootstrapMinHoldMs: 0,
+      minDirectMeshPeers: 1
     }
   });
   manager.bootstrapPeerIds = new Set(['relay-peer']);
@@ -363,6 +371,11 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
     close: async () => {}
   };
   manager.libp2p = {
+    services: {
+      pubsub: {
+        getPeers: () => [{ toString: () => 'peer-a' }]
+      }
+    },
     getConnections: (peerId) => {
       if (peerId === 'relay-peer') return [relayConn];
       return [relayConn, directConn];
@@ -376,7 +389,7 @@ test('NetworkManager drops bootstrap relay connections when direct peers exist a
 test('NetworkManager keeps bootstrap relay when elected keeper even with direct peers', () => {
   const manager = new NetworkManager({
     targetConnections: 1,
-    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: false }
   });
   manager.peerId = 'peer-self';
   manager.bootstrapPeerIds = new Set(['relay-peer']);
@@ -622,11 +635,21 @@ test('NetworkManager reports relay-webrtc transport truthfully without marking p
 test('NetworkManager counts relay-webrtc as direct-capable by default', () => {
   const manager = new NetworkManager({
     targetConnections: 1,
-    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+    webrtc: {
+      dropRelayBootstrapOnDirect: true,
+      relayRetention: false,
+      relayBootstrapMinHoldMs: 0,
+      minDirectMeshPeers: 1
+    }
   });
   manager.bootstrapPeerIds = new Set(['relay-peer']);
   manager.peerId = 'peer-self';
   manager.libp2p = {
+    services: {
+      pubsub: {
+        getPeers: () => [{ toString: () => 'peer-a' }]
+      }
+    },
     getConnections: (peerId) => {
       if (peerId === 'relay-peer') {
         return [{
@@ -670,7 +693,12 @@ test('NetworkManager counts relay-webrtc as direct-capable by default', () => {
 test('NetworkManager does not block relay drop on unreachable targetConnections in small rooms', () => {
   const manager = new NetworkManager({
     targetConnections: 5,
-    webrtc: { dropRelayBootstrapOnDirect: true, relayRetention: null }
+    webrtc: {
+      dropRelayBootstrapOnDirect: true,
+      relayRetention: false,
+      relayBootstrapMinHoldMs: 0,
+      minDirectMeshPeers: 2
+    }
   });
   manager.peerId = 'peer-self';
   manager.bootstrapPeerIds = new Set(['relay-peer']);
@@ -687,6 +715,14 @@ test('NetworkManager does not block relay drop on unreachable targetConnections 
     joinedAt: Date.now() - 1500
   });
   manager.libp2p = {
+    services: {
+      pubsub: {
+        getPeers: () => [
+          { toString: () => 'peer-a' },
+          { toString: () => 'peer-b' }
+        ]
+      }
+    },
     getConnections: (peerId) => {
       if (peerId === 'relay-peer') {
         return [{
@@ -770,7 +806,8 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
     webrtc: {
       dropRelayBootstrapOnDirect: true,
       relayRetention: { mode: 'sqrt', min: 1 },
-      relayBootstrapMinHoldMs: 0
+      relayBootstrapMinHoldMs: 0,
+      minDirectMeshPeers: 1
     }
   });
   manager.peerId = 'peer-self';
@@ -813,6 +850,11 @@ test('NetworkManager caps relay keepers at sqrt(N)', () => {
   };
 
   manager.libp2p = {
+    services: {
+      pubsub: {
+        getPeers: () => [{ toString: () => 'peer-1' }]
+      }
+    },
     getConnections: (peerId) => {
       if (peerId === 'relay-peer') return [relayConn];
       return [relayConn, directConn];
@@ -1035,7 +1077,7 @@ test('NetworkManager computes transport connection max with bootstrap headroom',
     ]
   });
 
-  assert.equal(manager._getTransportMaxConnections(4), 8);
+  assert.equal(manager._getTransportMaxConnections(4), 12);
 });
 
 test('NetworkManager honors explicit transport max connection override', () => {
@@ -1071,7 +1113,7 @@ test('NetworkManager setConnectionLimits updates connection manager using transp
 
   assert.equal(manager.config.targetConnections, 3);
   assert.equal(manager.config.maxConnections, 6);
-  assert.equal(updatedMax, 9);
+  assert.equal(updatedMax, 15);
 });
 
 test('NetworkManager presence payload reports non-bootstrap active peers', () => {
@@ -1104,4 +1146,104 @@ test('NetworkManager presence payload reports non-bootstrap active peers', () =>
   const payload = manager._buildPresencePayload();
 
   assert.equal(payload.activeConnections, 2);
+});
+
+test('NetworkManager reserves inbound topology accepts against logical maxConnections', () => {
+  const manager = new NetworkManager({ maxConnections: 3 });
+  manager.bootstrapPeerIds = new Set();
+  manager._getScopedPeers = () => [];
+
+  const sent = [];
+  manager.sendToPeer = async (peerId, message) => {
+    sent.push({ peerId, type: message.type });
+  };
+  manager.libp2p = {
+    getConnections: () => [
+      buildConnection('peer-a', '/webrtc/p2p/peer-a'),
+      buildConnection('peer-b', '/webrtc/p2p/peer-b')
+    ]
+  };
+
+  manager._handleTopologyConnectRequest('peer-c');
+  manager._handleTopologyConnectRequest('peer-d');
+
+  assert.deepEqual(sent, [
+    { peerId: 'peer-c', type: 'topology-connect-accept' },
+    { peerId: 'peer-d', type: 'topology-connect-referral' }
+  ]);
+  assert.equal(manager.pendingTopologyAccepts.has('peer-c'), true);
+  assert.equal(manager.pendingTopologyAccepts.has('peer-d'), false);
+});
+
+test('NetworkManager blocks new topology requests when logical slots are already reserved', () => {
+  const manager = new NetworkManager({ maxConnections: 3 });
+  manager.bootstrapPeerIds = new Set();
+  manager.pendingTopologyRequests.set('peer-c', { sentAt: Date.now(), expiresAt: Date.now() + 10000 });
+
+  const sent = [];
+  manager.sendToPeer = async (peerId, message) => {
+    sent.push({ peerId, type: message.type });
+  };
+  manager.libp2p = {
+    getConnections: () => [
+      buildConnection('peer-a', '/webrtc/p2p/peer-a'),
+      buildConnection('peer-b', '/webrtc/p2p/peer-b')
+    ]
+  };
+
+  manager._ensureTopologyConnections(new Set(['peer-d', 'peer-e']));
+
+  assert.deepEqual(sent, []);
+  assert.equal(manager.pendingTopologyRequests.has('peer-d'), false);
+  assert.equal(manager.pendingTopologyRequests.has('peer-e'), false);
+});
+
+test('NetworkManager blocks new-peer dials when logical maxConnections is already reserved', async () => {
+  const manager = new NetworkManager({ maxConnections: 3, webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  manager.pendingTopologyRequests.set('peer-b', { sentAt: Date.now(), expiresAt: Date.now() + 10000 });
+  manager.pendingTopologyAccepts.set('peer-c', { reservedAt: Date.now(), expiresAt: Date.now() + 10000 });
+
+  const dialed = [];
+  manager.libp2p = {
+    getConnections: () => [
+      buildConnection('peer-a', '/webrtc/p2p/peer-a')
+    ],
+    dial: async (addr) => {
+      dialed.push(addr?.toString?.() || String(addr));
+    }
+  };
+
+  await manager._maybeDialPeer('peer-d', 'test', [buildAddr('/webrtc')], { force: true });
+
+  assert.deepEqual(dialed, []);
+  assert.equal(manager.pendingPeerDials.has('peer-d'), false);
+});
+
+test('NetworkManager reports logical peer counts separately from raw connection totals', () => {
+  const bootstrapPeerId = '12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs';
+  const manager = new NetworkManager({
+    bootstrapPeers: [
+      `/dns4/example.com/tcp/443/wss/p2p/${bootstrapPeerId}`
+    ]
+  });
+  manager.bootstrapPeerIds = new Set([bootstrapPeerId]);
+  manager.pendingTopologyRequests.set('peer-c', { sentAt: Date.now(), expiresAt: Date.now() + 10000 });
+  manager.libp2p = {
+    getConnections: () => [
+      buildConnection(bootstrapPeerId, `/dns4/example.com/tcp/443/wss/p2p/${bootstrapPeerId}`),
+      buildConnection('peer-a', '/webrtc/p2p/peer-a'),
+      buildConnection('peer-b', '/webrtc/p2p/peer-b'),
+      buildConnection('peer-b', '/dns4/example.com/tcp/443/wss/p2p/relay/p2p-circuit/webrtc/p2p/peer-b')
+    ]
+  };
+
+  const stats = manager.getNetworkStats();
+
+  assert.equal(stats.peerCount, 3);
+  assert.equal(stats.logicalPeerCount, 3);
+  assert.equal(stats.activeDialedPeerCount, 2);
+  assert.equal(stats.bootstrapPeerCount, 1);
+  assert.equal(stats.reservedDialPeerCount, 1);
+  assert.equal(stats.connections, 4);
 });

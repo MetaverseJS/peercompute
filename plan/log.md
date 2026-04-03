@@ -21089,3 +21089,286 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - The relay-drop bug is fixed in source and built into `docs/`, but the live GitHub Pages frontend will not change until the updated `docs/` artifacts are deployed.
 - `Libp2p addrs: []` remains a separate open issue; it was not the cause of the relay-drop bug fixed here.
+
+## Date: 2026-04-03
+
+### Prompt
+- alright I restarted the shell and gave you full access. I just deployed to gh pages. now continue looking into the libp2p address issue
+
+### Prompt Time/Date
+- 2026-04-03T21:19:39Z
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the latest `plan/log.md` entries before continuing, per repo instructions.
+- Traced the browser symptom (`window.__NETVIZ__.getStatus().addrs === []`) through:
+  - NetViz debug logging (`demos/netviz/src/main.js`)
+  - `NetworkManager.initialize()`, `_ensureRelayReservation()`, `_logLocalAnnounceAddrs()`, and `_getAnnounceAddrs()`
+  - libp2p JS address-manager internals (`node_modules/libp2p/src/address-manager/**`)
+  - circuit-relay listener behavior (`node_modules/@libp2p/circuit-relay-v2/src/transport/listener.ts`)
+- Confirmed the frontend already has a fallback path (`_getAnnounceAddrs()`) that keeps dialing/presence functional even when raw libp2p `getMultiaddrs()` is empty, so the remaining issue is not simple browser logging noise.
+- Determined that the post-Go-cutover symptom is best explained by the relay advertising its internal listen address to libp2p reservations instead of the public proxied WSS address:
+  - prod `config/relay.json` is set up for reverse-proxy mode (`relayHost=secretworkshop.net`, `relayPort=443`, `relayProtocol=wss`, `listenHost=127.0.0.1`, `listenPort=8080`)
+  - `peercompute/src/relay-go/main.go` was only using `RELAY_PUBLIC_*` when writing `relay-config.json`
+  - the Go relay was **not** feeding those public values back into libp2p host advertised addresses / circuit reservations
+- Patched `peercompute/src/relay-go/main.go` so the Go relay now:
+  - derives dual-family public host segments (`/dns4/...` + `/dns6/...`) for hostnames
+  - builds public advertised multiaddrs from `RELAY_PUBLIC_HOST` / `RELAY_PUBLIC_PORT` / `RELAY_PUBLIC_PROTOCOL`
+  - passes those public addrs into libp2p via `libp2p.AddrsFactory(...)`
+  - emits the same public address set into generated bootstrap peers / relay-config output
+  - logs `Listen address` separately from `Advertised addresses` so proxied deployments are easier to reason about
+- Updated docs and plan files to capture the new root cause and the required next step:
+  - README and relay docs now explicitly note that `RELAY_PUBLIC_*` must be correct for reverse-proxy deployments because they drive relay reservations, not just config-file output
+  - plan files now record the Go relay advertised-address fix and convert the old open question into a restart/re-verify step
+  - tests plan now includes a concrete NetViz/manual verification gate for `addrs` vs loopback
+
+### Files Touched
+- `peercompute/src/relay-go/main.go`
+- `README.md`
+- `peercompute/docs/RELAY_SERVER.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `git status --short`
+- `tail -n 120 plan/log.md`
+- `rg -n "Libp2p addrs|getMultiaddrs|announceAddrs|confirmObservedAddr|_getAnnounceAddrs|_ensureRelayReservation|addressManager|reservationStore" peercompute/src demos/netviz peercompute/tests -g '!node_modules'`
+- `sed -n '840,1120p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3200,3365p' demos/netviz/src/main.js`
+- `sed -n '2600,3525p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3720,3815p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '560,640p' demos/netviz/src/main.js`
+- `rg -n "confirmObservedAddr\\s*\\(" node_modules/@libp2p node_modules/libp2p -g '!**/*.map'`
+- `sed -n '1,320p' node_modules/libp2p/src/address-manager/index.ts`
+- `sed -n '120,220p' node_modules/@libp2p/circuit-relay-v2/src/transport/listener.ts`
+- `sed -n '1,220p' node_modules/libp2p/src/address-manager/transport-addresses.ts`
+- `sed -n '1,220p' node_modules/libp2p/src/address-manager/observed-addresses.ts`
+- `sed -n '220,470p' node_modules/libp2p/src/address-manager/index.ts`
+- `sed -n '1,260p' node_modules/libp2p/src/transport-manager.ts`
+- `sed -n '1,220p' node_modules/@libp2p/circuit-relay-v2/src/utils.ts`
+- `rg -n "reservation\\.addrs|Reserve|p2p-circuit|RelayReservation|addrs" scripts peercompute -g '!node_modules'`
+- `sed -n '480,620p' peercompute/src/relay-go/main.go`
+- `sed -n '330,430p' peercompute/src/relay-go/main.go`
+- `sed -n '1,240p' scripts/run-go-relay.sh`
+- `sed -n '120,240p' scripts/start-relay-prod.sh`
+- `cat config/relay.json`
+- `which go || true`
+- `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+- `sed -n '170,340p' peercompute/src/relay-go/main.go`
+- `sed -n '400,580p' peercompute/src/relay-go/main.go`
+- `git diff --check`
+- `rg -n "RELAY_PUBLIC_HOST|RELAY_PUBLIC_PROTOCOL|nginx|proxy|AddrsFactory|advertis|reservation|public addrs" README.md peercompute/docs/RELAY_SERVER.md scripts/install-prod-systemd-services.sh -g '!node_modules'`
+- `sed -n '88,170p' peercompute/docs/RELAY_SERVER.md`
+- `sed -n '180,210p' README.md`
+- `sed -n '1,240p' plan/tests.md`
+- `sed -n '34,86p' plan/branch/demo-fixes.md`
+
+### Test Results
+- PASS: `git diff --check` after the Go relay patch and doc updates (no whitespace or patch-format errors).
+- STATIC VERIFICATION ONLY: the new Go relay path now clearly routes `RELAY_PUBLIC_*` into libp2p `AddrsFactory` and generated bootstrap peers, which is the required correction for reverse-proxy deployments.
+- NOT RUN: no Go compile/test command was available in this shell because `go` is still not on `PATH` and no accessible `go` binary was found under `/usr/local`, `/usr/lib`, `/opt`, or `/home/cos`.
+- NOT RUN: no live relay restart/browser recheck from this shell; the fix is on disk only until the service is restarted.
+
+### Failures / Open Questions
+- `systemctl`, `journalctl`, and reading the installed unit under `/etc/systemd/system` are still permission-blocked in this shell, so I could not restart or directly inspect the service here.
+- The Go relay advertised-address fix still needs a prod relay restart to take effect.
+- After restart, the required verification is:
+  - NetViz `window.__NETVIZ__?.getStatus?.().addrs` should be non-empty
+  - those addrs should be `secretworkshop.net:443/wss` relay circuit addrs (preferably `/dns4/...` and `/dns6/...`)
+  - neither `addrs` nor `announceAddrs` should contain `127.0.0.1` / `localhost`
+- Independent of the address-advertisement issue, intermittent `webrtc-relay` signal timeouts remain an open browser-side quality issue to revisit after the restart.
+
+## Date: 2026-04-03
+
+### Prompt
+- you should have access to nvm tmux and everything else now
+
+### Prompt Time/Date
+- 2026-04-03T21:23:05Z
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the latest `plan/log.md` entries before proceeding.
+- Verified the actual runtime capabilities of this Codex shell rather than assuming they changed with the user's shell restart.
+- Checked direct availability of `go`, `tmux`, `node`, `npm`, `systemctl`, and `journalctl`.
+- Confirmed the current process identity/environment:
+  - user is still `cos`
+  - but `HOME=/home/cos/snap/codex/34`
+  - which indicates this session is running under snap confinement, not inside the user's normal tmux/login shell environment
+- Probed the expected user-shell config/install locations:
+  - `/home/cos/.bashrc`
+  - `/home/cos/.profile`
+  - `/home/cos/.nvm`
+- Confirmed those hidden files/directories are inaccessible from this session with `Permission denied`, which explains why the installed `nvm`/Node/Go/tmux environment is still unavailable here even though it may exist in the user's interactive shell.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,160p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `bash -lc 'command -v go; go version; command -v tmux; tmux -V; command -v node; node -v; command -v npm; npm -v; command -v nvm >/dev/null 2>&1 && echo nvm-shell-fn || true; command -v systemctl; systemctl --version | head -n 1; command -v journalctl; journalctl --version | head -n 1'`
+- `ls -la /home/cos | sed -n '1,120p'`
+- `sed -n '1,240p' /home/cos/.bashrc 2>/dev/null`
+- `sed -n '1,240p' /home/cos/.profile 2>/dev/null`
+- `find /home/cos -maxdepth 3 \( -name nvm.sh -o -name node -o -name npm -o -name go -o -name tmux \) 2>/dev/null | head -n 200`
+- `ls -la /home/cos/.nvm`
+- `find /home/cos/.nvm -maxdepth 4 \( -name nvm.sh -o -name node -o -name npm \) 2>/dev/null | head -n 100`
+- `ls -l /usr/bin/tmux /bin/tmux /snap/bin/tmux 2>/dev/null`
+- `cat /home/cos/.profile`
+- `cat /home/cos/.bashrc`
+- `id`
+- `printf 'HOME=%s\nSHELL=%s\nUSER=%s\nLOGNAME=%s\nPWD=%s\n' "$HOME" "$SHELL" "$USER" "$LOGNAME" "$PWD"`
+- `ps -o pid,user,group,egid,euid,comm= -p $$`
+- `getfacl -p /home/cos /home/cos/.bashrc /home/cos/.profile /home/cos/.nvm 2>/dev/null`
+
+### Test Results
+- PASS: identified the environment mismatch precisely:
+  - current session user: `uid=1000(cos)`
+  - current session home: `/home/cos/snap/codex/34`
+- PASS: reproduced the confinement symptoms consistently:
+  - `go`, `tmux`, `node`, and `npm` are not on `PATH`
+  - `systemctl` and `journalctl` exist under `/usr/bin` but execution is denied
+  - `/home/cos/.bashrc`, `/home/cos/.profile`, and `/home/cos/.nvm` are not readable from this session
+
+### Failures / Open Questions
+- The user's interactive shell may indeed have full access now, but this Codex session remains snap-confined and therefore cannot consume the user's hidden home config or host-control tools.
+- Because of that confinement, I still cannot:
+  - source `nvm`
+  - access the installed `go` toolchain under hidden home paths
+  - run `tmux`
+  - restart or inspect the systemd service directly from this session
+- The backend diagnosis/fix in source remains valid, but applying/verifying it on prod still requires either:
+  - the user to run the restart/verification commands in their interactive shell, or
+  - a non-snap/unconfined Codex session.
+
+## Date: 2026-04-03
+
+### Prompt
+- it does not appear to be respecting "max connections" when they're set to 3
+
+### Prompt Time/Date
+- 2026-04-03T21:41:00Z
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the latest `plan/log.md` entries before changing code, per repo instructions.
+- Re-traced `NetworkManager` logical connection accounting, focusing on:
+  - `_ensureTopologyConnections`
+  - `_handleTopologyConnectRequest`
+  - `_handleTopologyConnectAccept`
+  - `_maybeDialPeer`
+  - `getNetworkStats`
+- Confirmed the root issue was real enforcement, not only NetViz/UI interpretation:
+  - active non-bootstrap peers were counted for `maxConnections`
+  - but pending topology requests, inbound accepts, and in-flight new-peer dials were not reserving logical slots
+  - which allowed concurrent topology/discovery churn to overshoot a logical cap like `maxConnections=3`
+- Implemented a logical-slot reservation layer in `NetworkManager`:
+  - added pending reservation maps for inbound topology accepts and in-flight peer dials
+  - added helper methods to prune stale reservations, union them with active non-bootstrap peers, and answer “is there still a logical slot?”
+  - made discovery dialing respect logical-slot availability
+  - made topology request emission stop when logical slots are already reserved
+  - made inbound topology accepts reserve a slot before sending `topology-connect-accept`
+  - made `_maybeDialPeer` refuse brand-new peer dials at logical capacity while still allowing already-reserved/active peers
+  - cleared logical reservations on connect, disconnect, stale-peer cleanup, and disconnect teardown
+- Added diagnostic counters so status surfaces distinguish raw transport sockets from logical peer occupancy:
+  - `logicalPeerCount`
+  - `activeDialedPeerCount`
+  - `bootstrapPeerCount`
+  - `reservedDialPeerCount`
+- Exposed those counters through `NodeKernel.getStatus().network`.
+- Added four focused unit tests for the new behavior:
+  - inbound topology accepts reserve logical slots
+  - new topology requests do not send once logical slots are already reserved
+  - brand-new peer dials are blocked when logical slots are fully reserved
+  - `getNetworkStats()` reports logical-vs-raw counts separately
+- Ran the full `peercompute/tests/unit/networkManager.webrtc.test.js` file and found six pre-existing stale assertions unrelated to the new bug:
+  - several tests used `relayRetention: null`, but current normalization treats null as “use defaults”; `false` is the disable value
+  - transport-max expectations were still written for older pre-overlap headroom math
+  - relay-drop tests did not provide pubsub mesh peers, so current mesh-health gating kept the relay by design
+- Updated those stale tests to match the current intended relay/transport policy, then reran the full unit file successfully.
+- Ran adjacent `NodeKernel` NetViz debug tests after extending `getStatus().network` to confirm the additive fields did not regress that surface.
+- Ran a full production-style build with the temporary Node 24 runtime so the fix is reflected in generated `docs/` output for GitHub Pages deploy.
+- Updated `plan/plan.md`, `plan/tests.md`, and `plan/branch/demo-fixes.md` to record the new logical-cap guard and test coverage.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `docs/netviz/index.html`
+- `docs/netviz/assets/index-CMxdN3-P.js`
+- `docs/cubechat/index.html`
+- `docs/cubechat/assets/index-DYehFXy_.js`
+- `docs/hyperborea/cb.html`
+- `docs/hyperborea/assets/cb-BxPL7S4d.js`
+- `docs/daddygo/index.html`
+- `docs/daddygo/assets/index-D3TpHHf0.js`
+- `docs/sneakywoods/index.html`
+- `docs/sneakywoods/assets/index-OmzsVPWh.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `node -v`
+- `go version`
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '430,660p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1120,1275p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1810,1965p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2330,3075p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3490,3765p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '860,1045p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '1045,1165p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "pendingTopologyRequests|peer:connect|peer:disconnect|disconnect\\(|setConnectionLimits\\(|getNetworkStats\\(" peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '680,745p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1070,1115p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1548,1615p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3105,3145p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3000,3138p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1,220p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `rg -n "maxConnections|targetConnections|computeDesiredPeers|shouldDialPeer" peercompute/src/peercompute/networkManager/TopologyController.js`
+- `sed -n '1,260p' peercompute/src/peercompute/networkManager/TopologyController.js`
+- `sed -n '260,520p' peercompute/src/peercompute/networkManager/TopologyController.js`
+- `sed -n '1260,1315p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '730,790p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `ls -la /home/cos/.nvm`
+- `find /home/cos -maxdepth 4 -type f \\( -name node -o -name npm \\) 2>/dev/null | head -n 40`
+- `sed -n '1890,2015p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `find /tmp -maxdepth 4 -type f -name node 2>/dev/null | head -n 20`
+- `find /usr -maxdepth 4 -type f -name node 2>/dev/null | head -n 20`
+- `find /opt -maxdepth 4 -type f -name node 2>/dev/null | head -n 20`
+- `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `git diff --check`
+- `sed -n '330,390p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '620,845p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `sed -n '1030,1090p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+- `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/npm run build`
+- `git status --short`
+- `tail -n 80 plan/plan.md`
+- `tail -n 120 plan/tests.md`
+- `tail -n 120 plan/branch/demo-fixes.md`
+- `tail -n 80 plan/log.md`
+- `date -u +%Y-%m-%dT%H:%M:%SZ`
+- `git diff --name-only -- docs/netviz docs/cubechat docs/hyperborea docs/daddygo docs/sneakywoods peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/src/peercompute/nodeKernel/NodeKernel.js peercompute/tests/unit/networkManager.webrtc.test.js`
+
+### Test Results
+- PASS: `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - 39 tests passed, 0 failed
+  - includes the new `maxConnections` logical-slot regression coverage
+- PASS: `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/node --test peercompute/tests/unit/nodeKernel.netvizDebug.test.js`
+  - 4 tests passed, 0 failed
+- PASS: `PATH=/tmp/node-v24.14.1-linux-x64/bin:$PATH /tmp/node-v24.14.1-linux-x64/bin/npm run build`
+  - root build completed successfully and regenerated GitHub Pages `docs/` bundles
+  - build emitted pre-existing large-chunk warnings and a pre-existing `planetgen` Rollup warning about `WebGL1Renderer` export shape, but it did not fail the build
+- PASS: `git diff --check`
+
+### Failures / Open Questions
+- `node` is still not on the shell `PATH`; tests had to be run with the previously downloaded temporary Node 24 binary at `/tmp/node-v24.14.1-linux-x64/bin/node`.
+- This patch fixes logical-cap enforcement for new-peer topology/discovery churn, but it does not intentionally collapse duplicate relay/direct transport sockets for an already-connected peer; raw libp2p socket counts can still exceed `maxConnections` during valid upgrade overlap. The new status counters now expose that distinction explicitly.
+- No live browser/manual validation was run in this prompt; verification here was headless unit coverage plus a successful build only.

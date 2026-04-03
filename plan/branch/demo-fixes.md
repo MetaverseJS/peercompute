@@ -50,12 +50,12 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 - 2026-04-03: prod host now shows enabled split systemd units (`peercompute-relay`, `peercompute-coturn`); live process table shows `pcserver.sh` + `go run .` + `peercompute-relay-go` + `turnserver`, and the old Node relay process is gone.
 - 2026-04-03: post-cutover NetViz browser smoke shows healthy bootstrap on the Go relay plus a mixed transport set (`direct-websocket`, `relay-webrtc`, `relay`, and at least one `webrtc-direct`). Remaining browser-side imperfection: `Libp2p addrs: []` and a still-high proportion of relay-scoped WebRTC links.
 - 2026-04-03: fixed a peer-level relay-drop bug in `NetworkManager`: relay pruning now retries after `directUpgradeGraceMs` and closes both `relay` and `relay-webrtc` once a true direct path is stable. Fresh docs bundles were rebuilt; GitHub Pages redeploy is required for the live demos to pick up the fix.
+- 2026-04-03: traced the post-cutover empty browser `Libp2p addrs` issue to the Go relay advertising only its internal listen address behind nginx. `peercompute/src/relay-go/main.go` now uses libp2p `AddrsFactory` plus dual-family public bootstrap generation from `RELAY_PUBLIC_*`, so relay reservations should advertise `secretworkshop.net:443/wss` instead of loopback/private addresses after the prod service is restarted.
 
 ### Next Up
 - Implement Phase 2b fixes (direct-drop recovery, relay safety window, election broadcast, reservation pruning).
-- Investigate and suppress leaked `/ip4/127.0.0.1/tcp/8080/ws/...` relay-scoped addrs from production announced addresses.
+- Restart the production Go relay service and verify browser `getMultiaddrs()` / NetViz `Libp2p addrs` now shows public `secretworkshop.net:443/wss` relay circuit addrs instead of loopback/private addresses.
 - Investigate remaining live `webrtc-relay` signal-timeout / `RTCErrorEvent` churn during browser relay-assisted dials.
-- Investigate why post-cutover browser `getMultiaddrs()` / NetViz `Libp2p addrs` is empty even though relay/direct connectivity is functioning.
 - Add supervised restart or closed-stream guards for the Node relay gossipsub crash.
 - Implement relay drop/rejoin strategy after nodes hit target peers to reduce relay load.
 - Add scoped + sharded Yjs update modes so global state is not broadcast to every node.
@@ -63,7 +63,7 @@ Use the demo suite to prove the PeerCompute architecture end-to-end: layered Dat
 
 ### Blocked / Risks
 - Node relay can still crash on StreamStateError when gossipsub writes to closed streams.
-- Live prod browser logs still show intermittent `webrtc-relay` signal timeouts and a leaked localhost relay address, which create some doomed remote dials even though `wss://secretworkshop.net/` is up.
+- Live prod browser logs still show intermittent `webrtc-relay` signal timeouts, and the Go relay advertised-address fix still needs a service restart plus browser re-check to confirm the localhost/empty-address symptoms are resolved.
 
 ## Scale Plan (current focus)
 Goal: reduce relay load so it behaves as a rendezvous/fallback path, not the main pipe.
@@ -206,3 +206,4 @@ Goal: build new demos that prove the platform and the distributed compute narrat
 - Done (2026-03-12): Restructured `_maybeUpdateBootstrapRelayConnections` — retention check now runs BEFORE the election, so the election keeper cannot override the drop decision. Election only fires as a last resort when no peer reports `relayConnected`. This was the primary cause of sticky relay: the election winner re-dialed bootstrap every 3 s tick, undoing the drop. 14 headless tests, 42 total, all pass.
 - Done (2026-03-13): Fixed empty `getMultiaddrs()` — circuit relay reservations were never picked up by the listener because `_reserveRelayForPeer` used `'configured'` type but the generic `/p2p-circuit` listener skips configured reservations. Fix: use specific bootstrap relay circuit addresses in listen config (e.g. `/dns4/localhost/tcp/8080/wss/p2p/<id>/p2p-circuit`) instead of generic `/p2p-circuit`. This triggers `CircuitListen` mode which properly calls `addedRelay()`, giving nodes externally-reachable multiaddrs so WebRTC signaling can succeed. 42 tests pass.
 - Done (2026-03-17): `ComputeManager` now supports pure WASM tasks and hybrid `wasm-webgpu` host modules, including typed memory views, worker-safe helper modules, inline fallback behavior, and `commitDelta` adapters covered by unit tests.
+- Done (2026-04-03): Fixed logical `maxConnections` oversubscription in `NetworkManager` by reserving slots for pending topology requests, inbound topology accepts, and in-flight new-peer dials. Added explicit logical-vs-raw connection counters for diagnosis and refreshed `networkManager.webrtc` coverage so the current relay/transport policy and the new `maxConnections=3` regression cases all pass.

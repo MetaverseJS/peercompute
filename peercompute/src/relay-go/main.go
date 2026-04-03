@@ -184,17 +184,63 @@ func splitList(raw string) []string {
   return out
 }
 
-func toMultiaddrHostSegment(host string) string {
-  if host == "" {
+func toListenHostSegment(host string) string {
+  trimmed := strings.TrimSpace(host)
+  if trimmed == "" {
     return ""
   }
-  if strings.Contains(host, ":") {
-    return "/ip6/" + host
+  ip := net.ParseIP(trimmed)
+  if ip != nil {
+    if ip.To4() != nil {
+      return "/ip4/" + trimmed
+    }
+    return "/ip6/" + trimmed
   }
-  if net.ParseIP(host) != nil {
-    return "/ip4/" + host
+  return "/dns4/" + trimmed
+}
+
+func toMultiaddrHostSegments(host string) []string {
+  trimmed := strings.TrimSpace(host)
+  if trimmed == "" {
+    return nil
   }
-  return "/dns4/" + host
+  ip := net.ParseIP(trimmed)
+  if ip != nil {
+    if ip.To4() != nil {
+      return []string{"/ip4/" + trimmed}
+    }
+    return []string{"/ip6/" + trimmed}
+  }
+  // Publish both families so IPv4-only and IPv6-only agents can bootstrap.
+  return []string{"/dns4/" + trimmed, "/dns6/" + trimmed}
+}
+
+func buildPublicRelayAddrs(host string, port string, protocol string) []ma.Multiaddr {
+  trimmedPort := strings.TrimSpace(port)
+  trimmedProtocol := strings.TrimSpace(protocol)
+  if trimmedPort == "" || trimmedProtocol == "" {
+    return nil
+  }
+  hostSegments := toMultiaddrHostSegments(host)
+  if len(hostSegments) == 0 {
+    return nil
+  }
+  addrs := make([]ma.Multiaddr, 0, len(hostSegments))
+  seen := make(map[string]struct{}, len(hostSegments))
+  for _, hostSegment := range hostSegments {
+    value := fmt.Sprintf("%s/tcp/%s/%s", hostSegment, trimmedPort, trimmedProtocol)
+    addr, err := ma.NewMultiaddr(value)
+    if err != nil {
+      log.Printf("[Relay] Invalid public multiaddr %s: %v", value, err)
+      continue
+    }
+    if _, ok := seen[addr.String()]; ok {
+      continue
+    }
+    seen[addr.String()] = struct{}{}
+    addrs = append(addrs, addr)
+  }
+  return addrs
 }
 
 func loadRelayIdentity(identityPath string) (crypto.PrivKey, peer.ID, error) {
@@ -416,7 +462,16 @@ func main() {
   if useWss {
     listenProtocol = "wss"
   }
-  listenAddr := fmt.Sprintf("%s/tcp/%s/%s", toMultiaddrHostSegment(relayListenHost), relayListenPort, listenProtocol)
+  listenAddr := fmt.Sprintf("%s/tcp/%s/%s", toListenHostSegment(relayListenHost), relayListenPort, listenProtocol)
+  advertiseProtocol := relayPublicProtocol
+  if advertiseProtocol == "" {
+    if useWss {
+      advertiseProtocol = "wss"
+    } else {
+      advertiseProtocol = "ws"
+    }
+  }
+  advertisedAddrs := buildPublicRelayAddrs(relayPublicHost, relayPublicPort, advertiseProtocol)
 
   var wsOpts []ws.Option
   if useWss {
@@ -439,6 +494,11 @@ func main() {
     libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport),
     libp2p.Transport(wsTransport),
     libp2p.Transport(tcp.NewTCPTransport),
+  }
+  if len(advertisedAddrs) > 0 {
+    opts = append(opts, libp2p.AddrsFactory(func([]ma.Multiaddr) []ma.Multiaddr {
+      return advertisedAddrs
+    }))
   }
   if privKey != nil {
     opts = append(opts, libp2p.Identity(privKey))
@@ -521,7 +581,8 @@ func main() {
   })
 
   addrs := host.Addrs()
-  log.Printf("Listening on:")
+  log.Printf("Listen address: %s", listenAddr)
+  log.Printf("Advertised addresses:")
   for _, addr := range addrs {
     log.Printf("%s", addr.String())
   }
@@ -544,20 +605,25 @@ func main() {
     }
   }
 
-  publicAddr := ""
+  bootstrapPeers := make([]string, 0, len(addrs))
   if relayPublicHost != "" && relayPublicPort != "" {
-    publicAddr = fmt.Sprintf("%s/tcp/%s/%s/p2p/%s", toMultiaddrHostSegment(relayPublicHost), relayPublicPort, relayPublicProtocol, host.ID().String())
-    log.Printf("Relay Address: %s", publicAddr)
+    publicRelayAddrs := buildPublicRelayAddrs(relayPublicHost, relayPublicPort, relayPublicProtocol)
+    for _, addr := range publicRelayAddrs {
+      bootstrapPeers = append(bootstrapPeers, fmt.Sprintf("%s/p2p/%s", addr.String(), host.ID().String()))
+    }
   } else if wsAddr != nil {
-    publicAddr = fmt.Sprintf("%s/p2p/%s", wsAddr.String(), host.ID().String())
-    log.Printf("Relay Address: %s", publicAddr)
+    bootstrapPeers = append(bootstrapPeers, fmt.Sprintf("%s/p2p/%s", wsAddr.String(), host.ID().String()))
   } else {
     log.Printf("No WebSocket address found")
   }
 
-  if publicAddr != "" {
+  if len(bootstrapPeers) > 0 {
+    log.Printf("Relay Address: %s", bootstrapPeers[0])
+    if len(bootstrapPeers) > 1 {
+      log.Printf("[Relay] Additional relay addresses: %s", strings.Join(bootstrapPeers[1:], ", "))
+    }
     config := relayConfig{
-      BootstrapPeers: []string{publicAddr},
+      BootstrapPeers: bootstrapPeers,
       PubsubType:     map[bool]string{true: "gossipsub", false: "floodsub"}[useGossipsub],
       WebRTC:         webrtcConfig,
       Gossipsub:      gossipsubConfig,
