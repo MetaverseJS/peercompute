@@ -5,6 +5,7 @@ const DIRECTORY_NAMESPACE = 'rooms';
 const ROOM_ENTRY_PREFIX = 'room-';
 const ROOM_HEARTBEAT_MS = 10000;
 const ROOM_TTL_MS = 45000;
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 
 const slugify = (value) => {
   const slug = String(value || '')
@@ -36,9 +37,12 @@ export const buildRoomId = ({ name, visibility, password }) => {
 export const normalizeRoomName = (value) => slugify(value);
 
 export class RoomDirectory {
-  constructor({ gameId, bootstrapPeers }) {
+  constructor({ gameId, bootstrapPeers, webrtc, pubsubType, gossipsub }) {
     this.gameId = gameId;
     this.bootstrapPeers = bootstrapPeers || [];
+    this.webrtc = webrtc || null;
+    this.pubsubType = pubsubType || null;
+    this.gossipsub = gossipsub || null;
     this.node = null;
     this.stateManager = null;
     this.rooms = new Map();
@@ -53,7 +57,11 @@ export class RoomDirectory {
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: this.gameId,
-      roomId: DIRECTORY_ROOM_ID
+      roomId: DIRECTORY_ROOM_ID,
+      transportManager: NO_FATAL_TRANSPORT_MANAGER,
+      ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+      ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
+      ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();
     await this.node.start();

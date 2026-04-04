@@ -1,0 +1,33 @@
+{
+  "bootstrapPeers": [
+    "/dns4/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv",
+    "/dns6/localhost/tcp/8080/wss/p2p/12D3KooWQnyQsyhxKHY41cDM4xXu9GW4SPHXF2rn1owL8ykZrtxv"
+  ],
+  "pubsubType": "gossipsub",
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": [
+          "stun:stun.l.google.com:19302",
+          "stun:stun.cloudflare.com:3478"
+        ]
+      }
+    ]
+  },
+  "gossipsub": {
+    "D": 8,
+    "Dhi": 16,
+    "Dout": 1,
+    "scoreParams": {
+      "IPColocationFactorWeight": 0,
+      "behaviourPenaltyWeight": 0,
+      "topics": {
+        "__default": {
+          "meshMessageDeliveriesWeight": 0,
+          "meshMessageDeliveriesThreshold": 0,
+          "meshFailurePenaltyWeight": 0
+        }
+      }
+    }
+  }
+}

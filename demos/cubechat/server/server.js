@@ -1,10 +1,10 @@
 import { createLibp2p } from 'libp2p';
 import { tcp } from '@libp2p/tcp';
 import { webSockets } from '@libp2p/websockets';
-import { noise } from '@chainsafe/libp2p-noise';
-import { yamux } from '@chainsafe/libp2p-yamux';
+import { noise } from '@libp2p/noise';
+import { yamux } from '@libp2p/yamux';
 import { mplex } from '@libp2p/mplex';
-import { gossipsub } from '@chainsafe/libp2p-gossipsub';
+import { gossipsub } from '@libp2p/gossipsub';
 import { identify } from '@libp2p/identify';
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
 import { kadDHT } from '@libp2p/kad-dht';

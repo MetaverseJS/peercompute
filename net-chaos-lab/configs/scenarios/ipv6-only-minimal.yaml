@@ -1,0 +1,6 @@
+name: ipv6-only-minimal
+settle_seconds: 8
+stages:
+  - at_seconds: 0
+    type: ip_mode
+    mode: ipv6-only

@@ -7,7 +7,7 @@ Demonstrate the key innovation from the root README in real time: a compute netw
 
 ## Core User Story
 - A host creates a room and becomes the root node.
-- The host selects a predefined workload from a list (CPU, WebGPU, WASM variants).
+- The host selects a predefined workload from a list (CPU, WebGPU, WASM, hybrid WASM+WebGPU).
 - Other peers join and are visualized as nodes.
 - The network reconfigures as peers join/leave and as task demand changes.
 - Users can see how topology and placement decisions affect throughput and latency.
@@ -21,13 +21,14 @@ Demonstrate the key innovation from the root README in real time: a compute netw
 - CPU baseline: grid diffusion or simple physics step.
 - WebGPU path: lightweight compute pass (particle step or field update).
 - WASM path: same workload compiled to WASM for portability comparisons.
+- Hybrid path: WASM preprocessing + worker-local WebGPU dispatch for capability-aware comparisons.
 - Optional batch vs streaming modes for each workload.
 
 ## Architecture Mapping
 - NodeKernel orchestrates room, role, and scheduler profile.
 - NetworkManager publishes presence and warm deltas (topology + metrics).
 - StateManager/DataState store warm deltas for visualization and replay.
-- ComputeManager dispatches tasks (CPU/WebGPU/WASM) and emits commitDelta.
+- ComputeManager dispatches tasks (CPU/WebGPU/WASM/WASM+WebGPU) and emits commitDelta.
 - GPU hub used when render-coupled buffers are shared.
 
 ## Data Flow

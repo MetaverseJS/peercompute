@@ -2,12 +2,53 @@
   "relayHost": "secretworkshop.net",
   "relayPort": "443",
   "relayProtocol": "wss",
-  "relayPeerId": "",
+  "relayPeerId": "12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs",
   "relayIdentityFile": "config/relay-peer-id.json",
   "relayConfigUrl": "https://secretworkshop.net/peercompute/config/relay-config.json",
   "relayConfigFile": "config/relay-config.json",
   "bootstrapPeers": [],
-  "publicHost": "",
+  "pubsubType": "gossipsub",
+  "gossipsub": {
+    "D": 8,
+    "Dhi": 16,
+    "Dout": 1,
+    "scoreParams": {
+      "IPColocationFactorWeight": 0,
+      "behaviourPenaltyWeight": 0,
+      "topics": {
+        "__default": {
+          "meshMessageDeliveriesWeight": 0,
+          "meshMessageDeliveriesThreshold": 0,
+          "meshFailurePenaltyWeight": 0
+        }
+      }
+    }
+  },
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": "stun:stun.l.google.com:19302"
+      },
+      {
+        "urls": [
+          "turn:secretworkshop.net:3478?transport=udp",
+          "turn:secretworkshop.net:3478?transport=tcp"
+        ],
+        "username": "peer",
+        "credential": "compute"
+      }
+    ],
+    "preferDirect": true,
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "countRelayWebrtcAsDirectCapable": true,
+    "relayRetention": {
+      "mode": "logn",
+      "min": 1,
+      "max": 10
+    }
+  },
+  "publicHost": "2605:59c0:2c05:c108:c95c:4e95:717:86d1",
   "publicPort": "",
   "sslCert": "",
   "sslKey": "",

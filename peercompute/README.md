@@ -22,7 +22,7 @@ The Keystone demo (planned) will visualize this reconfiguration live with select
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
 - **StateManager**: shared state sync (Yjs + scoped namespaces).
 - **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
-- **ComputeManager**: CPU/WebGPU compute worker pool (in progress).
+- **ComputeManager**: JS/WASM/WebGPU compute runtime with worker offload, hybrid `wasm-webgpu` tasks, and `commitDelta` support.
 - **ioManager**: controls local input/output (like threejs and your keyboard).
 - **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
@@ -158,7 +158,7 @@ const positionsBuffer = gpuHub.createHotBuffer(
 );
 ```
 
-### Compute Workers (CPU + isolated GPU)
+### Compute Workers (JS, WASM, isolated GPU, hybrid WASM+WebGPU)
 ```js
 // CPU task (runs in a worker when available)
 const cpuResult = await node.submitTask({
@@ -177,11 +177,41 @@ const cpuResult = await node.submitTask({
   }
 });
 
+// Pure WASM task with memory IO and a result adapter
+const wasmResult = await node.submitTask({
+  runtime: 'wasm',
+  wasm: {
+    source: '/compute/scaleField.wasm',
+    entry: 'scaleFirst',
+    args: [4],
+    inputViews: [
+      { name: 'input', dataKey: 'input', view: 'Int32Array', byteOffset: 0 }
+    ],
+    outputViews: [
+      { name: 'scaled', view: 'Int32Array', byteOffset: 0, length: 1 }
+    ],
+    resultModule: '/compute/scaleFieldResult.js',
+    resultExport: 'toCommitDelta'
+  },
+  data: { input: [7] }
+});
+
 // WebGPU task in a worker (module-based, isolated GPU)
 await node.submitTask({
   module: '/compute/stepWebGPU.js',
   exportName: 'stepWebGPU',
   data: { /* inputs */ }
+});
+
+// Hybrid task: WASM preprocessing + worker-local WebGPU orchestration
+await node.submitTask({
+  runtime: 'wasm-webgpu',
+  wasm: {
+    source: '/compute/prefixSum.wasm'
+  },
+  module: '/compute/prefixSumHybrid.js',
+  exportName: 'runPrefixSumHybrid',
+  data: { values }
 });
 ```
 
@@ -197,6 +227,21 @@ export async function stepWebGPU(input) {
       payload: { /* compact CPU delta */ }
     },
     value: { ok: true }
+  };
+}
+```
+
+```js
+// /compute/scaleFieldResult.js
+export function toCommitDelta({ outputs }) {
+  return {
+    commitDelta: {
+      taskId: 'wasm-scale',
+      scope: 'deltas',
+      version: Date.now(),
+      payload: { scaled: Array.from(outputs.scaled) }
+    },
+    value: outputs
   };
 }
 ```
@@ -232,6 +277,7 @@ peercompute/src/peercompute/
 - Authority election + snapshot ownership modes.
 - Optional binary encoding for high-throughput channels.
 - ComputeManager integration with network scheduler for distributed workloads.
+- Portable compute placement across JS, WASM, and hybrid WASM+WebGPU task descriptors.
 
 ## License
 MIT

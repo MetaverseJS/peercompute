@@ -2,7 +2,7 @@ llm instructions for this file: always keep this file in your context. LOCK IT I
 
 This file provides general instructions for the LLM coding assistent. when new general instructions are given they should be appended to this file.
 
-keep a conscice high level plan document in plan.md and a more detailed narrative of our implementation in log.md. imp-log should describe the approaches we've tried problems and solutions. this should help us avoid retreading ground we have already covered. the imp-branch file contains the goal for the current branch.
+keep a conscice high level plan document in plan.md and a more detailed narrative of our implementation in log.md. log.md should describe the approaches we've tried problems and solutions. this should help us avoid retreading ground we have already covered. branch.md contains the goal for the current branch.
 
 Make things in a modular composable way using ES6 modules. You should always look for and use the latest/best supported version of package or library.
 

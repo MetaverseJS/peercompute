@@ -13,6 +13,9 @@
       --grid: rgba(0, 255, 106, 0.18);
       --glow: #00ff6a;
       --hot: #ff4fb3;
+      --amber: #ffb13b;
+      --relay: #caf6ff;
+      --pubsub: #caf6ff;
       --panel: rgba(0, 15, 0, 0.9);
       --panel-soft: rgba(0, 20, 0, 0.75);
       --text-dim: rgba(0, 255, 106, 0.7);
@@ -55,14 +58,58 @@
       opacity: 0.7;
     }
 
-    .hud {
+    .console-shell {
       position: fixed;
       top: 16px;
       left: 16px;
-      width: min(360px, 92vw);
       display: grid;
-      gap: 12px;
+      gap: 10px;
       z-index: 2;
+      width: min(380px, 92vw);
+    }
+
+    .console-toggle {
+      justify-self: start;
+      padding: 6px 10px;
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+    }
+
+    .console-window {
+      width: 100%;
+      max-height: 80vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: var(--glow) rgba(0, 10, 0, 0.6);
+    }
+
+    .console-window.collapsed {
+      display: none;
+    }
+
+    .console-window::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .console-window::-webkit-scrollbar-track {
+      background: rgba(0, 10, 0, 0.6);
+      border-left: 1px solid rgba(0, 255, 106, 0.2);
+    }
+
+    .console-window::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(0, 255, 106, 0.85), rgba(0, 255, 106, 0.35));
+      border: 1px solid rgba(0, 255, 106, 0.75);
+    }
+
+    .console-window::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 255, 106, 0.9);
+    }
+
+    .console-section + .console-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(0, 255, 106, 0.2);
     }
 
     .panel {
@@ -101,6 +148,41 @@
       flex-wrap: wrap;
     }
 
+    .control-group {
+      display: grid;
+      gap: 8px;
+      padding: 8px 0;
+    }
+
+    .control-group + .control-group {
+      border-top: 1px solid rgba(0, 255, 106, 0.15);
+    }
+
+    .group-title {
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .field input,
+    .field select,
+    .field button {
+      width: 100%;
+    }
+
+    .field button {
+      justify-self: start;
+    }
+
     label {
       font-size: 0.7rem;
       letter-spacing: 0.12em;
@@ -110,6 +192,18 @@
     input {
       flex: 1;
       min-width: 120px;
+      background: transparent;
+      border: 1px solid var(--glow);
+      color: var(--glow);
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    select {
+      flex: 1;
+      min-width: 140px;
       background: transparent;
       border: 1px solid var(--glow);
       color: var(--glow);
@@ -148,13 +242,26 @@
       color: var(--text-dim);
       line-height: 1.6;
       white-space: pre-line;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .peer-list {
       font-size: 0.7rem;
       color: var(--text-dim);
-      white-space: pre;
+      white-space: pre-wrap;
       line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .event-log {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      white-space: pre-line;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .legend {
@@ -166,6 +273,18 @@
 
     .legend span {
       color: var(--glow);
+    }
+
+    .legend .legend-amber {
+      color: var(--amber);
+    }
+
+    .legend .legend-relay {
+      color: var(--relay);
+    }
+
+    .legend .legend-pubsub {
+      color: var(--pubsub);
     }
 
     #inspect-panel {
@@ -189,6 +308,8 @@
       font-size: 0.68rem;
       color: var(--text-dim);
       line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     #inspect-body {
@@ -196,6 +317,8 @@
       font-size: 0.68rem;
       color: var(--text-dim);
       line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .hot {
@@ -203,10 +326,18 @@
     }
 
     @media (max-width: 640px) {
-      .hud {
+      .console-shell {
         left: 12px;
         right: 12px;
         width: auto;
+      }
+
+      .console-window {
+        max-height: 50vh;
+      }
+
+      .field {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -214,53 +345,157 @@
 <body>
   <canvas id="netviz-canvas"></canvas>
   <div class="scanlines" aria-hidden="true"></div>
-  <div class="hud">
-    <section class="panel">
+  <div class="console-shell">
+    <button id="console-toggle" class="console-toggle" type="button" aria-expanded="true" aria-controls="console-window">[console]</button>
+    <div id="console-window" class="panel console-window">
       <div class="panel-title-row">
         <div class="panel-title">NetViz Console</div>
         <button id="help-toggle" class="help-btn" type="button" aria-label="About NetViz" aria-expanded="false" aria-controls="help-panel">?</button>
       </div>
-      <div class="row">
-        <label for="room-input">Room</label>
-        <input id="room-input" value="telemetry" spellcheck="false" />
-        <button id="connect-btn">Connect</button>
+      <div class="console-section">
+        <div class="control-group">
+          <div class="group-title">Topology</div>
+          <div class="field">
+            <label for="topology-select">Topology</label>
+            <select id="topology-select">
+              <option value="distributed" selected>Distributed</option>
+              <option value="hierarchical">Hierarchical</option>
+              <option value="emergent">Emergent</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="topology-id">Topology ID</label>
+            <input id="topology-id" value="netviz-topology" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="room-input">Room</label>
+            <input id="room-input" value="telemetry" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="attach-session-select">Attach demo</label>
+            <select id="attach-session-select">
+              <option value="">Manual</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="attach-session-btn">Attach</label>
+            <button id="attach-session-btn" type="button">Attach session</button>
+          </div>
+          <div class="field">
+            <label for="connect-btn">Connect</label>
+            <button id="connect-btn">Connect</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="group-title">Render</div>
+          <div class="field">
+            <label for="render-mode">Render</label>
+            <select id="render-mode">
+              <option value="full">Full</option>
+              <option value="low">Low</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="group-title">Connections</div>
+          <div class="field">
+            <label for="connection-radius">Radius</label>
+            <input id="connection-radius" type="number" min="0" step="0.1" placeholder="1.1" />
+          </div>
+          <div class="field">
+            <label for="max-connections">Max</label>
+            <input id="max-connections" type="number" min="1" step="1" placeholder="5" />
+          </div>
+          <div class="field">
+            <label for="target-connections">Target</label>
+            <input id="target-connections" type="number" min="1" step="1" placeholder="4" />
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="group-title">Relay</div>
+          <div class="field">
+            <label for="drop-relay">Drop relay</label>
+            <input id="drop-relay" type="checkbox" />
+          </div>
+          <div class="field">
+            <label for="relay-retention-mode">Retention</label>
+            <select id="relay-retention-mode">
+              <option value="">Off</option>
+              <option value="logn">Log N</option>
+              <option value="sqrt">Sqrt</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="relay-retention-min">Retention min</label>
+            <input id="relay-retention-min" type="number" min="0" step="1" placeholder="1" />
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="group-title">Display</div>
+          <div class="field">
+            <label for="show-p2p-topology">Show P2P</label>
+            <input id="show-p2p-topology" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="show-ip-topology">Show IP topology</label>
+            <input id="show-ip-topology" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="hide-ghosts">Hide ghosts</label>
+            <input id="hide-ghosts" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="auto-rotate">Auto rotate</label>
+            <input id="auto-rotate" type="checkbox" />
+          </div>
+        </div>
+        <div id="status" class="status">Status: idle</div>
       </div>
-      <div class="row">
-        <label for="hide-ghosts">Hide ghosts</label>
-        <input id="hide-ghosts" type="checkbox" checked />
+      <div id="help-panel" class="console-section">
+        <div class="panel-title">What is NetViz?</div>
+        <div id="help-body">
+          NetViz is a live topology + telemetry view of the PeerCompute network.
+          The center cube is your local node; amber cubes are peers and blue-white icosahedrons are relays.
+          Amber links show direct WebRTC connections, green arcs show relay-facilitated links with a spur to the relay,
+          and blue-white arcs show peers keeping a relay connection (pubsub activity).
+          Pulses indicate message direction along each link.
+          Select a topology + topology ID before connecting; in distributed mode you can drag your cube to change its metric position.
+          Use "Attach demo" to auto-fill topology + room from any running PeerCompute demo tab.
+          Use Display toggles to render P2P topology, IP topology, or both at once.
+          Click any node or edge to inspect detailed stats (bandwidth, addresses, relay/direct mode, NAT hints).
+          For chaos-lab overlays, set ?chaosApi=http://127.0.0.1:8866 and this panel will show live lab topology + scenario state.
+        </div>
       </div>
-      <div class="row">
-        <label for="auto-rotate">Auto rotate</label>
-        <input id="auto-rotate" type="checkbox" />
+      <div class="console-section">
+        <div class="panel-title">Chaos Lab</div>
+        <div id="chaos-status" class="status">Chaos feed: disabled (add ?chaosApi=http://127.0.0.1:8866)</div>
       </div>
-      <div id="status" class="status">Status: idle</div>
-    </section>
-    <section id="help-panel" class="panel">
-      <div class="panel-title">What is NetViz?</div>
-      <div id="help-body">
-        NetViz is a live topology + telemetry view of the PeerCompute network.
-        The center cube is your local node. Green cubes are connected peers.
-        Ghost nodes are inferred from neighbor lists without direct telemetry.
-        Curved links show connections; pulses indicate recent rx/tx activity and line thickness reflects bandwidth.
-        Click any node or edge to inspect detailed stats.
+      <div class="console-section">
+        <div class="panel-title">Log</div>
+        <div id="event-log" class="event-log">Waiting for events...</div>
       </div>
-    </section>
-    <section class="panel">
-      <div class="panel-title">Peers</div>
-      <div id="peer-list" class="peer-list">No peers yet.</div>
-    </section>
-    <section class="panel">
-      <div class="panel-title">Legend</div>
-      <div class="legend">
-        <div><span class="hot">LOCAL</span> root view</div>
-        <div><span>REMOTE</span> peer nodes</div>
-        <div><span>GHOST</span> inferred nodes (no telemetry yet)</div>
+      <div class="console-section">
+        <div class="panel-title">Peers</div>
+        <div id="peer-list" class="peer-list">No peers yet.</div>
       </div>
-    </section>
-    <section id="inspect-panel" class="panel">
-      <div id="inspect-title" class="panel-title">Inspect</div>
-      <div id="inspect-body">Click a node or edge.</div>
-    </section>
+      <div class="console-section">
+        <div class="panel-title">Legend</div>
+        <div class="legend">
+          <div><span class="legend-amber">LOCAL</span> your node</div>
+          <div><span class="legend-amber">PEER</span> connected peers</div>
+          <div><span>GHOST</span> inferred nodes (no telemetry yet)</div>
+          <div><span class="legend-relay">RELAY</span> relay servers</div>
+          <div><span class="legend-amber">WEBRTC</span> direct peer link (amber)</div>
+          <div><span>RELAY PATH</span> relayed hop + spur (green)</div>
+          <div><span class="legend-pubsub">RELAY LINK</span> relay keepers / pubsub (blue-white)</div>
+        </div>
+      </div>
+      <div id="inspect-panel" class="console-section">
+        <div id="inspect-title" class="panel-title">Inspect</div>
+        <div id="inspect-body">Click a node or edge.</div>
+      </div>
+    </div>
   </div>
   <script type="module" src="./src/main.js"></script>
 </body>

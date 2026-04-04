@@ -18,6 +18,7 @@ test('NetworkManager telemetry snapshot reports counts and peers', () => {
   manager._touchPeer('peer-a', {
     gameId: 'demo',
     roomId: 'room',
+    topologyId: manager.config.topologyId,
     connectedAt: 100,
     rxCount: 3,
     txCount: 1,

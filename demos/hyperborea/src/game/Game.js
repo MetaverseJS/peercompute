@@ -27,16 +27,65 @@ import {
 import { TimeSystem } from '../systems/timeSystem.js';
 import { TerrainGenerator } from '../systems/terrainGenerator.js';
 import { RoomDirectory, buildRoomId, normalizeRoomName } from './roomDirectory.js';
+import { registerPeercomputeBotBridge } from '../../../shared/peercomputeBotBridge.js';
+import {
+    bindPeercomputeBotSettingsControls,
+    createPeercomputeBotHost,
+    maybeStartPeercomputeLocalBotRuntime,
+    readPeercomputeBotIdentity,
+    readPeercomputeBotParams,
+    readPeercomputeRoomParams
+} from '../../../shared/peercomputeBots.js';
+
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
+
+const normalizeWebRTCConfig = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+    const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+    const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+    const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+    const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+    const next = { ...raw };
+    if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+    if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+    if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+    if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+    return Object.keys(next).length ? next : null;
+};
+
+const normalizePubsubType = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.pubsubType ?? cfg.pubsub;
+    if (!raw) return null;
+    return String(raw).trim().toLowerCase();
+};
+
+const normalizeGossipsubConfig = (cfg) => {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const raw = cfg.gossipsub;
+    if (!raw || typeof raw !== 'object') return null;
+    return { ...raw };
+};
 
 export class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
+        this.botLaunch = readPeercomputeBotParams();
+        this.botHost = null;
+        this.botRuntime = null;
+        this.e2eEnabled = typeof window !== 'undefined'
+            && new URLSearchParams(window.location.search).get('e2e') === '1';
         this.gameNamespace = 'hyperborea';
         this.peerMeshes = new Map();
         this.peers = new Map();
         this.bootstrapPeers = [];
+        this.webrtc = null;
+        this.pubsubType = null;
+        this.gossipsub = null;
         this.roomDirectory = null;
         this.currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
+        this.currentRoomPassword = '';
         this.networkManager = null;
         this.libp2p = null;
         this.visibilityHandler = null;
@@ -65,6 +114,27 @@ export class Game {
             }
         } catch (_) {
             // ignore localStorage errors
+        }
+        const initialRoom = readPeercomputeRoomParams(null, {
+            buildRoomId,
+            normalizeRoomName
+        });
+        if (initialRoom) {
+            this.currentRoom = {
+                name: initialRoom.name,
+                visibility: initialRoom.visibility,
+                roomId: initialRoom.roomId
+            };
+            this.currentRoomPassword = initialRoom.password || '';
+        }
+        const botIdentity = readPeercomputeBotIdentity(null, { demoId: 'hyperborea' });
+        if (botIdentity.enabled) {
+            if (botIdentity.name) {
+                this.playerName = botIdentity.name;
+            }
+            if (botIdentity.colorInt !== null) {
+                this.myColor = botIdentity.colorInt;
+            }
         }
         this.spearThrustProgress = 0;
         this.persistedState = this.loadPersistedState();
@@ -116,6 +186,7 @@ export class Game {
         this.schedulerConfigured = false;
         this.snapshotProviderId = null;
         this.keys = {};
+        this.botBridgePrimaryDown = false;
         this.currentSeed = CONFIG.WORLD_SEED; // Track current terrain seed
         this.pointerLocked = false;
         
@@ -170,6 +241,132 @@ export class Game {
         this.generateInitialTerrain();
         // Use XR-friendly animation loop
         this.renderer.setAnimationLoop(() => this.animate());
+        this.registerBotBridge();
+        this.botRuntime = maybeStartPeercomputeLocalBotRuntime({
+            demoId: 'hyperborea',
+            bridgeId: 'hyperborea',
+            hideSelectors: ['#hud', '#controls', '#settings-button', '#settings-menu', '#room-list', '#attackButton']
+        });
+        this.updateE2EState();
+    }
+
+    updateE2EState() {
+        if (!this.e2eEnabled || typeof window === 'undefined') return;
+        window.__hyperboreaTest = {
+            localPeerId: this.myPeerId || null,
+            roomId: this.currentRoom?.roomId || null,
+            remotePeerCount: this.peers.size,
+            remoteMeshCount: this.peerMeshes.size
+        };
+    }
+
+    createBotBridgeSnapshot() {
+        if (!this.position) return null;
+        const peers = [];
+        for (const [peerId, mesh] of this.peerMeshes.entries()) {
+            const peerState = this.peers.get(peerId) || null;
+            const group = mesh?.group || mesh;
+            if (!group?.position) continue;
+            peers.push({
+                id: peerId,
+                position: {
+                    x: group.position.x,
+                    y: group.position.y,
+                    z: group.position.z
+                },
+                lastSeenAgeMs: Number.isFinite(peerState?.lastSeen) ? (Date.now() - peerState.lastSeen) : null
+            });
+        }
+        return {
+            gameId: 'hyperborea',
+            localId: this.myPeerId || null,
+            localPosition: {
+                x: this.position.x,
+                y: this.position.y,
+                z: this.position.z
+            },
+            localVelocity: {
+                x: this.velocity?.x || 0,
+                y: this.velocity?.y || 0,
+                z: this.velocity?.z || 0
+            },
+            localRotation: Number(this.yaw || 0),
+            localPitch: Number(this.pitch || 0),
+            capabilities: {
+                primaryAttack: true,
+                primaryRange: 2.6,
+                interact: false,
+                descend: true,
+                verticalMovement: true
+            },
+            peerCount: peers.length,
+            peers
+        };
+    }
+
+    applyBotBridgeAction(action) {
+        this.keys['KeyW'] = Number(action?.forward || 0) > 0.25;
+        this.keys['KeyS'] = Number(action?.forward || 0) < -0.25;
+        this.keys['KeyA'] = Number(action?.strafe || 0) < -0.25;
+        this.keys['KeyD'] = Number(action?.strafe || 0) > 0.25;
+        this.keys['Space'] = Boolean(action?.jump);
+        this.keys['ShiftLeft'] = Boolean(action?.descend);
+        const primaryDown = Boolean(action?.primary);
+        if (primaryDown && !this.botBridgePrimaryDown) {
+            this.triggerAttack();
+        }
+        this.botBridgePrimaryDown = primaryDown;
+        if (Number.isFinite(action?.rotation)) {
+            this.yaw = action.rotation;
+        }
+        if (Number.isFinite(action?.pitch)) {
+            this.pitch = action.pitch;
+        }
+        this.markStateDirty();
+        return true;
+    }
+
+    clearBotBridgeAction() {
+        ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft'].forEach((key) => {
+            this.keys[key] = false;
+        });
+        this.botBridgePrimaryDown = false;
+        this.markStateDirty();
+        return true;
+    }
+
+    registerBotBridge() {
+        registerPeercomputeBotBridge('hyperborea', {
+            supports: ['arena', 'combat'],
+            snapshot: () => this.createBotBridgeSnapshot(),
+            applyAction: (action) => this.applyBotBridgeAction(action),
+            clearAction: () => this.clearBotBridgeAction()
+        });
+    }
+
+    initBotControls() {
+        const countInput = document.getElementById('bot-count');
+        const presetInput = document.getElementById('bot-preset');
+        const addButton = document.getElementById('bot-add');
+        const clearButton = document.getElementById('bot-clear');
+        const statusEl = document.getElementById('bot-status');
+        if (!this.botHost) {
+            this.botHost = createPeercomputeBotHost({
+                demoId: 'hyperborea',
+                getRoomState: () => ({
+                    room: this.currentRoom,
+                    password: this.currentRoomPassword
+                })
+            });
+        }
+        bindPeercomputeBotSettingsControls({
+            host: this.botHost,
+            countInput,
+            presetInput,
+            addButton,
+            clearButton,
+            statusEl
+        });
     }
     
     loadPersistedState() {
@@ -387,6 +584,9 @@ export class Game {
         try {
             const cfg = await this.loadRelayConfig();
             this.bootstrapPeers = this.normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+            this.webrtc = normalizeWebRTCConfig(cfg);
+            this.pubsubType = normalizePubsubType(cfg);
+            this.gossipsub = normalizeGossipsubConfig(cfg);
             this.relayPeerIds = this.bootstrapPeers.map(getPeerIdFromAddr).filter(Boolean);
             if (this.bootstrapPeers.length === 0) {
                 logNet('No bootstrap peers; relay config missing');
@@ -397,7 +597,11 @@ export class Game {
                 bootstrapPeers: this.bootstrapPeers,
                 enablePersistence: false,
                 gameId: 'hyperborea',
-                roomId: this.currentRoom?.roomId || 'global'
+                roomId: this.currentRoom?.roomId || 'global',
+                transportManager: NO_FATAL_TRANSPORT_MANAGER,
+                ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+                ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
+                ...(this.webrtc ? { webrtc: this.webrtc } : {})
             });
             await this.node.initialize();
             await this.node.start();
@@ -405,6 +609,7 @@ export class Game {
             this.networkManager = this.node.getNetworkManager();
             this.libp2p = this.networkManager?.getLibp2pNode?.() || null;
             this.myPeerId = this.node.getStatus().network.peerId;
+            this.updateE2EState();
             logNet('Node started', this.myPeerId);
             if (this.libp2p && !this.connectionLogBound) {
                 this.connectionLogBound = true;
@@ -473,7 +678,10 @@ export class Game {
         if (!this.roomDirectory) {
             this.roomDirectory = new RoomDirectory({
                 gameId: 'hyperborea',
-                bootstrapPeers: this.bootstrapPeers
+                bootstrapPeers: this.bootstrapPeers,
+                webrtc: this.webrtc,
+                pubsubType: this.pubsubType,
+                gossipsub: this.gossipsub
             });
             try {
                 await this.roomDirectory.init();
@@ -530,13 +738,17 @@ export class Game {
                 const roomId = visibility === 'private'
                     ? buildRoomId({ name: normalizeRoomName(name), visibility, password })
                     : (room.roomId || buildRoomId({ name: normalizeRoomName(name), visibility }));
-                await this.switchRoom({ name, visibility, roomId });
+                await this.switchRoom({ name, visibility, roomId, password });
                 const roomList = document.getElementById('room-list');
                 if (roomList) roomList.style.display = 'none';
                 const roomNameInput = document.getElementById('room-name');
                 const roomPrivacyInput = document.getElementById('room-privacy');
+                const roomPasswordInput = document.getElementById('room-password');
                 if (roomNameInput) roomNameInput.value = name;
                 if (roomPrivacyInput) roomPrivacyInput.value = visibility;
+                if (roomPasswordInput) {
+                    roomPasswordInput.value = visibility === 'private' ? password : '';
+                }
                 try {
                     localStorage.setItem('hyperboreaRoomName', name);
                     localStorage.setItem('hyperboreaRoomPrivacy', visibility);
@@ -551,14 +763,16 @@ export class Game {
         });
     }
 
-    async switchRoom({ name, visibility, roomId }) {
+    async switchRoom({ name, visibility, roomId, password = '' }) {
         if (!roomId || roomId === this.currentRoom.roomId) return;
         this.setRoomStatus('Switching rooms...');
         await this.shutdownMultiplayer();
         this.currentRoom = { name, visibility, roomId };
+        this.currentRoomPassword = visibility === 'private' ? String(password || '') : '';
         this.joinedAt = Date.now();
         await this.initMultiplayer();
         this.roomDirectory?.announceRoom(this.currentRoom);
+        this.botHost?.refreshBots();
         this.setRoomStatus(`Current room: ${name} (${visibility})`);
     }
 
@@ -590,6 +804,7 @@ export class Game {
         this.libp2p = null;
         this.myPeerId = null;
         this.clearPeers();
+        this.updateE2EState();
     }
 
     clearPeers() {
@@ -598,6 +813,7 @@ export class Game {
         }
         this.peerMeshes.clear();
         this.peers.clear();
+        this.updateE2EState();
     }
 
     configureNetworkScheduler() {
@@ -1224,7 +1440,13 @@ export class Game {
         if (roomPrivacyInput) {
             roomPrivacyInput.value = savedRoomPrivacy;
         }
+        if (roomPasswordInput) {
+            roomPasswordInput.value = this.currentRoom.visibility === 'private'
+                ? (this.currentRoomPassword || '')
+                : '';
+        }
         this.setRoomStatus(`Current room: ${this.currentRoom.name} (${this.currentRoom.visibility})`);
+        this.initBotControls();
 
         if (playerSaveButton) {
             playerSaveButton.addEventListener('click', () => {
@@ -1256,7 +1478,7 @@ export class Game {
             const normalizedName = normalizeRoomName(name);
             const roomId = buildRoomId({ name: normalizedName, visibility, password });
             this.setRoomStatus('Switching rooms...');
-            await this.switchRoom({ name, visibility, roomId });
+            await this.switchRoom({ name, visibility, roomId, password });
             try {
                 localStorage.setItem('hyperboreaRoomName', name);
                 localStorage.setItem('hyperboreaRoomPrivacy', visibility);
@@ -3334,6 +3556,7 @@ export class Game {
         }
         const lastSeen = typeof data.ts === 'number' ? data.ts : Date.now();
         this.peers.set(peerId, { lastSeen });
+        this.updateE2EState();
     }
 
     handleRemoteEvent(peerId, payload) {
@@ -3416,6 +3639,7 @@ export class Game {
         }
         this.peerMeshes.delete(peerId);
         this.peers.delete(peerId);
+        this.updateE2EState();
     }
 
     removeChunk(key, chunk) {

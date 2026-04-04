@@ -17,7 +17,7 @@ export default defineConfig(({ mode, command }) => {
         host: '0.0.0.0',
         https: command === 'serve' ? ensureDevHttpsCert() : undefined,
         fs: {
-          allow: [__dirname, peercomputeRoot]
+          allow: [__dirname, peercomputeRoot, path.resolve(__dirname, '../planetgen/src')]
         }
       },
       plugins: [],

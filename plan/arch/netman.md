@@ -35,6 +35,16 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - Mesh snapshots: each peer publishes its own entity state.
 - Hybrid: pubsub discovery with optional direct streams.
 
+## Pubsub
+- Gossipsub is the default mesh; floodsub remains as a fallback.
+- Topics are scoped by topologyId/roomId and shard id when sharding is enabled.
+
+## Relay Scaling (Phase 1 - Implemented 2026-01-12)
+- `enableRelayDirectPeers` (default: true): Adds relay as gossipsub directPeer to keep it in mesh
+- DirectPeers ensures relay can forward messages between direct and relayed peers
+- Prevents mesh fragmentation when peers drop relay connections after establishing WebRTC
+- See plan/branch/relay-scaling.md for full strategy
+
 ## Interest Management
 - Scope by gameId/roomId topics.
 - Optional spatial buckets and per-entity throttles.
@@ -61,10 +71,20 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - getHealth()
 - getTelemetrySnapshot() (rx/tx counts, byte rates, per-peer RTT)
 
+## Configuration Options (Relay Scaling)
+- `enableRelayDirectPeers`: Keep relay in gossipsub mesh (default: true)
+- `webrtc.dropRelayOnDirect`: Drop relay connection after WebRTC established (default: true)
+- `webrtc.relayRetention`: Policy for maintaining subset of relay connections
+  - `mode`: 'logn' | 'sqrt' - scaling function
+  - `min`: Minimum peers to keep connected to relay
+  - `max`: Maximum peers to keep connected to relay
+  - `base`: Log base for logn mode (default: 2)
+
 ## Open Questions
 - Per-entity authority vs single authority.
 - Reliable vs best-effort commands.
 - Reconnect aggressiveness thresholds.
+- Phase 3 relay retention deterministic selection algorithm.
 
 ## Related Docs
 - plan/arch/nodekernel.md

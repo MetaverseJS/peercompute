@@ -1,3 +1,46 @@
 {
-  "bootstrapPeers": []
+  "bootstrapPeers": [
+    "/dns4/secretworkshop.net/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs"
+  ],
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": "stun:stun.l.google.com:19302"
+      },
+      {
+        "urls": [
+          "turn:secretworkshop.net:3478?transport=udp",
+          "turn:secretworkshop.net:3478?transport=tcp"
+        ],
+        "username": "peer",
+        "credential": "compute"
+      }
+    ],
+    "preferDirect": true,
+    "dropRelayOnDirect": true,
+    "dropRelayBootstrapOnDirect": true,
+    "countRelayWebrtcAsDirectCapable": true,
+    "relayRetention": {
+      "mode": "logn",
+      "min": 1,
+      "max": 10
+    }
+  },
+  "pubsubType": "gossipsub",
+  "gossipsub": {
+    "D": 8,
+    "Dhi": 16,
+    "Dout": 1,
+    "scoreParams": {
+      "IPColocationFactorWeight": 0,
+      "behaviourPenaltyWeight": 0,
+      "topics": {
+        "__default": {
+          "meshMessageDeliveriesWeight": 0,
+          "meshMessageDeliveriesThreshold": 0,
+          "meshFailurePenaltyWeight": 0
+        }
+      }
+    }
+  }
 }

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hyperborea</title>
-  <script type="module" crossorigin src="./assets/cb-BjO65rMf.js"></script>
+  <script type="module" crossorigin src="./assets/cb-B6gVXbeJ.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/cb-Y3lUfBHl.css">
 </head>
 <body>
@@ -67,6 +67,22 @@
                     <button id="room-list-open">Room List</button>
                 </div>
                 <div id="room-status"></div>
+            </div>
+            <div class="settings-section">
+                <h4>Bots</h4>
+                <label>
+                    Add Count
+                    <input id="bot-count" type="number" min="1" max="8" step="1" value="1">
+                </label>
+                <label>
+                    Archetype
+                    <select id="bot-preset"></select>
+                </label>
+                <div class="room-actions">
+                    <button id="bot-add">Add Bots</button>
+                    <button id="bot-clear">Clear Bots</button>
+                </div>
+                <div id="bot-status"></div>
             </div>
         </div>
         <div id="room-list" style="display: none;">

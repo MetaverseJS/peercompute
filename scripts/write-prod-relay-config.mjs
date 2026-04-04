@@ -134,6 +134,18 @@ const resolveBootstrapPeers = (cfg) => {
 const relayConfigBase = readJson(relayConfigPath);
 const { peers } = resolveBootstrapPeers(relayConfigBase);
 const relayConfig = { bootstrapPeers: peers };
+if (relayConfigBase.webrtc && typeof relayConfigBase.webrtc === 'object') {
+  relayConfig.webrtc = relayConfigBase.webrtc;
+}
+if (!relayConfig.webrtc && relayConfigBase.iceServers) {
+  relayConfig.webrtc = { iceServers: relayConfigBase.iceServers };
+}
+if (relayConfigBase.pubsubType) {
+  relayConfig.pubsubType = relayConfigBase.pubsubType;
+}
+if (relayConfigBase.gossipsub && typeof relayConfigBase.gossipsub === 'object') {
+  relayConfig.gossipsub = relayConfigBase.gossipsub;
+}
 const relayConfigUrl = resolveRelayConfigUrl(relayConfigBase);
 const relayConfigSource = { relayConfigUrl };
 

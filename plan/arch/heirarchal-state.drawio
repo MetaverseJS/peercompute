@@ -1,0 +1,99 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" version="29.2.9">
+  <diagram name="Page-1" id="-HfFHTj-sa7FrEavhkYF">
+    <mxGraphModel dx="1610" dy="1288" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="EiSohYhQSTQKImBC61UF-13" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-1" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-14" value="Connected to Host">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="620" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-1" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Relay Connection" vertex="1">
+          <mxGeometry height="80" width="80" x="690" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-4" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;curved=1;" target="EiSohYhQSTQKImBC61UF-1" value="Dial&amp;nbsp; host">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="360" />
+              <mxPoint x="790" y="300" />
+              <mxPoint x="730" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-8" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-6" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="EiSohYhQSTQKImBC61UF-1" value="connected to relay (no host)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-12" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-6" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" target="EiSohYhQSTQKImBC61UF-6" value="Connect to relay">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="530" y="150" />
+              <mxPoint x="530" y="60" />
+              <mxPoint x="465" y="60" />
+            </Array>
+            <mxPoint x="500" y="100" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-6" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;direction=south;" value="No Connections" vertex="1">
+          <mxGeometry height="80" width="80" x="425" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-20" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-14" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-1" value="Lost connection to host">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="910" y="800" />
+              <mxPoint x="910" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-26" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-14" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-18" value="Drop Relay Connection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-14" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Host Connected" vertex="1">
+          <mxGeometry height="80" width="80" x="690" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-22" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-18" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-6" value="&lt;div&gt;&lt;br&gt;&lt;/div&gt;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="230" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-27" connectable="0" parent="EiSohYhQSTQKImBC61UF-22" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Host changed or disconnects" vertex="1">
+          <mxGeometry relative="1" x="0.097" y="1" as="geometry">
+            <mxPoint x="11" y="162" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-29" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-18" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="70" y="580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-18" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Play State" vertex="1">
+          <mxGeometry height="80" width="80" x="190" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-24" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-21" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="230" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-21" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="D" vertex="1">
+          <mxGeometry height="80" width="80" x="60" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-28" edge="1" parent="1" source="EiSohYhQSTQKImBC61UF-18" style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="EiSohYhQSTQKImBC61UF-18" value="Send and receive&lt;div&gt;game / workload&amp;nbsp;&lt;/div&gt;&lt;div&gt;Updates from Host&lt;/div&gt;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="230" y="950" />
+              <mxPoint x="70" y="950" />
+              <mxPoint x="70" y="800" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EiSohYhQSTQKImBC61UF-30" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Promoted to Host" vertex="1">
+          <mxGeometry height="80" width="80" x="30" y="500" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

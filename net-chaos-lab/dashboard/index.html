@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PeerCompute Chaos Lab Dashboard</title>
+  <style>
+    :root {
+      --bg: #05120b;
+      --panel: #062012;
+      --line: #0b6f3b;
+      --text: #64ffb0;
+      --text-dim: #2bc77d;
+      --warn: #ffb347;
+      --bad: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 10%, #0a2f1c 0%, var(--bg) 50%, #020805 100%);
+      color: var(--text);
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      min-height: 100vh;
+      padding: 18px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(0, 255, 120, 0.06), rgba(0, 0, 0, 0.4));
+      border: 1px solid var(--line);
+      padding: 12px;
+      border-radius: 4px;
+    }
+    .k {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .v {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .log {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 10px;
+      height: 46vh;
+      overflow: auto;
+      white-space: pre-wrap;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .meta {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>PeerCompute Internet Chaos Lab</h1>
+  <div class="meta" id="meta">loading...</div>
+  <div class="grid">
+    <div class="card"><span class="k">Agent Probes</span><span class="v" id="probe-count">-</span></div>
+    <div class="card"><span class="k">Success Rate</span><span class="v" id="success-rate">-</span></div>
+    <div class="card"><span class="k">Avg Convergence (ms)</span><span class="v" id="avg-convergence">-</span></div>
+    <div class="card"><span class="k">P95 Convergence (ms)</span><span class="v" id="p95-convergence">-</span></div>
+    <div class="card"><span class="k">Media Probe Pass</span><span class="v" id="media-success">-</span></div>
+    <div class="card"><span class="k">Scenario Events</span><span class="v" id="scenario-events">-</span></div>
+    <div class="card"><span class="k">Direct Announce Rate</span><span class="v" id="direct-announce-rate">-</span></div>
+    <div class="card"><span class="k">Direct Connection Rate</span><span class="v" id="direct-connection-rate">-</span></div>
+    <div class="card"><span class="k">Relay-WebRTC Rate</span><span class="v" id="relay-webrtc-rate">-</span></div>
+    <div class="card"><span class="k">Host-only Local ICE</span><span class="v" id="host-only-ice-rate">-</span></div>
+  </div>
+  <div class="log" id="event-log"></div>
+
+  <script>
+    const formatPct = (v) => (Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : '-');
+    const formatNum = (v) => (Number.isFinite(v) ? `${Math.round(v)}` : '-');
+
+    async function refresh() {
+      const [summaryRes, eventsRes] = await Promise.all([
+        fetch('/api/summary', { cache: 'no-store' }),
+        fetch('/api/events?limit=60', { cache: 'no-store' })
+      ]);
+      const summary = await summaryRes.json();
+      const events = await eventsRes.json();
+
+      document.getElementById('meta').textContent = `run: ${summary.run_id || '-'} | updated: ${summary.updated_at || '-'}`;
+      document.getElementById('probe-count').textContent = formatNum(summary.probe_total);
+      document.getElementById('success-rate').textContent = formatPct(summary.connection_success_rate);
+      document.getElementById('avg-convergence').textContent = formatNum(summary.convergence_avg_ms);
+      document.getElementById('p95-convergence').textContent = formatNum(summary.convergence_p95_ms);
+      document.getElementById('media-success').textContent = formatPct(summary.media_success_rate);
+      document.getElementById('scenario-events').textContent = formatNum(summary.scenario_event_count);
+      document.getElementById('direct-announce-rate').textContent = formatPct(summary.direct_announce_rate);
+      document.getElementById('direct-connection-rate').textContent = formatPct(summary.direct_connection_rate);
+      document.getElementById('relay-webrtc-rate').textContent = formatPct(summary.relay_webrtc_connection_rate);
+      document.getElementById('host-only-ice-rate').textContent = formatPct(summary.rtc_host_only_local_rate);
+
+      const lines = (events.events || []).map((event) => {
+        const ts = event.ts || '-';
+        const type = event.type || 'event';
+        const payload = JSON.stringify(event.payload || {});
+        return `[${ts}] ${type} ${payload}`;
+      });
+      document.getElementById('event-log').textContent = lines.join('\n');
+    }
+
+    refresh().catch(() => {});
+    setInterval(() => refresh().catch(() => {}), 2000);
+  </script>
+</body>
+</html>

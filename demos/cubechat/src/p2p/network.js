@@ -1,4 +1,7 @@
 import { NodeKernel } from '@peercompute';
+import { readPeercomputeBotParams } from '../../../shared/peercomputeBots.js';
+
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 
 const DEFAULT_PROFILE = {
   snapshotHz: 20,
@@ -58,7 +61,44 @@ const loadRelayConfig = async () => {
 
 const normalizeBootstrapPeers = (peers) => {
   if (!Array.isArray(peers)) return [];
-  return peers.filter(Boolean);
+  const protocol = typeof window !== 'undefined' ? window.location?.protocol : '';
+  const preferSecure = protocol === 'https:';
+  return peers.filter(Boolean).map((addr) => {
+    if (typeof addr !== 'string') return addr;
+    if (preferSecure) {
+      return addr.replace('/ws/', '/wss/');
+    }
+    return addr.replace('/wss/', '/ws/');
+  });
+};
+
+const normalizeWebRTCConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
+  const iceServers = raw.iceServers ?? cfg.iceServers ?? cfg.webrtcIceServers;
+  const rtcConfiguration = raw.rtcConfiguration ?? cfg.rtcConfiguration;
+  const preferDirect = raw.preferDirect ?? cfg.preferDirect;
+  const dropRelayOnDirect = raw.dropRelayOnDirect ?? cfg.dropRelayOnDirect;
+  const next = { ...raw };
+  if (iceServers !== undefined && next.iceServers === undefined) next.iceServers = iceServers;
+  if (rtcConfiguration !== undefined && next.rtcConfiguration === undefined) next.rtcConfiguration = rtcConfiguration;
+  if (preferDirect !== undefined && next.preferDirect === undefined) next.preferDirect = preferDirect;
+  if (dropRelayOnDirect !== undefined && next.dropRelayOnDirect === undefined) next.dropRelayOnDirect = dropRelayOnDirect;
+  return Object.keys(next).length ? next : null;
+};
+
+const normalizePubsubType = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.pubsubType ?? cfg.pubsub;
+  if (!raw) return null;
+  return String(raw).trim().toLowerCase();
+};
+
+const normalizeGossipsubConfig = (cfg) => {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const raw = cfg.gossipsub;
+  if (!raw || typeof raw !== 'object') return null;
+  return { ...raw };
 };
 
 export class P2PNetwork {
@@ -68,6 +108,9 @@ export class P2PNetwork {
     this.stateManager = null;
     this.peerId = null;
     this.bootstrapPeers = [];
+    this.webrtc = null;
+    this.pubsubType = null;
+    this.gossipsub = null;
     this.roomId = 'global';
     this.localMediaReady = false;
     this.peers = new Map();
@@ -84,9 +127,29 @@ export class P2PNetwork {
     this.pendingIceCandidates = new Map();
     this.dataChannels = new Map();
     this.peerConnections = new Map();
+    this.makingOfferPeers = new Set();
     this.localPlayer = null;
     this.snapshotProviderId = null;
     this.peerCleanupInterval = null;
+  }
+
+  _isPolitePeer(peerId) {
+    if (!this.peerId || !peerId) return false;
+    return String(this.peerId).localeCompare(String(peerId)) > 0;
+  }
+
+  _isStableStateError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+      message.includes('called in wrong state: stable')
+      || message.includes('cannot create an answer in a state other than have-remote-offer')
+      || message.includes('failed to set remote answer sdp: called in wrong state')
+    );
+  }
+
+  _handleSignalError(context, error) {
+    if (this._isStableStateError(error)) return;
+    console.error(`Error handling ${context}:`, error);
   }
 
   async init({ roomId = 'global' } = {}) {
@@ -110,13 +173,21 @@ export class P2PNetwork {
   async _startNode(roomId) {
     const cfg = await loadRelayConfig();
     this.bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
+    this.webrtc = normalizeWebRTCConfig(cfg);
+    this.pubsubType = normalizePubsubType(cfg);
+    this.gossipsub = normalizeGossipsubConfig(cfg);
     this.roomId = roomId || 'global';
 
     this.node = new NodeKernel({
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
       gameId: 'cubechat',
-      roomId: this.roomId
+      roomId: this.roomId,
+      maxConnections: 10,
+      transportManager: NO_FATAL_TRANSPORT_MANAGER,
+      ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
+      ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
+      ...(this.webrtc ? { webrtc: this.webrtc } : {})
     });
     await this.node.initialize();
     await this.node.start();
@@ -156,6 +227,11 @@ export class P2PNetwork {
   }
 
   async _initLocalMedia() {
+    const botLaunch = readPeercomputeBotParams();
+    if (botLaunch.enabled && !botLaunch.mediaEnabled) {
+      this.localStream = null;
+      return;
+    }
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240 },
@@ -213,17 +289,23 @@ export class P2PNetwork {
       }
 
       if (payload.type === 'webrtc-offer') {
-        this.handleOffer(from, payload.offer);
+        this.handleOffer(from, payload.offer).catch((error) => {
+          this._handleSignalError('offer', error);
+        });
         return;
       }
 
       if (payload.type === 'webrtc-answer') {
-        this.handleAnswer(from, payload.answer);
+        this.handleAnswer(from, payload.answer).catch((error) => {
+          this._handleSignalError('answer', error);
+        });
         return;
       }
 
       if (payload.type === 'webrtc-ice') {
-        this.handleIceCandidate(from, payload.candidate);
+        this.handleIceCandidate(from, payload.candidate).catch((error) => {
+          this._handleSignalError('ICE candidate', error);
+        });
         return;
       }
 
@@ -359,6 +441,7 @@ export class P2PNetwork {
         });
 
         try {
+          this.makingOfferPeers.add(peerId);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           this._sendSignal(peerId, {
@@ -384,6 +467,8 @@ export class P2PNetwork {
           }
         } catch (error) {
           console.error('Error renegotiating connection for screen share:', error);
+        } finally {
+          this.makingOfferPeers.delete(peerId);
         }
       }
 
@@ -467,12 +552,19 @@ export class P2PNetwork {
       }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this._sendSignal(peerId, {
-      type: 'webrtc-offer',
-      offer
-    }, { reliable: true });
+    try {
+      this.makingOfferPeers.add(peerId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      this._sendSignal(peerId, {
+        type: 'webrtc-offer',
+        offer
+      }, { reliable: true });
+    } catch (error) {
+      this._handleSignalError('initial offer', error);
+    } finally {
+      this.makingOfferPeers.delete(peerId);
+    }
   }
 
   async handleOffer(peerId, offer) {
@@ -480,7 +572,18 @@ export class P2PNetwork {
 
     if (pc) {
       try {
+        const offerCollision = offer?.type === 'offer'
+          && (this.makingOfferPeers.has(peerId) || pc.signalingState !== 'stable');
+        if (offerCollision && !this._isPolitePeer(peerId)) {
+          return;
+        }
+        if (offerCollision && pc.signalingState === 'have-local-offer') {
+          await pc.setLocalDescription({ type: 'rollback' });
+        }
         await pc.setRemoteDescription(offer);
+        if (pc.signalingState !== 'have-remote-offer') {
+          return;
+        }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         this._sendSignal(peerId, {
@@ -488,7 +591,7 @@ export class P2PNetwork {
           answer
         }, { reliable: true });
       } catch (error) {
-        console.error('Error handling renegotiation offer:', error);
+        this._handleSignalError('renegotiation offer', error);
       }
       return;
     }
@@ -529,32 +632,8 @@ export class P2PNetwork {
       }
     };
 
-    await pc.setRemoteDescription(offer);
-
-    if (this.pendingIceCandidates.has(peerId)) {
-      const candidates = this.pendingIceCandidates.get(peerId);
-      for (const candidate of candidates) {
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch (error) {
-          console.error('Error adding queued ICE candidate:', error);
-        }
-      }
-      this.pendingIceCandidates.delete(peerId);
-    }
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    this._sendSignal(peerId, {
-      type: 'webrtc-answer',
-      answer
-    }, { reliable: true });
-  }
-
-  async handleAnswer(peerId, answer) {
-    const pc = this.peerConnections.get(peerId);
-    if (pc && pc.signalingState === 'have-local-offer') {
-      await pc.setRemoteDescription(answer);
+    try {
+      await pc.setRemoteDescription(offer);
 
       if (this.pendingIceCandidates.has(peerId)) {
         const candidates = this.pendingIceCandidates.get(peerId);
@@ -562,17 +641,59 @@ export class P2PNetwork {
           try {
             await pc.addIceCandidate(candidate);
           } catch (error) {
-            console.error('Error adding ICE candidate:', error);
+            this._handleSignalError('queued ICE candidate', error);
           }
         }
         this.pendingIceCandidates.delete(peerId);
+      }
+
+      if (pc.signalingState !== 'have-remote-offer') {
+        return;
+      }
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      this._sendSignal(peerId, {
+        type: 'webrtc-answer',
+        answer
+      }, { reliable: true });
+    } catch (error) {
+      this._handleSignalError('offer', error);
+    }
+  }
+
+  async handleAnswer(peerId, answer) {
+    const pc = this.peerConnections.get(peerId);
+    if (pc && pc.signalingState === 'have-local-offer') {
+      try {
+        await pc.setRemoteDescription(answer);
+
+        if (this.pendingIceCandidates.has(peerId)) {
+          const candidates = this.pendingIceCandidates.get(peerId);
+          for (const candidate of candidates) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (error) {
+              console.error('Error adding ICE candidate:', error);
+            }
+          }
+          this.pendingIceCandidates.delete(peerId);
+        }
+      } catch (error) {
+        this._handleSignalError('answer', error);
       }
     }
   }
 
   async handleIceCandidate(peerId, candidate) {
     const pc = this.peerConnections.get(peerId);
-    if (!pc) return;
+    if (!pc) {
+      if (!this.pendingIceCandidates.has(peerId)) {
+        this.pendingIceCandidates.set(peerId, []);
+      }
+      this.pendingIceCandidates.get(peerId).push(candidate);
+      return;
+    }
 
     if (!pc.remoteDescription) {
       if (!this.pendingIceCandidates.has(peerId)) {
@@ -585,7 +706,7 @@ export class P2PNetwork {
     try {
       await pc.addIceCandidate(candidate);
     } catch (error) {
-      console.error('Error adding ICE candidate:', error);
+      this._handleSignalError('ICE candidate', error);
     }
   }
 
@@ -714,6 +835,8 @@ export class P2PNetwork {
     this.remoteAudioTracks.delete(peerId);
     this.remoteTrackIds.delete(peerId);
     this.remoteScreenTrackIds.delete(peerId);
+    this.pendingIceCandidates.delete(peerId);
+    this.makingOfferPeers.delete(peerId);
 
     this.messageHandlers.forEach((handler) => handler({
       type: 'stream_removed',

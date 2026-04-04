@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
-    "three": "^0.180.0"
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "vite": "^6.4.1"

@@ -1,0 +1,23 @@
+{
+  "name": "net-chaos-lab",
+  "private": true,
+  "scripts": {
+    "chaos-lab": "bash scripts/chaos-lab.sh",
+    "test:behavior": "node --test tests/player-behavior-harness.test.mjs tests/quake3-bot-core.test.mjs",
+    "full": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python bash scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard",
+    "matrix": "bash scripts/chaos-lab.sh --matrix configs/matrix/direct-regression.yaml",
+    "matrix:demos": "bash scripts/chaos-lab.sh --matrix configs/matrix/demo-regression.yaml",
+    "matrix:full": "bash scripts/chaos-lab-matrix-full.sh",
+    "matrix:demos:full": "CHAOSLAB_MATRIX_CONFIG=configs/matrix/demo-regression.yaml bash scripts/chaos-lab-matrix-full.sh",
+    "matrix:loop": "bash scripts/chaos-lab-matrix-loop.sh",
+    "matrix:demos:loop": "CHAOSLAB_MATRIX_CONFIG=configs/matrix/demo-regression.yaml bash scripts/chaos-lab-matrix-loop.sh",
+    "matrix:watch": "bash scripts/chaos-lab-matrix-watch.sh",
+    "matrix:smoke": "bash scripts/chaos-lab.sh --matrix configs/matrix/dry-run-smoke.yaml",
+    "ipv6:min": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python CHAOSLAB_PREFLIGHT_CURL_MAX_TIME=20 CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS=4 CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS=1200 bash scripts/chaos-lab.sh --mode containernet --topology configs/topology.ipv6-minimal.yaml --scenario configs/scenarios/ipv6-only-minimal.yaml --probe-each-stage --probe-agents 4 --probe-parallelism 1 --probe-fail-fast --no-dashboard",
+    "ipv6:min:all": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python CHAOSLAB_IP_MODE_SCOPE=all CHAOSLAB_PREFLIGHT_CURL_MAX_TIME=20 CHAOSLAB_PREFLIGHT_CURL_ATTEMPTS=4 CHAOSLAB_PREFLIGHT_CURL_RETRY_DELAY_MS=1200 bash scripts/chaos-lab.sh --mode containernet --topology configs/topology.ipv6-minimal.yaml --scenario configs/scenarios/ipv6-only-minimal.yaml --probe-each-stage --probe-agents 4 --probe-parallelism 1 --probe-fail-fast --no-dashboard",
+    "ipv6:loop": "bash scripts/chaos-lab-ipv6-loop.sh",
+    "image:build": "docker build -t peercompute/net-chaos-lab-node:latest -f docker/chaos-node.Dockerfile docker",
+    "cleanup": "sudo docker ps -a --format '{{.Names}}' | awk '/^mn\\./ {print}' | xargs -r sudo docker rm -f",
+    "deps:python": "python3 -m pip install -r requirements.txt"
+  }
+}

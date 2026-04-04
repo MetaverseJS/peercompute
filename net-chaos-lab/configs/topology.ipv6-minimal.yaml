@@ -1,0 +1,61 @@
+network:
+  name: peercompute-chaos-lab-ipv6-minimal
+  dual_stack: true
+  core_switch: core
+  ip_mode_scope: agents
+
+agents:
+  count: 4
+  image: peercompute/net-chaos-lab-node:latest
+  command: sleep infinity
+  cpu_shares: 512
+  memory: 1g
+  media_enabled: false
+
+segments:
+  - id: lan_a
+    ipv4_subnet: 10.50.10.0/24
+    ipv6_subnet: fd42:50:10::/64
+    gateway4: 10.50.10.1
+    gateway6: fd42:50:10::1
+    nat:
+      enabled: true
+      type: full-cone
+      uplink_ipv4: 10.50.254.110/24
+      uplink_ipv6: fd42:50:254::110/64
+
+core_services:
+  subnet_ipv4: 10.50.254.0/24
+  subnet_ipv6: fd42:50:254::/64
+  dns:
+    host: dns.peercompute.test
+    ipv4: 10.50.254.2/24
+    ipv6: fd42:50:254::2/64
+    image: peercompute/net-chaos-lab-node:latest
+  https:
+    host: demos.peercompute.test
+    ipv4: 10.50.254.10/24
+    ipv6: fd42:50:254::10/64
+    image: peercompute/net-chaos-lab-node:latest
+  relay:
+    host: relay.peercompute.test
+    ipv4: 10.50.254.20/24
+    ipv6: fd42:50:254::20/64
+    image: peercompute/net-chaos-lab-node:latest
+  turn:
+    host: turn.peercompute.test
+    ipv4: 10.50.254.30/24
+    ipv6: fd42:50:254::30/64
+    image: peercompute/net-chaos-lab-node:latest
+
+links:
+  defaults:
+    bw_mbit: 100
+    delay_ms: 5
+    loss_pct: 0
+
+harness:
+  default_demo: netviz
+  default_url: https://demos.peercompute.test/netviz/
+  min_expected_peers: 1
+  probe_duration_ms: 25000
