@@ -8,12 +8,61 @@ The Keystone demo (planned) will visualize this reconfiguration live with select
 
 
 ## What You Can Use Today
-- **libp2p relay + floodsub + presence** for browser P2P sessions.
-- **NodeKernel** orchestrator with State, Network, and Compute managers.
-- **NetworkScheduler** for decoupled network cadence (snapshots/events/commands).
-- **Room + game scoping** so different sessions do not collide.
-- **LAN-friendly relay config** via `relay-config.json`.
-- **Fano Reactor demo scaffold** for exact sedenion bond classification and Fano-plane chemistry exploration.
+- **Browser-first libp2p runtime** with websocket relay bootstrap, relay reservations, gossipsub/floodsub messaging, presence, room/game scoping, and relay-config discovery.
+- **NodeKernel orchestration** with `NetworkManager`, `StateManager`, `ComputeManager`, `ioManager`, and configurable clocking/policy modes.
+- **NetworkScheduler streams** for snapshots, events, and commands with cadence control, retries, keepalive, and profile-based defaults.
+- **Direct-path management** with relay-assisted WebRTC upgrades, relay retention/drop policy, logical `targetConnections` / `maxConnections`, and transport headroom.
+- **Layered shared state** through Yjs plus `DataState` hot/warm/cold storage, scoped namespaces, `commitDelta`, and optional IndexedDB persistence.
+- **Distributed compute runtimes** for CPU workers, pure WASM, worker-local WebGPU, and hybrid WASM+WebGPU tasks.
+- **Cross-demo observability** through NetViz telemetry, attach-session discovery, RTC path diagnostics, and transport/signaling/media-path truth.
+- **Playable demo surfaces** including CubeChat, Hyperborea, SneakyWoods, Daddy Go!, NetViz, PlanetGen, Universes, WebGPUPhys, and the Fano Reactor scaffold.
+- **Automation + stress tooling** including the shared in-browser bot host, reusable Quake-style bot core, runtime multiplayer browser gates, and the Containernet-based chaos lab.
+- **Deployment support** with generated relay config artifacts, Node relay for dev, Go relay for production, coturn integration, and systemd installers for the backend stack.
+
+## Functional Surface Area
+
+### Core Runtime
+- `NodeKernel` is the top-level orchestration surface for browser peers. It starts and coordinates networking, shared state, compute, telemetry, and local IO policy.
+- Clocking is configurable: independent, kernel-driven, or hybrid sync points depending on determinism vs throughput requirements.
+- Profiles and scheduler settings let one app use low-latency action-game cadence while another uses sparse co-op or turn-style messaging.
+- Rooms, game IDs, and topology IDs keep sessions isolated even when multiple demos share the same relay fabric.
+
+### Networking and Topology
+- Browser peers bootstrap through a relay, then attempt to upgrade to more direct paths when possible instead of staying relay-bound forever.
+- Active transport truth is tracked explicitly: plain relay, relay-scoped WebRTC, direct WebRTC/media, websocket relay, and pubsub overlays are not collapsed into one ambiguous state.
+- Topology policy includes `connectionRadius`, `targetConnections`, `maxConnections`, unsolicited-peer pruning, relay-assist redials, and direct-upgrade overlap headroom.
+- Relay retention is tunable, including logN keeper modes so a swarm can keep only a minority of peers attached to the bootstrap relay after convergence.
+- Runtime relay config can be loaded from built artifacts, a default prod URL, or an explicit `?relayConfigUrl=...` override.
+
+### State, Persistence, and Compute
+- `StateManager` provides shared Yjs-backed documents plus PeerCompute-specific scoped state publication.
+- `DataState` is layered on purpose: hot GPU buffers for render-coupled/high-frequency state, warm CPU deltas for replicated working state and telemetry, and cold IndexedDB persistence for snapshots and durable caches.
+- `commitDelta` lets compute tasks emit small authoritative state updates instead of forcing full-state rewrites.
+- `ComputeManager` supports inline and worker-safe JS, pure WASM modules with typed memory views, isolated worker WebGPU jobs, and hybrid WASM+WebGPU pipelines.
+- The optional GPU hub keeps a shared main-thread WebGPU context available for render-adjacent workloads that should not live in isolated workers.
+
+### Observability, Automation, and Test Infrastructure
+- NetViz can attach to any running demo session, discover rooms from shared pubsub beacons, and render peer/edge truth across transport, pubsub, signaling, and media paths.
+- Browser telemetry includes warm-delta debug state, RTC selected-candidate evidence, connection counters, and relay-retention diagnostics for live prod investigation.
+- `net-chaos-lab/` provides scenario-driven protocol testing with NAT segments, dual-stack/IPv4-only/IPv6-only modes, partitions, churn, bandwidth shifts, and multi-agent browser probes.
+- The shared bot system can now spawn hidden same-origin browser peers from demo settings screens and drive them through a reusable bridge contract instead of per-demo hacks.
+- The reusable bot behavior core is intentionally modular: world model, navigation, memory, personalities, and combat/steering logic live under `net-chaos-lab/agent/quake3/` and can be adapted to more games.
+- The repo includes both lightweight static gates and full headless Chromium runtime gates so transport or demo regressions can be checked locally before deploy.
+
+### Demo and Product Surfaces
+- **CubeChat** is a browser 3D social/video world with room/password deep links, remote webcam playback, screen share, themed worlds, and bot spawning from settings.
+- **Hyperborea** is a top-down multiplayer action surface used to validate replicated remote-player state, attacks, room flow, bot control, and runtime attach/debug behavior.
+- **SneakyWoods** is a stealth/action multiplayer surface with shared room presence, combat hooks, and the same bot/settings integration path as the other live demos.
+- **Daddy Go!** is a smaller multiplayer validation surface used for deterministic replicated score/state checks in the browser runtime suite.
+- **NetViz** is the live multiplayer debugger and topology viewer, not just a demo. It is the primary surface for inspecting transport truth, room attach, relay keepers, and chaos-lab overlays.
+- **PlanetGen**, **Universes**, and **WebGPUPhys** exercise rendering, procedural generation, and compute-oriented browser workloads on the same stack.
+- **Fano Reactor** is the current chemistry/scaffold branch for exact sedenion bond classification and future distributed chemistry/compute workloads.
+
+### Backend and Deployment
+- Local development can run entirely from Vite plus the repo relay scripts, with strict demo ports and loopback-safe relay defaults.
+- Production is designed around the Go relay under systemd, with coturn either bundled through `pcserver.sh` or split into its own hardened systemd unit.
+- `npm run build` emits the docs site plus per-demo relay config artifacts so GitHub Pages builds can point back at the live production relay config.
+- Repo scripts cover dry-run backend validation, relay-only launch, combined relay+TURN launch, coturn install, and full split-service production install.
 
 ## Architecture Overview
 
@@ -320,6 +369,16 @@ Use this together with `PCSERVER_ENABLE_TURN=0` on `scripts/install-relay-system
 ## Demo Gallery
 See `docs/index.html` for the full demo index.
 
+Current demos and validation surfaces:
+- **CubeChat**: browser video chat world with themed maps, room/password deep links, shared movement/state, screen share, and in-browser bot spawning.
+- **Hyperborea**: multiplayer action/adventure surface for replicated movement, attacks, remote-player assertions, and bot-driven room activity.
+- **SneakyWoods**: multiplayer stealth/action surface with the shared bot bridge and settings-screen bot host.
+- **Daddy Go!**: compact multiplayer score/state validation demo with deterministic runtime checks.
+- **NetViz**: transport inspector, room attach tool, relay/debug overlay, and chaos-lab watcher.
+- **PlanetGen** and **Universes**: procedural generation / world-building demos on the same runtime stack.
+- **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
+- **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.
+
 ![Hyperborea](docs/assets/hyperborea.png)
 ![CubeChat](docs/assets/cubechat.png)
 ![SneakyWoods](docs/assets/sneakywoods.png)
@@ -587,6 +646,8 @@ Default chaos-lab topology uses `peercompute/net-chaos-lab-node:latest` for agen
 ## Tests
 ```bash
 npm --prefix peercompute run test:unit
+node --test demos/tests/demo-ports.test.js
+npm --prefix net-chaos-lab run test:behavior
 npm run test:runtime:p2p
 RUNTIME_P2P_DEMOS=hyperborea npm run test:runtime:p2p
 ```
@@ -594,9 +655,32 @@ RUNTIME_P2P_DEMOS=hyperborea npm run test:runtime:p2p
 Note: Playwright is blocked in sandboxed environments (Chromium EPERM).
 `npm run test:runtime` also exercises the built docs bundle, but it includes non-multiplayer demos as well.
 `npm run test:runtime:p2p` is the full multiplayer browser gate for `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`; use `RUNTIME_P2P_DEMOS=...` to isolate a subset while debugging.
+`node --test demos/tests/demo-ports.test.js` is the fast static/docs gate for demo wiring, bot bridge registration, and settings-surface expectations.
+`npm --prefix net-chaos-lab run test:behavior` verifies the reusable bot behavior core, personalities, navigation, and demo interaction profiles.
 
 ## Project Structure
 ```
+config/
+docs/
+demos/
+├── cubechat/
+├── daddygo/
+├── hyperborea/
+├── netviz/
+├── sneakywoods/
+├── shared/
+│   ├── peercomputeBotBridge.js
+│   └── peercomputeBots.js
+├── universes/
+├── planetgen/
+└── webgpuphys/
+net-chaos-lab/
+├── agent/
+│   ├── player-behavior-harness.mjs
+│   └── quake3/
+├── configs/
+├── src/
+└── tests/
 peercompute/src/peercompute/
 ├── index.js
 ├── nodeKernel/NodeKernel.js
@@ -605,6 +689,8 @@ peercompute/src/peercompute/
 ├── networkManager/NetworkScheduler.js
 ├── computeManager/ComputeManager.js
 └── utils/Utils.js
+plan/
+scripts/
 ```
 
 ## Roadmap Highlights

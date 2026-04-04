@@ -61,5 +61,6 @@ Create a continuous, scalable, procedural universe simulator.
 -   [x] Galactic & Stellar Lifecycles (Evolutionary Logic).
 -   [x] N-Body Physics Integration.
 -   [x] Black Hole & Nebula Rendering.
+-   [x] Built-doc cosmic-web recovery via ComputeManager inline fallback when bundled workers fail.
 -   [ ] Infinite Scrolling / Sector Management (Deferred).
 -   [ ] Star System Zoom-in (3D Meshes).

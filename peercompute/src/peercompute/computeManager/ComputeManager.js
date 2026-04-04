@@ -1,5 +1,36 @@
 import { executeTaskPayload } from './taskRuntime.js';
 
+function encodeWorkerSource(source) {
+  if (typeof btoa === 'function') {
+    return btoa(source);
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(source, 'utf8').toString('base64');
+  }
+  throw new Error('Unable to encode compute worker source');
+}
+
+function createWorkerBootstrapURL() {
+  const taskRuntimeURL = new URL('./taskRuntime.js', import.meta.url).href;
+  const workerSource = `/* eslint-disable no-restricted-globals */
+
+import { executeTaskPayload } from ${JSON.stringify(taskRuntimeURL)};
+
+self.onmessage = async (event) => {
+  const msg = event.data;
+  if (!msg || msg.type !== 'run') return;
+  const { id } = msg;
+  try {
+    const result = await executeTaskPayload(msg);
+    self.postMessage({ type: 'result', id, result });
+  } catch (err) {
+    self.postMessage({ type: 'error', id, error: err?.message || String(err) });
+  }
+};
+`;
+  return `data:text/javascript;base64,${encodeWorkerSource(workerSource)}`;
+}
+
 /**
  * @fileoverview Compute Manager - Manages distributed compute tasks
  * Coordinates task distribution, execution, and result aggregation
@@ -41,6 +72,7 @@ export class ComputeManager {
       wasmWebgpu: hasWasm && hasWebGPU
     };
     this.initialized = false;
+    this.workerBootstrapURL = null;
   }
 
   /**
@@ -70,13 +102,25 @@ export class ComputeManager {
       return;
     }
 
-    const workerURL = new URL('./computeWorker.js', import.meta.url);
+    this.workerBootstrapURL ||= createWorkerBootstrapURL();
     const count = Math.max(1, Math.min(this.config.maxWorkers, 128));
     for (let i = 0; i < count; i++) {
-      const worker = new Worker(workerURL, { type: 'module' });
-      worker.onmessage = (evt) => this._handleWorkerMessage(worker, evt.data);
-      worker.onerror = (err) => console.error('[ComputeManager] Worker error', err);
-      this.workers.push(worker);
+      try {
+        const worker = new Worker(this.workerBootstrapURL, { type: 'module' });
+        worker.onmessage = (evt) => this._handleWorkerMessage(worker, evt.data);
+        worker.onerror = (err) => this._handleWorkerFailure(worker, err);
+        if (typeof worker.addEventListener === 'function') {
+          worker.addEventListener('messageerror', (err) => this._handleWorkerFailure(worker, err));
+        }
+        this.workers.push(worker);
+      } catch (err) {
+        console.warn('[ComputeManager] Failed to start worker; falling back to inline execution', err);
+        break;
+      }
+    }
+
+    if (this.workers.length === 0) {
+      console.warn('[ComputeManager] Worker bootstrap failed; falling back to inline execution');
     }
   }
 
@@ -280,6 +324,30 @@ export class ComputeManager {
       task.reject(new Error(error || 'Worker task failed'));
     }
     this.activeTasks.delete(id);
+    this._scheduleNext();
+  }
+
+  _handleWorkerFailure(worker, error) {
+    console.warn('[ComputeManager] Worker error; falling back to inline execution', error);
+    this.workers = this.workers.filter((entry) => entry !== worker);
+    try {
+      worker.terminate?.();
+    } catch {}
+
+    const stranded = [];
+    for (const [taskId, task] of this.activeTasks.entries()) {
+      if (task.worker !== worker) continue;
+      this.activeTasks.delete(taskId);
+      stranded.push(task);
+    }
+
+    stranded.forEach((task) => {
+      if (this.workers.length > 0 && this._dispatchToWorker(task)) {
+        return;
+      }
+      this._executeInline(task);
+    });
+
     this._scheduleNext();
   }
 

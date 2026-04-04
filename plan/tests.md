@@ -17,6 +17,11 @@
 - Purpose: verify `ComputeManager` can execute pure WASM tasks, memory-view IO, result adapters that emit `commitDelta`, and hybrid `wasm-webgpu` host modules without regressing the existing inline fallback path.
 - Gate: run when changing `peercompute/src/peercompute/computeManager/**`, new compute workload descriptors, or compute README examples.
 
+### ComputeManager worker-bootstrap fallback gate
+- Command: `node --test peercompute/tests/unit/computeManager.worker.test.js`
+- Purpose: verify `ComputeManager` bootstraps workers with a self-contained absolute runtime import and falls back inline when a worker fails after task dispatch, so production-style Vite builds do not leave module-based JS compute tasks hanging forever.
+- Gate: run when changing `peercompute/src/peercompute/computeManager/**` or when debugging demos that use `submitTask({ module, exportName, data })` from built/docs artifacts.
+
 ### Local relay launcher smoke
 - Command: `timeout 20s env DEV_OPEN_OVERVIEW=0 PEERCOMPUTE_NO_OPEN=1 RELAY_IMPL=node bash scripts/dev-local-relay.sh`
 - Purpose: verify local dev launcher emits loopback-safe relay env (`RELAY_PUBLIC_HOST=localhost`, `RELAY_LISTEN_HOST=127.0.0.1`) and writes fresh per-demo `relay-config.json` files.

@@ -22900,3 +22900,171 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - The first push attempt failed because the shell had no active SSH authentication agent. This was resolved locally by starting `ssh-agent` and re-adding `~/.ssh/id_rsa`.
 - The live Pages hash poll emitted one harmless `curl: (23) Failed writing body` when `rg/head` closed early after a successful match; this did not affect deploy verification.
+
+## Date: 2026-04-04
+
+### Prompt
+- update the readme with the full extent of the functionality of peercompute
+
+### Prompt Time/Date
+- 2026-04-04 15:22:57 UTC
+
+### Actions Attempted
+- Re-read the current root `README.md`, `plan/plan.md`, and the latest `plan/log.md` entries before editing so the docs refresh would reflect the actual current shipped/runtime state instead of stale assumptions.
+- Audited the existing README structure and confirmed that it already documented setup, relay operations, integration snippets, and chaos-lab basics, but significantly under-described the real functional surface area now present in the repo.
+- Expanded `README.md` to inventory the current platform capabilities in one place:
+  - browser transport/topology behavior
+  - NodeKernel/runtime orchestration
+  - layered state/persistence/compute surfaces
+  - observability, NetViz, bots, and chaos-lab tooling
+  - demo/runtime coverage
+  - backend/deploy workflows
+- Added clearer textual descriptions to the demo gallery so the README now explains what each major demo validates instead of only showing screenshots.
+- Expanded the README test section to mention the fast demo wiring gate and the bot-behavior harness gate in addition to the existing unit/runtime commands.
+- Expanded the README project-structure section so the top-level repo layout now reflects demos, shared bot helpers, chaos-lab modules, plans, and scripts rather than only the `peercompute/src/peercompute` library folder.
+- Aligned planning docs with the documentation work:
+  - `plan/plan.md` now records the README capability-inventory refresh as completed work
+  - the older TODO item was narrowed from generic `docs/README refresh` to remaining release-facing/per-demo doc polish
+  - `plan/branch/demo-fixes.md` now records the README refresh in the branch status timeline
+- Ran structural diff/sanity checks after editing to ensure the markdown/doc changes were clean and whitespace-safe.
+
+### Files Touched
+- `README.md`
+- `plan/plan.md`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `rg -n '^#|^##|^###' README.md`
+- `tail -n 80 plan/log.md`
+- `sed -n '1,220p' README.md`
+- `sed -n '221,520p' README.md`
+- `sed -n '520,760p' README.md`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,220p' plan/branch/demo-fixes.md`
+- `sed -n '1,240p' plan/tests.md`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `sed -n '1,180p' README.md`
+- `sed -n '320,430p' README.md`
+- `sed -n '580,680p' README.md`
+- `sed -n '680,740p' README.md`
+- `rg -n 'README refresh|README' plan/plan.md plan/branch/demo-fixes.md`
+- `git diff -- README.md`
+- `git diff --check -- README.md plan/plan.md plan/branch/demo-fixes.md`
+- `git diff --stat -- README.md plan/plan.md plan/branch/demo-fixes.md`
+- `git status --short`
+
+### Test Results
+- PASS: README structural/docs refresh landed cleanly
+  - `README.md` now includes a comprehensive capability inventory, expanded demo descriptions, updated test guidance, and a broader project-structure overview
+- PASS: diff hygiene check
+  - `git diff --check -- README.md plan/plan.md plan/branch/demo-fixes.md` returned no whitespace/context errors
+- PASS: doc-scope review
+  - manual section checks confirmed the new README sections render in the intended places (`What You Can Use Today`, `Functional Surface Area`, `Demo Gallery`, `Tests`, `Project Structure`)
+- NOT RUN: unit/runtime/browser tests
+  - this prompt only changed documentation/plan files, so no product-code test suite was required or executed
+
+### Failures / Open Questions
+- The root README is now much closer to the actual shipped functionality, but per-demo README coverage is still lighter than the root capability inventory. The plan TODO was narrowed accordingly instead of claiming all release-facing docs are complete.
+
+## Date: 2026-04-04
+
+### Prompt
+- universes broke. can you identify why its not showing the cosmic web anymore
+
+### Prompt Time/Date
+- 2026-04-04 16:01:40 UTC
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the latest `plan/log.md`, then inspected the current `demos/universes/main.js` cosmic-web generation/render path before touching code.
+- Searched the Universes source for the cosmic-web / volume-rendering path and reviewed the relevant universe-generation, volume shader, and view-transition code.
+- Reviewed recent history for `demos/universes/main.js` and confirmed the likely regression area was the production volumetric path rather than a recent top-level README/docs change.
+- Reproduced the issue locally and in production with headless Chromium:
+  - local Vite dev (`https://127.0.0.1:4178/`) still showed the cosmic web correctly
+  - live GitHub Pages (`https://metaversejs.github.io/peercompute/universes/`) rendered black
+  - local production-style built docs served over `python3 -m http.server` reproduced the same black-screen regression as GitHub Pages
+- Instrumented the browser `Worker` constructor in Playwright and found the root cause:
+  - dev mode created a real worker URL (`/@fs/.../computeWorker.js`) and worked
+  - production builds emitted the worker as a `data:` module
+  - that inlined worker/task-runtime path still contained nested relative imports, so the worker crashed during bootstrap
+  - `ComputeManager` only logged the worker error and never resolved/rejected the stranded task, so `runComputeTask('generateUniverseDensity')` / `runComputeTask('generateUniverseData')` hung and `generateUniverse()` never reached its inline fallback generation
+- Patched `peercompute/src/peercompute/computeManager/ComputeManager.js` so `ComputeManager`:
+  - bootstraps workers from self-contained inlined source
+  - handles worker bootstrap/runtime failure by removing the broken worker
+  - re-dispatches stranded tasks to a surviving worker when possible
+  - otherwise executes stranded tasks inline so module-based JS compute work can still finish
+  - downgrades the recovered worker failure log to a warning instead of a hard error
+- Added focused worker regression coverage:
+  - new unit test `peercompute/tests/unit/computeManager.worker.test.js`
+  - new fixture `peercompute/tests/fixtures/computeManagerWorkerFixture.js`
+- Rebuilt `demos/universes` and re-ran the production-style headless Chromium check against `docs/universes/`; the cosmic web rendered again in the rebuilt artifact.
+- Updated `plan/plan.md`, `plan/branch/demo-fixes.md`, `plan/tests.md`, `demos/universes/plan/plan.md`, and `demos/universes/plan/log.md` so the diagnosis and new regression gate are recorded.
+
+### Files Touched
+- `peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `peercompute/tests/unit/computeManager.worker.test.js`
+- `peercompute/tests/fixtures/computeManagerWorkerFixture.js`
+- `docs/universes/index.html`
+- `docs/universes/assets/index-CIrBa6KX.js`
+- `plan/plan.md`
+- `plan/branch/demo-fixes.md`
+- `plan/tests.md`
+- `demos/universes/plan/plan.md`
+- `demos/universes/plan/log.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `git status --short`
+- `rg -n "cosmic web|cosmicWeb|web" demos/universes peercompute/src -g '!node_modules'`
+- `sed -n '2360,2560p' demos/universes/main.js`
+- `sed -n '2860,3160p' demos/universes/main.js`
+- `git log --oneline --decorate -- demos/universes/main.js | head -n 20`
+- `rg -n "viewLevel|cosmic|filament|cluster|UNIVERSE|bigBang|inspectingTarget|trackingTarget" demos/universes/main.js`
+- `sed -n '2560,2865p' demos/universes/main.js`
+- `sed -n '1988,2065p' demos/universes/main.js`
+- `sed -n '4440,4515p' demos/universes/main.js`
+- `git diff 3c15cb21..HEAD -- demos/universes/main.js`
+- `sed -n '1,260p' demos/universes/compute/universeTasks.js`
+- `sed -n '260,520p' demos/universes/compute/universeTasks.js`
+- `npm --prefix demos/universes run dev -- --host 127.0.0.1 --port 4178`
+- Playwright headless check against `https://127.0.0.1:4178/`
+- Playwright headless check against `https://metaversejs.github.io/peercompute/universes/`
+- `curl -fsSL https://metaversejs.github.io/peercompute/universes/ | rg -o "assets/[A-Za-z0-9._-]+\\.js|assets/[A-Za-z0-9._-]+\\.css"`
+- `sed -n '1,120p' demos/universes/main.js`
+- `sed -n '1,240p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '240,360p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '1,220p' peercompute/src/peercompute/computeManager/computeWorker.js`
+- `sed -n '1,220p' peercompute/src/peercompute/computeManager/taskRuntime.js`
+- `npm --prefix demos/universes run build`
+- `python3 -m http.server 4181 -d docs/universes`
+- Playwright headless checks against `http://127.0.0.1:4181/` before and after the fix
+- `node --test peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/computeManager.wasm.test.js`
+- `ls demos/universes/plan`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `sed -n '1,220p' demos/universes/plan/plan.md`
+- `tail -n 120 demos/universes/plan/log.md`
+- `sed -n '1,220p' demos/universes/plan/branch.md`
+- `rg -n "ComputeManager|worker" plan/tests.md`
+
+### Test Results
+- PASS: local source/dev Universes repro
+  - headless Chromium against `https://127.0.0.1:4178/` showed the cosmic web visible
+- PASS: production-regression repro
+  - headless Chromium against live `https://metaversejs.github.io/peercompute/universes/` rendered black and logged `ComputeManager` worker failure
+- PASS: local production-style repro
+  - headless Chromium against locally served built `docs/universes/` reproduced the same black screen before the fix
+- PASS: unit regression coverage
+  - `node --test peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/computeManager.wasm.test.js`
+  - result: `5/5` passing
+- PASS: rebuilt Universes docs
+  - `npm --prefix demos/universes run build`
+  - fresh built asset: `docs/universes/assets/index-CIrBa6KX.js`
+- PASS: local production-style post-fix verification
+  - headless Chromium against rebuilt `http://127.0.0.1:4181/` showed the cosmic web visible again
+  - console now reports a fallback warning instead of a hard error while inline execution takes over
+
+### Failures / Open Questions
+- The deeper worker-bundling issue is not fully eliminated yet: production-style Vite builds still emit a broken nested `data:` worker/runtime graph for module-based JS compute tasks. The new `ComputeManager` behavior restores functionality by falling back inline, but true worker execution in built docs still needs a cleaner bundler-compatible worker/runtime URL strategy if we want to remove the warning entirely.
