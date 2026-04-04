@@ -23068,3 +23068,59 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - The deeper worker-bundling issue is not fully eliminated yet: production-style Vite builds still emit a broken nested `data:` worker/runtime graph for module-based JS compute tasks. The new `ComputeManager` behavior restores functionality by falling back inline, but true worker execution in built docs still needs a cleaner bundler-compatible worker/runtime URL strategy if we want to remove the warning entirely.
+
+## Date: 2026-04-04
+
+### Prompt
+- deploy!
+
+### Prompt Time/Date
+- 2026-04-04 17:54:39 UTC
+
+### Actions Attempted
+- Re-read the current project plan/log state, confirmed the Universes cosmic-web fix commit candidate (`a673a734`) was clean, and verified the worktree before publishing.
+- Tried a direct `git push origin demo-fixes`, which failed because this shell still had no active SSH authentication agent.
+- Started a fresh `ssh-agent bash` session, re-added `~/.ssh/id_rsa`, and unlocked it with the previously supplied passphrase so the branch could be pushed from an agent-backed shell.
+- Successfully pushed `a673a734` to `origin/demo-fixes`.
+- Polled the live GitHub Pages Universes page until the asset hash changed from the broken `assets/index-DJnP2HYK.js` bundle to the fixed `assets/index-CIrBa6KX.js` bundle.
+- Ran a fresh headless Chromium verification against `https://metaversejs.github.io/peercompute/universes/` after the Pages update propagated and confirmed the published page now visibly renders the cosmic web again.
+- Updated `plan/branch/demo-fixes.md` and `demos/universes/plan/log.md` so the branch/demo notes record the actual deployed commit and live verification result.
+
+### Files Touched
+- `plan/branch/demo-fixes.md`
+- `demos/universes/plan/log.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `tail -n 120 plan/log.md`
+- `sed -n '1,220p' plan/plan.md`
+- `git log --oneline --decorate -5`
+- `git add README.md demos/universes/plan/log.md demos/universes/plan/plan.md docs/universes/index.html docs/universes/assets/index-CIrBa6KX.js docs/universes/assets/index-DJnP2HYK.js peercompute/src/peercompute/computeManager/ComputeManager.js peercompute/tests/fixtures/computeManagerWorkerFixture.js peercompute/tests/unit/computeManager.worker.test.js plan/branch/demo-fixes.md plan/log.md plan/plan.md plan/tests.md`
+- `git commit -m "Fix Universes built cosmic web fallback"`
+- `git status --short`
+- `git log --oneline --decorate -3`
+- `git push origin demo-fixes`
+- `ssh-agent bash`
+- `ssh-add ~/.ssh/id_rsa`
+- `git push origin demo-fixes`
+- `for i in $(seq 1 24); do out=$(curl -fsSL https://metaversejs.github.io/peercompute/universes/ | rg -o 'assets/[A-Za-z0-9._-]+\\.js' | head -n 1); echo "$i $out"; if [ "$out" = 'assets/index-CIrBa6KX.js' ]; then exit 0; fi; sleep 10; done; exit 1`
+- Playwright headless check against `https://metaversejs.github.io/peercompute/universes/`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `git log --oneline --decorate -3`
+- `tail -n 40 plan/branch/demo-fixes.md`
+- `tail -n 60 demos/universes/plan/log.md`
+- `tail -n 60 plan/log.md`
+
+### Test Results
+- PASS: git publish
+  - `a673a734` pushed successfully to `origin/demo-fixes` after reloading the SSH key into a fresh local agent
+- PASS: live GitHub Pages asset update
+  - Universes switched from `assets/index-DJnP2HYK.js` to `assets/index-CIrBa6KX.js`
+- PASS: live post-deploy browser verification
+  - headless Chromium against `https://metaversejs.github.io/peercompute/universes/` showed the cosmic web visible again on the published page
+  - console emitted the expected recovery warning: `ComputeManager` worker failure followed by inline fallback
+
+### Failures / Open Questions
+- The first push attempt failed because the main shell still lacked an active SSH authentication agent; this was resolved by starting a fresh agent-backed shell and re-adding the existing key.
+- The live Pages verification confirms functionality is restored, but the underlying production worker-bundling issue still exists and is currently masked by the inline fallback behavior rather than by a true worker-compatible bundle shape.

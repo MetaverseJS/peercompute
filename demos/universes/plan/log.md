@@ -32,3 +32,15 @@
   - Headless Chromium against locally served `docs/universes/` showed the cosmic web visible again in the rebuilt production artifact.
 - Remaining note:
   - The built artifact still logs a warning that worker bootstrap failed and inline fallback is being used. Functionality is restored, but there is still room for a deeper bundler-specific worker cleanup if we want true worker execution in built docs.
+
+## 2026-04-04 17:54:39 UTC - Deploy Verification
+
+- Prompt: `deploy!`
+- Actions:
+  - committed the current Universes/ComputeManager fix set as `a673a734` (`Fix Universes built cosmic web fallback`)
+  - pushed `demo-fixes` to `origin`
+  - polled GitHub Pages until the Universes asset switched from `assets/index-DJnP2HYK.js` to `assets/index-CIrBa6KX.js`
+  - ran a fresh headless Chromium check against `https://metaversejs.github.io/peercompute/universes/`
+- Result:
+  - live GitHub Pages Universes now shows the cosmic web again
+  - production still logs the recovered `ComputeManager` inline-fallback warning, but the published demo is functional
