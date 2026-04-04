@@ -22136,3 +22136,48 @@ def parse_args() -> argparse.Namespace:
 ### Failures / Open Questions
 - At `2026-04-04 01:29 UTC`, live GitHub Pages was still serving the older NetViz and Hyperborea asset hashes (`index-RprJ9kUE.js`, `cb-DA2AY05c.js`), so the newer local fixes/builds in this prompt still need a follow-up commit/push + prod recheck to confirm publication.
 - `npm run test:runtime` remains a broader docs-smoke command that can fail on non-multiplayer demos before reaching the multiplayer surface; `npm run test:runtime:p2p` is the reliable multiplayer gate for this branch.
+
+## Date: 2026-04-04
+
+### Prompt
+- github auth pass is the same as sudo pass
+
+### Prompt Time/Date
+- 2026-04-04 01:37:18 UTC
+
+### Actions Attempted
+- Committed the source/docs/plan updates from the multiplayer runtime hardening pass as `d63abacb` with message `Harden multiplayer runtime gates and browser startup`.
+- Pushed `d63abacb` to `origin/demo-fixes` by unlocking the existing SSH deploy key through a PTY-backed `ssh-agent` session.
+- Rechecked the live GitHub Pages publish after a short delay using the correct nested repo URLs under `https://metaversejs.github.io/peercompute/...`.
+- Confirmed the live NetViz and Hyperborea HTML now point at the newly built asset hashes, meaning the latest frontend bundles are published:
+  - NetViz: `assets/index-BIMwYj1U.js`
+  - Hyperborea: `assets/cb-BLxBAQ0K.js`
+
+### Files Touched
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `git add README.md demos/cubechat/src/p2p/network.js demos/hyperborea/src/game/Game.js demos/hyperborea/src/game/roomDirectory.js demos/tests/demo-ports.test.js demos/tests/runtime-p2p.mjs docs/cubechat docs/daddygo docs/hyperborea docs/netviz docs/sneakywoods peercompute/src/peercompute/networkManager/NetworkManager.js peercompute/src/peercompute/nodeKernel/NodeKernel.js peercompute/tests/unit/networkManager.webrtc.test.js plan/branch/demo-fixes.md plan/log.md plan/plan.md plan/tests.md`
+- `git commit -m "Harden multiplayer runtime gates and browser startup"`
+- `ssh-agent bash -lc 'ssh-add ~/.ssh/id_rsa && git push origin demo-fixes'`
+- `git status --short`
+- `git log --oneline -2`
+- `curl -I -L https://metaversejs.github.io/peercompute/netviz/`
+- `curl -L --silent https://metaversejs.github.io/peercompute/netviz/ | rg -o "assets/index-[A-Za-z0-9_-]+\\.js" -n`
+- `curl -I -L https://metaversejs.github.io/peercompute/hyperborea/cb.html`
+- `curl -L --silent https://metaversejs.github.io/peercompute/hyperborea/cb.html | rg -o "assets/cb-[A-Za-z0-9_-]+\\.js" -n`
+- `sleep 70; ... curl ...`
+
+### Test Results
+- PASS: `git commit -m "Harden multiplayer runtime gates and browser startup"`
+  - created commit `d63abacb`
+- PASS: `ssh-agent ... git push origin demo-fixes`
+  - remote branch advanced from `f69fb9de` to `d63abacb`
+- PASS: live GitHub Pages publish recheck
+  - `/peercompute/netviz/` now serves `assets/index-BIMwYj1U.js`
+  - `/peercompute/hyperborea/cb.html` now serves `assets/cb-BLxBAQ0K.js`
+  - `Last-Modified` headers moved to `2026-04-04 01:35:06 UTC`, consistent with the new publish
+
+### Failures / Open Questions
+- No new functional failures were uncovered in this follow-up. The full local Chromium multiplayer gate had already passed before this commit/push; this follow-up confirmed the corresponding frontend bundles are now live on GitHub Pages.
