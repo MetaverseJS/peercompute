@@ -22841,3 +22841,62 @@ def parse_args() -> argparse.Namespace:
 - The first combined multi-demo bot-settings smoke used a non-PTY shell path and produced poor incremental visibility while waiting on browser state, so I abandoned that attempt in favor of per-demo PTY smokes. That was a tooling/debugging issue, not a product failure.
 - The settings-screen bot-host smokes validated iframe spawn + bridge registration + local runtime ticks, but they did not assert real peer convergence (`peerCount` stayed `0` in the quick local docs checks). Treat "settings can launch a bot that becomes `ready/running`" and "that spawned bot fully converges into a multiplayer room under a specific relay config" as separate gates.
 - `node --test demos/tests/demo-ports.test.js` now emits a harmless `[MODULE_TYPELESS_PACKAGE_JSON]` warning because the CJS static gate dynamically imports the ESM `demos/shared/peercomputeBots.js` helper from the root package without a repo-wide `"type": "module"` declaration. This is noisy but not currently blocking.
+
+## Date: 2026-04-04
+
+### Prompt
+- deploy it
+
+### Prompt Time/Date
+- 2026-04-04 15:19:09 UTC
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the latest `plan/log.md` entry, then checked the current branch/worktree/remote state to confirm the bot-settings and Quake-style bot-core changes were sitting on `demo-fixes` and ready to publish.
+- Reviewed the outgoing diff and recent branch history before publishing. Confirmed the live branch head was still `168d0d6b` and that the current bot-settings work had not yet been pushed.
+- Created a feature commit for the full in-browser bot host/settings batch:
+  - commit: `c7b39cb8`
+  - message: `Add shared in-browser demo bots`
+- Initial direct `git push origin demo-fixes` failed with `Permission denied (publickey)` because no SSH agent was active in this shell.
+- Started a fresh `ssh-agent bash` PTY shell, ran `ssh-add ~/.ssh/id_rsa`, unlocked it with the user-provided passphrase, and retried the push from that same agent-backed shell.
+- Successfully pushed `c7b39cb8` to `origin/demo-fixes`.
+- Polled the live GitHub Pages URLs until the new bundle hashes appeared publicly:
+  - `https://metaversejs.github.io/peercompute/cubechat/` -> `index-D0l_3sgy.js`
+  - `https://metaversejs.github.io/peercompute/hyperborea/cb.html` -> `cb-B6gVXbeJ.js`
+  - `https://metaversejs.github.io/peercompute/sneakywoods/` -> `index-CNBDqZqF.js`
+- Updated `plan/branch/demo-fixes.md` with the pushed commit and live-asset verification so branch notes reflect the published state.
+
+### Files Touched
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `git branch --show-current && git status --short && git remote -v`
+- `git diff --stat`
+- `git log --oneline -5 --decorate`
+- `git add -A && git commit -m "Add shared in-browser demo bots"`
+- `git push origin demo-fixes`
+- `ssh-add -l`
+- `ls -la ~/.ssh`
+- `git remote get-url origin`
+- `ssh-agent bash`
+- `ssh-add ~/.ssh/id_rsa`
+- `git push origin demo-fixes`
+- `curl -fsSL https://metaversejs.github.io/peercompute/cubechat/ | rg -o "index-[A-Za-z0-9_-]+\\.js|index-[A-Za-z0-9_-]+\\.css"`
+- `curl -fsSL https://metaversejs.github.io/peercompute/hyperborea/cb.html | rg -o "cb-[A-Za-z0-9_-]+\\.js|cb-[A-Za-z0-9_-]+\\.css"`
+- `curl -fsSL https://metaversejs.github.io/peercompute/sneakywoods/ | rg -o "index-[A-Za-z0-9_-]+\\.js"`
+- `for i in $(seq 1 18); do ... curl live Pages HTML for cubechat/hyperborea/sneakywoods and break once the expected hashes appear ... done`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- PASS: git publish
+  - `c7b39cb8` pushed successfully to `origin/demo-fixes` after reloading the local SSH key into a fresh agent
+- PASS: live GitHub Pages verification
+  - CubeChat live HTML now references `index-D0l_3sgy.js`
+  - Hyperborea live HTML now references `cb-B6gVXbeJ.js`
+  - SneakyWoods live HTML now references `index-CNBDqZqF.js`
+
+### Failures / Open Questions
+- The first push attempt failed because the shell had no active SSH authentication agent. This was resolved locally by starting `ssh-agent` and re-adding `~/.ssh/id_rsa`.
+- The live Pages hash poll emitted one harmless `curl: (23) Failed writing body` when `rg/head` closed early after a successful match; this did not affect deploy verification.
