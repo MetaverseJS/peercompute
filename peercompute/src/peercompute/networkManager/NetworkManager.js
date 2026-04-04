@@ -4,6 +4,7 @@
  */
 
 import { createLibp2p } from 'libp2p';
+import { FaultTolerance } from '@libp2p/interface';
 import { webSockets } from '@libp2p/websockets';
 import { webRTC } from '@libp2p/webrtc';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
@@ -450,6 +451,41 @@ const normalizeTopicList = (input) => {
   return Array.from(new Set(normalized));
 };
 
+const normalizeTransportFaultTolerance = (value) => {
+  if (value === FaultTolerance.FATAL_ALL || value === FaultTolerance.NO_FATAL) {
+    return value;
+  }
+  if (value == null) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (
+    normalized === 'fatal_all'
+    || normalized === 'fatal-all'
+    || normalized === 'fatalall'
+  ) {
+    return FaultTolerance.FATAL_ALL;
+  }
+  if (
+    normalized === 'no_fatal'
+    || normalized === 'no-fatal'
+    || normalized === 'nofatal'
+  ) {
+    return FaultTolerance.NO_FATAL;
+  }
+  return undefined;
+};
+
+const normalizeTransportManagerConfig = (input) => {
+  if (!input || typeof input !== 'object') return null;
+  const next = { ...input };
+  const faultTolerance = normalizeTransportFaultTolerance(next.faultTolerance);
+  if (faultTolerance !== undefined) {
+    next.faultTolerance = faultTolerance;
+  } else if ('faultTolerance' in next) {
+    delete next.faultTolerance;
+  }
+  return Object.keys(next).length > 0 ? next : null;
+};
+
 
 export class NetworkManager {
   constructor(config = {}) {
@@ -602,6 +638,7 @@ export class NetworkManager {
       typeof addr === 'string' ? normalizeBootstrapAddr(addr) : addr
     );
     const allowLocalDial = config.allowLocalDial ?? normalizedBootstrapPeers.some(isLocalDialAddr);
+    const transportManager = normalizeTransportManagerConfig(config.transportManager);
     const definedConfig = Object.fromEntries(
       Object.entries(config).filter(([, value]) => value !== undefined)
     );
@@ -613,7 +650,8 @@ export class NetworkManager {
       ),
       bootstrapPeers: normalizedBootstrapPeers,
       allowLocalDial,
-      webrtc: webrtcConfig
+      webrtc: webrtcConfig,
+      transportManager
     };
     this.debugOutput = typeof this.config.debugOutput === 'boolean'
       ? this.config.debugOutput
@@ -936,6 +974,10 @@ export class NetworkManager {
       : Number.isFinite(this.config.dialTimeout)
         ? Math.max(1000, this.config.dialTimeout)
         : null;
+    const transportManagerConfig =
+      this.config.transportManager && typeof this.config.transportManager === 'object'
+        ? { ...this.config.transportManager }
+        : null;
     if (dialTimeoutMs) {
       connectionManagerConfig.dialTimeout = dialTimeoutMs;
     }
@@ -960,6 +1002,7 @@ export class NetworkManager {
         connectionMonitor: {
           abortConnectionOnPingFailure: false
         },
+        ...(transportManagerConfig ? { transportManager: transportManagerConfig } : {}),
         addresses: {
           listen: listenAddrs
         },

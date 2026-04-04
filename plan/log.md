@@ -22032,3 +22032,107 @@ def parse_args() -> argparse.Namespace:
 - Hyperborea remains the one multiplayer outlier under the local relay harness. After the relay-source cleanup and the other demo fixes, it still fails with `UnsupportedListenAddressesError` / `signal timed out` while listening on the explicit `/p2p-circuit` bootstrap relay address. This needs a separate Chromium pass against the deployed production environment before calling the full multiplayer matrix green.
 - `npm run test:runtime` is still not a clean "multiplayer demos only" gate because the generic docs-smoke phase can fail earlier on non-multiplayer demos (PlanetGen in this run).
 - Deploy/push plus post-deploy Chromium validation were still pending at the end of this log entry and should be recorded in the next entry once completed.
+
+## Date: 2026-04-04
+
+### Prompt
+- github auth pass is the same as sudo pass
+
+### Prompt Time/Date
+- 2026-04-04 01:31:54 UTC
+
+### Actions Attempted
+- Re-read `plan/plan.md`, `plan/log.md`, and `plan/branch/demo-fixes.md`, then inspected git state to resume from the blocked deploy point after context compaction.
+- Verified the existing SSH key failure was a TTY/passphrase problem, not missing GitHub authorization: `ssh -vT git@github.com` showed GitHub accepted `~/.ssh/id_rsa` and then failed only because the non-interactive shell could not open `/dev/tty` for the private-key passphrase.
+- Unlocked the existing SSH key through a PTY-backed agent using the user-provided passphrase (not written to disk or repo files) and successfully pushed the already-prepared deploy commit `f69fb9de` to `origin/demo-fixes`.
+- Re-ran the full multiplayer Chromium gate (`npm run test:runtime:p2p`) against the local Go relay. That exposed two remaining real failures:
+  - CubeChat still surfaced an unhandled `RTCPeerConnection.createAnswer()` stable-state race as a browser `pageerror`.
+  - Hyperborea no longer needed separate prod-only validation; the local harness showed the real issue was that its explicit relay-circuit listen timeout was still treated as fatal, and the runtime assertion was relying on a brittle transport log (`[hyperborea-net] Peer connected`) instead of replicated gameplay state.
+- Hardened CubeChat async signaling in `demos/cubechat/src/p2p/network.js`:
+  - expanded the "stable state" error filter to cover Chromium's `createAnswer` state error text
+  - added `_handleSignalError(...)` so async offer/answer/ICE handlers no longer reject unobserved promises into `pageerror`
+  - wrapped initial offer creation in a real `try/catch`
+  - wrapped the new-peer `handleOffer()` answer path in a guarded `try/catch` with `have-remote-offer` checks before `createAnswer()`
+  - started queueing ICE candidates even when a `RTCPeerConnection` does not exist yet, not just when `remoteDescription` is absent
+  - pruned queued ICE + `makingOffer` state on peer close
+- Added explicit transport-manager fault-tolerance plumbing in PeerCompute so demos can request non-fatal browser listen startup:
+  - `peercompute/src/peercompute/networkManager/NetworkManager.js` now normalizes `transportManager.faultTolerance` values (including `'no-fatal'`) and forwards the resulting config into libp2p `createLibp2p(...)`
+  - `peercompute/src/peercompute/nodeKernel/NodeKernel.js` now passes `transportManager` config through to `NetworkManager`
+- Opted Hyperborea into non-fatal browser relay-listen startup by setting `transportManager: { faultTolerance: 'no-fatal' }` on both its main node and room-directory node in `demos/hyperborea/src/game/Game.js` and `demos/hyperborea/src/game/roomDirectory.js`.
+- Added lightweight `?e2e=1` state exposure to Hyperborea in `demos/hyperborea/src/game/Game.js` so headless Chromium can assert local peer identity plus replicated remote-player visibility from actual game state (`remotePeerCount` / `remoteMeshCount`) instead of relying on connection-log timing.
+- Updated `demos/tests/runtime-p2p.mjs` so Hyperborea now runs as `cb.html?e2e=1` and waits for:
+  - both pages to expose `window.__hyperboreaTest.localPeerId`
+  - both pages to report a non-zero replicated remote-player count or remote mesh count
+- Added regression coverage:
+  - `peercompute/tests/unit/networkManager.webrtc.test.js` now asserts `transportManager.faultTolerance: 'no-fatal'` normalizes to libp2p `FaultTolerance.NO_FATAL`
+  - `demos/tests/demo-ports.test.js` now asserts the CubeChat async signaling guard exists and Hyperborea's main/room-directory nodes both opt into non-fatal relay-listen startup
+- Rebuilt the docs bundles multiple times so the runtime harness and final deploy artifact used the new CubeChat/Hyperborea/NetViz code paths, then restored the production relay-config docs output after the runtime harness had temporarily injected local relay config into `docs/*/relay-config.json`.
+- Verified the correct live GitHub Pages base path is `https://metaversejs.github.io/peercompute/...`, not the stale root-path URLs. At `2026-04-04 01:29 UTC`, the live `/peercompute/netviz/` and `/peercompute/hyperborea/cb.html` pages were still serving the previous asset hashes (`index-RprJ9kUE.js`, `cb-DA2AY05c.js`), confirming the then-current local fixes/builds had not yet been published.
+
+### Files Touched
+- `README.md`
+- `demos/cubechat/src/p2p/network.js`
+- `demos/hyperborea/src/game/Game.js`
+- `demos/hyperborea/src/game/roomDirectory.js`
+- `demos/tests/demo-ports.test.js`
+- `demos/tests/runtime-p2p.mjs`
+- `docs/cubechat/**`
+- `docs/daddygo/**`
+- `docs/hyperborea/**`
+- `docs/netviz/**`
+- `docs/sneakywoods/**`
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `git status --short && git branch --show-current && git log --oneline -1`
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,220p' plan/branch/demo-fixes.md`
+- `ssh -T git@github.com`
+- `ls -la ~/.ssh && ssh-keygen -lf ~/.ssh/id_rsa.pub`
+- `ssh -vT git@github.com`
+- `git remote -v`
+- `ssh-agent bash -lc 'ssh-add ~/.ssh/id_rsa && git push origin demo-fixes'`
+- `sed -n '1,760p' demos/tests/runtime-p2p.mjs`
+- `rg -n "new NodeKernel|relay-config|peercompute" demos -g '!**/node_modules/**'`
+- `npm run test:runtime:p2p`
+- `sed -n '1,760p' demos/cubechat/src/p2p/network.js`
+- `sed -n '380,520p' demos/hyperborea/src/game/Game.js`
+- `sed -n '1,220p' demos/hyperborea/src/game/roomDirectory.js`
+- `rg -n "faultTolerance|NO_FATAL|Some configured addresses failed to be listened on" node_modules`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `node --test demos/tests/demo-ports.test.js`
+- `npm run build`
+- `npm --prefix demos/hyperborea run build && npm run test:runtime:p2p`
+- `curl -I -L https://metaversejs.github.io/netviz/`
+- `curl -I -L https://metaversejs.github.io/peercompute/netviz/`
+- `curl -L --silent https://metaversejs.github.io/peercompute/netviz/ | rg -o "assets/index-[A-Za-z0-9_-]+\\.js" -n`
+- `curl -L --silent https://metaversejs.github.io/peercompute/hyperborea/cb.html | rg -o "assets/cb-[A-Za-z0-9_-]+\\.js" -n`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- PASS: SSH deploy of the pre-existing frontend/runtime commit
+  - `ssh-agent ... git push origin demo-fixes` succeeded
+  - `origin/demo-fixes` advanced to `f69fb9de`
+- PASS: `node --test demos/tests/demo-ports.test.js`
+  - 14 tests passed, 0 failed
+- PASS: `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - 42 tests passed, 0 failed
+- PASS: `npm --prefix demos/hyperborea run build && npm run test:runtime:p2p`
+  - full local Chromium multiplayer gate passed for `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`
+  - Hyperborea now starts under the local harness and proves remote-player replication via `?e2e=1` state rather than timing-sensitive connection logs
+- PASS: final `npm run build`
+  - rebuilt/restored the production `docs/` output after the runtime harness had temporarily rewritten local relay-config files
+- PASS (diagnostic): live GitHub Pages path validation
+  - root-path URLs like `https://metaversejs.github.io/netviz/` returned GitHub Pages 404s
+  - nested repo-path URLs like `https://metaversejs.github.io/peercompute/netviz/` returned HTTP 200
+
+### Failures / Open Questions
+- At `2026-04-04 01:29 UTC`, live GitHub Pages was still serving the older NetViz and Hyperborea asset hashes (`index-RprJ9kUE.js`, `cb-DA2AY05c.js`), so the newer local fixes/builds in this prompt still need a follow-up commit/push + prod recheck to confirm publication.
+- `npm run test:runtime` remains a broader docs-smoke command that can fail on non-multiplayer demos before reaching the multiplayer surface; `npm run test:runtime:p2p` is the reliable multiplayer gate for this branch.

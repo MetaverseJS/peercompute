@@ -231,6 +231,7 @@ export class NodeKernel {
         maxDialQueueLength: this.config.maxDialQueueLength,
         maxPeerAddrsToDial: this.config.maxPeerAddrsToDial,
         dialTimeoutMs: this.config.dialTimeoutMs ?? this.config.dialTimeout,
+        transportManager: this.config.transportManager,
         pubsubType: this.config.pubsubType,
         gossipsub: this.config.gossipsub,
         debugOutput: this.config.debugOutput,

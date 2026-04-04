@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { FaultTolerance } from '@libp2p/interface';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
 
 const buildAddr = (value) => ({
@@ -51,6 +52,18 @@ test('NetworkManager uses lightweight defaults for room-directory nodes', () => 
   assert.equal(manager.config.longRangeCount, 0);
   assert.equal(manager.config.isolationMinConnections, 1);
   assert.equal(manager.config.maxDialPeers, 4);
+});
+
+test('NetworkManager normalizes transportManager fault tolerance', () => {
+  const manager = new NetworkManager({
+    transportManager: {
+      faultTolerance: 'no-fatal'
+    }
+  });
+
+  assert.deepEqual(manager.config.transportManager, {
+    faultTolerance: FaultTolerance.NO_FATAL
+  });
 });
 
 test('NetworkManager delivers additional pubsub topics even when scope differs', () => {

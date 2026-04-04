@@ -5,6 +5,7 @@ const DIRECTORY_NAMESPACE = 'rooms';
 const ROOM_ENTRY_PREFIX = 'room-';
 const ROOM_HEARTBEAT_MS = 10000;
 const ROOM_TTL_MS = 45000;
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 
 const slugify = (value) => {
   const slug = String(value || '')
@@ -57,6 +58,7 @@ export class RoomDirectory {
       enablePersistence: false,
       gameId: this.gameId,
       roomId: DIRECTORY_ROOM_ID,
+      transportManager: NO_FATAL_TRANSPORT_MANAGER,
       ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
       ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})

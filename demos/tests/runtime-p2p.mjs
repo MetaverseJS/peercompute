@@ -353,7 +353,7 @@ async function runHyperborea(context) {
   attachPageErrorLogging(pageA, errors);
   attachPageErrorLogging(pageB, errors);
 
-  const url = `${baseUrl}/hyperborea/cb.html`;
+  const url = `${baseUrl}/hyperborea/cb.html?e2e=1`;
   console.log(`→ hyperborea: ${url}`);
 
   try {
@@ -378,16 +378,29 @@ async function runHyperborea(context) {
         logsB
       )
     ]);
-    await waitForConsoleMatch(
-      pageA,
-      (text) => text.includes('[hyperborea-net] Peer connected'),
-      demoTimeoutMs,
-      'peer connected',
-      logsA
-    );
+    await Promise.all([
+      pageA.waitForFunction(() => window.__hyperboreaTest?.localPeerId, null, { timeout: demoTimeoutMs }),
+      pageB.waitForFunction(() => window.__hyperboreaTest?.localPeerId, null, { timeout: demoTimeoutMs })
+    ]);
+    await Promise.all([
+      pageA.waitForFunction(
+        () => (window.__hyperboreaTest?.remotePeerCount || 0) > 0 || (window.__hyperboreaTest?.remoteMeshCount || 0) > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      ),
+      pageB.waitForFunction(
+        () => (window.__hyperboreaTest?.remotePeerCount || 0) > 0 || (window.__hyperboreaTest?.remoteMeshCount || 0) > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      )
+    ]);
   } catch (err) {
+    const debugA = await pageA.evaluate(() => window.__hyperboreaTest || null).catch(() => null);
+    const debugB = await pageB.evaluate(() => window.__hyperboreaTest || null).catch(() => null);
     errors.push(
       `Hyperborea P2P wait failed: ${err?.message || err}\n` +
+      `pageA state: ${JSON.stringify(debugA)}\n` +
+      `pageB state: ${JSON.stringify(debugB)}\n` +
       `pageA logs: ${logsA.slice(-12).join(' | ')}\n` +
       `pageB logs: ${logsB.slice(-12).join(' | ')}`
     );

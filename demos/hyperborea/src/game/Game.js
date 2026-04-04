@@ -28,6 +28,8 @@ import { TimeSystem } from '../systems/timeSystem.js';
 import { TerrainGenerator } from '../systems/terrainGenerator.js';
 import { RoomDirectory, buildRoomId, normalizeRoomName } from './roomDirectory.js';
 
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
+
 const normalizeWebRTCConfig = (cfg) => {
     if (!cfg || typeof cfg !== 'object') return null;
     const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
@@ -60,6 +62,8 @@ const normalizeGossipsubConfig = (cfg) => {
 export class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
+        this.e2eEnabled = typeof window !== 'undefined'
+            && new URLSearchParams(window.location.search).get('e2e') === '1';
         this.gameNamespace = 'hyperborea';
         this.peerMeshes = new Map();
         this.peers = new Map();
@@ -202,6 +206,17 @@ export class Game {
         this.generateInitialTerrain();
         // Use XR-friendly animation loop
         this.renderer.setAnimationLoop(() => this.animate());
+        this.updateE2EState();
+    }
+
+    updateE2EState() {
+        if (!this.e2eEnabled || typeof window === 'undefined') return;
+        window.__hyperboreaTest = {
+            localPeerId: this.myPeerId || null,
+            roomId: this.currentRoom?.roomId || null,
+            remotePeerCount: this.peers.size,
+            remoteMeshCount: this.peerMeshes.size
+        };
     }
     
     loadPersistedState() {
@@ -433,6 +448,7 @@ export class Game {
                 enablePersistence: false,
                 gameId: 'hyperborea',
                 roomId: this.currentRoom?.roomId || 'global',
+                transportManager: NO_FATAL_TRANSPORT_MANAGER,
                 ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
                 ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
                 ...(this.webrtc ? { webrtc: this.webrtc } : {})
@@ -443,6 +459,7 @@ export class Game {
             this.networkManager = this.node.getNetworkManager();
             this.libp2p = this.networkManager?.getLibp2pNode?.() || null;
             this.myPeerId = this.node.getStatus().network.peerId;
+            this.updateE2EState();
             logNet('Node started', this.myPeerId);
             if (this.libp2p && !this.connectionLogBound) {
                 this.connectionLogBound = true;
@@ -631,6 +648,7 @@ export class Game {
         this.libp2p = null;
         this.myPeerId = null;
         this.clearPeers();
+        this.updateE2EState();
     }
 
     clearPeers() {
@@ -639,6 +657,7 @@ export class Game {
         }
         this.peerMeshes.clear();
         this.peers.clear();
+        this.updateE2EState();
     }
 
     configureNetworkScheduler() {
@@ -3375,6 +3394,7 @@ export class Game {
         }
         const lastSeen = typeof data.ts === 'number' ? data.ts : Date.now();
         this.peers.set(peerId, { lastSeen });
+        this.updateE2EState();
     }
 
     handleRemoteEvent(peerId, payload) {
@@ -3457,6 +3477,7 @@ export class Game {
         }
         this.peerMeshes.delete(peerId);
         this.peers.delete(peerId);
+        this.updateE2EState();
     }
 
     removeChunk(key, chunk) {

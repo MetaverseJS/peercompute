@@ -136,8 +136,17 @@ export class P2PNetwork {
   }
 
   _isStableStateError(error) {
-    const message = error?.message || String(error || '');
-    return message.includes('Called in wrong state: stable');
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+      message.includes('called in wrong state: stable')
+      || message.includes('cannot create an answer in a state other than have-remote-offer')
+      || message.includes('failed to set remote answer sdp: called in wrong state')
+    );
+  }
+
+  _handleSignalError(context, error) {
+    if (this._isStableStateError(error)) return;
+    console.error(`Error handling ${context}:`, error);
   }
 
   async init({ roomId = 'global' } = {}) {
@@ -271,17 +280,23 @@ export class P2PNetwork {
       }
 
       if (payload.type === 'webrtc-offer') {
-        this.handleOffer(from, payload.offer);
+        this.handleOffer(from, payload.offer).catch((error) => {
+          this._handleSignalError('offer', error);
+        });
         return;
       }
 
       if (payload.type === 'webrtc-answer') {
-        this.handleAnswer(from, payload.answer);
+        this.handleAnswer(from, payload.answer).catch((error) => {
+          this._handleSignalError('answer', error);
+        });
         return;
       }
 
       if (payload.type === 'webrtc-ice') {
-        this.handleIceCandidate(from, payload.candidate);
+        this.handleIceCandidate(from, payload.candidate).catch((error) => {
+          this._handleSignalError('ICE candidate', error);
+        });
         return;
       }
 
@@ -536,6 +551,8 @@ export class P2PNetwork {
         type: 'webrtc-offer',
         offer
       }, { reliable: true });
+    } catch (error) {
+      this._handleSignalError('initial offer', error);
     } finally {
       this.makingOfferPeers.delete(peerId);
     }
@@ -565,7 +582,7 @@ export class P2PNetwork {
           answer
         }, { reliable: true });
       } catch (error) {
-        console.error('Error handling renegotiation offer:', error);
+        this._handleSignalError('renegotiation offer', error);
       }
       return;
     }
@@ -606,26 +623,34 @@ export class P2PNetwork {
       }
     };
 
-    await pc.setRemoteDescription(offer);
+    try {
+      await pc.setRemoteDescription(offer);
 
-    if (this.pendingIceCandidates.has(peerId)) {
-      const candidates = this.pendingIceCandidates.get(peerId);
-      for (const candidate of candidates) {
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch (error) {
-          console.error('Error adding queued ICE candidate:', error);
+      if (this.pendingIceCandidates.has(peerId)) {
+        const candidates = this.pendingIceCandidates.get(peerId);
+        for (const candidate of candidates) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (error) {
+            this._handleSignalError('queued ICE candidate', error);
+          }
         }
+        this.pendingIceCandidates.delete(peerId);
       }
-      this.pendingIceCandidates.delete(peerId);
-    }
 
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    this._sendSignal(peerId, {
-      type: 'webrtc-answer',
-      answer
-    }, { reliable: true });
+      if (pc.signalingState !== 'have-remote-offer') {
+        return;
+      }
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      this._sendSignal(peerId, {
+        type: 'webrtc-answer',
+        answer
+      }, { reliable: true });
+    } catch (error) {
+      this._handleSignalError('offer', error);
+    }
   }
 
   async handleAnswer(peerId, answer) {
@@ -646,16 +671,20 @@ export class P2PNetwork {
           this.pendingIceCandidates.delete(peerId);
         }
       } catch (error) {
-        if (!this._isStableStateError(error)) {
-          console.error('Error handling answer:', error);
-        }
+        this._handleSignalError('answer', error);
       }
     }
   }
 
   async handleIceCandidate(peerId, candidate) {
     const pc = this.peerConnections.get(peerId);
-    if (!pc) return;
+    if (!pc) {
+      if (!this.pendingIceCandidates.has(peerId)) {
+        this.pendingIceCandidates.set(peerId, []);
+      }
+      this.pendingIceCandidates.get(peerId).push(candidate);
+      return;
+    }
 
     if (!pc.remoteDescription) {
       if (!this.pendingIceCandidates.has(peerId)) {
@@ -668,7 +697,7 @@ export class P2PNetwork {
     try {
       await pc.addIceCandidate(candidate);
     } catch (error) {
-      console.error('Error adding ICE candidate:', error);
+      this._handleSignalError('ICE candidate', error);
     }
   }
 
@@ -797,6 +826,8 @@ export class P2PNetwork {
     this.remoteAudioTracks.delete(peerId);
     this.remoteTrackIds.delete(peerId);
     this.remoteScreenTrackIds.delete(peerId);
+    this.pendingIceCandidates.delete(peerId);
+    this.makingOfferPeers.delete(peerId);
 
     this.messageHandlers.forEach((handler) => handler({
       type: 'stream_removed',

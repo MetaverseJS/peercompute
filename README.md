@@ -584,11 +584,12 @@ Default chaos-lab topology uses `peercompute/net-chaos-lab-node:latest` for agen
 ```bash
 npm --prefix peercompute run test:unit
 npm run test:runtime:p2p
-RUNTIME_P2P_DEMOS=cubechat,sneakywoods,daddygo,netviz npm run test:runtime:p2p
+RUNTIME_P2P_DEMOS=hyperborea npm run test:runtime:p2p
 ```
 
 Note: Playwright is blocked in sandboxed environments (Chromium EPERM).
 `npm run test:runtime` also exercises the built docs bundle, but it includes non-multiplayer demos as well.
+`npm run test:runtime:p2p` is the full multiplayer browser gate for `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`; use `RUNTIME_P2P_DEMOS=...` to isolate a subset while debugging.
 
 ## Project Structure
 ```

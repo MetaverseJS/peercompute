@@ -99,13 +99,12 @@
 - Gate: run when changing `demos/netviz/src/main.js`, `demos/netviz/src/relayOverlay.js`, or relay-line visualization semantics.
 
 ### Multiplayer runtime gate
-- Command: `RUNTIME_P2P_DEMOS=cubechat,sneakywoods,daddygo,netviz npm run test:runtime:p2p`
-- Purpose: validate the built docs bundles for the main multiplayer demos plus NetViz attach against a local Go relay, including CubeChat media/screen-share negotiation, SneakyWoods room presence, DaddyGo score replication, and NetViz attach-session discovery.
+- Command: `npm run test:runtime:p2p`
+- Purpose: validate the built docs bundles for all multiplayer demos plus NetViz attach against a local Go relay, including CubeChat media/screen-share negotiation, Hyperborea replicated remote-player visibility, SneakyWoods room presence, DaddyGo score replication, and NetViz attach-session discovery.
 - Notes:
 : `demos/tests/runtime-p2p.mjs` now clears built `relay-config-source.json` files before injecting local relay configs so the harness does not accidentally bootstrap against the live production relay.
 : `RUNTIME_P2P_DEMOS` can be used to run a subset while debugging.
-- Current caveat:
-: Hyperborea still needs a separate Chromium check against the deployed production environment because its explicit relay-circuit listen path is timing out under the current local relay harness.
+: Hyperborea now uses a lightweight `?e2e=1` state surface plus `transportManager.faultTolerance = no-fatal` on its browser nodes so transient circuit-listen timeouts do not abort multiplayer startup before remote-player replication can be observed.
 
 ### Current direct-connection diagnosis target
 - Symptom: peers upgrade from relay to `webrtc`, then churn/disconnect and re-dial relay.

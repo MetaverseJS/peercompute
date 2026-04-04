@@ -81,6 +81,26 @@ test('cubechat uses PeerCompute for WebRTC signaling', () => {
   assert.ok(content.includes('RTCPeerConnection'), 'cubechat WebRTC adapter missing');
   assert.ok(content.includes('webrtc-offer'), 'cubechat WebRTC signaling missing');
   assert.ok(content.includes('queueEvent'), 'cubechat PeerCompute event usage missing');
+  assert.ok(content.includes('_handleSignalError'), 'cubechat async signaling guard missing');
+  assert.ok(
+    content.includes('cannot create an answer in a state other than have-remote-offer'),
+    'cubechat stable-state answer guard missing'
+  );
+});
+
+test('hyperborea opts into non-fatal relay listen startup', () => {
+  const gameFile = path.join(demosRoot, 'hyperborea', 'src', 'game', 'Game.js');
+  const roomDirectoryFile = path.join(demosRoot, 'hyperborea', 'src', 'game', 'roomDirectory.js');
+  const gameContent = fs.readFileSync(gameFile, 'utf8');
+  const roomDirectoryContent = fs.readFileSync(roomDirectoryFile, 'utf8');
+  assert.ok(
+    gameContent.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'),
+    'hyperborea main node missing non-fatal transport startup'
+  );
+  assert.ok(
+    roomDirectoryContent.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'),
+    'hyperborea room directory missing non-fatal transport startup'
+  );
 });
 
 test('planetgen uses shared GPU hub device', () => {
