@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import { NodeKernel } from '@peercompute';
+import { registerPeercomputeBotBridge } from '../shared/peercomputeBotBridge.js';
+import {
+    bindPeercomputeBotSettingsControls,
+    createPeercomputeBotHost,
+    maybeStartPeercomputeLocalBotRuntime,
+    readPeercomputeBotIdentity,
+    readPeercomputeRoomParams
+} from '../shared/peercomputeBots.js';
 
 // Joystick class
         class Joystick {
@@ -139,6 +147,7 @@ import { NodeKernel } from '@peercompute';
             space: false
         };
         const mouse = { x: 0, y: 0, pressed: false };
+        const botBridgeState = { primaryDown: false };
         
         // Initialize joysticks
         let leftJoystick, rightJoystick;
@@ -165,6 +174,9 @@ import { NodeKernel } from '@peercompute';
         let peerCleanupInterval = null;
         let beforeUnloadHandler = null;
         let currentRoom = { name: 'global', visibility: 'public', roomId: 'global' };
+        let currentRoomPassword = '';
+        let botHost = null;
+        let botRuntime = null;
         let roomDirectoryNode = null;
         let roomDirectoryState = null;
         let roomDirectoryRooms = new Map();
@@ -295,6 +307,28 @@ import { NodeKernel } from '@peercompute';
             return slug;
         };
 
+        const initialRoom = readPeercomputeRoomParams(null, {
+            buildRoomId,
+            normalizeRoomName: slugifyRoomName
+        });
+        if (initialRoom) {
+            currentRoom = {
+                name: initialRoom.name,
+                visibility: initialRoom.visibility,
+                roomId: initialRoom.roomId
+            };
+            currentRoomPassword = initialRoom.password || '';
+        }
+        const botIdentity = readPeercomputeBotIdentity(null, { demoId: 'sneakywoods' });
+        if (botIdentity.enabled) {
+            if (botIdentity.name) {
+                myName = botIdentity.name;
+            }
+            if (botIdentity.colorInt !== null) {
+                myColor = botIdentity.colorInt;
+            }
+        }
+
         const setRoomStatus = (message) => {
             const statusEl = document.getElementById('roomStatus');
             if (statusEl) {
@@ -402,13 +436,15 @@ import { NodeKernel } from '@peercompute';
                     const roomId = visibility === 'private'
                         ? buildRoomId({ name: slugifyRoomName(name), visibility, password })
                         : (room.roomId || buildRoomId({ name: slugifyRoomName(name), visibility }));
-                    await switchRoom({ name, visibility, roomId });
+                    await switchRoom({ name, visibility, roomId, password });
                     const roomList = document.getElementById('room-list');
                     if (roomList) roomList.style.display = 'none';
                     const nameInput = document.getElementById('roomName');
                     const privacyInput = document.getElementById('roomPrivacy');
+                    const passwordInput = document.getElementById('roomPassword');
                     if (nameInput) nameInput.value = name;
                     if (privacyInput) privacyInput.value = visibility;
+                    if (passwordInput) passwordInput.value = visibility === 'private' ? password : '';
                     localStorage.setItem('sneakywoodsRoomName', name);
                     localStorage.setItem('sneakywoodsRoomPrivacy', visibility);
                 });
@@ -933,6 +969,31 @@ import { NodeKernel } from '@peercompute';
             });
         }
 
+        const initBotControls = () => {
+            const countInput = document.getElementById('bot-count');
+            const presetInput = document.getElementById('bot-preset');
+            const addButton = document.getElementById('bot-add');
+            const clearButton = document.getElementById('bot-clear');
+            const statusEl = document.getElementById('bot-status');
+            if (!botHost) {
+                botHost = createPeercomputeBotHost({
+                    demoId: 'sneakywoods',
+                    getRoomState: () => ({
+                        room: currentRoom,
+                        password: currentRoomPassword
+                    })
+                });
+            }
+            bindPeercomputeBotSettingsControls({
+                host: botHost,
+                countInput,
+                presetInput,
+                addButton,
+                clearButton,
+                statusEl
+            });
+        };
+
         const savedRoomName = localStorage.getItem('sneakywoodsRoomName') || currentRoom.name;
         const savedRoomPrivacy = localStorage.getItem('sneakywoodsRoomPrivacy') || currentRoom.visibility;
         if (roomNameInput) {
@@ -941,7 +1002,13 @@ import { NodeKernel } from '@peercompute';
         if (roomPrivacyInput) {
             roomPrivacyInput.value = savedRoomPrivacy;
         }
+        if (roomPasswordInput) {
+            roomPasswordInput.value = currentRoom.visibility === 'private'
+                ? (currentRoomPassword || '')
+                : '';
+        }
         setRoomStatus(`Current room: ${currentRoom.name} (${currentRoom.visibility})`);
+        initBotControls();
 
         const applyRoomChange = async () => {
             const name = roomNameInput?.value?.trim() || 'global';
@@ -954,7 +1021,7 @@ import { NodeKernel } from '@peercompute';
             const normalizedName = slugifyRoomName(name);
             const roomId = buildRoomId({ name: normalizedName, visibility, password });
             setRoomStatus('Switching rooms...');
-            await switchRoom({ name, visibility, roomId });
+            await switchRoom({ name, visibility, roomId, password });
             try {
                 localStorage.setItem('sneakywoodsRoomName', name);
                 localStorage.setItem('sneakywoodsRoomPrivacy', visibility);
@@ -997,6 +1064,89 @@ import { NodeKernel } from '@peercompute';
                 publishPlayerState();
             }
         });
+
+        function createBotBridgeSnapshot() {
+            return {
+                gameId: 'sneakywoods',
+                localId: myPeerId || null,
+                localPosition: {
+                    x: playerPosition.x,
+                    y: playerPosition.y,
+                    z: playerPosition.z
+                },
+                localVelocity: {
+                    x: playerVelocity.x,
+                    y: playerVelocity.y,
+                    z: playerVelocity.z
+                },
+                localRotation: Number(playerRotation || 0),
+                localPitch: 0,
+                capabilities: {
+                    primaryAttack: true,
+                    primaryRange: ATTACK_DISTANCE + 0.5,
+                    interact: false,
+                    descend: false,
+                    verticalMovement: false
+                },
+                peerCount: peers.size,
+                peers: Array.from(peers.entries()).map(([peerId, peerData]) => ({
+                    id: peerId,
+                    position: peerData?.position
+                        ? {
+                            x: peerData.position.x,
+                            y: peerData.position.y,
+                            z: peerData.position.z
+                        }
+                        : null,
+                    velocity: peerData?.lastPos && peerData?.position
+                        ? {
+                            x: peerData.position.x - peerData.lastPos.x,
+                            y: peerData.position.y - peerData.lastPos.y,
+                            z: peerData.position.z - peerData.lastPos.z
+                        }
+                        : null,
+                    lastSeenAgeMs: Number.isFinite(peerData?.lastSeen)
+                        ? (Date.now() - peerData.lastSeen)
+                        : null
+                })).filter((peer) => peer.id && peer.position)
+            };
+        }
+
+        function applyBotBridgeAction(action) {
+            keys.w = Number(action?.forward || 0) > 0.25;
+            keys.s = Number(action?.forward || 0) < -0.25;
+            keys.a = Number(action?.strafe || 0) < -0.25;
+            keys.d = Number(action?.strafe || 0) > 0.25;
+            keys.space = Boolean(action?.jump);
+            if (Number.isFinite(action?.rotation)) {
+                playerRotation = action.rotation;
+            }
+            const primaryDown = Boolean(action?.primary);
+            if (primaryDown && !botBridgeState.primaryDown && canAttack) {
+                attack();
+            }
+            botBridgeState.primaryDown = primaryDown;
+            mouse.pressed = primaryDown;
+            return true;
+        }
+
+        function clearBotBridgeAction() {
+            ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space'].forEach((key) => {
+                keys[key] = false;
+            });
+            botBridgeState.primaryDown = false;
+            mouse.pressed = false;
+            return true;
+        }
+
+        function registerBotBridge() {
+            registerPeercomputeBotBridge('sneakywoods', {
+                supports: ['arena', 'combat'],
+                snapshot: () => createBotBridgeSnapshot(),
+                applyAction: (action) => applyBotBridgeAction(action),
+                clearAction: () => clearBotBridgeAction()
+            });
+        }
         
         // Game update loop
         function update() {
@@ -1393,12 +1543,14 @@ import { NodeKernel } from '@peercompute';
             seenAttacks.clear();
         }
 
-        async function switchRoom({ name, visibility, roomId }) {
+        async function switchRoom({ name, visibility, roomId, password = '' }) {
             if (!roomId || roomId === currentRoom.roomId) return;
             setRoomStatus('Switching rooms...');
             await stopP2P();
             currentRoom = { name, visibility, roomId };
+            currentRoomPassword = visibility === 'private' ? String(password || '') : '';
             await setupP2P(roomId);
+            botHost?.refreshBots();
             setRoomStatus(`Current room: ${name} (${visibility})`);
         }
 
@@ -1620,5 +1772,11 @@ import { NodeKernel } from '@peercompute';
         // Initialize the game
         initializeGrid();
         respawnOnPeriphery();
+        registerBotBridge();
+        botRuntime = maybeStartPeercomputeLocalBotRuntime({
+            demoId: 'sneakywoods',
+            bridgeId: 'sneakywoods',
+            hideSelectors: ['#hud', '#controls', '#settings-button', '#settings-menu', '#room-list', '#attack-button']
+        });
         setupP2P();
         update();

@@ -106,6 +106,29 @@
 : `RUNTIME_P2P_DEMOS` can be used to run a subset while debugging.
 : Hyperborea now uses a lightweight `?e2e=1` state surface plus `transportManager.faultTolerance = no-fatal` on its browser nodes so transient circuit-listen timeouts do not abort multiplayer startup before remote-player replication can be observed.
 
+### Production CubeChat multi-peer media gate
+- Command: host-run Playwright/Chromium probe against `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=<isolated>&privacy=private&password=<pw>`
+- Purpose: verify the live GitHub Pages CubeChat bundle can sustain real remote video playback in a private prod room, not just local built-docs playback against a local relay.
+- Expectation:
+: 3-peer prod rooms should reach `peerCount=2`, `remoteStreamCount=2`, and `remoteVideoReadyCount=2` on every page.
+: 4-peer prod rooms are currently a known regression target; until fixed, treat any timeout or partial convergence (`remoteStreamCount < 3` or `remoteVideoReadyCount < 3` on any page) as a prod failure even if the local multiplayer gate passes.
+- Gate: run after CubeChat media/signaling changes, after prod frontend deploys that touch CubeChat, or when validating reported live multi-peer regressions.
+
+### Chaos-lab player behavior harness gate
+- Command: `npm --prefix net-chaos-lab run test:behavior`
+- Purpose: verify the reusable simulated player behavior harness stays deterministic and that the standalone `net-chaos-lab/agent/quake3/` bot stack still normalizes snapshots, resolves personality presets, applies recent-goal/nav memory, routes via nav points, patrols, pursues, retreats, and triggers attack intent as expected.
+- Gate: run when changing `net-chaos-lab/agent/player-behavior-harness.mjs`, `net-chaos-lab/agent/probe.mjs`, or demo simulation-profile mappings.
+- Companion static gate: `node --test demos/tests/demo-ports.test.js`
+: now includes assertions that CubeChat, Hyperborea, and SneakyWoods register shared bot bridges, guarding the cross-demo adapter contract.
+
+### Settings-screen bot host smoke
+- Command: host-run headless Chromium against locally served `docs/` pages, open the settings menu in `cubechat`, `hyperborea`, and `sneakywoods`, click `Add Bots`, then inspect `window.__PEERCOMPUTE_BOT_HOSTS__[demoId].getStatus()`.
+- Purpose: verify the shared in-browser bot host/runtime wiring stays intact end-to-end, including settings controls, hidden iframe spawn, bot bridge registration, and Quake-style runtime ticks.
+- Expectation:
+: `totalBots >= 1`, `runningBots >= 1`, and `readyBots >= 1` for each demo after one bot is added.
+: `status.bots[0].mode` should settle to a live value such as `patrol` instead of remaining empty.
+- Gate: run after changes to `demos/shared/peercomputeBots.js`, demo settings UIs, demo bot-bridge adapters, or bot launch/query handling.
+
 ### Current direct-connection diagnosis target
 - Symptom: peers upgrade from relay to `webrtc`, then churn/disconnect and re-dial relay.
 - Key signal from logs: `No local /webrtc addrs to announce; using relay-scoped WebRTC announce addrs.`

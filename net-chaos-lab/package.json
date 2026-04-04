@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "chaos-lab": "bash scripts/chaos-lab.sh",
+    "test:behavior": "node --test tests/player-behavior-harness.test.mjs tests/quake3-bot-core.test.mjs",
     "full": "sudo -E env \"PATH=$PATH\" PYTHON_BIN=/home/$USER/projects/containernet/.venv/bin/python bash scripts/chaos-lab.sh --mode containernet --skip-scenario --skip-probes --no-dashboard",
     "matrix": "bash scripts/chaos-lab.sh --matrix configs/matrix/direct-regression.yaml",
     "matrix:demos": "bash scripts/chaos-lab.sh --matrix configs/matrix/demo-regression.yaml",

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadPlaywright } from './playwright-loader.mjs';
+import { resolveSimulationProfile, runSimulationProfile } from './player-behavior-harness.mjs';
 
 const parseArgs = (argv) => {
   const out = new Map();
@@ -244,112 +245,6 @@ const collectNetvizDiagnostics = async (page) => {
       hasRelayWebrtcConnection: connectionAddrCounts.relayWebrtc > 0
     };
   });
-};
-
-const resolveSimulationProfile = (requestedProfile, url) => {
-  const requested = String(requestedProfile || '').trim().toLowerCase();
-  if (requested && requested !== 'auto') return requested;
-  if (!url) return requested || 'none';
-
-  let pathname = '';
-  try {
-    pathname = new URL(url).pathname || '';
-  } catch (_) {
-    pathname = '';
-  }
-  const normalized = pathname.toLowerCase();
-  if (normalized.includes('/cubechat/')) return 'cubechat';
-  if (normalized.includes('/daddygo/')) return 'daddygo';
-  if (normalized.includes('/sneakywoods/')) return 'sneakywoods';
-  if (normalized.includes('/hyperborea/')) return 'hyperborea';
-  if (normalized.includes('/netviz/')) return 'none';
-  return 'basic';
-};
-
-const runSimulationProfile = async (page, profile, durationMs = 0) => {
-  const startedAt = Date.now();
-  const selected = String(profile || '').trim().toLowerCase();
-  if (!selected || selected === 'none') {
-    return {
-      profile: selected || 'none',
-      applied: false,
-      durationMs: 0
-    };
-  }
-
-  const clickFirst = async (selectors) => {
-    for (const selector of selectors) {
-      try {
-        const handle = await page.$(selector);
-        if (!handle) continue;
-        await handle.click({ force: true });
-        return selector;
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-    return null;
-  };
-
-  const pressKeys = async (keys, holdMs = 120) => {
-    for (const key of keys) {
-      try {
-        await page.keyboard.down(key);
-        await sleep(holdMs);
-        await page.keyboard.up(key);
-      } catch (_) {
-        // Ignore transient focus/input errors.
-      }
-    }
-  };
-
-  const runBasicMotion = async (keys) => {
-    await clickFirst(['canvas', '#gameCanvas', '#scene-container', '#canvas3d', 'body']);
-    await pressKeys(keys, 110);
-  };
-
-  const simulationLog = [];
-  try {
-    if (selected === 'cubechat') {
-      await page.evaluate(() => {
-        const loading = document.getElementById('loading');
-        if (loading) loading.style.display = 'none';
-      });
-      const clicked = await clickFirst([
-        '#scene-container',
-        'canvas',
-        '#settings-close-x',
-        '#close-settings',
-        '#settings-close',
-        'body'
-      ]);
-      if (clicked) simulationLog.push(`click:${clicked}`);
-      await runBasicMotion(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowLeft', 'ArrowRight']);
-    } else if (selected === 'daddygo') {
-      await runBasicMotion(['ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'Space']);
-    } else if (selected === 'sneakywoods') {
-      await runBasicMotion(['KeyW', 'KeyD', 'KeyS', 'KeyA', 'Space']);
-    } else if (selected === 'hyperborea') {
-      await runBasicMotion(['KeyW', 'KeyD', 'ArrowUp', 'ArrowRight', 'KeyS']);
-    } else {
-      await runBasicMotion(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowLeft', 'ArrowRight']);
-    }
-  } catch (err) {
-    simulationLog.push(`error:${err?.message || err}`);
-  }
-
-  const elapsed = Date.now() - startedAt;
-  const budgetMs = Number.isFinite(durationMs) ? Math.max(0, Math.floor(durationMs)) : 0;
-  if (budgetMs > elapsed) {
-    await sleep(budgetMs - elapsed);
-  }
-
-  return {
-    profile: selected,
-    applied: true,
-    durationMs: Date.now() - startedAt,
-    steps: simulationLog
-  };
 };
 
 const collectPeercomputeDiagnostics = async (page) => {

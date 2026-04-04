@@ -21,6 +21,7 @@ It is intended for heavy-duty protocol-level validation of PeerCompute networkin
 - Probe harness:
   - headless Playwright agent probe (`agent/probe.mjs`)
   - optional media loopback probe
+  - reusable simulated player behavior harness with per-demo profiles
 
 ## Prerequisites (Protocol Testing Only)
 - Linux host with network namespace support (Containernet mode is Linux-only).
@@ -334,6 +335,17 @@ bash net-chaos-lab/scripts/chaos-lab.sh \
 - Optional simulated input profiles are available via:
 - `--simulate-profile <name>` (`basic`, `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `none`)
 - `--simulate-ms <duration>` to keep interaction active for a bounded window.
+- Games can opt into richer bot control by registering a browser bridge under `window.__PEERCOMPUTE_BOT_BRIDGES__` via `demos/shared/peercomputeBotBridge.js`. A bridge exposes `snapshot()`, `applyAction(action)`, and `clearAction()` so the harness can drive real game state without hard-coded page internals.
+- The reusable bot logic now lives under `net-chaos-lab/agent/quake3/` as a standalone Quake III-style bot core:
+  - `world-model.mjs` normalizes generic snapshots (`localPosition`, `peers`, `items`, `objectives`, `capabilities`)
+  - `personalities.mjs` provides named archetypes (`arena`, `aggressor`, `skirmisher`, `scavenger`, `sentinel`) plus deterministic seeded variation
+  - `memory.mjs` tracks recent goals/nav points so bots do not thrash on the same pickup or route node
+  - `navigation.mjs` handles nav-point route selection and hazard-aware steering adjustments
+  - `bot-core.mjs` coordinates target scoring, patrol routing, strafe/retreat/pursue decisions, attack cadence, and metadata-driven personality selection
+  - `math.mjs` provides deterministic steering/angle helpers shared by the harness and tests
+- `cubechat`, `hyperborea`, and `sneakywoods` now expose the shared bot-bridge contract, so the same Quake-style bot core can drive different movement/combat models without probe-specific adapters.
+- `cubechat` remains movement-focused (`primaryAttack: false`), while `hyperborea` and `sneakywoods` now map the generic `primary` action into real spear/melee attacks.
+- `basic` and `daddygo` still use repeatable skirmish phase plans (`advance`, `strafe`, `snap-turn`, `jump-peek`, `retreat`) when a full bridge adapter is not present.
 - Set `CHAOSLAB_ALLOW_HOST_PROBE_FALLBACK=1` only when you intentionally want host fallback behavior for troubleshooting.
 - Probe preflight now treats missing probe script/curl as hard failures, but continues past non-fatal DNS/HTTPS warnings and can fall back to a known in-lab service IP URL when available; `network_preflight` still records the warning state.
 - Probe preflight curl behavior is tunable via environment variables:

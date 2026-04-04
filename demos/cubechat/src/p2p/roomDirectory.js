@@ -1,5 +1,6 @@
 import { NodeKernel } from '@peercompute';
 
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 const DIRECTORY_ROOM_ID = '__rooms__';
 const DIRECTORY_NAMESPACE = 'rooms';
 const ROOM_ENTRY_PREFIX = 'room-';
@@ -59,6 +60,7 @@ export class RoomDirectory {
       enablePersistence: false,
       gameId: this.gameId,
       roomId: DIRECTORY_ROOM_ID,
+      transportManager: NO_FATAL_TRANSPORT_MANAGER,
       ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
       ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})

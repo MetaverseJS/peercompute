@@ -70,6 +70,10 @@ Dev servers:
 - `https://localhost:5183/` (Fano Reactor)
 - `https://localhost:5182/` (NetViz)
 
+Multiplayer bot controls:
+- CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
+- `Add Bots` spawns hidden same-origin browser peers that join the current room/password and drive themselves through the shared Quake-style bot bridge/runtime.
+
 ### NetViz Attach (Any Demo)
 - Every `NodeKernel` now publishes NetViz debug telemetry (`telemetry:<peerId>`) by default.
 - Demos now also publish lightweight NetViz session beacons on a shared pubsub topic (`peercompute-netviz-sessions`), so NetViz can discover sessions across different demo ports/origins.

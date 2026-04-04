@@ -22181,3 +22181,663 @@ def parse_args() -> argparse.Namespace:
 
 ### Failures / Open Questions
 - No new functional failures were uncovered in this follow-up. The full local Chromium multiplayer gate had already passed before this commit/push; this follow-up confirmed the corresponding frontend bundles are now live on GitHub Pages.
+
+## Date: 2026-04-04
+
+### Prompt
+- yes do it
+
+### Prompt Time/Date
+- 2026-04-04 03:02:14 UTC (log update time)
+
+### Actions Attempted
+- Re-read the current planning context before starting the prod verification (`plan/plan.md`, `plan/log.md`) and inspected the existing CubeChat `?e2e=1` hooks plus runtime harness so the live probe could assert actual remote video readiness rather than only peer counts.
+- Ran a host Playwright/Chromium probe against the live GitHub Pages CubeChat URL `https://metaversejs.github.io/peercompute/cubechat/` using isolated private-room query params (`room=prod-live-<stamp>`, `privacy=private`, `password=pw-<stamp>`, `e2e=1`) and fake camera/screen media sources.
+- First, executed a 4-peer production probe with a 120 s convergence budget. The probe required each page to reach:
+  - `localStreamReady === true`
+  - `peerCount >= 3`
+  - `peerConnectionCount >= 3`
+  - `remoteStreamCount >= 3`
+  - every rendered remote player to have a real `videoElement` with `srcObject`, `paused === false`, `readyState >= 2`, and non-zero dimensions
+- The 4-peer probe timed out at the final readiness gate and dumped per-page summaries showing partial media convergence only:
+  - page 1: `peerCount=3`, `peerConnectionCount=3`, `remoteStreamCount=2`, `remoteVideoReadyCount=1`
+  - page 2: `peerCount=2`, `peerConnectionCount=1`, `remoteStreamCount=1`, `remoteVideoReadyCount=0`
+  - page 3: `peerCount=3`, `peerConnectionCount=3`, `remoteStreamCount=2`, `remoteVideoReadyCount=0`
+  - page 4: `peerCount=3`, `peerConnectionCount=2`, `remoteStreamCount=0`, `remoteVideoReadyCount=0`
+- Captured the live page logs from the failing 4-peer run. They still included repeated `Video playing for <peerId>` messages on every page, which means media callbacks fired, but the in-page scene state remained incomplete or zero-dimensioned for several remote players by the time the gate expired.
+- Ran a second live production bracket at 3 peers with the same private-room + fake-media setup to determine whether the failure was a general prod regression or a higher-peer-count threshold issue.
+- The 3-peer production probe passed cleanly. Every page reached `peerCount=2`, `peerConnectionCount=2`, `remoteStreamCount=2`, and `remoteVideoReadyCount=2`, with all remote video elements reporting `readyState=4` and `320x240` dimensions.
+- Updated the project planning docs so the branch now explicitly distinguishes the passing local multiplayer gate from the still-failing live 4-peer CubeChat media case.
+
+### Files Touched
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '1,180p' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `rg -n "__cubechatTest|e2e|remoteStreamCount|remoteScreenStreamCount|localStreamReady|peerConnectionCount" demos/cubechat/src`
+- `sed -n '1,260p' demos/tests/runtime-p2p.mjs`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; node --input-type=module <<'NODE' ... peerTotal = 4 ... NODE`
+- `ps -ef | rg 'node --input-type=module|playwright|prod-live-'`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; node -v`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; node --input-type=module <<'NODE' ... peerTotal = 3 ... NODE`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 120 plan/log.md`
+- `sed -n '1,220p' plan/branch/demo-fixes.md`
+- `sed -n '1,220p' plan/tests.md`
+
+### Test Results
+- PASS: live GitHub Pages CubeChat 3-peer private-room media probe
+  - URL shape: `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=prod-live-1775271682022&privacy=private&password=pw-1775271682022`
+  - every page reached `peerCount=2`, `peerConnectionCount=2`, `remoteStreamCount=2`, `remoteVideoReadyCount=2`
+  - every remote video element reported `hasSrcObject=true`, `paused=false`, `readyState=4`, `videoWidth=320`, `videoHeight=240`
+- FAIL: live GitHub Pages CubeChat 4-peer private-room media probe
+  - URL shape: `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=prod-live-1775271399701&privacy=private&password=pw-1775271399701`
+  - probe timed out after `120000ms`
+  - one page never reached any remote media (`remoteStreamCount=0`)
+  - one page stalled at only `peerConnectionCount=1`
+  - the best page still rendered only `1/3` fully ready remote videos by the deadline
+
+### Failures / Open Questions
+- Live CubeChat production media currently has a clear threshold gap: the same deployed bundle passes at 3 peers and fails at 4 peers from fresh headless Chromium sessions.
+- The failing 4-peer run produced repeated `Video playing for <peerId>` logs even when `remoteVideoReadyCount` stayed `0`, which suggests the remaining issue may be in stream attachment/scene propagation, incomplete peer convergence, or a race between remote stream arrival and player/video element readiness rather than a simple total signaling outage.
+- No code changes were made in this prompt; the next step is a targeted CubeChat production investigation using the same 4-peer private-room harness as the regression reproducer.
+
+## Date: 2026-04-04
+
+### Prompt
+- id like you to create a player behavior harness that we can use to simulate actual plauer movement and ibteraction. maybe you coukd base it off of the quake 3 ai
+
+### Prompt Time/Date
+- 2026-04-04 03:12:00 UTC (log update time)
+
+### Actions Attempted
+- Re-read the planning context (`plan/plan.md`, `plan/log.md`) and inspected the existing probe simulation path in `net-chaos-lab/agent/probe.mjs`, the chaos-lab README, the demo regression matrix, and the CubeChat control surfaces (`window.__cubechat`, `PlayerController`, `P2PNetwork.getPeers()`).
+- Confirmed the old behavior was still a very small inline probe helper that just clicked once and tapped a few keys. Chose to replace that with a reusable module so the same simulation behavior can be tested directly and reused by future prod/chaos runs.
+- Added `net-chaos-lab/agent/player-behavior-harness.mjs` and moved the probe simulation logic there. The new module now provides:
+  - `resolveSimulationProfile(...)` for per-demo profile selection
+  - deterministic RNG helpers plus repeatable keyboard skirmish plans for `basic`, `hyperborea`, `sneakywoods`, and `daddygo`
+  - a CubeChat-specific arena bot with Quake-style behavior phases
+- Implemented the CubeChat bot as a controller/physics-driven harness rather than a raw DOM key mash:
+  - reads `window.__cubechat` each tick
+  - patrols around an anchor point when no fresh peers are visible
+  - locks onto the nearest fresh remote peer when one appears
+  - chooses `pursue`, `orbit`, `evade`, and `unstick` behaviors from distance/stuck state
+  - updates the real `PlayerController` key-state map plus `rotation`/`pitch`
+  - injects periodic jump-peek behavior and strafe-direction flips
+- Updated `net-chaos-lab/agent/probe.mjs` to import the new harness instead of keeping the old inline simulation functions.
+- Added a dedicated Node test file `net-chaos-lab/tests/player-behavior-harness.test.mjs` covering:
+  - auto profile resolution
+  - repeatable keyboard plan creation
+  - CubeChat patrol behavior with no targets
+  - CubeChat pursue behavior for a distant target
+  - CubeChat close-range evade/orbit behavior with strafe flips
+- Added `npm --prefix net-chaos-lab run test:behavior` as a stable command for this harness.
+- Ran a live smoke through the real probe path against production CubeChat with a unique private room and fake media enabled. The probe succeeded, and `diagnostics.simulation` showed the new CubeChat arena harness was applied with `driver=\"cubechat-controller\"`, `behavior=\"quake-arena-bot\"`, `tickCount=7`, and behavior steps including `click:#scene-container`, `mode:patrol`, and `jump`.
+- Ran an additional two-page live CubeChat smoke using Playwright plus `runSimulationProfile(page, 'cubechat', 3200)` directly against a shared private prod room so the harness could see a real remote player. Both bots reported `mode:pursue` plus a `target:<peerId>` step, both pages ended with `peerCount=1` and `remoteStreamCount=1`, and both final snapshots still contained the remote peer position data used by the arena bot.
+- Updated chaos-lab docs and the plan/test files so this harness is recorded as a maintained part of the regression stack.
+
+### Files Touched
+- `net-chaos-lab/agent/player-behavior-harness.mjs`
+- `net-chaos-lab/agent/probe.mjs`
+- `net-chaos-lab/package.json`
+- `net-chaos-lab/README.md`
+- `net-chaos-lab/tests/player-behavior-harness.test.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 160 plan/log.md`
+- `rg -n "simulate-profile|simulateProfile|runtime-p2p|cubechat|player behavior|bot" demos net-chaos-lab peercompute --glob '!**/node_modules/**'`
+- `git status --short && git branch --show-current`
+- `sed -n '840,1060p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '1,360p' demos/cubechat/src/main.js`
+- `rg -n "keydown|keyup|pointerlock|PointerLock|screen-share|jump|moveForward|moveBackward|KeyW|KeyA|KeyS|KeyD|Space|chat|message" demos/cubechat/src --glob '!**/node_modules/**'`
+- `sed -n '1,320p' net-chaos-lab/README.md`
+- `rg -n "runSimulationProfile|resolveSimulationProfile|simulateCubechat|simulateHyperborea|simulateSneakywoods|simulateDaddygo|simulateBasic" net-chaos-lab/agent/probe.mjs`
+- `sed -n '1,260p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '260,520p' net-chaos-lab/agent/probe.mjs`
+- `sed -n '1,260p' demos/cubechat/src/controls/input.js`
+- `sed -n '320,520p' demos/cubechat/src/controls/input.js`
+- `sed -n '760,910p' demos/cubechat/src/main.js`
+- `rg -n "window\\.__cubechat|__cubechatTest|localPlayer|sendPlayerUpdate|update\\(" demos/cubechat/src/main.js demos/cubechat/src/p2p/network.js`
+- `sed -n '1,220p' net-chaos-lab/configs/matrix/demo-regression.yaml`
+- `rg -n "probe.mjs|simulate_profile|simulateProfile|player behavior|behavior harness|agent/probe" net-chaos-lab/tests demos/tests --glob '!**/node_modules/**'`
+- `ls -la net-chaos-lab/agent && find net-chaos-lab/tests -maxdepth 2 -type f | sort`
+- `cat net-chaos-lab/package.json`
+- `sed -n '470,535p' demos/cubechat/src/main.js`
+- `sed -n '700,780p' demos/cubechat/src/main.js`
+- `sed -n '1,260p' demos/hyperborea/src/main.js`
+- `rg -n "__hyperboreaTest|__daddygo|__sneakywoods|keydown|keyup|pointerlock|PlayerController|bot" demos/hyperborea demos/daddygo demos/sneakywoods --glob '!**/node_modules/**'`
+- `rg -n "getPeers\\(|peers\\.set|position:" demos/cubechat/src/p2p/network.js`
+- `sed -n '150,260p' demos/cubechat/src/p2p/network.js`
+- `sed -n '380,430p' demos/cubechat/src/p2p/network.js`
+- `sed -n '720,780p' demos/cubechat/src/p2p/network.js`
+- `rg -n "generateRandomPosition|Math.random\\(|position: \\{ x" demos/cubechat/src/p2p/network.js demos/cubechat/src/main.js`
+- `sed -n '892,915p' demos/cubechat/src/p2p/network.js`
+- `rg -n "simulate-profile|simulateProfile|basic|cubechat|hyperborea|sneakywoods|daddygo|none" net-chaos-lab/README.md`
+- `sed -n '320,360p' net-chaos-lab/README.md`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; node --test net-chaos-lab/tests/player-behavior-harness.test.mjs`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; npm --prefix net-chaos-lab run test:behavior`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; ROOM="behavior-smoke-$(date +%s)"; node net-chaos-lab/agent/probe.mjs --url "https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=${ROOM}&privacy=private&password=${ROOM}" --mode peercompute --simulateProfile cubechat --simulateMs 3500 --waitMs 12000 --minPeers 0 --media true`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; node --input-type=module <<'NODE' ... import { runSimulationProfile } from './net-chaos-lab/agent/player-behavior-harness.mjs'; ... two Playwright pages against a shared private CubeChat room ... NODE`
+
+### Test Results
+- PASS: `node --test net-chaos-lab/tests/player-behavior-harness.test.mjs`
+  - 5 tests passed, 0 failed
+- PASS: `npm --prefix net-chaos-lab run test:behavior`
+  - wrapper command executed the same 5 behavior tests successfully
+- PASS: live CubeChat behavior-harness smoke through the real probe path
+  - URL shape: `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=behavior-smoke-1775272346&privacy=private&password=behavior-smoke-1775272346`
+  - probe returned `ok: true`, `connected: true`, `mediaOk: true`
+  - `diagnostics.simulation.applied === true`
+  - simulation driver reported `cubechat-controller` / `quake-arena-bot`
+  - simulation steps included `click:#scene-container`, `mode:patrol`, `jump`
+- PASS: live two-page CubeChat arena-bot smoke
+  - URL shape: `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=behavior-duo-1775272464626&privacy=private&password=behavior-duo-1775272464626`
+  - both pages reached `peerCount=1`, `remoteStreamCount=1`, `localStreamReady=true`
+  - both simulation results reported `applied: true`, `driver: "cubechat-controller"`, `behavior: "quake-arena-bot"`
+  - both simulation logs included `mode:pursue` and `target:<peerId>` against the live remote peer
+
+### Failures / Open Questions
+- The new harness proves out the simulation path, but it does not by itself fix the previously observed 4-peer production CubeChat media regression. The next step there is to use this richer harness during the multi-peer prod repro so peer movement and proximity churn are part of the diagnosis instead of static idle peers.
+
+## Date: 2026-04-04
+
+### Prompt
+- then you could have the abilitybto add them as bots to any game
+
+### Prompt Time/Date
+- 2026-04-04 03:23:30 UTC (log update time)
+
+### Actions Attempted
+- Interpreted the request as a generalization pass on the new player-behavior harness rather than another one-off CubeChat bot. Reviewed Hyperborea's control/state surfaces and confirmed it also exposes enough local movement state (`position`, `velocity`, `yaw`, `pitch`, `keys`, `peerMeshes`) to support the same style of arena bot.
+- Added `demos/shared/peercomputeBotBridge.js` as a shared browser-side registry for bot adapters. It creates `window.__PEERCOMPUTE_BOT_BRIDGES__` plus a last-bridge pointer, and exposes helper functions to register/unregister/list bridges.
+- Updated CubeChat to register a shared bot bridge after init. The CubeChat bridge publishes a snapshot from the real controller/physics/network state and implements `applyAction()` / `clearAction()` by mutating the existing controller key map plus yaw/pitch.
+- Updated Hyperborea to register the same bridge contract. Its adapter exposes local position/velocity/yaw/pitch plus remote peer positions from `peerMeshes`, and maps arena-bot actions into the game's `KeyW/KeyA/KeyS/KeyD/Space/ShiftLeft` movement model.
+- Updated `net-chaos-lab/agent/player-behavior-harness.mjs` so `runSimulationProfile()` now prefers registered bot bridges before falling back to the older game-specific direct CubeChat control path or the generic keyboard-plan profiles. Added generic bridge helpers to read snapshots, apply actions, and clear actions through the shared registry.
+- Added a static demo test in `demos/tests/demo-ports.test.js` to assert that both CubeChat and Hyperborea register shared bot bridges.
+- Re-ran the behavior tests, the static demo gates, and both affected demo builds. All passed.
+- Started a temporary local `python3 -m http.server 4180 -d docs` server and attempted two local CubeChat browser smokes against the freshly built docs to prove the bridge path in the built bundle:
+  - a two-page local room smoke timed out waiting for peer convergence
+  - a one-page local smoke timed out waiting for `window.__cubechatTest.localStreamReady`
+- Shut the temporary local HTTP server down after those checks.
+- Updated docs/plan files so the new bot-bridge contract is recorded as the supported path for making games bot-drivable.
+
+### Files Touched
+- `demos/cubechat/src/main.js`
+- `demos/hyperborea/src/game/Game.js`
+- `demos/shared/peercomputeBotBridge.js`
+- `demos/tests/demo-ports.test.js`
+- `net-chaos-lab/README.md`
+- `net-chaos-lab/agent/player-behavior-harness.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '180,260p' demos/hyperborea/src/game/Game.js`
+- `rg -n "keys\\[|this\\.keys|player\\.position|camera\\.position|localPeerId|remotePlayerCount|markStateDirty|moveSpeed|yaw|pitch" demos/hyperborea/src/game/Game.js`
+- `sed -n '100,170p' demos/daddygo/src/main.js`
+- `rg -n "keys\\[|keydown|keyup|player|velocity|position|rotation|movement|pose|camera" demos/daddygo/src/main.js demos/sneakywoods/main.js --glob '!**/node_modules/**'`
+- `rg -n "this\\.peers\\.set|peerMeshes\\.set|peerMeshes|getStateSnapshot|position:\\s*new THREE\\.Vector3|currentRoom" demos/hyperborea/src/game/Game.js`
+- `sed -n '3320,3460p' demos/hyperborea/src/game/Game.js`
+- `find demos -maxdepth 2 -type d -name shared -o -type f | rg "demos/.*/shared|demos/shared"`
+- `sed -n '1,220p' demos/tests/demo-ports.test.js`
+- `sed -n '1,120p' demos/cubechat/src/main.js`
+- `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 24 >/dev/null; npm --prefix net-chaos-lab run test:behavior`
+- `export NVM_DIR="$HOME/.nvm"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 24 >/dev/null; node --test demos/tests/demo-ports.test.js`
+- `export NVM_DIR="$HOME/.nvm"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 24 >/dev/null; npm --prefix demos/cubechat run build`
+- `export NVM_DIR="$HOME/.nvm"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 24 >/dev/null; npm --prefix demos/hyperborea run build`
+- `python3 -m http.server 4180 -d docs`
+- `export NVM_DIR="$HOME/.nvm"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 24 >/dev/null; node --input-type=module <<'NODE' ... two local CubeChat pages against http://127.0.0.1:4180/cubechat/ ... NODE`
+- `export NVM_DIR="$HOME/.nvm"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm use 24 >/dev/null; node --input-type=module <<'NODE' ... one local CubeChat page against http://127.0.0.1:4180/cubechat/ ... NODE`
+
+### Test Results
+- PASS: `npm --prefix net-chaos-lab run test:behavior`
+  - 5 tests passed, 0 failed
+- PASS: `node --test demos/tests/demo-ports.test.js`
+  - 15 tests passed, 0 failed
+  - includes the new static guard that CubeChat and Hyperborea both register bot bridges
+- PASS: `npm --prefix demos/cubechat run build`
+  - CubeChat built successfully into `docs/cubechat`
+- PASS: `npm --prefix demos/hyperborea run build`
+  - Hyperborea built successfully into `docs/hyperborea`
+- FAIL (diagnostic): local built-docs CubeChat two-page bridge smoke
+  - URL shape: `http://127.0.0.1:4180/cubechat/?e2e=1&room=bridge-duo-1775272911450&privacy=private&password=bridge-duo-1775272911450`
+  - timed out waiting for `window.__cubechatTest?.peerCount >= 1`
+- FAIL (diagnostic): local built-docs CubeChat one-page bridge smoke
+  - URL shape: `http://127.0.0.1:4180/cubechat/?e2e=1&room=bridge-single-1775272966179&privacy=private&password=bridge-single-1775272966179`
+  - timed out waiting for `window.__cubechatTest?.localStreamReady === true`
+
+### Failures / Open Questions
+- The shared bot-bridge contract itself is implemented and compile/test-clean, but local built-docs CubeChat did not become usable enough under the ad hoc `python3 -m http.server` check to prove the bridge path in-browser. The failures look more like local page/media/bootstrap readiness than bridge registration specifically.
+- We already have live prod evidence that the pre-bridge CubeChat bot path works, and we now have static/build coverage for the bridge path. The next practical browser validation should be a local Vite/preview-style run or a fresh deploy smoke that explicitly checks `simulation.driver === "peercompute-bot-bridge"`.
+
+## Date: 2026-04-04
+
+### Prompt
+- did you make the q3 ai yet?
+
+### Prompt Time/Date
+- 2026-04-04 03:39:51 UTC
+
+### Actions Attempted
+- Re-checked the current harness/code state before answering so the response would reflect the actual implementation rather than memory.
+- Verified that the behavior harness still labels the current bot as `quake-arena-bot` and that the shared bridge path now reports `driver: 'peercompute-bot-bridge'`.
+- Prepared a direct clarification for the user: the current work is Quake-style arena behavior, not a literal Quake III AI port.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `rg -n "quake-arena-bot|peercompute-bot-bridge|createArenaBotState|decideArenaBotAction|runBridgeArenaHarness" net-chaos-lab/agent/player-behavior-harness.mjs demos/cubechat/src/main.js demos/hyperborea/src/game/Game.js demos/shared/peercomputeBotBridge.js`
+- `tail -n 60 plan/log.md`
+
+### Test Results
+- No new runtime tests were executed for this prompt.
+- Verification only:
+  - `net-chaos-lab/agent/player-behavior-harness.mjs` still exports the shared arena-bot decision path (`createArenaBotState`, `decideArenaBotAction`) and bridge-driven runner (`runBridgeArenaHarness`)
+  - the harness still reports `behavior: 'quake-arena-bot'`
+  - the shared bridge path still reports `driver: 'peercompute-bot-bridge'`
+
+### Failures / Open Questions
+- The current bot is Quake-like behavior, not a literal Quake III AI implementation with Q3-style goal selection, item/weapon tactics, waypoint/navmesh routing, or bot personality parameters.
+
+## Date: 2026-04-04
+
+### Prompt
+- how about sneaky woods
+
+### Prompt Time/Date
+- 2026-04-04 03:41:46 UTC
+
+### Actions Attempted
+- Checked the current harness and SneakyWoods code path to answer precisely whether it already participates in the new shared bot system.
+- Verified that `net-chaos-lab/agent/player-behavior-harness.mjs` still includes a `sneakywoods` profile, but that profile currently resolves to the generic keyboard-plan / arena-phase driver rather than the newer shared bot-bridge path.
+- Verified that SneakyWoods does not yet register `registerPeercomputeBotBridge(...)`, while CubeChat and Hyperborea do.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "sneakywoods|registerPeercomputeBotBridge|peercompute-bot-bridge|keyboard-plan|arena-phases" net-chaos-lab/agent/player-behavior-harness.mjs demos/sneakywoods/main.js demos/tests/demo-ports.test.js`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- No new runtime tests were executed for this prompt.
+- Verification only:
+  - SneakyWoods profile exists in `net-chaos-lab/agent/player-behavior-harness.mjs`
+  - SneakyWoods currently runs through `driver: 'keyboard-plan'`, `behavior: 'arena-phases'`
+  - SneakyWoods does not yet register a shared bot bridge
+
+### Failures / Open Questions
+- SneakyWoods is not yet bot-drivable through the shared `window.__PEERCOMPUTE_BOT_BRIDGES__` contract. It only has the older generic key-plan simulation profile right now.
+
+## Date: 2026-04-04
+
+### Prompt
+- everything ok?
+
+### Prompt Time/Date
+- 2026-04-04 05:53:17 UTC
+
+### Actions Attempted
+- Verified that the interrupted turn did not leave behind any stray local servers, Playwright sessions, or long-running probe processes before resuming work.
+- Checked the current git worktree state so the next implementation steps can continue from a known baseline.
+
+### Files Touched
+- `plan/log.md`
+
+### Commands Run
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `ps -ef | rg "http.server 4180|playwright|node --input-type=module|probe.mjs"`
+- `git status --short`
+
+### Test Results
+- No code/runtime tests were executed for this prompt.
+- Verification only:
+  - no stray `http.server`, Playwright, or `probe.mjs` processes were left running
+  - the worktree is still in the expected dirty state from the in-progress bot-bridge/harness work
+
+### Failures / Open Questions
+- None for this status check. The next implementation step is still to wire SneakyWoods into the shared bot bridge and then expand the modular bot core beyond the current Quake-like arena heuristic layer.
+
+## Date: 2026-04-04
+
+### Prompt
+- yes please and then add the full wuake three port in a modular independent way we can wire up to anything
+
+### Prompt Time/Date
+- 2026-04-04 06:07:29 UTC (log update time after implementation)
+
+### Actions Attempted
+- Reviewed the current bot-bridge work, SneakyWoods control/state surfaces, and the existing harness structure before changing architecture. Confirmed SneakyWoods already exposed enough real state (`playerPosition`, `playerVelocity`, `playerRotation`, `peers`, `attack()`) to adopt the same bridge contract as CubeChat and Hyperborea.
+- Split the previous in-harness arena heuristic into a standalone modular Quake III-style bot core under `net-chaos-lab/agent/quake3/`:
+  - `math.mjs` now owns deterministic RNG plus steering/angle helpers.
+  - `world-model.mjs` now normalizes generic bot snapshots (`localPosition`, `peers`, `items`, `objectives`, `capabilities`, `navPoints`, `hazards`) into a reusable world model.
+  - `bot-core.mjs` now owns bot state/personality creation, goal scoring, patrol routing, pursue/close-in/retreat/unstick movement, and generic `primary` attack intent.
+  - `index.mjs` re-exports the modular surface so the harness and future adapters can consume one stable API.
+- Refactored `net-chaos-lab/agent/player-behavior-harness.mjs` to consume the new standalone core rather than keeping the decision logic inline. Kept compatibility exports (`createCubechatArenaState`, `decideCubechatArenaAction`) so existing probe/test callers did not need to change immediately.
+- Upgraded the harness behavior label from `quake-arena-bot` to `quake3-bot-core` and started logging `primary` attack steps in addition to movement/jump state changes.
+- Extended the shared browser bridge adoption:
+  - CubeChat snapshot now publishes explicit non-combat capabilities so the generic core does not synthesize unused attack intent there.
+  - Hyperborea snapshot now advertises combat/vertical capabilities, and its bridge maps generic `primary` actions to `triggerAttack()` with a press-edge latch to avoid repeated spam.
+  - SneakyWoods now imports `registerPeercomputeBotBridge`, registers `sneakywoods`, publishes real local/peer state, and maps generic `primary` actions to the existing melee `attack()` path with a press-edge latch.
+- Added new regression coverage for the modular core in `net-chaos-lab/tests/quake3-bot-core.test.mjs` and updated the existing harness tests so they assert the new `goalType`/combat semantics rather than the old ad hoc orbit/evade names.
+- Expanded the static demo bridge guard in `demos/tests/demo-ports.test.js` so SneakyWoods is now required to register the shared bridge too.
+- Rebuilt CubeChat, Hyperborea, and SneakyWoods docs bundles after the bridge/core changes.
+- Ran local headless Chromium proofs against the freshly built docs served through a temporary `python3 -m http.server 4180 -d docs` server:
+  - first tried a single dual-demo script for SneakyWoods + Hyperborea; Chromium hung long enough that the result was not useful, so I killed that attempt instead of waiting indefinitely
+  - reran focused one-page proofs with a shell `timeout 90s`, which successfully confirmed both SneakyWoods and Hyperborea now execute through `driver: "peercompute-bot-bridge"` / `behavior: "quake3-bot-core"` and physically move the local player state
+- Shut the temporary local HTTP server down after the browser proofs completed.
+- Updated README and plan files so the repo now documents the modular Quake-style bot core, SneakyWoods bridge adoption, and the new browser validation path.
+
+### Files Touched
+- `demos/cubechat/src/main.js`
+- `demos/hyperborea/src/game/Game.js`
+- `demos/sneakywoods/main.js`
+- `demos/tests/demo-ports.test.js`
+- `docs/cubechat/index.html`
+- `docs/cubechat/assets/index-Vz0xHzIl.js`
+- `docs/hyperborea/cb.html`
+- `docs/hyperborea/assets/cb-sPX1TBcu.js`
+- `docs/sneakywoods/index.html`
+- `docs/sneakywoods/assets/index-Cno4VrZi.js`
+- `net-chaos-lab/README.md`
+- `net-chaos-lab/agent/player-behavior-harness.mjs`
+- `net-chaos-lab/agent/quake3/math.mjs`
+- `net-chaos-lab/agent/quake3/world-model.mjs`
+- `net-chaos-lab/agent/quake3/bot-core.mjs`
+- `net-chaos-lab/agent/quake3/index.mjs`
+- `net-chaos-lab/package.json`
+- `net-chaos-lab/tests/player-behavior-harness.test.mjs`
+- `net-chaos-lab/tests/quake3-bot-core.test.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `rg -n "playerPosition|playerRotation|playerVelocity|keys|attack|peer|bot bridge|registerPeercomputeBotBridge|requestPointerLock" demos/sneakywoods/main.js`
+- `sed -n '1,260p' net-chaos-lab/agent/player-behavior-harness.mjs`
+- `sed -n '780,1165p' demos/sneakywoods/main.js`
+- `sed -n '1320,1625p' demos/sneakywoods/main.js`
+- `sed -n '1,380p' demos/cubechat/src/main.js`
+- `sed -n '1,360p' demos/hyperborea/src/game/Game.js`
+- `sed -n '1,260p' demos/tests/demo-ports.test.js`
+- `rg -n '"build"' demos/*/package.json`
+- `find demos/sneakywoods -maxdepth 2 -type f | sort`
+- `rg -n "createCubechatArenaState|createArenaBotState|decideCubechatArenaAction|decideArenaBotAction|quake-arena-bot|runSimulationProfile|buildKeyboardBehaviorPlan" -g '!**/node_modules/**'`
+- `rg -n "Space|ShiftLeft|KeyF|spear|attack|mouse|click|keys\\['|keys\\[\\\"" demos/hyperborea/src/game/Game.js`
+- `rg -n "attack\\(|canAttack|mouse\\.pressed|keys\\.space|keys\\[' '|keys\\[\\\" \\\"|applyAction|clearAction" demos/cubechat/src/main.js demos/cubechat/src/controls/input.js demos/cubechat/src/p2p/network.js`
+- `sed -n '3388,3438p' demos/hyperborea/src/game/Game.js`
+- `npm --prefix net-chaos-lab run test:behavior`
+- `node --test demos/tests/demo-ports.test.js`
+- `npm --prefix demos/cubechat run build`
+- `npm --prefix demos/hyperborea run build`
+- `npm --prefix demos/sneakywoods run build`
+- `python3 -m http.server 4180 -d docs`
+- `timeout 90s node --input-type=module <<'NODE' ... SneakyWoods built-doc Playwright smoke using runSimulationProfile(page, 'sneakywoods', 2600) ... NODE`
+- `timeout 90s node --input-type=module <<'NODE' ... Hyperborea built-doc Playwright smoke using runSimulationProfile(page, 'hyperborea', 2600) ... NODE`
+- `ps -ef | rg "node --input-type=module|playwright|http.server 4180"`
+- `curl -I --max-time 5 http://127.0.0.1:4180/sneakywoods/`
+- `kill 636168 636454 || true; pkill -P 636454 || true; pkill -P 636466 || true; ...`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `git status --short`
+
+### Test Results
+- PASS: `npm --prefix net-chaos-lab run test:behavior`
+  - 10 tests passed, 0 failed
+  - includes both `player-behavior-harness.test.mjs` and the new `quake3-bot-core.test.mjs`
+- PASS: `node --test demos/tests/demo-ports.test.js`
+  - 15 tests passed, 0 failed
+  - now includes the static guard that CubeChat, Hyperborea, and SneakyWoods all register shared bot bridges
+- PASS: `npm --prefix demos/cubechat run build`
+  - built `docs/cubechat` successfully
+- PASS: `npm --prefix demos/hyperborea run build`
+  - built `docs/hyperborea` successfully
+- PASS: `npm --prefix demos/sneakywoods run build`
+  - built `docs/sneakywoods` successfully
+- PASS: local built-doc SneakyWoods Playwright proof
+  - URL: `http://127.0.0.1:4180/sneakywoods/?e2e=1`
+  - bridge appeared under `window.__PEERCOMPUTE_BOT_BRIDGES__.sneakywoods`
+  - harness result: `driver: "peercompute-bot-bridge"`, `behavior: "quake3-bot-core"`, `applied: true`
+  - local player moved from roughly `(-44.27, 0.5, -40.50)` to `(-44.60, 0.5, -40.91)` during/after the run
+- PASS: local built-doc Hyperborea Playwright proof
+  - URL: `http://127.0.0.1:4180/hyperborea/?e2e=1`
+  - bridge appeared under `window.__PEERCOMPUTE_BOT_BRIDGES__.hyperborea`
+  - harness result: `driver: "peercompute-bot-bridge"`, `behavior: "quake3-bot-core"`, `applied: true`
+  - local player moved from roughly `(0, 386.37, 400)` to `(-13.46, 383.87, 381.37)` during/after the run
+
+### Failures / Open Questions
+- The first combined SneakyWoods + Hyperborea browser proof script hung long enough to be unhelpful, even though the focused per-demo browser proofs both passed. This looks like a headless Chromium startup/render pacing issue under the combined ad hoc script rather than a bridge/core failure.
+- This is still a Quake III-style standalone bot core, not a literal source-code lift of id Tech 3 bot AI. The architecture is now modular and reusable, but features like authored navmesh/waypoint datasets, item-route memory, weapon-specific utility tables, or personality packs would still need additional game-side data/adapters if we want to push it closer to a true Quake III bot stack.
+
+## Date: 2026-04-04
+
+### Prompt
+- keep going
+
+### Prompt Time/Date
+- 2026-04-04 06:27:51 UTC
+
+### Actions Attempted
+- Reviewed `plan/plan.md`, the tail of `plan/log.md`, the current `quake3/bot-core.mjs`, and the existing tests before deciding the next step. Chose to keep pushing the bot stack toward a more independent Quake-style architecture by splitting missing AI subsystems out of `bot-core.mjs` instead of adding more logic inline.
+- Added `net-chaos-lab/agent/quake3/personalities.mjs`:
+  - introduced named archetypes (`arena`, `aggressor`, `skirmisher`, `scavenger`, `sentinel`)
+  - added deterministic seeded personality creation plus preset resolution
+  - added parameters for attack cadence, route search distance, route/goal memory windows, pickup/objective bias, and hazard avoidance
+- Added `net-chaos-lab/agent/quake3/memory.mjs`:
+  - tracks recent goal IDs and nav-point IDs
+  - exposes recency penalties so the planner can avoid immediately reusing the same pickup or route node
+- Added `net-chaos-lab/agent/quake3/navigation.mjs`:
+  - added nav-point route selection for distant goals
+  - added hazard-aware target adjustment and per-nav hazard penalties
+  - keeps short route retention so bots do not thrash every tick
+- Refactored `net-chaos-lab/agent/quake3/bot-core.mjs` to consume those modules:
+  - bot state now keeps `personalityName`, `goalMemory`, `navMemory`, `routeNavId`, `routeTargetId`, `routeUntil`, and `nextPrimaryAt`
+  - scoring now penalizes recently visited pickups/objectives
+  - traverse/combat behavior now consults nav-point routing for longer paths
+  - combat now respects a personality-driven primary attack cooldown
+  - snapshot `metadata.botPersonality` / `metadata.botPreset` / `metadata.botPersonalityOverrides` can now retune the bot personality at runtime without changing the harness code
+- Fixed follow-up integration drift after the refactor:
+  - corrected `scorePickupGoal(world, state, nowMs)` signature
+  - moved personality exports to `quake3/index.mjs` from the correct module
+- Expanded `net-chaos-lab/tests/quake3-bot-core.test.mjs` with direct coverage for:
+  - preset resolution and deterministic overrides
+  - recent-goal penalty changing pickup choice
+  - nav-point route selection avoiding recently used nodes
+- Re-ran the chaos-lab behavior gate and the demo static gate. Both passed.
+- Ran a fresh local built-doc SneakyWoods Chromium smoke against `http://127.0.0.1:4180/sneakywoods/?e2e=1` to verify the refactored core still drives a real page through `peercompute-bot-bridge`. It passed and moved the player position.
+- Shut the temporary local HTTP server down after the smoke completed.
+- Updated README and plan files to describe the new `personalities` / `memory` / `navigation` modules and the additional proof point.
+
+### Files Touched
+- `net-chaos-lab/README.md`
+- `net-chaos-lab/agent/quake3/bot-core.mjs`
+- `net-chaos-lab/agent/quake3/index.mjs`
+- `net-chaos-lab/agent/quake3/memory.mjs`
+- `net-chaos-lab/agent/quake3/navigation.mjs`
+- `net-chaos-lab/agent/quake3/personalities.mjs`
+- `net-chaos-lab/tests/quake3-bot-core.test.mjs`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `sed -n '1,260p' net-chaos-lab/agent/quake3/bot-core.mjs`
+- `sed -n '260,520p' net-chaos-lab/agent/quake3/bot-core.mjs`
+- `sed -n '1,260p' net-chaos-lab/tests/quake3-bot-core.test.mjs`
+- `sed -n '1,260p' net-chaos-lab/agent/quake3/world-model.mjs`
+- `sed -n '1,220p' demos/shared/peercomputeBotBridge.js`
+- `rg -n "navPoints|objectives|items|hazards|capabilities" net-chaos-lab demos --glob '!**/node_modules/**'`
+- `cat net-chaos-lab/agent/quake3/index.mjs`
+- `sed -n '1,220p' net-chaos-lab/agent/player-behavior-harness.mjs`
+- `rg -n "createQuake3BotPersonality|DEFAULT_Q3_PERSONALITY|createQuake3BotState|decideQuake3BotAction|scoreQuake3Goals" net-chaos-lab --glob '!**/node_modules/**'`
+- `sed -n '1,220p' net-chaos-lab/agent/quake3/personalities.mjs`
+- `sed -n '1,240p' net-chaos-lab/agent/quake3/navigation.mjs`
+- `sed -n '1,220p' net-chaos-lab/agent/quake3/memory.mjs`
+- `npm --prefix net-chaos-lab run test:behavior`
+- `node --test demos/tests/demo-ports.test.js`
+- `python3 -m http.server 4180 -d docs`
+- `timeout 90s node --input-type=module <<'NODE' ... SneakyWoods built-doc Playwright smoke using runSimulationProfile(page, 'sneakywoods', 2600) ... NODE`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `git status --short`
+
+### Test Results
+- PASS: `npm --prefix net-chaos-lab run test:behavior`
+  - 13 tests passed, 0 failed
+  - includes the expanded `quake3-bot-core.test.mjs` coverage for presets, memory, and routing
+- PASS: `node --test demos/tests/demo-ports.test.js`
+  - 15 tests passed, 0 failed
+- PASS: local built-doc SneakyWoods Playwright smoke after the modularization pass
+  - URL: `http://127.0.0.1:4180/sneakywoods/?e2e=1`
+  - harness result: `driver: "peercompute-bot-bridge"`, `behavior: "quake3-bot-core"`
+  - simulation steps: `click:canvas`, `mode:patrol`
+  - local player moved from roughly `(58.82, 0.5, -11.85)` to `(58.22, 0.5, -12.21)`
+
+### Failures / Open Questions
+- The bot stack is now more modular, but this is still not a literal id Tech 3 bot code port. It is a Quake III-style architecture with reusable planning/routing/personality modules. To push it further toward a true port, the next big steps would be game-fed item/weapon metadata, authored nav graphs/waypoint sets, and richer combat utility models.
+
+## Date: 2026-04-04
+
+### Prompt
+- make sure to integrate it into all the settings screens so peiple can add bots
+
+### Prompt Time/Date
+- 2026-04-04 06:55:27 UTC (recorded during this prompt while writing the log entry from the active shell session)
+
+### Actions Attempted
+- Re-read `plan/plan.md` and the tail of `plan/log.md`, then re-checked the dirty worktree before editing so the settings integration would extend the existing bot-core/bridge work instead of diverging from it.
+- Inspected the current settings UI and room-switch implementations for CubeChat, Hyperborea, and SneakyWoods, plus the existing shared bridge contract and the modular Quake-style harness/core, to determine the cleanest path for user-facing bot spawning.
+- Added a new shared browser module at `demos/shared/peercomputeBots.js` with four responsibilities:
+  - parse bot and room launch query params (`peercomputeBot`, `botPreset`, `room`, `privacy`, `password`, etc.)
+  - build bot iframe URLs that preserve the current room/password state and assign deterministic bot names/colors
+  - host hidden same-origin iframe bots from a parent demo page and expose live status through `window.__PEERCOMPUTE_BOT_HOSTS__`
+  - self-start a local Quake-style bot runtime inside bot pages that waits for the shared bridge, drives it with `decideQuake3BotAction(...)`, and reports `ready/running` state under `window.__PEERCOMPUTE_LOCAL_BOT_STATUS__`
+- Integrated the shared bot host/runtime into all three settings screens:
+  - CubeChat: added a `Bots` settings section to the JS-built menu, bound it to the shared host, applied bot launch identity (name/color), auto-started the local bot runtime for iframe launches, and taught the bot room host to carry current room/password/theme into spawned bot URLs.
+  - Hyperborea: added a `Bots` section to `cb.html`, added bot-host binding in `Game.js`, added startup query parsing for room/password and bot identity, stored `currentRoomPassword`, and refreshed hosted bots after room switches.
+  - SneakyWoods: added a `Bots` section to `index.html`, added shared bot-host binding in `main.js`, added startup query parsing for room/password and bot identity, stored `currentRoomPassword`, and refreshed hosted bots after room switches.
+- Hardened CubeChat bot/browser startup specifically for hidden iframe bot peers:
+  - `demos/cubechat/src/p2p/network.js` now skips `getUserMedia()` when launched as a bot with `botMedia=0`
+  - both CubeChat browser `NodeKernel` paths (`network.js` and `roomDirectory.js`) now use `transportManager.faultTolerance = no-fatal` so local/docs headless bot sessions still boot even if relay circuit listen addrs are rejected under the local HTTP harness
+- Expanded `demos/tests/demo-ports.test.js`:
+  - static checks now verify the shared bot helper exists, the three settings screens expose bot controls, and the helper can build/parse private-room bot launch URLs correctly
+  - updated the CubeChat/static transport assertions to require the new non-fatal startup hardening
+- Rebuilt the affected docs bundles for CubeChat, Hyperborea, and SneakyWoods after the settings/runtime changes.
+- Started a temporary local docs server (`python3 -m http.server 4180 -d docs`) and used host-run headless Chromium/Playwright to exercise the actual settings UI path for all three demos:
+  - the first combined multi-demo smoke used plain pipe output and was too opaque to diagnose quickly, so I killed it and switched to per-demo PTY-backed smokes with live progress/status prints
+  - SneakyWoods smoke: opened settings, clicked `Add Bots`, and confirmed host status immediately reached `readyBots=1`, `runningBots=1`, `mode:"patrol"`
+  - Hyperborea smoke: same UI flow, with the bot taking one extra polling step to settle; by tick 2 the host status reported `readyBots=1`, `runningBots=1`, `mode:"patrol"`
+  - CubeChat smoke: after the non-fatal startup patch and hidden-load dismissal, the bot host likewise reached `readyBots=1`, `runningBots=1`, `mode:"patrol"` by tick 1
+- Updated `README.md`, `plan/plan.md`, `plan/tests.md`, and `plan/branch/demo-fixes.md` to record the new in-browser bot-host/settings capability and the new regression gate.
+- Shut down the temporary local docs server and confirmed there were no leftover Chromium/Playwright/temp Node processes.
+
+### Files Touched
+- `README.md`
+- `demos/cubechat/src/main.js`
+- `demos/cubechat/src/p2p/network.js`
+- `demos/cubechat/src/p2p/roomDirectory.js`
+- `demos/hyperborea/cb.html`
+- `demos/hyperborea/src/game/Game.js`
+- `demos/shared/peercomputeBots.js`
+- `demos/sneakywoods/index.html`
+- `demos/sneakywoods/main.js`
+- `demos/tests/demo-ports.test.js`
+- `docs/cubechat/index.html`
+- `docs/cubechat/assets/index-D0l_3sgy.js`
+- `docs/hyperborea/cb.html`
+- `docs/hyperborea/assets/cb-B6gVXbeJ.js`
+- `docs/sneakywoods/index.html`
+- `docs/sneakywoods/assets/index-CNBDqZqF.js`
+- `plan/branch/demo-fixes.md`
+- `plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `tail -n 220 plan/log.md`
+- `git status --short`
+- `rg -n "settings|bot|switchRoom|initSettings|initSettingsUI|applyRoomChange|registerPeercomputeBotBridge|__PEERCOMPUTE_BOT_BRIDGES__" demos/cubechat/src/main.js demos/hyperborea/src/game/Game.js demos/hyperborea/cb.html demos/sneakywoods/main.js demos/sneakywoods/index.html demos/shared -g '!docs/**'`
+- `sed -n '280,430p' demos/cubechat/src/main.js`
+- `sed -n '1142,1455p' demos/cubechat/src/main.js`
+- `sed -n '1,220p' demos/shared/peercomputeBotBridge.js`
+- `sed -n '1,560p' net-chaos-lab/agent/player-behavior-harness.mjs`
+- `sed -n '1,360p' net-chaos-lab/agent/quake3/bot-core.mjs`
+- `sed -n '1,140p' demos/hyperborea/cb.html`
+- `sed -n '1326,1445p' demos/hyperborea/src/game/Game.js`
+- `sed -n '260,340p' demos/sneakywoods/index.html`
+- `sed -n '862,995p' demos/sneakywoods/main.js`
+- `sed -n '1,260p' demos/cubechat/src/p2p/network.js`
+- `sed -n '1,210p' demos/cubechat/src/main.js`
+- `sed -n '1,260p' demos/sneakywoods/main.js`
+- `sed -n '1,120p' demos/hyperborea/src/game/Game.js`
+- `sed -n '430,590p' demos/cubechat/src/main.js`
+- `sed -n '240,330p' demos/hyperborea/src/game/Game.js`
+- `sed -n '1040,1095p' demos/sneakywoods/main.js`
+- `sed -n '1,260p' demos/tests/demo-ports.test.js`
+- `sed -n '1,140p' demos/cubechat/src/p2p/roomDirectory.js`
+- `node --test demos/tests/demo-ports.test.js`
+- `npm --prefix demos/cubechat run build`
+- `npm --prefix demos/hyperborea run build`
+- `npm --prefix demos/sneakywoods run build`
+- `python3 -m http.server 4180 -d docs`
+- `ps -ef | rg "node --input-type=module|playwright|http.server 4180"`
+- `kill 659114 659400 659401 659413 659415 659416 659432 659434 659478 659486 659505 || true`
+- `kill 659592 659878 659879 659891 659893 659894 659907 659911 659931 || true`
+- PTY Chromium smoke for SneakyWoods settings bot add:
+  - `node --input-type=module <<'NODE' ... page.goto('http://127.0.0.1:4180/sneakywoods/?room=bot-debug-...') ... click settings ... click #bot-add ... log window.__PEERCOMPUTE_BOT_HOSTS__.sneakywoods.getStatus() ... NODE`
+- PTY Chromium smoke for Hyperborea settings bot add:
+  - `node --input-type=module <<'NODE' ... page.goto('http://127.0.0.1:4180/hyperborea/cb.html?room=bot-debug-...') ... click settings ... click #bot-add ... log window.__PEERCOMPUTE_BOT_HOSTS__.hyperborea.getStatus() ... NODE`
+- PTY Chromium smoke for CubeChat settings bot add:
+  - `node --input-type=module <<'NODE' ... page.goto('http://127.0.0.1:4180/cubechat/?room=bot-debug-...') ... hide #loading ... click settings ... click #bot-add ... log window.__PEERCOMPUTE_BOT_HOSTS__.cubechat.getStatus() ... NODE`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+- `ps -ef | rg "http.server 4180|chrome-headless-shell|playwright|node --input-type=module"`
+
+### Test Results
+- PASS: `node --test demos/tests/demo-ports.test.js`
+  - 17 tests passed, 0 failed
+  - now covers shared bot helper existence, settings-screen bot controls, and private-room bot URL parsing in addition to bridge/static transport guards
+- PASS: `npm --prefix demos/cubechat run build`
+  - built `docs/cubechat` successfully
+- PASS: `npm --prefix demos/hyperborea run build`
+  - built `docs/hyperborea` successfully
+- PASS: `npm --prefix demos/sneakywoods run build`
+  - built `docs/sneakywoods` successfully
+- PASS: local PTY Chromium SneakyWoods settings smoke
+  - loaded `http://127.0.0.1:4180/sneakywoods/?room=bot-debug-...`
+  - clicked `Settings -> Bots -> Add Bots`
+  - host status reached `totalBots=1`, `readyBots=1`, `runningBots=1`, `mode:"patrol"`
+- PASS: local PTY Chromium Hyperborea settings smoke
+  - loaded `http://127.0.0.1:4180/hyperborea/cb.html?room=bot-debug-...`
+  - clicked `Settings -> Bots -> Add Bots`
+  - host status progressed from `readyBots=0` to `readyBots=1`, `runningBots=1`, `mode:"patrol"` by tick 2
+- PASS: local PTY Chromium CubeChat settings smoke
+  - loaded `http://127.0.0.1:4180/cubechat/?room=bot-debug-...`
+  - hid the startup overlay, then clicked `Settings -> Bots -> Add Bots`
+  - host status progressed from `readyBots=0` to `readyBots=1`, `runningBots=1`, `mode:"patrol"` by tick 1 after the non-fatal startup hardening
+- PASS: hygiene check
+  - temporary docs server shut down successfully
+  - no leftover `http.server`, Playwright, `chrome-headless-shell`, or `node --input-type=module` processes remained afterward
+
+### Failures / Open Questions
+- The first combined multi-demo bot-settings smoke used a non-PTY shell path and produced poor incremental visibility while waiting on browser state, so I abandoned that attempt in favor of per-demo PTY smokes. That was a tooling/debugging issue, not a product failure.
+- The settings-screen bot-host smokes validated iframe spawn + bridge registration + local runtime ticks, but they did not assert real peer convergence (`peerCount` stayed `0` in the quick local docs checks). Treat "settings can launch a bot that becomes `ready/running`" and "that spawned bot fully converges into a multiplayer room under a specific relay config" as separate gates.
+- `node --test demos/tests/demo-ports.test.js` now emits a harmless `[MODULE_TYPELESS_PACKAGE_JSON]` warning because the CJS static gate dynamically imports the ESM `demos/shared/peercomputeBots.js` helper from the root package without a repo-wide `"type": "module"` declaration. This is noisy but not currently blocking.

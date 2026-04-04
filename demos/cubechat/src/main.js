@@ -13,9 +13,20 @@ import {
   getWorldThemeLabel,
   normalizeWorldTheme
 } from './world/themes.js';
+import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
+import {
+  bindPeercomputeBotSettingsControls,
+  createPeercomputeBotHost,
+  maybeStartPeercomputeLocalBotRuntime,
+  readPeercomputeBotIdentity,
+  readPeercomputeBotParams
+} from '../../shared/peercomputeBots.js';
 
 class CubeChat {
   constructor() {
+    this.botLaunch = readPeercomputeBotParams();
+    this.botHost = null;
+    this.botRuntime = null;
     this.network = null;
     this.scene = null;
     this.controller = null;
@@ -23,7 +34,7 @@ class CubeChat {
     this.remotePlayers = new Set();
     this.remoteBillboards = new Map(); // peerId -> {mesh, body, video}
     this.lastTime = performance.now();
-    this.settingsShownOnce = false;
+    this.settingsShownOnce = this.botLaunch.enabled;
     this.screenStream = null;
     this.screenBillboard = null;
     this.screenBillboardBody = null;
@@ -245,6 +256,117 @@ class CubeChat {
     }
   }
 
+  _createBotBridgeSnapshot() {
+    const localId = this.network?.localPlayer?.id || null;
+    if (!localId) return null;
+    const physicsPosition = this.physics?.getPosition?.(localId) || null;
+    const physicsVelocity = this.physics?.getVelocity?.(localId) || null;
+    const peers = typeof this.network?.getPeers === 'function' ? this.network.getPeers() : [];
+    return {
+      gameId: 'cubechat',
+      localId,
+      localPosition: physicsPosition || this.network?.localPlayer?.position || null,
+      localVelocity: physicsVelocity || this.network?.localPlayer?.velocity || null,
+      localRotation: Number(this.controller?.rotation || 0),
+      localPitch: Number(this.controller?.pitch || 0),
+      capabilities: {
+        primaryAttack: false,
+        interact: false,
+        descend: false,
+        verticalMovement: false
+      },
+      peerCount: Array.isArray(peers) ? peers.length : 0,
+      peers: Array.isArray(peers)
+        ? peers.map((peer) => ({
+            id: peer?.id || null,
+            position: peer?.position || null,
+            hasMedia: Boolean(peer?.hasMedia),
+            screenSharing: Boolean(peer?.screenSharing),
+            lastSeenAgeMs: Number.isFinite(peer?.lastSeen) ? (Date.now() - peer.lastSeen) : null
+          }))
+        : []
+    };
+  }
+
+  _applyBotBridgeAction(action) {
+    if (!this.controller) return false;
+    const keys = this.controller.keys || {};
+    keys.w = Number(action?.forward || 0) > 0.25;
+    keys.s = Number(action?.forward || 0) < -0.25;
+    keys.a = Number(action?.strafe || 0) < -0.25;
+    keys.d = Number(action?.strafe || 0) > 0.25;
+    keys[' '] = Boolean(action?.jump);
+    this.controller.keys = keys;
+    if (Number.isFinite(action?.rotation)) {
+      this.controller.rotation = action.rotation;
+    }
+    if (Number.isFinite(action?.pitch)) {
+      this.controller.pitch = action.pitch;
+    }
+    return true;
+  }
+
+  _clearBotBridgeAction() {
+    if (!this.controller?.keys) return false;
+    ['w', 'a', 's', 'd', ' '].forEach((key) => {
+      this.controller.keys[key] = false;
+    });
+    return true;
+  }
+
+  _registerBotBridge() {
+    registerPeercomputeBotBridge('cubechat', {
+      supports: ['arena'],
+      snapshot: () => this._createBotBridgeSnapshot(),
+      applyAction: (action) => this._applyBotBridgeAction(action),
+      clearAction: () => this._clearBotBridgeAction()
+    });
+  }
+
+  _applyBotLaunchIdentity() {
+    if (!this.network?.localPlayer) return;
+    const identity = readPeercomputeBotIdentity(null, { demoId: 'cubechat' });
+    if (!identity.enabled) return;
+    if (identity.name) {
+      this.network.localPlayer.name = identity.name;
+      this.scene?.setPlayerName(this.network.localPlayer.id, identity.name);
+    }
+    if (identity.colorHex) {
+      this.network.localPlayer.color = identity.colorHex;
+      this.scene?.updatePlayerColor(this.network.localPlayer.id, identity.colorHex);
+    }
+    this.network.broadcastPlayerState();
+  }
+
+  _initBotControls() {
+    const countInput = document.getElementById('bot-count');
+    const presetInput = document.getElementById('bot-preset');
+    const addButton = document.getElementById('bot-add');
+    const clearButton = document.getElementById('bot-clear');
+    const statusEl = document.getElementById('bot-status');
+    if (!this.botHost) {
+      this.botHost = createPeercomputeBotHost({
+        demoId: 'cubechat',
+        mediaEnabled: false,
+        getRoomState: () => ({
+          room: this.currentRoom,
+          password: this.currentRoomPassword,
+          extraParams: {
+            theme: normalizeWorldTheme(this.worldTheme)
+          }
+        })
+      });
+    }
+    bindPeercomputeBotSettingsControls({
+      host: this.botHost,
+      countInput,
+      presetInput,
+      addButton,
+      clearButton,
+      statusEl
+    });
+  }
+
   async init() {
     this._applyLaunchStateFromQuery();
 
@@ -332,6 +454,22 @@ class CubeChat {
             <div id="screen-share-status" style="font-size: 0.8em; color: #00ffff; text-align: center;"></div>
           </div>
         </div>
+        <div class="settings-section">
+          <h4>Bots</h4>
+          <label>
+            Add Count:
+            <input type="number" id="bot-count" min="1" max="8" step="1" value="1">
+          </label>
+          <label>
+            Archetype:
+            <select id="bot-preset"></select>
+          </label>
+          <div class="room-actions">
+            <button id="bot-add">Add Bots</button>
+            <button id="bot-clear">Clear Bots</button>
+          </div>
+          <div id="bot-status"></div>
+        </div>
         <button id="save-settings">Save</button>
         <button id="close-settings">Close</button>
       </div>
@@ -384,6 +522,8 @@ class CubeChat {
       if (this.network.getLocalStream()) {
         this.scene.setPlayerVideoStream(localPlayer.id, this.network.getLocalStream());
       }
+
+      this._applyBotLaunchIdentity();
 
       // Initialize player controller
       this.controller = new PlayerController();
@@ -475,6 +615,13 @@ class CubeChat {
 
       // Initialize VR
       this.initVR();
+
+      this._registerBotBridge();
+      this.botRuntime = maybeStartPeercomputeLocalBotRuntime({
+        demoId: 'cubechat',
+        bridgeId: 'cubechat',
+        hideSelectors: ['#loading', '#settings-button', '#settings-menu', '#room-list', '#event-log', '#vr-button']
+      });
 
       // Start game loop
       this.startGameLoop();
@@ -1270,6 +1417,8 @@ class CubeChat {
       });
     }
 
+    this._initBotControls();
+
     // Screen share toggle
     const screenShareToggle = document.getElementById('screen-share-toggle');
     const screenShareStatus = document.getElementById('screen-share-status');
@@ -1355,6 +1504,7 @@ class CubeChat {
     this.roomDirectory?.announceRoom(this.currentRoom);
     this._syncRoomInputs();
     this._updateLinkQueryParams();
+    this.botHost?.refreshBots();
     this.setRoomStatus(`Current room: ${name} (${visibility})`);
   }
 

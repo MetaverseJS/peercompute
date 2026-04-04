@@ -1,4 +1,7 @@
 import { NodeKernel } from '@peercompute';
+import { readPeercomputeBotParams } from '../../../shared/peercomputeBots.js';
+
+const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 
 const DEFAULT_PROFILE = {
   snapshotHz: 20,
@@ -181,6 +184,7 @@ export class P2PNetwork {
       gameId: 'cubechat',
       roomId: this.roomId,
       maxConnections: 10,
+      transportManager: NO_FATAL_TRANSPORT_MANAGER,
       ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
       ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})
@@ -223,6 +227,11 @@ export class P2PNetwork {
   }
 
   async _initLocalMedia() {
+    const botLaunch = readPeercomputeBotParams();
+    if (botLaunch.enabled && !botLaunch.mediaEnabled) {
+      this.localStream = null;
+      return;
+    }
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240 },

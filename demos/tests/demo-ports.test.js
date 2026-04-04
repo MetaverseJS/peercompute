@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const repoRoot = path.resolve(process.cwd());
 const demosRoot = path.join(repoRoot, 'demos');
@@ -82,6 +83,7 @@ test('cubechat uses PeerCompute for WebRTC signaling', () => {
   assert.ok(content.includes('webrtc-offer'), 'cubechat WebRTC signaling missing');
   assert.ok(content.includes('queueEvent'), 'cubechat PeerCompute event usage missing');
   assert.ok(content.includes('_handleSignalError'), 'cubechat async signaling guard missing');
+  assert.ok(content.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'), 'cubechat missing non-fatal transport startup');
   assert.ok(
     content.includes('cannot create an answer in a state other than have-remote-offer'),
     'cubechat stable-state answer guard missing'
@@ -90,17 +92,93 @@ test('cubechat uses PeerCompute for WebRTC signaling', () => {
 
 test('hyperborea opts into non-fatal relay listen startup', () => {
   const gameFile = path.join(demosRoot, 'hyperborea', 'src', 'game', 'Game.js');
+  const cubechatRoomDirectory = path.join(demosRoot, 'cubechat', 'src', 'p2p', 'roomDirectory.js');
   const roomDirectoryFile = path.join(demosRoot, 'hyperborea', 'src', 'game', 'roomDirectory.js');
   const gameContent = fs.readFileSync(gameFile, 'utf8');
+  const cubechatRoomDirectoryContent = fs.readFileSync(cubechatRoomDirectory, 'utf8');
   const roomDirectoryContent = fs.readFileSync(roomDirectoryFile, 'utf8');
   assert.ok(
     gameContent.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'),
     'hyperborea main node missing non-fatal transport startup'
   );
   assert.ok(
+    cubechatRoomDirectoryContent.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'),
+    'cubechat room directory missing non-fatal transport startup'
+  );
+  assert.ok(
     roomDirectoryContent.includes('transportManager: NO_FATAL_TRANSPORT_MANAGER'),
     'hyperborea room directory missing non-fatal transport startup'
   );
+});
+
+test('cubechat, hyperborea, and sneakywoods register bot bridges for shared harness control', () => {
+  const bridgeHelper = path.join(demosRoot, 'shared', 'peercomputeBotBridge.js');
+  const botHelper = path.join(demosRoot, 'shared', 'peercomputeBots.js');
+  const cubechatMain = path.join(demosRoot, 'cubechat', 'src', 'main.js');
+  const hyperboreaGame = path.join(demosRoot, 'hyperborea', 'src', 'game', 'Game.js');
+  const sneakywoodsMain = path.join(demosRoot, 'sneakywoods', 'main.js');
+  assert.ok(exists(bridgeHelper), 'shared bot bridge helper missing');
+  assert.ok(exists(botHelper), 'shared bot runtime helper missing');
+  const cubechatContent = fs.readFileSync(cubechatMain, 'utf8');
+  const hyperboreaContent = fs.readFileSync(hyperboreaGame, 'utf8');
+  const sneakywoodsContent = fs.readFileSync(sneakywoodsMain, 'utf8');
+  assert.ok(
+    cubechatContent.includes("registerPeercomputeBotBridge('cubechat'"),
+    'cubechat bot bridge registration missing'
+  );
+  assert.ok(
+    hyperboreaContent.includes("registerPeercomputeBotBridge('hyperborea'"),
+    'hyperborea bot bridge registration missing'
+  );
+  assert.ok(
+    sneakywoodsContent.includes("registerPeercomputeBotBridge('sneakywoods'"),
+    'sneakywoods bot bridge registration missing'
+  );
+});
+
+test('cubechat, hyperborea, and sneakywoods expose bot controls in settings screens', () => {
+  const cubechatMain = fs.readFileSync(path.join(demosRoot, 'cubechat', 'src', 'main.js'), 'utf8');
+  const hyperboreaHtml = fs.readFileSync(path.join(demosRoot, 'hyperborea', 'cb.html'), 'utf8');
+  const sneakywoodsHtml = fs.readFileSync(path.join(demosRoot, 'sneakywoods', 'index.html'), 'utf8');
+  assert.ok(cubechatMain.includes('id="bot-count"'), 'cubechat bot count control missing');
+  assert.ok(cubechatMain.includes('id="bot-add"'), 'cubechat bot add control missing');
+  assert.ok(hyperboreaHtml.includes('id="bot-preset"'), 'hyperborea bot preset control missing');
+  assert.ok(hyperboreaHtml.includes('id="bot-status"'), 'hyperborea bot status control missing');
+  assert.ok(sneakywoodsHtml.includes('id="bot-clear"'), 'sneakywoods bot clear control missing');
+  assert.ok(sneakywoodsHtml.includes('id="bot-status"'), 'sneakywoods bot status control missing');
+});
+
+test('shared bot runtime helper builds iframe launch URLs and parses private-room bot params', async () => {
+  const modulePath = pathToFileURL(path.join(demosRoot, 'shared', 'peercomputeBots.js')).href;
+  const {
+    buildPeercomputeBotUrl,
+    readPeercomputeBotParams,
+    readPeercomputeRoomParams
+  } = await import(modulePath);
+  const url = buildPeercomputeBotUrl(
+    'https://metaversejs.github.io/peercompute/sneakywoods/?relayConfigUrl=https%3A%2F%2Fsecretworkshop.net%2Fpeercompute%2Fconfig%2Frelay-config.json',
+    {
+      room: { name: 'Lab Room', visibility: 'private' },
+      password: 'secret'
+    },
+    {
+      demoId: 'sneakywoods',
+      botIndex: 2,
+      preset: 'sentinel'
+    }
+  );
+  const params = readPeercomputeBotParams(new URL(url).search);
+  const room = readPeercomputeRoomParams(new URL(url).search, {
+    buildRoomId: ({ name, visibility, password }) => `${visibility}:${name}:${password}`,
+    normalizeRoomName: (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '-')
+  });
+  assert.equal(params.enabled, true, 'bot launch flag missing');
+  assert.equal(params.demoId, 'sneakywoods', 'bot demo id missing');
+  assert.equal(params.botIndex, 2, 'bot index mismatch');
+  assert.equal(params.preset, 'sentinel', 'bot preset mismatch');
+  assert.equal(room?.visibility, 'private', 'room visibility mismatch');
+  assert.equal(room?.password, 'secret', 'room password missing');
+  assert.equal(room?.roomId, 'private:lab-room:secret', 'room id normalizer mismatch');
 });
 
 test('planetgen uses shared GPU hub device', () => {
