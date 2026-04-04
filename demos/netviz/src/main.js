@@ -1,5 +1,6 @@
 import { NodeKernel } from '@peercompute';
 import { loadRelayConfig, normalizeBootstrapPeers } from './relayConfig.js';
+import { buildPubsubEdges, buildRelayState } from './relayOverlay.js';
 import { TelemetryStore } from './telemetryStore.js';
 import { NetworkVisualizer } from './visualizer.js';
 
@@ -1931,32 +1932,6 @@ const getLocalRelayPeerId = () => {
   return null;
 };
 
-const buildRelayState = (entries, relayIds) => {
-  const relaySet = relayIds instanceof Set ? relayIds : new Set(relayIds || []);
-  const activeRelayIds = new Set();
-  const peerRelayMap = new Map();
-  if (!Array.isArray(entries) || relaySet.size === 0) {
-    return { relayIds: Array.from(relaySet), activeRelayIds: [], peerRelayMap };
-  }
-  entries.forEach((peer) => {
-    const peerId = peer?.peerId;
-    if (!peerId) return;
-    const neighbors = Array.isArray(peer.peers) ? peer.peers : [];
-    let relayId = null;
-    neighbors.forEach((neighbor) => {
-      if (!isActiveNeighbor(neighbor)) return;
-      const id = neighbor?.peerId || neighbor?.id || null;
-      if (!id || !relaySet.has(id)) return;
-      activeRelayIds.add(id);
-      if (!relayId) relayId = id;
-    });
-    if (relayId) {
-      peerRelayMap.set(peerId, relayId);
-    }
-  });
-  return { relayIds: Array.from(relaySet), activeRelayIds: Array.from(activeRelayIds), peerRelayMap };
-};
-
 const normalizeWebRTCConfig = (cfg) => {
   if (!cfg || typeof cfg !== 'object') return null;
   const raw = cfg.webrtc && typeof cfg.webrtc === 'object' ? cfg.webrtc : {};
@@ -2485,35 +2460,6 @@ const buildEdges = (peers, localId, relayState = null) => {
   });
 
   return Array.from(edgeMap.values());
-};
-
-const buildPubsubEdges = (peers, relayState = null) => {
-  const edges = [];
-  const now = Date.now();
-  const peerRelayMap = relayState?.peerRelayMap;
-
-  peers.forEach((peer) => {
-    if (!peer?.peerId || peer.isRelay) return;
-    const pubsub = peer.pubsub || {};
-    const txCount = Number(pubsub.txCount) || 0;
-    const rxCount = Number(pubsub.rxCount) || 0;
-    const relayPeerId = peerRelayMap?.get(peer.peerId);
-    if (!relayPeerId) return;
-    const lastTxAt = Number(pubsub.lastTxAt);
-    const lastRxAt = Number(pubsub.lastRxAt);
-    const txActive = Number.isFinite(lastTxAt) && now - lastTxAt < PUBSUB_ACTIVE_MS;
-    const rxActive = Number.isFinite(lastRxAt) && now - lastRxAt < PUBSUB_ACTIVE_MS;
-    edges.push({
-      from: peer.peerId,
-      to: relayPeerId,
-      lastTxAt: txActive ? lastTxAt : null,
-      lastRxAt: rxActive ? lastRxAt : null,
-      txCount,
-      rxCount
-    });
-  });
-
-  return edges;
 };
 
 const findNeighborMetrics = (fromPeer, toPeerId) => {
@@ -3331,13 +3277,13 @@ const attachDebugHandles = () => {
       chaosFeed,
       attachSessions: Array.from(attachSessions.values()),
       rtcPath: { ...rtcPathState },
-      relayRetentionDebug: networkManager ? {
+      relayRetentionDebug: networkManager?.getRelayRetentionDebug?.() || (networkManager ? {
         dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
         relayRetention: networkManager.config?.webrtc?.relayRetention,
         hasBootstrapRelayConnections: networkManager._hasBootstrapRelayConnections?.(),
         hasDirectPeerConnections: networkManager._hasDirectPeerConnections?.(),
         shouldKeepRelay: networkManager._shouldKeepRelayBootstrapConnection?.()
-      } : null
+      } : null)
     }),
     connect: () => connect(),
     disconnect: () => disconnect(),

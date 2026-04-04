@@ -768,6 +768,83 @@ test('NetworkManager does not block relay drop on unreachable targetConnections 
   assert.equal(manager._shouldKeepRelayBootstrapConnection(), false);
 });
 
+test('NetworkManager treats direct-capable peers as healthy when gossipsub mesh lags', () => {
+  const manager = new NetworkManager({
+    targetConnections: 2,
+    webrtc: {
+      dropRelayBootstrapOnDirect: true,
+      relayRetention: false,
+      relayBootstrapMinHoldMs: 0
+    }
+  });
+  manager.peerId = 'peer-self';
+  manager.bootstrapPeerIds = new Set(['relay-peer']);
+  manager.peers.set('peer-a', {
+    gameId: 'default-game',
+    roomId: 'default-room',
+    topologyId: manager.config.topologyId,
+    joinedAt: Date.now() - 2000
+  });
+  manager.peers.set('peer-b', {
+    gameId: 'default-game',
+    roomId: 'default-room',
+    topologyId: manager.config.topologyId,
+    joinedAt: Date.now() - 1500
+  });
+  manager.libp2p = {
+    services: {
+      pubsub: {
+        getMeshPeers: () => [{ toString: () => 'peer-a' }]
+      }
+    },
+    getConnections: (peerId) => {
+      if (peerId === 'relay-peer') {
+        return [{
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        }];
+      }
+      if (peerId === 'peer-a') {
+        return [{
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/udp/9999/webrtc'),
+          status: 'open'
+        }];
+      }
+      if (peerId === 'peer-b') {
+        return [{
+          remotePeer: { toString: () => 'peer-b' },
+          remoteAddr: buildAddr('/ip4/5.6.7.8/udp/9999/webrtc'),
+          status: 'open'
+        }];
+      }
+      return [
+        {
+          remotePeer: { toString: () => 'relay-peer' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/tcp/8080/wss/p2p/relay-peer'),
+          status: 'open'
+        },
+        {
+          remotePeer: { toString: () => 'peer-a' },
+          remoteAddr: buildAddr('/ip4/1.2.3.4/udp/9999/webrtc'),
+          status: 'open'
+        },
+        {
+          remotePeer: { toString: () => 'peer-b' },
+          remoteAddr: buildAddr('/ip4/5.6.7.8/udp/9999/webrtc'),
+          status: 'open'
+        }
+      ];
+    }
+  };
+
+  assert.equal(manager._getDirectGossipsubMeshPeerCount(), 1);
+  assert.equal(manager._getDirectCapableDialedPeerCount(), 2);
+  assert.equal(manager._hasHealthyGossipsubMesh(), true);
+  assert.equal(manager._shouldKeepRelayBootstrapConnection(), false);
+});
+
 test('NetworkManager keeps relay for longest-connected logN peers', () => {
   const manager = new NetworkManager({
     webrtc: {
@@ -1196,6 +1273,53 @@ test('NetworkManager blocks new topology requests when logical slots are already
   assert.deepEqual(sent, []);
   assert.equal(manager.pendingTopologyRequests.has('peer-d'), false);
   assert.equal(manager.pendingTopologyRequests.has('peer-e'), false);
+});
+
+test('NetworkManager prunes excess unsolicited peers back to logical maxConnections on topology tick', () => {
+  const manager = new NetworkManager({
+    maxConnections: 2,
+    targetConnections: 2,
+    connectionRadius: 10,
+    topologyMetric: { x: 0, y: 0, z: 0 }
+  });
+  manager.isConnected = true;
+  manager.bootstrapPeerIds = new Set();
+
+  ['peer-a', 'peer-b', 'peer-c', 'peer-d'].forEach((peerId, index) => {
+    manager.peers.set(peerId, {
+      peerId,
+      gameId: 'default-game',
+      roomId: 'default-room',
+      topologyId: manager.config.topologyId,
+      metricInitialized: true,
+      metric: { x: index + 1, y: 0, z: 0 },
+      joinedAt: Date.now() - ((index + 1) * 1000)
+    });
+  });
+
+  const connections = ['peer-a', 'peer-b', 'peer-c', 'peer-d'].map((peerId, index) => ({
+    remotePeer: { toString: () => peerId },
+    remoteAddr: buildAddr(`/ip4/10.0.0.${index + 1}/udp/9999/webrtc/p2p/${peerId}`),
+    status: 'open',
+    close: async function close() {
+      this.status = 'closed';
+    }
+  }));
+
+  manager.libp2p = {
+    getConnections: (peerId) => {
+      if (!peerId) return connections;
+      return connections.filter((conn) => conn.remotePeer.toString() === peerId);
+    }
+  };
+
+  manager._tickTopology();
+
+  const openPeers = connections
+    .filter((conn) => conn.status === 'open')
+    .map((conn) => conn.remotePeer.toString())
+    .sort();
+  assert.deepEqual(openPeers, ['peer-a', 'peer-b']);
 });
 
 test('NetworkManager blocks new-peer dials when logical maxConnections is already reserved', async () => {

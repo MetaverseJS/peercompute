@@ -18,8 +18,18 @@ const demos = [
   { name: 'cubechat', path: '/cubechat/' },
   { name: 'hyperborea', path: '/hyperborea/cb.html' },
   { name: 'sneakywoods', path: '/sneakywoods/' },
-  { name: 'daddygo', path: '/daddygo/' }
+  { name: 'daddygo', path: '/daddygo/' },
+  { name: 'netviz', path: '/netviz/' }
 ];
+const selectedDemoNames = new Set(
+  String(process.env.RUNTIME_P2P_DEMOS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
+const selectedDemos = selectedDemoNames.size
+  ? demos.filter((demo) => selectedDemoNames.has(demo.name))
+  : demos;
 
 const mime = {
   '.html': 'text/html',
@@ -90,7 +100,7 @@ function checkDocsBuild() {
   if (!existsSync(docsRoot)) {
     throw new Error('docs/ folder missing. Run `npm run build` first.');
   }
-  const missing = demos.filter((demo) => {
+  const missing = selectedDemos.filter((demo) => {
     const relPath = demo.path.endsWith('.html')
       ? demo.path
       : `${demo.path.replace(/\/?$/, '/') }index.html`;
@@ -127,10 +137,15 @@ function waitForFiles(filePaths, timeoutMs) {
 }
 
 function startRelay() {
-  const relayConfigDirs = demos
+  const relayConfigDirs = selectedDemos
     .map((demo) => path.join(docsRoot, demo.name))
     .filter((dir) => existsSync(dir));
-  const relayConfigPaths = relayConfigDirs.map((dir) => path.join(dir, 'relay-config.json'));
+  const relayConfigPaths = relayConfigDirs.flatMap((dir) => ([
+    path.join(dir, 'relay-config.json'),
+    path.join(dir, '.relay-config.json'),
+    path.join(dir, 'relay-config-source.json'),
+    path.join(dir, '.relay-config-source.json')
+  ]));
   relayConfigPaths.forEach((filePath) => {
     if (existsSync(filePath)) {
       try {
@@ -161,7 +176,7 @@ function startRelay() {
 
   return {
     child,
-    relayConfigPaths,
+    relayConfigPaths: relayConfigDirs.map((dir) => path.join(dir, 'relay-config.json')),
     relayConfigDirs
   };
 }
@@ -444,7 +459,7 @@ async function runDaddyGo(context) {
   attachPageErrorLogging(pageA, errors);
   attachPageErrorLogging(pageB, errors);
 
-  const url = `${baseUrl}/daddygo/`;
+  const url = `${baseUrl}/daddygo/?e2e=1`;
   console.log(`→ daddygo: ${url}`);
 
   try {
@@ -454,27 +469,39 @@ async function runDaddyGo(context) {
     await pageB.waitForSelector('#global-score', { timeout: demoTimeoutMs });
 
     await Promise.all([
-      waitForConsoleMatch(
-        pageA,
-        (text) => text.includes('[NodeKernel] Node started'),
-        demoTimeoutMs,
-        'node started',
-        logsA
+      pageA.waitForFunction(
+        () => Boolean(window.__daddygoTest?.localPeerId),
+        null,
+        { timeout: demoTimeoutMs }
       ),
-      waitForConsoleMatch(
-        pageB,
-        (text) => text.includes('[NodeKernel] Node started'),
-        demoTimeoutMs,
-        'node started',
-        logsB
+      pageB.waitForFunction(
+        () => Boolean(window.__daddygoTest?.localPeerId),
+        null,
+        { timeout: demoTimeoutMs }
       )
     ]);
-    await waitForConsoleMatch(
-      pageA,
-      (text) => text.includes('[NodeKernel] Peer connected'),
-      demoTimeoutMs,
-      'peer connected',
-      logsA
+    await Promise.all([
+      pageA.waitForFunction(
+        () => window.__daddygoTest?.networkPeerCount > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      ),
+      pageB.waitForFunction(
+        () => window.__daddygoTest?.networkPeerCount > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      )
+    ]);
+    await pageA.evaluate(() => window.__daddygoTest?.setScore?.(11));
+    await pageA.waitForFunction(
+      () => window.__daddygoTest?.globalScoreText?.includes('11'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await pageB.waitForFunction(
+      () => window.__daddygoTest?.globalScoreText?.includes('11'),
+      null,
+      { timeout: demoTimeoutMs }
     );
   } catch (err) {
     errors.push(
@@ -486,6 +513,91 @@ async function runDaddyGo(context) {
     await pageA.close();
     await pageB.close();
   }
+  return errors;
+}
+
+async function runNetViz(context) {
+  const errors = [];
+  const sourcePage = await context.newPage();
+  const page = await context.newPage();
+  const sourceLogs = createConsoleBuffer(sourcePage);
+  const logs = createConsoleBuffer(page);
+  attachPageErrorLogging(sourcePage, errors);
+  attachPageErrorLogging(page, errors);
+
+  const sourceUrl = `${baseUrl}/cubechat/?e2e=1`;
+  const url = `${baseUrl}/netviz/?attachSession=latest`;
+  console.log(`→ netviz: ${url}`);
+
+  try {
+    await sourcePage.goto(sourceUrl, { waitUntil: 'load' });
+    await sourcePage.waitForSelector('#event-log', { state: 'attached', timeout: demoTimeoutMs });
+    await sourcePage.evaluate(() => {
+      const loading = document.getElementById('loading');
+      if (loading) loading.style.display = 'none';
+    });
+    await Promise.all([
+      sourcePage.waitForFunction(
+        () => window.__cubechatTest?.localStreamReady === true,
+        null,
+        { timeout: demoTimeoutMs }
+      ),
+      sourcePage.waitForFunction(
+        () => window.__cubechatTest?.bootstrapPeerCount > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      ),
+      sourcePage.waitForFunction(
+        () => window.__cubechatTest?.networkPeerCount > 0,
+        null,
+        { timeout: demoTimeoutMs }
+      )
+    ]);
+
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForSelector('#netviz-canvas', { timeout: demoTimeoutMs });
+    await page.waitForFunction(() => {
+      const status = window.__NETVIZ__?.getStatus?.();
+      return Array.isArray(status?.attachSessions)
+        && status.attachSessions.some((session) => session?.gameId === 'cubechat');
+    }, null, { timeout: demoTimeoutMs });
+    await page.waitForFunction(() => {
+      const status = window.__NETVIZ__?.getStatus?.();
+      return status?.roomId === 'global';
+    }, null, { timeout: demoTimeoutMs });
+    await page.waitForFunction(() => {
+      const status = window.__NETVIZ__?.getStatus?.();
+      return status?.connectionState === 'connected' && Boolean(status?.localPeerId);
+    }, null, { timeout: demoTimeoutMs });
+    await page.waitForFunction(() => {
+      const status = window.__NETVIZ__?.getStatus?.();
+      return Array.isArray(status?.connections) && status.connections.length > 0;
+    }, null, { timeout: demoTimeoutMs });
+    await page.waitForFunction(() => {
+      const status = window.__NETVIZ__?.getStatus?.();
+      return Array.isArray(status?.peers)
+        && status.peers.some((peer) => !peer?.isRelay && peer?.peerId);
+    }, null, { timeout: demoTimeoutMs + 15000 });
+  } catch (err) {
+    const sourceDebug = await sourcePage.evaluate(() => ({
+      localStreamReady: window.__cubechatTest?.localStreamReady ?? null,
+      bootstrapPeerCount: window.__cubechatTest?.bootstrapPeerCount ?? null,
+      networkPeerCount: window.__cubechatTest?.networkPeerCount ?? null,
+      peerCount: window.__cubechatTest?.peerCount ?? null
+    })).catch(() => null);
+    const debug = await page.evaluate(() => window.__NETVIZ__?.getStatus?.() || null).catch(() => null);
+    errors.push(
+      `NetViz attach wait failed: ${err?.message || err}\n` +
+      `cubechat: ${JSON.stringify(sourceDebug)}\n` +
+      `netviz: ${JSON.stringify(debug)}\n` +
+      `cubechat logs: ${sourceLogs.slice(-12).join(' | ')}\n` +
+      `netviz logs: ${logs.slice(-12).join(' | ')}`
+    );
+  } finally {
+    await sourcePage.close();
+    await page.close();
+  }
+
   return errors;
 }
 
@@ -533,17 +645,30 @@ async function main() {
 
     const failures = [];
     try {
-      const cubechatErrors = await runCubeChat(context);
-      if (cubechatErrors.length) failures.push({ demo: 'cubechat', errors: cubechatErrors });
+      if (selectedDemoNames.size === 0 || selectedDemoNames.has('cubechat')) {
+        const cubechatErrors = await runCubeChat(context);
+        if (cubechatErrors.length) failures.push({ demo: 'cubechat', errors: cubechatErrors });
+      }
 
-      const hyperboreaErrors = await runHyperborea(context);
-      if (hyperboreaErrors.length) failures.push({ demo: 'hyperborea', errors: hyperboreaErrors });
+      if (selectedDemoNames.size === 0 || selectedDemoNames.has('hyperborea')) {
+        const hyperboreaErrors = await runHyperborea(context);
+        if (hyperboreaErrors.length) failures.push({ demo: 'hyperborea', errors: hyperboreaErrors });
+      }
 
-      const sneakyErrors = await runSneakyWoods(context);
-      if (sneakyErrors.length) failures.push({ demo: 'sneakywoods', errors: sneakyErrors });
+      if (selectedDemoNames.size === 0 || selectedDemoNames.has('sneakywoods')) {
+        const sneakyErrors = await runSneakyWoods(context);
+        if (sneakyErrors.length) failures.push({ demo: 'sneakywoods', errors: sneakyErrors });
+      }
 
-      const daddyErrors = await runDaddyGo(context);
-      if (daddyErrors.length) failures.push({ demo: 'daddygo', errors: daddyErrors });
+      if (selectedDemoNames.size === 0 || selectedDemoNames.has('daddygo')) {
+        const daddyErrors = await runDaddyGo(context);
+        if (daddyErrors.length) failures.push({ demo: 'daddygo', errors: daddyErrors });
+      }
+
+      if (selectedDemoNames.size === 0 || selectedDemoNames.has('netviz')) {
+        const netvizErrors = await runNetViz(context);
+        if (netvizErrors.length) failures.push({ demo: 'netviz', errors: netvizErrors });
+      }
     } finally {
       await context.close();
       await browser.close();

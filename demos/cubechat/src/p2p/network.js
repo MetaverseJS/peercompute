@@ -124,9 +124,20 @@ export class P2PNetwork {
     this.pendingIceCandidates = new Map();
     this.dataChannels = new Map();
     this.peerConnections = new Map();
+    this.makingOfferPeers = new Set();
     this.localPlayer = null;
     this.snapshotProviderId = null;
     this.peerCleanupInterval = null;
+  }
+
+  _isPolitePeer(peerId) {
+    if (!this.peerId || !peerId) return false;
+    return String(this.peerId).localeCompare(String(peerId)) > 0;
+  }
+
+  _isStableStateError(error) {
+    const message = error?.message || String(error || '');
+    return message.includes('Called in wrong state: stable');
   }
 
   async init({ roomId = 'global' } = {}) {
@@ -406,6 +417,7 @@ export class P2PNetwork {
         });
 
         try {
+          this.makingOfferPeers.add(peerId);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           this._sendSignal(peerId, {
@@ -431,6 +443,8 @@ export class P2PNetwork {
           }
         } catch (error) {
           console.error('Error renegotiating connection for screen share:', error);
+        } finally {
+          this.makingOfferPeers.delete(peerId);
         }
       }
 
@@ -514,12 +528,17 @@ export class P2PNetwork {
       }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this._sendSignal(peerId, {
-      type: 'webrtc-offer',
-      offer
-    }, { reliable: true });
+    try {
+      this.makingOfferPeers.add(peerId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      this._sendSignal(peerId, {
+        type: 'webrtc-offer',
+        offer
+      }, { reliable: true });
+    } finally {
+      this.makingOfferPeers.delete(peerId);
+    }
   }
 
   async handleOffer(peerId, offer) {
@@ -527,7 +546,18 @@ export class P2PNetwork {
 
     if (pc) {
       try {
+        const offerCollision = offer?.type === 'offer'
+          && (this.makingOfferPeers.has(peerId) || pc.signalingState !== 'stable');
+        if (offerCollision && !this._isPolitePeer(peerId)) {
+          return;
+        }
+        if (offerCollision && pc.signalingState === 'have-local-offer') {
+          await pc.setLocalDescription({ type: 'rollback' });
+        }
         await pc.setRemoteDescription(offer);
+        if (pc.signalingState !== 'have-remote-offer') {
+          return;
+        }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         this._sendSignal(peerId, {
@@ -601,18 +631,24 @@ export class P2PNetwork {
   async handleAnswer(peerId, answer) {
     const pc = this.peerConnections.get(peerId);
     if (pc && pc.signalingState === 'have-local-offer') {
-      await pc.setRemoteDescription(answer);
+      try {
+        await pc.setRemoteDescription(answer);
 
-      if (this.pendingIceCandidates.has(peerId)) {
-        const candidates = this.pendingIceCandidates.get(peerId);
-        for (const candidate of candidates) {
-          try {
-            await pc.addIceCandidate(candidate);
-          } catch (error) {
-            console.error('Error adding ICE candidate:', error);
+        if (this.pendingIceCandidates.has(peerId)) {
+          const candidates = this.pendingIceCandidates.get(peerId);
+          for (const candidate of candidates) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (error) {
+              console.error('Error adding ICE candidate:', error);
+            }
           }
+          this.pendingIceCandidates.delete(peerId);
         }
-        this.pendingIceCandidates.delete(peerId);
+      } catch (error) {
+        if (!this._isStableStateError(error)) {
+          console.error('Error handling answer:', error);
+        }
       }
     }
   }

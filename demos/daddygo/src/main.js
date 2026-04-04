@@ -18,6 +18,13 @@ import { NodeKernel } from '@peercompute';
         let node = null;
         let stateManager = null;
         let myPeerId = null;
+        const e2eEnabled = (() => {
+            try {
+                return new URLSearchParams(window.location.search).has('e2e');
+            } catch (_) {
+                return false;
+            }
+        })();
 
         const loadRelayConfig = async () => {
             const tryFetch = async (path) => {
@@ -117,6 +124,29 @@ import { NodeKernel } from '@peercompute';
             stateManager.writeScoped(gameNamespace, `score-${myPeerId}`, payload);
         };
 
+        const exposeE2EState = () => {
+            if (!e2eEnabled) return;
+            window.__daddygoTest = {
+                get localPeerId() {
+                    return myPeerId || null;
+                },
+                get networkPeerCount() {
+                    return node?.getStatus?.().network?.peerCount || 0;
+                },
+                get globalScoreText() {
+                    return globalScoreElement?.textContent || '';
+                },
+                setScore(nextScore) {
+                    updateScore(nextScore);
+                    return {
+                        score,
+                        localHighScore,
+                        globalScoreText: globalScoreElement?.textContent || ''
+                    };
+                }
+            };
+        };
+
         async function initMultiplayer() {
             try {
                 const cfg = await loadRelayConfig();
@@ -157,6 +187,7 @@ import { NodeKernel } from '@peercompute';
 
                 publishHighScore();
                 updateGlobalHighScore();
+                exposeE2EState();
             } catch (err) {
                 console.warn('Multiplayer high score unavailable:', err);
             }

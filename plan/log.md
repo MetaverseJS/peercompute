@@ -21767,3 +21767,268 @@ def parse_args() -> argparse.Namespace:
   - the loaded asset hash
   - whether hard refresh or incognito changes the result
   - whether `?debugoutput=1` shows `Local multiaddrs` as empty or only the higher-level NetViz summary as empty
+
+## Date: 2026-04-04
+
+### Prompt
+- to be clear. every single node is showing a connection to the relay still.
+
+### Prompt Time/Date
+- 2026-04-04 00:13:04 UTC
+
+### Actions Attempted
+- Re-read the active planning/docs context and resumed the live investigation from the prior headless Chromium prod repro.
+- Audited `NetworkManager` connection accounting, presence publishing, topology tick, relay-retention, and NetViz debug surfaces to separate two issues:
+  - actual over-cap peer retention (`activeConnections` above logical `maxConnections`)
+  - sticky bootstrap relay retention where every browser kept the relay open
+- Confirmed from code that presence payloads already use `_getActiveDialedPeerCount()` (unique non-bootstrap open peers), so the over-cap values were not just duplicate relay+direct sockets to the same peer.
+- Identified a missing enforcement path: unsolicited inbound peers could survive above the logical cap because topology code only swapped for better desired peers; it never hard-pruned excess non-bootstrap peers when already over `maxConnections`.
+- Reproduced the broken runtime locally with the headless NetViz scale harness:
+  - `node peercompute/tests/runtime/netviz-scale.mjs --peers 6 --wait 30000 --maxConnections 3 --targetConnections 2 --dropRelay true --relayRetention logn --retentionMin 2`
+  - result before fixes: all 6 peers still held bootstrap relay, and average raw connections rose to `3.67`
+- Implemented three browser-side changes:
+  1. Added direct-capable peer counting (`_getDirectCapableDialedPeerIds` / `_getDirectCapableDialedPeerCount`) and used it as a fallback in `_hasHealthyGossipsubMesh()` so relay drop is not pinned open just because browser gossipsub mesh views lag behind the actual transport graph.
+  2. Added `_pruneExcessTopologyConnections()` and invoked it from `_tickTopology()` so topology ticks close excess unsolicited non-bootstrap peers back down to the logical `maxConnections` cap.
+  3. Expanded NetViz relay diagnostics via `NetworkManager.getRelayRetentionDebug()` so Chromium runs now expose `directMeshPeerCount`, `directCapablePeerCount`, retention candidate/keeper counts, self rank, and hold-window remaining time.
+- Added focused unit coverage for:
+  - the gossipsub-mesh-lag fallback (`direct-capable peers => healthy`)
+  - topology pruning of excess unsolicited peers back to logical cap
+- Re-ran the same local headless scale harness after the patch:
+  - result after fixes: `Relay-connected peers: 3`, `Avg connections: 2.67`
+- Created a temporary Playwright helper in `/tmp/prod-netviz-check.mjs` to run multiple Chromium pages against either GitHub Pages or the local Vite NetViz client, with optional `relayConfigUrl` override.
+- First attempted a direct GitHub Pages multi-page run and hit two harness issues:
+  - a malformed shell heredoc/quoting attempt (abandoned)
+  - an incorrect `page.waitForFunction` signature that silently used the default 30 s timeout; fixed by passing `undefined` as the arg slot
+- Used the repaired helper plus a temporary local Vite server to run the patched local NetViz client against the live prod relay config (`relayConfigUrl=https://secretworkshop.net/peercompute/config/relay-config.json`), which avoids a speculative GitHub Pages deploy while still exercising live production infrastructure.
+- Verified the prod-relay check after a 30 s settle:
+  - earliest peers still retained the bootstrap relay as expected for logN keepers
+  - later peers dropped bootstrap relay (`hasBootstrapRelayConnections: false`, `shouldKeepRelay: false`)
+  - retention debug now clearly showed `candidateCount`, `keepCount`, `keepPeerIds`, and `selfRank`, confirming the keep-set rather than an all-peers sticky state
+- Restored the generated local `demos/netviz/public/relay-config.json` after harness runs and cleaned up build/test noise plus the temporary Vite dev server so only source/test edits remained in the working tree.
+
+### Files Touched
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `demos/netviz/src/main.js`
+- `plan/plan.md`
+- `plan/branch/demo-fixes.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short`
+- `rg -n "_touchPeer|getNetworkStats|activeConnections|maxConnections|targetConnections|relayRetentionDebug|_getLogicalDialedPeerCount|_getConnectionPeers|_hasAvailableLogicalPeerSlot|_maybeSwapTopologyConnections|_ensureTopologyConnections|presence.*activeConnections|publish.*presence|relayRetention" peercompute/src/peercompute/networkManager/NetworkManager.js demos/netviz/src/main.js demos/netviz/src/telemetryStore.js peercompute/tests -g '!**/node_modules/**'`
+- `sed -n '1,260p' demos/netviz/src/telemetryStore.js`
+- `sed -n '1,260p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `sed -n '1200,1335p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1760,1835p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '1835,2065p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2060,2415p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2400,2795p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '2898,3225p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3600,4015p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '3230,3375p' demos/netviz/src/main.js`
+- `sed -n '650,1135p' peercompute/tests/unit/networkManager.webrtc.test.js`
+- `node peercompute/tests/runtime/netviz-scale.mjs --peers 6 --wait 30000 --maxConnections 3 --targetConnections 2 --dropRelay true --relayRetention logn --retentionMin 2`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `npm --prefix demos/netviz run dev -- --host`
+- `node /tmp/prod-netviz-check.mjs 5 35000 https://localhost:5182/ https://secretworkshop.net/peercompute/config/relay-config.json`
+- `node /tmp/prod-netviz-check.mjs 5 30000 https://localhost:5182/ https://secretworkshop.net/peercompute/config/relay-config.json`
+- `npm run build`
+- `kill 611422 611421`
+- `git restore docs/cubechat/assets/index-DYehFXy_.js docs/cubechat/index.html docs/daddygo/assets/index-D3TpHHf0.js docs/daddygo/index.html docs/hyperborea/assets/cb-BxPL7S4d.js docs/hyperborea/cb.html docs/netviz/assets/index-CMxdN3-P.js docs/netviz/index.html docs/sneakywoods/assets/index-OmzsVPWh.js docs/sneakywoods/index.html`
+- `rm -f docs/cubechat/assets/index-CtEZ1kv_.js docs/daddygo/assets/index-VftIbYuA.js docs/hyperborea/assets/cb-DA2AY05c.js docs/netviz/assets/index-CwkZS1R3.js docs/sneakywoods/assets/index-yaSy5D_y.js`
+- `git diff --check`
+
+### Test Results
+- PASS: `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - 41 tests passed, 0 failed
+  - new coverage includes:
+    - `NetworkManager treats direct-capable peers as healthy when gossipsub mesh lags`
+    - `NetworkManager prunes excess unsolicited peers back to logical maxConnections on topology tick`
+- PASS: local NetViz runtime scale repro before/after patch
+  - before patch: `Relay-connected peers: 6`, `Avg connections: 3.67`
+  - after patch: `Relay-connected peers: 3`, `Avg connections: 2.67`
+- PASS: `npm run build`
+  - full project build completed successfully; only existing chunk/asset-size warnings remained
+- PASS: local patched NetViz client against live prod relay config
+  - 5-page Chromium run using `relayConfigUrl=https://secretworkshop.net/peercompute/config/relay-config.json` converged to only the oldest keepers retaining bootstrap relay
+  - later peers reported `hasBootstrapRelayConnections: false`, `shouldKeepRelay: false`, and retention debug exposed the expected `keepCount`/`selfRank`
+
+### Failures / Open Questions
+- Initial GitHub Pages multi-page Chromium attempts were noisy because of harness issues (shell quoting and Playwright `waitForFunction` arg placement), not because of a new product failure.
+- The browser-side fix is implemented and validated locally plus against live prod infrastructure, but it is not yet deployed to GitHub Pages. If the user wants the live site updated immediately, the next step is a targeted NetViz/docs build + push.
+- Residual `relay-webrtc` / `RTCErrorEvent` churn is still open. The cap/keeper fix reduces sticky relay retention, but it does not yet explain every remaining relay-scoped WebRTC timeout.
+
+## Date: 2026-04-04
+
+### Prompt
+- great. so why am I still seeing a light blue line connecting every node to the relay still?
+- does that light blue line indicate an active tcp connection to that relay?
+- change netviz so it only draws that line when theres an active tcp connection from that node to that relay.
+
+### Prompt Time/Date
+- 2026-04-04 00:36:00 UTC
+
+### Actions Attempted
+- Re-read the existing 2026-03-12 log entry about pale blue relay lines and re-confirmed that NetViz uses `COLORS.pubsub = 0xcaf6ff` for a separate pubsub overlay rather than transport edges.
+- Audited the current overlay path in `demos/netviz/src/main.js` and `demos/netviz/src/visualizer.js`:
+  - `buildRelayState()` mapped peers to a relay whenever telemetry listed that relay as any active neighbor.
+  - `buildPubsubEdges()` then drew the pale-blue line for every mapped peer, regardless of whether the relay association represented a real live bootstrap websocket/TCP socket versus a looser relay/pubsub association.
+- Collected one live Chromium sample against the local NetViz client + production relay config to inspect the exact remote telemetry payload shape for real bootstrap relay sockets. The relay neighbor entries that represented genuine live relay sockets had:
+  - `connectedAt`
+  - `via: "direct"`
+  - `signalingPath: "direct"`
+  - `mediaPath: "direct"`
+- Extracted the overlay logic into a new pure helper module `demos/netviz/src/relayOverlay.js` and changed NetViz to require that stricter evidence before mapping a peer to a relay for the light-blue line:
+  - relay neighbor must be one of the known relay peer IDs
+  - must have finite `connectedAt`
+  - must indicate direct transport/signaling (`via: "direct"` or `signalingPath: "direct"`)
+- Updated `demos/netviz/src/main.js` to import `buildRelayState()` and `buildPubsubEdges()` from the helper instead of the previous in-file generic mapping logic.
+- Added focused tests in `demos/netviz/tests/relayOverlay.test.js` covering:
+  - `isActiveRelayTransportNeighbor` acceptance/rejection cases
+  - `buildRelayState` only mapping peers with active direct relay transport evidence
+  - `buildPubsubEdges` only drawing relay lines for mapped peers
+- Ran one Chromium sanity check against the local NetViz client pointed at the live production relay config after the patch. That run still showed all five sampled peers publishing an active direct relay neighbor at the 30 s settle point, which means that if the line persists after deploy in a similar session it will represent actual live bootstrap relay sockets under the new rule, not the old looser relay-association artifact.
+
+### Files Touched
+- `demos/netviz/src/relayOverlay.js`
+- `demos/netviz/src/main.js`
+- `demos/netviz/tests/relayOverlay.test.js`
+- `plan/branch/demo-fixes.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "COLORS\\.pubsub|pubsub|relayRetentionDebug|build.*edges|transport" demos/netviz/src -g '!**/node_modules/**'`
+- `sed -n '19730,19748p' plan/log.md`
+- `sed -n '1,260p' demos/netviz/src/visualizer.js`
+- `sed -n '955,1020p' demos/netviz/src/visualizer.js`
+- `sed -n '2140,2525p' demos/netviz/src/main.js`
+- `sed -n '2680,2805p' demos/netviz/src/main.js`
+- `sed -n '2840,2915p' demos/netviz/src/main.js`
+- `sed -n '1934,1965p' demos/netviz/src/main.js`
+- `sed -n '1900,1925p' demos/netviz/src/main.js`
+- `rg -n "netVizDebugTelemetry|getTelemetrySnapshot\\(|peer\\.peers|peers:" peercompute/src/peercompute/nodeKernel/NodeKernel.js peercompute/src/peercompute/networkManager/NetworkManager.js demos/netviz/src/main.js`
+- `sed -n '1330,1415p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '520,980p' peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `npm --prefix demos/netviz run dev -- --host`
+- `node --input-type=module -e "... Chromium sample to inspect relay neighbor shape ..."`
+- `node --test demos/netviz/tests/relayOverlay.test.js`
+- `npm --prefix demos/netviz run build`
+- `node --input-type=module -e "... Chromium sanity check counting peers with active direct relay neighbor against prod relay config ..."`
+
+### Test Results
+- PASS: `node --test demos/netviz/tests/relayOverlay.test.js`
+  - 3 tests passed, 0 failed
+- PASS: `npm --prefix demos/netviz run build`
+  - NetViz production bundle built successfully; only the existing large-chunk warning remained
+- PASS: Chromium relay-neighbor payload inspection
+  - active bootstrap relay sockets were confirmed to appear in telemetry with `connectedAt` + `via: "direct"` + direct signaling/media paths
+- PASS: Chromium sanity check against local NetViz client + live prod relay config
+  - the stricter rule worked as intended, but the sampled room still reported `directRelayPeerCount: 5`, meaning all five sampled peers were publishing active direct relay neighbors at that settle point
+
+### Failures / Open Questions
+- This prompt intentionally changed the visualization semantics only. It does not force peers to drop relay transport; it only stops NetViz from drawing the pale-blue line unless it has direct relay-socket evidence.
+- The change is not deployed to GitHub Pages yet. Until that happens, the live site will still be using the older looser relay-line logic.
+
+## Date: 2026-04-04
+
+### Prompt
+- deploy it and then create or run tests for all multiplayer demos to ensure functionality and stability
+
+### Prompt Time/Date
+- 2026-04-04 01:01:30 UTC
+
+### Actions Attempted
+- Re-read `plan/plan.md`, `plan/log.md`, the root `package.json`, and the existing runtime harnesses to determine what "all multiplayer demos" currently meant in-repo.
+- Confirmed the documented multiplayer surface is `cubechat`, `hyperborea`, `sneakywoods`, and `daddygo`, with NetViz treated as the networked visualizer that also needed deploy validation.
+- Extended `demos/tests/runtime-p2p.mjs` so the multiplayer harness:
+  - includes NetViz
+  - supports `RUNTIME_P2P_DEMOS=<csv>` to run subsets while debugging
+  - clears built `relay-config-source.json` files before injecting local relay configs, so the docs harness no longer accidentally boots against the live production relay
+  - validates NetViz by attaching to a live CubeChat session and waiting for discovered sessions, connected status, relay connections, and remote telemetry
+  - validates DaddyGo through an explicit `?e2e=1` state-sync hook rather than fragile console-message matching
+- Added `?e2e=1` test hooks in `demos/daddygo/src/main.js` so headless Chromium can assert local peer identity, network peer count, global-score text, and force a local score update that should replicate to a second tab.
+- Fixed two CubeChat races uncovered by the new runtime pass:
+  - `demos/cubechat/src/p2p/network.js`: added deterministic offer-collision handling around renegotiation (`makingOffer` tracking, polite-peer rollback/ignore, answer-state guards) so screen-share renegotiation no longer throws WebRTC `stable`-state errors under headless concurrency
+  - `demos/cubechat/src/renderer/scene.js`: queued early-arriving remote video streams until the remote player cube exists, instead of logging hard errors when media arrives before player-state creation
+- Re-ran focused unit tests and rebuilt the docs multiple times as the runtime harness surfaced real issues.
+- Re-ran the multiplayer runtime suite in slices:
+  - full local suite initially exposed stale built relay source files, Hyperborea local-relay listen failures, DaddyGo observability gaps, and CubeChat negotiation/order races
+  - after the harness and demo fixes, the filtered local suite (`cubechat,sneakywoods,daddygo,netviz`) passed cleanly against the local Go relay
+- Rebuilt the full docs bundle after local runtime validation so the deploy artifact no longer contained the runtime harness's temporary local relay config mutations.
+
+### Files Touched
+- `README.md`
+- `demos/cubechat/src/p2p/network.js`
+- `demos/cubechat/src/renderer/scene.js`
+- `demos/daddygo/src/main.js`
+- `demos/netviz/src/main.js`
+- `demos/netviz/src/relayOverlay.js`
+- `demos/netviz/tests/relayOverlay.test.js`
+- `demos/tests/runtime-p2p.mjs`
+- `docs/cubechat/**`
+- `docs/daddygo/**`
+- `docs/hyperborea/**`
+- `docs/netviz/**`
+- `docs/sneakywoods/**`
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/tests/unit/networkManager.webrtc.test.js`
+- `plan/branch/demo-fixes.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,260p' package.json`
+- `sed -n '1,260p' demos/tests/runtime-smoke.mjs`
+- `sed -n '1,760p' demos/tests/runtime-p2p.mjs`
+- `sed -n '1,220p' demos/README.md`
+- `sed -n '1,220p' demos/netviz/README.md`
+- `sed -n '1,220p' demos/cubechat/README.md`
+- `sed -n '1,220p' demos/hyperborea/README.md`
+- `sed -n '1,220p' demos/sneakywoods/README.md`
+- `sed -n '1,220p' demos/daddygo/README.md`
+- `sed -n '1,220p' demos/netviz/src/relayConfig.js`
+- `sed -n '1,240p' scripts/run-relay.sh`
+- `sed -n '1,260p' scripts/build-all.sh`
+- `sed -n '1,260p' scripts/write-prod-relay-config.mjs`
+- `node --test demos/netviz/tests/relayOverlay.test.js`
+- `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+- `npm run build`
+- `npm run test:runtime`
+- `npm run test:runtime:p2p`
+- `node --input-type=module <<'NODE' ... cubechat built-docs Playwright repro ... NODE`
+- `npm run build:cubechat`
+- `npm run build:daddygo`
+- `RUNTIME_P2P_DEMOS=cubechat,sneakywoods,daddygo,netviz npm run test:runtime:p2p`
+- `git status --short`
+- `git diff --stat`
+- `git diff --check`
+- `date -u +"%Y-%m-%d %H:%M:%S UTC"`
+
+### Test Results
+- PASS: `node --test demos/netviz/tests/relayOverlay.test.js`
+  - 3 tests passed, 0 failed
+- PASS: `node --test peercompute/tests/unit/networkManager.webrtc.test.js`
+  - 41 tests passed, 0 failed
+- PASS: `RUNTIME_P2P_DEMOS=cubechat,sneakywoods,daddygo,netviz npm run test:runtime:p2p`
+  - local Go-relay runtime completed successfully for the filtered multiplayer set
+  - CubeChat media + screen-share flow, SneakyWoods presence, DaddyGo score replication, and NetViz attach all passed under headless Chromium
+- PASS: final `npm run build`
+  - restored production `docs/` output after local runtime tests had intentionally rewritten/deleted local relay-config artifacts
+- FAIL: `npm run test:runtime`
+  - generic docs smoke timed out in PlanetGen at `page.waitForFunction(...)` before the multiplayer harness stage, so it did not serve as a useful multiplayer gate for this prompt
+- FAIL: unfiltered `npm run test:runtime:p2p`
+  - initial failures were useful and directly drove fixes:
+    - stale `relay-config-source.json` made the local harness boot demos against the live prod relay instead of the local relay
+    - CubeChat hit WebRTC glare/ordering races during renegotiation
+    - DaddyGo lacked deterministic e2e observability for cross-tab state assertions
+    - Hyperborea timed out while listening on its explicit relay-circuit address under the local relay harness
+
+### Failures / Open Questions
+- Hyperborea remains the one multiplayer outlier under the local relay harness. After the relay-source cleanup and the other demo fixes, it still fails with `UnsupportedListenAddressesError` / `signal timed out` while listening on the explicit `/p2p-circuit` bootstrap relay address. This needs a separate Chromium pass against the deployed production environment before calling the full multiplayer matrix green.
+- `npm run test:runtime` is still not a clean "multiplayer demos only" gate because the generic docs-smoke phase can fail earlier on non-multiplayer demos (PlanetGen in this run).
+- Deploy/push plus post-deploy Chromium validation were still pending at the end of this log entry and should be recorded in the next entry once completed.

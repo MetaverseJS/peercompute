@@ -1927,6 +1927,23 @@ export class NetworkManager {
     return this._getActiveDialedPeerIds().size;
   }
 
+  _getDirectCapableDialedPeerIds() {
+    const directPeers = new Set();
+    const connectionList = this._getConnections();
+    for (const conn of connectionList) {
+      if (!isConnectionOpen(conn)) continue;
+      const peerId = conn?.remotePeer?.toString?.();
+      if (!peerId || this.bootstrapPeerIds.has(peerId)) continue;
+      if (!this._isDirectCapableConnection(conn)) continue;
+      directPeers.add(peerId);
+    }
+    return directPeers;
+  }
+
+  _getDirectCapableDialedPeerCount() {
+    return this._getDirectCapableDialedPeerIds().size;
+  }
+
   _getLogicalReservationExpiry(entry) {
     if (!entry || typeof entry !== 'object') return null;
     if (Number.isFinite(entry.expiresAt)) return entry.expiresAt;
@@ -2063,11 +2080,100 @@ export class NetworkManager {
    * configured minimum.  When the mesh is not healthy the relay should
    * be kept as a message-forwarding bridge.
    */
-  _hasHealthyGossipsubMesh() {
-    const minMeshPeers = Number.isFinite(this.config.webrtc?.minDirectMeshPeers)
+  _getMinDirectMeshPeers() {
+    return Number.isFinite(this.config.webrtc?.minDirectMeshPeers)
       ? Math.max(1, this.config.webrtc.minDirectMeshPeers)
       : Math.min(this.config.targetConnections || 3, 3);
-    return this._getDirectGossipsubMeshPeerCount() >= minMeshPeers;
+  }
+
+  _hasHealthyGossipsubMesh() {
+    const minMeshPeers = this._getMinDirectMeshPeers();
+    if (this._getDirectGossipsubMeshPeerCount() >= minMeshPeers) {
+      return true;
+    }
+    // In browsers the gossipsub mesh can stay sparse even after the
+    // transport graph has already converged. Fall back to active
+    // direct-capable peers so relay drop does not get pinned open for
+    // every node by a lagging mesh overlay view.
+    return this._getDirectCapableDialedPeerCount() >= minMeshPeers;
+  }
+
+  getRelayRetentionDebug() {
+    const now = Date.now();
+    const minDirectMeshPeers = this._getMinDirectMeshPeers();
+    const directMeshPeerCount = this._getDirectGossipsubMeshPeerCount();
+    const directCapablePeerCount = this._getDirectCapableDialedPeerCount();
+    const retention = this._getRelayRetentionConfig();
+    const candidates = this._getRetentionCandidates();
+    const keepCount = retention
+      ? this._getRelayRetentionKeepCount(candidates.length, retention)
+      : 0;
+    const orderedCandidates = candidates
+      .slice()
+      .sort((a, b) => {
+        const aJoined = Number.isFinite(a.joinedAt) ? a.joinedAt : Infinity;
+        const bJoined = Number.isFinite(b.joinedAt) ? b.joinedAt : Infinity;
+        if (aJoined !== bJoined) return aJoined - bJoined;
+        return String(a.peerId).localeCompare(String(b.peerId));
+      });
+    const keepPeerIds = orderedCandidates
+      .slice(0, keepCount)
+      .map((entry) => entry.peerId);
+    const targetConnections = Number.isFinite(this.config.targetConnections)
+      ? this.config.targetConnections
+      : null;
+    const scopedDialablePeers = this._getScopedPeers()
+      .filter((peer) => peer?.peerId && peer.peerId !== this.peerId && !this.bootstrapPeerIds.has(peer.peerId))
+      .length;
+    const observedDialablePeers = Math.max(
+      this._getActiveDialedPeerCount(),
+      this._countDialedPeers()
+    );
+    const knownDialablePeers = Math.max(scopedDialablePeers, observedDialablePeers);
+    const desiredConnections = Number.isFinite(targetConnections)
+      ? (knownDialablePeers > 0 ? Math.min(targetConnections, knownDialablePeers) : targetConnections)
+      : null;
+    const relayBootstrapMinHoldMs = Number.isFinite(this.config.webrtc?.relayBootstrapMinHoldMs)
+      ? Math.max(0, this.config.webrtc.relayBootstrapMinHoldMs)
+      : DEFAULT_RELAY_BOOTSTRAP_MIN_HOLD_MS;
+    const relayBootstrapHeldForMs = Number.isFinite(this.relayBootstrapConnectedAt)
+      ? Math.max(0, now - this.relayBootstrapConnectedAt)
+      : null;
+    const relayBootstrapHoldRemainingMs = (
+      Number.isFinite(relayBootstrapHeldForMs) && relayBootstrapMinHoldMs > 0
+    )
+      ? Math.max(0, relayBootstrapMinHoldMs - relayBootstrapHeldForMs)
+      : 0;
+    const relayPostDirectHoldMs = Number.isFinite(this.config.webrtc?.relayPostDirectHoldMs)
+      ? Math.max(0, this.config.webrtc.relayPostDirectHoldMs)
+      : DEFAULT_RELAY_POST_DIRECT_HOLD_MS;
+    const postDirectHeldForMs = Number.isFinite(this.firstDirectUpgradeAt)
+      ? Math.max(0, now - this.firstDirectUpgradeAt)
+      : null;
+    const postDirectHoldRemainingMs = (
+      Number.isFinite(postDirectHeldForMs) && relayPostDirectHoldMs > 0
+    )
+      ? Math.max(0, relayPostDirectHoldMs - postDirectHeldForMs)
+      : 0;
+    return {
+      dropRelayBootstrapOnDirect: this.config.webrtc?.dropRelayBootstrapOnDirect,
+      relayRetention: retention,
+      minDirectMeshPeers,
+      directMeshPeerCount,
+      directCapablePeerCount,
+      activeDialedPeerCount: this._getActiveDialedPeerCount(),
+      desiredConnections,
+      candidateCount: candidates.length,
+      keepCount,
+      keepPeerIds,
+      selfRank: orderedCandidates.findIndex((entry) => entry.peerId === this.peerId),
+      relayBootstrapHoldRemainingMs,
+      postDirectHoldRemainingMs,
+      hasBootstrapRelayConnections: this._hasBootstrapRelayConnections(),
+      hasDirectPeerConnections: this._hasDirectPeerConnections(),
+      healthyMesh: directMeshPeerCount >= minDirectMeshPeers || directCapablePeerCount >= minDirectMeshPeers,
+      shouldKeepRelay: this._shouldKeepRelayBootstrapConnection()
+    };
   }
 
   _hasBootstrapRelayConnections() {
@@ -2934,8 +3040,78 @@ export class NetworkManager {
       connections,
       now
     });
+    this._pruneExcessTopologyConnections(desiredPeers, peers, connections);
     this._maybeSwapTopologyConnections(desiredPeers, peers, connections);
     this._ensureTopologyConnections(desiredPeers);
+  }
+
+  _pruneExcessTopologyConnections(desiredPeers, peers, connections) {
+    if (!this.topologyController) return;
+    if (this.config.topology !== 'distributed') return;
+    const maxConnections = Number.isFinite(this.config.maxConnections)
+      ? Math.max(1, this.config.maxConnections)
+      : 0;
+    if (maxConnections <= 0) return;
+
+    const connected = (Array.isArray(connections) ? connections : [])
+      .filter((peer) => peer?.peerId && !this.bootstrapPeerIds.has(peer.peerId));
+    const overflow = connected.length - maxConnections;
+    if (overflow <= 0) return;
+
+    const desiredSet = desiredPeers instanceof Set ? desiredPeers : new Set();
+    const peerById = new Map();
+    peers.forEach((peer) => {
+      if (peer?.peerId) peerById.set(peer.peerId, peer);
+    });
+    connected.forEach((peer) => {
+      if (peer?.peerId && !peerById.has(peer.peerId)) {
+        peerById.set(peer.peerId, peer);
+      }
+    });
+
+    const protectedIds = new Set(this.bootstrapPeerIds);
+    if (this.topologyController.longRangePeers) {
+      for (const peerId of this.topologyController.longRangePeers) {
+        protectedIds.add(peerId);
+      }
+    }
+
+    const dropCandidates = connected
+      .filter((peer) => !desiredSet.has(peer.peerId))
+      .filter((peer) => !protectedIds.has(peer.peerId))
+      .map((peer) => {
+        const peerMeta = peerById.get(peer.peerId) || peer;
+        const distance = this.topologyController.getPeerDistance(peerMeta);
+        const activeConnections = Number.isFinite(peerMeta?.activeConnections)
+          ? peerMeta.activeConnections
+          : 0;
+        const joinedAt = Number(peerMeta?.joinedAt ?? peerMeta?.connectedAt ?? 0);
+        return {
+          peerId: peer.peerId,
+          via: peer?.via || peerMeta?.via || null,
+          distance: Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY,
+          activeConnections,
+          joinedAt: Number.isFinite(joinedAt) ? joinedAt : 0
+        };
+      });
+
+    if (dropCandidates.length === 0) return;
+
+    dropCandidates.sort((a, b) => {
+      const aRelay = isRelayPeerVia(a.via);
+      const bRelay = isRelayPeerVia(b.via);
+      if (aRelay !== bRelay) return aRelay ? -1 : 1;
+      if (a.distance !== b.distance) return b.distance - a.distance;
+      if (a.activeConnections !== b.activeConnections) return b.activeConnections - a.activeConnections;
+      if (a.joinedAt !== b.joinedAt) return b.joinedAt - a.joinedAt;
+      return String(a.peerId).localeCompare(String(b.peerId));
+    });
+
+    dropCandidates
+      .slice(0, overflow)
+      .forEach((candidate) => {
+        this._closeConnectionsToPeer(candidate.peerId);
+      });
   }
 
   _maybeSwapTopologyConnections(desiredPeers, peers, connections) {

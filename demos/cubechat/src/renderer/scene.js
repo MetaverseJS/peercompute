@@ -31,6 +31,7 @@ export class TronScene {
     this.camera = null;
     this.renderer = null;
     this.players = new Map();
+    this.pendingVideoStreams = new Map();
     this.localPlayerId = null;
     this.gridSize = 1000;
     this.worldThemeId = DEFAULT_WORLD_THEME;
@@ -2823,6 +2824,11 @@ export class TronScene {
     this.scene.add(cube);
     this.players.set(id, cube);
     this._applyPlayerGroundContour(cube, cube.userData.lastNetworkY);
+    if (this.pendingVideoStreams.has(id)) {
+      const pendingStream = this.pendingVideoStreams.get(id);
+      this.pendingVideoStreams.delete(id);
+      this.setPlayerVideoStream(id, pendingStream);
+    }
 
     return cube;
   }
@@ -2830,7 +2836,9 @@ export class TronScene {
   setPlayerVideoStream(id, stream) {
     const player = this.players.get(id);
     if (!player) {
-      console.error('Player not found:', id);
+      if (stream) {
+        this.pendingVideoStreams.set(id, stream);
+      }
       return;
     }
     if (!stream) {
