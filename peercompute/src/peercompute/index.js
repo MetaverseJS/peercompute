@@ -57,6 +57,19 @@ export {
   REMOTE_RESULT_QUORUM_POLICY_SCHEMA,
   REMOTE_RESULT_QUORUM_REPORT_SCHEMA
 } from './computeManager/RemoteResultQuorumValidator.js';
+export {
+  CHILD_WORKER_LEASE_SCHEMA,
+  COMPUTE_MANAGER_SERVICE_ADAPTER_SCHEMA,
+  COMPUTE_SERVICE_MANIFEST_SCHEMA,
+  COMPUTE_SERVICE_REGISTRY_SCHEMA,
+  ComputeManagerServiceAdapter,
+  ComputeServiceRegistry,
+  ChildWorkerLeaseManager,
+  WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
+  WorkerSupervisor,
+  createComputeManagerServiceFactory,
+  normalizeComputeServiceManifest
+} from './serviceOrchestration/index.js';
 export { GPUHubManager } from './gpu/GPUHubManager.js';
 
 // Subsystems

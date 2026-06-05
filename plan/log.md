@@ -47337,6 +47337,110 @@ User asked whether Infinite Context Coder is being used.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
 
+## 2026-06-05 15:32:31 AKDT - PeerCompute ULG service orchestration slice
+
+### Prompt
+- User prompt: "big dog, you are the peercompute implementation agent for the ULG effort. Work in /home/cos/projects/peercompute on the current branch only; do not switch branches. Read /home/cos/projects/peercompute/AGENTS.md, /home/cos/projects/ulg/agents.md, /home/cos/projects/AGENTS.md, and /home/cos/projects/ulg/plan/plan.md before editing. Do not use or log any SSH password. Scope: implement the first reusable PeerCompute service-orchestration slice inspired by the ULG demo contract, preferably in vanilla JS under peercompute/src/peercompute or a nearby existing pattern. Target modules: ComputeServiceRegistry, ChildWorkerLeaseManager, WorkerSupervisor or an adapter layer that can be tested without a browser. Reuse existing ComputeManager/SolverRegistry/NodeKernel patterns where reasonable, but keep the patch focused. Add unit tests. Run relevant node tests. Commit locally when you reach a passing, coherent checkpoint if the repo policy allows; otherwise leave changes staged/unstaged and report exact files. Final report must list files changed, tests run, pass/fail, and any follow-up needed."
+- Prompt time/date recorded from the local machine: `2026-06-05 15:32:31 AKDT`.
+
+### Actions
+- Read the required cross-repo instructions before editing: `/home/cos/projects/peercompute/AGENTS.md`, `/home/cos/projects/ulg/agents.md`, `/home/cos/projects/AGENTS.md`, and `/home/cos/projects/ulg/plan/plan.md`.
+- Also reviewed required PeerCompute planning files `plan/plan.md`, `plan/log.md`, and `plan/tests.md`.
+- Confirmed the current PeerCompute branch was `multi-scale-physics-sim` and did not switch branches.
+- Inspected the ULG demo runtime modules for registry, lease, and supervisor contract shape.
+- Added vanilla ES module service-orchestration primitives under `peercompute/src/peercompute/serviceOrchestration/`.
+- Exported the primitives from the main PeerCompute source entrypoint.
+- Added headless Node unit coverage for registry resolution, child-worker leases, worker-style supervision, cancellation-tree lease revocation, and ComputeManager-backed service execution.
+- Added a same-origin lease regression for relative browser-style module URLs such as `/service.js` and foreign absolute child modules.
+- Updated README, roadmap, and test-plan docs for the new reusable slice.
+- No SSH password was used or logged.
+
+### Files Touched
+- `README.md`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js`
+- `peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js`
+- `peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `peercompute/src/peercompute/serviceOrchestration/ComputeManagerServiceAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "peercompute|ULG|Multiscale|NodeKernel|ComputeManager|SolverRegistry" /home/cos/.codex/memories/MEMORY.md`
+- `sed -n '1,220p' /home/cos/projects/peercompute/AGENTS.md`
+- `sed -n '1,220p' /home/cos/projects/ulg/agents.md`
+- `sed -n '1,220p' /home/cos/projects/AGENTS.md`
+- `sed -n '1,260p' /home/cos/projects/ulg/plan/plan.md`
+- `sed -n '1,260p' /home/cos/projects/peercompute/plan/plan.md`
+- `sed -n '1,260p' /home/cos/projects/peercompute/plan/log.md`
+- `sed -n '1,220p' /home/cos/.codex/memories/rollout_summaries/2026-05-29T17-42-13-NQ9N-multiscale_live_remote_solver_placement_smoke.md`
+- `git status --short --branch`
+- `find /home/cos/projects/peercompute/plan -maxdepth 2 -type f | sort`
+- `sed -n '1,220p' /home/cos/projects/peercompute/plan/tests.md`
+- `rg -n "ComputeServiceRegistry|ChildWorkerLeaseManager|WorkerSupervisor|service registry|lease|supervisor|ULG|runtime-manifest|service" /home/cos/projects/ulg /home/cos/projects/peercompute/src/peercompute /home/cos/projects/peercompute/demos/multiscale/src -g '*.js' -g '*.mjs' -g '*.md'`
+- `find /home/cos/projects/peercompute/peercompute/src/peercompute -maxdepth 4 -type f | sort`
+- `find /home/cos/projects/peercompute/peercompute/tests /home/cos/projects/peercompute/tests /home/cos/projects/peercompute/demos/tests -maxdepth 3 -type f 2>/dev/null | sort`
+- `find /home/cos/projects/ulg/src /home/cos/projects/ulg/tests -maxdepth 4 -type f 2>/dev/null | sort`
+- `sed -n '1,260p' /home/cos/projects/ulg/src/runtime/ComputeServiceRegistry.js`
+- `sed -n '1,260p' /home/cos/projects/ulg/src/runtime/ChildWorkerLeaseManager.js`
+- `sed -n '1,340p' /home/cos/projects/ulg/src/runtime/WorkerSupervisor.js`
+- `sed -n '1,220p' /home/cos/projects/ulg/tests/orchestration.test.mjs`
+- `node -v && npm -v`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '260,620p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '1,280p' peercompute/src/peercompute/computeManager/SolverRegistry.js`
+- `sed -n '1,220p' peercompute/src/peercompute/index.js`
+- `cat peercompute/package.json`
+- `sed -n '1,260p' peercompute/tests/unit/solverRegistry.test.js`
+- `rg -n "submitTask|submitSolverTask|initialize\\(|terminate|shutdown|getCapabilities|getStats|registerSolver" peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '620,1120p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '1120,1740p' peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `sed -n '1,220p' peercompute/tests/unit/computeManager.worker.test.js`
+- `sed -n '1,360p' /home/cos/projects/ulg/src/runtime/demoRuntime.js`
+- `sed -n '1,280p' /home/cos/projects/ulg/src/services/dummyService.worker.js`
+- `sed -n '1,220p' /home/cos/projects/ulg/src/runtime/GpuBroker.js`
+- `sed -n '1,220p' /home/cos/projects/ulg/src/runtime/ArtifactCache.js`
+- `sed -n '1,260p' peercompute/src/peercompute/computeManager/taskRuntime.js`
+- `sed -n '1,180p' peercompute/tests/unit/computeManager.commitDelta.test.js`
+- `sed -n '1,220p' peercompute/tests/unit/placementAdmissionPolicy.test.js`
+- `mkdir -p /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration`
+- `mv /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js`
+- `mv /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js`
+- `mv /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `mv /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration/ComputeManagerServiceAdapter.js /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration/ComputeManagerServiceAdapter.js`
+- `mv /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration/index.js /home/cos/projects/peercompute/peercompute/src/peercompute/serviceOrchestration/index.js`
+- `find /home/cos/projects/ulg/peercompute -maxdepth 6 -print 2>/dev/null`
+- `rmdir -p /home/cos/projects/ulg/peercompute/src/peercompute/serviceOrchestration`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ComputeManagerServiceAdapter.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/solverRegistry.test.js`
+- `npm --prefix peercompute run test:unit`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `tail -n 80 plan/plan.md`
+- `tail -n 120 plan/tests.md`
+- `tail -n 80 plan/log.md`
+- `sed -n '1,220p' README.md`
+- `rg -n "Completed:|Project Goals|Distributed compute runtimes|ComputeManager|service" plan/plan.md README.md plan/tests.md`
+
+### Test Results
+- PASS: `node --check` completed for all new service-orchestration modules, `serviceOrchestration.test.js`, and `peercompute/src/peercompute/index.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `5/5` tests passing.
+- PASS: integrated targeted gate completed with `28/28` tests passing across service orchestration, ComputeManager commitDelta, ComputeManager worker/bootstrap/stats, and SolverRegistry tests.
+- PASS: full `npm --prefix peercompute run test:unit` completed with `121/121` tests passing.
+
+### Failures / Open Questions
+- A path correction was needed after the first `apply_patch` additions landed under the ULG checkout's temporary `peercompute/` path because the initial tool cwd was `/home/cos/projects/ulg`; those files were moved into the real PeerCompute package, and the empty temporary directory was removed. Existing unrelated ULG worktree changes were not touched.
+- `rmdir -p` returned nonzero only because it stopped at the non-empty `/home/cos/projects/ulg` repo root after removing the empty temporary path.
+- No browser, relay, or live distributed smoke was run for this focused headless orchestration slice.
+
 ## 2026-06-05 13:57:21 AKDT - Reduced qmat product topology mutation checkpoint
 
 ### Prompt

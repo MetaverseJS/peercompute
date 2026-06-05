@@ -181,6 +181,12 @@
 - Purpose: guard core `NetworkManager`, scheduler, topology, and NodeKernel policy behavior.
 - Gate: must pass before merging networking policy changes.
 
+### Service orchestration gate
+- Command: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- Integrated command: `node --test peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/solverRegistry.test.js`
+- Purpose: verify `ComputeServiceRegistry` manifest normalization and task-kind resolution, `ChildWorkerLeaseManager` approved-module/quota/expiry/root-revocation behavior, `WorkerSupervisor` worker-style service-host task and lease flow, cancellation-tree lease revocation, public exports, and the headless `ComputeManagerServiceAdapter` path for service execution without a browser worker.
+- Gate: run when changing `peercompute/src/peercompute/serviceOrchestration/**`, service manifest contracts, ULG service-host adapters, or ComputeManager-backed service execution.
+
 ### Local relay + coturn dev stack gate
 - Launch command: `npm run dev:vpn-coturn`, or `RELAY_PUBLIC_HOST=<vpn-ip> RELAY_TURN_HOST=<vpn-ip> RELAY_TURN_USERNAME=peer RELAY_TURN_CREDENTIAL=compute npm run dev:vpn-coturn` when overriding detection.
 - Health commands: `curl -k -I --max-time 10 https://<vpn-ip>:4173/?dev=1`, `curl -k -I --max-time 10 https://<vpn-ip>:5185/`, `curl -k -I --max-time 10 https://<vpn-ip>:5182/`, and `timeout 15s turnutils_uclient -u peer -w compute -p 3478 -n 1 -m 1 -y <vpn-ip>`.
