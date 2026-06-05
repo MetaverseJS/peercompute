@@ -35,10 +35,12 @@ test('backend launcher and systemd wiring include relay + turn stack', () => {
 
   const rootPackage = read('package.json');
   assert.ok(rootPackage.includes('"backend"'), 'package.json missing backend script');
+  assert.ok(rootPackage.includes('"dev:vpn-coturn"'), 'package.json missing local coturn dev launcher script');
 
   const relaySystemd = read('scripts/install-relay-systemd.sh');
   assert.ok(relaySystemd.includes('scripts/pcserver.sh'), 'relay systemd installer does not launch pcserver.sh');
-  assert.ok(relaySystemd.includes('PCSERVER_ENABLE_TURN=1'), 'relay systemd installer does not enable TURN service');
+  assert.ok(relaySystemd.includes('enable_turn="${PCSERVER_ENABLE_TURN:-1}"'), 'relay systemd installer does not default TURN service on');
+  assert.ok(relaySystemd.includes('Environment=PCSERVER_ENABLE_TURN=$enable_turn'), 'relay systemd installer does not write TURN enable env');
 });
 
 test('docs index includes all demos and screenshots', () => {
@@ -49,7 +51,9 @@ test('docs index includes all demos and screenshots', () => {
     './sneakywoods/',
     './daddygo/',
     './fano-reactor/',
+    './schrodinger/',
     './planetgen/',
+    './multiscale/',
     './universes/',
     './webgpuphys/'
   ];
@@ -61,12 +65,54 @@ test('docs index includes all demos and screenshots', () => {
     './assets/cubechat.png',
     './assets/sneakywoods.png',
     './assets/fano-reactor.svg',
+    './assets/schrodinger.svg',
+    './assets/multiscale.svg',
     './assets/planetgen.png',
     './assets/webgpuphys.png'
   ];
   requiredImages.forEach((src) => {
     assert.ok(html.includes(src), `docs index missing image: ${src}`);
   });
+});
+
+test('docs overview keeps expected tile order', () => {
+  const html = read('docs/index.html');
+  const names = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((match) => match[1]);
+  const expected = [
+    'PeerCompute (GitHub)',
+    'CubeChat',
+    'Universes',
+    'Multiscale Ladder',
+    'PlanetGen',
+    'NetViz',
+    'Fano Reactor',
+    'Schrodinger',
+    'SneakyWoods',
+    'Daddy Go!',
+    'Dynamics (WebGpuPhys)',
+    'MPM Visual (WebGpuPhys)',
+    'PPF Contact Solver (WebGpuPhys)',
+    'Hyperborea'
+  ];
+  assert.deepEqual(names.slice(0, expected.length), expected, 'docs overview tile order mismatch');
+});
+
+test('multiscale release wiring uses fixed port and docs output', () => {
+  const rootPackage = JSON.parse(read('package.json'));
+  const viteConfig = read('demos/multiscale/vite.config.js');
+  const devAll = read('scripts/dev-all.sh');
+  const devLocalRelay = read('scripts/dev-local-relay.sh');
+
+  assert.ok(rootPackage.workspaces.includes('demos/multiscale'), 'package workspaces missing multiscale');
+  assert.equal(rootPackage.scripts['dev:multiscale'], 'npm --prefix demos/multiscale run dev -- --host');
+  assert.equal(rootPackage.scripts['build:multiscale'], 'npm --prefix demos/multiscale run build');
+  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:multiscale'), 'build:demos missing multiscale');
+  assert.match(viteConfig, /port:\s*5185/, 'multiscale Vite port changed from 5185');
+  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'multiscale')"), 'multiscale build output changed from docs/multiscale');
+  assert.ok(devAll.includes('demos/multiscale/public'), 'dev-all missing multiscale public relay config dir');
+  assert.ok(devAll.includes('docs/multiscale'), 'dev-all missing docs/multiscale relay config dir');
+  assert.ok(devLocalRelay.includes('VITE_MULTISCALE_URL="${demo_base}:5185/"'), 'dev-local-relay missing multiscale overview URL');
+  assert.match(devLocalRelay, /demos\/multiscale\\?" run dev/, 'dev-local-relay missing multiscale dev command');
 });
 
 test('hyperborea has settings + room UI and room directory wiring', () => {
@@ -126,5 +172,7 @@ test('root README includes relay config instructions', () => {
   assert.ok(readme.includes('config/relay.json'), 'README missing relay config section');
   assert.ok(readme.includes('npm run dev'), 'README missing npm run dev instruction');
   assert.ok(readme.includes('Fano Reactor'), 'README missing Fano Reactor mention');
+  assert.ok(readme.includes('Schrodinger Materials Console'), 'README missing Schrodinger demo mention');
+  assert.ok(readme.includes('Multiscale Ladder'), 'README missing Multiscale Ladder mention');
   assert.ok(readme.includes('scripts/pcserver.sh'), 'README missing pcserver backend instructions');
 });

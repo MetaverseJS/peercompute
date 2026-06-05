@@ -1,7 +1,8 @@
 {
   "bootstrapPeers": [
-    "/dns4/secretworkshop.net/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs"
+    "/ip4/100.86.83.35/tcp/38513/wss/p2p/12D3KooWNfk2P7XVkqESrMeYipBX6VgVWCWHHgTtheJBoJ5Brtj1"
   ],
+  "pubsubType": "gossipsub",
   "webrtc": {
     "iceServers": [
       {
@@ -9,14 +10,13 @@
       },
       {
         "urls": [
-          "turn:secretworkshop.net:3478?transport=udp",
-          "turn:secretworkshop.net:3478?transport=tcp"
+          "turn:100.86.83.35:3478?transport=udp",
+          "turn:100.86.83.35:3478?transport=tcp"
         ],
         "username": "peer",
         "credential": "compute"
       }
     ],
-    "preferDirect": true,
     "dropRelayOnDirect": true,
     "dropRelayBootstrapOnDirect": true,
     "countRelayWebrtcAsDirectCapable": true,
@@ -26,7 +26,6 @@
       "max": 10
     }
   },
-  "pubsubType": "gossipsub",
   "gossipsub": {
     "D": 8,
     "Dhi": 16,

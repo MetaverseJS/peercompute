@@ -67,6 +67,36 @@ test('NodeKernel builds NetViz attach URL from topology + room config', () => {
   }
 });
 
+test('NodeKernel includes and preserves NetViz session metadata', () => {
+  const node = new NodeKernel({
+    gameId: 'multiscale',
+    roomId: 'ladder',
+    topologyId: 'multiscale-ladder',
+    netVizSessionMetadataProvider: () => ({
+      schema: 'peercompute.multiscale.runtime-debug.v0',
+      manager: { workerCount: 4 },
+      taskFamilies: [{ family: 'molecular-dynamics', completed: 7 }]
+    })
+  });
+  node.nodeId = 'node-multiscale';
+  const session = node.getNetVizDebugSession();
+  assert.equal(session.metadata.schema, 'peercompute.multiscale.runtime-debug.v0');
+  assert.equal(session.metadata.manager.workerCount, 4);
+
+  const normalized = node._normalizeNetVizSession({
+    ...session,
+    sessionId: 'session-multiscale',
+    peerId: '',
+    metadata: {
+      schema: 'peercompute.multiscale.runtime-debug.v0',
+      taskFamilies: [{ family: 'multiscale-ladder', completed: 12 }]
+    }
+  }, '12D3KooWMetaSource');
+  assert.equal(normalized.peerId, '12D3KooWMetaSource');
+  assert.equal(normalized.metadata.schema, 'peercompute.multiscale.runtime-debug.v0');
+  assert.equal(normalized.metadata.taskFamilies[0].family, 'multiscale-ladder');
+});
+
 test('NodeKernel tracks and prunes discovered NetViz sessions from network messages', () => {
   const node = new NodeKernel({
     enableNetVizSessionDiscovery: true,

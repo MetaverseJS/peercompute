@@ -113,20 +113,24 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/hyperborea/public"
     "$repo_root/demos/cubechat/public"
     "$repo_root/demos/planetgen/public"
+    "$repo_root/demos/multiscale/public"
     "$repo_root/demos/universes/public"
     "$repo_root/demos/webgpuphys/public"
     "$repo_root/demos/sneakywoods/public"
     "$repo_root/demos/daddygo/public"
     "$repo_root/demos/fano-reactor/public"
+    "$repo_root/demos/schrodinger/public"
     "$repo_root/demos/netviz/public"
     "$repo_root/docs/hyperborea"
     "$repo_root/docs/cubechat"
     "$repo_root/docs/planetgen"
+    "$repo_root/docs/multiscale"
     "$repo_root/docs/universes"
     "$repo_root/docs/webgpuphys"
     "$repo_root/docs/sneakywoods"
     "$repo_root/docs/daddygo"
     "$repo_root/docs/fano-reactor"
+    "$repo_root/docs/schrodinger"
     "$repo_root/docs/netviz"
   )
   RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
@@ -178,21 +182,25 @@ echo "  relay: dynamic WSS (check relay logs for address)"
 echo "  hyperborea: https://$(to_url_host "$overview_host"):5175/"
 echo "  cubechat:   https://$(to_url_host "$overview_host"):5176/"
 echo "  planetgen:  https://$(to_url_host "$overview_host"):5177/"
+echo "  multiscale: https://$(to_url_host "$overview_host"):5185/"
 echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
 echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
 echo "  sneakywoods: https://$(to_url_host "$overview_host"):5180/"
 echo "  daddygo:    https://$(to_url_host "$overview_host"):5181/"
 echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
+echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,universes,webgpuphys,sneakywoods,daddygo,fano,netviz \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz \
   "npm run dev:relay" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/multiscale\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/fano-reactor\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/schrodinger\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args"

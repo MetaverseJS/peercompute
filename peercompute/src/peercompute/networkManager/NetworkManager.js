@@ -41,6 +41,7 @@ const DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 15000;
 const DEFAULT_RELAY_ELECTION_STICKY_MS = 30000;
 const DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS = 1500;
 const DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS = 30000;
+const MAX_PRESENCE_CAPABILITIES_BYTES = 16 * 1024;
 const TRANSIENT_DIAL_FAILURE_PATTERNS = [
   'no_reservation',
   'reservation',
@@ -63,6 +64,18 @@ const debugLog = (...args) => {
 };
 const debugWarn = (...args) => {
   if (DEBUG_P2P) console.warn(...args);
+};
+
+const clonePresenceCapabilities = (capabilities) => {
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return null;
+  try {
+    const json = JSON.stringify(capabilities);
+    if (!json || json.length > MAX_PRESENCE_CAPABILITIES_BYTES) return null;
+    const cloned = JSON.parse(json);
+    return cloned && typeof cloned === 'object' && !Array.isArray(cloned) ? cloned : null;
+  } catch (_) {
+    return null;
+  }
 };
 
 const getByteLength = (data) => {
@@ -630,6 +643,9 @@ export class NetworkManager {
       directoryQueryTimeoutMs: Number.isFinite(config.directoryQueryTimeoutMs)
         ? Math.max(1000, config.directoryQueryTimeoutMs)
         : 5000,
+      presenceCapabilitiesProvider: typeof config.presenceCapabilitiesProvider === 'function'
+        ? config.presenceCapabilitiesProvider
+        : null,
       onPublishError: typeof config.onPublishError === 'function' ? config.onPublishError : null,
       onPublishSuccess: typeof config.onPublishSuccess === 'function' ? config.onPublishSuccess : null
     };
@@ -1841,6 +1857,7 @@ export class NetworkManager {
       maxConnections: message.maxConnections,
       activeConnections: message.activeConnections,
       relayConnected: message.relayConnected ?? null,
+      capabilities: clonePresenceCapabilities(message.capabilities),
       lastSeen: Date.now(),
       joinedAt,
       via: 'presence'
@@ -2908,6 +2925,7 @@ export class NetworkManager {
   _buildPresencePayload() {
     if (!this.peerId) return null;
     const activeConnections = this._getActiveDialedPeerCount();
+    const capabilities = this._getPresenceCapabilities();
     return {
       type: 'presence',
       from: this.peerId,
@@ -2924,8 +2942,22 @@ export class NetworkManager {
       transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
       activeConnections,
       relayConnected: this._hasBootstrapRelayConnections(),
+      ...(capabilities ? { capabilities } : {}),
       multiaddrs: this._getAnnounceAddrs()
     };
+  }
+
+  _getPresenceCapabilities() {
+    if (typeof this.config.presenceCapabilitiesProvider !== 'function') return null;
+    try {
+      return clonePresenceCapabilities(this.config.presenceCapabilitiesProvider({
+        peerId: this.peerId,
+        networkManager: this
+      }));
+    } catch (error) {
+      debugWarn('[NetworkManager] Presence capabilities provider failed', error);
+      return null;
+    }
   }
 
   async _publishPresenceNow() {

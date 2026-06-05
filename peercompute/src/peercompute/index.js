@@ -9,12 +9,54 @@
  */
 
 // Core components
-import { NodeKernel } from './nodeKernel/NodeKernel.js';
-export { NodeKernel };
+import {
+  NODE_KERNEL_REDUNDANT_PLACEMENT_SCHEMA,
+  NodeKernel,
+  REMOTE_COMPUTE_PLACEMENT_PROVENANCE_SCHEMA,
+  REMOTE_COMPUTE_REQUEST_SCHEMA,
+  REMOTE_COMPUTE_RESULT_SCHEMA
+} from './nodeKernel/NodeKernel.js';
+export {
+  NODE_KERNEL_REDUNDANT_PLACEMENT_SCHEMA,
+  NodeKernel,
+  REMOTE_COMPUTE_PLACEMENT_PROVENANCE_SCHEMA,
+  REMOTE_COMPUTE_REQUEST_SCHEMA,
+  REMOTE_COMPUTE_RESULT_SCHEMA
+};
 export { StateManager } from './stateManager/StateManager.js';
 export { DataState } from './stateManager/DataState.js';
 export { NetworkManager } from './networkManager/NetworkManager.js';
-export { ComputeManager } from './computeManager/ComputeManager.js';
+export {
+  ComputeManager,
+  COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,
+  COMPUTE_REMOTE_PLACEMENT_RETRY_SCHEMA,
+  COMPUTE_REMOTE_PLACEMENT_VALIDATION_SCHEMA,
+  COMPUTE_REMOTE_PLACEMENT_VERIFICATION_SCHEMA,
+  COMPUTE_REMOTE_TASK_ENVELOPE_SCHEMA,
+  COMPUTE_TASK_PACKET_SCHEMA,
+  COMPUTE_TASK_PLACEMENT_SCHEMA,
+  COMPUTE_WORKER_UTILIZATION_SCHEMA
+} from './computeManager/ComputeManager.js';
+export {
+  SolverRegistry,
+  normalizeSolverDescriptor,
+  SOLVER_DESCRIPTOR_SCHEMA,
+  SOLVER_TASK_SCHEMA
+} from './computeManager/SolverRegistry.js';
+export {
+  createPlacementAdmissionPolicy,
+  evaluatePlacementAdmission,
+  normalizePlacementAdmissionPolicyOptions,
+  PLACEMENT_ADMISSION_POLICY_SCHEMA,
+  PLACEMENT_ADMISSION_RESULT_SCHEMA
+} from './computeManager/PlacementAdmissionPolicy.js';
+export {
+  createRemoteResultQuorumValidator,
+  evaluateRemoteResultQuorum,
+  normalizeRemoteResultQuorumOptions,
+  REMOTE_RESULT_QUORUM_POLICY_SCHEMA,
+  REMOTE_RESULT_QUORUM_REPORT_SCHEMA
+} from './computeManager/RemoteResultQuorumValidator.js';
 export { GPUHubManager } from './gpu/GPUHubManager.js';
 
 // Subsystems

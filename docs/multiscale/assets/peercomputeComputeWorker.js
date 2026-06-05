@@ -1,0 +1,1 @@
+import{e as o}from"./taskRuntime-DX9oqDud.js";globalThis.self.onmessage=async a=>{const e=a.data;if(!e||e.type!=="run")return;const{id:t}=e;try{const s=await o(e);globalThis.self.postMessage({type:"result",id:t,result:s})}catch(s){globalThis.self.postMessage({type:"error",id:t,error:(s==null?void 0:s.message)||String(s)})}};

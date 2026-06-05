@@ -264,6 +264,19 @@
       word-break: break-word;
     }
 
+    .session-inspector {
+      border-color: rgba(0, 255, 106, 0.35);
+    }
+
+    .session-inspector-body {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      white-space: pre-line;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     .legend {
       font-size: 0.65rem;
       color: var(--text-dim);
@@ -470,6 +483,10 @@
       <div class="console-section">
         <div class="panel-title">Chaos Lab</div>
         <div id="chaos-status" class="status">Chaos feed: disabled (add ?chaosApi=http://127.0.0.1:8866)</div>
+      </div>
+      <div id="session-inspector" class="console-section session-inspector">
+        <div class="panel-title">Session Runtime</div>
+        <div id="session-inspector-body" class="session-inspector-body">No demo sessions discovered.</div>
       </div>
       <div class="console-section">
         <div class="panel-title">Log</div>

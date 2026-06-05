@@ -82,6 +82,16 @@ Turn the sedenion chemistry paper into an interactive PeerCompute demo instead o
 4. Shard pair evaluation across peers and visualize work ownership in `swarm`.
 5. Add optional NetViz attach/debug hooks if the distributed mode needs deeper telemetry.
 
+## Schrodinger/Materials Integration
+- Treat Fano Reactor as an exact symbolic reaction grammar for candidate channels, not as a physical property solver.
+- In the broader multiscale runtime framing, Fano Reactor belongs in the chemistry/closure layer as a candidate prefilter and symbolic bond-event source, not in any macro solver.
+- Expose the algebra/model code as reusable ES modules before importing it into `demos/schrodinger`.
+- Candidate use in Schrodinger property packets:
+- `chemical.bondEvents[]` can include symbolic `sedenion-fano-v0` events with `delta`, `bondClass`, and `reactiveDegree` fields.
+- The sedenion layer can prefilter candidate interactions and prioritize tiny quantum probes or empirical reaction-rate lookups.
+- It must not claim to predict thermodynamic, optical, electromagnetic, mechanical, nuclear, or phase properties by itself.
+- Cross-demo validation should reuse the existing exact invariants: 42 reactive families, 7 inert CD partner channels, sigma-conjugate target flips, and the `8 -> 2 -> 0` cascade.
+
 ## Validation
 - Deterministic model tests for the paper invariants before any render-heavy work.
 - Headless seeded chamber test that verifies stable bond-class counts and repeatable cascade behavior.

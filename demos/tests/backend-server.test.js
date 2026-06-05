@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(process.cwd());
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+const turnserverDryRunPattern = /dry-run command: .*turnserver -c /;
 
 function runScript(script, args = [], extraEnv = {}) {
   const result = spawnSync('bash', [script, ...args], {
@@ -48,7 +49,7 @@ test('start-turn-prod dry-run renders managed coturn config from env overrides',
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /dry-run command: turnserver -c /);
+  assert.match(result.stdout, turnserverDryRunPattern);
 
   const generatedConfig = path.join(runtimeDir, 'peercompute-turnserver.conf');
   assert.ok(fs.existsSync(generatedConfig), 'generated turn config missing');
@@ -82,7 +83,7 @@ test('pcserver dry-run renders relay and turn by default', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /would run: bash .*scripts\/start-relay-prod\.sh/);
-  assert.match(result.stdout, /dry-run command: turnserver -c /);
+  assert.match(result.stdout, turnserverDryRunPattern);
 });
 
 test('pcserver relay-only mode suppresses turn output', () => {
@@ -90,7 +91,7 @@ test('pcserver relay-only mode suppresses turn output', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /would run: bash .*scripts\/start-relay-prod\.sh/);
-  assert.doesNotMatch(result.stdout, /dry-run command: turnserver -c /);
+  assert.doesNotMatch(result.stdout, turnserverDryRunPattern);
 });
 
 test('pcserver turn-only mode suppresses relay output', () => {
@@ -101,7 +102,7 @@ test('pcserver turn-only mode suppresses relay output', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.doesNotMatch(result.stdout, /would run: bash .*scripts\/start-relay-prod\.sh/);
-  assert.match(result.stdout, /dry-run command: turnserver -c /);
+  assert.match(result.stdout, turnserverDryRunPattern);
 });
 
 test('pcserver rejects disabling both relay and turn', () => {
@@ -115,7 +116,8 @@ test('backend scripts parse cleanly and relay systemd installer targets pcserver
   [
     'scripts/start-turn-prod.sh',
     'scripts/pcserver.sh',
-    'scripts/install-relay-systemd.sh'
+    'scripts/install-relay-systemd.sh',
+    'scripts/dev-vpn-coturn.sh'
   ].forEach((script) => {
     const result = runBash(['-n', script]);
     assert.equal(result.status, 0, `${script} failed bash -n: ${result.stderr || result.stdout}`);
@@ -124,7 +126,9 @@ test('backend scripts parse cleanly and relay systemd installer targets pcserver
   const relaySystemd = read('scripts/install-relay-systemd.sh');
   assert.match(relaySystemd, /Description=PeerCompute Backend Server/);
   assert.match(relaySystemd, /ExecStart=.*scripts\/pcserver\.sh/);
-  assert.match(relaySystemd, /Environment=PCSERVER_ENABLE_RELAY=1/);
-  assert.match(relaySystemd, /Environment=PCSERVER_ENABLE_TURN=1/);
+  assert.match(relaySystemd, /enable_relay="\$\{PCSERVER_ENABLE_RELAY:-1\}"/);
+  assert.match(relaySystemd, /enable_turn="\$\{PCSERVER_ENABLE_TURN:-1\}"/);
+  assert.match(relaySystemd, /Environment=PCSERVER_ENABLE_RELAY=\$enable_relay/);
+  assert.match(relaySystemd, /Environment=PCSERVER_ENABLE_TURN=\$enable_turn/);
   assert.match(relaySystemd, /WantedBy=multi-user\.target/);
 });

@@ -13,6 +13,7 @@ const topologyIdInput = document.getElementById('topology-id');
 const roomInput = document.getElementById('room-input');
 const attachSessionSelect = document.getElementById('attach-session-select');
 const attachSessionBtn = document.getElementById('attach-session-btn');
+const sessionInspectorBody = document.getElementById('session-inspector-body');
 const renderModeSelect = document.getElementById('render-mode');
 const connectionRadiusInput = document.getElementById('connection-radius');
 const maxConnectionsInput = document.getElementById('max-connections');
@@ -932,6 +933,15 @@ const syncInputsToUrl = () => {
   syncQueryParams(readUrlInputState());
 };
 
+const cloneAttachSessionMetadata = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') return null;
+  try {
+    return JSON.parse(JSON.stringify(metadata));
+  } catch (_) {
+    return null;
+  }
+};
+
 const normalizeAttachSession = (session) => {
   if (!session || typeof session !== 'object') return null;
   const sessionId = String(session.sessionId || '').trim();
@@ -947,6 +957,7 @@ const normalizeAttachSession = (session) => {
     topologyId: topologyIdValue,
     topologyType: normalizeTopologyType(session.topologyType || 'distributed'),
     isStarted: session.isStarted !== false,
+    metadata: cloneAttachSessionMetadata(session.metadata),
     ts: Number.isFinite(session.ts) ? session.ts : Date.now()
   };
 };
@@ -967,6 +978,110 @@ const formatAttachSessionLabel = (session) => {
   const topology = session.topologyId || '--';
   const peer = session.peerId ? formatPeerId(session.peerId) : 'pending';
   return `${gameId} | ${room} | ${topology} | ${peer}`;
+};
+
+const formatRuntimeNumber = (value, digits = 2) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '--';
+  return number.toFixed(digits);
+};
+
+const formatRuntimeInteger = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '--';
+  return String(Math.round(number));
+};
+
+const formatRuntimeMs = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '--';
+  return `${number.toFixed(1)}ms`;
+};
+
+const formatSessionAge = (ts) => {
+  const ageMs = Date.now() - Number(ts || 0);
+  if (!Number.isFinite(ageMs) || ageMs < 0) return '--';
+  if (ageMs < 1000) return `${Math.round(ageMs)}ms`;
+  return `${(ageMs / 1000).toFixed(1)}s`;
+};
+
+const getSelectedAttachSession = () => {
+  pruneAttachSessions();
+  const selectedId = attachSessionSelect?.value || '';
+  if (selectedId && attachSessions.has(selectedId)) {
+    return attachSessions.get(selectedId);
+  }
+  const sessions = Array.from(attachSessions.values())
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return sessions[0] || null;
+};
+
+const formatTaskFamilyLine = (family) => {
+  const name = family?.family || 'unknown';
+  const completed = formatRuntimeInteger(family?.completed);
+  const submitted = formatRuntimeInteger(family?.submitted);
+  const failed = Number(family?.failed || 0);
+  const avg = formatRuntimeMs(family?.averageTaskDurationMs);
+  const failureSuffix = failed > 0 ? ` fail ${formatRuntimeInteger(failed)}` : '';
+  return `${name} ${completed}/${submitted}${failureSuffix} @ ${avg}`;
+};
+
+const buildSessionRuntimeLines = (session) => {
+  if (!session) {
+    return ['No demo sessions discovered.'];
+  }
+  const metadata = session.metadata && typeof session.metadata === 'object'
+    ? session.metadata
+    : null;
+  const runtime = metadata?.runtimeDebug && typeof metadata.runtimeDebug === 'object'
+    ? metadata.runtimeDebug
+    : null;
+  const manager = runtime?.manager && typeof runtime.manager === 'object'
+    ? runtime.manager
+    : {};
+  const solverLoad = runtime?.solverLoad && typeof runtime.solverLoad === 'object'
+    ? runtime.solverLoad
+    : {};
+  const scaler = runtime?.scaler && typeof runtime.scaler === 'object'
+    ? runtime.scaler
+    : {};
+  const warmDeltas = runtime?.warmDeltas && typeof runtime.warmDeltas === 'object'
+    ? runtime.warmDeltas
+    : {};
+  const families = Array.isArray(runtime?.topTaskFamilies) && runtime.topTaskFamilies.length
+    ? runtime.topTaskFamilies
+    : Array.isArray(runtime?.taskFamilies)
+      ? runtime.taskFamilies.slice(0, 5)
+      : [];
+  const workerCount = manager.workerCount ?? metadata?.workerCount ?? session.workerCount;
+  const targetWorkers = manager.targetWorkers ?? metadata?.targetWorkers ?? session.targetWorkers;
+  const lines = [
+    `Session: ${session.gameId || 'unknown'} | ${session.topologyId || '--'}`,
+    `Room: ${session.roomId || '--'} | peer ${session.peerId ? formatPeerId(session.peerId) : 'pending'}`,
+    `Age: ${formatSessionAge(session.ts)} | schema ${metadata?.schema || 'none'}`,
+    `Layer: ${metadata?.activeLayerId || '--'} | backend ${metadata?.computeBackend || '--'}`,
+    `Workers: ${formatRuntimeInteger(workerCount)}/${formatRuntimeInteger(targetWorkers)} | min ${formatRuntimeInteger(manager.minWorkers)} max ${formatRuntimeInteger(manager.maxWorkers)}`,
+    `Tasks: ${formatRuntimeInteger(manager.totalTasksCompleted)}/${formatRuntimeInteger(manager.totalTasksSubmitted)} | fail ${formatRuntimeInteger(manager.totalTasksFailed)} | load ${formatRuntimeNumber(manager.currentLoad, 2)}`,
+    `Runtime avg: ${formatRuntimeMs(manager.averageTaskDurationMs)} | active ${formatRuntimeInteger(manager.activeTasks)} queued ${formatRuntimeInteger(manager.queuedTasks)}`,
+    `Solver pressure: ${solverLoad.dominantSolver || metadata?.dominantSolver || '--'} ${formatRuntimeNumber(solverLoad.dominantPressure ?? metadata?.dominantPressure, 2)} | total ${formatRuntimeNumber(solverLoad.totalPressure, 2)}`,
+    `Autoscale: ${scaler.lastAction || '--'} | pressure ${formatRuntimeNumber(scaler.pressure, 2)} | frame ${formatRuntimeMs(scaler.frameMsAvg)}`,
+    `Warm deltas: compute ${formatRuntimeInteger(warmDeltas.compute)} | solver ${formatRuntimeInteger(warmDeltas.solver)} | closure ${formatRuntimeInteger(warmDeltas.closure)} | conservation ${formatRuntimeInteger(warmDeltas.conservation)}`
+  ];
+  if (families.length) {
+    lines.push(`Top families: ${families.map(formatTaskFamilyLine).join(' / ')}`);
+  }
+  if (!metadata) {
+    lines.push('Metadata: none');
+  } else if (!runtime) {
+    lines.push('Runtime debug: none');
+  }
+  return lines;
+};
+
+const renderSessionInspector = () => {
+  if (!sessionInspectorBody) return;
+  const session = getSelectedAttachSession();
+  sessionInspectorBody.textContent = buildSessionRuntimeLines(session).join('\n');
 };
 
 const refreshAttachSessionOptions = () => {
@@ -992,6 +1107,7 @@ const refreshAttachSessionOptions = () => {
   if (previousValue && attachSessions.has(previousValue)) {
     attachSessionSelect.value = previousValue;
   }
+  renderSessionInspector();
 };
 
 const upsertAttachSession = (session) => {
@@ -1007,6 +1123,7 @@ const upsertAttachSession = (session) => {
   if (attachSessionSelect) {
     attachSessionSelect.value = normalized.sessionId;
   }
+  renderSessionInspector();
   queueMicrotask(() => {
     attachToSelectedSession().catch((err) => {
       logEvent(`Attach failed: ${err?.message || err}`);
@@ -1028,6 +1145,7 @@ const applyAttachSessionInputs = (session) => {
   if (topologyIdInput) topologyIdInput.value = topologyId;
   if (roomInput) roomInput.value = session.roomId || 'telemetry';
   visualizer.setTopologyMode(topologyType);
+  renderSessionInspector();
   syncInputsToUrl();
 };
 
@@ -2820,6 +2938,7 @@ const updateRelayStatus = () => {
 const updateHud = () => {
   telemetryStore.prune(15000);
   syncAttachSessionsFromNode();
+  renderSessionInspector();
   updateRelayStatus();
   const entries = telemetryStore.list();
   resolveLocalMetricOverlap(entries);
@@ -3319,6 +3438,10 @@ attachSessionBtn?.addEventListener('click', () => {
   attachToSelectedSession().catch((err) => {
     logEvent(`Attach failed: ${err?.message || err}`);
   });
+});
+
+attachSessionSelect?.addEventListener('change', () => {
+  renderSessionInspector();
 });
 
 const handlePick = (event) => {
