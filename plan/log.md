@@ -47337,6 +47337,69 @@ User asked whether Infinite Context Coder is being used.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
 
+## 2026-06-05 15:47:45 AKDT - ULG service orchestration fixture bridge
+
+### Prompt
+- User prompt: asked for the second-wave PeerCompute task on the current branch only: wire the new serviceOrchestration primitives toward ULG contract fixtures without runtime dependence on `/home/cos/projects/ulg`, add fixture-style Eshkol/MoonLab manifests/task capsules, add headless tests for `ComputeServiceRegistry` + `WorkerSupervisor` registration/submission/leases/telemetry, run targeted and relevant unit gates, and commit locally if passing.
+- Prompt time/date recorded from the local machine: `2026-06-05 15:47:45 AKDT`.
+
+### Actions
+- Read the local `AGENTS.md`, root `plan/plan.md`, root `plan/log.md`, and service-orchestration test plan before editing.
+- Added self-contained ULG fixture manifests and representative law/quantum task capsules under `peercompute/tests/fixtures/ulgServiceFixtures.js`; the serialized fixtures assert no `/home/cos/projects/ulg` runtime path.
+- Preserved service contract metadata during `ComputeServiceRegistry` normalization and included contract summaries in registry capability telemetry.
+- Extended `WorkerSupervisor` tree telemetry with a registry capability report plus per-service ABI/contract fields.
+- Added a headless ULG fixture service host test that registers both Eshkol and MoonLab manifests, resolves them by task kind/capsule schema, submits representative tasks, grants and releases an Eshkol child lease, grants and revokes a MoonLab child lease through `cancelTree`, and verifies ULG contract telemetry.
+- Updated root plan and service test-gate docs.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js`
+- `peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `peercompute/tests/fixtures/ulgServiceFixtures.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `rg -n "peercompute|serviceOrchestration|WorkerSupervisor|ComputeServiceRegistry|MoonLab|ULG" /home/cos/.codex/memories/MEMORY.md`
+- `pwd && git branch --show-current && git status --short && rg --files -g 'AGENTS*' -g '*PLAN*' -g '*plan*' -g '*LOG*' -g '*log*' -g '*handoff*' -g '*Handoff*'`
+- `nl -ba AGENTS.md | sed -n '1,220p'`
+- `ls -lt plan plan/branch demos/multiscale/plan | sed -n '1,120p'`
+- `nl -ba plan/plan.md | sed -n '1,260p'`
+- `nl -ba plan/log.md | tail -n 240`
+- `rg -n "service-orchestration|service orchestration|ComputeServiceRegistry|WorkerSupervisor|ChildWorkerLeaseManager|ComputeManagerServiceAdapter|ULG|Eshkol|MoonLab" plan/plan.md plan/tests.md plan/branch/multiscale-ladder.md demos/multiscale/plan/plan.md demos/multiscale/plan/log.md README.md package.json peercompute demos tests docs`
+- `find . -path './node_modules' -prune -o -name 'AGENTS.md' -print`
+- `node -v && npm -v && nl -ba package.json | sed -n '1,220p'`
+- `rg --files peercompute/tests demos/multiscale/tests tests | sed -n '1,220p'`
+- `rg --files peercompute/src demos/shared demos/multiscale/src | rg "(Service|service|Supervisor|Lease|registry|compute)" | sed -n '1,260p'`
+- Source inspection with `nl`, `sed`, and `rg` across `peercompute/src/peercompute/serviceOrchestration`, `peercompute/tests/unit/serviceOrchestration.test.js`, `peercompute/package.json`, `plan/refs/ulg/ULG_PeerCompute_Star_Spec_v0.4.md`, and `demos/multiscale/src/simulation/ulgRuntime.js`.
+- `node --check peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js && node --check peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js && node --check peercompute/tests/fixtures/ulgServiceFixtures.js && node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/solverRegistry.test.js`
+- `npm --prefix peercompute run test:unit`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `git status --short`
+- `tail -n 80 plan/plan.md`
+- `tail -n 80 plan/log.md`
+- `nl -ba plan/plan.md | sed -n '48,62p'`
+- `nl -ba plan/tests.md | sed -n '184,189p'`
+- `nl -ba plan/branch/multiscale-ladder.md | sed -n '210,222p'`
+- `git diff --check -- peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js peercompute/tests/fixtures/ulgServiceFixtures.js peercompute/tests/unit/serviceOrchestration.test.js plan/plan.md plan/tests.md plan/log.md`
+- `git diff --stat`
+- `git diff -- peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js peercompute/tests/unit/serviceOrchestration.test.js | sed -n '1,260p'`
+
+### Test Results
+- PASS: syntax checks completed for the edited service-orchestration modules, fixture file, and unit test.
+- PASS: focused `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `6/6` tests passing.
+- PASS: documented service-orchestration integrated gate completed with `29/29` tests passing.
+- PASS: `npm --prefix peercompute run test:unit` completed with `122/122` tests passing.
+- PASS: `git diff --check` reported no whitespace errors for the touched implementation, fixture, test, and plan paths.
+
+### Failures / Open Questions
+- No failures in the headless fixture or unit gates.
+- Non-blocking discovery note: early broad `rg` commands that included a root `tests` path returned code `2` because that path does not exist; targeted `peercompute/tests` and `demos/multiscale/tests` inspection provided the needed context.
+- Follow-up remains actual production adapter work: these are local ULG contract fixtures and stub hosts, not live Eshkol/MoonLab service processes or calibrated scientific execution.
+
 ## 2026-06-05 15:32:31 AKDT - PeerCompute ULG service orchestration slice
 
 ### Prompt

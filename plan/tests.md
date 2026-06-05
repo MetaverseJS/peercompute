@@ -184,7 +184,7 @@
 ### Service orchestration gate
 - Command: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
 - Integrated command: `node --test peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/solverRegistry.test.js`
-- Purpose: verify `ComputeServiceRegistry` manifest normalization and task-kind resolution, `ChildWorkerLeaseManager` approved-module/quota/expiry/root-revocation behavior, `WorkerSupervisor` worker-style service-host task and lease flow, cancellation-tree lease revocation, public exports, and the headless `ComputeManagerServiceAdapter` path for service execution without a browser worker.
+- Purpose: verify `ComputeServiceRegistry` manifest normalization and task-kind resolution, local Eshkol/MoonLab ULG fixture service manifests and task capsules, `ChildWorkerLeaseManager` approved-module/quota/expiry/root-revocation behavior, `WorkerSupervisor` worker-style service-host task and lease flow, cancellation-tree lease revocation, ULG service-contract telemetry, public exports, and the headless `ComputeManagerServiceAdapter` path for service execution without a browser worker.
 - Gate: run when changing `peercompute/src/peercompute/serviceOrchestration/**`, service manifest contracts, ULG service-host adapters, or ComputeManager-backed service execution.
 
 ### Local relay + coturn dev stack gate

@@ -13,6 +13,18 @@ import {
   createComputeManagerServiceFactory,
   normalizeComputeServiceManifest
 } from '../../src/peercompute/serviceOrchestration/index.js';
+import {
+  ULG_COMPACT_DELTA_SCHEMA,
+  ULG_FIXTURE_SOURCE,
+  ULG_LAW_TASK_CAPSULE_SCHEMA,
+  ULG_QUANTUM_TASK_CAPSULE_SCHEMA,
+  ULG_RUNTIME_MANIFEST_SCHEMA,
+  ULG_SERVICE_CONTRACT_SCHEMA,
+  ULG_SERVICE_TASK_RESULT_SCHEMA,
+  ULG_SERVICE_TELEMETRY_SCHEMA,
+  createUlgServiceFixtureManifests,
+  createUlgServiceFixtureTasks
+} from '../fixtures/ulgServiceFixtures.js';
 
 function serviceManifest(overrides = {}) {
   return {
@@ -163,6 +175,168 @@ class CancellableServiceHost extends CompletingServiceHost {
   }
 }
 
+class UlgContractServiceHost {
+  constructor(manifest, { holdUntilCancel = false } = {}) {
+    this.manifest = manifest;
+    this.contract = manifest.contract || manifest.metadata?.ulgContract || null;
+    this.holdUntilCancel = holdUntilCancel;
+    this.listeners = {
+      message: new Set(),
+      error: new Set()
+    };
+    this.messages = [];
+    this.task = null;
+    this.lease = null;
+  }
+
+  addEventListener(type, listener) {
+    this.listeners[type]?.add(listener);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners[type]?.delete(listener);
+  }
+
+  postMessage(message) {
+    this.messages.push(message);
+    if (message.type === 'init') {
+      this.workerId = message.workerId;
+      this.emit({
+        type: 'ready',
+        workerId: message.workerId,
+        serviceId: this.manifest.serviceId
+      });
+      this.emitHeartbeat('ready');
+    }
+    if (message.type === 'submit-task') {
+      this.task = message.task;
+      this.emitHeartbeat('validating-contract', message.task.capsule);
+      this.emit({
+        type: 'task-status',
+        rootTaskId: message.task.rootTaskId,
+        status: 'validating-ulg-contract',
+        progress: 0.2,
+        children: []
+      });
+      this.emit({
+        type: 'lease-request',
+        requestId: `${message.task.rootTaskId}:lease`,
+        rootTaskId: message.task.rootTaskId,
+        module: this.manifest.childWorkers.allowedModules[0],
+        count: message.task.resources?.childWorkers || 1,
+        ttlMs: 5_000,
+        resources: {
+          capsuleSchema: message.task.capsule?.schema || null,
+          runtimeManifestSchema: message.task.runtimeManifest?.schema || null
+        }
+      });
+    }
+    if (message.type === 'lease-granted') {
+      this.lease = message.lease;
+      this.emitHeartbeat('running', this.task?.capsule, message.lease);
+      this.emit({
+        type: 'task-status',
+        rootTaskId: message.lease.rootTaskId,
+        status: 'running-ulg-capsule',
+        progress: 0.7,
+        children: [{
+          childId: `${message.lease.rootTaskId}:child-1`,
+          leaseId: message.lease.leaseId,
+          module: message.lease.module,
+          serviceId: this.manifest.serviceId,
+          capsuleSchema: this.task?.capsule?.schema || null,
+          status: 'running',
+          progress: 0.7
+        }]
+      });
+      if (!this.holdUntilCancel) {
+        this.emit({ type: 'lease-release', leaseId: message.lease.leaseId });
+        this.emit({
+          type: 'task-result',
+          rootTaskId: message.lease.rootTaskId,
+          result: this.createResult('complete', message.lease)
+        });
+      }
+    }
+    if (message.type === 'lease-denied') {
+      this.emit({
+        type: 'task-error',
+        rootTaskId: this.task?.rootTaskId,
+        error: message.error
+      });
+    }
+    if (message.type === 'cancel-task') {
+      this.emitHeartbeat('cancelled', this.task?.capsule, this.lease);
+      this.emit({
+        type: 'task-cancelled',
+        rootTaskId: message.rootTaskId,
+        result: this.createResult('cancelled-clean', this.lease, { cancelled: true })
+      });
+    }
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+
+  emitHeartbeat(status, capsule = null, lease = null) {
+    this.emit({
+      type: 'heartbeat',
+      telemetry: {
+        schema: ULG_SERVICE_TELEMETRY_SCHEMA,
+        serviceId: this.manifest.serviceId,
+        status,
+        fixtureSource: ULG_FIXTURE_SOURCE,
+        contract: this.contract,
+        abi: this.manifest.abi,
+        runtimeManifestSchema: this.task?.runtimeManifest?.schema || ULG_RUNTIME_MANIFEST_SCHEMA,
+        lastTaskKind: this.task?.taskKind || null,
+        lastCapsuleSchema: capsule?.schema || null,
+        activeLeaseId: lease?.leaseId || null
+      }
+    });
+  }
+
+  createResult(status, lease = null, extras = {}) {
+    return {
+      schema: ULG_SERVICE_TASK_RESULT_SCHEMA,
+      serviceId: this.manifest.serviceId,
+      status,
+      taskId: this.task?.taskId || null,
+      taskKind: this.task?.taskKind || null,
+      capsuleSchema: this.task?.capsule?.schema || null,
+      runtimeManifestSchema: this.task?.runtimeManifest?.schema || null,
+      contract: this.contract,
+      childLease: lease ? {
+        schema: lease.schema,
+        leaseId: lease.leaseId,
+        module: lease.module,
+        count: lease.count
+      } : null,
+      delta: {
+        schema: ULG_COMPACT_DELTA_SCHEMA,
+        deltaHash: `sha256:${this.manifest.serviceId}:fixture-delta`,
+        stateRefs: ['warm:closures/material']
+      },
+      residuals: {
+        invariantDrift: 0,
+        closureUncertainty: 0.01
+      },
+      performance: {
+        backend: 'stub-host',
+        childLeaseCount: lease?.count || 0
+      },
+      ...extras
+    };
+  }
+
+  emit(data) {
+    for (const listener of this.listeners.message) {
+      listener({ data });
+    }
+  }
+}
+
 async function waitFor(predicate) {
   for (let i = 0; i < 50; i += 1) {
     if (predicate()) return;
@@ -268,6 +442,95 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
   assert.equal(revocable.status, 'active');
   await leases.revokeByRootTask('root-task-c');
   assert.equal(leases.get(revocable.leaseId).status, 'revoked');
+});
+
+test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {
+  const manifests = createUlgServiceFixtureManifests();
+  const registry = new ComputeServiceRegistry(manifests);
+  const tasks = createUlgServiceFixtureTasks();
+  const serializedFixtures = JSON.stringify({ manifests, tasks });
+  assert.equal(serializedFixtures.includes('/home/cos/projects/ulg'), false);
+
+  const capabilities = registry.listCapabilities();
+  assert.equal(capabilities.schema, COMPUTE_SERVICE_REGISTRY_SCHEMA);
+  assert.equal(capabilities.serviceCount, 2);
+  assert.deepEqual(
+    capabilities.services.map((service) => service.serviceId).sort(),
+    ['eshkol-ulg-fixture', 'moonlab-ulg-fixture']
+  );
+  assert.equal(capabilities.services[0].contract.schema, ULG_SERVICE_CONTRACT_SCHEMA);
+  assert.equal(registry.resolve(ULG_LAW_TASK_CAPSULE_SCHEMA)[0].serviceId, 'eshkol-ulg-fixture');
+  assert.equal(registry.resolve(ULG_QUANTUM_TASK_CAPSULE_SCHEMA)[0].serviceId, 'moonlab-ulg-fixture');
+  assert.equal(registry.resolveTask(tasks.eshkol)[0].serviceId, 'eshkol-ulg-fixture');
+  assert.equal(registry.resolveTask(tasks.moonlab)[0].serviceId, 'moonlab-ulg-fixture');
+
+  const leaseManager = new ChildWorkerLeaseManager();
+  const hosts = new Map();
+  const supervisor = new WorkerSupervisor({
+    registry,
+    leaseManager,
+    workerFactory: (manifest) => {
+      const host = new UlgContractServiceHost(manifest, {
+        holdUntilCancel: manifest.serviceId === 'moonlab-ulg-fixture'
+      });
+      hosts.set(manifest.serviceId, host);
+      return host;
+    }
+  });
+
+  const events = [];
+  supervisor.subscribe((event, telemetry) => events.push({ type: event.type, telemetry }));
+
+  const eshkolResult = await supervisor.submitTask(tasks.eshkol);
+  const moonlabPromise = supervisor.submitTask(tasks.moonlab);
+  await waitFor(() => leaseManager.list({ status: 'active', rootTaskId: tasks.moonlab.rootTaskId }).length === 1);
+  await supervisor.cancelTree(tasks.moonlab.rootTaskId);
+  const moonlabResult = await moonlabPromise;
+
+  assert.equal(eshkolResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(eshkolResult.status, 'complete');
+  assert.equal(eshkolResult.serviceId, 'eshkol-ulg-fixture');
+  assert.equal(eshkolResult.capsuleSchema, ULG_LAW_TASK_CAPSULE_SCHEMA);
+  assert.equal(eshkolResult.runtimeManifestSchema, ULG_RUNTIME_MANIFEST_SCHEMA);
+  assert.equal(eshkolResult.contract.schema, ULG_SERVICE_CONTRACT_SCHEMA);
+  assert.equal(eshkolResult.childLease.schema, CHILD_WORKER_LEASE_SCHEMA);
+
+  assert.equal(moonlabResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(moonlabResult.status, 'cancelled-clean');
+  assert.equal(moonlabResult.cancelled, true);
+  assert.equal(moonlabResult.serviceId, 'moonlab-ulg-fixture');
+  assert.equal(moonlabResult.capsuleSchema, ULG_QUANTUM_TASK_CAPSULE_SCHEMA);
+  assert.equal(moonlabResult.contract.runtimeDependency, 'none');
+
+  const leases = leaseManager.list();
+  const eshkolLease = leases.find((lease) => lease.rootTaskId === tasks.eshkol.rootTaskId);
+  const moonlabLease = leases.find((lease) => lease.rootTaskId === tasks.moonlab.rootTaskId);
+  assert.equal(eshkolLease.status, 'released');
+  assert.equal(moonlabLease.status, 'revoked');
+  assert.equal(moonlabLease.module, '/peercompute-fixtures/ulg/moonlab-quantum-worker.js');
+
+  const telemetry = supervisor.getTreeTelemetry();
+  assert.equal(telemetry.schema, WORKER_SUPERVISOR_TELEMETRY_SCHEMA);
+  assert.equal(telemetry.registry.schema, COMPUTE_SERVICE_REGISTRY_SCHEMA);
+  assert.equal(telemetry.registry.serviceCount, 2);
+  assert.equal(telemetry.registry.services[0].contract.schema, ULG_SERVICE_CONTRACT_SCHEMA);
+
+  const serviceTelemetry = new Map(telemetry.services.map((service) => [service.serviceId, service]));
+  const eshkolService = serviceTelemetry.get('eshkol-ulg-fixture');
+  const moonlabService = serviceTelemetry.get('moonlab-ulg-fixture');
+  assert.equal(eshkolService.contract.schema, ULG_SERVICE_CONTRACT_SCHEMA);
+  assert.equal(eshkolService.telemetry.schema, ULG_SERVICE_TELEMETRY_SCHEMA);
+  assert.equal(eshkolService.telemetry.lastCapsuleSchema, ULG_LAW_TASK_CAPSULE_SCHEMA);
+  assert.equal(moonlabService.contract.runtimeManifestSchema, ULG_RUNTIME_MANIFEST_SCHEMA);
+  assert.equal(moonlabService.telemetry.lastCapsuleSchema, ULG_QUANTUM_TASK_CAPSULE_SCHEMA);
+  assert.equal(moonlabService.telemetry.activeLeaseId, moonlabLease.leaseId);
+
+  const taskTelemetry = new Map(telemetry.tasks.map((task) => [task.rootTaskId, task]));
+  assert.equal(taskTelemetry.get(tasks.eshkol.rootTaskId).status, 'complete');
+  assert.equal(taskTelemetry.get(tasks.moonlab.rootTaskId).status, 'cancelled-clean');
+  assert.equal(taskTelemetry.get(tasks.moonlab.rootTaskId).children[0].capsuleSchema, ULG_QUANTUM_TASK_CAPSULE_SCHEMA);
+  assert.equal(hosts.size, 2);
+  assert.equal(events.some((event) => event.type === 'task-cancelling'), true);
 });
 
 test('WorkerSupervisor runs a fake service host with child-worker leases', async () => {

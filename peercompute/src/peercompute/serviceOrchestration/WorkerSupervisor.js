@@ -243,6 +243,9 @@ export class WorkerSupervisor {
   getTreeTelemetry() {
     return {
       schema: WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
+      registry: typeof this.registry?.listCapabilities === 'function'
+        ? this.registry.listCapabilities()
+        : null,
       services: [...this.handles.values()].map((handle) => this.#handleSummary(handle)),
       tasks: [...this.tasks.values()].map((task) => this.#taskSummary(task)),
       leases: this.leaseManager.list(),
@@ -357,7 +360,9 @@ export class WorkerSupervisor {
       heartbeatAt: handle.heartbeatAt,
       telemetry: clonePlain(handle.telemetry || {}),
       capabilities: [...(handle.manifest.capabilities || [])],
-      taskKinds: [...(handle.manifest.taskKinds || [])]
+      taskKinds: [...(handle.manifest.taskKinds || [])],
+      abi: clonePlain(handle.manifest.abi || null),
+      contract: clonePlain(handle.manifest.contract || handle.manifest.metadata?.ulgContract || null)
     };
   }
 

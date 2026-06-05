@@ -51,6 +51,9 @@ export function normalizeComputeServiceManifest(manifest = {}) {
     ? manifest.childWorkers
     : {};
 
+  const metadata = clonePlain(manifest.metadata || {});
+  const contract = clonePlain(manifest.contract || metadata?.ulgContract || null);
+
   return {
     schema: manifest.schema || COMPUTE_SERVICE_MANIFEST_SCHEMA,
     serviceId,
@@ -67,8 +70,9 @@ export function normalizeComputeServiceManifest(manifest = {}) {
     capabilities,
     taskKinds,
     abi: clonePlain(manifest.abi || null),
+    contract,
     validation: clonePlain(manifest.validation || {}),
-    metadata: clonePlain(manifest.metadata || {})
+    metadata
   };
 }
 
@@ -139,7 +143,8 @@ export class ComputeServiceRegistry {
       runtime: manifest.runtime,
       capabilities: [...manifest.capabilities],
       taskKinds: [...manifest.taskKinds],
-      abi: clonePlain(manifest.abi)
+      abi: clonePlain(manifest.abi),
+      contract: clonePlain(manifest.contract || null)
     }));
     return {
       schema: COMPUTE_SERVICE_REGISTRY_SCHEMA,
