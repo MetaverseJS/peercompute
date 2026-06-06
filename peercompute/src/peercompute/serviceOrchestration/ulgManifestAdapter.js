@@ -13,6 +13,8 @@ export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.mag
 export const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
 
 const DEFAULT_PROTOCOL_VERSION = '0.5';
+const MOONLAB_MAGNETAR_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
+const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
 const TASK_ARTIFACT_KIND = Object.freeze({
   'eshkol.closure.derive': 'closure',
   'moonlab.quantum.response': 'quantum-response'
@@ -180,6 +182,20 @@ function finiteNumberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function stringOrNull(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function normalizeValidationStatus(validation = {}) {
+  const explicitStatus = stringOrNull(validation?.status);
+  if (explicitStatus) return explicitStatus;
+  if (typeof validation?.parityPassed === 'boolean') return validation.parityPassed ? 'pass' : 'fail';
+  if (typeof validation?.passed === 'boolean') return validation.passed ? 'pass' : 'fail';
+  return null;
+}
+
 function countWasmEntries(entries = [], kind) {
   return Array.isArray(entries)
     ? entries.filter((entry) => entry?.kind === kind).length
@@ -205,6 +221,7 @@ function normalizeWasmByteArray(input) {
 
 export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const validationStatus = artifact.validation?.status || artifact.validationStatus || null;
+  const outputs = artifact.outputs && typeof artifact.outputs === 'object' ? artifact.outputs : {};
   const parity = artifact.parity && typeof artifact.parity === 'object' ? artifact.parity : null;
   const responseDescriptor = artifact.responseDescriptor && typeof artifact.responseDescriptor === 'object'
     ? artifact.responseDescriptor
@@ -221,6 +238,23 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const outputSemanticsStdout = outputSemantics?.stdout && typeof outputSemantics.stdout === 'object'
     ? outputSemantics.stdout
     : {};
+  const magnetarReference = outputs.reference && typeof outputs.reference === 'object' ? outputs.reference : null;
+  const magnetarReferenceObservables = magnetarReference?.observables && typeof magnetarReference.observables === 'object'
+    ? magnetarReference.observables
+    : {};
+  const magnetarReferenceGroundState = magnetarReferenceObservables.groundState
+    && typeof magnetarReferenceObservables.groundState === 'object'
+    ? magnetarReferenceObservables.groundState
+    : {};
+  const magnetarReferenceTolerances = magnetarReference?.tolerances
+    && typeof magnetarReference.tolerances === 'object'
+    ? magnetarReference.tolerances
+    : {};
+  const magnetarReferenceValidation = magnetarReference?.validation
+    && typeof magnetarReference.validation === 'object'
+    ? magnetarReference.validation
+    : {};
+  const magnetarReferenceValidationStatus = normalizeValidationStatus(magnetarReferenceValidation);
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
@@ -314,6 +348,24 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
       .filter((entry) => entry?.status === 'unsupported')
       .map((entry) => String(entry.mode || '').trim())
       .filter(Boolean),
+    magnetarReferenceReady: artifactKind === 'quantum-response'
+      && magnetarReference?.schema === MOONLAB_MAGNETAR_REFERENCE_SCHEMA
+      && magnetarReference?.role === MOONLAB_MAGNETAR_REFERENCE_ROLE
+      && magnetarReferenceValidationStatus === 'pass',
+    magnetarReferenceSchema: magnetarReference?.schema || null,
+    magnetarReferenceRole: magnetarReference?.role || null,
+    magnetarReferenceContractHash: magnetarReference?.contractHash || null,
+    magnetarReferenceEnergyUnits: magnetarReference?.energyUnits || null,
+    magnetarReferenceGroundStateBitString: stringOrNull(
+      magnetarReferenceGroundState.bitString ?? magnetarReferenceGroundState.bitstring
+    ),
+    magnetarReferenceGroundStateEnergy: finiteNumberOrNull(magnetarReferenceGroundState.referenceEnergy),
+    magnetarReferenceToleranceEnergyAbs: finiteNumberOrNull(magnetarReferenceTolerances.energyAbs),
+    magnetarReferenceMaxObservedEnergyDelta: finiteNumberOrNull(
+      magnetarReferenceTolerances.maxObservedEnergyDelta
+        ?? magnetarReferenceValidation.maxEnergyDelta
+    ),
+    magnetarReferenceValidationStatus,
     calibrationArtifactCount: calibrationSummaries.length,
     calibrationReadyCount: calibrationSummaries.filter((entry) => entry.ready).length,
     calibrationArtifacts: calibrationSummaries,
@@ -391,7 +443,10 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
       || artifact.artifactKind
       || 'artifact'
   ).trim();
-  const artifactSummary = clonePlain(entry.artifactSummary || summarizeUlgArtifact(artifactKind, artifact));
+  const computedArtifactSummary = summarizeUlgArtifact(artifactKind, artifact);
+  const artifactSummary = entry.artifactSummary
+    ? { ...computedArtifactSummary, ...clonePlain(entry.artifactSummary) }
+    : computedArtifactSummary;
   const wasmBytes = normalizeWasmByteArray(entry.wasmBytes);
   const wasmByteLength = wasmBytes?.length ?? finiteNumberOrNull(entry.wasmByteLength);
   const sourceService = artifactSummary.sourceService

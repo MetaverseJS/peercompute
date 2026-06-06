@@ -403,7 +403,40 @@ class UlgV05ArtifactServiceHost {
         },
         outputs: {
           probabilities: [0.5, 0, 0, 0.5],
-          basis: 'computational'
+          basis: 'computational',
+          reference: {
+            schema: 'moonlab.magnetar-dipole-ising-reference.v0',
+            role: 'peercompute-reference-tolerance-input',
+            contractHash: task.capsule.inputHash,
+            energyUnits: 'normalized-ising',
+            hamiltonian: {
+              localFields: [0.25, 0.125, 0.0625],
+              couplings: [
+                { qubit1: 0, qubit2: 1, value: -0.5 },
+                { qubit1: 1, qubit2: 2, value: -0.25 }
+              ]
+            },
+            observables: {
+              groundState: {
+                bitstring: 0,
+                bitString: '000',
+                referenceEnergy: -0.9375
+              },
+              energySpectrum: [
+                { bitstring: 0, bitString: '000', referenceEnergy: -0.9375 },
+                { bitstring: 7, bitString: '111', referenceEnergy: 0.3125 }
+              ]
+            },
+            tolerances: {
+              energyAbs: 1e-9,
+              maxObservedEnergyDelta: 0
+            },
+            validation: {
+              parityPassed: true,
+              maxEnergyDelta: 0,
+              evaluatedBitstrings: 8
+            }
+          }
         },
         calibrationArtifacts: {
           magnetarDipoleIsing: {
@@ -671,6 +704,16 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   assert.equal(result.artifactSummary.parityModeCount, 2);
   assert.equal(result.artifactSummary.unsupportedParityModeCount, 1);
   assert.deepEqual(result.artifactSummary.unsupportedParityModes, ['moonlab-webgpu']);
+  assert.equal(result.artifactSummary.magnetarReferenceReady, true);
+  assert.equal(result.artifactSummary.magnetarReferenceSchema, 'moonlab.magnetar-dipole-ising-reference.v0');
+  assert.equal(result.artifactSummary.magnetarReferenceRole, 'peercompute-reference-tolerance-input');
+  assert.equal(result.artifactSummary.magnetarReferenceContractHash, moonlabCapsule.inputHash);
+  assert.equal(result.artifactSummary.magnetarReferenceEnergyUnits, 'normalized-ising');
+  assert.equal(result.artifactSummary.magnetarReferenceGroundStateBitString, '000');
+  assert.equal(result.artifactSummary.magnetarReferenceGroundStateEnergy, -0.9375);
+  assert.equal(result.artifactSummary.magnetarReferenceToleranceEnergyAbs, 1e-9);
+  assert.equal(result.artifactSummary.magnetarReferenceMaxObservedEnergyDelta, 0);
+  assert.equal(result.artifactSummary.magnetarReferenceValidationStatus, 'pass');
   assert.equal(result.artifactSummary.calibrationArtifactCount, 1);
   assert.equal(result.artifactSummary.calibrationReadyCount, 1);
   assert.equal(result.artifactSummary.magnetarDipoleIsingReady, true);
@@ -866,7 +909,30 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
       },
       artifact: {
         artifactId: 'artifact:moonlab-calibration',
-        sourceService: 'moonlab'
+        sourceService: 'moonlab',
+        outputs: {
+          reference: {
+            schema: 'moonlab.magnetar-dipole-ising-reference.v0',
+            role: 'peercompute-reference-tolerance-input',
+            contractHash: 'sha256:moonlab-magnetar-reference',
+            energyUnits: 'normalized-ising',
+            observables: {
+              groundState: {
+                bitString: '000',
+                referenceEnergy: -0.9375
+              }
+            },
+            tolerances: {
+              energyAbs: 1e-9,
+              maxObservedEnergyDelta: 0
+            },
+            validation: {
+              parityPassed: true,
+              maxEnergyDelta: 0,
+              evaluatedBitstrings: 8
+            }
+          }
+        }
       }
     }, {
       ref: {
@@ -927,6 +993,12 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.equal(handoff.closureArtifactsWithBytes.length, 1);
   assert.equal(handoff.readyCalibrationArtifact.sourceService, 'moonlab');
   assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarDipoleIsingGroundState, '000');
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceReady, true);
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceSchema, 'moonlab.magnetar-dipole-ising-reference.v0');
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceContractHash, 'sha256:moonlab-magnetar-reference');
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceGroundStateBitString, '000');
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceToleranceEnergyAbs, 1e-9);
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceValidationStatus, 'pass');
   assert.equal(handoff.readyClosureArtifact.sourceService, 'eshkol');
   assert.equal(handoff.readyClosureArtifact.hasTransferredWasmBytes, true);
   assert.equal(handoff.readyClosureArtifact.closureOutputSemanticsReady, true);

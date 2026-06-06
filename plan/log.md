@@ -48885,3 +48885,48 @@ User asked whether Infinite Context Coder is being used.
 - The first Playwright probe failed because package-managed Chromium was not
   installed; reran successfully with `/bin/google-chrome`.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 00:20:16 AKDT - MoonLab magnetar reference contract summary
+
+### Prompt
+- User prompt time/date: `2026-06-06 00:20:16 AKDT`.
+- User asked for a focused PeerCompute sidecar on branch
+  `multi-scale-physics-sim`: add service-orchestration adapter support for
+  MoonLab ULG quantum-response artifacts that include `outputs.reference` from
+  MoonLab commit `c39118c`, keep commits local, do not push, scope edits away
+  from Multiscale runtime/model files, run targeted checks, and commit locally
+  if passing.
+
+### Actions
+- Read parent and repo `AGENTS.md`; confirmed all responses must address the
+  user as big dog, plan/log/test docs should be updated, Node 24 should remain
+  active, commits stay local, and no push should occur.
+- Performed the memory quick pass for PeerCompute/Multiscale context.
+- Inspected MoonLab's emitted `outputs.reference` contract fields for the
+  magnetar dipole Ising probe.
+- Extended `summarizeUlgArtifact()` so MoonLab quantum-response artifacts expose
+  `magnetarReferenceReady`, schema, role, contract hash, energy units,
+  ground-state bit string/reference energy, absolute energy tolerance, max
+  observed energy delta, and validation status.
+- Kept `outputs.reference` separate from older `calibrationArtifacts` summaries.
+- Made ULG demo handoff normalization merge computed full-artifact summary
+  fields into provided summaries, so a handoff carrying a full artifact can
+  expose reference-contract fields even if the upstream compact summary lacks
+  them.
+- Updated the service-orchestration unit fixture and assertions for the new
+  MoonLab reference fields.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed
+  `9/9`.
+- PASS: `git diff --check`.
+- No push was attempted; changes are ready for the requested local commit.
