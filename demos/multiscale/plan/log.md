@@ -22303,3 +22303,40 @@ User asked whether Infinite Context Coder is being used.
   and cross-family conservation/coupling validation remain open before the
   live manifest has bounded proxy artifacts for every required family.
 - No push was attempted.
+
+## 2026-06-06 03:53:30 AKDT - PIC runtime proxy validation
+
+### Prompt
+- User asked how progress was going and whether the overall plan remained on
+  track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0` for
+  bounded proxy validation of the reduced PIC kinetic plasma runtime.
+- Added a hashable PIC runtime evidence entry with validation schema, scope,
+  pass/fail checks, observed particle/grid counts, charge/current/field-energy
+  diagnostics, divergence-E, reconnection heating, escape fraction, and
+  charge/energy drift summaries.
+- Preserved the same validation schema/scope path used by MHD, radiation, and
+  relativistic runtime evidence so all four solver-family proxy artifacts
+  survive manifest normalization.
+- Added a regression that ingests bounded PIC proxy evidence into the magnetar
+  scenario and proves it remains proxy-only with `scenarioScientificReady:
+  false`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'PIC kinetic plasma runtime evidence|magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+  passed `189/189`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings.
+- PASS: `git diff --check`.
+
+### Open
+- This is runtime provenance for a reduced PIC proxy, not calibrated
+  charge-conserving PIC or magnetar science. Cross-family conservation/coupling
+  validation remains open before the manifest has a bounded proxy artifact for
+  every required runtime family.
+- No push was attempted.

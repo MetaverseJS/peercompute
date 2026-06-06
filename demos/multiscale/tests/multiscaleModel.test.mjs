@@ -91,11 +91,14 @@ import {
 import {
   MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
   MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE,
+  PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA,
+  PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE,
   RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA,
   RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
   createMagnetosphereMhdRuntimeEvidenceEntry,
+  createPicKineticPlasmaRuntimeEvidenceEntry,
   createRadiationTransportRuntimeEvidenceEntry,
   createRelativisticCorrectionRuntimeEvidenceEntry
 } from '../src/simulation/magnetarRuntimeEvidence.js';
@@ -2530,6 +2533,89 @@ test('magnetosphere MHD runtime evidence records bounded proxy validation withou
   assert.equal(magnetosphere.validation.schema, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA);
   assert.equal(magnetosphere.validationScope, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE);
   assert.ok(magnetosphere.blockers.includes('magnetosphere-plasma-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+});
+
+test('PIC kinetic plasma runtime evidence records bounded proxy validation without scientific readiness', async () => {
+  resetPicPlasmaPatch();
+  const runtime = await stepPicPlasmaPatch({
+    stateKey: 'pic:evidence:bounded',
+    input: {
+      stateKey: 'pic:evidence:bounded',
+      state: makePicPlasmaPatchInitialState({
+        particleCount: 48,
+        gridWidth: 8,
+        gridHeight: 4,
+        seed: 20260606,
+        environment: { ambientTemperatureK: 800 },
+        coupling: {
+          reconnectionRate: 1.2,
+          solarWindPressure: 3.2,
+          ionization: 0.55,
+          alfvenSpeed: 1.8,
+          maxwellFieldEnergy: 1.1,
+          poyntingFlux: [0.25, 0.08, 0]
+        }
+      }),
+      dt: 0.05,
+      environment: { ambientTemperatureK: 800 },
+      coupling: {
+        reconnectionRate: 1.2,
+        solarWindPressure: 3.2,
+        ionization: 0.55,
+        alfvenSpeed: 1.8,
+        meanTemperatureK: 12000,
+        maxwellFieldEnergy: 1.1,
+        poyntingFlux: [0.25, 0.08, 0]
+      },
+      enableWebGPU: false
+    }
+  });
+  const entry = await createPicKineticPlasmaRuntimeEvidenceEntry(runtime);
+
+  assert.equal(entry.id, 'validated-pic-kinetic-plasma-runtime');
+  assert.equal(entry.family, 'pic-kinetic-plasma');
+  assert.equal(entry.solverId, 'pic-plasma-patch');
+  assert.equal(entry.status, 'proxy-runtime-validated');
+  assert.equal(entry.ready, false);
+  assert.equal(entry.scientificExecution, false);
+  assert.equal(entry.validationStatus, 'pass');
+  assert.match(entry.evidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(entry.validation.schema, PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(entry.validation.scope, PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(entry.validation.pass, true);
+  assert.equal(entry.validation.ready, false);
+  assert.equal(entry.validation.scientificExecution, false);
+  assert.equal(entry.validation.checks.speciesCountsPositive, true);
+  assert.equal(entry.validation.checks.divergenceEFinite, true);
+  assert.equal(entry.validation.checks.proxyConservationMode, true);
+  assert.ok(entry.observed.particleCount > 0);
+  assert.ok(entry.observed.kineticEnergy >= 0);
+  assert.ok(entry.blockers.includes('pic-plasma-patch-runtime-proxy-only'));
+
+  const model = new MultiscaleModel({ seed: 482 });
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest({
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [entry]
+  });
+  const pic = scenario.scientificRuntimeEvidence.entries.find((candidate) => (
+    candidate.id === 'validated-pic-kinetic-plasma-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 4);
+  assert.equal(pic.status, 'proxy-runtime-observed');
+  assert.equal(pic.ready, false);
+  assert.equal(pic.scientificExecution, false);
+  assert.equal(pic.evidenceHash, entry.evidenceHash);
+  assert.equal(pic.validation.schema, PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(pic.validationScope, PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(pic.blockers.includes('pic-plasma-patch-runtime-proxy-only'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
   assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });

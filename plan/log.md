@@ -2,6 +2,60 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 03:53:30 AKDT - PIC runtime proxy validation
+
+### Prompt
+- User asked how the overall plan was going and whether the work remained on
+  track, with standing instruction to keep going.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 03:53:30 AKDT`.
+
+### Actions
+- Added `peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0` as a
+  bounded runtime validation artifact for the reduced PIC kinetic plasma proxy
+  worker.
+- Added hashable runtime evidence entries for the PIC kinetic-plasma family
+  with validation schema/scope/check metadata, observed particle/field/charge
+  summaries, and explicit `scientificExecution: false` / `proxyOnly: true`
+  status.
+- Preserved the same magnetar manifest normalization path now used by MHD,
+  PIC, radiation, and relativistic proxy-validation artifacts.
+- Added a regression proving bounded PIC proxy evidence can be observed and
+  hashed while still leaving validated runtime count and scenario scientific
+  readiness blocked.
+
+### Files Touched
+- `demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'PIC kinetic plasma runtime evidence|magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused Multiscale model run passed `189/189`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: `git diff --check` passed before local commit.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The new PIC artifact is a bounded reduced kinetic-plasma proxy validation
+  report. It does not satisfy calibrated charge-conserving PIC or magnetar
+  scientific execution requirements.
+- Cross-family conservation/coupling validation remains the remaining required
+  runtime evidence family before the manifest has a bounded proxy artifact for
+  every required entry.
+
 ## 2026-06-06 03:49:09 AKDT - Magnetosphere MHD runtime proxy validation
 
 ### Prompt

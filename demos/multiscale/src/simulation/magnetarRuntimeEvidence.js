@@ -16,6 +16,12 @@ export const MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA =
 export const MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE =
   'bounded-ideal-mhd-plasma-proxy-validation';
 
+export const PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA =
+  'peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0';
+
+export const PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE =
+  'bounded-pic-kinetic-plasma-proxy-validation';
+
 const RUNTIME_EVIDENCE_ENTRY_ID = 'validated-relativistic-correction-runtime';
 const RUNTIME_EVIDENCE_FAMILY = 'relativistic-correction';
 const RUNTIME_EVIDENCE_SOLVER_ID = 'relativistic-correction';
@@ -25,6 +31,9 @@ const RADIATION_RUNTIME_EVIDENCE_SOLVER_ID = 'radiation-opacity';
 const MAGNETOSPHERE_RUNTIME_EVIDENCE_ENTRY_ID = 'validated-magnetosphere-mhd-runtime';
 const MAGNETOSPHERE_RUNTIME_EVIDENCE_FAMILY = 'magnetosphere-mhd';
 const MAGNETOSPHERE_RUNTIME_EVIDENCE_SOLVER_ID = 'magnetosphere-plasma';
+const PIC_RUNTIME_EVIDENCE_ENTRY_ID = 'validated-pic-kinetic-plasma-runtime';
+const PIC_RUNTIME_EVIDENCE_FAMILY = 'pic-kinetic-plasma';
+const PIC_RUNTIME_EVIDENCE_SOLVER_ID = 'pic-plasma-patch';
 
 export function createRelativisticCorrectionRuntimeValidation(result = {}, options = {}) {
   const diagnostics = clonePlain(result.diagnostics || {});
@@ -307,6 +316,109 @@ export async function createMagnetosphereMhdRuntimeEvidenceEntry(result = {}, op
   };
 }
 
+export function createPicKineticPlasmaRuntimeValidation(result = {}, options = {}) {
+  const diagnostics = clonePlain(result.diagnostics || {});
+  const conservation = clonePlain(result.conservation || {});
+  const observed = summarizePicKineticPlasmaRuntime(result);
+  const checks = {
+    resultOk: result.ok === true,
+    backendObserved: typeof result.backend === 'string' && result.backend !== 'none',
+    sequenceAdvanced: Number.isFinite(Number(result.sequence)) && Number(result.sequence) > 0,
+    diagnosticsSchema: diagnostics.schema === 'peercompute.multiscale.pic-plasma-patch.diagnostics.v0',
+    particleCountPositive: Number.isFinite(Number(diagnostics.particleCount))
+      && Number(diagnostics.particleCount) > 0,
+    cellCountPositive: Number.isFinite(Number(diagnostics.cellCount)) && Number(diagnostics.cellCount) > 0,
+    speciesCountsPositive: Number.isFinite(Number(diagnostics.electronCount))
+      && Number(diagnostics.electronCount) > 0
+      && Number.isFinite(Number(diagnostics.ionCount))
+      && Number(diagnostics.ionCount) > 0,
+    totalMassPositive: Number.isFinite(Number(diagnostics.totalMass))
+      && Number(diagnostics.totalMass) > 0,
+    chargeImbalanceFinite: Number.isFinite(Number(diagnostics.chargeImbalance)),
+    kineticEnergyNonnegative: Number.isFinite(Number(diagnostics.kineticEnergy))
+      && Number(diagnostics.kineticEnergy) >= 0,
+    fieldEnergyNonnegative: Number.isFinite(Number(diagnostics.fieldEnergy))
+      && Number(diagnostics.fieldEnergy) >= 0,
+    maxParticleSpeedFinite: Number.isFinite(Number(diagnostics.maxParticleSpeed))
+      && Number(diagnostics.maxParticleSpeed) >= 0,
+    currentDensityFinite: Number.isFinite(Number(diagnostics.currentDensity))
+      && Number(diagnostics.currentDensity) >= 0,
+    chargeSeparationFinite: Number.isFinite(Number(diagnostics.chargeSeparation))
+      && Number(diagnostics.chargeSeparation) >= 0,
+    particleEscapeFractionBounded: Number.isFinite(Number(diagnostics.particleEscapeFraction))
+      && Number(diagnostics.particleEscapeFraction) >= 0,
+    divergenceEFinite: Number.isFinite(Number(diagnostics.divergenceEProxy))
+      && Number(diagnostics.divergenceEProxy) >= 0,
+    reconnectionHeatingFinite: Number.isFinite(Number(diagnostics.reconnectionHeating))
+      && Number(diagnostics.reconnectionHeating) >= 0,
+    chargeDriftFinite: Number.isFinite(Number(conservation.chargeDrift)),
+    kineticEnergyDeltaFinite: Number.isFinite(Number(conservation.kineticEnergyDelta)),
+    fieldEnergyDeltaFinite: Number.isFinite(Number(conservation.fieldEnergyDelta)),
+    proxyConservationMode: conservation.energyMode === 'reduced-pic-plasma-patch'
+  };
+  const blockers = validationBlockers('pic-kinetic-plasma', checks);
+  const passed = blockers.length === 0;
+  return {
+    schema: PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA,
+    status: passed ? 'proxy-validation-pass' : 'proxy-validation-fail',
+    pass: passed,
+    ready: false,
+    scientificExecution: false,
+    proxyOnly: true,
+    scope: options.scope || PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE,
+    solverId: PIC_RUNTIME_EVIDENCE_SOLVER_ID,
+    backend: typeof result.backend === 'string' ? result.backend : null,
+    sequence: finiteOrNull(result.sequence),
+    observed,
+    checks,
+    blockerCount: blockers.length,
+    blockers,
+    note: 'This validates bounded scalar invariants for the reduced PIC proxy runtime only; it is not calibrated kinetic plasma, charge-conserving PIC, or magnetar scientific execution.'
+  };
+}
+
+export async function createPicKineticPlasmaRuntimeEvidenceEntry(result = {}, options = {}) {
+  const validation = createPicKineticPlasmaRuntimeValidation(result, options);
+  const evidenceHash = validation.pass
+    ? await sha256CanonicalJson({
+      schema: PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA,
+      scope: validation.scope,
+      solverId: validation.solverId,
+      backend: validation.backend,
+      sequence: validation.sequence,
+      observed: validation.observed,
+      checks: validation.checks
+    })
+    : null;
+  return {
+    id: PIC_RUNTIME_EVIDENCE_ENTRY_ID,
+    family: PIC_RUNTIME_EVIDENCE_FAMILY,
+    solverId: PIC_RUNTIME_EVIDENCE_SOLVER_ID,
+    status: validation.pass ? 'proxy-runtime-validated' : 'proxy-runtime-validation-failed',
+    ready: false,
+    scientificExecution: false,
+    runtimeObserved: validation.pass,
+    proxyOnly: true,
+    backend: validation.backend,
+    sequence: validation.sequence,
+    validationStatus: validation.pass ? 'pass' : 'fail',
+    evidenceHash,
+    observed: validation.observed,
+    validation,
+    scope: validation.scope,
+    blocker: 'pic-plasma-patch-runtime-proxy-only',
+    blockers: validation.pass
+      ? [
+        'pic-plasma-patch-runtime-proxy-only',
+        'validated-pic-kinetic-plasma-runtime-missing'
+      ]
+      : [
+        ...validation.blockers,
+        'validated-pic-kinetic-plasma-runtime-missing'
+      ]
+  };
+}
+
 function summarizeRelativisticCorrectionRuntime(result = {}) {
   const diagnostics = result.diagnostics || {};
   const conservation = result.conservation || {};
@@ -325,6 +437,40 @@ function summarizeRelativisticCorrectionRuntime(result = {}) {
     relativisticEnergyDelta: finiteOrNull(conservation.relativisticEnergyDelta),
     timeDilationDrift: finiteOrNull(conservation.timeDilationDrift),
     causalityClampCount: finiteOrNull(diagnostics.causalityClampCount)
+  };
+}
+
+function summarizePicKineticPlasmaRuntime(result = {}) {
+  const diagnostics = result.diagnostics || {};
+  const conservation = result.conservation || {};
+  return {
+    particleCount: finiteOrNull(diagnostics.particleCount),
+    gridWidth: finiteOrNull(diagnostics.gridWidth),
+    gridHeight: finiteOrNull(diagnostics.gridHeight),
+    cellCount: finiteOrNull(diagnostics.cellCount),
+    electronCount: finiteOrNull(diagnostics.electronCount),
+    ionCount: finiteOrNull(diagnostics.ionCount),
+    totalMass: finiteOrNull(diagnostics.totalMass),
+    totalCharge: finiteOrNull(diagnostics.totalCharge),
+    chargeImbalance: finiteOrNull(diagnostics.chargeImbalance),
+    kineticEnergy: finiteOrNull(diagnostics.kineticEnergy),
+    meanKineticEnergy: finiteOrNull(diagnostics.meanKineticEnergy),
+    fieldEnergy: finiteOrNull(diagnostics.fieldEnergy),
+    meanFieldEnergy: finiteOrNull(diagnostics.meanFieldEnergy),
+    maxParticleSpeed: finiteOrNull(diagnostics.maxParticleSpeed),
+    currentDensity: finiteOrNull(diagnostics.currentDensity),
+    meanChargeDensity: finiteOrNull(diagnostics.meanChargeDensity),
+    chargeSeparation: finiteOrNull(diagnostics.chargeSeparation),
+    escapedParticles: finiteOrNull(diagnostics.escapedParticles),
+    particleEscapeFraction: finiteOrNull(diagnostics.particleEscapeFraction),
+    debyeLengthProxy: finiteOrNull(diagnostics.debyeLengthProxy),
+    larmorRadiusProxy: finiteOrNull(diagnostics.larmorRadiusProxy),
+    reconnectionHeating: finiteOrNull(diagnostics.reconnectionHeating),
+    divergenceEProxy: finiteOrNull(diagnostics.divergenceEProxy),
+    chargeDrift: finiteOrNull(conservation.chargeDrift),
+    kineticEnergyDelta: finiteOrNull(conservation.kineticEnergyDelta),
+    fieldEnergyDelta: finiteOrNull(conservation.fieldEnergyDelta),
+    escapedParticleDelta: finiteOrNull(conservation.escapedParticleDelta)
   };
 }
 
