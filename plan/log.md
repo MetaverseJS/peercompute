@@ -2,6 +2,43 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 18:09:16 AKDT - ULG magnetar calibration summary bridge
+
+### Prompt
+- User asked: "this is great. based on current progress how many days until we have a compkete working system that adheres to the soec and can simulate a magnetar"
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-05 18:09:16 AKDT`.
+
+### Actions
+- Estimated the remaining complete spec-adherent magnetar system work at roughly 3-5 focused engineering days, assuming no major hidden spec gaps.
+- Extended the ULG v0.5 artifact-summary adapter so MoonLab `peercompute.ulg.magnetar-dipole-ising-calibration.v0` calibration artifacts are summarized beside the artifact ref.
+- The summary now exposes calibration artifact counts, ready counts, magnetar readiness, validation status, parity status, ground-state bitstring, max energy delta, and evaluated bitstring count.
+- Exported the magnetar calibration schema constant through the service-orchestration public index.
+- Updated the ULG v0.5 MoonLab service-host fixture and assertions to verify the new calibration summary fields.
+- Updated roadmap and test-strategy docs for the magnetar calibration summary bridge.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+
+### Test Results
+- PASS: syntax checks completed for the changed adapter, public index, and focused unit test.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `7/7` tests passing.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- This bridge surfaces the MoonLab calibration handoff to PeerCompute orchestration; full calibrated magnetar physics still needs validated tensor/profile fixtures, Eshkol deployment/artifact ingestion, and an end-to-end magnetar artifact replay gate.
+
 ## 2026-06-05 17:55:24 AKDT - Multiscale magnetar scenario preset
 
 ### Prompt

@@ -7,6 +7,7 @@ export const ULG_ARTIFACT_RESULT_SCHEMA = 'peercompute.ulg.artifact-result.v0';
 export const ULG_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.ulg.artifact-summary.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
+export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
 const DEFAULT_PROTOCOL_VERSION = '0.5';
 const TASK_ARTIFACT_KIND = Object.freeze({
@@ -178,6 +179,28 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     : null;
   const parityComparisons = Array.isArray(parity?.comparisons) ? parity.comparisons : [];
   const unsupportedParityModeCount = parityComparisons.filter((entry) => entry?.status === 'unsupported').length;
+  const calibrationArtifacts = artifact.calibrationArtifacts && typeof artifact.calibrationArtifacts === 'object'
+    ? artifact.calibrationArtifacts
+    : {};
+  const calibrationSummaries = Object.entries(calibrationArtifacts)
+    .filter(([, calibration]) => calibration && typeof calibration === 'object')
+    .map(([id, calibration]) => ({
+      id,
+      schema: calibration.schema || null,
+      sample: calibration.sample || null,
+      status: calibration.validation?.status || calibration.status || null,
+      parityStatus: calibration.parity?.status || null,
+      groundStateBitString: calibration.summary?.groundState?.bitString || null,
+      maxEnergyDelta: calibration.summary?.maxEnergyDelta ?? calibration.parity?.metrics?.maxEnergyDelta ?? null,
+      evaluatedBitstrings: calibration.summary?.evaluatedBitstrings ?? null,
+      ready: calibration.schema === ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
+        && calibration.validation?.status === 'pass'
+        && calibration.parity?.status === 'pass'
+    }));
+  const magnetarDipoleIsing = calibrationSummaries.find((entry) => (
+    entry.id === 'magnetarDipoleIsing'
+    || entry.schema === ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
+  )) || null;
   return {
     schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
     artifactKind,
@@ -194,7 +217,16 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     unsupportedParityModes: parityComparisons
       .filter((entry) => entry?.status === 'unsupported')
       .map((entry) => String(entry.mode || '').trim())
-      .filter(Boolean)
+      .filter(Boolean),
+    calibrationArtifactCount: calibrationSummaries.length,
+    calibrationReadyCount: calibrationSummaries.filter((entry) => entry.ready).length,
+    calibrationArtifacts: calibrationSummaries,
+    magnetarDipoleIsingReady: magnetarDipoleIsing?.ready === true,
+    magnetarDipoleIsingStatus: magnetarDipoleIsing?.status || null,
+    magnetarDipoleIsingParityStatus: magnetarDipoleIsing?.parityStatus || null,
+    magnetarDipoleIsingGroundState: magnetarDipoleIsing?.groundStateBitString || null,
+    magnetarDipoleIsingMaxEnergyDelta: magnetarDipoleIsing?.maxEnergyDelta ?? null,
+    magnetarDipoleIsingEvaluatedBitstrings: magnetarDipoleIsing?.evaluatedBitstrings ?? null
   };
 }
 

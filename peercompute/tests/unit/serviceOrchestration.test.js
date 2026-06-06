@@ -11,6 +11,7 @@ import {
   ChildWorkerLeaseManager,
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
+  ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
   ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
@@ -400,6 +401,28 @@ class UlgV05ArtifactServiceHost {
           probabilities: [0.5, 0, 0, 0.5],
           basis: 'computational'
         },
+        calibrationArtifacts: {
+          magnetarDipoleIsing: {
+            schema: ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
+            sample: 'magnetar_dipole_ising',
+            validation: {
+              status: 'pass'
+            },
+            parity: {
+              status: 'pass',
+              metrics: {
+                maxEnergyDelta: 0
+              }
+            },
+            summary: {
+              groundState: {
+                bitString: '000'
+              },
+              maxEnergyDelta: 0,
+              evaluatedBitstrings: 8
+            }
+          }
+        },
         parity: {
           schema: ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
           sample: 'bell_phi_plus',
@@ -644,6 +667,15 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   assert.equal(result.artifactSummary.parityModeCount, 2);
   assert.equal(result.artifactSummary.unsupportedParityModeCount, 1);
   assert.deepEqual(result.artifactSummary.unsupportedParityModes, ['moonlab-webgpu']);
+  assert.equal(result.artifactSummary.calibrationArtifactCount, 1);
+  assert.equal(result.artifactSummary.calibrationReadyCount, 1);
+  assert.equal(result.artifactSummary.magnetarDipoleIsingReady, true);
+  assert.equal(result.artifactSummary.magnetarDipoleIsingStatus, 'pass');
+  assert.equal(result.artifactSummary.magnetarDipoleIsingParityStatus, 'pass');
+  assert.equal(result.artifactSummary.magnetarDipoleIsingGroundState, '000');
+  assert.equal(result.artifactSummary.magnetarDipoleIsingMaxEnergyDelta, 0);
+  assert.equal(result.artifactSummary.magnetarDipoleIsingEvaluatedBitstrings, 8);
+  assert.equal(result.artifactSummary.calibrationArtifacts[0].schema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
   assert.equal(result.outputs[0].artifactSummary.parityStatus, 'pass');
   assert.equal(result.artifact.sourceService, 'moonlab');
   assert.equal(result.artifact.taskKind, 'moonlab.quantum.response');
