@@ -148,6 +148,16 @@ Updated: 2026-06-06 13:25:59 AKDT
 - Handler summary regression proves compact service summaries surface handler
   readiness and output schema/status/ready for both MoonLab and Eshkol dispatch
   results without copying raw artifact payloads.
+- Relay-backed focused runtime P2P smoke passed on 2026-06-06:
+  `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
+  DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay
+  on a dynamic localhost port, wrote Hyperborea `relay-config.json`, connected
+  multiple headless browser peers, and exited with `Runtime P2P tests passed`.
+- VPN coturn/backend dry-runs passed on 2026-06-06:
+  `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
+  `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host
+  `100.86.83.35:3478`; `npm run backend:dry-run` reported relay plus coturn
+  launch commands without starting services.
 - `git diff --check` passed.
 
 ## Next
@@ -155,5 +165,8 @@ Updated: 2026-06-06 13:25:59 AKDT
   once the closure runtime contract can produce non-fixture table evidence.
 - Wire concrete MoonLab/Eshkol production handlers into the handler-backed
   dispatch host once those services expose their runtime entry points.
+- Extend relay-backed runtime P2P smoke coverage from focused Hyperborea to the
+  full selected ULG/Multiscale service path once the browser service adapters
+  can participate in room discovery without manual handoff.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

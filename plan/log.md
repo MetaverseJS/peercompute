@@ -51352,3 +51352,50 @@ timeout 8s env \
   execute browser WebGPU parity, does not mark `backendAvailable`, and does not
   promote full-fidelity magnetar simulation or full physics validation.
 - No push was attempted.
+
+## 2026-06-06 13:53:05 AKDT - Focused relay-backed runtime P2P smoke
+
+### Prompt
+- Continue toward the AGENTS.md requirement to run a local PeerCompute stack
+  with relay/STUN/TURN/ICE coverage while keeping the active ULG and Multiscale
+  Vite demos reachable on `0.0.0.0`.
+
+### Actions
+- Reviewed relay entrypoints: `scripts/dev-local-relay.sh`,
+  `scripts/dev-vpn-coturn.sh`, `scripts/run-relay.sh`,
+  `scripts/pcserver.sh`, and `demos/tests/runtime-p2p.mjs`.
+- Confirmed `turnserver` is installed at `/bin/turnserver`.
+- Ran the VPN coturn dry-run and production backend dry-run without starting or
+  replacing the active live demo servers.
+- Ran a focused Hyperborea runtime P2P smoke, which starts an isolated Go relay
+  on a dynamic localhost port, writes temporary `docs/hyperborea/relay-config.json`,
+  opens two browser peers, waits for relay-backed discovery, then tears the
+  relay down.
+- Restored the generated localhost `docs/hyperborea/relay-config.json` back to
+  the tracked VPN WSS/TURN config after the smoke, so no dead localhost relay
+  address remains in the docs tree.
+
+### Commands Run
+- `bash scripts/dev-vpn-coturn.sh --dry-run`
+- `npm run backend:dry-run`
+- `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000 DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs`
+- `git status --short`
+- `git diff -- docs/hyperborea/relay-config.json`
+
+### Results
+- PASS: VPN coturn dry-run selected `RELAY_PUBLIC_HOST=100.86.83.35`,
+  `RELAY_LISTEN_HOST=0.0.0.0`, `RELAY_LISTEN_PORT=0`, and TURN host
+  `100.86.83.35:3478`.
+- PASS: backend dry-run reported the relay command and coturn command without
+  starting services.
+- PASS: focused runtime P2P smoke started the Go relay, advertised
+  `/ip4/127.0.0.1/tcp/46199/ws/p2p/12D3KooWKqKcJScPbCAaUdATimRcRVD3PE8CDuuNz2GThnMk7pVS`,
+  wrote Hyperborea relay config, connected multiple browser peers, disconnected
+  them cleanly, and printed `Runtime P2P tests passed`.
+- PASS: transient generated localhost relay config was restored; `git status`
+  was clean before plan-note edits.
+
+### Open
+- This is focused Hyperborea relay/P2P coverage, not a full ULG/Multiscale
+  distributed service adapter room test yet.
+- No push was attempted.

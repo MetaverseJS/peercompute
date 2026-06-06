@@ -919,3 +919,19 @@
   `scientificReady = true`, no blockers, `pic-kinetic-plasma`
   `fidelityRuntimeScopeReady = true`, and calibrated runtime scope flags
   `fullFidelityMagnetarSimulation = false` and `fullPhysicsValidation = false`.
+
+### Relay-backed runtime P2P gate
+- VPN coturn dry-run:
+  `bash scripts/dev-vpn-coturn.sh --dry-run`.
+: current result on 2026-06-06 selected `RELAY_PUBLIC_HOST=100.86.83.35`,
+  `RELAY_LISTEN_HOST=0.0.0.0`, `RELAY_LISTEN_PORT=0`, and TURN host
+  `100.86.83.35:3478`.
+- Backend dry-run:
+  `npm run backend:dry-run`.
+: current result on 2026-06-06 reported relay plus coturn commands without
+  starting services.
+- Focused runtime P2P smoke:
+  `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000 DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs`.
+: current result on 2026-06-06 passed. The smoke started the Go relay on a
+  dynamic localhost port, wrote Hyperborea relay config, connected multiple
+  browser peers, disconnected cleanly, and printed `Runtime P2P tests passed`.
