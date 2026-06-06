@@ -1,0 +1,187 @@
+{
+  "source": "copied from ULG ulg-gpu-abi/examples on 2026-06-05",
+  "manifests": [
+    {
+      "serviceId": "eshkol",
+      "version": "0.5.0-demo",
+      "runtime": "js",
+      "entry": {
+        "workerModule": "./workers/eshkol.service.worker.js"
+      },
+      "childWorkers": {
+        "allowed": true,
+        "maxChildren": 4,
+        "allowedModules": ["./workers/eshkol.child.worker.js"],
+        "sameOriginOnly": true
+      },
+      "resources": {
+        "maxWasmMemoryBytes": 67108864,
+        "maxGpuMemoryBytes": 33554432,
+        "maxCpuWorkers": 4,
+        "maxTaskMs": 30000
+      },
+      "capabilities": [
+        "ulg.closure.derive",
+        "ulg.table.generate",
+        "ulg.validation.reference"
+      ],
+      "taskKinds": ["eshkol.closure.derive"],
+      "abi": {
+        "ulgIrVersion": "0.5",
+        "gpuAbiVersion": "0.5",
+        "supportedDTypes": ["f32", "complex64"],
+        "supportedLayouts": ["soa", "interleaved", "row-major"]
+      },
+      "validation": {
+        "requiresCpuReference": true,
+        "toleranceProfile": "scientific-default",
+        "parityModes": ["wasm-reference", "js-dummy-reference"]
+      }
+    },
+    {
+      "serviceId": "moonlab",
+      "version": "0.5.0-demo",
+      "runtime": "wasm",
+      "entry": {
+        "workerModule": "./workers/moonlab.service.worker.js",
+        "loaderModule": "/service-assets/moonlab/moonlab.js",
+        "wasmModule": "/service-assets/moonlab/moonlab.wasm",
+        "serviceAssets": {
+          "serviceId": "moonlab",
+          "rootPath": "/service-assets",
+          "baseUrl": "/service-assets/moonlab/",
+          "loaderModule": "/service-assets/moonlab/moonlab.js",
+          "wasmModule": "/service-assets/moonlab/moonlab.wasm",
+          "locateFileProbe": "moonlab.wasm",
+          "coreProbeWorkerModule": "./workers/moonlab-core-probe.worker.js",
+          "required": ["loaderModule", "wasmModule"],
+          "files": {
+            "loaderModule": "moonlab.js",
+            "wasmModule": "moonlab.wasm"
+          }
+        }
+      },
+      "childWorkers": {
+        "allowed": true,
+        "maxChildren": 4,
+        "allowedModules": ["./workers/moonlab.child.worker.js", "./workers/moonlab-core-probe.worker.js"],
+        "sameOriginOnly": true
+      },
+      "resources": {
+        "maxWasmMemoryBytes": 67108864,
+        "maxGpuMemoryBytes": 33554432,
+        "maxCpuWorkers": 4,
+        "maxTaskMs": 30000
+      },
+      "capabilities": [
+        "ulg.quantum.response",
+        "ulg.parity.cpu_webgpu",
+        "ulg.tensor.contract"
+      ],
+      "taskKinds": ["moonlab.quantum.response"],
+      "abi": {
+        "ulgIrVersion": "0.5",
+        "gpuAbiVersion": "0.5",
+        "supportedDTypes": ["f32", "complex64"],
+        "supportedLayouts": ["soa", "interleaved", "row-major"]
+      },
+      "validation": {
+        "requiresCpuReference": true,
+        "toleranceProfile": "quantum-response-demo",
+        "parityModes": ["wasm-reference", "js-dummy-reference"]
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "taskId": "fixture-eshkol-closure-derive-001",
+      "rootTaskId": "fixture-eshkol-closure-derive-001",
+      "serviceId": "eshkol",
+      "taskKind": "eshkol.closure.derive",
+      "inputs": [
+        {
+          "tensorId": "rho-grid",
+          "dtype": "f32",
+          "shape": [16],
+          "layout": "row-major",
+          "source": "hot"
+        }
+      ],
+      "outputs": [
+        {
+          "artifactKind": "closure",
+          "artifactSchema": "closure_artifact.schema.json"
+        }
+      ],
+      "unitsHash": "ulg:fixture-units-v0.5",
+      "inputHash": "ulg:fixture-input-eshkol-001",
+      "methodHash": "ulg:fixture-method-eshkol-001",
+      "deterministicSeed": "fixture-seed-v0.5",
+      "resources": {
+        "childWorkers": 2,
+        "gpu": "optional",
+        "wasmMemoryBytes": 8388608,
+        "gpuMemoryBytes": 4194304,
+        "priority": "simulation"
+      },
+      "validation": {
+        "mode": "self",
+        "toleranceProfile": "demo-parity"
+      },
+      "provenance": {
+        "sourceService": "eshkol",
+        "methodHash": "ulg:fixture-method-eshkol-001",
+        "inputHash": "ulg:fixture-input-eshkol-001",
+        "codeVersion": "ulg-service-contract-fixture",
+        "deterministicSeed": "fixture-seed-v0.5",
+        "createdAt": "2026-06-05T00:00:00.000Z",
+        "notes": ["cross-repo fixture"]
+      }
+    },
+    {
+      "taskId": "fixture-moonlab-quantum-response-001",
+      "rootTaskId": "fixture-moonlab-quantum-response-001",
+      "serviceId": "moonlab",
+      "taskKind": "moonlab.quantum.response",
+      "inputs": [
+        {
+          "tensorId": "closure-response-grid",
+          "dtype": "complex64",
+          "shape": [8, 2],
+          "layout": "interleaved",
+          "source": "artifact"
+        }
+      ],
+      "outputs": [
+        {
+          "artifactKind": "quantum-response",
+          "artifactSchema": "quantum_response_artifact.schema.json"
+        }
+      ],
+      "unitsHash": "ulg:fixture-units-v0.5",
+      "inputHash": "ulg:fixture-input-moonlab-001",
+      "methodHash": "ulg:fixture-method-moonlab-001",
+      "deterministicSeed": "fixture-seed-v0.5",
+      "resources": {
+        "childWorkers": 2,
+        "gpu": "optional",
+        "wasmMemoryBytes": 8388608,
+        "gpuMemoryBytes": 4194304,
+        "priority": "simulation"
+      },
+      "validation": {
+        "mode": "self",
+        "toleranceProfile": "demo-parity"
+      },
+      "provenance": {
+        "sourceService": "moonlab",
+        "methodHash": "ulg:fixture-method-moonlab-001",
+        "inputHash": "ulg:fixture-input-moonlab-001",
+        "codeVersion": "ulg-service-contract-fixture",
+        "deterministicSeed": "fixture-seed-v0.5",
+        "createdAt": "2026-06-05T00:00:00.000Z",
+        "notes": ["cross-repo fixture"]
+      }
+    }
+  ]
+}

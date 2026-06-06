@@ -17,3 +17,16 @@ export {
   ComputeManagerServiceAdapter,
   createComputeManagerServiceFactory
 } from './ComputeManagerServiceAdapter.js';
+export {
+  ULG_ARTIFACT_RESULT_SCHEMA,
+  ULG_MANIFEST_ADAPTER_SCHEMA,
+  ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
+  ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
+  adaptUlgV05ComputeServiceManifest,
+  adaptUlgV05TaskCapsule,
+  createUlgArtifactResult,
+  createUlgV05ArtifactResult,
+  normalizeUlgArtifactOutputs,
+  normalizeUlgServiceManifest,
+  normalizeUlgTaskCapsule
+} from './ulgManifestAdapter.js';

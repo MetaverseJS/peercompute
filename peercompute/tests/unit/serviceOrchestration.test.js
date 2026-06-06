@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { ComputeManager } from '../../src/peercompute/computeManager/ComputeManager.js';
 import {
   CHILD_WORKER_LEASE_SCHEMA,
@@ -8,9 +9,15 @@ import {
   COMPUTE_SERVICE_REGISTRY_SCHEMA,
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
+  ULG_ARTIFACT_RESULT_SCHEMA,
+  ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
+  ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor,
+  adaptUlgV05ComputeServiceManifest,
+  adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
+  createUlgV05ArtifactResult,
   normalizeComputeServiceManifest
 } from '../../src/peercompute/serviceOrchestration/index.js';
 import {
@@ -340,6 +347,100 @@ class UlgContractServiceHost {
   }
 }
 
+class UlgV05ArtifactServiceHost {
+  constructor(manifest) {
+    this.manifest = manifest;
+    this.listeners = {
+      message: new Set(),
+      error: new Set()
+    };
+  }
+
+  addEventListener(type, listener) {
+    this.listeners[type]?.add(listener);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners[type]?.delete(listener);
+  }
+
+  postMessage(message) {
+    if (message.type === 'init') {
+      this.emit({
+        type: 'ready',
+        workerId: message.workerId,
+        serviceId: this.manifest.serviceId
+      });
+    }
+    if (message.type === 'submit-task') {
+      const { task } = message;
+      const artifact = {
+        artifactId: `artifact:${task.taskId}`,
+        sourceService: task.serviceId,
+        taskKind: task.taskKind,
+        inputHash: task.capsule.inputHash,
+        method: 'moonlab.fixture.quantum-response',
+        representation: 'bell-state-probability-vector',
+        outputs: {
+          probabilities: [0.5, 0, 0, 0.5],
+          basis: 'computational'
+        },
+        validation: {
+          status: 'pass',
+          toleranceProfile: task.validation.toleranceProfile
+        },
+        provenance: task.provenance,
+        contentHash: 'ulg:fixture-result-moonlab-001'
+      };
+      this.emit({
+        type: 'task-result',
+        rootTaskId: task.rootTaskId,
+        result: createUlgV05ArtifactResult(task, artifact)
+      });
+    }
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+
+  emit(data) {
+    for (const listener of this.listeners.message) {
+      listener({ data });
+    }
+  }
+}
+
+class InMemoryArtifactCache {
+  constructor(now = () => 1) {
+    this.now = now;
+    this.records = new Map();
+  }
+
+  async put(artifact) {
+    const artifactHash = artifact.contentHash || `artifact-${this.records.size}`;
+    const ref = {
+      uri: `artifact://${artifactHash}`,
+      artifactHash,
+      sourceService: artifact.sourceService,
+      createdAt: this.now()
+    };
+    this.records.set(ref.uri, { ref, artifact });
+    return ref;
+  }
+
+  async get(ref) {
+    return this.records.get(ref.uri)?.artifact;
+  }
+
+  list() {
+    return [...this.records.values()].map(({ ref, artifact }) => ({
+      ref,
+      artifactKind: artifact.artifactKind || artifact.taskKind || 'unknown'
+    }));
+  }
+}
+
 async function waitFor(predicate) {
   for (let i = 0; i < 50; i += 1) {
     if (predicate()) return;
@@ -457,6 +558,62 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
   assert.equal(revocable.status, 'active');
   await leases.revokeByRootTask('root-task-c');
   assert.equal(leases.get(revocable.leaseId).status, 'revoked');
+});
+
+test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs through WorkerSupervisor', async () => {
+  const fixtureText = readFileSync(new URL('../fixtures/ulg-v0.5-fixtures.json', import.meta.url), 'utf8');
+  assert.equal(fixtureText.includes('/home/cos/projects/ulg'), false);
+  const fixtures = JSON.parse(fixtureText);
+  const moonlabManifest = fixtures.manifests.find((manifest) => manifest.serviceId === 'moonlab');
+  const moonlabCapsule = fixtures.tasks.find((task) => task.serviceId === 'moonlab');
+
+  const manifest = adaptUlgV05ComputeServiceManifest(moonlabManifest);
+  assert.equal(manifest.schema, COMPUTE_SERVICE_MANIFEST_SCHEMA);
+  assert.equal(manifest.serviceId, 'moonlab');
+  assert.equal(manifest.runtime, 'wasm');
+  assert.equal(manifest.contract.schema, ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA);
+  assert.equal(manifest.contract.protocolVersion, '0.5');
+  assert.deepEqual(manifest.contract.outputArtifactKinds, ['quantum-response']);
+  assert.equal(manifest.entry.serviceAssets.loaderModule, '/service-assets/moonlab/moonlab.js');
+  assert.equal(manifest.metadata.serviceAssets.coreProbeWorkerModule, './workers/moonlab-core-probe.worker.js');
+  assert.equal(manifest.childWorkers.allowedModules.includes('./workers/moonlab-core-probe.worker.js'), true);
+
+  const task = adaptUlgV05TaskCapsule(moonlabCapsule, { workerType: 'classic' });
+  assert.equal(task.schema, ULG_TASK_CAPSULE_ADAPTER_SCHEMA);
+  assert.equal(task.workerType, 'classic');
+  assert.equal(task.outputs[0].artifactKind, 'quantum-response');
+  assert.equal(task.artifactPlan[0].artifactSchema, 'quantum_response_artifact.schema.json');
+  assert.equal(task.capsule.methodHash, 'ulg:fixture-method-moonlab-001');
+
+  const registry = new ComputeServiceRegistry([manifest]);
+  assert.equal(registry.resolve('moonlab.quantum.response')[0].serviceId, 'moonlab');
+  assert.equal(registry.resolveTask(task)[0].serviceId, 'moonlab');
+
+  const artifactCache = new InMemoryArtifactCache(() => 1234);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    artifactCache,
+    workerFactory: (serviceManifest) => new UlgV05ArtifactServiceHost(serviceManifest)
+  });
+
+  const result = await supervisor.submitTask(task);
+  assert.equal(result.schema, ULG_ARTIFACT_RESULT_SCHEMA);
+  assert.equal(result.status, 'complete');
+  assert.equal(result.outputs[0].artifactKind, 'quantum-response');
+  assert.equal(result.outputs[0].artifactRefHint, 'ulg:quantum-response:ulg:fixture-result-moonlab-001');
+  assert.equal(result.artifact.sourceService, 'moonlab');
+  assert.equal(result.artifact.taskKind, 'moonlab.quantum.response');
+  assert.deepEqual(result.artifact.outputs.probabilities, [0.5, 0, 0, 0.5]);
+  assert.equal(result.artifactRef.uri, 'artifact://ulg:fixture-result-moonlab-001');
+  assert.equal(result.artifactRef.sourceService, 'moonlab');
+
+  const cached = await artifactCache.get(result.artifactRef);
+  assert.equal(cached.artifactId, `artifact:${moonlabCapsule.taskId}`);
+  assert.equal(cached.contentHash, 'ulg:fixture-result-moonlab-001');
+
+  const telemetry = supervisor.getTreeTelemetry();
+  assert.equal(telemetry.artifacts[0].ref.uri, result.artifactRef.uri);
+  assert.equal(telemetry.tasks[0].artifactRef.uri, result.artifactRef.uri);
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

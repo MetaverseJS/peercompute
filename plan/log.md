@@ -47404,6 +47404,85 @@ User asked whether Infinite Context Coder is being used.
 - The ULG demo's MoonLab artifact probe is ready and has observed Bell `phi_plus` probabilities `[0.5000000000000001, 0, 0, 0.5000000000000001]` through the MoonLab WASM core.
 - No PeerCompute dev server was left newly running by this checkpoint.
 
+## 2026-06-05 16:53:47 AKDT - ULG v0.5 manifest adapter bridge
+
+### Prompt
+- Continuing user direction: "keep going until i tell you to stop. youre doing great"
+- Inherited session constraints: keep all commits local, do not push, keep the ULG Vite demo reachable on the VPN, and do not use or log any SSH password.
+- Prompt time/date recorded from the local machine: `2026-06-05 16:53:47 AKDT`.
+
+### Actions
+- Added a small ULG v0.5 adapter module under PeerCompute service orchestration.
+- Exported `adaptUlgV05ComputeServiceManifest()`, `adaptUlgV05TaskCapsule()`, and `createUlgV05ArtifactResult()` aliases, plus neutral `normalizeUlgServiceManifest()`, `normalizeUlgTaskCapsule()`, and `createUlgArtifactResult()` names.
+- Copied ULG v0.5 Eshkol/MoonLab manifest and task-capsule fixtures into PeerCompute test fixtures without a runtime import or absolute dependency on `/home/cos/projects/ulg`.
+- Preserved MoonLab `entry.serviceAssets` metadata, including loader/WASM paths and the core probe worker module, through the normalized PeerCompute service manifest metadata/contract.
+- Added an in-memory artifact-cache test host that submits the adapted MoonLab task through `WorkerSupervisor`, returns a ULG quantum-response artifact body, and verifies the supervisor stores it through `artifactCache.put()` as an `artifact://...` ref.
+- Folded the read-only sidecar report into the API naming and artifact-ref behavior; the sidecar made no edits and was not pushed.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/fixtures/ulg-v0.5-fixtures.json`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short --branch`
+- `find peercompute/src/peercompute/serviceOrchestration -maxdepth 2 -type f -print`
+- `sed -n '1,240p' peercompute/src/peercompute/serviceOrchestration/ComputeServiceRegistry.js`
+- `sed -n '1,380p' peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `sed -n '1,180p' peercompute/src/peercompute/serviceOrchestration/index.js`
+- `sed -n '1,340p' peercompute/tests/fixtures/ulgServiceFixtures.js`
+- `sed -n '1,260p' peercompute/src/peercompute/serviceOrchestration/ComputeManagerServiceAdapter.js`
+- `sed -n '1,720p' peercompute/tests/unit/serviceOrchestration.test.js`
+- `rg -n "artifactCache|artifactRef|serviceAssets|compute_service_manifest|service manifest|ULG|task capsule|capsule" /home/cos/projects/ulg peercompute/src peercompute/tests -g '*.js' -g '*.mjs' -g '*.md' -g '*.json'`
+- `sed -n '1,140p' /home/cos/projects/ulg/ulg-gpu-abi/README.md`
+- `sed -n '1,280p' /home/cos/projects/ulg/ulg-gpu-abi/src/serviceContract.js`
+- `sed -n '1,260p' /home/cos/projects/ulg/ulg-gpu-abi/examples/eshkol-service-manifest.json`
+- `sed -n '1,280p' /home/cos/projects/ulg/ulg-gpu-abi/examples/moonlab-service-manifest.json`
+- `sed -n '1,280p' /home/cos/projects/ulg/ulg-gpu-abi/examples/eshkol-task-capsule.json`
+- `sed -n '1,280p' /home/cos/projects/ulg/ulg-gpu-abi/examples/moonlab-task-capsule.json`
+- `rg -n "serviceOrchestration|ComputeServiceRegistry|normalizeComputeServiceManifest" peercompute/src/peercompute -g '*.js'`
+- `find peercompute/src/peercompute -maxdepth 2 -type f -name 'index.js' -print -exec sed -n '1,220p' {} \;`
+- `cat peercompute/package.json`
+- `sed -n '1,80p' /home/cos/projects/ulg/src/runtime/ArtifactCache.js`
+- `sed -n '1,120p' /home/cos/projects/ulg/ulg-gpu-abi/src/schemas/quantum_response_artifact.schema.json`
+- `sed -n '1,110p' /home/cos/projects/ulg/ulg-gpu-abi/src/schemas/closure_artifact.schema.json`
+- `sed -n '1,120p' /home/cos/projects/ulg/ulg-gpu-abi/src/schemas/compute_service_manifest.schema.json`
+- `sed -n '1,90p' /home/cos/projects/ulg/ulg-gpu-abi/src/schemas/task_capsule.schema.json`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `git diff --stat`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `git diff --check`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/solverRegistry.test.js`
+- `npm --prefix peercompute run test:unit`
+- `npm --prefix peercompute run build`
+
+### Test Results
+- PASS: syntax checks completed for the new adapter, service-orchestration barrel export, PeerCompute root export, and service-orchestration unit test file.
+- PASS: focused `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `7/7` tests passing.
+- PASS: the new v0.5 adapter test proved the copied fixture text does not contain `/home/cos/projects/ulg`, preserves MoonLab service asset metadata, registers with `ComputeServiceRegistry`, resolves the adapted task, and stores the returned artifact through the supervisor artifact-cache path as `artifact://ulg:fixture-result-moonlab-001`.
+- PASS: `git diff --check` completed without whitespace errors.
+- PASS: integrated service/ComputeManager/SolverRegistry gate completed with `30/30` tests passing.
+- PASS: full `npm --prefix peercompute run test:unit` completed with `123/123` tests passing.
+- PASS: `npm --prefix peercompute run build` completed with the existing circular-chunk and bundle-size warnings.
+
+### Failures / Open Questions
+- This adapter is still a fixture/contract bridge. It does not start real MoonLab/Eshkol service workers, validate artifact bodies with ULG's JSON schema package at runtime, or perform calibrated scientific execution.
+- The next PeerCompute step should be either a real service-host wrapper around the browser worker protocol or fixing the Multiscale remote-solver cadence blocker found during relay smoke.
+
+### Demo Server State
+- ULG demo remains served by the live Vite process on `http://100.86.83.35:5173/`.
+- No PeerCompute dev server was left newly running by this checkpoint.
+
 ## 2026-06-05 15:47:45 AKDT - ULG service orchestration fixture bridge
 
 ### Prompt

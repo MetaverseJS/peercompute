@@ -65,10 +65,21 @@ export {
   ComputeManagerServiceAdapter,
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
+  ULG_ARTIFACT_RESULT_SCHEMA,
+  ULG_MANIFEST_ADAPTER_SCHEMA,
+  ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
+  ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor,
+  adaptUlgV05ComputeServiceManifest,
+  adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
-  normalizeComputeServiceManifest
+  createUlgArtifactResult,
+  createUlgV05ArtifactResult,
+  normalizeComputeServiceManifest,
+  normalizeUlgArtifactOutputs,
+  normalizeUlgServiceManifest,
+  normalizeUlgTaskCapsule
 } from './serviceOrchestration/index.js';
 export { GPUHubManager } from './gpu/GPUHubManager.js';
 
