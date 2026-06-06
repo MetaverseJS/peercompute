@@ -1413,6 +1413,9 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
     provider
   });
   const baseUrl = resolveUlgArtifactBaseUrl(preparedArtifact, options);
+  const outputSemantics = options.outputSemantics
+    || preparedArtifact.validation?.outputSemantics
+    || createOutputSemanticsFromArtifactSummary(artifactSummary);
   const probe = await probeScenarioClosureModule(preparedArtifact, {
     ...options,
     artifactKind,
@@ -1421,7 +1424,8 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
     dryInstantiateHostRuntime: true,
     executeHostRuntime: options.executeHostRuntime !== false,
     entryExport: options.entryExport || artifactSummary.closureEntryExport || preparedArtifact.execution?.entryExport || 'main',
-    entrySignature: options.entrySignature || artifactSummary.closureEntrySignature || preparedArtifact.execution?.entrySignature || null
+    entrySignature: options.entrySignature || artifactSummary.closureEntrySignature || preparedArtifact.execution?.entrySignature || null,
+    outputSemantics
   });
   return cloneJson({
     ...probe,
@@ -1702,6 +1706,137 @@ function serializeWasmValue(value) {
   return String(value);
 }
 
+const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
+const SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.multiscale.scenario-closure-output-semantics-validation.v0';
+
+function createOutputSemanticsFromArtifactSummary(summary = {}) {
+  if (!summary?.closureOutputSemanticsSchema) return null;
+  const stdout = {};
+  if (summary.closureOutputExpectedStdoutSha256) {
+    stdout.sha256 = summary.closureOutputExpectedStdoutSha256;
+  }
+  if (summary.closureOutputExpectedStdoutByteLength != null) {
+    stdout.byteLength = Number(summary.closureOutputExpectedStdoutByteLength);
+  }
+  return {
+    schema: summary.closureOutputSemanticsSchema,
+    semanticScope: summary.closureOutputSemanticScope || null,
+    scientificScope: summary.closureOutputScientificScope || null,
+    scientificValidation: summary.closureOutputScientificValidation === true,
+    entryExport: summary.closureOutputExpectedEntryExport || null,
+    entryArgs: Array.isArray(summary.closureOutputExpectedEntryArgs)
+      ? [...summary.closureOutputExpectedEntryArgs]
+      : null,
+    expectedEntryResult: summary.closureOutputExpectedEntryResult ?? null,
+    stdout
+  };
+}
+
+function compareSerializedScalar(actual, expected) {
+  if (actual == null || expected == null) return actual == null && expected == null;
+  return String(serializeWasmValue(actual)) === String(serializeWasmValue(expected));
+}
+
+function compareSerializedArray(actual = [], expected = []) {
+  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return false;
+  return actual.every((value, index) => compareSerializedScalar(value, expected[index]));
+}
+
+async function sha256Utf8(text) {
+  if (!globalThis.crypto?.subtle) return null;
+  const encoded = new TextEncoder().encode(String(text));
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded);
+  return `sha256:${Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+async function validateScenarioClosureOutputSemantics(execution = {}, outputSemantics = null) {
+  const blockers = [];
+  const semantics = outputSemantics && typeof outputSemantics === 'object' ? outputSemantics : null;
+  const stdout = semantics?.stdout && typeof semantics.stdout === 'object' ? semantics.stdout : {};
+  const outputText = String(execution.outputText || '');
+  const outputByteLength = Number.isFinite(Number(execution.outputByteLength))
+    ? Number(execution.outputByteLength)
+    : new TextEncoder().encode(outputText).length;
+  const outputSha256 = await sha256Utf8(outputText);
+  if (!semantics) {
+    blockers.push('eshkol-closure-output-semantics-missing');
+  }
+  if (semantics && semantics.schema !== ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA) {
+    blockers.push('eshkol-closure-output-semantics-schema-unrecognized');
+  }
+  if (semantics && semantics.semanticScope !== 'smoke-fixture') {
+    blockers.push('eshkol-closure-output-semantics-scope-unsupported');
+  }
+  if (semantics && semantics.scientificValidation !== false) {
+    blockers.push('eshkol-closure-output-semantics-scientific-scope-invalid');
+  }
+  if (semantics?.entryExport && semantics.entryExport !== execution.entryExport) {
+    blockers.push('eshkol-closure-output-entry-export-mismatch');
+  }
+  if (Array.isArray(semantics?.entryArgs) && !compareSerializedArray(execution.entryArgs || [], semantics.entryArgs)) {
+    blockers.push('eshkol-closure-output-entry-args-mismatch');
+  }
+  if (
+    semantics
+    && Object.prototype.hasOwnProperty.call(semantics, 'expectedEntryResult')
+    && !compareSerializedScalar(execution.entryResult, semantics.expectedEntryResult)
+  ) {
+    blockers.push('eshkol-closure-output-entry-result-mismatch');
+  }
+  if (Number.isFinite(Number(stdout.byteLength)) && Number(stdout.byteLength) !== outputByteLength) {
+    blockers.push('eshkol-closure-output-stdout-byte-length-mismatch');
+  }
+  if (stdout.sha256 && (!outputSha256 || stdout.sha256 !== outputSha256)) {
+    blockers.push(outputSha256 ? 'eshkol-closure-output-stdout-sha256-mismatch' : 'eshkol-closure-output-stdout-sha256-unavailable');
+  }
+  if (typeof stdout.expectedText === 'string' && stdout.expectedText !== outputText) {
+    blockers.push('eshkol-closure-output-stdout-text-mismatch');
+  }
+  if (execution.ready !== true) {
+    blockers.push('eshkol-closure-host-runtime-execution-not-ready');
+  }
+  return {
+    schema: SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
+    status: blockers.length === 0 ? 'output-semantics-validated' : 'output-semantics-pending',
+    ready: blockers.length === 0,
+    sourceSchema: semantics?.schema || null,
+    semanticScope: semantics?.semanticScope || null,
+    scientificScope: semantics?.scientificScope || null,
+    scientificValidation: semantics?.scientificValidation === true,
+    expected: {
+      entryExport: semantics?.entryExport || null,
+      entryArgs: Array.isArray(semantics?.entryArgs) ? [...semantics.entryArgs] : null,
+      entryResult: semantics?.expectedEntryResult ?? null,
+      stdoutSha256: stdout.sha256 || null,
+      stdoutByteLength: Number.isFinite(Number(stdout.byteLength)) ? Number(stdout.byteLength) : null,
+      stdoutExpectedTextProvided: typeof stdout.expectedText === 'string'
+    },
+    observed: {
+      entryExport: execution.entryExport || null,
+      entryArgs: Array.isArray(execution.entryArgs) ? [...execution.entryArgs] : [],
+      entryResult: execution.entryResult ?? null,
+      stdoutSha256: outputSha256,
+      stdoutByteLength: outputByteLength
+    },
+    checks: {
+      schema: semantics?.schema === ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+      semanticScope: semantics?.semanticScope === 'smoke-fixture',
+      scientificValidation: semantics?.scientificValidation === false,
+      entryExport: !semantics?.entryExport || semantics.entryExport === execution.entryExport,
+      entryArgs: !Array.isArray(semantics?.entryArgs) || compareSerializedArray(execution.entryArgs || [], semantics.entryArgs),
+      entryResult: !semantics || !Object.prototype.hasOwnProperty.call(semantics, 'expectedEntryResult')
+        || compareSerializedScalar(execution.entryResult, semantics.expectedEntryResult),
+      stdoutByteLength: !Number.isFinite(Number(stdout.byteLength)) || Number(stdout.byteLength) === outputByteLength,
+      stdoutSha256: !stdout.sha256 || stdout.sha256 === outputSha256,
+      stdoutText: typeof stdout.expectedText !== 'string' || stdout.expectedText === outputText
+    },
+    blockers,
+    scientificExecution: false
+  };
+}
+
 async function executeScenarioClosureHostRuntime(module, observedImports = [], options = {}) {
   const runtime = createScenarioClosureHostRuntimeExecutionImports(observedImports, options);
   const entryExport = options.entryExport || 'main';
@@ -1724,7 +1859,17 @@ async function executeScenarioClosureHostRuntime(module, observedImports = [], o
     error = err?.message || String(err);
   }
   const outputText = runtime.output.join('');
+  const serializedEntryArgs = entryArgs.map(serializeWasmValue);
+  const outputByteLength = new TextEncoder().encode(outputText).length;
   const ready = Boolean(instance && entryInvoked && !error);
+  const outputSemanticsValidation = await validateScenarioClosureOutputSemantics({
+    ready,
+    entryExport,
+    entryArgs: serializedEntryArgs,
+    entryResult,
+    outputText,
+    outputByteLength
+  }, options.outputSemantics || null);
   return {
     schema: 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0',
     status: ready ? 'host-runtime-execution-ready' : 'host-runtime-execution-pending',
@@ -1733,10 +1878,11 @@ async function executeScenarioClosureHostRuntime(module, observedImports = [], o
     instantiated: Boolean(instance),
     entryInvoked,
     entryExport,
-    entryArgs: entryArgs.map(serializeWasmValue),
+    entryArgs: serializedEntryArgs,
     entryResult,
     outputPreview: outputText.slice(0, 160),
-    outputByteLength: new TextEncoder().encode(outputText).length,
+    outputByteLength,
+    outputSemanticsValidation,
     runtimeCallCount: runtime.calls.length,
     calledImports: [...new Set(runtime.calls.map((call) => call.name))],
     mainInvoked: entryExport === 'main' && entryInvoked,
@@ -1828,7 +1974,8 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
           ? await executeScenarioClosureHostRuntime(module, observedImports, {
               ...options,
               entryExport,
-              entrySignature: options.entrySignature || execution.entrySignature || null
+              entrySignature: options.entrySignature || execution.entrySignature || null,
+              outputSemantics: options.outputSemantics || artifact.validation?.outputSemantics || null
             })
           : {
               schema: 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0',

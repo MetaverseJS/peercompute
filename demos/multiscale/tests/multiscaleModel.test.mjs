@@ -15,6 +15,7 @@ import {
   MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
+  MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
@@ -601,6 +602,19 @@ class SharedInlineManagerStub {
     };
   }
 }
+
+const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY = Object.freeze({
+  closureOutputSemanticsSchema: 'eshkol.ulg.closure-output-semantics.v0',
+  closureOutputSemanticsReady: true,
+  closureOutputSemanticScope: 'smoke-fixture',
+  closureOutputScientificScope: 'none',
+  closureOutputScientificValidation: false,
+  closureOutputExpectedEntryExport: 'main',
+  closureOutputExpectedEntryArgs: [0, 0],
+  closureOutputExpectedEntryResult: 0,
+  closureOutputExpectedStdoutSha256: 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d',
+  closureOutputExpectedStdoutByteLength: 16
+});
 
 test('scale ladder spans atomic through supergalactic levels', () => {
   assert.deepEqual(
@@ -1644,6 +1658,7 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
     closureHostImportsPath: 'eshkol-host-imports.js',
     closureHostImportsFactory: 'createEshkolHostImportObject',
     closureHostImportsDomFree: true,
+    ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
     closureReady: true
   });
 
@@ -1672,6 +1687,16 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(scenario.closureIngest.closure.hostImports.factory, 'createEshkolHostImportObject');
   assert.equal(scenario.closureIngest.closure.hostImports.domFree, true);
   assert.equal(scenario.closureIngest.closure.bundlePreserveRelativeUrls, true);
+  assert.equal(scenario.closureIngest.closure.outputSemantics.schema, 'eshkol.ulg.closure-output-semantics.v0');
+  assert.equal(scenario.closureIngest.closure.outputSemantics.ready, true);
+  assert.equal(scenario.closureIngest.closure.outputSemantics.semanticScope, 'smoke-fixture');
+  assert.equal(scenario.closureIngest.closure.outputSemantics.scientificScope, 'none');
+  assert.equal(scenario.closureIngest.closure.outputSemantics.scientificValidation, false);
+  assert.equal(scenario.closureIngest.closure.outputSemantics.expectedEntryExport, 'main');
+  assert.deepEqual(scenario.closureIngest.closure.outputSemantics.expectedEntryArgs, [0, 0]);
+  assert.equal(scenario.closureIngest.closure.outputSemantics.expectedEntryResult, 0);
+  assert.equal(scenario.closureIngest.closure.outputSemantics.expectedStdoutSha256, 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d');
+  assert.equal(scenario.closureIngest.closure.outputSemantics.expectedStdoutByteLength, 16);
 
   const packet = model.createPacket();
   assert.equal(packet.scenario.closureIngest.ready, true);
@@ -1683,6 +1708,9 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(packet.downward.boundaryConditions.scenarioClosureImportCount, 12);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureExportCount, 1);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsDomFree, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticScope, 'smoke-fixture');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputScientificValidation, false);
 });
 
 test('magnetar scenario combines ULG calibration and Eshkol closure handoffs into proxy readiness manifest', () => {
@@ -1732,6 +1760,7 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
     closureHostImportsPath: 'eshkol-host-imports.js',
     closureHostImportsFactory: 'createEshkolHostImportObject',
     closureHostImportsDomFree: true,
+    ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
     closureReady: true
   });
 
@@ -1754,6 +1783,11 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.closureHandoff.importCount, 12);
   assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsFactory, 'createEshkolHostImportObject');
   assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsDomFree, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.outputSemanticsReady, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.outputSemanticScope, 'smoke-fixture');
+  assert.equal(scenario.handoffReadiness.closureHandoff.outputScientificScope, 'none');
+  assert.equal(scenario.handoffReadiness.closureHandoff.outputScientificValidation, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.outputExpectedStdoutByteLength, 16);
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
@@ -1793,6 +1827,7 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
     closureRequiresDynamicCode: false,
     closureRequiresHostImports: true,
     closureBundlePreserveRelativeUrls: true,
+    ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
     closureReady: true
   });
   const scenario = model.ingestScenarioClosureModuleProbeReport({
@@ -1869,6 +1904,43 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
       entryResult: 0,
       outputPreview: '1048560\n1048544\n',
       outputByteLength: 16,
+      outputSemanticsValidation: {
+        schema: MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
+        status: 'output-semantics-validated',
+        ready: true,
+        sourceSchema: 'eshkol.ulg.closure-output-semantics.v0',
+        semanticScope: 'smoke-fixture',
+        scientificScope: 'none',
+        scientificValidation: false,
+        expected: {
+          entryExport: 'main',
+          entryArgs: [0, 0],
+          entryResult: 0,
+          stdoutSha256: 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d',
+          stdoutByteLength: 16,
+          stdoutExpectedTextProvided: true
+        },
+        observed: {
+          entryExport: 'main',
+          entryArgs: [0, 0],
+          entryResult: 0,
+          stdoutSha256: 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d',
+          stdoutByteLength: 16
+        },
+        checks: {
+          schema: true,
+          semanticScope: true,
+          scientificValidation: true,
+          entryExport: true,
+          entryArgs: true,
+          entryResult: true,
+          stdoutByteLength: true,
+          stdoutSha256: true,
+          stdoutText: true
+        },
+        blockers: [],
+        scientificExecution: false
+      },
       runtimeCallCount: 11,
       calledImports: [
         'eshkol_init_stack_size',
@@ -1910,17 +1982,33 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.entryResult, 0);
   assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.mainInvoked, true);
   assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.scientificExecution, false);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.schema, MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.ready, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.status, 'output-semantics-validated');
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.semanticScope, 'smoke-fixture');
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.scientificScope, 'none');
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.scientificValidation, false);
+  assert.deepEqual(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.blockers, []);
+  assert.equal(scenario.validation.closureOutputSemanticsReady, true);
+  assert.equal(scenario.validation.closureOutputSemanticsStatus, 'output-semantics-validated');
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeReady, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeStatus, 'host-runtime-probe-ready');
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeMode, 'stub-import-dry-instantiate-v0');
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionStatus, 'host-runtime-execution-ready');
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionMode, 'dom-free-eshkol-host-imports-v0');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticsReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticsStatus, 'output-semantics-validated');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticScope, 'smoke-fixture');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputScientificValidation, false);
+  assert.deepEqual(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticsBlockers, []);
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-scientific-execution-not-validated'));
-  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
   assert.equal(scenario.handoffReadiness.scientificReady, false);
 
   const packet = model.createPacket();
@@ -1934,8 +2022,76 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionStatus, 'host-runtime-execution-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionMode, 'dom-free-eshkol-host-imports-v0');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeOutputSemanticsReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeOutputSemanticsStatus, 'output-semantics-validated');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeOutputSemanticScope, 'smoke-fixture');
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scenario keeps output semantics blocker until executed output is validated', () => {
+  const model = new MultiscaleModel({ seed: 49 });
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true
+  });
+  model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    validationStatus: 'pass',
+    closureKind: 'wasm-reference',
+    closureModuleUrl: 'hello.wasm',
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: true,
+    closureBundlePreserveRelativeUrls: true,
+    ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
+    closureReady: true
+  });
+  const scenario = model.ingestScenarioClosureModuleProbeReport({
+    artifactId: 'eshkol:881d9a92d523921d',
+    closureKind: 'wasm-reference',
+    moduleUrl: 'hello.wasm',
+    entryExport: 'main',
+    importSummary: { expectedCount: 12, observedCount: 12, functionCount: 9, memoryCount: 1, globalCount: 1, tableCount: 1 },
+    exportSummary: { expectedCount: 1, observedCount: 1, functionCount: 1 },
+    importMetadataMatches: true,
+    exportMetadataMatches: true,
+    entryExportAvailable: true,
+    moduleCompiled: true,
+    serviceWorkerSafe: true,
+    requiresHostImports: true,
+    hostRuntimeRequired: true,
+    hostRuntimeExecution: {
+      schema: MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
+      status: 'host-runtime-execution-ready',
+      ready: true,
+      instantiated: true,
+      entryInvoked: true,
+      entryExport: 'main',
+      entryArgs: [0, 0],
+      entryResult: 0,
+      outputPreview: '1048560\n1048544\n',
+      outputByteLength: 16,
+      runtimeCallCount: 11,
+      calledImports: [],
+      mainInvoked: true,
+      scientificExecution: false
+    }
+  });
+
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation, null);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticsReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {

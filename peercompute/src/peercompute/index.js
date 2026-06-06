@@ -65,6 +65,7 @@ export {
   ComputeManagerServiceAdapter,
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
+  ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,

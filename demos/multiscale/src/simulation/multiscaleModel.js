@@ -166,6 +166,7 @@ export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale
 export const MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-module-probe.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0';
+export const MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.multiscale.scenario-closure-output-semantics-validation.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
@@ -239,6 +240,48 @@ function rounded(value, digits = 4) {
 
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeScenarioClosureOutputSemanticsSummary(source = {}) {
+  if (!source?.closureOutputSemanticsSchema) return null;
+  return {
+    schema: source.closureOutputSemanticsSchema || null,
+    ready: source.closureOutputSemanticsReady === true,
+    semanticScope: source.closureOutputSemanticScope || null,
+    scientificScope: source.closureOutputScientificScope || null,
+    scientificValidation: typeof source.closureOutputScientificValidation === 'boolean'
+      ? source.closureOutputScientificValidation
+      : null,
+    expectedEntryExport: source.closureOutputExpectedEntryExport || null,
+    expectedEntryArgs: clonePlain(Array.isArray(source.closureOutputExpectedEntryArgs)
+      ? source.closureOutputExpectedEntryArgs
+      : null),
+    expectedEntryResult: source.closureOutputExpectedEntryResult ?? null,
+    expectedStdoutSha256: source.closureOutputExpectedStdoutSha256 || null,
+    expectedStdoutByteLength: source.closureOutputExpectedStdoutByteLength == null
+      ? null
+      : Number.isFinite(Number(source.closureOutputExpectedStdoutByteLength))
+      ? Number(source.closureOutputExpectedStdoutByteLength)
+      : null
+  };
+}
+
+function normalizeScenarioClosureOutputSemanticsValidation(source = null) {
+  if (!source || typeof source !== 'object') return null;
+  return {
+    schema: source.schema || MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
+    status: source.status || (source.ready === true ? 'output-semantics-validated' : 'output-semantics-pending'),
+    ready: source.ready === true,
+    sourceSchema: source.sourceSchema || null,
+    semanticScope: source.semanticScope || null,
+    scientificScope: source.scientificScope || null,
+    scientificValidation: source.scientificValidation === true,
+    expected: clonePlain(source.expected || null),
+    observed: clonePlain(source.observed || null),
+    checks: clonePlain(source.checks || null),
+    blockers: Array.isArray(source.blockers) ? [...source.blockers] : [],
+    scientificExecution: false
+  };
 }
 
 function createDefaultScenarioState() {
@@ -405,7 +448,8 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
         factory: source.closureHostImportsFactory || null,
         global: source.closureHostImportsGlobal || null,
         domFree: source.closureHostImportsDomFree === true
-      }
+      },
+      outputSemantics: normalizeScenarioClosureOutputSemanticsSummary(source)
     },
     validation: {
       status: ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
@@ -477,6 +521,7 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
         entryResult: hostRuntimeExecutionSource.entryResult ?? null,
         outputPreview: String(hostRuntimeExecutionSource.outputPreview || ''),
         outputByteLength: Number.isFinite(Number(hostRuntimeExecutionSource.outputByteLength)) ? Number(hostRuntimeExecutionSource.outputByteLength) : 0,
+        outputSemanticsValidation: normalizeScenarioClosureOutputSemanticsValidation(hostRuntimeExecutionSource.outputSemanticsValidation),
         runtimeCallCount: Number.isFinite(Number(hostRuntimeExecutionSource.runtimeCallCount)) ? Number(hostRuntimeExecutionSource.runtimeCallCount) : 0,
         calledImports: Array.isArray(hostRuntimeExecutionSource.calledImports) ? [...hostRuntimeExecutionSource.calledImports] : [],
         startFunctionIndex: hostRuntimeExecutionSource.startFunctionIndex == null
@@ -543,7 +588,8 @@ function createScenarioHandoffBlockers({
   closureHandoffReady,
   closureModuleProbeReady,
   closureHostRuntimeRequired,
-  closureHostRuntimeExecutionReady
+  closureHostRuntimeExecutionReady,
+  closureOutputSemanticsValidated
 }) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
@@ -558,7 +604,9 @@ function createScenarioHandoffBlockers({
   if (closureModuleProbeReady === true && closureHostRuntimeExecutionReady !== true) {
     blockers.push('eshkol-closure-scientific-execution-not-validated');
   }
-  if (closureHostRuntimeExecutionReady === true) blockers.push('eshkol-closure-output-semantics-unvalidated');
+  if (closureHostRuntimeExecutionReady === true && closureOutputSemanticsValidated !== true) {
+    blockers.push('eshkol-closure-output-semantics-unvalidated');
+  }
   blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
   blockers.push('scientific-tolerance-suite-missing');
   return blockers;
@@ -573,6 +621,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureReady = closureIngest?.ready === true || scenario.validation?.closureReady === true;
   const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
   const closureHostRuntimeExecutionReady = closureModuleProbe?.hostRuntimeExecution?.ready === true;
+  const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -584,7 +633,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureHandoffReady: closureReady,
     closureModuleProbeReady,
     closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
-    closureHostRuntimeExecutionReady
+    closureHostRuntimeExecutionReady,
+    closureOutputSemanticsValidated
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -636,7 +686,15 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       hostImportsPath: closureIngest?.closure?.hostImports?.path || null,
       hostImportsFactory: closureIngest?.closure?.hostImports?.factory || null,
       hostImportsDomFree: closureIngest?.closure?.hostImports?.domFree === true,
-      bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true
+      bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true,
+      outputSemanticsReady: closureIngest?.closure?.outputSemantics?.ready === true,
+      outputSemanticScope: closureIngest?.closure?.outputSemantics?.semanticScope || null,
+      outputScientificScope: closureIngest?.closure?.outputSemantics?.scientificScope || null,
+      outputScientificValidation: typeof closureIngest?.closure?.outputSemantics?.scientificValidation === 'boolean'
+        ? closureIngest.closure.outputSemantics.scientificValidation
+        : null,
+      outputExpectedStdoutSha256: closureIngest?.closure?.outputSemantics?.expectedStdoutSha256 || null,
+      outputExpectedStdoutByteLength: closureIngest?.closure?.outputSemantics?.expectedStdoutByteLength ?? null
     },
     closureModuleProbe: {
       provider: closureModuleProbe?.provider || 'eshkol',
@@ -661,6 +719,13 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       hostRuntimeExecutionEntryInvoked: closureModuleProbe?.hostRuntimeExecution?.entryInvoked === true,
       hostRuntimeExecutionResult: closureModuleProbe?.hostRuntimeExecution?.entryResult ?? null,
       hostRuntimeExecutionOutputByteLength: closureModuleProbe?.hostRuntimeExecution?.outputByteLength ?? null,
+      hostRuntimeExecutionOutputSemanticsReady: closureOutputSemanticsValidated,
+      hostRuntimeExecutionOutputSemanticsStatus: closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
+      hostRuntimeExecutionOutputSemanticScope: closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.semanticScope || null,
+      hostRuntimeExecutionOutputScientificValidation: closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.scientificValidation === true,
+      hostRuntimeExecutionOutputSemanticsBlockers: Array.isArray(closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.blockers)
+        ? [...closureModuleProbe.hostRuntimeExecution.outputSemanticsValidation.blockers]
+        : [],
       hostRuntimeExecutionCallCount: closureModuleProbe?.hostRuntimeExecution?.runtimeCallCount ?? null,
       scientificExecution: false,
       moduleUrl: closureModuleProbe?.moduleUrl || null,
@@ -1824,6 +1889,8 @@ export class MultiscaleModel {
         status: this.scenario.validation?.status || 'proxy-only',
         closureModuleProbeStatus: probe.ready ? 'closure-module-probe-ready' : 'closure-module-probe-pending',
         closureModuleProbeReady: probe.ready,
+        closureOutputSemanticsStatus: probe.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
+        closureOutputSemanticsReady: probe.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
         simulationStatus: 'proxy-only'
       }
     };
@@ -6586,6 +6653,9 @@ export class MultiscaleModel {
           scenarioClosureImportCount: scenario.closureIngest?.closure?.importCount ?? null,
           scenarioClosureExportCount: scenario.closureIngest?.closure?.exportCount ?? null,
           scenarioClosureHostImportsDomFree: scenario.closureIngest?.closure?.hostImports?.domFree === true,
+          scenarioClosureOutputSemanticsReady: scenario.closureIngest?.closure?.outputSemantics?.ready === true,
+          scenarioClosureOutputSemanticScope: scenario.closureIngest?.closure?.outputSemantics?.semanticScope || null,
+          scenarioClosureOutputScientificValidation: scenario.closureIngest?.closure?.outputSemantics?.scientificValidation === true,
           scenarioClosureModuleProbeReady: scenario.closureModuleProbe?.ready === true,
           scenarioClosureModuleProbeStatus: scenario.validation?.closureModuleProbeStatus || null,
           scenarioClosureModuleProbeMode: scenario.closureModuleProbe?.probeMode || null,
@@ -6595,6 +6665,9 @@ export class MultiscaleModel {
           scenarioClosureHostRuntimeExecutionReady: scenario.closureModuleProbe?.hostRuntimeExecution?.ready === true,
           scenarioClosureHostRuntimeExecutionStatus: scenario.closureModuleProbe?.hostRuntimeExecution?.status || null,
           scenarioClosureHostRuntimeExecutionMode: scenario.closureModuleProbe?.hostRuntimeExecution?.mode || null,
+          scenarioClosureHostRuntimeOutputSemanticsReady: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
+          scenarioClosureHostRuntimeOutputSemanticsStatus: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
+          scenarioClosureHostRuntimeOutputSemanticScope: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.semanticScope || null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

@@ -1,5 +1,64 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-06 00:06:22 AKDT - Closure output-semantics validation
+
+### Prompt
+User asked why work was not still continuing after context compaction and asked
+to keep going. Standing instruction remains local commits only and no push.
+
+### Actions Attempted
+- Added Multiscale support for
+  `peercompute.multiscale.scenario-closure-output-semantics-validation.v0`.
+- Compared executed Eshkol `main(0, 0)` result/stdout against the staged
+  `eshkol.ulg.closure-output-semantics.v0` declaration carried by ULG and
+  PeerCompute summaries.
+- Propagated output-semantics declaration state through closure ingest,
+  handoff readiness, scenario validation, and packet boundary conditions.
+- Updated readiness blockers so `eshkol-closure-output-semantics-unvalidated`
+  clears only after deterministic smoke validation passes.
+- Added a guardrail test proving the blocker remains when host-runtime execution
+  is ready but output-semantics validation is missing.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- Live Playwright ULG-to-Multiscale handoff probe using system Chrome.
+
+### Results
+- PASS: syntax checks completed for changed Multiscale source and tests.
+- PASS: full Multiscale model suite passed with `177/177`.
+- PASS: Vite production build completed; existing large chunk warnings remain
+  non-fatal.
+- PASS: Multiscale VPN endpoint returned HTTP `200`.
+- PASS: live ULG-to-Multiscale handoff reported host-runtime execution ready,
+  `output-semantics-validated`, `semanticScope = "smoke-fixture"`,
+  `scientificValidation = false`, stdout byte length `16`, output preview
+  `1048560\n1048544\n`, packet
+  `scenarioClosureHostRuntimeOutputSemanticsReady = true`, and
+  `scenarioScientificReady = false`.
+- PASS: live blockers are now only the calibrated-reference and scientific
+  tolerance-suite blockers.
+
+### Failures / Open Questions
+- The first Playwright run failed because package-managed Chromium was missing;
+  reran successfully with `/bin/google-chrome`.
+- This validates deterministic Eshkol hello smoke output, not magnetar closure
+  physics.
+
 ## 2026-06-05 18:16:34 AKDT - Magnetar calibration ingest
 
 ### Prompt

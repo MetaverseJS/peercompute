@@ -9,6 +9,7 @@ import {
   COMPUTE_SERVICE_REGISTRY_SCHEMA,
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
+  ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
@@ -773,7 +774,20 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
     },
     validation: {
       status: 'pass',
-      validationMode: 'eshkol-static-closure-bundle'
+      validationMode: 'eshkol-static-closure-smoke',
+      outputSemantics: {
+        schema: ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+        semanticScope: 'smoke-fixture',
+        scientificScope: 'none',
+        entryExport: 'main',
+        entryArgs: [0, 0],
+        expectedEntryResult: 0,
+        stdout: {
+          sha256: 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d',
+          byteLength: 16
+        },
+        scientificValidation: false
+      }
     },
     provenance: { source: 'eshkol-export-helper' },
     contentHash: 'ulg:fixture-result-eshkol-bundle-001'
@@ -813,6 +827,16 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
   assert.equal(result.artifactSummary.closureHostImportsFactory, 'createEshkolHostImportObject');
   assert.equal(result.artifactSummary.closureHostImportsGlobal, 'EshkolHostImports');
   assert.equal(result.artifactSummary.closureHostImportsDomFree, true);
+  assert.equal(result.artifactSummary.closureOutputSemanticsSchema, ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA);
+  assert.equal(result.artifactSummary.closureOutputSemanticsReady, true);
+  assert.equal(result.artifactSummary.closureOutputSemanticScope, 'smoke-fixture');
+  assert.equal(result.artifactSummary.closureOutputScientificScope, 'none');
+  assert.equal(result.artifactSummary.closureOutputScientificValidation, false);
+  assert.equal(result.artifactSummary.closureOutputExpectedEntryExport, 'main');
+  assert.deepEqual(result.artifactSummary.closureOutputExpectedEntryArgs, [0, 0]);
+  assert.equal(result.artifactSummary.closureOutputExpectedEntryResult, 0);
+  assert.equal(result.artifactSummary.closureOutputExpectedStdoutSha256, 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d');
+  assert.equal(result.artifactSummary.closureOutputExpectedStdoutByteLength, 16);
   assert.equal(result.artifactSummary.closureReady, true);
   assert.equal(result.outputs[0].artifactSummary.closureReady, true);
 });
@@ -862,7 +886,17 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
         closureModuleUrl: 'hello.wasm',
         closureEntryExport: 'main',
         closureHostImportsFactory: 'createEshkolHostImportObject',
-        closureHostImportsDomFree: true
+        closureHostImportsDomFree: true,
+        closureOutputSemanticsSchema: ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+        closureOutputSemanticsReady: true,
+        closureOutputSemanticScope: 'smoke-fixture',
+        closureOutputScientificScope: 'none',
+        closureOutputScientificValidation: false,
+        closureOutputExpectedEntryExport: 'main',
+        closureOutputExpectedEntryArgs: [0, 0],
+        closureOutputExpectedEntryResult: 0,
+        closureOutputExpectedStdoutSha256: 'sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d',
+        closureOutputExpectedStdoutByteLength: 16
       },
       artifact: {
         closureId: 'eshkol:881d9a92d523921d',
@@ -895,6 +929,9 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarDipoleIsingGroundState, '000');
   assert.equal(handoff.readyClosureArtifact.sourceService, 'eshkol');
   assert.equal(handoff.readyClosureArtifact.hasTransferredWasmBytes, true);
+  assert.equal(handoff.readyClosureArtifact.closureOutputSemanticsReady, true);
+  assert.equal(handoff.readyClosureArtifact.artifactSummary.closureOutputSemanticScope, 'smoke-fixture');
+  assert.equal(handoff.readyClosureArtifact.artifactSummary.closureOutputExpectedStdoutByteLength, 16);
   assert.equal(handoff.readyClosureArtifact.wasmByteLength, 4);
   assert.deepEqual(handoff.readyClosureArtifact.wasmBytes, [0, 97, 115, 109]);
   assert.equal(handoff.readyClosureArtifact.bundleManifest.schema, 'eshkol.ulg.closure-bundle.v0');

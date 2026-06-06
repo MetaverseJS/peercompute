@@ -48790,3 +48790,98 @@ User asked whether Infinite Context Coder is being used.
 - Magnetar scientific readiness remains blocked by Eshkol closure output
   semantics, calibrated MHD/PIC/radiation/relativity references, and tolerance
   coverage.
+
+## 2026-06-06 00:06:22 AKDT - Eshkol closure output-semantics smoke validation
+
+### Prompt
+- User asked why work was not still continuing after context compaction and
+  asked to keep going under the existing local-commits-only rule.
+- Prompt time/date recorded from the local machine:
+  `2026-06-06 00:06:22 AKDT`.
+- Continued from the ULG output-semantics summary commit and the Eshkol/MoonLab
+  sidecar completions.
+
+### Actions
+- Extended PeerCompute's ULG artifact-summary adapter with
+  `eshkol.ulg.closure-output-semantics.v0` summary fields for smoke-fixture
+  output semantics.
+- Preserved `closureOutputSemanticsReady` through normalized ULG demo handoff
+  artifacts.
+- Added Multiscale host-runtime output validation:
+  `peercompute.multiscale.scenario-closure-output-semantics-validation.v0`.
+- The validator compares executed Eshkol `main(0, 0)` output against the staged
+  declaration: entry export, args, expected result, UTF-8 stdout byte length,
+  stdout SHA-256, and expected text when the full artifact provides it.
+- Updated Multiscale closure ingest, readiness, scenario validation, and packet
+  boundary conditions to expose declared output semantics and execution
+  validation state.
+- Updated blocker logic so `eshkol-closure-output-semantics-unvalidated` clears
+  only when smoke output validation passes. Scientific readiness remains false.
+- Added a guardrail test proving ready execution without output-semantics
+  validation still keeps the blocker.
+- Updated root and Multiscale plan/test docs and rebuilt the checked-in
+  Multiscale docs bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `git diff --check`
+- `npm --prefix demos/multiscale run build`
+- `curl -sS -o /dev/null -w 'ulg %{http_code} %{url_effective}\n' 'http://100.86.83.35:5173/'`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- Live Playwright probe from ULG `http://100.86.83.35:5173/` to Multiscale
+  `https://100.86.83.35:5185/?scenario=magnetar` using
+  `window.__ulgDemo.createPeerComputeHandoff()` and
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+
+### Validation
+- PASS: changed-file syntax checks completed.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `9/9`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `177/177`.
+- PASS: `git diff --check` reported no whitespace errors before docs/build.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings and refreshed the checked-in docs bundle.
+- PASS: ULG and Multiscale VPN endpoints returned HTTP `200`.
+- PASS: live ULG-to-Multiscale handoff reported `handoff-ready`, calibration
+  ready, closure ready, module ready, host-runtime execution ready,
+  `output-semantics-validated`, `semanticScope = "smoke-fixture"`,
+  `scientificValidation = false`, `entryResult = 0`, stdout byte length `16`,
+  output preview `1048560\n1048544\n`, packet
+  `scenarioClosureHostRuntimeOutputSemanticsReady = true`, and
+  `scenarioScientificReady = false`.
+- PASS: live blockers are now only
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` and
+  `scientific-tolerance-suite-missing`.
+
+### Open
+- The live check validates deterministic Eshkol hello smoke output only.
+- Magnetar scientific readiness still needs calibrated MHD/PIC/radiation/
+  relativity references and a scientific tolerance suite.
+- The first Playwright probe failed because package-managed Chromium was not
+  installed; reran successfully with `/bin/google-chrome`.
+- No push was attempted; all commits remain local per user instruction.
