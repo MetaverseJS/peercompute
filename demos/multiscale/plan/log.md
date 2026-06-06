@@ -22379,3 +22379,46 @@ User asked whether Infinite Context Coder is being used.
   authoritative scientific runtime artifacts are still required before the
   runtime gate can clear.
 - No push was attempted.
+
+## 2026-06-06 04:09:02 AKDT - Live bounded proxy runtime evidence API
+
+### Prompt
+- User asked how progress was going and whether the overall implementation plan
+  was still on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added bounded state-to-runtime adapters in `MultiscaleModel` for the current
+  magnetar proxy state so the live demo can create validation payloads without
+  mutating the visible extreme-field scenario state.
+- Added `createScenarioBoundedProxyRuntimeEvidenceManifest()` and
+  `refreshScenarioBoundedProxyRuntimeEvidence()` model methods.
+- Exposed
+  `window.__multiscaleDemo.createScenarioBoundedProxyRuntimeEvidenceManifest()`,
+  `window.__multiscaleDemo.refreshScenarioBoundedProxyRuntimeEvidence()`, and
+  `window.__multiscaleDemo.refreshBoundedProxyRuntimeEvidence()`.
+- Added a model regression proving the live-facing API returns five
+  hash-bearing proxy entries, ingests all five as observed proxy evidence,
+  reports `missingCount: 0`, keeps `validatedCount: 0`, and leaves
+  `scenarioScientificReady: false`.
+- Updated Multiscale and root plan/test notes.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'bounded proxy runtime evidence|cross-family conservation coupling runtime evidence|PIC kinetic plasma runtime evidence|magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`
+  passed `191/191`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large-chunk warning and refreshed `docs/multiscale/`.
+- PASS: live browser probe against
+  `https://100.86.83.35:5185/?scenario=magnetar` using system Chrome and
+  ignored local HTTPS certificate errors reported five manifest entries, five
+  `sha256:` hashes, five validation passes, runtime evidence counts
+  `required=5`, `observed=5`, `proxyOnly=5`, `validated=0`, `missing=0`, and
+  scientific gate ready `false`.
+
+### Open
+- This is browser-visible bounded proxy provenance only. Authoritative
+  scientific solver execution and calibrated magnetar validation remain open.
+- No push was attempted.

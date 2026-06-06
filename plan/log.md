@@ -49781,3 +49781,63 @@ User asked whether Infinite Context Coder is being used.
   runtime artifacts. Real MHD/PIC/radiation/relativity runtime evidence and
   cross-family conservation/coupling validation are still required.
 - No push was attempted.
+
+## 2026-06-06 04:09:02 AKDT - Live bounded proxy runtime evidence API
+
+### Prompt
+- User asked how progress was going and whether the overall implementation plan
+  was still on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added bounded state-to-runtime adapters in `MultiscaleModel` for
+  magnetosphere MHD, PIC kinetic plasma, radiation transport, and relativistic
+  correction state.
+- Added `createScenarioBoundedProxyRuntimeEvidenceManifest()` to build all four
+  solver-family bounded proxy evidence entries, create the packet-level
+  cross-family conservation/coupling evidence entry, and return a five-entry
+  hash-bearing manifest.
+- Added `refreshScenarioBoundedProxyRuntimeEvidence()` so the model and live
+  browser can ingest that bounded proxy manifest into scenario readiness.
+- Exposed browser APIs:
+  `window.__multiscaleDemo.createScenarioBoundedProxyRuntimeEvidenceManifest()`,
+  `window.__multiscaleDemo.refreshScenarioBoundedProxyRuntimeEvidence()`, and
+  `window.__multiscaleDemo.refreshBoundedProxyRuntimeEvidence()`.
+- Added a regression proving the live-facing bounded proxy API produces five
+  `sha256:` evidence hashes, records all five entries as observed proxy
+  evidence, keeps `validatedCount: 0`, and preserves `scientificReady: false`.
+- Updated the root and Multiscale plan/test notes.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'bounded proxy runtime evidence|cross-family conservation coupling runtime evidence|PIC kinetic plasma runtime evidence|magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`
+  passed `191/191`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large-chunk warning and refreshed `docs/multiscale/`.
+- PASS: live browser probe against
+  `https://100.86.83.35:5185/?scenario=magnetar` using system Chrome and
+  ignored local HTTPS certificate errors reported API keys for the new bounded
+  runtime evidence methods, manifest entry/hash/pass counts `5/5/5`, ready and
+  scientific execution counts `0/0`, runtime evidence status
+  `runtime-evidence-proxy-only`, required `5`, observed `5`, proxy-only `5`,
+  validated `0`, missing `0`, cross-family status `proxy-runtime-observed`,
+  cross-family validation status `pass`, and scientific gate ready `false`.
+
+### Open
+- The bounded proxy API improves live provenance only. It still does not claim
+  calibrated MHD, charge-conserving PIC, radiation transport, GR/GRMHD, or
+  magnetar scientific execution.
+- No push was attempted.

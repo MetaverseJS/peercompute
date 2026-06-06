@@ -20,6 +20,13 @@ import {
   createUlgSpecContractReport
 } from './ulgSpecContracts.js';
 import {
+  createCrossFamilyConservationCouplingRuntimeEvidenceEntry,
+  createMagnetosphereMhdRuntimeEvidenceEntry,
+  createPicKineticPlasmaRuntimeEvidenceEntry,
+  createRadiationTransportRuntimeEvidenceEntry,
+  createRelativisticCorrectionRuntimeEvidenceEntry
+} from './magnetarRuntimeEvidence.js';
+import {
   createMultiscaleSolverDescriptors
 } from '../compute/solverWorkerDescriptors.js';
 import {
@@ -1426,6 +1433,242 @@ function summarizeMagnetarRuntimeState(requirement, source = {}) {
     };
   }
   return clonePlain(source);
+}
+
+function positiveInteger(value, fallback = 1) {
+  return Math.max(1, Math.trunc(finite(value, fallback)));
+}
+
+function nonnegativeNumber(value, fallback = 0) {
+  return Math.max(0, finite(value, fallback));
+}
+
+function boundedNumber(value, fallback, min, max) {
+  return clamp(finite(value, fallback), min, max);
+}
+
+function runtimeBackendFromState(source = {}, fallback = 'bounded-state-proxy') {
+  const backend = stringOrNull(source.backend);
+  return backend && backend !== 'none' ? backend : fallback;
+}
+
+function runtimeSequenceFromState(source = {}, fallback = 1) {
+  return positiveInteger(source.sequence, fallback);
+}
+
+function createBoundedMagnetosphereMhdRuntimeResultFromState(source = {}) {
+  const width = positiveInteger(source.width, 8);
+  const height = positiveInteger(source.height, 4);
+  const cellCount = positiveInteger(source.cellCount, width * height);
+  const meanDensity = nonnegativeNumber(source.meanDensity, 1);
+  const meanTemperatureK = boundedNumber(source.meanTemperatureK, 5200, 80, 4800000);
+  const meanIonizationFraction = boundedNumber(source.meanIonizationFraction, 0.1, 0, 1);
+  const magneticEnergy = nonnegativeNumber(source.magneticEnergy, 0);
+  const kineticEnergy = nonnegativeNumber(source.kineticEnergy, 0);
+  const plasmaEnergy = nonnegativeNumber(source.plasmaEnergy, kineticEnergy);
+  const currentSheetIntensity = nonnegativeNumber(source.currentSheetIntensity, source.reconnectionRate);
+  const divergenceBProxy = nonnegativeNumber(source.divergenceBProxy, 0);
+  const alfvenSpeed = nonnegativeNumber(source.alfvenSpeed, 0);
+  return {
+    ok: true,
+    backend: runtimeBackendFromState(source, 'bounded-magnetosphere-mhd-state-proxy'),
+    sequence: runtimeSequenceFromState(source),
+    diagnostics: {
+      schema: 'peercompute.multiscale.magnetosphere-plasma.diagnostics.v0',
+      width,
+      height,
+      cellCount,
+      totalMass: meanDensity * cellCount,
+      meanDensity,
+      meanTemperatureK,
+      meanIonizationFraction,
+      magneticEnergy,
+      kineticEnergy,
+      thermalEnergy: Math.max(0, plasmaEnergy - kineticEnergy),
+      plasmaEnergy,
+      currentSheetIntensity,
+      maxCurrentDensity: currentSheetIntensity,
+      divergenceBProxy,
+      alfvenSpeed,
+      maxSpeed: alfvenSpeed,
+      solarWindPressure: nonnegativeNumber(source.solarWindPressure, 0),
+      magnetopauseRadius: boundedNumber(source.magnetopauseRadius, 10, 2.4, 10),
+      reconnectionRate: boundedNumber(source.reconnectionRate, 0, 0, 4)
+    },
+    conservation: {
+      massDrift: finite(source.massDrift, 0),
+      magneticEnergyDelta: finite(source.magneticEnergyDelta, 0),
+      plasmaEnergyDelta: finite(source.plasmaEnergyDelta, 0),
+      divergenceBProxy,
+      energyMode: 'reduced-ideal-mhd-plasma'
+    }
+  };
+}
+
+function createBoundedPicKineticPlasmaRuntimeResultFromState(source = {}) {
+  const particleCount = positiveInteger(source.particleCount, 64);
+  const gridWidth = positiveInteger(source.gridWidth, 8);
+  const gridHeight = positiveInteger(source.gridHeight, 4);
+  const cellCount = positiveInteger(source.cellCount, gridWidth * gridHeight);
+  const electronCount = positiveInteger(source.electronCount, Math.ceil(particleCount / 2));
+  const ionCount = positiveInteger(source.ionCount, Math.max(1, particleCount - electronCount));
+  const totalMass = Math.max(1e-9, finite(source.totalMass, particleCount));
+  const kineticEnergy = nonnegativeNumber(source.kineticEnergy, 0);
+  const fieldEnergy = nonnegativeNumber(source.fieldEnergy, 0);
+  const currentDensity = nonnegativeNumber(source.currentDensity, 0);
+  const chargeSeparation = nonnegativeNumber(source.chargeSeparation, 0);
+  const escapedParticles = nonnegativeNumber(source.escapedParticleDelta, 0);
+  const particleEscapeFraction = boundedNumber(source.particleEscapeFraction, 0, 0, 1);
+  const divergenceEProxy = nonnegativeNumber(source.divergenceEProxy, 0);
+  return {
+    ok: true,
+    backend: runtimeBackendFromState(source, 'bounded-pic-kinetic-plasma-state-proxy'),
+    sequence: runtimeSequenceFromState(source),
+    diagnostics: {
+      schema: 'peercompute.multiscale.pic-plasma-patch.diagnostics.v0',
+      particleCount,
+      gridWidth,
+      gridHeight,
+      cellCount,
+      electronCount,
+      ionCount,
+      totalMass,
+      totalCharge: finite(source.totalCharge, 0),
+      chargeImbalance: finite(source.chargeImbalance, 0),
+      kineticEnergy,
+      meanKineticEnergy: kineticEnergy / particleCount,
+      fieldEnergy,
+      meanFieldEnergy: fieldEnergy / cellCount,
+      maxParticleSpeed: nonnegativeNumber(source.maxParticleSpeed, 0),
+      currentDensity,
+      meanChargeDensity: Math.abs(finite(source.chargeImbalance, 0)),
+      chargeSeparation,
+      escapedParticles,
+      particleEscapeFraction,
+      debyeLengthProxy: nonnegativeNumber(source.debyeLengthProxy, 0),
+      larmorRadiusProxy: nonnegativeNumber(source.larmorRadiusProxy, 0),
+      reconnectionHeating: nonnegativeNumber(source.reconnectionHeating, 0),
+      divergenceEProxy
+    },
+    conservation: {
+      chargeDrift: finite(source.chargeDrift, 0),
+      chargeImbalance: finite(source.chargeImbalance, 0),
+      kineticEnergyDelta: finite(source.kineticEnergyDelta, 0),
+      fieldEnergyDelta: finite(source.fieldEnergyDelta, 0),
+      escapedParticleDelta: finite(source.escapedParticleDelta, 0),
+      divergenceEProxy,
+      energyMode: 'reduced-pic-plasma-patch'
+    }
+  };
+}
+
+function createBoundedRadiationTransportRuntimeResultFromState(source = {}) {
+  const width = positiveInteger(source.width, 8);
+  const height = positiveInteger(source.height, 4);
+  const cellCount = positiveInteger(source.cellCount, width * height);
+  const meanTemperatureK = boundedNumber(source.meanTemperatureK, 294, 120, 2400);
+  const meanOpacity = boundedNumber(source.meanOpacity, 0.01, 0.01, 3);
+  const opticalDepth = nonnegativeNumber(source.opticalDepth, meanOpacity * Math.sqrt(cellCount));
+  const greenhouseFactor = boundedNumber(source.greenhouseFactor, opticalDepth / (1 + opticalDepth), 0, 1);
+  const netHeatingPower = finite(source.netHeatingPower, 0);
+  const totalRadiationEnergy = nonnegativeNumber(source.totalRadiationEnergy, Math.max(1, Math.abs(netHeatingPower) * 0.001));
+  const totalAbsorbedPower = nonnegativeNumber(source.totalAbsorbedPower, Math.max(0, netHeatingPower) + cellCount * 0.1);
+  const totalEmittedPower = nonnegativeNumber(source.totalEmittedPower, Math.max(0, totalAbsorbedPower - netHeatingPower));
+  return {
+    ok: true,
+    backend: runtimeBackendFromState(source, 'bounded-radiation-transport-state-proxy'),
+    sequence: runtimeSequenceFromState(source),
+    diagnostics: {
+      schema: 'peercompute.multiscale.radiation-opacity.diagnostics.v0',
+      width,
+      height,
+      cellCount,
+      totalRadiationEnergy,
+      meanRadiationEnergy: totalRadiationEnergy / cellCount,
+      totalAbsorbedPower,
+      totalEmittedPower,
+      sourcePower: nonnegativeNumber(source.sourcePower, totalAbsorbedPower),
+      meanTemperatureK,
+      meanOpacity,
+      opticalDepth,
+      greenhouseFactor,
+      maxFluxMagnitude: nonnegativeNumber(source.maxFluxMagnitude, 0)
+    },
+    conservation: {
+      radiationEnergyDelta: finite(source.radiationEnergyDrift, 0),
+      absorbedMinusEmitted: finite(source.absorbedMinusEmitted, netHeatingPower),
+      energyMode: 'reduced-grey-radiation-opacity'
+    }
+  };
+}
+
+function createBoundedRelativisticCorrectionRuntimeResultFromState(source = {}) {
+  const sampleCount = positiveInteger(source.sampleCount, 64);
+  const meanSpeedFractionC = boundedNumber(source.meanSpeedFractionC, 0, 0, 0.98);
+  const maxSpeedFractionC = boundedNumber(
+    Math.max(meanSpeedFractionC, finite(source.maxSpeedFractionC, meanSpeedFractionC)),
+    meanSpeedFractionC,
+    0,
+    0.98
+  );
+  const meanLorentzFactor = Math.max(1, finite(source.meanLorentzFactor, 1));
+  const maxLorentzFactor = Math.max(meanLorentzFactor, finite(source.maxLorentzFactor, meanLorentzFactor));
+  const meanTimeDilation = nonnegativeNumber(source.meanTimeDilation, 1);
+  const gravitationalRedshiftProxy = nonnegativeNumber(source.gravitationalRedshiftProxy, 0);
+  return {
+    ok: true,
+    backend: runtimeBackendFromState(source, 'bounded-relativistic-correction-state-proxy'),
+    sequence: runtimeSequenceFromState(source),
+    diagnostics: {
+      schema: 'peercompute.multiscale.relativistic-correction.diagnostics.v0',
+      sampleCount,
+      meanSpeedFractionC,
+      maxSpeedFractionC,
+      meanLorentzFactor,
+      maxLorentzFactor,
+      meanTimeDilation,
+      minTimeDilation: nonnegativeNumber(source.minTimeDilation, meanTimeDilation),
+      gravitationalRedshiftProxy,
+      maxGravitationalRedshiftProxy: Math.max(
+        gravitationalRedshiftProxy,
+        nonnegativeNumber(source.maxGravitationalRedshiftProxy, gravitationalRedshiftProxy)
+      ),
+      meanPotentialProxy: nonnegativeNumber(source.meanPotentialProxy, 0),
+      maxPotentialProxy: nonnegativeNumber(source.maxPotentialProxy, 0),
+      perihelionPrecessionArcsecProxy: finite(source.perihelionPrecessionArcsecProxy, 0),
+      frameDraggingProxy: finite(source.frameDraggingProxy, 0),
+      lensingDeflectionArcsecProxy: finite(source.lensingDeflectionArcsecProxy, 0),
+      shapiroDelayProxy: nonnegativeNumber(source.shapiroDelayProxy, 0),
+      relativisticEnergyProxy: finite(source.relativisticEnergyProxy, 0),
+      causalityClampCount: nonnegativeNumber(source.causalityClampCount, 0)
+    },
+    conservation: {
+      relativisticEnergyDelta: finite(source.relativisticEnergyDelta, 0),
+      timeDilationDrift: finite(source.timeDilationDrift, 0),
+      precessionDeltaArcsecProxy: finite(source.precessionDeltaArcsecProxy, 0),
+      causalityClampCount: nonnegativeNumber(source.causalityClampCount, 0),
+      maxSpeedFractionC,
+      energyMode: 'reduced-post-newtonian-proxy'
+    }
+  };
+}
+
+async function createBoundedProxyRuntimeEvidenceEntriesFromState(state = {}) {
+  const solar = state?.solar || {};
+  return Promise.all([
+    createMagnetosphereMhdRuntimeEvidenceEntry(
+      createBoundedMagnetosphereMhdRuntimeResultFromState(solar.magnetosphere)
+    ),
+    createPicKineticPlasmaRuntimeEvidenceEntry(
+      createBoundedPicKineticPlasmaRuntimeResultFromState(solar.picPlasmaPatch)
+    ),
+    createRadiationTransportRuntimeEvidenceEntry(
+      createBoundedRadiationTransportRuntimeResultFromState(solar.radiationOpacity)
+    ),
+    createRelativisticCorrectionRuntimeEvidenceEntry(
+      createBoundedRelativisticCorrectionRuntimeResultFromState(solar.relativity)
+    )
+  ]);
 }
 
 export function createScenarioHandoffReadinessReport(scenario = {}) {
@@ -2899,6 +3142,50 @@ export class MultiscaleModel {
       handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
     };
     return this.getScenario();
+  }
+
+  async createScenarioBoundedProxyRuntimeEvidenceManifest(options = {}) {
+    const scenarioId = options.scenarioId || this.scenario.id || 'magnetar';
+    if (scenarioId !== 'magnetar') {
+      return {
+        schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+        scenarioId,
+        source: 'bounded-state-proxy-adapter-v0',
+        proxyOnly: false,
+        scientificExecution: false,
+        entries: []
+      };
+    }
+    const solverEntries = await createBoundedProxyRuntimeEvidenceEntriesFromState(this.state);
+    const solverManifest = {
+      schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+      scenarioId,
+      source: 'bounded-state-proxy-adapter-v0',
+      proxyOnly: true,
+      scientificExecution: false,
+      sequence: Math.max(1, ...solverEntries.map((entry) => finite(entry.sequence, 0))),
+      entries: solverEntries
+    };
+    const packet = options.packet && typeof options.packet === 'object'
+      ? options.packet
+      : this.createPacket();
+    const crossFamilyEntry = await createCrossFamilyConservationCouplingRuntimeEvidenceEntry({
+      conservationAudit: packet.conservation,
+      crossScaleCoupling: packet.coupling,
+      runtimeEvidenceManifest: solverManifest
+    });
+    return {
+      ...solverManifest,
+      entries: [
+        ...solverEntries,
+        crossFamilyEntry
+      ]
+    };
+  }
+
+  async refreshScenarioBoundedProxyRuntimeEvidence(options = {}) {
+    const manifest = await this.createScenarioBoundedProxyRuntimeEvidenceManifest(options);
+    return this.ingestScenarioRuntimeEvidenceManifest(manifest, options);
   }
 
   refreshScenarioRuntimeEvidence(options = {}) {

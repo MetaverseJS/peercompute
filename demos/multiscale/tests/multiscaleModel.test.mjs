@@ -2459,6 +2459,66 @@ test('magnetar scenario records proxy runtime evidence without clearing the runt
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 
+test('magnetar scenario creates bounded proxy runtime evidence manifest for the live API', async () => {
+  const model = new MultiscaleModel({ seed: 475 });
+  model.applyScenarioPreset('magnetar');
+
+  const manifest = await model.createScenarioBoundedProxyRuntimeEvidenceManifest();
+
+  assert.equal(manifest.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(manifest.scenarioId, 'magnetar');
+  assert.equal(manifest.source, 'bounded-state-proxy-adapter-v0');
+  assert.equal(manifest.proxyOnly, true);
+  assert.equal(manifest.scientificExecution, false);
+  assert.equal(manifest.entries.length, 5);
+  assert.equal(manifest.entries.every((entry) => entry.runtimeObserved === true), true);
+  assert.equal(manifest.entries.every((entry) => entry.ready === false), true);
+  assert.equal(manifest.entries.every((entry) => entry.scientificExecution === false), true);
+  assert.equal(manifest.entries.every((entry) => /^sha256:[a-f0-9]{64}$/.test(entry.evidenceHash)), true);
+  assert.equal(
+    manifest.entries.find((entry) => entry.id === 'validated-magnetosphere-mhd-runtime')
+      .validation.checks.temperatureBounded,
+    true
+  );
+  assert.equal(
+    manifest.entries.find((entry) => entry.id === 'validated-radiation-transport-runtime')
+      .validation.checks.greenhouseFactorBounded,
+    true
+  );
+  assert.equal(
+    manifest.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation')
+      .validation.observed.activeRequiredLinkCount,
+    5
+  );
+
+  const scenario = await model.refreshScenarioBoundedProxyRuntimeEvidence();
+  const runtimeEvidence = scenario.scientificRuntimeEvidence;
+
+  assert.equal(runtimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(runtimeEvidence.ready, false);
+  assert.equal(runtimeEvidence.scientificExecution, false);
+  assert.equal(runtimeEvidence.requiredCount, 5);
+  assert.equal(runtimeEvidence.observedCount, 5);
+  assert.equal(runtimeEvidence.proxyOnlyCount, 5);
+  assert.equal(runtimeEvidence.validatedCount, 0);
+  assert.equal(runtimeEvidence.missingCount, 0);
+  assert.equal(runtimeEvidence.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation').status, 'proxy-runtime-observed');
+  assert.equal(runtimeEvidence.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation').validationStatus, 'pass');
+  assert.ok(runtimeEvidence.blockers.includes('multiscale-conservation-coupling-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeEvidence.observedCount, 5);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceObservedCount, 5);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceObservedCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceProxyOnlyCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceMissingCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
 test('magnetar runtime evidence manifest requires evidence hashes for validated entries', () => {
   const model = new MultiscaleModel({ seed: 476 });
   const manifest = createReadyMagnetarRuntimeEvidenceManifest();
