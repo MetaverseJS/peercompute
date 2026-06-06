@@ -50963,3 +50963,32 @@ timeout 8s env \
 - This is still smoke/runtime plumbing. Scientific readiness remains blocked
   until validated solver runtime evidence is attached.
 - No push was attempted.
+
+## 2026-06-06 19:05:00 AKDT - Live reduced calibrated runtime evidence
+
+### Prompt
+- Continue from the ULG handoff and descriptor-smoke path toward the current
+  magnetar scientific runtime gate.
+
+### Actions
+- Ran the live browser sequence that first applies the ULG magnetar handoff, then
+  calls `refreshScenarioCalibratedRuntimeEvidence()`.
+- Recorded the result as the current reduced calibrated runtime evidence path.
+
+### Commands Run
+- Live Playwright/System Chrome probe against `http://127.0.0.1:5173/` and
+  `https://127.0.0.1:5185/?scenario=magnetar`.
+
+### Results
+- PASS: after the ULG handoff, Multiscale reported `handoff-ready` with
+  blocker `proxy-runtime-not-scientific`.
+- PASS: `refreshScenarioCalibratedRuntimeEvidence()` then reported
+  `runtime-evidence-ready`, `validatedCount = 5`, `proxyOnlyCount = 0`,
+  `missingCount = 0`, `scientific-runtime-ready`, no handoff blockers, and
+  `scenarioScientificReady = true`.
+
+### Open
+- This is the reduced calibrated magnetar runtime path already documented in
+  the plan. It is not full-fidelity GRMHD, production PIC, or spectral radiation
+  transport.
+- No push was attempted.

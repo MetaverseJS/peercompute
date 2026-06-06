@@ -76,6 +76,11 @@ Updated: 2026-06-06 18:35:00 AKDT
   the handoff includes transferred WASM bytes plus explicit output semantics,
   while preserving descriptor readiness and keeping the scientific runtime gate
   blocked on validated solver evidence.
+- Live reduced calibrated runtime evidence can now clear the explicit scientific
+  gate after the ULG magnetar handoff: `refreshScenarioCalibratedRuntimeEvidence()`
+  reports `runtime-evidence-ready`, `validatedCount = 5`,
+  `scientific-runtime-ready`, and `scenarioScientificReady = true` for the
+  reduced calibrated magnetar runtime.
 - `git diff --check` passed.
 
 ## Next
