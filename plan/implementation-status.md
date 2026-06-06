@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 08:50:30 AKDT
+Updated: 2026-06-06 09:59:02 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -27,6 +27,15 @@ Updated: 2026-06-06 08:50:30 AKDT
 - Dispatch adapters now run source-specific probes: MoonLab validates the
   materialized quantum-response calibration payload and Eshkol compiles complete
   transferred WASM modules to record import/export/entry-export metadata.
+- Handoff supervisor dispatch results now include compact
+  `peercompute.ulg.handoff-supervisor-service-summary.v0` records so callers can
+  inspect MoonLab reference readiness, Eshkol descriptor/dry-runtime readiness,
+  and gated smoke output-semantics execution without digging through raw nested
+  service payloads.
+- Multiscale `runUlgDispatchServiceAdapterProbe()` now returns top-level
+  `serviceResultSummaries[]` with compact per-dispatch identity, ingest/probe
+  status, host-runtime probe/execution, and output-semantics validation fields,
+  while intentionally excluding artifact bodies and transferred WASM bytes.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
@@ -41,6 +50,11 @@ Updated: 2026-06-06 08:50:30 AKDT
   and preserves Eshkol `53066` transferred WASM bytes with no blockers.
 - Live VPN probe confirmed the Eshkol adapter worker compiled the transferred
   `53066`-byte WASM module with `33` imports, `1` export, and `main` present.
+- Live VPN probe confirmed the real ULG `hello` smoke handoff reports
+  `serviceResultSummaries.length = 2`, Eshkol
+  `host-runtime-output-semantics-validated`, `entryResult = 0`,
+  output semantics status `output-semantics-validated`, expected stdout SHA-256,
+  no summary-level `wasmBytes`, and `scientificExecution = false`.
 - `git diff --check` passed.
 
 ## Next

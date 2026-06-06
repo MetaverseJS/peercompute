@@ -9,6 +9,7 @@ export const ULG_HANDOFF_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.handoff-servic
 export const ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-plan.v0';
 export const ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-result.v0';
 export const ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA = 'peercompute.ulg.handoff-supervisor-service-executor.v0';
+export const ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA = 'peercompute.ulg.handoff-supervisor-service-summary.v0';
 export const ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA = 'peercompute.ulg.handoff-dispatch-artifact-payload.v0';
 
 const DEFAULT_DISPATCH_SERVICE_IDS = Object.freeze({
@@ -40,6 +41,18 @@ function stringOrNull(value) {
 
 function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
+}
+
+function objectOrNull(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function finiteNumberOrNull(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
+
+function booleanOrNull(value) {
+  return typeof value === 'boolean' ? value : null;
 }
 
 function normalizeDispatchServiceIds(options = {}) {
@@ -255,6 +268,62 @@ function createNotExecutedDispatchResult(dispatchPlan = {}) {
   };
 }
 
+export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
+  const result = objectOrNull(serviceResult) || {};
+  const ingest = objectOrNull(result.ingest) || {};
+  const probe = objectOrNull(result.probe) || {};
+  const descriptorProbe = objectOrNull(probe.descriptorProbe) || {};
+  const hostRuntimeProbe = objectOrNull(probe.hostRuntimeProbe) || {};
+  const hostRuntimeExecution = objectOrNull(probe.hostRuntimeExecution) || {};
+  const outputSemanticsValidation = objectOrNull(hostRuntimeExecution.outputSemanticsValidation) || {};
+  const observedOutput = objectOrNull(outputSemanticsValidation.observed) || {};
+  return {
+    schema: ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA,
+    serviceResultSchema: result.schema || null,
+    serviceStatus: result.serviceStatus || result.adapterStatus || result.status || null,
+    taskKind: result.taskKind || null,
+    ready: booleanOrNull(result.ready),
+    probeSchema: probe.schema || null,
+    probeStatus: probe.status || null,
+    probeReady: booleanOrNull(probe.ready),
+    probeMode: probe.probeMode || null,
+    moduleCompiled: booleanOrNull(probe.moduleCompiled),
+    moduleImportCount: finiteNumberOrNull(probe.importCount ?? ingest.moduleImportCount),
+    moduleExportCount: finiteNumberOrNull(probe.exportCount ?? ingest.moduleExportCount),
+    descriptorContractReady: booleanOrNull(ingest.descriptorContractReady ?? descriptorProbe.ready),
+    descriptorContractStatus: ingest.descriptorContractStatus || descriptorProbe.status || null,
+    hostRuntimeProbeReady: booleanOrNull(ingest.hostRuntimeProbeReady ?? hostRuntimeProbe.ready),
+    hostRuntimeProbeStatus: ingest.hostRuntimeProbeStatus || hostRuntimeProbe.status || null,
+    hostRuntimeExecutionReady: booleanOrNull(ingest.hostRuntimeExecutionReady ?? hostRuntimeExecution.ready),
+    hostRuntimeExecutionStatus: ingest.hostRuntimeExecutionStatus || hostRuntimeExecution.status || null,
+    hostRuntimeExecutionInvoked: booleanOrNull(ingest.hostRuntimeExecutionInvoked ?? hostRuntimeExecution.entryInvoked),
+    hostRuntimeExecutionMainInvoked: booleanOrNull(hostRuntimeExecution.mainInvoked),
+    hostRuntimeExecutionResult: hostRuntimeExecution.entryResult ?? null,
+    hostRuntimeExecutionScientificExecution: booleanOrNull(
+      ingest.hostRuntimeExecutionScientificExecution ?? hostRuntimeExecution.scientificExecution
+    ),
+    outputSemanticsValidationReady: booleanOrNull(
+      ingest.outputSemanticsValidationReady ?? outputSemanticsValidation.ready
+    ),
+    outputSemanticsValidationStatus: outputSemanticsValidation.status || null,
+    outputSemanticsValidationBlockers: uniqueStrings(outputSemanticsValidation.blockers || []),
+    outputSemanticsObservedStdoutSha256: observedOutput.stdoutSha256 || null,
+    outputSemanticsObservedStdoutByteLength: finiteNumberOrNull(observedOutput.stdoutByteLength),
+    ingestSchema: ingest.schema || null,
+    closureReady: booleanOrNull(ingest.closureReady),
+    closureDescriptorReady: booleanOrNull(ingest.closureDescriptorReady),
+    closureOutputSemanticsReady: booleanOrNull(ingest.closureOutputSemanticsReady),
+    wasmByteLength: finiteNumberOrNull(ingest.wasmByteLength),
+    wasmSha256: ingest.wasmSha256 || null,
+    magnetarDipoleIsingReady: booleanOrNull(ingest.magnetarDipoleIsingReady),
+    magnetarReferenceReady: booleanOrNull(ingest.magnetarReferenceReady),
+    outputReferenceReadyCount: finiteNumberOrNull(ingest.outputReferenceReadyCount),
+    outputReferenceCount: finiteNumberOrNull(ingest.outputReferenceCount),
+    magnetarCalibratedReferenceReadyCount: finiteNumberOrNull(ingest.magnetarCalibratedReferenceReadyCount),
+    magnetarCalibratedReferenceCount: finiteNumberOrNull(ingest.magnetarCalibratedReferenceCount)
+  };
+}
+
 export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
   const getSupervisor = typeof options.getSupervisor === 'function'
     ? options.getSupervisor
@@ -299,6 +368,7 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
         }
       };
     const serviceResult = await supervisor.submitTask(serviceTask);
+    const serviceSummary = summarizeUlgHandoffSupervisorServiceResult(serviceResult);
     const serviceStatus = serviceResult?.serviceStatus || serviceResult?.adapterStatus || serviceResult?.status;
     const serviceReady = serviceResult?.ready === true
       || (serviceResult?.ready !== false && (
@@ -317,6 +387,7 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
       blockers: uniqueStrings(serviceResult?.blockers || []),
       artifactRefUri: dispatch.artifactRefUri || null,
       artifactContentHash: dispatch.artifactContentHash || null,
+      serviceSummary,
       serviceTask: clonePlain(serviceTask),
       serviceResult: clonePlain(serviceResult || null),
       serviceArtifactRef: clonePlain(serviceResult?.artifactRef || null)

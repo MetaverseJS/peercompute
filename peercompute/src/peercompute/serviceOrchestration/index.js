@@ -25,10 +25,12 @@ export {
   ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_TASK_SCHEMA,
   ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
+  ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA,
   UlgHandoffServiceHost,
   createUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceManifest,
-  createUlgHandoffSupervisorServiceExecutor
+  createUlgHandoffSupervisorServiceExecutor,
+  summarizeUlgHandoffSupervisorServiceResult
 } from './UlgHandoffServiceHost.js';
 export {
   ULG_DISPATCH_SERVICE_ADAPTER_SCHEMA,

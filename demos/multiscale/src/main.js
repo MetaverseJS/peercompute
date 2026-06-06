@@ -1623,6 +1623,42 @@ function uniqueUlgStrings(values = []) {
     .filter(Boolean))];
 }
 
+function summarizeUlgDispatchServiceAdapterResults(results = []) {
+  return results.map((entry = {}) => {
+    const serviceResult = entry.serviceResult && typeof entry.serviceResult === 'object'
+      ? entry.serviceResult
+      : {};
+    const serviceSummary = entry.serviceSummary && typeof entry.serviceSummary === 'object'
+      ? entry.serviceSummary
+      : null;
+    const probe = serviceResult.probe && typeof serviceResult.probe === 'object'
+      ? serviceResult.probe
+      : {};
+    const hostRuntimeExecution = probe.hostRuntimeExecution && typeof probe.hostRuntimeExecution === 'object'
+      ? probe.hostRuntimeExecution
+      : null;
+    return {
+      schema: 'peercompute.multiscale.ulg-dispatch-service-result-summary.v0',
+      dispatchId: entry.dispatchId || null,
+      serviceId: entry.serviceId || null,
+      sourceService: entry.sourceService || null,
+      artifactKind: entry.artifactKind || null,
+      taskKind: entry.taskKind || null,
+      status: entry.status || null,
+      ready: entry.ready === true,
+      blockers: uniqueUlgStrings(entry.blockers || []),
+      serviceSummary: cloneJson(serviceSummary),
+      ingest: cloneJson(serviceResult.ingest || null),
+      probeStatus: serviceSummary?.probeStatus || probe.status || null,
+      probeReady: serviceSummary?.probeReady ?? (typeof probe.ready === 'boolean' ? probe.ready : null),
+      probeMode: serviceSummary?.probeMode || probe.probeMode || null,
+      hostRuntimeProbe: cloneJson(probe.hostRuntimeProbe || null),
+      hostRuntimeExecution: cloneJson(hostRuntimeExecution),
+      outputSemanticsValidation: cloneJson(hostRuntimeExecution?.outputSemanticsValidation || null)
+    };
+  });
+}
+
 function createUlgDispatchArtifactCache(now = () => Date.now()) {
   const records = new Map();
   return {
@@ -1718,6 +1754,7 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       serviceIds: cloneJson(serviceIds),
       workerModules: cloneJson(workerModules),
       results,
+      serviceResultSummaries: summarizeUlgDispatchServiceAdapterResults(results),
       telemetry,
       artifacts: artifactCache.list(),
       blockers

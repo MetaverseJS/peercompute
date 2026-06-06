@@ -26,6 +26,7 @@ import {
   ULG_HANDOFF_SERVICE_TASK_SCHEMA,
   ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
   ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
+  ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -47,6 +48,7 @@ import {
   ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
   normalizeUlgDemoHandoff,
   normalizeComputeServiceManifest,
+  summarizeUlgHandoffSupervisorServiceResult,
   summarizeUlgArtifact
 } from '../../src/peercompute/serviceOrchestration/index.js';
 import {
@@ -1830,6 +1832,11 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.magnetarDipoleIsingReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.schema, 'peercompute.ulg.moonlab-dispatch-payload-probe.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.ready, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceStatus, 'accepted');
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.probeStatus, 'pass');
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.magnetarDipoleIsingReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.hostRuntimeExecutionReady, null);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceArtifactRef.sourceService, 'moonlab-ulg-fixture');
   assert.equal(
@@ -1853,6 +1860,12 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.status, 'skipped-short-wasm-header');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.ready, true);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.moduleCompiled, false);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.probeStatus, 'skipped-short-wasm-header');
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.moduleCompiled, false);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.closureDescriptorReady, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.closureOutputSemanticsReady, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.wasmByteLength, 4);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
   assert.equal(result.dispatchResult.results[1].output.serviceArtifactRef.sourceService, 'eshkol-ulg-fixture');
   assert.equal(
@@ -1997,6 +2010,14 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.referenceCount, 4);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productTopologyBinding.status, 'descriptor-bound-not-executed');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'declared-not-executed');
+  assert.equal(eshkol.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
+  assert.equal(eshkol.serviceSummary.probeStatus, 'descriptor-contract-ready');
+  assert.equal(eshkol.serviceSummary.probeMode, 'descriptor-contract-metadata-only');
+  assert.equal(eshkol.serviceSummary.moduleCompiled, false);
+  assert.equal(eshkol.serviceSummary.descriptorContractReady, true);
+  assert.equal(eshkol.serviceSummary.descriptorContractStatus, 'descriptor-contract-ready');
+  assert.equal(eshkol.serviceSummary.hostRuntimeExecutionReady, false);
+  assert.equal(eshkol.serviceSummary.hostRuntimeExecutionScientificExecution, false);
 
   const cached = await artifactCache.get(result.artifactRef);
   assert.equal(cached.dispatchResult.results[1].output.serviceResult.probe.probeMode, 'descriptor-contract-metadata-only');
@@ -2187,6 +2208,21 @@ test('ULG Eshkol dispatch adapter executes only explicit smoke output semantics'
   assert.equal(result.ingest.hostRuntimeExecutionInvoked, true);
   assert.equal(result.ingest.hostRuntimeExecutionScientificExecution, false);
   assert.equal(result.ingest.outputSemanticsValidationReady, true);
+
+  const summary = summarizeUlgHandoffSupervisorServiceResult(result);
+  assert.equal(summary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
+  assert.equal(summary.serviceStatus, 'accepted');
+  assert.equal(summary.probeStatus, 'pass');
+  assert.equal(summary.hostRuntimeProbeReady, true);
+  assert.equal(summary.hostRuntimeExecutionReady, true);
+  assert.equal(summary.hostRuntimeExecutionStatus, 'host-runtime-output-semantics-validated');
+  assert.equal(summary.hostRuntimeExecutionInvoked, true);
+  assert.equal(summary.hostRuntimeExecutionMainInvoked, true);
+  assert.equal(summary.hostRuntimeExecutionResult, 0);
+  assert.equal(summary.hostRuntimeExecutionScientificExecution, false);
+  assert.equal(summary.outputSemanticsValidationReady, true);
+  assert.equal(summary.outputSemanticsValidationStatus, 'output-semantics-validated');
+  assert.deepEqual(summary.outputSemanticsValidationBlockers, []);
 });
 
 test('ULG Eshkol dispatch adapter blocks malformed output semantics before invoking main', async () => {

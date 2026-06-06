@@ -50758,3 +50758,74 @@ timeout 8s env \
   execution/table-probe semantics remain future work until the closure runtime
   contract is ready.
 - No push was attempted.
+
+## 2026-06-06 09:59:02 AKDT - ULG dispatch service summary surface
+
+### Prompt
+- Continue implementing the ULG service-hosting plan and keep live VPN demos
+  inspectable.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 09:59:02 AKDT`.
+
+### Actions
+- Added `peercompute.ulg.handoff-supervisor-service-summary.v0` summaries to
+  `createUlgHandoffSupervisorServiceExecutor()` results.
+- Exported `summarizeUlgHandoffSupervisorServiceResult()` through the service
+  orchestration barrel.
+- The summary keeps dispatch/UI callers out of raw nested service payloads by
+  flattening probe status, module compile counts, descriptor readiness, host
+  dry-runtime status, gated host-runtime execution status, entry invocation,
+  output-semantics validation status, observed stdout metadata, MoonLab
+  reference readiness, and calibrated-reference counts.
+- Added Multiscale top-level
+  `peercompute.multiscale.ulg-dispatch-service-result-summary.v0` entries under
+  `runUlgDispatchServiceAdapterProbe().serviceResultSummaries[]`.
+- Kept summaries additive and compact: raw `results[]`, nested `serviceResult`,
+  readiness logic, artifact bodies, service tasks, and transferred WASM bytes are
+  unchanged.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+- Live Playwright/System Chrome probe against `http://100.86.83.35:5173/` and
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: full `serviceOrchestration.test.js` passed `20/20`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live VPN smoke handoff probe returned `dispatch-adapters-ready`,
+  blocker count `0`, accepted dispatch count `2`, and
+  `serviceResultSummaries.length = 2`.
+- PASS: live MoonLab top-level service summary reported schema
+  `peercompute.ulg.handoff-supervisor-service-summary.v0` and
+  `magnetarReferenceReady = true`.
+- PASS: live Eshkol top-level service summary reported probe status `pass`,
+  `host-runtime-output-semantics-validated`, output-semantics status
+  `output-semantics-validated`, `entryResult = 0`, stdout SHA-256
+  `sha256:675d2e8686b6a85ffaa5751fba535c108d23ba941f1890d0a102619ec2cdf20d`,
+  `scientificExecution = false`, and no summary-level `wasmBytes`.
+
+### Open
+- This is an observability/API surface for existing dispatch adapter evidence.
+  It does not promote the Eshkol smoke fixture or the magnetar descriptor path to
+  full scientific execution.
+- No push was attempted.
