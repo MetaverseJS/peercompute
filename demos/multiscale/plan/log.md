@@ -1,5 +1,57 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-05 18:16:34 AKDT - Magnetar calibration ingest
+
+### Prompt
+User asked how many days remain until a complete working spec-adherent system can simulate a magnetar. Standing instruction remains local commits only and no push.
+
+### Actions Attempted
+- Corrected the working estimate after a read-only sidecar audit: the current path can become a convincing proxy demo in about 3-6 focused days, but spec-adherent magnetar simulation is closer to 25-40 focused engineering days.
+- Added `peercompute.multiscale.scenario-calibration-ingest.v0` to consume PeerCompute/ULG artifact summaries.
+- Added model and browser APIs to summarize and ingest the live ULG MoonLab magnetar dipole Ising calibration artifact.
+- Propagated calibration handoff readiness into scenario state, packet boundary conditions, and HUD text while preserving `simulationStatus: "proxy-only"`.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `peercompute/src/peercompute/index.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `demos/multiscale/plan/plan.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --test --test-name-pattern "magnetar scenario" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run test`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Playwright browser probe from ULG `http://127.0.0.1:5173/` to Multiscale `https://127.0.0.1:5185/?scenario=magnetar`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks completed for the changed model, demo runtime, root package export, and model tests.
+- PASS: focused magnetar scenario tests passed with `2/2`.
+- PASS: full Multiscale model suite passed with `173/173`.
+- PASS: package-level Multiscale test script passed with `173/173`.
+- PASS: service-orchestration unit test remained passing with `7/7`.
+- PASS: Vite production build completed; existing large-chunk warnings remain non-fatal.
+- PASS: live browser probe confirmed ULG artifact summary readiness, Multiscale calibration ingest readiness, ground state `000`, max energy delta `0`, evaluated bitstrings `8`, and packet `scenarioCalibrationReady: true` while keeping `validationStatus: "proxy-only"`.
+- PASS: whitespace check passed.
+
+### Failures / Open Questions
+- Initial Playwright probe failed against the missing package-managed Chromium executable; reran successfully with system Chrome.
+- This is still a calibration handoff and proxy scenario path, not spec-complete magnetar physics.
+
 ## 2026-06-05 17:55:24 AKDT - Magnetar scenario preset scaffold
 
 ### Prompt

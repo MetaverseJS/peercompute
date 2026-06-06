@@ -5,7 +5,8 @@ import {
   NodeKernel,
   StateManager,
   createPlacementAdmissionPolicy,
-  createRemoteResultQuorumValidator
+  createRemoteResultQuorumValidator,
+  summarizeUlgArtifact as summarizePeerComputeUlgArtifact
 } from '@peercompute';
 import {
   MULTISCALE_SCENARIO_PRESETS,
@@ -1324,6 +1325,27 @@ function applyScenarioPreset(id = 'magnetar', options = {}) {
     scenario,
     environment: model.environment,
     refinementRequests: model.estimateRefinementRequests()
+  });
+}
+
+function ingestScenarioCalibrationSummary(summary = {}, options = {}) {
+  const scenario = model.ingestScenarioCalibrationSummary(summary, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    calibrationIngest: scenario.calibrationIngest || null
+  });
+}
+
+function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
+  const artifactKind = options.artifactKind || 'quantum-response';
+  const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
+  return ingestScenarioCalibrationSummary(artifactSummary, {
+    ...options,
+    artifactKind,
+    provider: options.provider || artifact.sourceService || 'moonlab'
   });
 }
 
@@ -5657,7 +5679,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -9904,6 +9926,15 @@ window.__multiscaleDemo = {
   },
   applyScenarioPreset(id = 'magnetar', options = {}) {
     return applyScenarioPreset(id, options);
+  },
+  ingestScenarioCalibrationSummary(summary = {}, options = {}) {
+    return ingestScenarioCalibrationSummary(summary, options);
+  },
+  ingestUlgArtifactForScenario(artifact = {}, options = {}) {
+    return ingestUlgArtifactForScenario(artifact, options);
+  },
+  summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
+    return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));
   },
   getScenario() {
     return cloneJson(model.getScenario());

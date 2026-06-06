@@ -11,10 +11,12 @@ import {
 } from '../../../peercompute/src/peercompute/computeManager/ComputeManager.js';
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import {
+  MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
   MultiscaleModel,
-  SCALE_LAYERS
+  SCALE_LAYERS,
+  ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
 } from '../src/simulation/multiscaleModel.js';
 import {
   MULTISCALE_COMPUTE_RESIZE_CONSERVATION_SCHEMA,
@@ -1558,6 +1560,48 @@ test('magnetar scenario preset seeds normalized extreme-field packet state', () 
   assert.equal(packet.downward.boundaryConditions.scenarioObjectClass, 'magnetar-neutron-star');
   assert.equal(packet.downward.boundaryConditions.magneticFieldT, preset.environment.magneticFieldT);
   assert.equal(packet.downward.boundaryConditions.radiativeHeatFlux, preset.environment.radiativeHeatFlux);
+});
+
+test('magnetar scenario ingests ULG calibration artifact summary without promoting physics status', () => {
+  const model = new MultiscaleModel({ seed: 45 });
+  const scenario = model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    calibrationArtifacts: [
+      {
+        id: 'magnetarDipoleIsing',
+        schema: ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
+        sample: 'magnetar_dipole_ising',
+        status: 'pass',
+        parityStatus: 'pass',
+        groundStateBitString: '000',
+        maxEnergyDelta: 0,
+        evaluatedBitstrings: 8,
+        ready: true
+      }
+    ]
+  });
+
+  assert.equal(scenario.id, 'magnetar');
+  assert.equal(scenario.active, true);
+  assert.equal(scenario.validation.status, 'proxy-only');
+  assert.equal(scenario.validation.simulationStatus, 'proxy-only');
+  assert.equal(scenario.validation.calibrationStatus, 'artifact-summary-ready');
+  assert.equal(scenario.validation.calibrationReady, true);
+  assert.equal(scenario.calibrationIngest.schema, MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA);
+  assert.equal(scenario.calibrationIngest.ready, true);
+  assert.equal(scenario.calibrationIngest.magnetarDipoleIsing.schema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
+  assert.equal(scenario.calibrationIngest.magnetarDipoleIsing.groundStateBitString, '000');
+  assert.equal(scenario.calibrationIngest.magnetarDipoleIsing.maxEnergyDelta, 0);
+  assert.equal(scenario.calibrationArtifacts[0].readiness, 'artifact-summary-ready');
+
+  const packet = model.createPacket();
+  assert.equal(packet.scenario.calibrationIngest.ready, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibrationReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibrationStatus, 'artifact-summary-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibrationSchema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {

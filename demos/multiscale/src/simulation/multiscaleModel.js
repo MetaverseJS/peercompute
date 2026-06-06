@@ -161,6 +161,8 @@ export const SCALE_LAYERS = [
 ];
 
 export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenario-preset.v0';
+export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multiscale.scenario-calibration-ingest.v0';
+export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
 export const MULTISCALE_SCENARIO_PRESETS = {
   magnetar: {
@@ -248,6 +250,7 @@ function createDefaultScenarioState() {
     normalization: { status: 'none' },
     solverFocus: [],
     calibrationArtifacts: [],
+    calibrationIngest: null,
     validation: {
       status: 'default',
       note: 'No named astrophysical scenario is active.'
@@ -258,6 +261,125 @@ function createDefaultScenarioState() {
 export function getMultiscaleScenarioPreset(id = '') {
   const key = String(id || '').trim().toLowerCase();
   return MULTISCALE_SCENARIO_PRESETS[key] ? clonePlain(MULTISCALE_SCENARIO_PRESETS[key]) : null;
+}
+
+function normalizeMagnetarCalibrationEntry(entry = {}, fallbackId = '') {
+  const schema = entry.schema || null;
+  const status = entry.status || entry.validation?.status || null;
+  const parityStatus = entry.parityStatus || entry.parity?.status || null;
+  return {
+    id: entry.id || fallbackId || null,
+    schema,
+    sample: entry.sample || null,
+    status,
+    parityStatus,
+    groundStateBitString: entry.groundStateBitString || entry.summary?.groundState?.bitString || null,
+    maxEnergyDelta: entry.maxEnergyDelta ?? entry.summary?.maxEnergyDelta ?? entry.parity?.metrics?.maxEnergyDelta ?? null,
+    evaluatedBitstrings: entry.evaluatedBitstrings ?? entry.summary?.evaluatedBitstrings ?? null,
+    ready: entry.ready === true
+      || (
+        schema === ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
+        && status === 'pass'
+        && parityStatus === 'pass'
+      )
+  };
+}
+
+function findMagnetarCalibrationEntry(source = {}) {
+  const calibrationArtifacts = source.calibrationArtifacts;
+  const entries = Array.isArray(calibrationArtifacts)
+    ? calibrationArtifacts.map((entry) => normalizeMagnetarCalibrationEntry(entry, entry?.id))
+    : Object.entries(calibrationArtifacts && typeof calibrationArtifacts === 'object' ? calibrationArtifacts : {})
+      .map(([id, entry]) => normalizeMagnetarCalibrationEntry(entry, id));
+  return entries.find((entry) => (
+    entry.id === 'magnetarDipoleIsing'
+    || entry.schema === ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
+  )) || null;
+}
+
+export function createScenarioCalibrationIngestReport(input = {}, options = {}) {
+  const source = input?.artifactSummary && typeof input.artifactSummary === 'object'
+    ? input.artifactSummary
+    : input || {};
+  const hasMagnetarSummary = [
+    source.magnetarDipoleIsingStatus,
+    source.magnetarDipoleIsingParityStatus,
+    source.magnetarDipoleIsingGroundState,
+    source.magnetarDipoleIsingMaxEnergyDelta,
+    source.magnetarDipoleIsingEvaluatedBitstrings,
+    source.magnetarDipoleIsingReady
+  ].some((value) => value != null);
+  const entry = findMagnetarCalibrationEntry(source) || normalizeMagnetarCalibrationEntry(hasMagnetarSummary ? {
+    id: 'magnetarDipoleIsing',
+    schema: ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
+    status: source.magnetarDipoleIsingStatus,
+    parityStatus: source.magnetarDipoleIsingParityStatus,
+    groundStateBitString: source.magnetarDipoleIsingGroundState,
+    maxEnergyDelta: source.magnetarDipoleIsingMaxEnergyDelta,
+    evaluatedBitstrings: source.magnetarDipoleIsingEvaluatedBitstrings,
+    ready: source.magnetarDipoleIsingReady === true
+  } : {});
+  const calibrationArtifactCount = Number.isFinite(Number(source.calibrationArtifactCount))
+    ? Number(source.calibrationArtifactCount)
+    : (entry.schema ? 1 : 0);
+  const calibrationReadyCount = Number.isFinite(Number(source.calibrationReadyCount))
+    ? Number(source.calibrationReadyCount)
+    : (entry.ready ? 1 : 0);
+  const ready = source.magnetarDipoleIsingReady === true || entry.ready === true;
+  return {
+    schema: MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
+    scenarioId: options.scenarioId || 'magnetar',
+    provider: options.provider || 'moonlab',
+    sourceSchema: source.schema || null,
+    sourceArtifactKind: source.artifactKind || options.artifactKind || null,
+    calibrationArtifactCount,
+    calibrationReadyCount,
+    ready,
+    magnetarDipoleIsing: {
+      id: entry.id || 'magnetarDipoleIsing',
+      schema: entry.schema,
+      sample: entry.sample,
+      status: entry.status,
+      parityStatus: entry.parityStatus,
+      groundStateBitString: entry.groundStateBitString,
+      maxEnergyDelta: entry.maxEnergyDelta,
+      evaluatedBitstrings: entry.evaluatedBitstrings,
+      ready
+    },
+    validation: {
+      status: ready ? 'calibration-artifact-ready' : 'calibration-artifact-pending',
+      simulationStatus: 'proxy-only',
+      note: 'Calibration artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
+    }
+  };
+}
+
+function mergeScenarioCalibrationArtifacts(artifacts = [], ingest) {
+  const nextArtifact = {
+    provider: ingest.provider,
+    artifactKind: 'magnetar-dipole-ising-calibration',
+    schema: ingest.magnetarDipoleIsing.schema,
+    parity: 'wasm-ising-energy-js-reference',
+    readiness: ingest.ready ? 'artifact-summary-ready' : 'artifact-summary-pending',
+    validationStatus: ingest.magnetarDipoleIsing.status,
+    parityStatus: ingest.magnetarDipoleIsing.parityStatus,
+    groundStateBitString: ingest.magnetarDipoleIsing.groundStateBitString,
+    maxEnergyDelta: ingest.magnetarDipoleIsing.maxEnergyDelta,
+    evaluatedBitstrings: ingest.magnetarDipoleIsing.evaluatedBitstrings,
+    sourceSchema: ingest.sourceSchema
+  };
+  let replaced = false;
+  const merged = artifacts.map((artifact) => {
+    if (
+      artifact.artifactKind === nextArtifact.artifactKind
+      || artifact.schema === nextArtifact.schema
+    ) {
+      replaced = true;
+      return { ...artifact, ...nextArtifact };
+    }
+    return artifact;
+  });
+  return replaced ? merged : [...merged, nextArtifact];
 }
 
 export function createSeededRandom(seed = 1337) {
@@ -1306,6 +1428,30 @@ export class MultiscaleModel {
       }
     };
     this.applyScenarioProxyState(this.scenario);
+    return this.getScenario();
+  }
+
+  ingestScenarioCalibrationSummary(summary = {}, options = {}) {
+    const ingest = createScenarioCalibrationIngestReport(summary, options);
+    if (options.applyPreset !== false && this.scenario.id !== ingest.scenarioId) {
+      this.applyScenarioPreset(ingest.scenarioId);
+    }
+    if (this.scenario.id !== ingest.scenarioId) {
+      return this.getScenario();
+    }
+    this.scenario = {
+      ...this.scenario,
+      calibrationIngest: ingest,
+      calibrationArtifacts: mergeScenarioCalibrationArtifacts(this.scenario.calibrationArtifacts || [], ingest),
+      validation: {
+        ...(this.scenario.validation || {}),
+        status: this.scenario.validation?.status || 'proxy-only',
+        calibrationStatus: ingest.ready ? 'artifact-summary-ready' : 'artifact-summary-pending',
+        calibrationReady: ingest.ready,
+        calibrationSchema: ingest.magnetarDipoleIsing.schema,
+        simulationStatus: 'proxy-only'
+      }
+    };
     return this.getScenario();
   }
 
@@ -6048,7 +6194,10 @@ export class MultiscaleModel {
           radiativeHeatFlux: this.environment.radiativeHeatFlux,
           scenarioId: scenario.id,
           scenarioObjectClass: scenario.objectClass,
-          scenarioModelTier: scenario.modelTier
+          scenarioModelTier: scenario.modelTier,
+          scenarioCalibrationReady: scenario.calibrationIngest?.ready === true,
+          scenarioCalibrationStatus: scenario.validation?.calibrationStatus || null,
+          scenarioCalibrationSchema: scenario.calibrationIngest?.magnetarDipoleIsing?.schema || null
         },
         refinementRequests
       },

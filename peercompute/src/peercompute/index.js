@@ -66,7 +66,11 @@ export {
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
   ULG_ARTIFACT_RESULT_SCHEMA,
+  ULG_ARTIFACT_SUMMARY_SCHEMA,
+  ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_MANIFEST_ADAPTER_SCHEMA,
+  ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
+  ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
   ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
   ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
@@ -79,7 +83,8 @@ export {
   normalizeComputeServiceManifest,
   normalizeUlgArtifactOutputs,
   normalizeUlgServiceManifest,
-  normalizeUlgTaskCapsule
+  normalizeUlgTaskCapsule,
+  summarizeUlgArtifact
 } from './serviceOrchestration/index.js';
 export { GPUHubManager } from './gpu/GPUHubManager.js';
 

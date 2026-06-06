@@ -2,6 +2,63 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 18:16:34 AKDT - Magnetar calibration ingest into Multiscale
+
+### Prompt
+- User asked: "this is great. based on current progress how many days until we have a compkete working system that adheres to the soec and can simulate a magnetar"
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-05 18:16:34 AKDT`.
+
+### Actions
+- Corrected the estimate after a read-only sidecar audit: a visually convincing proxy path is about 3-6 focused days, while an honest spec-adherent magnetar simulation path is closer to 25-40 focused engineering days because validated physics closures and solver gates remain.
+- Exported ULG artifact summary helpers and schema constants from the PeerCompute package root so demos can summarize ULG artifacts through `@peercompute`.
+- Added `peercompute.multiscale.scenario-calibration-ingest.v0` to the Multiscale model.
+- Added a model API that consumes a PeerCompute/ULG artifact summary, marks the MoonLab magnetar dipole Ising handoff ready in the active scenario, records ground-state/max-energy/evaluated-bitstring metadata, and leaves simulation fidelity explicitly `proxy-only`.
+- Exposed scenario calibration readiness through packet boundary conditions.
+- Added browser APIs: `window.__multiscaleDemo.summarizeUlgArtifact()`, `ingestScenarioCalibrationSummary()`, and `ingestUlgArtifactForScenario()`.
+- Updated Multiscale HUD scenario text with calibration handoff status.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/index.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --test --test-name-pattern "magnetar scenario" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run test`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Playwright browser probe from ULG `http://127.0.0.1:5173/` to Multiscale `https://127.0.0.1:5185/?scenario=magnetar`
+- `git diff --check`
+
+### Test Results
+- PASS: syntax checks completed for the changed package root, model, runtime, and tests.
+- PASS: focused magnetar scenario tests passed with `2/2`.
+- PASS: full Multiscale model suite passed with `173/173`.
+- PASS: package-level Multiscale test script passed with `173/173`.
+- PASS: service-orchestration unit test remained passing with `7/7`.
+- PASS: Vite production build completed; existing large-chunk warnings remain non-fatal.
+- PASS: live browser probe pulled the ULG MoonLab artifact, summarized `peercompute.ulg.magnetar-dipole-ising-calibration.v0` as ready, ingested it into the Multiscale magnetar scenario, and confirmed packet boundary conditions reported `scenarioCalibrationReady: true`, `scenarioCalibrationStatus: "artifact-summary-ready"`, and `validationStatus: "proxy-only"`.
+- PASS: whitespace check passed.
+
+### Failures / Open Questions
+- Initial Playwright probe used the package-managed Chromium path and failed because that browser executable was missing. Reran successfully with system Chrome at `/usr/bin/google-chrome`.
+- The calibration ingest confirms cross-repo handoff readiness; it does not promote the magnetar simulation out of proxy mode. Spec-adherent magnetar work still needs validated Eshkol closures, physical MHD/PIC/radiation/relativity tolerances, WebGPU pass validation, and end-to-end artifact replay gates.
+
 ## 2026-06-05 18:09:16 AKDT - ULG magnetar calibration summary bridge
 
 ### Prompt
