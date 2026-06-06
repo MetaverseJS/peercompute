@@ -50621,3 +50621,76 @@ timeout 8s env \
   connecting their worker-module entries to real MoonLab/Eshkol browser service
   assets and execution/probe code.
 - No push was attempted.
+
+## 2026-06-06 08:43:17 AKDT - Multiscale ULG dispatch adapter workers
+
+### Prompt
+- Continue implementing the ULG service-hosting plan and keep live VPN demos
+  inspectable.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 08:43:17 AKDT`.
+
+### Actions
+- Added Multiscale browser module-worker shims for the exported PeerCompute
+  MoonLab and Eshkol dispatch adapters.
+- Added stable Vite build entries for
+  `assets/ulgMoonLabDispatchServiceHost.js` and
+  `assets/ulgEshkolDispatchServiceHost.js`.
+- `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe()` and
+  `executeUlgHandoffDispatchServices()` now build a durable handoff envelope,
+  derive the dispatch plan, launch the dispatch adapter workers through
+  `WorkerSupervisor`, execute both dispatches through
+  `createUlgHandoffSupervisorServiceExecutor()`, and return adapter results,
+  nested artifact refs, and supervisor telemetry.
+- Extended `createUlgDispatchServiceManifests()` with per-service worker-module
+  and child-worker-module overrides for browser bundles.
+
+### Files Touched
+- `demos/multiscale/src/compute/ulgMoonLabDispatchServiceHost.js`
+- `demos/multiscale/src/compute/ulgEshkolDispatchServiceHost.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/vite.config.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/compute/ulgMoonLabDispatchServiceHost.js`
+- `node --check demos/multiscale/src/compute/ulgEshkolDispatchServiceHost.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/vite.config.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probe against `http://100.86.83.35:5173/` and
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: full `serviceOrchestration.test.js` passed `16/16`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live VPN probe exported two ULG artifacts from `5173`: MoonLab
+  `quantum-response` and Eshkol `closure` with `wasmByteLength = 53066`.
+- PASS: live Multiscale `runUlgDispatchServiceAdapterProbe()` returned
+  `peercompute.multiscale.ulg-dispatch-service-adapter-probe.v0`,
+  `dispatch-adapters-ready`, `ready = true`, `dispatchCount = 2`,
+  `executedDispatchCount = 2`, `acceptedDispatchCount = 2`,
+  `failedDispatchCount = 0`, task kinds
+  `moonlab.ulg.quantum-response.ingest` /
+  `eshkol.ulg.closure-artifact.ingest`, nested service result schema
+  `peercompute.ulg.dispatch-service-result.v0`, nested artifact refs for
+  `moonlab-ulg-fixture` and `eshkol-ulg-fixture`, Eshkol ingest
+  `wasmByteLength = 53066`, MoonLab `magnetarDipoleIsingReady = true`,
+  telemetry schema `peercompute.ulg.dispatch-service-telemetry.v0`, and no
+  blockers.
+
+### Open
+- The browser workers currently run deterministic dispatch acceptance. The next
+  step is to move MoonLab/Eshkol execution or probe logic behind these worker
+  shims while keeping the same PeerCompute supervisor/lease/artifact contracts.
+- No push was attempted.

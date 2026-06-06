@@ -1,13 +1,17 @@
 import './styles.css';
 import {
   ComputeManager,
+  ComputeServiceRegistry,
   NODE_KERNEL_REDUNDANT_PLACEMENT_SCHEMA,
   NodeKernel,
   StateManager,
+  WorkerSupervisor,
   createPlacementAdmissionPolicy,
   createRemoteResultQuorumValidator,
+  createUlgDispatchServiceManifests,
   createUlgHandoffServiceDispatchPlan as createPeerComputeUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceEnvelope as createPeerComputeUlgHandoffServiceEnvelope,
+  createUlgHandoffSupervisorServiceExecutor as createPeerComputeUlgHandoffSupervisorServiceExecutor,
   normalizeUlgDemoHandoff as normalizePeerComputeUlgDemoHandoff,
   summarizeUlgArtifact as summarizePeerComputeUlgArtifact
 } from '@peercompute';
@@ -18,6 +22,20 @@ import {
 } from './simulation/multiscaleModel.js';
 import { MultiscaleScene } from './visualization/multiscaleScene.js';
 import { MULTISCALE_RENDER_BUDGET_SCHEMA } from './visualization/renderBudget.js';
+
+const ULG_DISPATCH_SERVICE_ADAPTER_PROBE_SCHEMA = 'peercompute.multiscale.ulg-dispatch-service-adapter-probe.v0';
+const ULG_DISPATCH_SERVICE_IDS = Object.freeze({
+  moonlab: 'moonlab-ulg-fixture',
+  eshkol: 'eshkol-ulg-fixture'
+});
+const ULG_DISPATCH_WORKER_MODULES = Object.freeze({
+  moonlab: new URL('./compute/ulgMoonLabDispatchServiceHost.js', import.meta.url).href,
+  eshkol: new URL('./compute/ulgEshkolDispatchServiceHost.js', import.meta.url).href
+});
+const ULG_DISPATCH_CHILD_WORKER_MODULES = Object.freeze({
+  moonlab: ULG_DISPATCH_WORKER_MODULES.moonlab,
+  eshkol: ULG_DISPATCH_WORKER_MODULES.eshkol
+});
 import {
   resolvePeerComputeWorkerBootstrapUrl
 } from './compute/peercomputeLadderRuntime.js';
@@ -1597,6 +1615,116 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     closureDescriptorProbe,
     packet: createUiPacket()
   });
+}
+
+function uniqueUlgStrings(values = []) {
+  return [...new Set(values
+    .map((value) => (value == null ? null : String(value).trim()))
+    .filter(Boolean))];
+}
+
+function createUlgDispatchArtifactCache(now = () => Date.now()) {
+  const records = new Map();
+  return {
+    async put(artifact = {}) {
+      const artifactHash = artifact.contentHash || `ulg-dispatch-artifact-${records.size}`;
+      const ref = {
+        uri: `artifact://${artifactHash}`,
+        artifactHash,
+        sourceService: artifact.sourceService || null,
+        createdAt: now()
+      };
+      records.set(ref.uri, { ref, artifact: cloneJson(artifact) });
+      return cloneJson(ref);
+    },
+    async get(ref = {}) {
+      return cloneJson(records.get(ref.uri)?.artifact || null);
+    },
+    list() {
+      return [...records.values()].map(({ ref, artifact }) => ({
+        ref: cloneJson(ref),
+        artifactKind: artifact.artifactKind || artifact.taskKind || 'unknown',
+        schema: artifact.schema || null
+      }));
+    }
+  };
+}
+
+async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
+  const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
+  const serviceEnvelope = createPeerComputeUlgHandoffServiceEnvelope(normalized, {
+    origin: window.location.origin,
+    url: window.location.href,
+    ...options,
+    receivedAt: normalized.receivedAt
+  });
+  const serviceIds = {
+    ...ULG_DISPATCH_SERVICE_IDS,
+    ...(options.serviceIds || {})
+  };
+  const workerModules = {
+    ...ULG_DISPATCH_WORKER_MODULES,
+    ...(options.workerModules || {})
+  };
+  const childWorkerModules = {
+    ...ULG_DISPATCH_CHILD_WORKER_MODULES,
+    ...(options.childWorkerModules || {})
+  };
+  const serviceDispatchPlan = createPeerComputeUlgHandoffServiceDispatchPlan(serviceEnvelope, {
+    ...options,
+    serviceIds
+  });
+  const artifactCache = createUlgDispatchArtifactCache();
+  const registry = new ComputeServiceRegistry(createUlgDispatchServiceManifests({
+    serviceIds,
+    workerModules,
+    childWorkerModules
+  }));
+  const supervisor = new WorkerSupervisor({ registry, artifactCache });
+  const serviceExecutor = createPeerComputeUlgHandoffSupervisorServiceExecutor({ supervisor });
+  const results = [];
+  try {
+    for (const dispatch of serviceDispatchPlan.dispatches || []) {
+      results.push(await serviceExecutor({
+        dispatch,
+        dispatchPlan: serviceDispatchPlan,
+        envelope: serviceEnvelope,
+        task: {
+          taskId: `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`,
+          rootTaskId: `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`
+        }
+      }));
+    }
+    const acceptedDispatchCount = results.filter((entry) => entry.ready === true).length;
+    const blockers = uniqueUlgStrings([
+      ...(serviceDispatchPlan.blockers || []),
+      ...results.flatMap((entry) => entry.blockers || [])
+    ]);
+    const telemetry = supervisor.getTreeTelemetry();
+    return cloneJson({
+      schema: ULG_DISPATCH_SERVICE_ADAPTER_PROBE_SCHEMA,
+      handoffId: serviceEnvelope.handoffId || null,
+      dispatchPlan: serviceDispatchPlan,
+      dispatchCount: serviceDispatchPlan.dispatchCount || 0,
+      executedDispatchCount: results.length,
+      acceptedDispatchCount,
+      failedDispatchCount: results.length - acceptedDispatchCount,
+      ready: serviceDispatchPlan.ready === true
+        && acceptedDispatchCount === serviceDispatchPlan.dispatchCount
+        && blockers.length === 0,
+      status: blockers.length === 0 && acceptedDispatchCount === serviceDispatchPlan.dispatchCount
+        ? 'dispatch-adapters-ready'
+        : 'dispatch-adapters-blocked',
+      serviceIds: cloneJson(serviceIds),
+      workerModules: cloneJson(workerModules),
+      results,
+      telemetry,
+      artifacts: artifactCache.list(),
+      blockers
+    });
+  } finally {
+    await supervisor.shutdown();
+  }
 }
 
 function resolveScenarioClosureModuleUrl(artifact = {}, options = {}) {
@@ -10875,6 +11003,15 @@ window.__multiscaleDemo = {
         ...options
       });
     return cloneJson(createPeerComputeUlgHandoffServiceDispatchPlan(envelope, options));
+  },
+  runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
+    return runUlgDispatchServiceAdapterProbe(handoff, options);
+  },
+  executeUlgHandoffDispatchServices(handoff = {}, options = {}) {
+    return runUlgDispatchServiceAdapterProbe(handoff, options);
+  },
+  getUlgDispatchServiceWorkerModules() {
+    return cloneJson(ULG_DISPATCH_WORKER_MODULES);
   },
   summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
     return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));

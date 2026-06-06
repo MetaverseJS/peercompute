@@ -136,14 +136,20 @@ export function createUlgEshkolDispatchServiceManifest(options = {}) {
 }
 
 export function createUlgDispatchServiceManifests(options = {}) {
+  const workerModules = options.workerModules || {};
+  const childWorkerModules = options.childWorkerModules || {};
   return [
     createUlgMoonLabDispatchServiceManifest({
       ...options,
-      serviceId: options.serviceIds?.moonlab || options.moonlabServiceId || options.serviceId
+      serviceId: options.serviceIds?.moonlab || options.moonlabServiceId || options.serviceId,
+      workerModule: workerModules.moonlab || options.moonlabWorkerModule || options.workerModule,
+      childWorkerModule: childWorkerModules.moonlab || options.moonlabChildWorkerModule || options.childWorkerModule
     }),
     createUlgEshkolDispatchServiceManifest({
       ...options,
-      serviceId: options.serviceIds?.eshkol || options.eshkolServiceId || options.serviceId
+      serviceId: options.serviceIds?.eshkol || options.eshkolServiceId || options.serviceId,
+      workerModule: workerModules.eshkol || options.eshkolWorkerModule || options.workerModule,
+      childWorkerModule: childWorkerModules.eshkol || options.eshkolChildWorkerModule || options.childWorkerModule
     })
   ];
 }

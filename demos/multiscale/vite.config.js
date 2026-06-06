@@ -46,11 +46,13 @@ export default defineConfig(({ command }) => ({
         picPlasmaPatchTasks: path.resolve(__dirname, 'src/compute/picPlasmaPatchTasks.js'),
         relativisticCorrectionTasks: path.resolve(__dirname, 'src/compute/relativisticCorrectionTasks.js'),
         combustionPlumeTasks: path.resolve(__dirname, 'src/compute/combustionPlumeTasks.js'),
-        membraneShellTasks: path.resolve(__dirname, 'src/compute/membraneShellTasks.js')
+        membraneShellTasks: path.resolve(__dirname, 'src/compute/membraneShellTasks.js'),
+        ulgMoonLabDispatchServiceHost: path.resolve(__dirname, 'src/compute/ulgMoonLabDispatchServiceHost.js'),
+        ulgEshkolDispatchServiceHost: path.resolve(__dirname, 'src/compute/ulgEshkolDispatchServiceHost.js')
       },
       output: {
         entryFileNames: (chunkInfo) => (
-          ['peercomputeComputeWorker', 'peercomputeLadderTasks', 'nbodyGravityTasks', 'cosmologyExpansionTasks', 'molecularDynamicsTasks', 'reactiveThermalTasks', 'maxwellTasks', 'sphMaterialTasks', 'hydroAtmosphereTasks', 'radiationOpacityTasks', 'stellarFusionTasks', 'magnetospherePlasmaTasks', 'picPlasmaPatchTasks', 'relativisticCorrectionTasks', 'combustionPlumeTasks', 'membraneShellTasks'].includes(chunkInfo.name)
+          ['peercomputeComputeWorker', 'peercomputeLadderTasks', 'nbodyGravityTasks', 'cosmologyExpansionTasks', 'molecularDynamicsTasks', 'reactiveThermalTasks', 'maxwellTasks', 'sphMaterialTasks', 'hydroAtmosphereTasks', 'radiationOpacityTasks', 'stellarFusionTasks', 'magnetospherePlasmaTasks', 'picPlasmaPatchTasks', 'relativisticCorrectionTasks', 'combustionPlumeTasks', 'membraneShellTasks', 'ulgMoonLabDispatchServiceHost', 'ulgEshkolDispatchServiceHost'].includes(chunkInfo.name)
             ? `assets/${chunkInfo.name}.js`
             : 'assets/[name]-[hash].js'
         )

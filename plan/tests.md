@@ -691,6 +691,18 @@
   `moonlab.ulg.quantum-response.ingest` and
   `eshkol.ulg.closure-artifact.ingest`, Eshkol transferred WASM byte length
   `53066`, and no dispatch blockers.
+- Live ULG dispatch adapter-worker gate: after the dispatch-plan API gate, call
+  `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe(handoff)` on
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+: expected result is `peercompute.multiscale.ulg-dispatch-service-adapter-probe.v0`,
+  `dispatch-adapters-ready`, `ready = true`, `dispatchCount = 2`,
+  `executedDispatchCount = 2`, `acceptedDispatchCount = 2`,
+  `failedDispatchCount = 0`, service result schema
+  `peercompute.ulg.dispatch-service-result.v0` for MoonLab and Eshkol,
+  nested artifact refs from `moonlab-ulg-fixture` and `eshkol-ulg-fixture`,
+  Eshkol ingest `wasmByteLength = 53066`, MoonLab
+  `magnetarDipoleIsingReady = true`, telemetry schema
+  `peercompute.ulg.dispatch-service-telemetry.v0`, and no blockers.
 - Live ULG calibrated-reference bridge gate: use `window.__ulgDemo.createPeerComputeHandoff()` from `http://100.86.83.35:5173/` and `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` on `https://100.86.83.35:5185/?scenario=magnetar`; expected result is `transfer-manifest-ready`, descriptor-only Eshkol magnetar closure probe readiness with transferred WASM bytes preserved, host-runtime/output-semantics execution fields false for the descriptor path, `scientific-tolerance-suite-ready`, tolerance ready `5/5`, calibrated reference ready `4/4`, calibrated scientific ready `4/4`, ready MoonLab `magnetosphere-mhd`, `pic-kinetic-plasma`, `radiation-transport`, and `relativistic-correction` reference entries, blockers including only the runtime gate blocker once handoff prerequisites are present, and `scenarioScientificReady: false`. Follow with `window.__multiscaleDemo.refreshScenarioBoundedProxyRuntimeEvidence()` when browser-visible bounded proxy provenance is required; expected runtime evidence counts are `required=5`, `observed=5`, `proxyOnly=5`, `validated=0`, `missing=0`, with five `sha256:` evidence hashes, five proxy-validation passes, `runtime-evidence-proxy-only`, and scientific runtime gate blocker `proxy-runtime-not-scientific`.
 - Scientific runtime gate Node gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'scientific runtime gate|magnetar scenario'`.
 : expected result is a full pass proving incomplete live-like handoffs report `scientific-runtime-pending`, complete proxy fixtures report `scientific-runtime-blocked`, `proxy-runtime-not-scientific` remains the only blocker once transfer/reference/closure prerequisites are all present, and packet boundary conditions expose runtime gate readiness/status/prerequisite/runtime-evidence fields.
