@@ -49379,8 +49379,14 @@ User asked whether Infinite Context Coder is being used.
   `1/5`, calibrated reference ready `1/4`, calibrated scientific ready `1/4`,
   a ready `magnetosphere-mhd-reference` entry with no blocker, and
   `scenarioScientificReady: false`.
+- PASS: awaited ULG handoff application executed the Eshkol closure from
+  transferred bytes, reported closure module probe ready, host-runtime execution
+  ready with `entryResult = 0`, output-semantics validation ready, packet
+  `scenarioClosureHostRuntimeExecutionReady: true`, and packet
+  `scenarioClosureHostRuntimeOutputSemanticsReady: true`.
 
 ### Open
 - PIC/radiation/relativity plus full MHD/force-free calibrated references remain
-  missing, and the scenario remains proxy-only.
+  missing, leaving only the calibrated-reference and scientific-tolerance live
+  blockers while the scenario remains proxy-only.
 - No push was attempted.

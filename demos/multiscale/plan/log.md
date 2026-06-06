@@ -22074,9 +22074,15 @@ User asked whether Infinite Context Coder is being used.
 - PASS: the `magnetosphere-mhd-reference` tolerance entry reported
   `ready: true`, `scientificCoverage: true`, solver id
   `moonlab-analytic-dipole-field-v0`, validation `pass`, and no blocker.
+- PASS: awaited ULG handoff application executed the Eshkol closure from
+  transferred bytes, reported closure module probe ready, host-runtime execution
+  ready with `entryResult = 0`, output-semantics validation ready, packet
+  `scenarioClosureHostRuntimeExecutionReady: true`, and packet
+  `scenarioClosureHostRuntimeOutputSemanticsReady: true`.
 
 ### Open
 - PIC/radiation/relativity plus full MHD/force-free calibrated references remain
-  missing, so the broad calibrated-reference and scientific-tolerance blockers
-  correctly stay active.
+  missing, so the only remaining live blockers are
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` and
+  `scientific-tolerance-suite-missing`.
 - No push was attempted.
