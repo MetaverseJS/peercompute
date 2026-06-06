@@ -2,6 +2,58 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 03:44:30 AKDT - Radiation runtime proxy validation
+
+### Prompt
+- User asked how the overall plan was going and whether the work remained on
+  track, with standing instruction to keep going.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 03:44:30 AKDT`.
+
+### Actions
+- Added `peercompute.multiscale.radiation-transport.runtime-validation.v0` as
+  a bounded runtime validation artifact for the reduced grey-radiation opacity
+  worker.
+- Added hashable runtime evidence entries for the radiation-transport family
+  with validation schema/scope/check metadata, observed radiation/opacity/heat
+  summaries, and explicit `scientificExecution: false` / `proxyOnly: true`
+  status.
+- Reused the magnetar runtime evidence helper so radiation and relativistic
+  proxy-validation artifacts preserve validation schema/scope/hash data through
+  scenario runtime-evidence ingestion.
+- Added a regression proving bounded radiation proxy evidence can be observed
+  and hashed while still leaving validated runtime count and scenario scientific
+  readiness blocked.
+
+### Files Touched
+- `demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused Multiscale model run passed `187/187`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning and no docs asset changes were required for this helper.
+- PASS: `git diff --check` passed before local commit.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The new radiation artifact is a bounded grey-radiation proxy validation
+  report. It does not satisfy calibrated radiation transport or magnetar
+  scientific execution requirements.
+
 ## 2026-06-06 03:38:00 AKDT - Relativistic runtime proxy validation
 
 ### Prompt

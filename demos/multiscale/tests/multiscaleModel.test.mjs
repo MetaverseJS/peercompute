@@ -89,8 +89,11 @@ import {
   createKernelPassSpec
 } from '../src/simulation/ulgRuntime.js';
 import {
+  RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA,
+  RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
+  createRadiationTransportRuntimeEvidenceEntry,
   createRelativisticCorrectionRuntimeEvidenceEntry
 } from '../src/simulation/magnetarRuntimeEvidence.js';
 import {
@@ -2448,6 +2451,72 @@ test('magnetar runtime evidence manifest rejects unknown and duplicate entries',
   assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('runtime-evidence-entry-duplicate'));
   assert.ok(scenario.scientificRuntimeEvidence.errors.includes('runtime evidence entry does not match a required magnetar runtime evidence family'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+});
+
+test('radiation transport runtime evidence records bounded proxy validation without scientific readiness', async () => {
+  resetRadiationOpacity();
+  const runtime = await stepRadiationOpacity({
+    stateKey: 'radiation:evidence:bounded',
+    input: {
+      stateKey: 'radiation:evidence:bounded',
+      state: makeRadiationOpacityInitialState({
+        width: 8,
+        height: 4,
+        seed: 20260606,
+        environment: { ambientTemperatureK: 310, stellarFlux: 1.7 },
+        coupling: { fireIntensity: 0.9, cloudCover: 0.65, smokeFraction: 0.18 }
+      }),
+      dt: 0.04,
+      environment: { ambientTemperatureK: 310, stellarFlux: 1.7 },
+      coupling: { fireIntensity: 0.9, cloudCover: 0.65, smokeFraction: 0.18 },
+      enableWebGPU: false
+    }
+  });
+  const entry = await createRadiationTransportRuntimeEvidenceEntry(runtime);
+
+  assert.equal(entry.id, 'validated-radiation-transport-runtime');
+  assert.equal(entry.family, 'radiation-transport');
+  assert.equal(entry.solverId, 'radiation-opacity');
+  assert.equal(entry.status, 'proxy-runtime-validated');
+  assert.equal(entry.ready, false);
+  assert.equal(entry.scientificExecution, false);
+  assert.equal(entry.validationStatus, 'pass');
+  assert.match(entry.evidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(entry.validation.schema, RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(entry.validation.scope, RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(entry.validation.pass, true);
+  assert.equal(entry.validation.ready, false);
+  assert.equal(entry.validation.scientificExecution, false);
+  assert.equal(entry.validation.checks.greenhouseFactorBounded, true);
+  assert.equal(entry.validation.checks.radiationEnergyDeltaFinite, true);
+  assert.ok(entry.observed.greenhouseFactor >= 0);
+  assert.ok(entry.observed.greenhouseFactor <= 1);
+  assert.ok(entry.blockers.includes('radiation-transport-runtime-proxy-only'));
+
+  const model = new MultiscaleModel({ seed: 480 });
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest({
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [entry]
+  });
+  const radiation = scenario.scientificRuntimeEvidence.entries.find((candidate) => (
+    candidate.id === 'validated-radiation-transport-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 4);
+  assert.equal(radiation.status, 'proxy-runtime-observed');
+  assert.equal(radiation.ready, false);
+  assert.equal(radiation.scientificExecution, false);
+  assert.equal(radiation.evidenceHash, entry.evidenceHash);
+  assert.equal(radiation.validation.schema, RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(radiation.validationScope, RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(radiation.blockers.includes('radiation-transport-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });
 
 test('relativistic correction runtime evidence records bounded proxy validation without scientific readiness', async () => {
