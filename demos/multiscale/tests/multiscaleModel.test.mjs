@@ -632,6 +632,60 @@ const MOONLAB_MAGNETAR_REFERENCE_SUMMARY = Object.freeze({
   magnetarReferenceValidationStatus: 'pass'
 });
 
+const MAGNETAR_CALIBRATED_REFERENCE_FIXTURES = Object.freeze([
+  {
+    id: 'magnetosphere-mhd-reference',
+    family: 'magnetosphere-mhd',
+    solverId: 'moonlab-magnetosphere-mhd-calibrated-v0',
+    fields: ['magneticEnergy', 'divergenceBProxy']
+  },
+  {
+    id: 'pic-kinetic-plasma-reference',
+    family: 'pic-kinetic-plasma',
+    solverId: 'moonlab-pic-kinetic-plasma-calibrated-v0',
+    fields: ['chargeImbalance', 'reconnectionHeating']
+  },
+  {
+    id: 'radiation-transport-reference',
+    family: 'radiation-transport',
+    solverId: 'moonlab-radiation-transport-calibrated-v0',
+    fields: ['totalRadiationEnergy', 'opticalDepth']
+  },
+  {
+    id: 'relativistic-correction-reference',
+    family: 'relativistic-correction',
+    solverId: 'moonlab-relativistic-correction-calibrated-v0',
+    fields: ['meanLorentzFactor', 'gravitationalRedshiftProxy']
+  }
+]);
+
+function createMagnetarCalibratedReference(fixture, overrides = {}) {
+  const fields = fixture.fields || ['primaryResidual'];
+  return {
+    id: fixture.id,
+    family: fixture.family,
+    provider: 'moonlab',
+    solverId: fixture.solverId,
+    schema: 'moonlab.magnetar.calibrated-reference.v0',
+    role: 'peercompute-scientific-tolerance-input',
+    contractHash: `sha256:${fixture.id}-contract`,
+    unitsHash: `sha256:${fixture.id}-units`,
+    fieldMap: Object.fromEntries(fields.map((field) => [field, `${fixture.family}.${field}`])),
+    fieldTolerances: Object.fromEntries(fields.map((field) => [field, { abs: 0.01 }])),
+    fieldObservedDeltas: Object.fromEntries(fields.map((field, index) => [field, 0.002 + index * 0.001])),
+    validationStatus: 'pass',
+    ready: true,
+    scientificCoverage: true,
+    ...overrides
+  };
+}
+
+function createMagnetarCalibratedReferences(overridesByFamily = {}) {
+  return MAGNETAR_CALIBRATED_REFERENCE_FIXTURES.map((fixture) => (
+    createMagnetarCalibratedReference(fixture, overridesByFamily[fixture.family] || {})
+  ));
+}
+
 test('scale ladder spans atomic through supergalactic levels', () => {
   assert.deepEqual(
     SCALE_LAYERS.map((layer) => layer.id),
@@ -1809,6 +1863,10 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.toleranceSuite.readyCount, 1);
   assert.equal(scenario.handoffReadiness.toleranceSuite.scientificReadyCount, 0);
   assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 4);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceRequiredCount, 4);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceReadyCount, 0);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceScientificReadyCount, 0);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceSuiteReady, false);
   const moonlabToleranceEntry = scenario.handoffReadiness.toleranceSuite.entries.find((entry) => entry.id === 'moonlab-dipole-ising-reference');
   assert.equal(moonlabToleranceEntry.ready, true);
   assert.equal(moonlabToleranceEntry.scientificCoverage, false);
@@ -1853,8 +1911,101 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReadyCount, 1);
   assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteScientificReadyCount, 0);
   assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteMissingCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceSuiteReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceRequiredCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceReadyCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceScientificReadyCount, 0);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
+});
+
+test('magnetar scenario keeps tolerance suite partial when calibrated references are incomplete', () => {
+  const model = new MultiscaleModel({ seed: 471 });
+  const scenario = model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    magnetarCalibratedReferences: [
+      createMagnetarCalibratedReference(MAGNETAR_CALIBRATED_REFERENCE_FIXTURES[0]),
+      createMagnetarCalibratedReference(MAGNETAR_CALIBRATED_REFERENCE_FIXTURES[1], {
+        scientificCoverage: false
+      })
+    ]
+  });
+
+  assert.equal(scenario.calibrationIngest.calibratedReferenceCount, 2);
+  assert.equal(scenario.calibrationIngest.calibratedReferenceReadyCount, 1);
+  assert.equal(scenario.calibrationIngest.calibratedReferenceScientificCoverageCount, 1);
+  assert.equal(scenario.handoffReadiness.referenceInventory.calibratedReferenceCount, 2);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.status, 'scientific-tolerance-suite-partial');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.ready, false);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.readyCount, 2);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.scientificReadyCount, 1);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 3);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceReadyCount, 1);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceScientificReadyCount, 1);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceSuiteReady, false);
+  const mhdEntry = scenario.handoffReadiness.toleranceSuite.entries.find((entry) => entry.id === 'magnetosphere-mhd-reference');
+  assert.equal(mhdEntry.ready, true);
+  assert.equal(mhdEntry.scientificCoverage, true);
+  assert.equal(mhdEntry.blocker, null);
+  const picEntry = scenario.handoffReadiness.toleranceSuite.entries.find((entry) => entry.id === 'pic-kinetic-plasma-reference');
+  assert.equal(picEntry.ready, false);
+  assert.equal(picEntry.scientificCoverage, false);
+  assert.equal(picEntry.blocker, 'calibrated-pic-reference-missing');
+  assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+});
+
+test('magnetar scenario clears calibrated reference blockers only when all scientific family references validate', () => {
+  const model = new MultiscaleModel({ seed: 472 });
+  const scenario = model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    magnetarCalibratedReferences: createMagnetarCalibratedReferences()
+  });
+
+  assert.equal(scenario.calibrationIngest.calibratedReferenceCount, 4);
+  assert.equal(scenario.calibrationIngest.calibratedReferenceReadyCount, 4);
+  assert.equal(scenario.calibrationIngest.calibratedReferenceScientificCoverageCount, 4);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.status, 'scientific-tolerance-suite-ready');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.ready, true);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.requiredCount, 5);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.readyCount, 5);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.scientificReadyCount, 4);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 0);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceSuiteReady, true);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.blockers.length, 0);
+  assert.ok(!scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-bundle-summary-missing'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteStatus, 'scientific-tolerance-suite-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceSuiteReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceReadyCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceScientificReadyCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 
 test('magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness', () => {

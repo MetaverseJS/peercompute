@@ -49075,3 +49075,83 @@ User asked whether Infinite Context Coder is being used.
   remains blocked until calibrated MHD/PIC/radiation/relativity reference
   tolerances are supplied and validated.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 01:07:13 AKDT - Calibrated magnetar reference inventory ingest
+
+### Prompt
+- User asked for status and whether the work is still on track with the overall
+  plan while the calibrated-reference ingest slice was underway.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Extended PeerCompute ULG artifact summaries to normalize future
+  `outputs.references[]` entries into `magnetarCalibratedReferences`.
+- Required calibrated reference readiness to include family, solver id,
+  schema/role, `sha256:` contract and units hashes, field maps, field
+  tolerances, observed deltas within tolerance, pass validation, and
+  `scientificCoverage: true`.
+- Extended Multiscale calibration ingest and
+  `peercompute.multiscale.scenario-scientific-tolerance-suite.v0` to consume
+  those calibrated references for the required MHD, PIC, radiation, and
+  relativity families.
+- Added calibrated-reference suite counters to handoff readiness and packet
+  boundary conditions.
+- Made the broad
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` blocker
+  conditional on all four calibrated families being ready with scientific
+  coverage, while keeping `scientificReady: false` even when the tolerance suite
+  is complete because the runtime remains proxy-only.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `git diff --check`
+- `npm --prefix demos/multiscale run build`
+- `curl -k -I --max-time 5 https://127.0.0.1:5185/?scenario=magnetar`
+- System Chrome Playwright probe against
+  `https://127.0.0.1:5185/?scenario=magnetar` using
+  `window.__multiscaleDemo.getPacket()`.
+
+### Validation
+- PASS: all four syntax checks completed.
+- PASS: PeerCompute service-orchestration test passed `11/11`.
+- PASS: Multiscale model suite passed `179/179`.
+- PASS: `git diff --check` reported no whitespace errors.
+- PASS: Multiscale build completed with the existing large-chunk warnings and
+  refreshed the checked-in docs bundle.
+- PASS: HTTPS live route returned `200` and `content-type: text/html`.
+- PASS: system Chrome page probe reported scenario `magnetar`,
+  `toleranceStatus: "scientific-tolerance-suite-missing"`,
+  `calibratedReferenceSuiteReady: false`,
+  `calibratedReferenceRequiredCount: 4`,
+  `calibratedReferenceReadyCount: 0`,
+  `calibratedReferenceScientificReadyCount: 0`, and
+  `scientificReady: false`, matching the current live state with no real
+  `outputs.references[]` entries.
+
+### Failures / Open Questions
+- Plain HTTP against the HTTPS `5185` dev server returned a protocol mismatch
+  (`Received HTTP/0.9 when not allowed`); HTTPS is the valid route.
+- The bundled Playwright Chromium executable was not installed, so the live page
+  probe used system `/bin/google-chrome`.
+- The ingest contract is now ready for calibrated references, but ULG/MoonLab do
+  not yet emit real MHD/PIC/radiation/relativity `outputs.references[]`
+  contracts. Live magnetar remains proxy-only and scientifically blocked.
+- No push was attempted; all commits remain local per user instruction.

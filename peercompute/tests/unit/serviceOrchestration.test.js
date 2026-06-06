@@ -785,6 +785,63 @@ test('ULG artifact summary requires complete MoonLab reference contract before r
   assert.equal(summarizeUlgArtifact('quantum-response', overTolerance).magnetarReferenceReady, false);
 });
 
+test('ULG artifact summary exposes calibrated magnetar reference inventory from outputs.references', () => {
+  const baseReference = {
+    id: 'magnetosphere-mhd-reference',
+    family: 'magnetosphere-mhd',
+    solverId: 'moonlab-mhd-calibrated-v0',
+    schema: 'moonlab.magnetar.calibrated-reference.v0',
+    role: 'peercompute-scientific-tolerance-input',
+    contractHash: 'sha256:magnetosphere-mhd-reference-contract',
+    unitsHash: 'sha256:magnetosphere-mhd-reference-units',
+    fieldMap: {
+      magneticEnergy: 'magnetosphere.magneticEnergy',
+      divergenceBProxy: 'magnetosphere.divergenceBProxy'
+    },
+    fieldTolerances: {
+      magneticEnergy: { abs: 0.01 },
+      divergenceBProxy: 0.0001
+    },
+    fieldObservedDeltas: {
+      magneticEnergy: 0.004,
+      divergenceBProxy: 0.00005
+    },
+    validation: {
+      status: 'pass'
+    },
+    ready: true,
+    scientificCoverage: true
+  };
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const missingCoverage = clone(baseReference);
+  missingCoverage.id = 'radiation-transport-reference';
+  missingCoverage.family = 'radiation-transport';
+  missingCoverage.scientificCoverage = false;
+  const placeholderHash = clone(baseReference);
+  placeholderHash.id = 'pic-kinetic-plasma-reference';
+  placeholderHash.family = 'pic-kinetic-plasma';
+  placeholderHash.contractHash = 'ulg:fixture-calibrated-pic-reference';
+
+  const summary = summarizeUlgArtifact('quantum-response', {
+    outputs: {
+      references: [baseReference, missingCoverage, placeholderHash]
+    }
+  });
+
+  assert.equal(summary.magnetarCalibratedReferenceCount, 3);
+  assert.equal(summary.magnetarCalibratedReferenceReadyCount, 1);
+  assert.equal(summary.magnetarCalibratedReferenceScientificCoverageCount, 2);
+  assert.equal(summary.magnetarCalibratedReferences[0].id, 'magnetosphere-mhd-reference');
+  assert.equal(summary.magnetarCalibratedReferences[0].ready, true);
+  assert.equal(summary.magnetarCalibratedReferences[0].validationStatus, 'pass');
+  assert.deepEqual(summary.magnetarCalibratedReferences[0].fieldObservedDeltas, {
+    magneticEnergy: 0.004,
+    divergenceBProxy: 0.00005
+  });
+  assert.equal(summary.magnetarCalibratedReferences[1].ready, false);
+  assert.equal(summary.magnetarCalibratedReferences[2].ready, false);
+});
+
 test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => {
   const task = adaptUlgV05TaskCapsule({
     taskId: 'task-eshkol-bundle-1',

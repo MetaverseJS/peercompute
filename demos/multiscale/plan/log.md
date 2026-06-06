@@ -21892,3 +21892,59 @@ User asked whether Infinite Context Coder is being used.
 ### Open
 - The scientific tolerance suite remains blocked until calibrated
   MHD/PIC/radiation/relativity reference tolerances are supplied and validated.
+
+## 2026-06-06 01:07:13 AKDT - Calibrated reference inventory tolerance-suite ingest
+
+### Prompt
+- User asked for status and whether the work remains on track while the
+  calibrated magnetar reference inventory path was underway.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added Multiscale normalization for PeerCompute ULG
+  `magnetarCalibratedReferences`, sourced from future ULG
+  `outputs.references[]` calibrated-reference contracts.
+- Replaced static missing MHD/PIC/radiation/relativity tolerance-suite rows with
+  rows that can consume validated calibrated family references.
+- Added calibrated-reference suite counters to handoff readiness and downward
+  boundary conditions:
+  `scenarioCalibratedReferenceSuiteReady`,
+  `scenarioCalibratedReferenceRequiredCount`,
+  `scenarioCalibratedReferenceReadyCount`, and
+  `scenarioCalibratedReferenceScientificReadyCount`.
+- Kept `scientificReady: false` even when tests provide all four calibrated
+  reference fixtures, because the scenario runtime is still proxy-only.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: full Multiscale model suite passed with `179/179`.
+- PASS: `git diff --check` reported no whitespace errors.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings.
+- PASS: HTTPS live route returned `200`.
+- PASS: system Chrome probe of
+  `https://127.0.0.1:5185/?scenario=magnetar` reported
+  `scientific-tolerance-suite-missing`, calibrated reference suite ready
+  `false`, required calibrated references `4`, ready calibrated references `0`,
+  scientific-ready calibrated references `0`, and scenario scientific ready
+  `false`.
+
+### Open
+- Live ULG/MoonLab packets still lack calibrated MHD/PIC/radiation/relativity
+  `outputs.references[]` contracts, so the live route correctly remains
+  blocked on calibrated references and scientific tolerance coverage.
+- Plain HTTP to the HTTPS `5185` dev server is invalid; use
+  `https://100.86.83.35:5185/?scenario=magnetar` for the VPN route.
+- No push was attempted; all commits remain local per user instruction.

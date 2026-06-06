@@ -196,6 +196,83 @@ function normalizeValidationStatus(validation = {}) {
   return null;
 }
 
+function plainObjectOrNull(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function hasSha256Digest(value) {
+  return typeof value === 'string' && value.startsWith('sha256:');
+}
+
+function fieldDeltasWithinTolerances(observedDeltas = {}, tolerances = {}) {
+  let checkedFieldCount = 0;
+  for (const [field, observedDelta] of Object.entries(observedDeltas)) {
+    const observed = finiteNumberOrNull(observedDelta);
+    const toleranceConfig = tolerances[field];
+    const tolerance = finiteNumberOrNull(
+      toleranceConfig && typeof toleranceConfig === 'object'
+        ? toleranceConfig.abs ?? toleranceConfig.absolute ?? toleranceConfig.value
+        : toleranceConfig
+    );
+    if (observed == null || tolerance == null || tolerance < 0) return false;
+    checkedFieldCount += 1;
+    if (Math.abs(observed) > tolerance) return false;
+  }
+  return checkedFieldCount > 0;
+}
+
+function normalizeMagnetarCalibratedReference(reference = {}, index = 0) {
+  const fieldMap = plainObjectOrNull(reference.fieldMap);
+  const fieldTolerances = plainObjectOrNull(reference.fieldTolerances || reference.tolerances);
+  const fieldObservedDeltas = plainObjectOrNull(reference.fieldObservedDeltas || reference.observedDeltas);
+  const validationSource = plainObjectOrNull(reference.validation) || {
+    status: reference.validationStatus,
+    passed: reference.validationPassed
+  };
+  const validationStatus = normalizeValidationStatus(validationSource);
+  const id = stringOrNull(reference.id) || `magnetar-calibrated-reference-${index + 1}`;
+  const family = stringOrNull(reference.family);
+  const solverId = stringOrNull(reference.solverId);
+  const schema = stringOrNull(reference.schema);
+  const role = stringOrNull(reference.role);
+  const contractHash = stringOrNull(reference.contractHash);
+  const unitsHash = stringOrNull(reference.unitsHash);
+  const scientificCoverage = reference.scientificCoverage === true;
+  const fieldContractReady = fieldMap != null
+    && Object.keys(fieldMap).length > 0
+    && fieldTolerances != null
+    && Object.keys(fieldTolerances).length > 0
+    && fieldObservedDeltas != null
+    && fieldDeltasWithinTolerances(fieldObservedDeltas, fieldTolerances);
+  const ready = reference.ready === true
+    && scientificCoverage
+    && validationStatus === 'pass'
+    && schema != null
+    && role != null
+    && family != null
+    && solverId != null
+    && hasSha256Digest(contractHash)
+    && hasSha256Digest(unitsHash)
+    && fieldContractReady;
+  return {
+    id,
+    family,
+    solverId,
+    schema,
+    role,
+    contractHash,
+    unitsHash,
+    fieldMap: clonePlain(fieldMap),
+    fieldTolerances: clonePlain(fieldTolerances),
+    fieldObservedDeltas: clonePlain(fieldObservedDeltas),
+    validationStatus,
+    ready,
+    scientificCoverage,
+    status: stringOrNull(reference.status) || (ready ? 'calibrated-reference-ready' : 'calibrated-reference-pending'),
+    blocker: ready ? null : stringOrNull(reference.blocker)
+  };
+}
+
 function countWasmEntries(entries = [], kind) {
   return Array.isArray(entries)
     ? entries.filter((entry) => entry?.kind === kind).length
@@ -264,6 +341,11 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     magnetarReferenceTolerances.maxObservedEnergyDelta
       ?? magnetarReferenceValidation.maxEnergyDelta
   );
+  const magnetarCalibratedReferences = Array.isArray(outputs.references)
+    ? outputs.references
+      .filter((reference) => reference && typeof reference === 'object')
+      .map((reference, index) => normalizeMagnetarCalibratedReference(reference, index))
+    : [];
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
@@ -378,6 +460,11 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     magnetarReferenceToleranceEnergyAbs,
     magnetarReferenceMaxObservedEnergyDelta,
     magnetarReferenceValidationStatus,
+    magnetarCalibratedReferenceCount: magnetarCalibratedReferences.length,
+    magnetarCalibratedReferenceReadyCount: magnetarCalibratedReferences.filter((entry) => entry.ready).length,
+    magnetarCalibratedReferenceScientificCoverageCount: magnetarCalibratedReferences
+      .filter((entry) => entry.scientificCoverage === true).length,
+    magnetarCalibratedReferences,
     calibrationArtifactCount: calibrationSummaries.length,
     calibrationReadyCount: calibrationSummaries.filter((entry) => entry.ready).length,
     calibrationArtifacts: calibrationSummaries,

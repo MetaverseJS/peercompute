@@ -173,6 +173,37 @@ export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.mag
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
 
+const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
+  {
+    id: 'magnetosphere-mhd-reference',
+    family: 'magnetosphere-mhd',
+    provider: 'moonlab',
+    toleranceKind: 'magnetic-field-energy-flux-conservation',
+    blocker: 'calibrated-mhd-reference-missing'
+  },
+  {
+    id: 'pic-kinetic-plasma-reference',
+    family: 'pic-kinetic-plasma',
+    provider: 'moonlab',
+    toleranceKind: 'particle-distribution-and-reconnection-rate',
+    blocker: 'calibrated-pic-reference-missing'
+  },
+  {
+    id: 'radiation-transport-reference',
+    family: 'radiation-transport',
+    provider: 'moonlab',
+    toleranceKind: 'radiative-transfer-energy-balance',
+    blocker: 'calibrated-radiation-reference-missing'
+  },
+  {
+    id: 'relativistic-correction-reference',
+    family: 'relativistic-correction',
+    provider: 'moonlab',
+    toleranceKind: 'compact-object-orbital-and-redshift-error',
+    blocker: 'calibrated-relativity-reference-missing'
+  }
+]);
+
 export const MULTISCALE_SCENARIO_PRESETS = {
   magnetar: {
     schema: MULTISCALE_SCENARIO_PRESET_SCHEMA,
@@ -241,6 +272,20 @@ function finiteOrNull(value) {
   if (value == null || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function stringOrNull(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function plainObjectOrNull(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function hasSha256Digest(value) {
+  return typeof value === 'string' && value.startsWith('sha256:');
 }
 
 function rounded(value, digits = 4) {
@@ -357,6 +402,82 @@ function findMagnetarCalibrationEntry(source = {}) {
   )) || null;
 }
 
+function fieldDeltasWithinTolerances(observedDeltas = {}, tolerances = {}) {
+  let checkedFieldCount = 0;
+  for (const [field, observedDelta] of Object.entries(observedDeltas)) {
+    const observed = finiteOrNull(observedDelta);
+    const toleranceConfig = tolerances[field];
+    const tolerance = finiteOrNull(
+      toleranceConfig && typeof toleranceConfig === 'object'
+        ? toleranceConfig.abs ?? toleranceConfig.absolute ?? toleranceConfig.value
+        : toleranceConfig
+    );
+    if (observed == null || tolerance == null || tolerance < 0) return false;
+    checkedFieldCount += 1;
+    if (Math.abs(observed) > tolerance) return false;
+  }
+  return checkedFieldCount > 0;
+}
+
+function normalizeCalibratedMagnetarReference(entry = {}, fallbackIndex = 0) {
+  const fieldMap = plainObjectOrNull(entry.fieldMap);
+  const fieldTolerances = plainObjectOrNull(entry.fieldTolerances || entry.tolerances);
+  const fieldObservedDeltas = plainObjectOrNull(entry.fieldObservedDeltas || entry.observedDeltas);
+  const id = stringOrNull(entry.id) || `magnetar-calibrated-reference-${fallbackIndex + 1}`;
+  const family = stringOrNull(entry.family);
+  const solverId = stringOrNull(entry.solverId);
+  const provider = stringOrNull(entry.provider);
+  const schema = stringOrNull(entry.schema);
+  const role = stringOrNull(entry.role);
+  const contractHash = stringOrNull(entry.contractHash);
+  const unitsHash = stringOrNull(entry.unitsHash);
+  const validationStatus = stringOrNull(entry.validationStatus || entry.validation?.status);
+  const scientificCoverage = entry.scientificCoverage === true;
+  const fieldContractReady = fieldMap != null
+    && Object.keys(fieldMap).length > 0
+    && fieldTolerances != null
+    && Object.keys(fieldTolerances).length > 0
+    && fieldObservedDeltas != null
+    && fieldDeltasWithinTolerances(fieldObservedDeltas, fieldTolerances);
+  const ready = entry.ready === true
+    && scientificCoverage
+    && schema != null
+    && role != null
+    && family != null
+    && solverId != null
+    && hasSha256Digest(contractHash)
+    && hasSha256Digest(unitsHash)
+    && validationStatus === 'pass'
+    && fieldContractReady;
+  return {
+    id,
+    family,
+    provider,
+    solverId,
+    schema,
+    role,
+    contractHash,
+    unitsHash,
+    fieldMap: clonePlain(fieldMap),
+    fieldTolerances: clonePlain(fieldTolerances),
+    fieldObservedDeltas: clonePlain(fieldObservedDeltas),
+    validationStatus,
+    ready,
+    scientificCoverage,
+    status: stringOrNull(entry.status) || (ready ? 'calibrated-reference-ready' : 'calibrated-reference-pending'),
+    blocker: ready && scientificCoverage ? null : stringOrNull(entry.blocker)
+  };
+}
+
+function normalizeCalibratedMagnetarReferences(source = {}) {
+  const entries = Array.isArray(source.magnetarCalibratedReferences)
+    ? source.magnetarCalibratedReferences
+    : (Array.isArray(source.calibratedReferences) ? source.calibratedReferences : []);
+  return entries
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry, index) => normalizeCalibratedMagnetarReference(entry, index));
+}
+
 function normalizeMagnetarReferenceContract(source = {}) {
   const schema = source.magnetarReferenceSchema || null;
   const role = source.magnetarReferenceRole || null;
@@ -395,7 +516,7 @@ function normalizeMagnetarReferenceContract(source = {}) {
   };
 }
 
-function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory } = {}) {
+function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory, calibratedReferences = [] } = {}) {
   if (scenarioId !== 'magnetar') {
     return {
       schema: MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
@@ -411,7 +532,8 @@ function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory } =
     };
   }
   const referenceReady = referenceInventory?.ready === true;
-  const entries = [{
+  const normalizedCalibratedReferences = normalizeCalibratedMagnetarReferences({ calibratedReferences });
+  const moonlabEntry = {
     id: 'moonlab-dipole-ising-reference',
     family: 'quantum-calibration',
     provider: 'moonlab',
@@ -425,59 +547,49 @@ function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory } =
     scientificCoverage: false,
     status: referenceReady ? 'partial-reference-ready' : 'reference-contract-missing',
     blocker: referenceReady ? null : 'moonlab-magnetar-dipole-ising-reference-contract-missing'
-  }, {
-    id: 'magnetosphere-mhd-reference',
-    family: 'magnetosphere-mhd',
-    provider: null,
-    toleranceKind: 'magnetic-field-energy-flux-conservation',
-    toleranceValue: null,
-    observedDelta: null,
-    energyUnits: null,
-    ready: false,
-    scientificCoverage: false,
-    status: 'calibrated-reference-missing',
-    blocker: 'calibrated-mhd-reference-missing'
-  }, {
-    id: 'pic-kinetic-plasma-reference',
-    family: 'pic-kinetic-plasma',
-    provider: null,
-    toleranceKind: 'particle-distribution-and-reconnection-rate',
-    toleranceValue: null,
-    observedDelta: null,
-    energyUnits: null,
-    ready: false,
-    scientificCoverage: false,
-    status: 'calibrated-reference-missing',
-    blocker: 'calibrated-pic-reference-missing'
-  }, {
-    id: 'radiation-transport-reference',
-    family: 'radiation-transport',
-    provider: null,
-    toleranceKind: 'radiative-transfer-energy-balance',
-    toleranceValue: null,
-    observedDelta: null,
-    energyUnits: null,
-    ready: false,
-    scientificCoverage: false,
-    status: 'calibrated-reference-missing',
-    blocker: 'calibrated-radiation-reference-missing'
-  }, {
-    id: 'relativistic-correction-reference',
-    family: 'relativistic-correction',
-    provider: null,
-    toleranceKind: 'compact-object-orbital-and-redshift-error',
-    toleranceValue: null,
-    observedDelta: null,
-    energyUnits: null,
-    ready: false,
-    scientificCoverage: false,
-    status: 'calibrated-reference-missing',
-    blocker: 'calibrated-relativity-reference-missing'
-  }];
+  };
+  const calibratedEntries = MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS.map((requirement) => {
+    const reference = normalizedCalibratedReferences.find((entry) => (
+      entry.family === requirement.family
+      || entry.id === requirement.id
+    ));
+    const referenceReady = reference?.ready === true;
+    const scientificReady = referenceReady && reference.scientificCoverage === true;
+    return {
+      id: requirement.id,
+      family: requirement.family,
+      provider: reference?.provider || requirement.provider,
+      solverId: reference?.solverId || null,
+      schema: reference?.schema || null,
+      role: reference?.role || null,
+      contractHash: reference?.contractHash || null,
+      unitsHash: reference?.unitsHash || null,
+      fieldMap: clonePlain(reference?.fieldMap || null),
+      fieldTolerances: clonePlain(reference?.fieldTolerances || null),
+      fieldObservedDeltas: clonePlain(reference?.fieldObservedDeltas || null),
+      validationStatus: reference?.validationStatus || null,
+      toleranceKind: requirement.toleranceKind,
+      toleranceValue: null,
+      observedDelta: null,
+      energyUnits: null,
+      ready: referenceReady,
+      scientificCoverage: reference?.scientificCoverage === true,
+      status: reference
+        ? (scientificReady ? 'calibrated-reference-ready' : reference.status || 'calibrated-reference-pending')
+        : 'calibrated-reference-missing',
+      blocker: scientificReady ? null : requirement.blocker
+    };
+  });
+  const entries = [moonlabEntry, ...calibratedEntries];
   const readyCount = entries.filter((entry) => entry.ready).length;
   const scientificReadyCount = entries.filter((entry) => entry.ready && entry.scientificCoverage).length;
   const blockers = entries.map((entry) => entry.blocker).filter(Boolean);
-  const ready = entries.length > 0 && entries.every((entry) => entry.ready && entry.scientificCoverage === true);
+  const calibratedReferenceReadyCount = calibratedEntries.filter((entry) => entry.ready).length;
+  const calibratedReferenceScientificReadyCount = calibratedEntries
+    .filter((entry) => entry.ready && entry.scientificCoverage === true).length;
+  const calibratedReferenceSuiteReady = calibratedEntries.length > 0
+    && calibratedEntries.every((entry) => entry.ready && entry.scientificCoverage === true);
+  const ready = referenceReady && calibratedReferenceSuiteReady;
   return {
     schema: MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
     scenarioId,
@@ -489,9 +601,13 @@ function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory } =
     readyCount,
     scientificReadyCount,
     missingCount: entries.length - readyCount,
+    calibratedReferenceRequiredCount: calibratedEntries.length,
+    calibratedReferenceReadyCount,
+    calibratedReferenceScientificReadyCount,
+    calibratedReferenceSuiteReady,
     entries,
     blockers,
-    note: 'Only entries with scientificCoverage=true can clear the scientific tolerance-suite blocker.'
+    note: 'MoonLab Ising remains a partial tolerance anchor; MHD/PIC/radiation/relativity entries require scientificCoverage=true to clear calibrated-reference blockers.'
   };
 }
 
@@ -525,6 +641,10 @@ export function createScenarioCalibrationIngestReport(input = {}, options = {}) 
     : (entry.ready ? 1 : 0);
   const ready = source.magnetarDipoleIsingReady === true || entry.ready === true;
   const magnetarReference = normalizeMagnetarReferenceContract(source);
+  const calibratedReferences = normalizeCalibratedMagnetarReferences(source);
+  const calibratedReferenceReadyCount = calibratedReferences.filter((reference) => reference.ready).length;
+  const calibratedReferenceScientificCoverageCount = calibratedReferences
+    .filter((reference) => reference.scientificCoverage === true).length;
   return {
     schema: MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
     scenarioId: options.scenarioId || 'magnetar',
@@ -546,10 +666,16 @@ export function createScenarioCalibrationIngestReport(input = {}, options = {}) 
       ready
     },
     magnetarReference,
+    calibratedReferenceCount: calibratedReferences.length,
+    calibratedReferenceReadyCount,
+    calibratedReferenceScientificCoverageCount,
+    calibratedReferences,
     validation: {
       status: ready ? 'calibration-artifact-ready' : 'calibration-artifact-pending',
       referenceStatus: magnetarReference.ready ? 'reference-contract-ready' : 'reference-contract-pending',
       referenceReady: magnetarReference.ready,
+      calibratedReferenceReadyCount,
+      calibratedReferenceScientificCoverageCount,
       simulationStatus: 'proxy-only',
       note: 'Calibration artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
     }
@@ -742,6 +868,7 @@ function createScenarioHandoffBlockers({
   closureHostRuntimeExecutionReady,
   closureOutputSemanticsValidated,
   magnetarReferenceReady,
+  calibratedReferenceSuiteReady,
   toleranceSuiteReady
 }) {
   if (scenarioId !== 'magnetar') return [];
@@ -763,7 +890,9 @@ function createScenarioHandoffBlockers({
   if (calibrationReady && magnetarReferenceReady !== true) {
     blockers.push('moonlab-magnetar-dipole-ising-reference-contract-missing');
   }
-  blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
+  if (calibratedReferenceSuiteReady !== true) {
+    blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
+  }
   if (toleranceSuiteReady !== true) {
     blockers.push('scientific-tolerance-suite-missing');
   }
@@ -782,6 +911,13 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
   const magnetarReference = calibrationIngest?.magnetarReference || null;
   const magnetarReferenceReady = magnetarReference?.ready === true || scenario.validation?.magnetarReferenceReady === true;
+  const calibratedReferences = Array.isArray(calibrationIngest?.calibratedReferences)
+    ? calibrationIngest.calibratedReferences.map((entry, index) => normalizeCalibratedMagnetarReference(entry, index))
+    : [];
+  const calibratedReferenceCount = calibratedReferences.length;
+  const calibratedReferenceReadyCount = calibratedReferences.filter((entry) => entry.ready).length;
+  const calibratedReferenceScientificCoverageCount = calibratedReferences
+    .filter((entry) => entry.scientificCoverage === true).length;
   const referenceInventory = {
     provider: calibrationIngest?.provider || 'moonlab',
     ready: magnetarReferenceReady,
@@ -796,9 +932,14 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     maxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
     validationStatus: magnetarReference?.validationStatus || null,
     scope: magnetarReference?.scope || 'moonlab-dipole-ising-reference-tolerance',
-    scientificScope: magnetarReference?.scientificScope || 'partial-calibration-reference-not-full-magnetar'
+    scientificScope: magnetarReference?.scientificScope || 'partial-calibration-reference-not-full-magnetar',
+    calibratedReferenceCount,
+    calibratedReferenceReadyCount,
+    calibratedReferenceScientificCoverageCount,
+    calibratedReferences
   };
-  const toleranceSuite = createScenarioToleranceSuiteReport({ scenarioId, referenceInventory });
+  const toleranceSuite = createScenarioToleranceSuiteReport({ scenarioId, referenceInventory, calibratedReferences });
+  const calibratedReferenceSuiteReady = toleranceSuite.calibratedReferenceSuiteReady === true;
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -813,6 +954,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureHostRuntimeExecutionReady,
     closureOutputSemanticsValidated,
     magnetarReferenceReady,
+    calibratedReferenceSuiteReady,
     toleranceSuiteReady: toleranceSuite.ready === true
   });
   return {
@@ -847,7 +989,10 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       referenceGroundStateEnergy: magnetarReference?.groundStateEnergy ?? null,
       referenceToleranceEnergyAbs: magnetarReference?.toleranceEnergyAbs ?? null,
       referenceMaxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
-      referenceValidationStatus: magnetarReference?.validationStatus || null
+      referenceValidationStatus: magnetarReference?.validationStatus || null,
+      calibratedReferenceCount,
+      calibratedReferenceReadyCount,
+      calibratedReferenceScientificCoverageCount
     },
     referenceInventory,
     toleranceSuite,
@@ -949,6 +1094,9 @@ function mergeScenarioCalibrationArtifacts(artifacts = [], ingest) {
     referenceToleranceEnergyAbs: ingest.magnetarReference.toleranceEnergyAbs,
     referenceMaxObservedEnergyDelta: ingest.magnetarReference.maxObservedEnergyDelta,
     referenceValidationStatus: ingest.magnetarReference.validationStatus,
+    calibratedReferenceCount: ingest.calibratedReferenceCount,
+    calibratedReferenceReadyCount: ingest.calibratedReferenceReadyCount,
+    calibratedReferenceScientificCoverageCount: ingest.calibratedReferenceScientificCoverageCount,
     sourceSchema: ingest.sourceSchema
   };
   let replaced = false;
@@ -2039,6 +2187,9 @@ export class MultiscaleModel {
         magnetarReferenceStatus: ingest.magnetarReference.ready ? 'reference-contract-ready' : 'reference-contract-pending',
         magnetarReferenceReady: ingest.magnetarReference.ready,
         magnetarReferenceSchema: ingest.magnetarReference.schema,
+        calibratedReferenceCount: ingest.calibratedReferenceCount,
+        calibratedReferenceReadyCount: ingest.calibratedReferenceReadyCount,
+        calibratedReferenceScientificCoverageCount: ingest.calibratedReferenceScientificCoverageCount,
         simulationStatus: 'proxy-only'
       }
     };
@@ -6862,6 +7013,10 @@ export class MultiscaleModel {
           scenarioToleranceSuiteReadyCount: scenario.handoffReadiness?.toleranceSuite?.readyCount ?? null,
           scenarioToleranceSuiteScientificReadyCount: scenario.handoffReadiness?.toleranceSuite?.scientificReadyCount ?? null,
           scenarioToleranceSuiteMissingCount: scenario.handoffReadiness?.toleranceSuite?.missingCount ?? null,
+          scenarioCalibratedReferenceSuiteReady: scenario.handoffReadiness?.toleranceSuite?.calibratedReferenceSuiteReady === true,
+          scenarioCalibratedReferenceRequiredCount: scenario.handoffReadiness?.toleranceSuite?.calibratedReferenceRequiredCount ?? null,
+          scenarioCalibratedReferenceReadyCount: scenario.handoffReadiness?.toleranceSuite?.calibratedReferenceReadyCount ?? null,
+          scenarioCalibratedReferenceScientificReadyCount: scenario.handoffReadiness?.toleranceSuite?.calibratedReferenceScientificReadyCount ?? null,
           scenarioClosureReady: scenario.closureIngest?.ready === true,
           scenarioClosureStatus: scenario.validation?.closureStatus || null,
           scenarioClosureKind: scenario.closureIngest?.closure?.kind || null,
