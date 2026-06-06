@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 18:13:00 AKDT
+Updated: 2026-06-06 18:35:00 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -66,6 +66,12 @@ Updated: 2026-06-06 18:13:00 AKDT
   hash `sha256:82ca16463d7ffe1d170adb266be61c3959b22a6c352751e99f0f510738a14165`,
   Eshkol descriptor probe ready, no blockers, and service-summary
   `scientificValidation = false`.
+- Live probe confirmed the default ULG magnetar descriptor handoff now also
+  carries guarded output semantics and executes as runtime smoke through the
+  Eshkol adapter: `host-runtime-output-semantics-validated`, `entryResult = 0`,
+  stdout hash
+  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
+  no output-semantics blockers, and `scientificExecution = false`.
 - `git diff --check` passed.
 
 ## Next

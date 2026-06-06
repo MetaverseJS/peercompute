@@ -50888,3 +50888,37 @@ timeout 8s env \
 - The table is deterministic fixture evidence only. Scientific readiness remains
   blocked until validated magnetar runtime solver evidence exists.
 - No push was attempted.
+
+## 2026-06-06 18:35:00 AKDT - Default magnetar runtime-smoke handoff
+
+### Prompt
+- Continue the implementation plan after the table fixture landed; evaluate the
+  Eshkol sidecar's recommended magnetar runtime-smoke output semantics.
+
+### Actions
+- Verified the default ULG `magnetar-closure` handoff now carries
+  `eshkol.ulg.closure-output-semantics.v0` directly in the staged artifact.
+- Ran the unchanged PeerCompute Eshkol dispatch adapter path against that
+  default handoff and confirmed it executes `main(0, 0)` only as smoke evidence.
+- Updated plan/status/test notes so the descriptor path is no longer documented
+  as dry-only once output semantics are present.
+
+### Commands Run
+- Live Playwright/System Chrome probe against `http://127.0.0.1:5173/` and
+  `https://127.0.0.1:5185/?scenario=magnetar`.
+
+### Results
+- PASS: live ULG handoff exported two artifacts, with Eshkol
+  `closureOutputSemanticsReady = true` and table status `computed-fixture`.
+- PASS: live Multiscale dispatch returned `dispatch-adapters-ready`, blocker
+  count `0`, accepted dispatch count `2`, Eshkol probe status `pass`,
+  `host-runtime-output-semantics-validated`, `entryInvoked = true`,
+  `mainInvoked = true`, `entryResult = 0`, output preview
+  `1048560\n10485441048528\n`, stdout byte length `23`, observed stdout SHA-256
+  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
+  no output-semantics blockers, and `scientificExecution = false`.
+
+### Open
+- This is still runtime-smoke evidence only. Full magnetar readiness requires
+  validated MHD/PIC/radiation/relativity runtime solver evidence.
+- No push was attempted.
