@@ -92,6 +92,7 @@ class CompletingServiceHost {
         requestId: `${message.task.rootTaskId}:lease`,
         rootTaskId: message.task.rootTaskId,
         module: this.manifest.childWorkers.allowedModules[0],
+        workerType: message.task.workerType,
         count: message.task.resources?.childWorkers || 1
       });
     }
@@ -153,6 +154,7 @@ class CancellableServiceHost extends CompletingServiceHost {
         requestId: `${message.task.rootTaskId}:lease`,
         rootTaskId: message.task.rootTaskId,
         module: this.manifest.childWorkers.allowedModules[0],
+        workerType: message.task.workerType,
         count: 1
       });
     }
@@ -223,6 +225,7 @@ class UlgContractServiceHost {
         requestId: `${message.task.rootTaskId}:lease`,
         rootTaskId: message.task.rootTaskId,
         module: this.manifest.childWorkers.allowedModules[0],
+        workerType: message.task.workerType,
         count: message.task.resources?.childWorkers || 1,
         ttlMs: 5_000,
         resources: {
@@ -379,6 +382,7 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
   const lease = await leases.request('root-worker-a', {
     rootTaskId: 'root-task-a',
     module: '/child.js',
+    workerType: 'classic',
     count: 2,
     allowed: true,
     maxChildren: 2,
@@ -389,6 +393,7 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
 
   assert.equal(lease.schema, CHILD_WORKER_LEASE_SCHEMA);
   assert.equal(lease.count, 2);
+  assert.equal(lease.workerType, 'classic');
   assert.equal(leases.activeChildCount('root-worker-a'), 2);
   await assert.rejects(() => leases.request('root-worker-a', {
     rootTaskId: 'root-task-a',
@@ -407,6 +412,15 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
     allowedModules: ['/child.js'],
     sameOriginOnly: false
   }), /not lease-approved/);
+  await assert.rejects(() => leases.request('root-worker-type', {
+    rootTaskId: 'root-task-type',
+    module: '/child.js',
+    workerType: 'shared',
+    allowed: true,
+    maxChildren: 1,
+    allowedModules: ['/child.js'],
+    sameOriginOnly: false
+  }), /Unsupported child worker type/);
 
   const sameOriginLease = await leases.request('root-worker-relative', {
     rootTaskId: 'root-task-relative',
@@ -417,6 +431,7 @@ test('ChildWorkerLeaseManager enforces approved modules, quotas, expiry, and roo
     baseUrl: '/service.js'
   });
   assert.equal(sameOriginLease.status, 'active');
+  assert.equal(sameOriginLease.workerType, 'module');
   await assert.rejects(() => leases.request('root-worker-foreign', {
     rootTaskId: 'root-task-foreign',
     module: 'https://example.com/child.js',
@@ -548,12 +563,14 @@ test('WorkerSupervisor runs a fake service host with child-worker leases', async
     serviceId: 'eshkol',
     taskKind: 'eshkol.closure.derive',
     rootTaskId: 'root-task-supervised',
+    workerType: 'classic',
     resources: { childWorkers: 1 }
   });
 
   assert.equal(result.status, 'complete');
   assert.equal(result.value.ok, true);
   assert.equal(leaseManager.list()[0].status, 'released');
+  assert.equal(leaseManager.list()[0].workerType, 'classic');
   const telemetry = supervisor.getTreeTelemetry();
   assert.equal(telemetry.schema, WORKER_SUPERVISOR_TELEMETRY_SCHEMA);
   assert.equal(telemetry.services[0].status, 'ready');

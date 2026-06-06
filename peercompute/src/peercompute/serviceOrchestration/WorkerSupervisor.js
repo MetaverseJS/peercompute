@@ -294,6 +294,7 @@ export class WorkerSupervisor {
       const lease = await this.leaseManager.request(handle.workerId, {
         rootTaskId: message.rootTaskId,
         module: message.module,
+        workerType: message.workerType,
         count: message.count,
         resources: message.resources,
         ttlMs: message.ttlMs,

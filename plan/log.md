@@ -47337,6 +47337,73 @@ User asked whether Infinite Context Coder is being used.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
 
+## 2026-06-05 16:46:32 AKDT - ULG child-worker lease type preservation
+
+### Prompt
+- User prompt: "keep going until i tell you to stop. youre doing great"
+- Inherited session constraints: continue the ULG implementation plan across local MoonLab/Eshkol/PeerCompute/ULG checkouts, keep all commits local, do not push to origin, keep VPN-facing demo services usable, and avoid logging any SSH password.
+- Prompt time/date recorded from the local machine: `2026-06-05 16:46:32 AKDT`.
+
+### Actions
+- Continued the focused PeerCompute service-orchestration slice after the ULG demo proved a MoonLab Emscripten runtime can run from a classic browser child worker.
+- Updated `ChildWorkerLeaseManager` so lease specs preserve a normalized `workerType`, default to `module`, accept `classic`, and reject unsupported worker kinds before a lease is granted.
+- Updated `WorkerSupervisor` so `lease-request` messages forward `workerType` into the lease manager instead of silently dropping it.
+- Expanded service-orchestration tests so fixture service hosts propagate task `workerType`, lease tests assert `classic` and default `module` behavior, unsupported `shared` leases reject, and the supervisor preserves a classic lease through release.
+- Verified the current local coturn/VPN relay dry-run path and documented the repeatable Multiscale live remote-placement smoke blocker observed while probing the ULG-relevant stack.
+- Restored the tracked VPN relay config after smoke runs generated transient local relay addresses; the final `docs/multiscale/relay-config.json` diff is empty.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js`
+- `peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `git status --short --branch`
+- `git diff -- docs/multiscale/relay-config.json`
+- `git diff -- peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js peercompute/tests/unit/serviceOrchestration.test.js`
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,240p' plan/log.md`
+- `sed -n '1,260p' plan/tests.md`
+- `sed -n '1,220p' plan/plan.md`
+- `rg -n "service orchestration|ULG|child worker|workerType|lease|Multiscale|relay" README.md plan/*.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ChildWorkerLeaseManager.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix peercompute run test:unit`
+- `npm --prefix peercompute run build`
+- `bash scripts/dev-vpn-coturn.sh --dry-run`
+- `npm --prefix demos/multiscale run test:remote-placement`
+- `MULTISCALE_REMOTE_COMPUTE_TIMEOUT_MS=90000 MULTISCALE_REMOTE_SMOKE_TIMEOUT_MS=150000 npm --prefix demos/multiscale run test:remote-placement`
+- `git diff --check`
+
+### Test Results
+- PASS: syntax checks completed for the service-orchestration implementation and unit test files.
+- PASS: focused `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `6/6` tests passing.
+- PASS: `npm --prefix peercompute run test:unit` completed with `122/122` tests passing.
+- PASS: `npm --prefix peercompute run build` completed; existing circular-chunk and bundle-size warnings remain non-fatal.
+- PASS: `bash scripts/dev-vpn-coturn.sh --dry-run` detected VPN host `100.86.83.35` and generated the expected Node relay launch command.
+- PASS: local coturn/turnserver was already active on TCP/UDP `3478` for VPN/TURN checks.
+- PASS: final `git diff --check` completed without whitespace errors after documentation updates.
+- PASS: final focused `node --test peercompute/tests/unit/serviceOrchestration.test.js` rerun completed with `6/6` tests passing after documentation updates.
+- FAIL: `npm --prefix demos/multiscale run test:remote-placement` reached relay startup, browser peers, remote readiness, and remote-solver policy promotion, but the normal `cosmologyExpansion` cadence still completed locally with `executionContext: "dedicated-worker"` / `backend: "webgpu-cosmology-expansion"` and no remote-peer bucket completions.
+- FAIL: the longer remote-placement rerun with `MULTISCALE_REMOTE_COMPUTE_TIMEOUT_MS=90000` and `MULTISCALE_REMOTE_SMOKE_TIMEOUT_MS=150000` failed with the same final assertion, so this remains a repeatable Multiscale remote-solver cadence blocker rather than evidence against the worker-type lease patch.
+
+### Failures / Open Questions
+- The remote-placement smoke writes tracked relay config artifacts during the run. The checked-in `docs/multiscale/relay-config.json` was restored to the VPN relay/coturn config before this checkpoint.
+- `config/relay.env` defaults `RELAY_IMPL=go`, while the ULG-relevant local dev/smoke path is more deterministic with `RELAY_IMPL=node`; keep forcing that env var unless testing Go relay parity.
+- Next PeerCompute slice should add a small ULG manifest/task adapter that normalizes ULG service manifests and task capsules into `ComputeServiceRegistry` / `WorkerSupervisor.submitTask` shape without depending on `/home/cos/projects/ulg` at runtime.
+
+### Demo Server State
+- ULG demo remains served by the live Vite process on `http://100.86.83.35:5173/`.
+- The ULG demo's MoonLab artifact probe is ready and has observed Bell `phi_plus` probabilities `[0.5000000000000001, 0, 0, 0.5000000000000001]` through the MoonLab WASM core.
+- No PeerCompute dev server was left newly running by this checkpoint.
+
 ## 2026-06-05 15:47:45 AKDT - ULG service orchestration fixture bridge
 
 ### Prompt

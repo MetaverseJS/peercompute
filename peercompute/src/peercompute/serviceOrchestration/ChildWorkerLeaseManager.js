@@ -24,6 +24,14 @@ function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGE
   return Math.min(max, Math.max(min, number));
 }
 
+function normalizeWorkerType(value) {
+  const workerType = String(value || 'module').trim().toLowerCase();
+  if (!['classic', 'module'].includes(workerType)) {
+    throw new Error(`Unsupported child worker type: ${workerType}`);
+  }
+  return workerType;
+}
+
 function normalizePolicy(spec = {}, defaultPolicy = {}) {
   return {
     allowed: spec.allowed ?? defaultPolicy.allowed ?? false,
@@ -61,6 +69,7 @@ export class ChildWorkerLeaseManager {
     const policy = normalizePolicy(spec, this.defaultPolicy);
     const moduleUrl = String(spec.module || spec.workerModule || '').trim();
     const count = normalizeInteger(spec.count, 1, 1);
+    const workerType = normalizeWorkerType(spec.workerType);
 
     if (!policy.allowed) {
       throw new Error(`Child workers are not allowed for ${parentId}`);
@@ -86,6 +95,7 @@ export class ChildWorkerLeaseManager {
       parentWorkerId: parentId,
       rootTaskId: spec.rootTaskId || null,
       module: moduleUrl,
+      workerType,
       count,
       createdAt,
       expiresAt: normalizeInteger(spec.expiresAt, createdAt + ttlMs, createdAt),
