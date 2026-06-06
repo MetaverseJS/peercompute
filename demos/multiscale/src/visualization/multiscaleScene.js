@@ -49,6 +49,7 @@ const RENDER_QUALITY_DEGRADE_COOLDOWN_FRAMES = 10;
 const RENDER_QUALITY_RELAX_COOLDOWN_FRAMES = 60;
 const RENDER_QUALITY_SEVERE_COOLDOWN_FRAMES = 4;
 const SCALE_ZOOM_TRANSITION_SECONDS = 0.86;
+const MAGNETAR_PROXY_VISIBLE_LAYER = 'solar';
 
 export const MULTISCALE_VISUAL_REFERENCE_SCHEMA = 'peercompute.multiscale.visual-reference.v0';
 export const SCALE_VISUAL_REFERENCE_POLICY = Object.freeze({
@@ -962,7 +963,130 @@ export class MultiscaleScene {
       group.add(mesh);
       this.dynamic.planets.push({ mesh, ...planet });
     }
+    const magnetarProxy = this.buildMagnetarProxyVisual();
+    group.add(magnetarProxy.group);
+    this.dynamic.magnetarProxy = magnetarProxy;
     return group;
+  }
+
+  buildMagnetarProxyVisual() {
+    const group = new THREE.Group();
+    group.visible = false;
+    group.userData.visualRole = 'magnetar-proxy';
+
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.78, 48, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff3ff
+      })
+    );
+    group.add(core);
+
+    const chromaShell = new THREE.Mesh(
+      new THREE.SphereGeometry(1.12, 48, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xff4f95,
+        transparent: true,
+        opacity: 0.36,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    group.add(chromaShell);
+
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(2.6, 48, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x54dfff,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    group.add(glow);
+
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff5b8d,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const rings = [];
+    for (const [radius, tube, rotation] of [
+      [2.4, 0.018, [Math.PI / 2, 0, 0.2]],
+      [3.1, 0.014, [Math.PI / 2, 0.6, 0.9]],
+      [3.7, 0.012, [Math.PI / 2, -0.45, -0.65]]
+    ]) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(radius, tube, 8, 160),
+        ringMaterial.clone()
+      );
+      ring.rotation.set(...rotation);
+      group.add(ring);
+      rings.push(ring);
+    }
+
+    const fieldLines = [];
+    const lineColors = [0x54dfff, 0xff5b8d, 0xf7d774, 0x9d7cff];
+    for (let i = 0; i < 8; i += 1) {
+      const phase = (i / 8) * Math.PI * 2;
+      const radius = 3.2 + (i % 2) * 0.75;
+      const height = 3.9 + (i % 3) * 0.34;
+      const geometry = this.createDipoleFieldLineGeometry({ radius, height, phase });
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: lineColors[i % lineColors.length],
+          transparent: true,
+          opacity: 0.54,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      group.add(line);
+      fieldLines.push(line);
+    }
+
+    const jetMaterial = new THREE.MeshBasicMaterial({
+      color: 0x78f7ff,
+      transparent: true,
+      opacity: 0.52,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const jets = [];
+    for (const direction of [-1, 1]) {
+      const jet = new THREE.Mesh(
+        new THREE.ConeGeometry(0.24, 5.4, 24, 1, true),
+        jetMaterial.clone()
+      );
+      jet.position.y = direction * 3.2;
+      jet.rotation.x = direction > 0 ? 0 : Math.PI;
+      group.add(jet);
+      jets.push(jet);
+    }
+
+    return { group, core, chromaShell, glow, rings, fieldLines, jets };
+  }
+
+  createDipoleFieldLineGeometry({ radius = 3.2, height = 4, phase = 0 } = {}) {
+    const segments = 144;
+    const positions = [];
+    for (let i = 0; i <= segments; i += 1) {
+      const theta = (i / segments) * Math.PI * 2;
+      const sinTheta = Math.sin(theta);
+      const radial = radius * sinTheta * sinTheta;
+      positions.push(
+        Math.cos(phase) * radial,
+        Math.cos(theta) * height,
+        Math.sin(phase) * radial
+      );
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geometry;
   }
 
   buildPlanet() {
@@ -1291,8 +1415,40 @@ export class MultiscaleScene {
     this.updatePicPlasmaPatchOverlayVisibility();
     this.updateRelativisticCorrectionOverlayVisibility();
     this.updateCombustionPlumeOverlayVisibility();
+    this.updateMagnetarProxyVisibility();
     this.setOverlayWaiting(`waiting layer ${this.model.layerIndex + 1}`);
     if (instant) this.controls.update();
+  }
+
+  isMagnetarScenarioActive() {
+    const scenario = this.model.getScenario?.();
+    return scenario?.id === 'magnetar' && scenario.active === true;
+  }
+
+  updateMagnetarProxyVisibility() {
+    const proxy = this.dynamic.magnetarProxy;
+    if (!proxy?.group) return false;
+    const activeLayer = SCALE_LAYERS[this.model.layerIndex] || SCALE_LAYERS[0];
+    const visible = this.isMagnetarScenarioActive() && activeLayer.id === MAGNETAR_PROXY_VISIBLE_LAYER;
+    proxy.group.visible = visible;
+    return visible;
+  }
+
+  getMagnetarProxyVisualStatus() {
+    const activeLayer = SCALE_LAYERS[this.model.layerIndex] || SCALE_LAYERS[0];
+    const scenario = this.model.getScenario?.() || null;
+    const proxy = this.dynamic.magnetarProxy;
+    return {
+      schema: 'peercompute.multiscale.magnetar-proxy-visual.v0',
+      active: this.isMagnetarScenarioActive(),
+      visible: proxy?.group?.visible === true,
+      activeLayerId: activeLayer.id,
+      targetLayerId: scenario?.targetLayerId || MAGNETAR_PROXY_VISIBLE_LAYER,
+      visualRole: proxy?.group?.userData?.visualRole || 'magnetar-proxy',
+      proxyOnly: scenario?.validation?.status === 'proxy-only',
+      handoffStatus: scenario?.handoffReadiness?.status || null,
+      blockerCount: scenario?.handoffReadiness?.blockerCount ?? null
+    };
   }
 
   updateLayerTransition(dt) {
@@ -3171,6 +3327,7 @@ export class MultiscaleScene {
         planet.mesh.position.set(Math.cos(angle) * planet.r, 0, Math.sin(angle) * planet.r);
       }
     }
+    this.updateMagnetarProxyVisual(t);
     if (this.dynamic.planet) {
       const { planet } = this.model.state;
       this.dynamic.planet.group.rotation.y = t * 0.08;
@@ -3243,6 +3400,33 @@ export class MultiscaleScene {
     if (this.molecularDynamicsOverlay) {
       this.molecularDynamicsOverlay.rotation.y = this.molecularDynamicsOverlay.visible ? t * 0.12 : 0;
     }
+  }
+
+  updateMagnetarProxyVisual(t = 0) {
+    const proxy = this.dynamic.magnetarProxy;
+    if (!proxy?.group || !this.updateMagnetarProxyVisibility()) return;
+    const readiness = this.model.getScenario?.().handoffReadiness || {};
+    const readyPulse = readiness.status === 'handoff-ready' ? 1 : 0;
+    const pulse = 1 + Math.sin(t * 3.4) * 0.08 + readyPulse * 0.08;
+    proxy.group.rotation.y = t * 0.32;
+    proxy.group.rotation.z = Math.sin(t * 0.22) * 0.08;
+    proxy.core.scale.setScalar(pulse);
+    proxy.chromaShell.scale.setScalar(1.02 + Math.sin(t * 2.1) * 0.07 + readyPulse * 0.06);
+    proxy.glow.scale.setScalar(1.02 + Math.sin(t * 1.6) * 0.12 + readyPulse * 0.1);
+    proxy.chromaShell.material.opacity = 0.28 + Math.sin(t * 2.7) * 0.06 + readyPulse * 0.08;
+    proxy.glow.material.opacity = 0.12 + Math.sin(t * 1.9) * 0.035 + readyPulse * 0.07;
+    proxy.rings.forEach((ring, index) => {
+      ring.rotation.z += 0.006 * (index + 1);
+      ring.material.opacity = 0.3 + Math.sin(t * (1.3 + index * 0.2)) * 0.06 + readyPulse * 0.08;
+    });
+    proxy.fieldLines.forEach((line, index) => {
+      line.rotation.y = t * (0.12 + index * 0.01);
+      line.material.opacity = 0.42 + Math.sin(t * 1.7 + index) * 0.08 + readyPulse * 0.08;
+    });
+    proxy.jets.forEach((jet, index) => {
+      jet.scale.set(1 + readyPulse * 0.2, 1 + Math.sin(t * 3.1 + index) * 0.08 + readyPulse * 0.18, 1 + readyPulse * 0.2);
+      jet.material.opacity = 0.38 + Math.sin(t * 2.4 + index) * 0.06 + readyPulse * 0.14;
+    });
   }
 
   updateBond(mesh, start, end) {
