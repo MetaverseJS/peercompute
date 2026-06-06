@@ -162,6 +162,7 @@ export const SCALE_LAYERS = [
 
 export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenario-preset.v0';
 export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multiscale.scenario-calibration-ingest.v0';
+export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale.scenario-closure-ingest.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
 export const MULTISCALE_SCENARIO_PRESETS = {
@@ -251,6 +252,7 @@ function createDefaultScenarioState() {
     solverFocus: [],
     calibrationArtifacts: [],
     calibrationIngest: null,
+    closureIngest: null,
     validation: {
       status: 'default',
       note: 'No named astrophysical scenario is active.'
@@ -350,6 +352,38 @@ export function createScenarioCalibrationIngestReport(input = {}, options = {}) 
       status: ready ? 'calibration-artifact-ready' : 'calibration-artifact-pending',
       simulationStatus: 'proxy-only',
       note: 'Calibration artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
+    }
+  };
+}
+
+export function createScenarioClosureIngestReport(input = {}, options = {}) {
+  const source = input?.artifactSummary && typeof input.artifactSummary === 'object'
+    ? input.artifactSummary
+    : input || {};
+  const ready = source.closureReady === true;
+  return {
+    schema: MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
+    scenarioId: options.scenarioId || 'magnetar',
+    provider: options.provider || source.sourceService || 'eshkol',
+    sourceSchema: source.schema || null,
+    sourceArtifactKind: source.artifactKind || options.artifactKind || null,
+    ready,
+    closure: {
+      artifactId: source.artifactId || null,
+      kind: source.closureKind || null,
+      moduleUrl: source.closureModuleUrl || null,
+      moduleSha256: source.closureModuleSha256 || null,
+      serviceWorkerSafe: source.closureServiceWorkerSafe === true,
+      requiresDynamicCode: source.closureRequiresDynamicCode ?? null,
+      requiresHostImports: source.closureRequiresHostImports ?? null,
+      bundleManifestSchema: source.closureBundleManifestSchema || null,
+      bundleCopyFileCount: source.closureBundleCopyFileCount ?? 0,
+      bundlePreserveRelativeUrls: source.closureBundlePreserveRelativeUrls === true
+    },
+    validation: {
+      status: ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
+      simulationStatus: 'proxy-only',
+      note: 'Closure artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
     }
   };
 }
@@ -1449,6 +1483,29 @@ export class MultiscaleModel {
         calibrationStatus: ingest.ready ? 'artifact-summary-ready' : 'artifact-summary-pending',
         calibrationReady: ingest.ready,
         calibrationSchema: ingest.magnetarDipoleIsing.schema,
+        simulationStatus: 'proxy-only'
+      }
+    };
+    return this.getScenario();
+  }
+
+  ingestScenarioClosureSummary(summary = {}, options = {}) {
+    const ingest = createScenarioClosureIngestReport(summary, options);
+    if (options.applyPreset !== false && this.scenario.id !== ingest.scenarioId) {
+      this.applyScenarioPreset(ingest.scenarioId);
+    }
+    if (this.scenario.id !== ingest.scenarioId) {
+      return this.getScenario();
+    }
+    this.scenario = {
+      ...this.scenario,
+      closureIngest: ingest,
+      validation: {
+        ...(this.scenario.validation || {}),
+        status: this.scenario.validation?.status || 'proxy-only',
+        closureStatus: ingest.ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
+        closureReady: ingest.ready,
+        closureKind: ingest.closure.kind,
         simulationStatus: 'proxy-only'
       }
     };
@@ -6197,7 +6254,10 @@ export class MultiscaleModel {
           scenarioModelTier: scenario.modelTier,
           scenarioCalibrationReady: scenario.calibrationIngest?.ready === true,
           scenarioCalibrationStatus: scenario.validation?.calibrationStatus || null,
-          scenarioCalibrationSchema: scenario.calibrationIngest?.magnetarDipoleIsing?.schema || null
+          scenarioCalibrationSchema: scenario.calibrationIngest?.magnetarDipoleIsing?.schema || null,
+          scenarioClosureReady: scenario.closureIngest?.ready === true,
+          scenarioClosureStatus: scenario.validation?.closureStatus || null,
+          scenarioClosureKind: scenario.closureIngest?.closure?.kind || null
         },
         refinementRequests
       },

@@ -1339,9 +1339,27 @@ function ingestScenarioCalibrationSummary(summary = {}, options = {}) {
   });
 }
 
+function ingestScenarioClosureSummary(summary = {}, options = {}) {
+  const scenario = model.ingestScenarioClosureSummary(summary, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    closureIngest: scenario.closureIngest || null
+  });
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
+  if (artifactSummary.artifactKind === 'closure') {
+    return ingestScenarioClosureSummary(artifactSummary, {
+      ...options,
+      artifactKind,
+      provider: options.provider || artifact.sourceService || artifactSummary.sourceService || 'eshkol'
+    });
+  }
   return ingestScenarioCalibrationSummary(artifactSummary, {
     ...options,
     artifactKind,
@@ -5679,7 +5697,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -9929,6 +9947,9 @@ window.__multiscaleDemo = {
   },
   ingestScenarioCalibrationSummary(summary = {}, options = {}) {
     return ingestScenarioCalibrationSummary(summary, options);
+  },
+  ingestScenarioClosureSummary(summary = {}, options = {}) {
+    return ingestScenarioClosureSummary(summary, options);
   },
   ingestUlgArtifactForScenario(artifact = {}, options = {}) {
     return ingestUlgArtifactForScenario(artifact, options);

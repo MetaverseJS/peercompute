@@ -12,6 +12,7 @@ import {
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import {
   MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
   MultiscaleModel,
@@ -1602,6 +1603,46 @@ test('magnetar scenario ingests ULG calibration artifact summary without promoti
   assert.equal(packet.downward.boundaryConditions.scenarioCalibrationReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioCalibrationStatus, 'artifact-summary-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioCalibrationSchema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
+});
+
+test('magnetar scenario ingests Eshkol closure bundle summary without promoting physics status', () => {
+  const model = new MultiscaleModel({ seed: 46 });
+  const scenario = model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    validationStatus: 'pass',
+    closureKind: 'wasm-reference',
+    closureModuleUrl: 'hello.wasm',
+    closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: true,
+    closureBundleManifestSchema: 'eshkol.ulg.closure-bundle.v0',
+    closureBundleCopyFileCount: 3,
+    closureBundlePreserveRelativeUrls: true,
+    closureReady: true
+  });
+
+  assert.equal(scenario.id, 'magnetar');
+  assert.equal(scenario.active, true);
+  assert.equal(scenario.validation.status, 'proxy-only');
+  assert.equal(scenario.validation.simulationStatus, 'proxy-only');
+  assert.equal(scenario.validation.closureStatus, 'closure-artifact-ready');
+  assert.equal(scenario.validation.closureReady, true);
+  assert.equal(scenario.closureIngest.schema, MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA);
+  assert.equal(scenario.closureIngest.ready, true);
+  assert.equal(scenario.closureIngest.closure.kind, 'wasm-reference');
+  assert.equal(scenario.closureIngest.closure.moduleUrl, 'hello.wasm');
+  assert.equal(scenario.closureIngest.closure.serviceWorkerSafe, true);
+  assert.equal(scenario.closureIngest.closure.bundlePreserveRelativeUrls, true);
+
+  const packet = model.createPacket();
+  assert.equal(packet.scenario.closureIngest.ready, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureStatus, 'closure-artifact-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureKind, 'wasm-reference');
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {

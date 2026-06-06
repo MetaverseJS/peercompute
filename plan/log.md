@@ -2,6 +2,52 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 18:43:44 AKDT - Magnetar Eshkol closure ingest
+
+### Prompt
+- Continued the ULG/PeerCompute/MoonLab/Eshkol implementation plan after PeerCompute could summarize staged Eshkol closure bundle readiness.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-05 18:43:44 AKDT`.
+
+### Actions
+- Added `peercompute.multiscale.scenario-closure-ingest.v0` to the Multiscale magnetar scenario model.
+- Added model/browser APIs to ingest Eshkol closure bundle summaries into scenario state without promoting the runtime beyond proxy mode.
+- Propagated closure readiness, status, and closure kind into packet boundary conditions.
+- Updated the scenario HUD row to show both calibration and closure handoff status.
+- Added focused model coverage for Eshkol closure ingest.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test --test-name-pattern "magnetar scenario" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- Playwright browser probe from ULG `http://127.0.0.1:5173/` to Multiscale `https://127.0.0.1:5185/?scenario=magnetar`
+
+### Test Results
+- PASS: syntax checks completed for the changed model, runtime, and tests.
+- PASS: focused magnetar scenario tests passed with `3/3`.
+- PASS: full Multiscale model suite passed with `174/174`.
+- PASS: Vite production build completed; existing large-chunk warnings remain non-fatal.
+- PASS: live browser probe pulled ULG MoonLab and Eshkol artifacts, ingested both through Multiscale, and confirmed one magnetar packet had calibration ready, closure ready, closure status `closure-artifact-ready`, closure kind `wasm-reference`, and top-level scenario validation still `proxy-only`.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- This records Eshkol closure handoff readiness only; PeerCompute/Multiscale still does not execute or physically validate the Eshkol closure module in the magnetar runtime.
+
 ## 2026-06-05 18:37:58 AKDT - Eshkol closure bundle summary bridge
 
 ### Prompt
