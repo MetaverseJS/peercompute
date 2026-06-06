@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 13:00:36 AKDT
+Updated: 2026-06-06 13:08:13 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -45,6 +45,11 @@ Updated: 2026-06-06 13:00:36 AKDT
   a `sha256:` content hash, and `scientificValidation = false`. Compact service
   summaries expose the table status, computed-fixture flag, sample count, and
   hash.
+- Eshkol descriptor probes now expose descriptor-aware interpolation-table
+  readiness: a computed fixture is not considered bound unless the table matches
+  the tensor contract, the closure tensor runtime contract points at the same
+  table id/schema/hash/sample count, and tensor sample-shape validation names
+  the same input/output tensors.
 - Multiscale now accepts direct ULG browser handoffs over
   `ulg.peercompute.browser-handoff-post.v0`, restricted to trusted ULG demo
   origins on port `5173`, dedupes repeated popup-load posts by `handoffId`, and
@@ -122,10 +127,14 @@ Updated: 2026-06-06 13:00:36 AKDT
   `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
   and Eshkol WASM hash
   `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
+- PeerCompute descriptor regression now blocks tensor-runtime/table binding
+  drift even when the interpolation table itself still reports
+  `computed-fixture`: mismatched runtime table hashes and mismatched
+  sample-shape tensor ids add explicit blockers before descriptor acceptance.
 - `git diff --check` passed.
 
 ## Next
-- Replace deterministic table-fixture acceptance with descriptor-aware
-  execution/table-probe logic once the closure runtime contract is ready.
+- Replace descriptor-bound fixture acceptance with execution/table-probe logic
+  once the closure runtime contract can produce non-fixture table evidence.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

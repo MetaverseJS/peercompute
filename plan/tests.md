@@ -839,7 +839,7 @@
 
 ### Magnetar runtime evidence requirements gate
 - Descriptor adapter summary gate:
-  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only Eshkol closures|descriptor probe blocks interpolation fixture scientific overclaims|executes only explicit smoke output semantics'`.
+  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only Eshkol closures|descriptor probe blocks interpolation fixture scientific overclaims|descriptor probe blocks tensor runtime contract overclaims|descriptor probe blocks tensor runtime table binding drift|executes only explicit smoke output semantics'`.
 : expected result is a full pass proving descriptor-only Eshkol magnetar closure
   handoffs accept tensor/product-topology/runtime-binding metadata through
   `peercompute.ulg.handoff-supervisor-service-summary.v0`, report descriptor
@@ -847,8 +847,9 @@
   `declared-not-executed`, accept explicit `closureTensorRuntimeContract`
   metadata only when its hash/ABI/tensor descriptor/interpolation/sample-shape
   gates match, block interpolation-table and tensor-runtime scientific
-  overclaims, and keep explicit smoke output semantics gated separately from
-  descriptor metadata.
+  overclaims, block tensor-runtime/table binding drift, require sample-shape
+  tensor ids to match the descriptor tensor contract, and keep explicit smoke
+  output semantics gated separately from descriptor metadata.
 - Live browser adapter-summary gate: on
   `https://100.86.83.35:5185/?scenario=magnetar`, call
   `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe()` with a synthetic

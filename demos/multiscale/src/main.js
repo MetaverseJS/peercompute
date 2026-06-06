@@ -1953,6 +1953,7 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
       probeMode: serviceSummary?.probeMode || probe.probeMode || null,
       descriptorProbe: cloneJson(descriptorProbe),
       descriptorTensorContract: cloneJson(descriptorProbe?.tensorContract || null),
+      descriptorInterpolationTable: cloneJson(descriptorProbe?.interpolationTable || null),
       descriptorProductTopologyBinding: cloneJson(descriptorProbe?.productTopologyBinding || null),
       descriptorTensorRuntimeContract: cloneJson(descriptorProbe?.tensorRuntimeContract || null),
       descriptorRuntimeBinding: cloneJson(descriptorProbe?.runtimeBinding || null),

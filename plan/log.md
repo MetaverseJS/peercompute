@@ -51114,3 +51114,55 @@ timeout 8s env \
   duplicate calibrated runtime evidence or full-fidelity magnetar simulation
   scope.
 - No push was attempted.
+
+## 2026-06-06 13:08:13 AKDT - Descriptor-aware table binding gate
+
+### Prompt
+- Continue the local-only ULG/PeerCompute/MoonLab/Eshkol magnetar plan.
+
+### Actions
+- Tightened the Eshkol descriptor probe so tensor sample-shape validation must
+  name the same input/output tensor ids as the descriptor tensor contract.
+- Added descriptor-aware interpolation table readiness fields. A
+  `computed-fixture` table now reports ready only when the table matches the
+  tensor contract, the closure tensor runtime contract points at the same
+  table id/schema/content hash/sample count, and sample-shape validation passes.
+- Added the compact summary fields needed for downstream/browser consumers:
+  table payload count, coordinate system, tensor-contract match,
+  descriptor-binding readiness, runtime-table match, sample-shape readiness,
+  runtime table id/hash/count, and runtime sample-shape contract match.
+- Exposed `descriptorInterpolationTable` directly in Multiscale
+  `peercompute.multiscale.ulg-dispatch-service-result-summary.v0` entries.
+- Added a service-orchestration regression that blocks tensor-runtime/table
+  binding drift even when the interpolation table itself still advertises
+  `computed-fixture`.
+- Rebuilt the Multiscale docs bundle.
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only Eshkol closures|descriptor probe blocks interpolation fixture scientific overclaims|descriptor probe blocks tensor runtime contract overclaims|descriptor probe blocks tensor runtime table binding drift'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale test`
+- `npm --prefix demos/multiscale run build`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused descriptor gate passed `23/23`, including the new
+  tensor-runtime table binding drift regression.
+- PASS: full service-orchestration test passed `23/23`.
+- PASS: Multiscale test suite passed `195/195`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live ULG browser handoff smoke passed against `127.0.0.1:5173` and
+  `127.0.0.1:5185`, with `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, and the
+  visible magnetar proxy on the solar layer.
+
+### Open
+- This is still descriptor-bound fixture acceptance, not full-fidelity
+  magnetar closure execution or non-fixture table generation.
+- No push was attempted.

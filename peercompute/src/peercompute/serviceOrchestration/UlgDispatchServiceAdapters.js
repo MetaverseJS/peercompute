@@ -872,6 +872,12 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
   const productOutputIds = Array.isArray(productTopologyBinding?.outputTensorIds) ? [...productTopologyBinding.outputTensorIds] : [];
   const tensorRuntimeInputIds = Array.isArray(tensorRuntimeContract?.inputTensorIds) ? [...tensorRuntimeContract.inputTensorIds] : [];
   const tensorRuntimeOutputIds = Array.isArray(tensorRuntimeContract?.outputTensorIds) ? [...tensorRuntimeContract.outputTensorIds] : [];
+  const tensorRuntimeSampleShapeInputIds = Array.isArray(tensorRuntimeSampleShapeValidation?.validatedInputTensorIds)
+    ? [...tensorRuntimeSampleShapeValidation.validatedInputTensorIds]
+    : [];
+  const tensorRuntimeSampleShapeOutputIds = Array.isArray(tensorRuntimeSampleShapeValidation?.validatedOutputTensorIds)
+    ? [...tensorRuntimeSampleShapeValidation.validatedOutputTensorIds]
+    : [];
   const descriptorEntryExport = descriptor.entryExport || null;
   const moduleEntryExport = moduleProbe.entryExport || summary.closureEntryExport || artifact.execution?.entryExport || null;
   const tensorContractMatches = arraysEqual(artifactInputIds, tensorInputIds)
@@ -913,6 +919,20 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
     && tensorRuntimeInterpolationTable?.schema === interpolationTable?.schema
     && tensorRuntimeInterpolationTable?.contentHash === interpolationTable?.contentHash
     && finiteNumberOrNull(tensorRuntimeInterpolationTable?.sampleCount) === tableSampleCount;
+  const tensorRuntimeSampleShapeValidationMatchesTensorContract = arraysEqual(
+    tensorRuntimeSampleShapeInputIds,
+    tensorInputIds
+  ) && arraysEqual(tensorRuntimeSampleShapeOutputIds, tensorOutputIds);
+  const tensorRuntimeSampleShapeValidationReady =
+    tensorRuntimeSampleShapeValidation?.schema === 'eshkol.ulg.tensor-sample-shape-validation.v0'
+    && tensorRuntimeSampleShapeValidation?.status === 'pass'
+    && finiteNumberOrNull(tensorRuntimeSampleShapeValidation?.validatedSampleCount) === tableSampleCount
+    && tensorRuntimeSampleShapeValidationMatchesTensorContract
+    && tensorRuntimeSampleShapeValidation?.scientificValidation === false;
+  const interpolationTableDescriptorBindingReady = interpolationTableMatches
+    && tensorRuntimeMatchesTensorContract
+    && tensorRuntimeMatchesInterpolationTable
+    && tensorRuntimeSampleShapeValidationReady;
 
   if (summary.closureDescriptorSchema && descriptor.schema !== summary.closureDescriptorSchema) {
     blockers.push('eshkol-descriptor-schema-summary-mismatch');
@@ -1010,10 +1030,10 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       if (!tensorRuntimeMatchesInterpolationTable) {
         blockers.push('eshkol-descriptor-tensor-runtime-interpolation-table-mismatch');
       }
-      if (tensorRuntimeSampleShapeValidation?.schema !== 'eshkol.ulg.tensor-sample-shape-validation.v0'
-        || tensorRuntimeSampleShapeValidation?.status !== 'pass'
-        || finiteNumberOrNull(tensorRuntimeSampleShapeValidation?.validatedSampleCount) !== tableSampleCount
-        || tensorRuntimeSampleShapeValidation?.scientificValidation !== false) {
+      if (!tensorRuntimeSampleShapeValidationMatchesTensorContract) {
+        blockers.push('eshkol-descriptor-tensor-runtime-sample-shape-validation-ids-mismatch');
+      }
+      if (!tensorRuntimeSampleShapeValidationReady) {
         blockers.push('eshkol-descriptor-tensor-runtime-sample-shape-validation-not-ready');
       }
       if (tensorRuntimeContract.runtimeStatus !== 'declared-not-executed') {
@@ -1089,7 +1109,10 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       coordinateSystem: interpolationTable.coordinateSystem || null,
       inputTensorIds: tableInputIds,
       outputTensorIds: tableOutputIds,
-      matchesTensorContract: interpolationTableMatches
+      matchesTensorContract: interpolationTableMatches,
+      descriptorBindingReady: interpolationTableDescriptorBindingReady,
+      tensorRuntimeMatchesInterpolationTable,
+      tensorRuntimeSampleShapeValidationReady
     } : null,
     moonlabNormalizedReferenceSuite: moonlabSuite ? {
       schema: moonlabSuite.schema || null,
@@ -1141,6 +1164,10 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       sampleShapeValidationSchema: tensorRuntimeSampleShapeValidation?.schema || null,
       sampleShapeValidationStatus: tensorRuntimeSampleShapeValidation?.status || null,
       sampleShapeValidatedSampleCount: finiteNumberOrNull(tensorRuntimeSampleShapeValidation?.validatedSampleCount),
+      sampleShapeValidatedInputTensorIds: tensorRuntimeSampleShapeInputIds,
+      sampleShapeValidatedOutputTensorIds: tensorRuntimeSampleShapeOutputIds,
+      sampleShapeValidationMatchesTensorContract: tensorRuntimeSampleShapeValidationMatchesTensorContract,
+      sampleShapeValidationReady: tensorRuntimeSampleShapeValidationReady,
       scientificValidation: tensorRuntimeContract.scientificValidation === true,
       fullPhysicsValidation: tensorRuntimeContract.fullPhysicsValidation === true
     } : null,

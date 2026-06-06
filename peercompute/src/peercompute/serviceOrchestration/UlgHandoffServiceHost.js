@@ -311,7 +311,17 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     descriptorInterpolationTableComputedFixture: booleanOrNull(interpolationTable.computedFixture),
     descriptorInterpolationTableScientificValidation: booleanOrNull(interpolationTable.scientificValidation),
     descriptorInterpolationTableSampleCount: finiteNumberOrNull(interpolationTable.sampleCount),
+    descriptorInterpolationTableSamplePayloadCount: finiteNumberOrNull(interpolationTable.samplePayloadCount),
     descriptorInterpolationTableContentHash: interpolationTable.contentHash || null,
+    descriptorInterpolationTableCoordinateSystem: interpolationTable.coordinateSystem || null,
+    descriptorInterpolationTableMatchesTensorContract: booleanOrNull(interpolationTable.matchesTensorContract),
+    descriptorInterpolationTableDescriptorBindingReady: booleanOrNull(interpolationTable.descriptorBindingReady),
+    descriptorInterpolationTableTensorRuntimeMatches: booleanOrNull(
+      interpolationTable.tensorRuntimeMatchesInterpolationTable
+    ),
+    descriptorInterpolationTableSampleShapeValidationReady: booleanOrNull(
+      interpolationTable.tensorRuntimeSampleShapeValidationReady
+    ),
     descriptorMoonLabReferenceSuiteReady: booleanOrNull(moonlabReferenceSuite.ready),
     descriptorMoonLabReferenceSuiteStatus: moonlabReferenceSuite.status || null,
     descriptorMoonLabReferenceCount: finiteNumberOrNull(moonlabReferenceSuite.referenceCount),
@@ -329,10 +339,19 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     descriptorTensorRuntimeExecutionClaim: tensorRuntimeContract.executionClaim || null,
     descriptorTensorRuntimeMatchesTensorContract: booleanOrNull(tensorRuntimeContract.matchesTensorContract),
     descriptorTensorRuntimeMatchesInterpolationTable: booleanOrNull(tensorRuntimeContract.matchesInterpolationTable),
+    descriptorTensorRuntimeInterpolationTableId: tensorRuntimeContract.interpolationTableId || null,
+    descriptorTensorRuntimeInterpolationTableContentHash:
+      tensorRuntimeContract.interpolationTableContentHash || null,
+    descriptorTensorRuntimeInterpolationTableSampleCount:
+      finiteNumberOrNull(tensorRuntimeContract.interpolationTableSampleCount),
     descriptorTensorRuntimeSampleShapeValidationStatus:
       tensorRuntimeContract.sampleShapeValidationStatus || null,
     descriptorTensorRuntimeSampleShapeValidatedSampleCount:
       finiteNumberOrNull(tensorRuntimeContract.sampleShapeValidatedSampleCount),
+    descriptorTensorRuntimeSampleShapeValidationMatchesTensorContract:
+      booleanOrNull(tensorRuntimeContract.sampleShapeValidationMatchesTensorContract),
+    descriptorTensorRuntimeSampleShapeValidationReady:
+      booleanOrNull(tensorRuntimeContract.sampleShapeValidationReady),
     descriptorTensorRuntimeScientificValidation: booleanOrNull(tensorRuntimeContract.scientificValidation),
     descriptorTensorRuntimeFullPhysicsValidation: booleanOrNull(tensorRuntimeContract.fullPhysicsValidation),
     descriptorRuntimeStatus: runtimeBinding.runtimeStatus || null,
