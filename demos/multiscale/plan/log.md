@@ -22048,3 +22048,35 @@ User asked whether Infinite Context Coder is being used.
   MHD/PIC/radiation/relativity references and scientific tolerance coverage are
   supplied.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 02:16:20 AKDT - Live ULG analytic reference bridge evidence
+
+### Prompt
+- User asked how things were going and whether the overall implementation plan
+  remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Rechecked the live ULG-to-Multiscale VPN bridge after MoonLab/ULG aligned the
+  analytic `magnetosphere-mhd` observed-delta keys with tolerance keys.
+- Verified Multiscale counts the scoped analytic reference as one ready
+  calibrated scientific reference while keeping full magnetar scientific
+  readiness blocked.
+
+### Validation
+- PASS: ULG `http://100.86.83.35:5173/` and Multiscale
+  `https://100.86.83.35:5185/?scenario=magnetar` both returned `200`.
+- PASS: live browser bridge reported two source artifacts, normalized transfer
+  ready with no transfer blockers, transfer status `transfer-manifest-ready`,
+  tolerance ready `2/5`, tolerance scientific ready `1/5`, calibrated reference
+  ready `1/4`, calibrated scientific ready `1/4`, and
+  `scenarioScientificReady: false`.
+- PASS: the `magnetosphere-mhd-reference` tolerance entry reported
+  `ready: true`, `scientificCoverage: true`, solver id
+  `moonlab-analytic-dipole-field-v0`, validation `pass`, and no blocker.
+
+### Open
+- PIC/radiation/relativity plus full MHD/force-free calibrated references remain
+  missing, so the broad calibrated-reference and scientific-tolerance blockers
+  correctly stay active.
+- No push was attempted.

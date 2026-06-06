@@ -49356,3 +49356,31 @@ User asked whether Infinite Context Coder is being used.
 - Live magnetar remains proxy-only and scientifically blocked on calibrated
   MHD/PIC/radiation/relativity references plus scientific tolerance coverage.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 02:16:20 AKDT - Live ULG analytic reference bridge evidence
+
+### Prompt
+- User asked how things were going and whether the overall implementation plan
+  remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Rechecked the live ULG-to-Multiscale VPN bridge after the producer-side
+  analytic magnetosphere reference delta keys were aligned with tolerance keys.
+- Recorded that Multiscale now counts the scoped analytic MHD reference as one
+  ready calibrated/scientific tolerance entry without promoting full magnetar
+  scientific readiness.
+
+### Validation
+- PASS: ULG `http://100.86.83.35:5173/` and Multiscale
+  `https://100.86.83.35:5185/?scenario=magnetar` both returned `200`.
+- PASS: live browser bridge reported two source artifacts, transfer status
+  `transfer-manifest-ready`, tolerance ready `2/5`, tolerance scientific ready
+  `1/5`, calibrated reference ready `1/4`, calibrated scientific ready `1/4`,
+  a ready `magnetosphere-mhd-reference` entry with no blocker, and
+  `scenarioScientificReady: false`.
+
+### Open
+- PIC/radiation/relativity plus full MHD/force-free calibrated references remain
+  missing, and the scenario remains proxy-only.
+- No push was attempted.
