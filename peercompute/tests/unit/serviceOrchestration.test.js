@@ -10,6 +10,9 @@ import {
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
   ULG_ARTIFACT_RESULT_SCHEMA,
+  ULG_ARTIFACT_SUMMARY_SCHEMA,
+  ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
+  ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
   ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
   ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
@@ -381,9 +384,40 @@ class UlgV05ArtifactServiceHost {
         inputHash: task.capsule.inputHash,
         method: 'moonlab.fixture.quantum-response',
         representation: 'bell-state-probability-vector',
+        responseDescriptor: {
+          schema: ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
+          sample: 'bell_phi_plus',
+          qubitCount: 2,
+          deterministic: true,
+          expectedProbabilities: [0.5, 0, 0, 0.5],
+          observedProbabilities: [0.5, 0, 0, 0.5],
+          invariants: {
+            probabilitySum: 1,
+            normalizationDelta: 0
+          }
+        },
         outputs: {
           probabilities: [0.5, 0, 0, 0.5],
           basis: 'computational'
+        },
+        parity: {
+          schema: ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
+          sample: 'bell_phi_plus',
+          status: 'pass',
+          comparisons: [
+            { mode: 'moonlab-wasm-core', status: 'pass', maxProbabilityError: 0 },
+            {
+              mode: 'moonlab-webgpu',
+              status: 'unsupported',
+              reason: 'moonlab-webgpu-response-kernel-unavailable',
+              maxProbabilityError: null
+            }
+          ],
+          metrics: {
+            maxProbabilityError: 0,
+            normalizationDelta: 0,
+            unsupportedModeCount: 1
+          }
         },
         validation: {
           status: 'pass',
@@ -601,8 +635,20 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   assert.equal(result.status, 'complete');
   assert.equal(result.outputs[0].artifactKind, 'quantum-response');
   assert.equal(result.outputs[0].artifactRefHint, 'ulg:quantum-response:ulg:fixture-result-moonlab-001');
+  assert.equal(result.artifactSummary.schema, ULG_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(result.artifactSummary.responseDescriptorSchema, ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA);
+  assert.equal(result.artifactSummary.responseDescriptorReady, true);
+  assert.equal(result.artifactSummary.paritySchema, ULG_QUANTUM_RESPONSE_PARITY_SCHEMA);
+  assert.equal(result.artifactSummary.parityStatus, 'pass');
+  assert.equal(result.artifactSummary.parityReady, true);
+  assert.equal(result.artifactSummary.parityModeCount, 2);
+  assert.equal(result.artifactSummary.unsupportedParityModeCount, 1);
+  assert.deepEqual(result.artifactSummary.unsupportedParityModes, ['moonlab-webgpu']);
+  assert.equal(result.outputs[0].artifactSummary.parityStatus, 'pass');
   assert.equal(result.artifact.sourceService, 'moonlab');
   assert.equal(result.artifact.taskKind, 'moonlab.quantum.response');
+  assert.equal(result.artifact.responseDescriptor.schema, ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA);
+  assert.equal(result.artifact.parity.schema, ULG_QUANTUM_RESPONSE_PARITY_SCHEMA);
   assert.deepEqual(result.artifact.outputs.probabilities, [0.5, 0, 0, 0.5]);
   assert.equal(result.artifactRef.uri, 'artifact://ulg:fixture-result-moonlab-001');
   assert.equal(result.artifactRef.sourceService, 'moonlab');

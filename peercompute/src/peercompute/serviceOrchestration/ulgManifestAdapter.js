@@ -4,6 +4,9 @@ export const ULG_MANIFEST_ADAPTER_SCHEMA = 'peercompute.ulg.manifest-adapter.v0'
 export const ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA = 'peercompute.ulg.service-contract.v0.5';
 export const ULG_TASK_CAPSULE_ADAPTER_SCHEMA = 'peercompute.ulg.task-capsule-adapter.v0';
 export const ULG_ARTIFACT_RESULT_SCHEMA = 'peercompute.ulg.artifact-result.v0';
+export const ULG_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.ulg.artifact-summary.v0';
+export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
+export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 
 const DEFAULT_PROTOCOL_VERSION = '0.5';
 const TASK_ARTIFACT_KIND = Object.freeze({
@@ -167,6 +170,34 @@ export function normalizeUlgTaskCapsule(capsule = {}, options = {}) {
 
 export const adaptUlgV05TaskCapsule = normalizeUlgTaskCapsule;
 
+export function summarizeUlgArtifact(artifactKind, artifact = {}) {
+  const validationStatus = artifact.validation?.status || artifact.validationStatus || null;
+  const parity = artifact.parity && typeof artifact.parity === 'object' ? artifact.parity : null;
+  const responseDescriptor = artifact.responseDescriptor && typeof artifact.responseDescriptor === 'object'
+    ? artifact.responseDescriptor
+    : null;
+  const parityComparisons = Array.isArray(parity?.comparisons) ? parity.comparisons : [];
+  const unsupportedParityModeCount = parityComparisons.filter((entry) => entry?.status === 'unsupported').length;
+  return {
+    schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+    artifactKind,
+    artifactId: artifact.artifactId || artifact.closureId || null,
+    sourceService: artifact.sourceService || null,
+    validationStatus,
+    responseDescriptorSchema: responseDescriptor?.schema || null,
+    responseDescriptorReady: responseDescriptor?.schema === ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
+    paritySchema: parity?.schema || null,
+    parityStatus: parity?.status || null,
+    parityReady: parity?.schema === ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
+    parityModeCount: parityComparisons.length,
+    unsupportedParityModeCount,
+    unsupportedParityModes: parityComparisons
+      .filter((entry) => entry?.status === 'unsupported')
+      .map((entry) => String(entry.mode || '').trim())
+      .filter(Boolean)
+  };
+}
+
 export function createUlgArtifactResult(task = {}, artifact = {}, options = {}) {
   const capsule = task.capsule || task;
   const serviceId = normalizeId(task.serviceId || capsule.serviceId, 'serviceId');
@@ -188,6 +219,7 @@ export function createUlgArtifactResult(task = {}, artifact = {}, options = {}) 
     throw new Error(`ULG ${artifactKind} artifact requires a contentHash`);
   }
   const artifactBody = clonePlain(artifact);
+  const artifactSummary = summarizeUlgArtifact(artifactKind, artifactBody);
 
   return {
     schema: ULG_ARTIFACT_RESULT_SCHEMA,
@@ -200,8 +232,10 @@ export function createUlgArtifactResult(task = {}, artifact = {}, options = {}) 
       ...clonePlain(output),
       artifactKind,
       contentHash,
-      artifactRefHint: `ulg:${artifactKind}:${contentHash}`
+      artifactRefHint: `ulg:${artifactKind}:${contentHash}`,
+      artifactSummary
     }],
+    artifactSummary,
     artifact: {
       ...artifactBody,
       schema: artifactBody.schema || output.artifactSchema || `${artifactKind}.artifact.v0.5`,

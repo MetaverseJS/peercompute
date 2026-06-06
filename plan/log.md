@@ -2,6 +2,42 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 17:42:00 AKDT - ULG artifact summary bridge
+
+### Prompt
+- Continued the ULG implementation plan after adding MoonLab quantum-response descriptor/parity metadata in `/home/cos/projects/ulg`.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-05 17:42:00 AKDT`.
+
+### Actions
+- Updated the ULG v0.5 service-orchestration adapter so `createUlgV05ArtifactResult()` emits `peercompute.ulg.artifact-summary.v0`.
+- The summary preserves artifact validation status, quantum-response descriptor schema/readiness, parity schema/status, parity comparison count, unsupported parity count, and unsupported parity modes.
+- Exported the new summary and quantum-response schema constants from the service-orchestration public index.
+- Updated the ULG v0.5 adapter unit fixture to include `peercompute.ulg.quantum-response-descriptor.v0` and `peercompute.ulg.quantum-response-parity.v0` metadata, matching the ULG app's new artifact shape.
+- Updated roadmap/test-plan docs.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+
+### Test Results
+- PASS: syntax checks completed for the adapter, service-orchestration index, and focused unit test.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `7/7` tests passing.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The summary reports current MoonLab WebGPU parity as unsupported; it does not implement the missing MoonLab WebGPU kernel.
+
 ## 2026-06-05 17:29:25 AKDT - Remote solver cadence promotion handoff
 
 ### Prompt
