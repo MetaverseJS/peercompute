@@ -49270,3 +49270,89 @@ User asked whether Infinite Context Coder is being used.
   not yet emit real MHD/PIC/radiation/relativity `outputs.references[]`
   contracts. Live magnetar remains proxy-only and scientifically blocked.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 01:47:03 AKDT - Multiscale ULG transfer-manifest packet ingest
+
+### Prompt
+- User asked how things were going and whether the work remained on track with
+  the overall plan.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Continued the PeerCompute/ULG/MoonLab/Eshkol magnetar handoff plan from the
+  prior local checkpoints.
+- Added `peercompute.multiscale.scenario-transfer-manifest.v0` ingestion to the
+  Multiscale magnetar scenario so the normalized ULG handoff transfer manifest
+  is stored on scenario state.
+- Added transfer-manifest status/count summaries to handoff readiness and packet
+  boundary conditions:
+  `scenarioHandoffTransferReady`, `scenarioHandoffTransferStatus`,
+  `scenarioHandoffTransferArtifactCount`,
+  `scenarioHandoffRelaySafeArtifactCount`,
+  `scenarioHandoffTransferredWasmArtifactCount`,
+  `scenarioHandoffTransferredWasmByteLength`, and
+  `scenarioHandoffTransferBlockerCount`.
+- Exposed `ingestScenarioTransferManifest()` on `window.__multiscaleDemo` and
+  made `applyUlgDemoHandoffForScenario()` ingest the aggregate transfer manifest
+  before applying MoonLab calibration and Eshkol closure artifacts.
+- Added the transfer status to the scenario HUD row while preserving
+  `scientificReady: false` as controlled by calibrated-reference/tolerance
+  coverage.
+- Tightened PeerCompute and Multiscale transfer readiness so empty exported
+  handoffs carry `ulg-handoff-artifacts-missing` instead of reporting transfer
+  ready before ULG's artifact cache is populated.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'transfer manifests|magnetar scenario'`
+- `git diff --check`
+- `npm --prefix demos/multiscale run build`
+- `curl -I --max-time 5 http://100.86.83.35:5173/`
+- `curl -k -I --max-time 5 https://100.86.83.35:5185/?scenario=magnetar`
+- Live Playwright bridge from ULG `5173` to Multiscale `5185` using
+  `window.__ulgDemo.createPeerComputeHandoff()` and
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+
+### Validation
+- PASS: all three syntax checks completed.
+- PASS: PeerCompute service-orchestration unit test passed `11/11`, including
+  the empty exported handoff transfer blocker regression.
+- PASS: Multiscale model test invocation passed `180/180`, including the new
+  transfer-manifest regression.
+- PASS: `git diff --check` reported no whitespace errors before the log update.
+- PASS: Multiscale build completed with the existing large-chunk warnings and
+  refreshed the checked-in docs bundle.
+- PASS: ULG `http://100.86.83.35:5173/` and Multiscale
+  `https://100.86.83.35:5185/?scenario=magnetar` both returned `200`.
+- PASS: live browser bridge, after waiting for ULG's MoonLab and Eshkol artifact
+  cache entries, reported two source artifacts, `transfer-manifest-ready`, two
+  relay-safe artifacts, one transferred WASM artifact, `33907` transferred WASM
+  bytes, zero transfer blockers, `scenarioHandoffReady: true`, and
+  `scenarioScientificReady: false`.
+
+### Failures / Open Questions
+- The first live bridge probe exported before ULG's artifact cache had populated
+  and therefore saw zero source artifacts; rerunning with an artifact-cache wait
+  condition produced the expected two-artifact handoff.
+- Live magnetar remains proxy-only and scientifically blocked on calibrated
+  MHD/PIC/radiation/relativity references plus scientific tolerance coverage.
+- No push was attempted; all commits remain local per user instruction.

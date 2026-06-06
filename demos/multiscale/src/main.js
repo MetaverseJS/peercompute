@@ -1365,6 +1365,18 @@ function ingestScenarioClosureModuleProbeReport(report = {}, options = {}) {
   });
 }
 
+function ingestScenarioTransferManifest(manifest = {}, options = {}) {
+  const scenario = model.ingestScenarioTransferManifest(manifest, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    transferManifest: scenario.transferManifest || null,
+    handoffReadiness: scenario.handoffReadiness || null
+  });
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
@@ -1438,6 +1450,12 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
 
 async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
   const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
+  const transfer = normalized.transferManifest
+    ? ingestScenarioTransferManifest(normalized.transferManifest, {
+      ...options,
+      scenarioId: options.scenarioId || 'magnetar'
+    })
+    : null;
   const calibrationArtifact = normalized.readyCalibrationArtifact || normalized.calibrationArtifacts[0] || null;
   const closureArtifact = normalized.readyClosureArtifact || normalized.closureArtifacts[0] || null;
   const calibration = calibrationArtifact
@@ -1464,6 +1482,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
       : null);
   return cloneJson({
     handoff: normalized,
+    transfer,
     calibration,
     closure,
     packet: createUiPacket()
@@ -6397,7 +6416,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / ref ${scenario.handoffReadiness?.referenceInventory?.status || 'reference-pending'} / tol ${scenario.handoffReadiness?.toleranceSuite?.status || 'tolerance-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / exec ${scenario.closureModuleProbe?.hostRuntimeExecution?.status || 'exec-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / ref ${scenario.handoffReadiness?.referenceInventory?.status || 'reference-pending'} / tol ${scenario.handoffReadiness?.toleranceSuite?.status || 'tolerance-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / exec ${scenario.closureModuleProbe?.hostRuntimeExecution?.status || 'exec-pending'} / xfer ${scenario.handoffReadiness?.transferManifest?.status || 'transfer-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -10653,6 +10672,9 @@ window.__multiscaleDemo = {
   },
   ingestScenarioClosureModuleProbeReport(report = {}, options = {}) {
     return ingestScenarioClosureModuleProbeReport(report, options);
+  },
+  ingestScenarioTransferManifest(manifest = {}, options = {}) {
+    return ingestScenarioTransferManifest(manifest, options);
   },
   probeScenarioClosureModule(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, options);

@@ -1147,6 +1147,18 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.ok(blocked.blockers.includes('eshkol-closure-wasm-sha256-missing'));
   assert.equal(blocked.transferReady, false);
   assert.equal(blocked.transferManifest.relaySafeArtifactCount, 0);
+
+  const empty = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    artifactCount: 0,
+    artifacts: []
+  }, { receivedAt: '2026-06-05T23:34:00.000Z' });
+  assert.equal(empty.ready, false);
+  assert.equal(empty.transferReady, false);
+  assert.equal(empty.transferManifest.ready, false);
+  assert.equal(empty.transferManifest.artifactCount, 0);
+  assert.ok(empty.transferBlockers.includes('ulg-handoff-artifacts-missing'));
+  assert.ok(empty.blockers.includes('ulg-handoff-artifacts-missing'));
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

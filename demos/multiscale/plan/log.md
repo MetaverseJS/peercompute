@@ -21993,3 +21993,58 @@ User asked whether Infinite Context Coder is being used.
 - Plain HTTP to the HTTPS `5185` dev server is invalid; use
   `https://100.86.83.35:5185/?scenario=magnetar` for the VPN route.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 01:47:03 AKDT - ULG transfer manifest scenario packet ingest
+
+### Prompt
+- User asked for status and whether the overall implementation plan remained on
+  track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-transfer-manifest.v0` normalization for
+  ULG handoff transfer manifests.
+- Stored transfer manifest status/counts on magnetar scenario state, handoff
+  readiness, and downward packet boundary conditions.
+- Exposed `window.__multiscaleDemo.ingestScenarioTransferManifest()` and made
+  `applyUlgDemoHandoffForScenario()` ingest the aggregate manifest before the
+  calibration/closure handoff path.
+- Added transfer status to the scenario HUD row.
+- Added model coverage proving transfer readiness does not promote magnetar
+  scientific readiness.
+- Added an explicit empty-handoff guard so `ulg-handoff-artifacts-missing`
+  prevents `transfer-manifest-ready` before ULG has cached MoonLab/Eshkol
+  artifacts.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: source/test syntax checks completed.
+- PASS: PeerCompute service-orchestration unit test passed with `11/11`.
+- PASS: Multiscale model invocation passed with `180/180`.
+- PASS: `git diff --check` reported no whitespace errors before this log
+  update.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings.
+- PASS: live ULG-to-Multiscale VPN bridge reported
+  `transfer-manifest-ready`, two relay-safe artifacts, one transferred WASM
+  artifact, `33907` transferred WASM bytes, no transfer blockers,
+  `scenarioHandoffReady: true`, and `scenarioScientificReady: false`.
+
+### Open
+- Live magnetar remains proxy-only and scientifically blocked until calibrated
+  MHD/PIC/radiation/relativity references and scientific tolerance coverage are
+  supplied.
+- No push was attempted; all commits remain local per user instruction.

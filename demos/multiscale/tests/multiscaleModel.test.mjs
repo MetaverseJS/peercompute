@@ -20,6 +20,7 @@ import {
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
+  MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
   MOONLAB_MAGNETAR_REFERENCE_ROLE,
@@ -1917,6 +1918,92 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceScientificReadyCount, 0);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
+});
+
+test('magnetar scenario ingests ULG transfer manifests without promoting scientific readiness', () => {
+  const model = new MultiscaleModel({ seed: 471 });
+  const scenario = model.ingestScenarioTransferManifest({
+    schema: 'peercompute.ulg.handoff-transfer-manifest.v0',
+    sourceSchema: 'peercompute.ulg.demo-handoff.v0',
+    artifactCount: 2,
+    relaySafeArtifactCount: 2,
+    transferredWasmArtifactCount: 1,
+    transferredWasmByteLength: 33907,
+    ready: true,
+    blockers: [],
+    artifacts: [
+      {
+        index: 0,
+        sourceService: 'moonlab',
+        artifactKind: 'quantum-response',
+        artifactRefUri: 'artifact://moonlab/magnetar-calibration',
+        artifactRefHash: 'sha256:moonlab-ref',
+        artifactContentHash: 'sha256:moonlab-content',
+        relaySafe: true,
+        blockers: []
+      },
+      {
+        index: 1,
+        sourceService: 'eshkol',
+        artifactKind: 'closure',
+        artifactRefUri: 'artifact://eshkol/hello-wasm-reference',
+        artifactRefHash: 'sha256:eshkol-ref',
+        artifactContentHash: 'sha256:eshkol-content',
+        wasmTransferMode: 'inline-byte-array',
+        wasmByteLength: 33907,
+        wasmSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+        hasTransferredWasmBytes: true,
+        relaySafe: true,
+        blockers: []
+      }
+    ]
+  });
+
+  assert.equal(scenario.id, 'magnetar');
+  assert.equal(scenario.transferManifest.schema, MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA);
+  assert.equal(scenario.transferManifest.status, 'transfer-manifest-ready');
+  assert.equal(scenario.transferManifest.ready, true);
+  assert.equal(scenario.transferManifest.artifactCount, 2);
+  assert.equal(scenario.transferManifest.relaySafeArtifactCount, 2);
+  assert.equal(scenario.transferManifest.transferredWasmArtifactCount, 1);
+  assert.equal(scenario.transferManifest.transferredWasmByteLength, 33907);
+  assert.equal(scenario.transferManifest.artifacts[1].wasmTransferMode, 'inline-byte-array');
+  assert.equal(scenario.transferManifest.artifacts[1].wasmSha256, 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c');
+  assert.equal(scenario.handoffReadiness.transferManifest.schema, MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA);
+  assert.equal(scenario.handoffReadiness.transferManifest.status, 'transfer-manifest-ready');
+  assert.equal(scenario.handoffReadiness.transferManifest.ready, true);
+  assert.equal(scenario.handoffReadiness.transferManifest.artifactCount, 2);
+  assert.equal(scenario.handoffReadiness.transferManifest.relaySafeArtifactCount, 2);
+  assert.equal(scenario.handoffReadiness.transferManifest.transferredWasmArtifactCount, 1);
+  assert.equal(scenario.handoffReadiness.transferManifest.transferredWasmByteLength, 33907);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferStatus, 'transfer-manifest-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferArtifactCount, 2);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffRelaySafeArtifactCount, 2);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferredWasmArtifactCount, 1);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferredWasmByteLength, 33907);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferBlockerCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+
+  const emptyScenarioModel = new MultiscaleModel({ seed: 472 });
+  const emptyScenario = emptyScenarioModel.ingestScenarioTransferManifest({
+    schema: 'peercompute.ulg.handoff-transfer-manifest.v0',
+    sourceSchema: 'peercompute.ulg.demo-handoff.v0',
+    artifactCount: 0,
+    ready: true,
+    blockers: [],
+    artifacts: []
+  });
+  assert.equal(emptyScenario.transferManifest.ready, false);
+  assert.equal(emptyScenario.transferManifest.status, 'transfer-manifest-missing');
+  assert.ok(emptyScenario.transferManifest.blockers.includes('ulg-handoff-artifacts-missing'));
+  const emptyPacket = emptyScenarioModel.createPacket();
+  assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferReady, false);
+  assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferStatus, 'transfer-manifest-missing');
+  assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferBlockerCount, 1);
 });
 
 test('magnetar scenario keeps tolerance suite partial when calibrated references are incomplete', () => {

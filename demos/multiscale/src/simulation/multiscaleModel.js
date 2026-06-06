@@ -167,6 +167,7 @@ export const MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA = 'peercompute.mult
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.multiscale.scenario-closure-output-semantics-validation.v0';
+export const MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-transfer-manifest.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -280,6 +281,10 @@ function stringOrNull(value) {
   return text || null;
 }
 
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
+}
+
 function plainObjectOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
@@ -355,6 +360,7 @@ function createDefaultScenarioState() {
     calibrationIngest: null,
     closureIngest: null,
     closureModuleProbe: null,
+    transferManifest: null,
     handoffReadiness: createScenarioHandoffReadinessReport({ id: 'default', active: false }),
     validation: {
       status: 'default',
@@ -857,6 +863,70 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
   };
 }
 
+export function createScenarioTransferManifestReport(input = {}, options = {}) {
+  const source = input?.transferManifest && typeof input.transferManifest === 'object'
+    ? input.transferManifest
+    : (input && typeof input === 'object' ? input : {});
+  const artifacts = Array.isArray(source.artifacts)
+    ? source.artifacts
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry, index) => ({
+        index: Number.isFinite(Number(entry.index)) ? Number(entry.index) : index,
+        sourceService: stringOrNull(entry.sourceService),
+        artifactKind: stringOrNull(entry.artifactKind) || 'artifact',
+        artifactRefUri: stringOrNull(entry.artifactRefUri),
+        artifactRefHash: stringOrNull(entry.artifactRefHash),
+        artifactContentHash: stringOrNull(entry.artifactContentHash),
+        wasmTransferMode: stringOrNull(entry.wasmTransferMode),
+        wasmByteLength: finiteOrNull(entry.wasmByteLength),
+        wasmSha256: stringOrNull(entry.wasmSha256),
+        wasmSourceUrl: stringOrNull(entry.wasmSourceUrl),
+        hasTransferredWasmBytes: entry.hasTransferredWasmBytes === true,
+        relaySafe: entry.relaySafe === true,
+        blockers: uniqueStrings(entry.blockers || [])
+      }))
+    : [];
+  const artifactCount = Number.isFinite(Number(source.artifactCount)) ? Number(source.artifactCount) : artifacts.length;
+  const blockers = uniqueStrings([
+    artifactCount > 0 ? null : 'ulg-handoff-artifacts-missing',
+    ...(Array.isArray(source.blockers) ? source.blockers : []),
+    ...artifacts.flatMap((entry) => entry.blockers)
+  ]);
+  const ready = source.ready === true && artifactCount > 0 && blockers.length === 0;
+  const relaySafeArtifactCount = Number.isFinite(Number(source.relaySafeArtifactCount))
+    ? Number(source.relaySafeArtifactCount)
+    : artifacts.filter((entry) => entry.relaySafe).length;
+  const transferredWasmArtifactCount = Number.isFinite(Number(source.transferredWasmArtifactCount))
+    ? Number(source.transferredWasmArtifactCount)
+    : artifacts.filter((entry) => entry.hasTransferredWasmBytes).length;
+  const transferredWasmByteLength = Number.isFinite(Number(source.transferredWasmByteLength))
+    ? Number(source.transferredWasmByteLength)
+    : artifacts.reduce((total, entry) => total + (entry.wasmByteLength || 0), 0);
+  return {
+    schema: MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
+    scenarioId: options.scenarioId || 'magnetar',
+    sourceSchema: source.schema || null,
+    handoffSourceSchema: source.sourceSchema || null,
+    createdAt: source.createdAt || null,
+    receivedAt: source.receivedAt || options.receivedAt || null,
+    artifactCount,
+    relaySafeArtifactCount,
+    transferredWasmArtifactCount,
+    transferredWasmByteLength,
+    ready,
+    status: ready ? 'transfer-manifest-ready' : (artifactCount > 0 ? 'transfer-manifest-pending' : 'transfer-manifest-missing'),
+    artifacts,
+    blockers,
+    validation: {
+      status: ready ? 'transfer-manifest-ready' : 'transfer-manifest-pending',
+      relaySafe: ready,
+      blockerCount: blockers.length,
+      simulationStatus: 'proxy-only',
+      note: 'Transfer manifest validates handoff byte/hash availability for relay-safe transport; it does not imply scientific readiness.'
+    }
+  };
+}
+
 function createScenarioHandoffBlockers({
   scenarioId,
   calibrationReady,
@@ -904,6 +974,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const calibrationIngest = scenario.calibrationIngest || null;
   const closureIngest = scenario.closureIngest || null;
   const closureModuleProbe = scenario.closureModuleProbe || null;
+  const transferManifest = scenario.transferManifest || null;
   const calibrationReady = calibrationIngest?.ready === true || scenario.validation?.calibrationReady === true;
   const closureReady = closureIngest?.ready === true || scenario.validation?.closureReady === true;
   const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
@@ -971,6 +1042,31 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     validationStatus: scenario.validation?.status || (scenarioId === 'default' ? 'default' : 'proxy-only'),
     blockerCount: blockers.length,
     blockers,
+    transferManifest: transferManifest ? {
+      schema: transferManifest.schema || MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
+      ready: transferManifest.ready === true,
+      status: transferManifest.status || (transferManifest.ready === true ? 'transfer-manifest-ready' : 'transfer-manifest-pending'),
+      sourceSchema: transferManifest.sourceSchema || null,
+      handoffSourceSchema: transferManifest.handoffSourceSchema || null,
+      artifactCount: transferManifest.artifactCount ?? null,
+      relaySafeArtifactCount: transferManifest.relaySafeArtifactCount ?? null,
+      transferredWasmArtifactCount: transferManifest.transferredWasmArtifactCount ?? null,
+      transferredWasmByteLength: transferManifest.transferredWasmByteLength ?? null,
+      blockerCount: Array.isArray(transferManifest.blockers) ? transferManifest.blockers.length : 0,
+      blockers: Array.isArray(transferManifest.blockers) ? [...transferManifest.blockers] : []
+    } : {
+      schema: MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
+      ready: false,
+      status: 'transfer-manifest-missing',
+      sourceSchema: null,
+      handoffSourceSchema: null,
+      artifactCount: 0,
+      relaySafeArtifactCount: 0,
+      transferredWasmArtifactCount: 0,
+      transferredWasmByteLength: 0,
+      blockerCount: 0,
+      blockers: []
+    },
     calibrationHandoff: {
       provider: calibrationIngest?.provider || 'moonlab',
       ready: calibrationReady,
@@ -2245,6 +2341,34 @@ export class MultiscaleModel {
         closureModuleProbeReady: probe.ready,
         closureOutputSemanticsStatus: probe.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
         closureOutputSemanticsReady: probe.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
+        simulationStatus: 'proxy-only'
+      }
+    };
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
+    };
+    return this.getScenario();
+  }
+
+  ingestScenarioTransferManifest(manifest = {}, options = {}) {
+    const transferManifest = createScenarioTransferManifestReport(manifest, options);
+    if (options.applyPreset !== false && this.scenario.id !== transferManifest.scenarioId) {
+      this.applyScenarioPreset(transferManifest.scenarioId);
+    }
+    if (this.scenario.id !== transferManifest.scenarioId) {
+      return this.getScenario();
+    }
+    this.scenario = {
+      ...this.scenario,
+      transferManifest,
+      validation: {
+        ...(this.scenario.validation || {}),
+        status: this.scenario.validation?.status || 'proxy-only',
+        transferManifestStatus: transferManifest.status,
+        transferManifestReady: transferManifest.ready,
+        relaySafeArtifactCount: transferManifest.relaySafeArtifactCount,
+        transferredWasmByteLength: transferManifest.transferredWasmByteLength,
         simulationStatus: 'proxy-only'
       }
     };
@@ -7041,6 +7165,13 @@ export class MultiscaleModel {
           scenarioClosureHostRuntimeOutputSemanticsReady: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
           scenarioClosureHostRuntimeOutputSemanticsStatus: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
           scenarioClosureHostRuntimeOutputSemanticScope: scenario.closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.semanticScope || null,
+          scenarioHandoffTransferReady: scenario.handoffReadiness?.transferManifest?.ready === true,
+          scenarioHandoffTransferStatus: scenario.handoffReadiness?.transferManifest?.status || null,
+          scenarioHandoffTransferArtifactCount: scenario.handoffReadiness?.transferManifest?.artifactCount ?? null,
+          scenarioHandoffRelaySafeArtifactCount: scenario.handoffReadiness?.transferManifest?.relaySafeArtifactCount ?? null,
+          scenarioHandoffTransferredWasmArtifactCount: scenario.handoffReadiness?.transferManifest?.transferredWasmArtifactCount ?? null,
+          scenarioHandoffTransferredWasmByteLength: scenario.handoffReadiness?.transferManifest?.transferredWasmByteLength ?? null,
+          scenarioHandoffTransferBlockerCount: scenario.handoffReadiness?.transferManifest?.blockerCount ?? null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

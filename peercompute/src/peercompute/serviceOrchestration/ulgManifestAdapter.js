@@ -680,7 +680,10 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
   ));
   const closureArtifactsWithBytes = closureArtifacts.filter((entry) => entry.hasTransferredWasmBytes);
   const artifactTransfers = artifacts.map((entry) => entry.transfer).filter(Boolean);
-  const transferBlockers = uniqueStrings(artifactTransfers.flatMap((entry) => entry.blockers || []));
+  const transferBlockers = uniqueStrings([
+    artifactTransfers.length > 0 ? null : 'ulg-handoff-artifacts-missing',
+    ...artifactTransfers.flatMap((entry) => entry.blockers || [])
+  ]);
   const transferManifest = {
     schema: ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
     sourceSchema: handoff.schema || null,
@@ -691,7 +694,7 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     transferredWasmArtifactCount: artifactTransfers.filter((entry) => entry.hasTransferredWasmBytes).length,
     transferredWasmByteLength: artifactTransfers.reduce((total, entry) => total + (entry.wasmByteLength || 0), 0),
     artifacts: artifactTransfers,
-    ready: transferBlockers.length === 0,
+    ready: artifactTransfers.length > 0 && transferBlockers.length === 0,
     blockers: transferBlockers
   };
   const blockers = [];
