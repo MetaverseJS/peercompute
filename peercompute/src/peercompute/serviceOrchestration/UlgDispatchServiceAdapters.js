@@ -6,6 +6,7 @@ export const ULG_DISPATCH_SERVICE_ADAPTER_SCHEMA = 'peercompute.ulg.dispatch-ser
 export const ULG_DISPATCH_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.dispatch-service-result.v0';
 export const ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA = 'peercompute.ulg.dispatch-service-telemetry.v0';
 export const ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA = 'peercompute.ulg.dispatch-service-artifact.v0';
+export const ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA = 'peercompute.ulg.dispatch-service-handler-context.v0';
 
 const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
 const ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.ulg.eshkol-host-runtime-execution.v0';
@@ -1438,7 +1439,7 @@ function createIngestSummary(payload = {}, probe = null) {
   };
 }
 
-function createResultArtifact({ manifest, task, payload, ingest, validation, lease, probe }) {
+function createResultArtifact({ manifest, task, payload, ingest, validation, lease, probe, serviceOutput }) {
   return {
     schema: ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA,
     artifactKind: `${payload.sourceService || 'ulg'}-dispatch-ingest`,
@@ -1461,8 +1462,40 @@ function createResultArtifact({ manifest, task, payload, ingest, validation, lea
       count: lease.count
     } : null,
     probe: clonePlain(probe),
+    serviceOutput: clonePlain(serviceOutput),
     artifactPayload: clonePlain(payload)
   };
+}
+
+function normalizeDispatchHandlerOutput(output) {
+  if (output == null) {
+    return {
+      output: null,
+      ready: true,
+      blockers: []
+    };
+  }
+  const body = output && typeof output === 'object' ? clonePlain(output) : { value: output };
+  const blockers = uniqueStrings(Array.isArray(body.blockers) ? body.blockers : []);
+  const status = stringOrNull(body.serviceStatus || body.status);
+  const ready = body.ready !== false
+    && status !== 'blocked'
+    && status !== 'error'
+    && blockers.length === 0;
+  return {
+    output: body,
+    ready,
+    blockers
+  };
+}
+
+function resolveDispatchHandler(options = {}, manifest = {}) {
+  if (typeof options.dispatchHandler === 'function') return options.dispatchHandler;
+  const handlers = options.dispatchHandlers || options.serviceHandlers || {};
+  const expectedSource = normalizeExpectedSource(manifest);
+  return handlers[manifest.serviceId]
+    || handlers[expectedSource]
+    || null;
 }
 
 export class UlgDispatchServiceHost {
@@ -1477,6 +1510,9 @@ export class UlgDispatchServiceHost {
     this.task = null;
     this.validation = null;
     this.probe = null;
+    this.serviceOutput = null;
+    this.serviceHandlerReady = null;
+    this.serviceHandlerBlockers = [];
     this.closed = false;
   }
 
@@ -1512,11 +1548,23 @@ export class UlgDispatchServiceHost {
       return;
     }
     if (message.type === 'lease-granted') {
-      this.#completeTask(message.lease || null);
+      this.#completeTask(message.lease || null).catch((error) => {
+        this.#emit({
+          type: 'task-error',
+          rootTaskId: message.lease?.rootTaskId || this.task?.rootTaskId,
+          error: error?.message || String(error)
+        });
+      });
       return;
     }
     if (message.type === 'lease-denied') {
-      this.#completeTask(null, ['ulg-dispatch-child-lease-denied', message.error]);
+      this.#completeTask(null, ['ulg-dispatch-child-lease-denied', message.error]).catch((error) => {
+        this.#emit({
+          type: 'task-error',
+          rootTaskId: this.task?.rootTaskId,
+          error: error?.message || String(error)
+        });
+      });
       return;
     }
     if (message.type === 'cancel-task') {
@@ -1545,6 +1593,9 @@ export class UlgDispatchServiceHost {
     this.task = task;
     this.validation = validateDispatchPayload(task, this.manifest);
     this.probe = null;
+    this.serviceOutput = null;
+    this.serviceHandlerReady = null;
+    this.serviceHandlerBlockers = [];
     this.#emitHeartbeat('validating-dispatch');
     this.#emit({
       type: 'task-status',
@@ -1594,7 +1645,7 @@ export class UlgDispatchServiceHost {
       && this.manifest.childWorkers?.allowed === true
       && module;
     if (!shouldRequestLease) {
-      this.#completeTask(null);
+      await this.#completeTask(null);
       return;
     }
     this.#emit({
@@ -1614,11 +1665,13 @@ export class UlgDispatchServiceHost {
     });
   }
 
-  #completeTask(lease = null, extraBlockers = []) {
-    const blockers = uniqueStrings([
+  async #completeTask(lease = null, extraBlockers = []) {
+    const baseBlockers = uniqueStrings([
       ...(this.validation?.blockers || []),
       ...extraBlockers
     ]);
+    const handlerBlockers = await this.#runDispatchHandler(lease, baseBlockers);
+    const blockers = uniqueStrings([...baseBlockers, ...handlerBlockers]);
     const ready = this.validation?.ready === true && blockers.length === 0;
     const task = this.task || {};
     if (lease) {
@@ -1664,10 +1717,21 @@ export class UlgDispatchServiceHost {
       acceptedArtifactKinds: clonePlain(this.validation?.acceptedKinds || []),
       adapterProbeSchema: this.probe?.schema || null,
       adapterProbeStatus: this.probe?.status || null,
-      adapterProbeReady: this.probe?.ready === true
+      adapterProbeReady: this.probe?.ready === true,
+      serviceHandlerReady: this.serviceHandlerReady,
+      serviceHandlerBlockers: clonePlain(this.serviceHandlerBlockers || [])
     };
     const artifact = ready && payload
-      ? createResultArtifact({ manifest: this.manifest, task, payload, ingest, validation, lease, probe: this.probe })
+      ? createResultArtifact({
+        manifest: this.manifest,
+        task,
+        payload,
+        ingest,
+        validation,
+        lease,
+        probe: this.probe,
+        serviceOutput: this.serviceOutput
+      })
       : null;
     return {
       schema: ULG_DISPATCH_SERVICE_RESULT_SCHEMA,
@@ -1686,6 +1750,7 @@ export class UlgDispatchServiceHost {
       artifactContentHash: payload.artifactContentHash || null,
       ingest,
       probe: clonePlain(this.probe),
+      serviceOutput: clonePlain(this.serviceOutput),
       validation,
       childLease: lease ? {
         schema: lease.schema,
@@ -1713,10 +1778,59 @@ export class UlgDispatchServiceHost {
         probeSchema: this.probe?.schema || null,
         probeStatus: this.probe?.status || null,
         probeReady: this.probe?.ready === true,
-        blockers: clonePlain(this.validation?.blockers || []),
+        serviceHandlerReady: this.serviceHandlerReady,
+        blockers: uniqueStrings([
+          ...(this.validation?.blockers || []),
+          ...(this.serviceHandlerBlockers || [])
+        ]),
         activeLeaseId: lease?.leaseId || null
       }
     });
+  }
+
+  async #runDispatchHandler(lease = null, blockers = []) {
+    this.serviceOutput = null;
+    this.serviceHandlerReady = null;
+    this.serviceHandlerBlockers = [];
+    if (blockers.length > 0 || this.validation?.ready !== true) return [];
+    const handler = resolveDispatchHandler(this.options, this.manifest);
+    if (typeof handler !== 'function') return [];
+    const task = this.task || {};
+    const payload = this.validation.payload || task.artifactPayload || {};
+    const ingest = createIngestSummary(payload, this.probe);
+    const context = {
+      schema: ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA,
+      serviceId: this.manifest.serviceId,
+      sourceService: payload.sourceService || normalizeExpectedSource(this.manifest),
+      artifactKind: payload.artifactKind || null,
+      taskKind: task.taskKind || null,
+      manifest: clonePlain(this.manifest),
+      task: clonePlain(task),
+      payload: clonePlain(payload),
+      validation: clonePlain(this.validation),
+      probe: clonePlain(this.probe),
+      ingest: clonePlain(ingest),
+      lease: clonePlain(lease)
+    };
+    try {
+      const output = await handler(context);
+      const normalized = normalizeDispatchHandlerOutput(output);
+      this.serviceOutput = normalized.output;
+      this.serviceHandlerReady = normalized.ready;
+      this.serviceHandlerBlockers = normalized.ready
+        ? []
+        : uniqueStrings(['ulg-dispatch-service-handler-blocked', ...normalized.blockers]);
+      return this.serviceHandlerBlockers;
+    } catch (error) {
+      this.serviceOutput = {
+        schema: 'peercompute.ulg.dispatch-service-handler-error.v0',
+        ready: false,
+        error: error?.message || String(error)
+      };
+      this.serviceHandlerReady = false;
+      this.serviceHandlerBlockers = ['ulg-dispatch-service-handler-error'];
+      return this.serviceHandlerBlockers;
+    }
   }
 
   #emit(data) {

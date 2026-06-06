@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 13:08:13 AKDT
+Updated: 2026-06-06 13:16:06 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -62,6 +62,12 @@ Updated: 2026-06-06 13:08:13 AKDT
   `npm --prefix demos/multiscale run test:ulg-handoff` verifies the ULG launcher,
   Multiscale origin filtering, browser ack state, `handoff-ready` readiness,
   magnetar proxy visibility, and canonical suite/source/WASM hashes.
+- `UlgDispatchServiceHost` now supports handler-backed service adapters through
+  `peercompute.ulg.dispatch-service-handler-context.v0`. Real MoonLab/Eshkol
+  implementations can consume the same validated materialized dispatch payload,
+  probe, ingest summary, task, manifest, and lease context, then attach service
+  output to the standard dispatch result/artifact without changing the durable
+  ULG handoff envelope.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -131,10 +137,16 @@ Updated: 2026-06-06 13:08:13 AKDT
   drift even when the interpolation table itself still reports
   `computed-fixture`: mismatched runtime table hashes and mismatched
   sample-shape tensor ids add explicit blockers before descriptor acceptance.
+- Handler-backed dispatch regression proves both MoonLab and Eshkol dispatch
+  hosts receive `peercompute.ulg.handoff-dispatch-artifact-payload.v0` through
+  `peercompute.ulg.dispatch-service-handler-context.v0`, preserve probe/ingest
+  status, and store handler service output in the standard dispatch artifact.
 - `git diff --check` passed.
 
 ## Next
 - Replace descriptor-bound fixture acceptance with execution/table-probe logic
   once the closure runtime contract can produce non-fixture table evidence.
+- Wire concrete MoonLab/Eshkol production handlers into the handler-backed
+  dispatch host once those services expose their runtime entry points.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

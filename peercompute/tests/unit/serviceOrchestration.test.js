@@ -11,6 +11,7 @@ import {
   ChildWorkerLeaseManager,
   ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
   ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA,
+  ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA,
   ULG_DISPATCH_SERVICE_RESULT_SCHEMA,
   ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA,
   ULG_ARTIFACT_RESULT_SCHEMA,
@@ -1881,6 +1882,35 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
     eshkol: 'eshkol-ulg-fixture',
     moonlab: 'moonlab-ulg-fixture'
   };
+  const handlerCalls = [];
+  const dispatchHandler = async (context) => {
+    handlerCalls.push({
+      schema: context.schema,
+      serviceId: context.serviceId,
+      sourceService: context.sourceService,
+      artifactKind: context.artifactKind,
+      taskKind: context.taskKind,
+      payloadSchema: context.payload.schema,
+      probeSchema: context.probe.schema,
+      probeStatus: context.probe.status,
+      ingestSchema: context.ingest.schema,
+      wasmByteLength: context.payload.wasmByteLength ?? null,
+      leaseId: context.lease?.leaseId || null
+    });
+    return {
+      schema: 'peercompute.ulg.real-service-adapter-output-fixture.v0',
+      status: 'accepted',
+      ready: true,
+      serviceId: context.serviceId,
+      sourceService: context.sourceService,
+      artifactKind: context.artifactKind,
+      taskKind: context.taskKind,
+      payloadSchema: context.payload.schema,
+      probeStatus: context.probe.status,
+      ingestSchema: context.ingest.schema,
+      wasmByteLength: context.payload.wasmByteLength ?? null
+    };
+  };
   const handoffManifest = normalizeComputeServiceManifest(createUlgHandoffServiceManifest({
     serviceId: 'ulg-handoff-registry-fixture'
   }));
@@ -1907,7 +1937,12 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
           serviceExecutor
         });
       }
-      return new UlgDispatchServiceHost(serviceManifest);
+      return new UlgDispatchServiceHost(serviceManifest, {
+        dispatchHandlers: {
+          moonlab: dispatchHandler,
+          eshkol: dispatchHandler
+        }
+      });
     }
   });
 
@@ -1935,12 +1970,17 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.magnetarDipoleIsingReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.schema, 'peercompute.ulg.moonlab-dispatch-payload-probe.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.ready, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.payloadSchema, ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.probeStatus, 'pass');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.validation.serviceHandlerReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceStatus, 'accepted');
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.probeStatus, 'pass');
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.magnetarDipoleIsingReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.hostRuntimeExecutionReady, null);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceArtifactRef.sourceService, 'moonlab-ulg-fixture');
   assert.equal(
     result.dispatchResult.results[0].output.serviceTask.artifactPayload.schema,
@@ -1962,6 +2002,11 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.schema, 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.status, 'skipped-short-wasm-header');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.ready, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.serviceOutput.payloadSchema, ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.serviceOutput.probeStatus, 'skipped-short-wasm-header');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.serviceOutput.wasmByteLength, 4);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.validation.serviceHandlerReady, true);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.moduleCompiled, false);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.probeStatus, 'skipped-short-wasm-header');
@@ -1970,6 +2015,7 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.closureOutputSemanticsReady, true);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.wasmByteLength, 4);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.artifact.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
   assert.equal(result.dispatchResult.results[1].output.serviceArtifactRef.sourceService, 'eshkol-ulg-fixture');
   assert.equal(
     result.dispatchResult.results[1].output.serviceTask.artifactPayload.schema,
@@ -1985,6 +2031,18 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   );
   assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.hasTransferredWasmBytes, true);
   assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.wasmByteLength, 4);
+  assert.equal(handlerCalls.length, 2);
+  assert.deepEqual(handlerCalls.map((entry) => entry.schema), [
+    ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA,
+    ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA
+  ]);
+  assert.deepEqual(handlerCalls.map((entry) => entry.sourceService), ['moonlab', 'eshkol']);
+  assert.deepEqual(handlerCalls.map((entry) => entry.payloadSchema), [
+    ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+    ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA
+  ]);
+  assert.deepEqual(handlerCalls.map((entry) => entry.probeStatus), ['pass', 'skipped-short-wasm-header']);
+  assert.equal(handlerCalls[1].wasmByteLength, 4);
 
   const telemetry = supervisor.getTreeTelemetry();
   assert.deepEqual(telemetry.services.map((entry) => entry.serviceId).sort(), [

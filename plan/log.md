@@ -51166,3 +51166,53 @@ timeout 8s env \
 - This is still descriptor-bound fixture acceptance, not full-fidelity
   magnetar closure execution or non-fixture table generation.
 - No push was attempted.
+
+## 2026-06-06 13:16:06 AKDT - Handler-backed ULG dispatch adapters
+
+### Prompt
+- Continue the local-only ULG/PeerCompute/MoonLab/Eshkol magnetar plan.
+
+### Actions
+- Added `peercompute.ulg.dispatch-service-handler-context.v0` as the stable
+  context passed from `UlgDispatchServiceHost` into real service handlers.
+- Added `dispatchHandler` / `dispatchHandlers` support to
+  `UlgDispatchServiceHost`. Handlers run only after existing dispatch payload
+  validation and source-specific adapter probes pass.
+- The handler context carries cloned manifest, task, materialized payload,
+  validation, probe, ingest summary, and optional child lease, so concrete
+  MoonLab/Eshkol service implementations can consume the current durable
+  dispatch shape without changing ULG handoff envelopes.
+- Handler output is normalized and stored on both the service result and the
+  cached `peercompute.ulg.dispatch-service-artifact.v0`; handler blockers or
+  errors block through the normal dispatch-service result path.
+- Extended the registry-backed handoff dispatch regression so both MoonLab and
+  Eshkol dispatch hosts receive the handler context and attach handler service
+  output while preserving the existing probe/ingest summaries.
+- Rebuilt the Multiscale docs bundle.
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host submits dispatches to registered Eshkol and MoonLab services|ULG handoff service host dispatches descriptor-only Eshkol closures without WASM bytes|descriptor probe blocks tensor runtime table binding drift'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale test`
+- `npm --prefix demos/multiscale run build`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused dispatch/descriptor run passed `23/23`.
+- PASS: full service-orchestration test passed `23/23`.
+- PASS: Multiscale test suite passed `195/195`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live ULG browser handoff smoke passed against `127.0.0.1:5173` and
+  `127.0.0.1:5185`, with `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, and the
+  visible magnetar proxy on the solar layer.
+
+### Open
+- This is the adapter entry point for real services; it does not yet wire actual
+  MoonLab WebGPU or Eshkol closure-runtime production handlers.
+- No push was attempted.

@@ -862,6 +862,15 @@
   `descriptorRuntimeDeclaredNotExecuted = true`, and no host/scientific
   execution claim.
 
+- Handler-backed dispatch adapter gate:
+  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host submits dispatches to registered Eshkol and MoonLab services'`.
+: expected result is a full pass proving registered MoonLab/Eshkol dispatch
+  hosts can attach `dispatchHandlers`, receive
+  `peercompute.ulg.dispatch-service-handler-context.v0` with the materialized
+  `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, preserve probe and
+  ingest status, and store handler service output in the standard dispatch
+  result and cached dispatch artifact.
+
 - Focused Node gate:
   `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence requirements|runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|magnetar scenario records proxy runtime evidence|magnetar scenario creates bounded proxy runtime evidence manifest|magnetar scientific runtime gate accepts explicit validated runtime evidence'`.
 : expected result is a full pass proving
