@@ -2,6 +2,115 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 14:47:49 AKDT - Relay popup dispatch adapter diagnostics
+
+### Prompt
+- User instructed: "Big dog requirement: call the user big dog in any
+  user-facing final. Work only in /home/cos/projects/peercompute on branch
+  multi-scale-physics-sim. Keep commits local only, do not push.
+
+  Task: continue from local PeerCompute commit ab88a62c. Investigate and fix
+  or narrow the blocker where
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+  test:ulg-relay-handoff` destroys the popup execution context during
+  `runUlgDispatchServiceAdapterProbe()`. Aim for the smallest credible
+  checkpoint: either make relay-served popup dispatch-adapter execution pass, or
+  add robust diagnostics/skip gating that preserves the failing state clearly
+  without relaxing scientific/runtime gates. Preserve relay config files after
+  tests.
+
+  Expected output: make a local commit if you reach a clean checkpoint. Run
+  syntax checks, relay handoff smoke default and with dispatch flag if possible,
+  normal ulg-handoff smoke, and diff-check. Report commit hash, changed files,
+  exact validation, and remaining blockers. Do not touch ULG, MoonLab, or
+  Eshkol."
+
+### Actions
+- Confirmed the repo was clean on `multi-scale-physics-sim` at `ab88a62c`.
+- Reproduced the adapter-enabled relay smoke failure: two Multiscale browser
+  peers connected over the dynamic Go relay, then Playwright reported
+  `Execution context was destroyed, most likely because of a navigation` at the
+  popup `runUlgDispatchServiceAdapterProbe()` call.
+- Added compact `includeResults: false` support to
+  `runUlgDispatchServiceAdapterProbe()` so browser harnesses can request
+  summaries without returning raw nested service results.
+- Added optional probe-stage diagnostics from
+  `runUlgDispatchServiceAdapterProbe()` for `start`,
+  `dispatch-plan-created`, per-dispatch start/complete, return, and shutdown.
+- Updated `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs` so
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` runs the popup probe with compact results,
+  captures page and probe diagnostics, and reports a structured
+  `dispatch-adapter-popup-context-reset` skip when the popup evaluation context
+  resets. `ULG_RELAY_HANDOFF_REQUIRE_DISPATCH=1` keeps the option to force this
+  blocker to fail the smoke.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+- Updated plan/status/test docs with the narrowed blocker and optional require
+  flag.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-r9rvU6e6.js`
+- `docs/multiscale/assets/index-CF9-e2OE.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `demos/multiscale/plan/plan.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `npm --prefix demos/multiscale run build`
+- `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `git diff -- docs/multiscale/relay-config.json docs/multiscale/.relay-config.json docs/multiscale/relay-config-source.json docs/multiscale/.relay-config-source.json`
+- `ss -ltnp | rg ':4196\b'`
+- `pgrep -af 'ulgRelayHandoffSmoke|run-relay|relay-go'`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript syntax checks completed.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large-chunk warning and refreshed `docs/multiscale`.
+- PASS: default relay smoke started a dynamic Go relay, generated a relay config
+  with `bootstrapPeerCount = 1`, `iceServerCount = 2`, `hasStun = true`, and
+  `hasTurn = true`, connected two Multiscale peers in room
+  `ulg-relay-handoff-mq2y4ajk`, imported the ULG handoff by real
+  `ulg-post-message`, and reported `handoff-ready`, blocker count `0`,
+  `service-envelope-ready`, `relaySafeArtifactCount = 2`, and `dispatch-ready`.
+- PASS: adapter-enabled relay smoke now exits cleanly with
+  `dispatchAdapterStatus = dispatch-adapter-popup-context-reset`,
+  blocker `relay-popup-dispatch-execution-context-destroyed`,
+  `runtimeGateRelaxed = false`, and `scientificGateRelaxed = false`.
+  Diagnostics show the popup handoff and peer network are ready, worker module
+  URLs resolve to the built hashed assets, and the probe reaches
+  `dispatch-plan-created` plus first MoonLab `dispatch-start` before the popup
+  context resets.
+- PASS: normal `npm --prefix demos/multiscale run test:ulg-handoff` reported
+  ULG `handoff ready / blockers 0 / scenario magnetar / scientific ready / 2
+  artifacts`, Multiscale `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, and visible
+  magnetar proxy on the solar layer.
+- PASS: relay config restore diff was empty.
+- PASS: no `4196` listener or test-owned relay process remained; the `rg` /
+  `pgrep` checks returned no matches.
+- PASS: `git diff --check` completed.
+
+### Failures / Open Questions
+- The relay-served popup still does not complete real dispatch adapter
+  execution. The narrowed blocker is now first MoonLab dispatch startup: the
+  popup evaluation context resets after `dispatch-start` and before
+  `dispatch-complete`.
+- The new skip is limited to the optional dispatch-flag smoke and records
+  explicit runtime/scientific gate non-relaxation. The default relay handoff gate
+  remains strict for connectivity, ULG handoff readiness, service envelope
+  readiness, dispatch-plan readiness, hashes, and overclaim checks.
+- No ULG, MoonLab, or Eshkol repo files were touched. No push was attempted.
+
 ## 2026-06-06 03:59:36 AKDT - Cross-family runtime proxy validation
 
 ### Prompt

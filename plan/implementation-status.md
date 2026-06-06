@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 14:31:50 AKDT
+Updated: 2026-06-06 14:47:49 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -36,6 +36,9 @@ Updated: 2026-06-06 14:31:50 AKDT
   `serviceResultSummaries[]` with compact per-dispatch identity, ingest/probe
   status, host-runtime probe/execution, and output-semantics validation fields,
   while intentionally excluding artifact bodies and transferred WASM bytes.
+- Multiscale `runUlgDispatchServiceAdapterProbe()` now supports compact
+  `includeResults: false` raw-result omission and emits optional stage
+  diagnostics for browser relay harnesses.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
@@ -172,6 +175,14 @@ Updated: 2026-06-06 14:31:50 AKDT
   verified `handoff-ready`, `service-envelope-ready`, `relaySafeArtifactCount=2`,
   `dispatch-ready`, canonical MoonLab/Eshkol hashes, and clean relay-config
   restoration after teardown.
+- Adapter-enabled relay smoke now exits cleanly as a diagnostic skip:
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+  test:ulg-relay-handoff` records
+  `dispatchAdapterStatus = dispatch-adapter-popup-context-reset`,
+  `relay-popup-dispatch-execution-context-destroyed`,
+  `runtimeGateRelaxed = false`, and `scientificGateRelaxed = false`. The probe
+  reaches `dispatch-plan-created` and first MoonLab `dispatch-start` with
+  resolved hashed worker module URLs before the popup context resets.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host
@@ -184,9 +195,8 @@ Updated: 2026-06-06 14:31:50 AKDT
   once the closure runtime contract can produce non-fixture table evidence.
 - Wire concrete MoonLab/Eshkol production handlers into the handler-backed
   dispatch host once those services expose their runtime entry points.
-- Promote the new relay-backed ULG/Multiscale handoff smoke from durable
-  envelope/dispatch-plan coverage to full browser dispatch-adapter execution
-  once the relay-served popup no longer destroys the execution context during
-  `runUlgDispatchServiceAdapterProbe()`.
+- Fix the remaining relay-served popup adapter blocker: the optional dispatch
+  probe resets the popup evaluation context after first MoonLab
+  `dispatch-start` and before `dispatch-complete`.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

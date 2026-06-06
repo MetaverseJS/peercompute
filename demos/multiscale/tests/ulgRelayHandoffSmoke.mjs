@@ -19,6 +19,7 @@ const relayConfigTimeoutMs = Number(process.env.RELAY_CONFIG_TIMEOUT_MS || 60000
 const chromeBin = process.env.CHROME_BIN || '/bin/google-chrome';
 const headless = process.env.HEADLESS !== '0';
 const runDispatchAdapters = process.env.ULG_RELAY_HANDOFF_RUN_DISPATCH === '1';
+const requireDispatchAdapters = process.env.ULG_RELAY_HANDOFF_REQUIRE_DISPATCH === '1';
 const relayTurnHost = process.env.RELAY_TURN_HOST || 'secretworkshop.net';
 const relayTurnPort = process.env.RELAY_TURN_PORT || '3478';
 const relayTurnUsername = process.env.RELAY_TURN_USERNAME || 'peer';
@@ -414,6 +415,120 @@ async function readRelayConfigSummary(relayConfigPath) {
   };
 }
 
+function dispatchContextWasDestroyed(error) {
+  const message = error?.message || String(error || '');
+  return /Execution context was destroyed|Target closed|Page closed|crash/i.test(message);
+}
+
+async function readDispatchPageSnapshot(page) {
+  if (!page || page.isClosed()) {
+    return { closed: true };
+  }
+  const url = page.url();
+  try {
+    return await page.evaluate(() => ({
+      closed: false,
+      url: window.location.href,
+      readyState: document.readyState,
+      peerNetwork: (() => {
+        const status = window.__multiscaleDemo?.getPeerNetworkStatus?.();
+        return status ? {
+          state: status.state || null,
+          isStarted: status.isStarted === true,
+          networkConnected: status.networkConnected === true,
+          peerId: status.peerId || null,
+          roomId: status.roomId || null,
+          bootstrapPeerCount: status.bootstrapPeerCount ?? null,
+          connectedPeerIds: Array.isArray(status.connectedPeerIds) ? status.connectedPeerIds : []
+        } : null;
+      })(),
+      handoffImport: (() => {
+        const state = window.__multiscaleDemo?.getUlgBrowserHandoffImportState?.();
+        return state ? {
+          handoffId: state.handoffId || null,
+          importing: state.importing === true,
+          ackStatus: state.ack?.status || null,
+          ackBlockerCount: state.ack?.blockerCount ?? null,
+          ackSimulationStatus: state.ack?.simulationStatus || null
+        } : null;
+      })(),
+      workerModules: window.__multiscaleDemo?.getUlgDispatchServiceWorkerModules?.() || null
+    }));
+  } catch (error) {
+    return {
+      closed: false,
+      url,
+      snapshotError: error?.message || String(error)
+    };
+  }
+}
+
+async function runPopupDispatchAdapterProbe(popup, handoff) {
+  const events = [];
+  const record = (event = {}) => {
+    events.push({
+      at: Date.now(),
+      ...event
+    });
+  };
+  const bindingName = `__recordUlgRelayDispatchDiagnostic_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2)}`;
+  popup.on('framenavigated', (frame) => record({
+    type: 'framenavigated',
+    isMainFrame: frame === popup.mainFrame(),
+    url: frame.url()
+  }));
+  popup.on('close', () => record({ type: 'page-close' }));
+  popup.on('crash', () => record({ type: 'page-crash' }));
+  await popup.exposeFunction(bindingName, (event) => record({
+    type: 'probe-diagnostic',
+    ...event
+  }));
+  const before = await readDispatchPageSnapshot(popup);
+  try {
+    const probe = await popup.evaluate(({ payload, recorder }) => {
+      const onDiagnostic = (event = {}) => {
+        const recordDiagnostic = window[recorder];
+        if (typeof recordDiagnostic === 'function') {
+          recordDiagnostic(event);
+        }
+      };
+      return window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe(payload, {
+        scenarioId: 'magnetar',
+        includeResults: false,
+        onDiagnostic
+      });
+    }, {
+      payload: handoff,
+      recorder: bindingName
+    });
+    return { probe, diagnostic: null };
+  } catch (error) {
+    if (!dispatchContextWasDestroyed(error)) {
+      throw error;
+    }
+    const after = await readDispatchPageSnapshot(popup);
+    return {
+      probe: null,
+      diagnostic: {
+        schema: 'peercompute.multiscale.ulg-relay-dispatch-adapter-diagnostic.v0',
+        status: 'dispatch-adapter-popup-context-reset',
+        ready: false,
+        skipped: true,
+        blockerCount: 1,
+        blockers: ['relay-popup-dispatch-execution-context-destroyed'],
+        runtimeGateRelaxed: false,
+        scientificGateRelaxed: false,
+        error: error?.message || String(error),
+        before,
+        after,
+        events
+      }
+    };
+  }
+}
+
 async function main() {
   checkDocsBuild();
 
@@ -523,13 +638,11 @@ async function main() {
       };
     }, handoff);
 
-    const dispatchProbe = runDispatchAdapters
-      ? await popup.evaluate((payload) => (
-        window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe(payload, {
-          scenarioId: 'magnetar'
-        })
-      ), handoff)
-      : null;
+    const dispatchRun = runDispatchAdapters
+      ? await runPopupDispatchAdapterProbe(popup, handoff)
+      : { probe: null, diagnostic: null };
+    const dispatchProbe = dispatchRun.probe;
+    const dispatchDiagnostic = dispatchRun.diagnostic;
 
     const scientificScopeFlags = dispatchProbe
       ? dispatchProbe.serviceResultSummaries
@@ -554,6 +667,16 @@ async function main() {
     if (dispatchProbe) {
       assert.equal(dispatchProbe.status, 'dispatch-adapters-ready');
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
+      assert.equal(dispatchProbe.rawResultsOmitted, true);
+    } else if (runDispatchAdapters) {
+      assert.equal(dispatchDiagnostic.status, 'dispatch-adapter-popup-context-reset');
+      assert.equal(dispatchDiagnostic.ready, false);
+      assert.equal(dispatchDiagnostic.runtimeGateRelaxed, false);
+      assert.equal(dispatchDiagnostic.scientificGateRelaxed, false);
+      assert.deepEqual(dispatchDiagnostic.blockers, ['relay-popup-dispatch-execution-context-destroyed']);
+      if (requireDispatchAdapters) {
+        throw new Error(`Required dispatch adapter execution failed: ${JSON.stringify(dispatchDiagnostic, null, 2)}`);
+      }
     }
     assert.equal(servicePlanProbe.readiness.status, 'handoff-ready');
     assert.equal(servicePlanProbe.readiness.blockerCount, 0);
@@ -588,9 +711,10 @@ async function main() {
         envelopeStatus: servicePlanProbe.envelope.status,
         relaySafeArtifactCount: servicePlanProbe.envelope.relaySafeArtifactCount,
         dispatchPlanStatus: servicePlanProbe.dispatchPlan.status,
-        dispatchAdapterStatus: dispatchProbe?.status || 'skipped',
+        dispatchAdapterStatus: dispatchProbe?.status || dispatchDiagnostic?.status || 'skipped',
         acceptedDispatchCount: dispatchProbe?.acceptedDispatchCount ?? null,
         dispatchAdapterProbeEnabled: runDispatchAdapters,
+        dispatchAdapterDiagnostic: dispatchDiagnostic,
         scientificScopeFlags
       }
     }, null, 2));

@@ -1,5 +1,82 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-06 14:47:49 AKDT - Relay popup dispatch adapter diagnostics
+
+### Prompt
+User asked to work only in `/home/cos/projects/peercompute` on branch
+`multi-scale-physics-sim`, continue from commit `ab88a62c`, keep commits local,
+do not push, do not touch ULG/MoonLab/Eshkol, and investigate/fix or narrow the
+relay handoff blocker where
+`ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+test:ulg-relay-handoff` destroys the popup execution context during
+`runUlgDispatchServiceAdapterProbe()`. User asked for a local commit at a clean
+checkpoint, syntax checks, relay smoke default and dispatch-flag runs, normal
+ULG handoff smoke, diff-check, preserved relay config files, changed files,
+commit hash, validation, and remaining blockers.
+
+### Actions
+- Reproduced the adapter-enabled relay smoke context reset at the popup
+  `runUlgDispatchServiceAdapterProbe()` call after two Multiscale peers had
+  connected through the dynamic Go relay.
+- Added `includeResults: false` support to
+  `runUlgDispatchServiceAdapterProbe()` so harnesses can request compact
+  service summaries instead of raw nested dispatch results.
+- Added optional probe-stage diagnostics from the Multiscale browser API.
+- Updated the relay handoff smoke so `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` captures
+  popup peer/handoff state, resolved dispatch worker module URLs, probe stages,
+  and a structured `dispatch-adapter-popup-context-reset` diagnostic. The
+  optional `ULG_RELAY_HANDOFF_REQUIRE_DISPATCH=1` flag still makes this blocker
+  fatal for focused adapter debugging.
+- Rebuilt `docs/multiscale` and updated the Multiscale/top-level plan docs.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-r9rvU6e6.js`
+- `docs/multiscale/assets/index-CF9-e2OE.js`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-relay-handoff` reported
+  relay config `bootstrapPeerCount = 1`, `iceServerCount = 2`, `hasStun =
+  true`, `hasTurn = true`, two peers connected in room
+  `ulg-relay-handoff-mq2y4ajk`, `handoff-ready`, blocker count `0`,
+  `service-envelope-ready`, `relaySafeArtifactCount = 2`, `dispatch-ready`, and
+  real `ulg-post-message` mode.
+- PASS: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+  test:ulg-relay-handoff` now exits cleanly with
+  `dispatchAdapterStatus = dispatch-adapter-popup-context-reset`, blocker
+  `relay-popup-dispatch-execution-context-destroyed`,
+  `runtimeGateRelaxed = false`, and `scientificGateRelaxed = false`. The
+  recorded probe stages are `start`, `dispatch-plan-created`, and first MoonLab
+  `dispatch-start`; no `dispatch-complete` is observed before the popup context
+  reset.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` reported ULG
+  `handoff ready / blockers 0 / scenario magnetar / scientific ready / 2
+  artifacts`, Multiscale `handoff-ready`, blocker count `0`, and bridge ack
+  `handoff-ready`.
+- PASS: relay config restore diff was empty.
+- PASS: no test-owned `4196` listener or relay process remained.
+- PASS: `git diff --check`.
+
+### Open
+- Relay-served popup dispatch adapter execution remains blocked at first
+  MoonLab dispatch startup. The checkpoint now preserves that failing state with
+  explicit diagnostics instead of losing it to a raw Playwright context error.
+- The optional dispatch skip does not relax runtime or scientific gates; it only
+  documents the still-failing adapter path.
+- No ULG, MoonLab, or Eshkol repo files were touched. No push was attempted.
+
 ## 2026-06-06 01:32:46 AKDT - Live calibrated-reference inventory handoff
 
 ### Prompt

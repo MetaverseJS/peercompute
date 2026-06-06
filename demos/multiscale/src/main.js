@@ -2110,7 +2110,22 @@ function createUlgDispatchArtifactCache(now = () => Date.now()) {
 }
 
 async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
+  const emitDiagnostic = typeof options.onDiagnostic === 'function'
+    ? (event = {}) => {
+      try {
+        options.onDiagnostic({
+          schema: 'peercompute.multiscale.ulg-dispatch-service-adapter-probe-diagnostic.v0',
+          at: Date.now(),
+          ...event
+        });
+      } catch (_) {
+        // Diagnostics must not affect dispatch adapter execution.
+      }
+    }
+    : () => {};
+  emitDiagnostic({ stage: 'start' });
   const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
+  const includeResults = options.includeResults !== false;
   const serviceEnvelope = createPeerComputeUlgHandoffServiceEnvelope(normalized, {
     origin: window.location.origin,
     url: window.location.href,
@@ -2133,6 +2148,11 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
     ...options,
     serviceIds
   });
+  emitDiagnostic({
+    stage: 'dispatch-plan-created',
+    dispatchCount: serviceDispatchPlan.dispatchCount || 0,
+    status: serviceDispatchPlan.status || null
+  });
   const artifactCache = createUlgDispatchArtifactCache();
   const registry = new ComputeServiceRegistry(createUlgDispatchServiceManifests({
     serviceIds,
@@ -2144,6 +2164,13 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
   const results = [];
   try {
     for (const dispatch of serviceDispatchPlan.dispatches || []) {
+      emitDiagnostic({
+        stage: 'dispatch-start',
+        dispatchId: dispatch.dispatchId || null,
+        serviceId: dispatch.serviceId || null,
+        sourceService: dispatch.sourceService || null,
+        artifactKind: dispatch.artifactKind || null
+      });
       results.push(await serviceExecutor({
         dispatch,
         dispatchPlan: serviceDispatchPlan,
@@ -2153,6 +2180,16 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
           rootTaskId: `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`
         }
       }));
+      const lastResult = results[results.length - 1] || {};
+      emitDiagnostic({
+        stage: 'dispatch-complete',
+        dispatchId: dispatch.dispatchId || null,
+        serviceId: dispatch.serviceId || null,
+        sourceService: dispatch.sourceService || null,
+        status: lastResult.status || null,
+        ready: lastResult.ready === true,
+        blockerCount: Array.isArray(lastResult.blockers) ? lastResult.blockers.length : 0
+      });
     }
     const acceptedDispatchCount = results.filter((entry) => entry.ready === true).length;
     const blockers = uniqueUlgStrings([
@@ -2160,6 +2197,15 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       ...results.flatMap((entry) => entry.blockers || [])
     ]);
     const telemetry = supervisor.getTreeTelemetry();
+    const serviceResultSummaries = summarizeUlgDispatchServiceAdapterResults(results);
+    emitDiagnostic({
+      stage: 'returning',
+      executedDispatchCount: results.length,
+      acceptedDispatchCount,
+      failedDispatchCount: results.length - acceptedDispatchCount,
+      rawResultsIncluded: includeResults,
+      blockerCount: blockers.length
+    });
     return cloneJson({
       schema: ULG_DISPATCH_SERVICE_ADAPTER_PROBE_SCHEMA,
       handoffId: serviceEnvelope.handoffId || null,
@@ -2168,6 +2214,8 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       executedDispatchCount: results.length,
       acceptedDispatchCount,
       failedDispatchCount: results.length - acceptedDispatchCount,
+      rawResultsIncluded: includeResults,
+      rawResultsOmitted: !includeResults,
       ready: serviceDispatchPlan.ready === true
         && acceptedDispatchCount === serviceDispatchPlan.dispatchCount
         && blockers.length === 0,
@@ -2176,14 +2224,16 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
         : 'dispatch-adapters-blocked',
       serviceIds: cloneJson(serviceIds),
       workerModules: cloneJson(workerModules),
-      results,
-      serviceResultSummaries: summarizeUlgDispatchServiceAdapterResults(results),
+      results: includeResults ? results : [],
+      serviceResultSummaries,
       telemetry,
       artifacts: artifactCache.list(),
       blockers
     });
   } finally {
+    emitDiagnostic({ stage: 'shutdown-start' });
     await supervisor.shutdown();
+    emitDiagnostic({ stage: 'shutdown-complete' });
   }
 }
 
