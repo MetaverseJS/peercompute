@@ -694,6 +694,72 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   assert.equal(telemetry.tasks[0].artifactRef.uri, result.artifactRef.uri);
 });
 
+test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => {
+  const task = adaptUlgV05TaskCapsule({
+    taskId: 'task-eshkol-bundle-1',
+    rootTaskId: 'task-eshkol-bundle-1',
+    serviceId: 'eshkol',
+    taskKind: 'eshkol.closure.derive',
+    inputHash: 'ulg:input-eshkol-bundle',
+    methodHash: 'ulg:method-eshkol-bundle',
+    outputs: [{ artifactKind: 'closure' }],
+    resources: { priority: 'simulation', gpu: 'optional' },
+    validation: { toleranceProfile: 'scientific-default' },
+    provenance: { source: 'ulg-fixture' }
+  });
+  const artifact = {
+    closureId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    closureKind: 'wasm-reference',
+    execution: {
+      backend: 'llvm-wasm',
+      serviceWorkerSafe: true,
+      module: {
+        url: 'hello.wasm',
+        sha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c'
+      }
+    },
+    validity: {
+      requiresDynamicCode: false,
+      requiresHostImports: true
+    },
+    runtime: {
+      bundleManifest: {
+        schema: 'eshkol.ulg.closure-bundle.v0',
+        copyFiles: [
+          'hello.ulg.json',
+          'hello.wasm',
+          'schemas/ulg/closure_artifact.schema.json'
+        ],
+        preserveRelativeUrls: true
+      }
+    },
+    validation: {
+      status: 'pass',
+      validationMode: 'eshkol-static-closure-bundle'
+    },
+    provenance: { source: 'eshkol-export-helper' },
+    contentHash: 'ulg:fixture-result-eshkol-bundle-001'
+  };
+  const result = createUlgV05ArtifactResult(task, artifact);
+
+  assert.equal(result.artifactSummary.schema, ULG_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(result.artifactSummary.artifactKind, 'closure');
+  assert.equal(result.artifactSummary.artifactId, 'eshkol:881d9a92d523921d');
+  assert.equal(result.artifactSummary.validationStatus, 'pass');
+  assert.equal(result.artifactSummary.closureKind, 'wasm-reference');
+  assert.equal(result.artifactSummary.closureModuleUrl, 'hello.wasm');
+  assert.equal(result.artifactSummary.closureModuleSha256, 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c');
+  assert.equal(result.artifactSummary.closureServiceWorkerSafe, true);
+  assert.equal(result.artifactSummary.closureRequiresDynamicCode, false);
+  assert.equal(result.artifactSummary.closureRequiresHostImports, true);
+  assert.equal(result.artifactSummary.closureBundleManifestSchema, 'eshkol.ulg.closure-bundle.v0');
+  assert.equal(result.artifactSummary.closureBundleCopyFileCount, 3);
+  assert.equal(result.artifactSummary.closureBundlePreserveRelativeUrls, true);
+  assert.equal(result.artifactSummary.closureReady, true);
+  assert.equal(result.outputs[0].artifactSummary.closureReady, true);
+});
+
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {
   const manifests = createUlgServiceFixtureManifests();
   const registry = new ComputeServiceRegistry(manifests);

@@ -2,6 +2,46 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 18:37:58 AKDT - Eshkol closure bundle summary bridge
+
+### Prompt
+- Continued the ULG/PeerCompute/MoonLab/Eshkol implementation plan after ULG began returning staged Eshkol closure bundle artifacts.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-05 18:37:58 AKDT`.
+
+### Actions
+- Extended the PeerCompute ULG artifact-summary adapter with Eshkol closure bundle readiness fields.
+- `peercompute.ulg.artifact-summary.v0` now reports closure kind, module URL/hash, service-worker safety, dynamic-code and host-import flags, bundle manifest schema/copy-file count/relative-URL preservation, and `closureReady`.
+- Added a focused ULG v0.5 artifact-result unit test for a staged Eshkol `wasm-reference` closure bundle.
+- Updated roadmap and service-orchestration test strategy docs.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- Playwright browser probe from ULG `http://127.0.0.1:5173/` to Multiscale `https://127.0.0.1:5185/?scenario=magnetar`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks completed for the ULG manifest adapter and service-orchestration unit test.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` completed with `8/8` tests passing.
+- PASS: live cross-repo browser probe pulled the ULG Eshkol artifact from the
+  ULG artifact cache, summarized it through Multiscale's PeerCompute
+  `summarizeUlgArtifact()` API, and confirmed `closureReady: true`,
+  `closureKind: "wasm-reference"`, `closureModuleUrl: "hello.wasm"`,
+  `closureServiceWorkerSafe: true`, and preserved relative URLs.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- This summarizes staged Eshkol closure bundle readiness; it does not execute the closure module inside PeerCompute yet.
+
 ## 2026-06-05 18:16:34 AKDT - Magnetar calibration ingest into Multiscale
 
 ### Prompt
