@@ -164,6 +164,7 @@ export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenari
 export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multiscale.scenario-calibration-ingest.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale.scenario-closure-ingest.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-module-probe.v0';
+export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
@@ -408,6 +409,36 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
   const entryExportAvailable = source.entryExportAvailable === true
     || (Array.isArray(source.observedExports) && source.observedExports.some((entry) => entry.name === (source.entryExport || 'main')));
   const ready = source.ready === true || (moduleCompiled && importMetadataMatches && exportMetadataMatches && entryExportAvailable);
+  const hostRuntimeSource = source.hostRuntimeProbe && typeof source.hostRuntimeProbe === 'object'
+    ? source.hostRuntimeProbe
+    : null;
+  const hostRuntimeProbe = hostRuntimeSource
+    ? {
+        schema: hostRuntimeSource.schema || MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
+        status: hostRuntimeSource.status || (hostRuntimeSource.ready === true ? 'host-runtime-probe-ready' : 'host-runtime-probe-pending'),
+        ready: hostRuntimeSource.ready === true || hostRuntimeSource.instantiated === true,
+        mode: hostRuntimeSource.mode || 'stub-import-dry-instantiate-v0',
+        stubbed: hostRuntimeSource.stubbed === true,
+        importObjectCreated: hostRuntimeSource.importObjectCreated === true,
+        instantiated: hostRuntimeSource.instantiated === true,
+        importCount: Number.isFinite(Number(hostRuntimeSource.importCount)) ? Number(hostRuntimeSource.importCount) : 0,
+        functionStubCount: Number.isFinite(Number(hostRuntimeSource.functionStubCount)) ? Number(hostRuntimeSource.functionStubCount) : 0,
+        memoryStubCount: Number.isFinite(Number(hostRuntimeSource.memoryStubCount)) ? Number(hostRuntimeSource.memoryStubCount) : 0,
+        globalStubCount: Number.isFinite(Number(hostRuntimeSource.globalStubCount)) ? Number(hostRuntimeSource.globalStubCount) : 0,
+        tableStubCount: Number.isFinite(Number(hostRuntimeSource.tableStubCount)) ? Number(hostRuntimeSource.tableStubCount) : 0,
+        stubCallCount: Number.isFinite(Number(hostRuntimeSource.stubCallCount)) ? Number(hostRuntimeSource.stubCallCount) : 0,
+        startFunctionIndex: hostRuntimeSource.startFunctionIndex == null
+          ? null
+          : Number.isFinite(Number(hostRuntimeSource.startFunctionIndex))
+          ? Number(hostRuntimeSource.startFunctionIndex)
+          : null,
+        entryExport: hostRuntimeSource.entryExport || source.entryExport || 'main',
+        entryExportAvailable: hostRuntimeSource.entryExportAvailable === true || entryExportAvailable,
+        mainInvoked: false,
+        scientificExecution: false,
+        error: hostRuntimeSource.error || null
+      }
+    : null;
   return {
     schema: MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
     scenarioId: options.scenarioId || source.scenarioId || 'magnetar',
@@ -433,11 +464,15 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     observedImports: Array.isArray(source.observedImports) ? [...source.observedImports] : [],
     observedExports: Array.isArray(source.observedExports) ? [...source.observedExports] : [],
     entryExportAvailable,
+    startFunctionIndex: source.startFunctionIndex == null
+      ? null
+      : Number.isFinite(Number(source.startFunctionIndex)) ? Number(source.startFunctionIndex) : null,
     moduleCompiled,
     ready,
     serviceWorkerSafe: source.serviceWorkerSafe === true,
     requiresHostImports: source.requiresHostImports ?? null,
     hostRuntimeRequired: source.hostRuntimeRequired === true || source.requiresHostImports === true,
+    hostRuntimeProbe,
     scientificExecution: false,
     probeMode: source.probeMode || 'browser-webassembly-module-abi-v0',
     validation: {
@@ -544,6 +579,12 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       importMetadataMatches: closureModuleProbe?.importMetadataMatches === true,
       exportMetadataMatches: closureModuleProbe?.exportMetadataMatches === true,
       hostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
+      hostRuntimeProbeReady: closureModuleProbe?.hostRuntimeProbe?.ready === true,
+      hostRuntimeProbeStatus: closureModuleProbe?.hostRuntimeProbe?.status || null,
+      hostRuntimeProbeMode: closureModuleProbe?.hostRuntimeProbe?.mode || null,
+      hostRuntimeProbeStubbed: closureModuleProbe?.hostRuntimeProbe?.stubbed === true,
+      hostRuntimeProbeInstantiated: closureModuleProbe?.hostRuntimeProbe?.instantiated === true,
+      hostRuntimeProbeStubCallCount: closureModuleProbe?.hostRuntimeProbe?.stubCallCount ?? null,
       scientificExecution: false,
       moduleUrl: closureModuleProbe?.moduleUrl || null,
       moduleSource: closureModuleProbe?.moduleSource || null
@@ -6465,6 +6506,9 @@ export class MultiscaleModel {
           scenarioClosureModuleProbeReady: scenario.closureModuleProbe?.ready === true,
           scenarioClosureModuleProbeStatus: scenario.validation?.closureModuleProbeStatus || null,
           scenarioClosureModuleProbeMode: scenario.closureModuleProbe?.probeMode || null,
+          scenarioClosureHostRuntimeProbeReady: scenario.closureModuleProbe?.hostRuntimeProbe?.ready === true,
+          scenarioClosureHostRuntimeProbeStatus: scenario.closureModuleProbe?.hostRuntimeProbe?.status || null,
+          scenarioClosureHostRuntimeProbeMode: scenario.closureModuleProbe?.hostRuntimeProbe?.mode || null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

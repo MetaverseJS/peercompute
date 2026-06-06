@@ -48612,3 +48612,29 @@ User asked whether Infinite Context Coder is being used.
 
 ### Open
 - The Eshkol module still requires a host runtime; scientific closure execution is not validated.
+
+## 2026-06-05 22:41:15 AKDT - Multiscale Eshkol host-runtime dry probe
+
+### Prompt
+- Continued implementation after the Eshkol closure module ABI checkpoint.
+- Prompt time/date recorded from the local machine: `2026-06-05 22:41:15 AKDT`.
+- Local commits only; no push.
+
+### Actions
+- Added nested `peercompute.multiscale.scenario-closure-host-runtime-probe.v0` to the Eshkol module-probe report.
+- Added browser-side start-section parsing and a guarded dry instantiate path using inert memory/global/table/function imports; dry instantiate is blocked if a start section exists and never calls `main`.
+- Exposed host-runtime dry-probe state through scenario handoff readiness, packet boundary conditions, browser APIs, and HUD text while keeping `scientificExecution: false`.
+- Updated plan/test docs and rebuilt the Multiscale docs bundle.
+- Incorporated read-only Eshkol sidecar findings: staged `hello.wasm` has no start section, dry instantiate makes zero host calls, and real execution should reuse/factor Eshkol host imports rather than generic no-op stubs.
+
+### Validation
+- PASS: changed-file syntax checks.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `176/176`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large chunk warnings.
+- PASS: live browser probe transferred Eshkol `hello.wasm` bytes from ULG `5173` to Multiscale `5185`, observed `startFunctionIndex: null`, `host-runtime-probe-ready`, `hostInstantiated: true`, `hostStubCallCount: 0`, `mainInvoked: false`, packet `scenarioClosureHostRuntimeProbeReady: true`, and packet `scenarioScientificReady: false`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed `8/8`.
+- PASS: ULG and Multiscale live endpoints returned HTTP `200`.
+- PASS: `git diff --check`.
+
+### Open
+- Dry instantiate is still non-execution. Real Eshkol execution needs a DOM-free runtime import provider, signature metadata, output capture, and scientific validation before it can reduce magnetar blockers.

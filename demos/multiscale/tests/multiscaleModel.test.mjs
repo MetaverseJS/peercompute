@@ -12,6 +12,7 @@ import {
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import {
   MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -1771,10 +1772,31 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
     importMetadataMatches: true,
     exportMetadataMatches: true,
     entryExportAvailable: true,
+    startFunctionIndex: null,
     moduleCompiled: true,
     serviceWorkerSafe: true,
     requiresHostImports: true,
     hostRuntimeRequired: true,
+    hostRuntimeProbe: {
+      schema: MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
+      status: 'host-runtime-probe-ready',
+      ready: true,
+      mode: 'stub-import-dry-instantiate-v0',
+      stubbed: true,
+      importObjectCreated: true,
+      instantiated: true,
+      importCount: 12,
+      functionStubCount: 9,
+      memoryStubCount: 1,
+      globalStubCount: 1,
+      tableStubCount: 1,
+      stubCallCount: 0,
+      startFunctionIndex: null,
+      entryExport: 'main',
+      entryExportAvailable: true,
+      mainInvoked: false,
+      scientificExecution: false
+    },
     probeMode: 'browser-webassembly-module-abi-v0'
   });
 
@@ -1787,6 +1809,16 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(scenario.handoffReadiness.closureModuleProbe.importMetadataMatches, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.exportMetadataMatches, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeRequired, true);
+  assert.equal(scenario.closureModuleProbe.startFunctionIndex, null);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.schema, MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.ready, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.instantiated, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.startFunctionIndex, null);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.mainInvoked, false);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.scientificExecution, false);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeStatus, 'host-runtime-probe-ready');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeMode, 'stub-import-dry-instantiate-v0');
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
@@ -1798,6 +1830,9 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeStatus, 'closure-module-probe-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeMode, 'browser-webassembly-module-abi-v0');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeStatus, 'host-runtime-probe-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeMode, 'stub-import-dry-instantiate-v0');
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });

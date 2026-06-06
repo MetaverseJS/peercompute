@@ -21504,3 +21504,59 @@ User asked whether Infinite Context Coder is being used.
 ### Demo Server State
 - ULG remains reachable at `http://100.86.83.35:5173/`.
 - Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
+
+## 2026-06-05 22:41:15 AKDT - Eshkol host-runtime dry probe
+
+### Prompt
+- Continued the long-running PeerCompute/ULG/Eshkol implementation plan after the ABI module-probe checkpoint.
+- Prompt time/date recorded from the local machine: `2026-06-05 22:41:15 AKDT`.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Spawned read-only sidecar `Laplace` for Eshkol import/runtime inspection. It confirmed the staged `hello.wasm` has no start section, validates as WASM, dry-instantiates with inert host stubs, makes zero host calls without `main`, and should require a start-section guard before any dry instantiate.
+- Added nested `peercompute.multiscale.scenario-closure-host-runtime-probe.v0` under the closure module probe.
+- Added a browser API `probeScenarioClosureHostRuntime()` that builds inert memory/global/table/function imports, rejects dry instantiate when a WASM start section is present, instantiates only no-start modules, and never calls `main`.
+- Threaded host-runtime dry-probe readiness into scenario state, handoff readiness, packet boundary conditions, and the HUD scenario row while keeping scientific execution false.
+- Updated demo/root plans and test strategy, then rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright probe that loaded ULG `hello.ulg.json` and `hello.wasm` from `5173`, transferred WASM bytes to Multiscale `5185`, ran `window.__multiscaleDemo.probeScenarioClosureHostRuntime()`, and checked full packet boundary conditions.
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `curl -sS -o /dev/null -w 'ulg %{http_code}\n' http://100.86.83.35:5173/`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code}\n' https://100.86.83.35:5185/?scenario=magnetar`
+- `git diff --check`
+
+### Test Results
+- PASS: syntax checks completed for changed Multiscale source and test files.
+- PASS: full Multiscale model suite passed with `176/176`.
+- PASS: Multiscale build completed; existing large chunk warnings remain.
+- PASS: live browser probe reported `moduleReady: true`, `startFunctionIndex: null`, `hostStatus: "host-runtime-probe-ready"`, `hostInstantiated: true`, `hostStubbed: true`, `hostStubCallCount: 0`, `mainInvoked: false`, `scientificExecution: false`, packet `scenarioClosureHostRuntimeProbeReady: true`, and packet `scenarioScientificReady: false`.
+- PASS: PeerCompute service-orchestration regression passed with `8/8`.
+- PASS: ULG endpoint returned HTTP `200`.
+- PASS: Multiscale magnetar endpoint returned HTTP `200`.
+- PASS: `git diff --check` reported no whitespace errors.
+
+### Failures / Open Questions
+- The host-runtime dry probe is not closure execution. It only proves a no-start module can be instantiated with inert imports without calling `main`.
+- Eshkol scientific closure execution still needs a DOM-free real host-import provider, signature metadata, explicit `main(0, 0)` execution policy, output capture, and physics validation.
+- Magnetar scientific readiness remains blocked by calibrated MHD/PIC/radiation/relativity references and scientific tolerance coverage.
+
+### Demo Server State
+- ULG remains reachable at `http://100.86.83.35:5173/`.
+- Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.

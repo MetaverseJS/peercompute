@@ -1432,6 +1432,138 @@ function wasmExportKey(entry = {}) {
   return `${entry.name || ''}:${entry.kind || ''}`;
 }
 
+function readUnsignedLeb128(bytes, offset) {
+  let result = 0;
+  let shift = 0;
+  let nextOffset = offset;
+  while (nextOffset < bytes.length) {
+    const byte = bytes[nextOffset];
+    nextOffset += 1;
+    result |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) {
+      return { value: result >>> 0, offset: nextOffset };
+    }
+    shift += 7;
+  }
+  throw new Error('Malformed WASM varuint');
+}
+
+function getWasmStartFunctionIndex(wasmBytes) {
+  const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
+  if (bytes.length < 8) return null;
+  const magicOk = bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+  if (!magicOk) return null;
+  let offset = 8;
+  while (offset < bytes.length) {
+    const sectionId = bytes[offset];
+    offset += 1;
+    const sectionSize = readUnsignedLeb128(bytes, offset);
+    offset = sectionSize.offset;
+    const sectionEnd = offset + sectionSize.value;
+    if (sectionEnd > bytes.length) return null;
+    if (sectionId === 8) {
+      return readUnsignedLeb128(bytes, offset).value;
+    }
+    offset = sectionEnd;
+  }
+  return null;
+}
+
+function createClosureHostRuntimeTable(initial = 64) {
+  try {
+    return new WebAssembly.Table({ initial, element: 'anyfunc' });
+  } catch {
+    return new WebAssembly.Table({ initial, element: 'funcref' });
+  }
+}
+
+function createScenarioClosureHostRuntimeStubImports(observedImports = [], options = {}) {
+  const importObject = {};
+  const calls = [];
+  const memoryInitialPages = Number.isFinite(Number(options.memoryInitialPages))
+    ? Math.max(1, Math.floor(Number(options.memoryInitialPages)))
+    : 256;
+  const tableInitial = Number.isFinite(Number(options.tableInitial))
+    ? Math.max(0, Math.floor(Number(options.tableInitial)))
+    : 64;
+  let functionStubCount = 0;
+  let memoryStubCount = 0;
+  let globalStubCount = 0;
+  let tableStubCount = 0;
+
+  const ensureModule = (moduleName = 'env') => {
+    if (!importObject[moduleName]) importObject[moduleName] = {};
+    return importObject[moduleName];
+  };
+
+  for (const entry of observedImports) {
+    const moduleName = entry.module || 'env';
+    const name = entry.name || '';
+    const moduleImports = ensureModule(moduleName);
+    if (!name || moduleImports[name]) continue;
+    if (entry.kind === 'function') {
+      functionStubCount += 1;
+      moduleImports[name] = (...args) => {
+        calls.push({ module: moduleName, name, argCount: args.length });
+        return 0;
+      };
+    } else if (entry.kind === 'memory') {
+      memoryStubCount += 1;
+      moduleImports[name] = new WebAssembly.Memory({ initial: memoryInitialPages });
+    } else if (entry.kind === 'global') {
+      globalStubCount += 1;
+      moduleImports[name] = new WebAssembly.Global({ value: 'i32', mutable: true }, options.stackPointerValue || 65536);
+    } else if (entry.kind === 'table') {
+      tableStubCount += 1;
+      moduleImports[name] = createClosureHostRuntimeTable(tableInitial);
+    }
+  }
+
+  return {
+    importObject,
+    calls,
+    functionStubCount,
+    memoryStubCount,
+    globalStubCount,
+    tableStubCount
+  };
+}
+
+async function dryProbeScenarioClosureHostRuntime(module, observedImports = [], options = {}) {
+  const stub = createScenarioClosureHostRuntimeStubImports(observedImports, options);
+  const entryExport = options.entryExport || 'main';
+  let instance = null;
+  let error = null;
+  try {
+    instance = await WebAssembly.instantiate(module, stub.importObject);
+  } catch (err) {
+    error = err?.message || String(err);
+  }
+  const exports = instance?.exports || {};
+  const entryExportAvailable = typeof exports[entryExport] === 'function';
+  const ready = Boolean(instance && entryExportAvailable);
+  return {
+    schema: 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0',
+    status: ready ? 'host-runtime-probe-ready' : 'host-runtime-probe-pending',
+    ready,
+    mode: 'stub-import-dry-instantiate-v0',
+    stubbed: true,
+    importObjectCreated: true,
+    instantiated: Boolean(instance),
+    importCount: observedImports.length,
+    functionStubCount: stub.functionStubCount,
+    memoryStubCount: stub.memoryStubCount,
+    globalStubCount: stub.globalStubCount,
+    tableStubCount: stub.tableStubCount,
+    stubCallCount: stub.calls.length,
+    entryExport,
+    entryExportAvailable,
+    mainInvoked: false,
+    scientificExecution: false,
+    error
+  };
+}
+
 async function probeScenarioClosureModule(artifact = {}, options = {}) {
   const execution = artifact.execution && typeof artifact.execution === 'object' ? artifact.execution : {};
   const importEntries = Array.isArray(execution.imports) ? execution.imports : [];
@@ -1458,6 +1590,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       }
       wasmBytes = await response.arrayBuffer();
     }
+    const startFunctionIndex = getWasmStartFunctionIndex(wasmBytes);
     const module = new WebAssembly.Module(wasmBytes);
     const observedImports = WebAssembly.Module.imports(module).map(normalizeWasmImportEntry);
     const observedExports = WebAssembly.Module.exports(module).map(normalizeWasmExportEntry);
@@ -1484,6 +1617,31 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       observedCount: observedExports.length,
       functionCount: observedExports.filter((entry) => entry.kind === 'function').length
     };
+    const hostRuntimeProbe = (options.dryInstantiateHostRuntime === true || options.probeHostRuntime === true)
+      ? (startFunctionIndex === null
+          ? await dryProbeScenarioClosureHostRuntime(module, observedImports, { ...options, entryExport })
+          : {
+              schema: 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0',
+              status: 'host-runtime-probe-blocked-start-section',
+              ready: false,
+              mode: 'stub-import-dry-instantiate-v0',
+              stubbed: false,
+              importObjectCreated: false,
+              instantiated: false,
+              importCount: observedImports.length,
+              functionStubCount: 0,
+              memoryStubCount: 0,
+              globalStubCount: 0,
+              tableStubCount: 0,
+              stubCallCount: 0,
+              startFunctionIndex,
+              entryExport,
+              entryExportAvailable,
+              mainInvoked: false,
+              scientificExecution: false,
+              error: 'WASM start section present; dry instantiate with inert host imports is blocked.'
+            })
+      : null;
     report = {
       scenarioId: options.scenarioId || 'magnetar',
       provider: options.provider || artifact.sourceService || 'eshkol',
@@ -1500,11 +1658,13 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       importMetadataMatches,
       exportMetadataMatches,
       entryExportAvailable,
+      startFunctionIndex,
       moduleCompiled: true,
       ready: importMetadataMatches && exportMetadataMatches && entryExportAvailable,
       serviceWorkerSafe: execution.serviceWorkerSafe === true,
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || observedImports.length > 0,
+      hostRuntimeProbe,
       probeMode: 'browser-webassembly-module-abi-v0',
       error: null
     };
@@ -1541,6 +1701,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       serviceWorkerSafe: execution.serviceWorkerSafe === true,
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || expectedImports.length > 0,
+      hostRuntimeProbe: null,
       probeMode: 'browser-webassembly-module-abi-v0',
       error: error?.message || String(error)
     };
@@ -5879,7 +6040,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -10138,6 +10299,12 @@ window.__multiscaleDemo = {
   },
   probeScenarioClosureModule(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, options);
+  },
+  probeScenarioClosureHostRuntime(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true });
+  },
+  probeScenarioClosureHostRuntimeProbe(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true });
   },
   probeScenarioClosureModuleProbe(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, options);
