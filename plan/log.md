@@ -48589,3 +48589,26 @@ User asked whether Infinite Context Coder is being used.
 - Multiscale live demo remains reachable at `https://100.86.83.35:5185/`.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
+
+## 2026-06-05 22:25:41 AKDT - Multiscale Eshkol closure module ABI probe
+
+### Prompt
+- Continued implementation after the magnetar handoff-readiness checkpoint.
+- Prompt time/date recorded from the local machine: `2026-06-05 22:25:41 AKDT`.
+- Local commits only; no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-closure-module-probe.v0` to validate staged Eshkol closure WASM at the ABI/readiness layer.
+- The browser API `probeScenarioClosureModule()` accepts transferred WASM bytes, compiles the module, compares `WebAssembly.Module.imports/exports()` against artifact metadata, and reports entry export availability without instantiating or calling the closure.
+- Handoff readiness now includes closure module-probe state and keeps scientific blockers explicit.
+- Rebuilt the Multiscale docs bundle.
+
+### Validation
+- PASS: changed-file syntax checks.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `176/176`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed `8/8`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large chunk warnings.
+- PASS: live browser probe transferred Eshkol `hello.wasm` bytes from ULG `5173` to Multiscale `5185`, observed `moduleCompiled: true`, import metadata `12/12`, export metadata `1/1`, `entryExport: "main"`, `scenarioClosureModuleProbeReady: true`, and `scenarioScientificReady: false`.
+
+### Open
+- The Eshkol module still requires a host runtime; scientific closure execution is not validated.

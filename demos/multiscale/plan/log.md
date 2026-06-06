@@ -21451,3 +21451,56 @@ User asked whether Infinite Context Coder is being used.
 - Multiscale live demo remains reachable at `https://100.86.83.35:5185/`.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
+
+## 2026-06-05 22:25:41 AKDT - Eshkol closure module ABI probe
+
+### Prompt
+- Continued the long-running PeerCompute/ULG/Eshkol implementation plan after adding the magnetar handoff-readiness manifest.
+- Prompt time/date recorded from the local machine: `2026-06-05 22:25:41 AKDT`.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Inspected the staged Eshkol `hello` closure artifact and confirmed the WASM exports `main` but requires 12 `env` imports, including memory/global/table and Eshkol runtime/display functions.
+- Added `peercompute.multiscale.scenario-closure-module-probe.v0` for a conservative browser-side ABI/readiness probe.
+- The probe accepts transferred Eshkol WASM bytes, builds `WebAssembly.Module`, compares observed imports/exports against the artifact metadata, records `main` entry-export availability, and does not instantiate or call the closure.
+- Threaded module-probe readiness into scenario state, handoff readiness, packet boundary conditions, browser APIs, and the HUD scenario row.
+- Updated blockers so a passed ABI probe clears `eshkol-closure-module-abi-probe-missing` while keeping `eshkol-closure-host-runtime-required`, `eshkol-closure-scientific-execution-not-validated`, calibrated magnetar references, and tolerance coverage blocked.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `curl -sS http://100.86.83.35:5173/service-assets/eshkol/closures/hello/hello.ulg.json`
+- `curl -sS http://100.86.83.35:5173/service-assets/eshkol/closures/hello/ulg_bundle_manifest.json`
+- Read-only sidecar inspection in `/home/cos/projects/eshkol` and `/home/cos/projects/ulg` confirmed the staged and served bundle files are byte-identical.
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright probe that loaded ULG on `5173`, transferred Eshkol `hello.wasm` bytes into Multiscale on `5185`, ran `window.__multiscaleDemo.probeScenarioClosureModule()`, and asserted module ABI readiness plus packet blocker state.
+
+### Test Results
+- PASS: syntax checks completed for changed Multiscale source and test files.
+- PASS: full Multiscale model suite passed with `176/176`.
+- PASS: PeerCompute service-orchestration regression passed with `8/8`.
+- PASS: Multiscale build completed; existing large chunk warnings remain.
+- PASS: live browser probe reported `peercompute.multiscale.scenario-closure-module-probe.v0`, `moduleSource: "provided-wasm-bytes"`, `moduleCompiled: true`, import metadata `12/12`, export metadata `1/1`, `entryExport: "main"`, `hostRuntimeRequired: true`, `scenarioClosureModuleProbeReady: true`, `scenarioScientificReady: false`, and blocker count `4`.
+
+### Failures / Open Questions
+- The probe is deliberately an ABI/readiness probe only. Eshkol host runtime wiring and scientific closure execution are still blocked.
+- Magnetar scientific readiness remains blocked by calibrated MHD/PIC/radiation/relativity references and scientific tolerance coverage.
+
+### Demo Server State
+- ULG remains reachable at `http://100.86.83.35:5173/`.
+- Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.

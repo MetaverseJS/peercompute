@@ -163,6 +163,7 @@ export const SCALE_LAYERS = [
 export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenario-preset.v0';
 export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multiscale.scenario-calibration-ingest.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale.scenario-closure-ingest.v0';
+export const MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-module-probe.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
@@ -254,6 +255,7 @@ function createDefaultScenarioState() {
     calibrationArtifacts: [],
     calibrationIngest: null,
     closureIngest: null,
+    closureModuleProbe: null,
     handoffReadiness: createScenarioHandoffReadinessReport({ id: 'default', active: false }),
     validation: {
       status: 'default',
@@ -390,13 +392,85 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
   };
 }
 
-function createScenarioHandoffBlockers({ scenarioId, calibrationReady, closureReady, closureRequiresHostImports, closureHandoffReady }) {
+export function createScenarioClosureModuleProbeReport(input = {}, options = {}) {
+  const source = input?.moduleProbeReport && typeof input.moduleProbeReport === 'object'
+    ? input.moduleProbeReport
+    : input || {};
+  const importSummary = source.importSummary && typeof source.importSummary === 'object'
+    ? source.importSummary
+    : {};
+  const exportSummary = source.exportSummary && typeof source.exportSummary === 'object'
+    ? source.exportSummary
+    : {};
+  const moduleCompiled = source.moduleCompiled === true;
+  const importMetadataMatches = source.importMetadataMatches === true;
+  const exportMetadataMatches = source.exportMetadataMatches === true;
+  const entryExportAvailable = source.entryExportAvailable === true
+    || (Array.isArray(source.observedExports) && source.observedExports.some((entry) => entry.name === (source.entryExport || 'main')));
+  const ready = source.ready === true || (moduleCompiled && importMetadataMatches && exportMetadataMatches && entryExportAvailable);
+  return {
+    schema: MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
+    scenarioId: options.scenarioId || source.scenarioId || 'magnetar',
+    provider: options.provider || source.provider || 'eshkol',
+    artifactId: source.artifactId || null,
+    closureKind: source.closureKind || null,
+    moduleUrl: source.moduleUrl || null,
+    moduleSource: source.moduleSource || null,
+    moduleSha256: source.moduleSha256 || null,
+    entryExport: source.entryExport || 'main',
+    expectedImportCount: Number.isFinite(Number(importSummary.expectedCount)) ? Number(importSummary.expectedCount) : 0,
+    observedImportCount: Number.isFinite(Number(importSummary.observedCount)) ? Number(importSummary.observedCount) : 0,
+    importedRuntimeFunctionCount: Number.isFinite(Number(importSummary.functionCount))
+      ? Number(importSummary.functionCount)
+      : (Array.isArray(source.importedRuntimeFunctions) ? source.importedRuntimeFunctions.length : 0),
+    importedRuntimeMemoryCount: Number.isFinite(Number(importSummary.memoryCount)) ? Number(importSummary.memoryCount) : 0,
+    importedRuntimeGlobalCount: Number.isFinite(Number(importSummary.globalCount)) ? Number(importSummary.globalCount) : 0,
+    importedRuntimeTableCount: Number.isFinite(Number(importSummary.tableCount)) ? Number(importSummary.tableCount) : 0,
+    expectedExportCount: Number.isFinite(Number(exportSummary.expectedCount)) ? Number(exportSummary.expectedCount) : 0,
+    observedExportCount: Number.isFinite(Number(exportSummary.observedCount)) ? Number(exportSummary.observedCount) : 0,
+    importMetadataMatches,
+    exportMetadataMatches,
+    observedImports: Array.isArray(source.observedImports) ? [...source.observedImports] : [],
+    observedExports: Array.isArray(source.observedExports) ? [...source.observedExports] : [],
+    entryExportAvailable,
+    moduleCompiled,
+    ready,
+    serviceWorkerSafe: source.serviceWorkerSafe === true,
+    requiresHostImports: source.requiresHostImports ?? null,
+    hostRuntimeRequired: source.hostRuntimeRequired === true || source.requiresHostImports === true,
+    scientificExecution: false,
+    probeMode: source.probeMode || 'browser-webassembly-module-abi-v0',
+    validation: {
+      status: ready ? 'closure-module-probe-ready' : 'closure-module-probe-pending',
+      simulationStatus: 'proxy-only',
+      note: 'The Eshkol WASM module compiled and its declared import/export ABI was checked; scientific closure execution remains unvalidated.'
+    },
+    error: source.error || null
+  };
+}
+
+function createScenarioHandoffBlockers({
+  scenarioId,
+  calibrationReady,
+  closureReady,
+  closureRequiresHostImports,
+  closureHandoffReady,
+  closureModuleProbeReady,
+  closureHostRuntimeRequired
+}) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
   if (!calibrationReady) blockers.push('moonlab-magnetar-calibration-summary-missing');
   if (!closureReady) blockers.push('eshkol-closure-bundle-summary-missing');
-  if (closureRequiresHostImports === true) blockers.push('eshkol-closure-requires-host-imports');
-  if (closureHandoffReady === true) blockers.push('eshkol-closure-not-executed-in-multiscale-runtime');
+  if (closureHandoffReady === true && closureModuleProbeReady !== true) {
+    blockers.push('eshkol-closure-module-abi-probe-missing');
+  }
+  if (closureRequiresHostImports === true || closureHostRuntimeRequired === true) {
+    blockers.push('eshkol-closure-host-runtime-required');
+  }
+  if (closureModuleProbeReady === true) {
+    blockers.push('eshkol-closure-scientific-execution-not-validated');
+  }
   blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
   blockers.push('scientific-tolerance-suite-missing');
   return blockers;
@@ -406,8 +480,10 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const scenarioId = scenario.id || 'default';
   const calibrationIngest = scenario.calibrationIngest || null;
   const closureIngest = scenario.closureIngest || null;
+  const closureModuleProbe = scenario.closureModuleProbe || null;
   const calibrationReady = calibrationIngest?.ready === true || scenario.validation?.calibrationReady === true;
   const closureReady = closureIngest?.ready === true || scenario.validation?.closureReady === true;
+  const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -416,7 +492,9 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     calibrationReady,
     closureReady,
     closureRequiresHostImports: closureIngest?.closure?.requiresHostImports,
-    closureHandoffReady: closureReady
+    closureHandoffReady: closureReady,
+    closureModuleProbeReady,
+    closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -454,6 +532,21 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       requiresDynamicCode: closureIngest?.closure?.requiresDynamicCode ?? null,
       requiresHostImports: closureIngest?.closure?.requiresHostImports ?? null,
       bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true
+    },
+    closureModuleProbe: {
+      provider: closureModuleProbe?.provider || 'eshkol',
+      ready: closureModuleProbeReady,
+      status: scenario.validation?.closureModuleProbeStatus || closureModuleProbe?.validation?.status || 'module-probe-pending',
+      schema: closureModuleProbe?.schema || null,
+      probeMode: closureModuleProbe?.probeMode || null,
+      entryExport: closureModuleProbe?.entryExport || null,
+      moduleCompiled: closureModuleProbe?.moduleCompiled === true,
+      importMetadataMatches: closureModuleProbe?.importMetadataMatches === true,
+      exportMetadataMatches: closureModuleProbe?.exportMetadataMatches === true,
+      hostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
+      scientificExecution: false,
+      moduleUrl: closureModuleProbe?.moduleUrl || null,
+      moduleSource: closureModuleProbe?.moduleSource || null
     },
     note: allHandoffsReady
       ? 'ULG/MoonLab and Eshkol handoffs are staged for the scenario, but magnetar simulation remains proxy-only until scientific blockers clear.'
@@ -1587,6 +1680,32 @@ export class MultiscaleModel {
         closureStatus: ingest.ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
         closureReady: ingest.ready,
         closureKind: ingest.closure.kind,
+        simulationStatus: 'proxy-only'
+      }
+    };
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
+    };
+    return this.getScenario();
+  }
+
+  ingestScenarioClosureModuleProbeReport(report = {}, options = {}) {
+    const probe = createScenarioClosureModuleProbeReport(report, options);
+    if (options.applyPreset !== false && this.scenario.id !== probe.scenarioId) {
+      this.applyScenarioPreset(probe.scenarioId);
+    }
+    if (this.scenario.id !== probe.scenarioId) {
+      return this.getScenario();
+    }
+    this.scenario = {
+      ...this.scenario,
+      closureModuleProbe: probe,
+      validation: {
+        ...(this.scenario.validation || {}),
+        status: this.scenario.validation?.status || 'proxy-only',
+        closureModuleProbeStatus: probe.ready ? 'closure-module-probe-ready' : 'closure-module-probe-pending',
+        closureModuleProbeReady: probe.ready,
         simulationStatus: 'proxy-only'
       }
     };
@@ -6343,6 +6462,9 @@ export class MultiscaleModel {
           scenarioClosureReady: scenario.closureIngest?.ready === true,
           scenarioClosureStatus: scenario.validation?.closureStatus || null,
           scenarioClosureKind: scenario.closureIngest?.closure?.kind || null,
+          scenarioClosureModuleProbeReady: scenario.closureModuleProbe?.ready === true,
+          scenarioClosureModuleProbeStatus: scenario.validation?.closureModuleProbeStatus || null,
+          scenarioClosureModuleProbeMode: scenario.closureModuleProbe?.probeMode || null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

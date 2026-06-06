@@ -1352,6 +1352,18 @@ function ingestScenarioClosureSummary(summary = {}, options = {}) {
   });
 }
 
+function ingestScenarioClosureModuleProbeReport(report = {}, options = {}) {
+  const scenario = model.ingestScenarioClosureModuleProbeReport(report, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    closureModuleProbe: scenario.closureModuleProbe || null,
+    handoffReadiness: scenario.handoffReadiness || null
+  });
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
@@ -1367,6 +1379,174 @@ function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
     artifactKind,
     provider: options.provider || artifact.sourceService || 'moonlab'
   });
+}
+
+function resolveScenarioClosureModuleUrl(artifact = {}, options = {}) {
+  const moduleUrl = options.moduleUrl || artifact.execution?.module?.url || artifact.closureModuleUrl || null;
+  if (!moduleUrl) return null;
+  const assetProbe = artifact.runtime?.assetProbe;
+  const moduleAssetUrl = assetProbe?.assets?.find((asset) => asset.kind === 'wasmModule')?.url || null;
+  if (moduleAssetUrl && moduleAssetUrl.endsWith(moduleUrl)) return moduleAssetUrl;
+  const baseUrl = options.baseUrl
+    || assetProbe?.baseUrl
+    || assetProbe?.assets?.find((asset) => asset.kind === 'artifactModule')?.url
+    || window.location.href;
+  return new URL(moduleUrl, baseUrl).href;
+}
+
+function normalizeScenarioClosureWasmBytes(input) {
+  if (!input) return null;
+  if (input instanceof ArrayBuffer) return input;
+  if (ArrayBuffer.isView(input)) {
+    return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
+  }
+  if (Array.isArray(input)) {
+    return new Uint8Array(input).buffer;
+  }
+  if (input?.type === 'Buffer' && Array.isArray(input.data)) {
+    return new Uint8Array(input.data).buffer;
+  }
+  return null;
+}
+
+function normalizeWasmImportEntry(entry = {}) {
+  return {
+    module: entry.module || 'env',
+    name: entry.name || '',
+    kind: entry.kind || ''
+  };
+}
+
+function normalizeWasmExportEntry(entry = {}) {
+  return {
+    name: entry.name || '',
+    kind: entry.kind || ''
+  };
+}
+
+function wasmEntryKey(entry = {}) {
+  return `${entry.module || ''}:${entry.name || ''}:${entry.kind || ''}`;
+}
+
+function wasmExportKey(entry = {}) {
+  return `${entry.name || ''}:${entry.kind || ''}`;
+}
+
+async function probeScenarioClosureModule(artifact = {}, options = {}) {
+  const execution = artifact.execution && typeof artifact.execution === 'object' ? artifact.execution : {};
+  const importEntries = Array.isArray(execution.imports) ? execution.imports : [];
+  const expectedImports = importEntries.map(normalizeWasmImportEntry);
+  const expectedExports = Array.isArray(execution.exports)
+    ? execution.exports.map(normalizeWasmExportEntry)
+    : [];
+  const entryExport = options.entryExport || execution.entryExport || 'main';
+  const moduleUrl = resolveScenarioClosureModuleUrl(artifact, options);
+  let moduleSource = 'fetched-wasm-url';
+  let report;
+
+  try {
+    let wasmBytes = normalizeScenarioClosureWasmBytes(options.wasmBytes || artifact.wasmBytes || null);
+    if (!wasmBytes && !moduleUrl) {
+      throw new Error('Missing Eshkol closure module URL');
+    }
+    if (wasmBytes) {
+      moduleSource = 'provided-wasm-bytes';
+    } else {
+      const response = await fetch(moduleUrl, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Eshkol closure module: ${response.status}`);
+      }
+      wasmBytes = await response.arrayBuffer();
+    }
+    const module = new WebAssembly.Module(wasmBytes);
+    const observedImports = WebAssembly.Module.imports(module).map(normalizeWasmImportEntry);
+    const observedExports = WebAssembly.Module.exports(module).map(normalizeWasmExportEntry);
+    const observedImportKeys = new Set(observedImports.map(wasmEntryKey));
+    const observedExportKeys = new Set(observedExports.map(wasmExportKey));
+    const expectedImportKeys = expectedImports.map(wasmEntryKey);
+    const expectedExportKeys = expectedExports.map(wasmExportKey);
+    const importMetadataMatches = expectedImportKeys.every((key) => observedImportKeys.has(key))
+      && observedImports.length === expectedImports.length;
+    const exportMetadataMatches = expectedExports.length === 0
+      ? observedExports.some((entry) => entry.name === entryExport)
+      : expectedExportKeys.every((key) => observedExportKeys.has(key));
+    const entryExportAvailable = observedExports.some((entry) => entry.name === entryExport && entry.kind === 'function');
+    const importSummary = {
+      expectedCount: expectedImports.length,
+      observedCount: observedImports.length,
+      functionCount: observedImports.filter((entry) => entry.kind === 'function').length,
+      memoryCount: observedImports.filter((entry) => entry.kind === 'memory').length,
+      globalCount: observedImports.filter((entry) => entry.kind === 'global').length,
+      tableCount: observedImports.filter((entry) => entry.kind === 'table').length
+    };
+    const exportSummary = {
+      expectedCount: expectedExports.length,
+      observedCount: observedExports.length,
+      functionCount: observedExports.filter((entry) => entry.kind === 'function').length
+    };
+    report = {
+      scenarioId: options.scenarioId || 'magnetar',
+      provider: options.provider || artifact.sourceService || 'eshkol',
+      artifactId: artifact.closureId || artifact.artifactId || null,
+      closureKind: artifact.closureKind || null,
+      moduleUrl,
+      moduleSource,
+      moduleSha256: execution.module?.sha256 || null,
+      entryExport,
+      importSummary,
+      exportSummary,
+      observedImports,
+      observedExports,
+      importMetadataMatches,
+      exportMetadataMatches,
+      entryExportAvailable,
+      moduleCompiled: true,
+      ready: importMetadataMatches && exportMetadataMatches && entryExportAvailable,
+      serviceWorkerSafe: execution.serviceWorkerSafe === true,
+      requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
+      hostRuntimeRequired: artifact.validity?.requiresHostImports === true || observedImports.length > 0,
+      probeMode: 'browser-webassembly-module-abi-v0',
+      error: null
+    };
+  } catch (error) {
+    report = {
+      scenarioId: options.scenarioId || 'magnetar',
+      provider: options.provider || artifact.sourceService || 'eshkol',
+      artifactId: artifact.closureId || artifact.artifactId || null,
+      closureKind: artifact.closureKind || null,
+      moduleUrl,
+      moduleSource,
+      moduleSha256: execution.module?.sha256 || null,
+      entryExport,
+      importSummary: {
+        expectedCount: expectedImports.length,
+        observedCount: 0,
+        functionCount: 0,
+        memoryCount: 0,
+        globalCount: 0,
+        tableCount: 0
+      },
+      exportSummary: {
+        expectedCount: expectedExports.length,
+        observedCount: 0,
+        functionCount: 0
+      },
+      observedImports: [],
+      observedExports: [],
+      importMetadataMatches: false,
+      exportMetadataMatches: false,
+      entryExportAvailable: false,
+      moduleCompiled: false,
+      ready: false,
+      serviceWorkerSafe: execution.serviceWorkerSafe === true,
+      requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
+      hostRuntimeRequired: artifact.validity?.requiresHostImports === true || expectedImports.length > 0,
+      probeMode: 'browser-webassembly-module-abi-v0',
+      error: error?.message || String(error)
+    };
+  }
+
+  return ingestScenarioClosureModuleProbeReport(report, options);
 }
 
 function normalizeEnvironmentValues(values = {}) {
@@ -5699,7 +5879,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -9952,6 +10132,15 @@ window.__multiscaleDemo = {
   },
   ingestScenarioClosureSummary(summary = {}, options = {}) {
     return ingestScenarioClosureSummary(summary, options);
+  },
+  ingestScenarioClosureModuleProbeReport(report = {}, options = {}) {
+    return ingestScenarioClosureModuleProbeReport(report, options);
+  },
+  probeScenarioClosureModule(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, options);
+  },
+  probeScenarioClosureModuleProbe(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, options);
   },
   getScenarioHandoffReadiness() {
     return cloneJson(model.getScenario().handoffReadiness || null);

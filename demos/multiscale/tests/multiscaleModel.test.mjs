@@ -12,6 +12,7 @@ import {
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import {
   MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
@@ -1692,8 +1693,8 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.closureHandoff.closureKind, 'wasm-reference');
   assert.equal(scenario.handoffReadiness.closureHandoff.moduleUrl, 'hello.wasm');
   assert.equal(scenario.handoffReadiness.closureHandoff.requiresHostImports, true);
-  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
-  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-not-executed-in-multiscale-runtime'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
 
@@ -1704,6 +1705,101 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffStatus, 'handoff-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
+});
+
+test('magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness', () => {
+  const model = new MultiscaleModel({ seed: 48 });
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true
+  });
+  model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    validationStatus: 'pass',
+    closureKind: 'wasm-reference',
+    closureModuleUrl: 'hello.wasm',
+    closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: true,
+    closureBundlePreserveRelativeUrls: true,
+    closureReady: true
+  });
+  const scenario = model.ingestScenarioClosureModuleProbeReport({
+    artifactId: 'eshkol:881d9a92d523921d',
+    closureKind: 'wasm-reference',
+    moduleUrl: 'http://100.86.83.35:5173/service-assets/eshkol/closures/hello/hello.wasm',
+    moduleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    entryExport: 'main',
+    importSummary: {
+      expectedCount: 12,
+      observedCount: 12,
+      functionCount: 9,
+      memoryCount: 1,
+      globalCount: 1,
+      tableCount: 1
+    },
+    exportSummary: {
+      expectedCount: 1,
+      observedCount: 1,
+      functionCount: 1
+    },
+    observedImports: [
+      { module: 'env', name: '__linear_memory', kind: 'memory' },
+      { module: 'env', name: '__stack_pointer', kind: 'global' },
+      { module: 'env', name: '__indirect_function_table', kind: 'table' },
+      { module: 'env', name: '__eshkol_register_parallel_workers', kind: 'function' },
+      { module: 'env', name: 'eshkol_init_stack_size', kind: 'function' },
+      { module: 'env', name: 'eshkol_runtime_init', kind: 'function' },
+      { module: 'env', name: 'get_global_arena', kind: 'function' },
+      { module: 'env', name: 'eshkol_lambda_registry_init', kind: 'function' },
+      { module: 'env', name: '__eshkol_lib_init__', kind: 'function' },
+      { module: 'env', name: 'eshkol_display_value', kind: 'function' },
+      { module: 'env', name: 'eshkol_runtime_current_output_fp', kind: 'function' },
+      { module: 'env', name: 'fputc', kind: 'function' }
+    ],
+    observedExports: [{ name: 'main', kind: 'function' }],
+    importMetadataMatches: true,
+    exportMetadataMatches: true,
+    entryExportAvailable: true,
+    moduleCompiled: true,
+    serviceWorkerSafe: true,
+    requiresHostImports: true,
+    hostRuntimeRequired: true,
+    probeMode: 'browser-webassembly-module-abi-v0'
+  });
+
+  assert.equal(scenario.closureModuleProbe.schema, MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA);
+  assert.equal(scenario.closureModuleProbe.ready, true);
+  assert.equal(scenario.closureModuleProbe.validation.status, 'closure-module-probe-ready');
+  assert.equal(scenario.validation.closureModuleProbeReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.ready, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.moduleCompiled, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.importMetadataMatches, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.exportMetadataMatches, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeRequired, true);
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-scientific-execution-not-validated'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.scenario.closureModuleProbe.ready, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeStatus, 'closure-module-probe-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureModuleProbeMode, 'browser-webassembly-module-abi-v0');
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {
