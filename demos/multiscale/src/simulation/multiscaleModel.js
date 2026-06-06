@@ -1111,6 +1111,15 @@ export function createScenarioRuntimeEvidenceManifestReport({
   }
 
   const sourceEntries = Array.isArray(manifest?.entries) ? manifest.entries : null;
+  const manifestDiagnostics = sourceEntries
+    ? createScenarioRuntimeEvidenceManifestDiagnostics(sourceEntries)
+    : {
+      unknownEntries: [],
+      duplicateEntries: [],
+      blockerCount: 0,
+      blockers: [],
+      errors: []
+    };
   const entries = MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.map((requirement) => (
     sourceEntries
       ? normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries)
@@ -1121,11 +1130,18 @@ export function createScenarioRuntimeEvidenceManifestReport({
   const validatedCount = entries.filter((entry) => entry.ready).length;
   const proxyOnlyCount = entries.filter((entry) => entry.proxyOnly).length;
   const missingCount = entries.filter((entry) => !entry.runtimeObserved && !entry.ready).length;
-  const ready = requiredCount > 0 && validatedCount === requiredCount;
-  const blockers = ready ? [] : uniqueStrings(entries.flatMap((entry) => entry.blockers || []));
+  const invalidEntryCount = sourceEntries ? entries.filter((entry) => !entry.ready).length : 0;
+  const manifestInvalid =
+    manifestDiagnostics.unknownEntries.length > 0 ||
+    manifestDiagnostics.duplicateEntries.length > 0;
+  const ready = requiredCount > 0 && validatedCount === requiredCount && !manifestInvalid;
+  const blockers = ready ? [] : uniqueStrings([
+    ...entries.flatMap((entry) => entry.blockers || []),
+    ...manifestDiagnostics.blockers
+  ]);
   const status = ready
     ? 'runtime-evidence-ready'
-    : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing');
+    : (manifestInvalid ? 'runtime-evidence-invalid' : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing'));
   return {
     schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
     scenarioId,
@@ -1138,13 +1154,89 @@ export function createScenarioRuntimeEvidenceManifestReport({
     validatedCount,
     proxyOnlyCount,
     missingCount,
+    invalidEntryCount,
+    unknownCount: manifestDiagnostics.unknownEntries.length,
+    duplicateCount: manifestDiagnostics.duplicateEntries.length,
     blockerCount: blockers.length,
     blockers,
+    unknownEntries: manifestDiagnostics.unknownEntries,
+    duplicateEntries: manifestDiagnostics.duplicateEntries,
+    errors: manifestDiagnostics.errors,
     entries,
     note: ready
       ? 'All required magnetar runtime evidence entries report validated scientific execution.'
       : 'Current magnetar runtime evidence is proxy-only until validated solver execution and cross-family conservation/coupling artifacts are attached.'
   };
+}
+
+function createScenarioRuntimeEvidenceManifestDiagnostics(sourceEntries = []) {
+  const unknownEntries = [];
+  const duplicateEntries = [];
+  const seenRequirementIds = new Set();
+  sourceEntries.forEach((source, index) => {
+    const sourceRecord = source && typeof source === 'object' && !Array.isArray(source)
+      ? source
+      : null;
+    if (!sourceRecord) {
+      unknownEntries.push({
+        index,
+        id: null,
+        family: null,
+        solverId: null,
+        errors: ['runtime evidence entry must be an object']
+      });
+      return;
+    }
+    const requirement = findMagnetarRuntimeEvidenceRequirement(sourceRecord);
+    const id = stringOrNull(sourceRecord.id);
+    const family = stringOrNull(sourceRecord.family);
+    const solverId = stringOrNull(sourceRecord.solverId);
+    if (!requirement) {
+      unknownEntries.push({
+        index,
+        id,
+        family,
+        solverId,
+        errors: ['runtime evidence entry does not match a required magnetar runtime evidence family']
+      });
+      return;
+    }
+    if (seenRequirementIds.has(requirement.id)) {
+      duplicateEntries.push({
+        index,
+        id,
+        family,
+        solverId,
+        matchedRequirementId: requirement.id,
+        errors: [`duplicate runtime evidence entry for ${requirement.id}`]
+      });
+      return;
+    }
+    seenRequirementIds.add(requirement.id);
+  });
+  const errors = [
+    ...unknownEntries.flatMap((entry) => entry.errors),
+    ...duplicateEntries.flatMap((entry) => entry.errors)
+  ];
+  const blockers = uniqueStrings([
+    ...unknownEntries.map(() => 'runtime-evidence-entry-unknown'),
+    ...duplicateEntries.map(() => 'runtime-evidence-entry-duplicate')
+  ]);
+  return {
+    unknownEntries,
+    duplicateEntries,
+    blockerCount: blockers.length,
+    blockers,
+    errors
+  };
+}
+
+function findMagnetarRuntimeEvidenceRequirement(source = {}) {
+  return MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.find((requirement) => (
+    source?.id === requirement.id
+    || source?.family === requirement.family
+    || source?.solverId === requirement.solverId
+  )) || null;
 }
 
 function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) {
@@ -1155,20 +1247,28 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
   )) || {};
   const validationStatus = source.validationStatus || source.validation?.status || null;
   const scientificExecution = source.scientificExecution === true;
-  const ready = source.ready === true && scientificExecution && validationStatus === 'pass';
   const backend = stringOrNull(source.backend);
+  const solverId = stringOrNull(source.solverId) || requirement.solverId;
+  const solverMatches = solverId === requirement.solverId;
+  const evidenceHash = hasSha256Digest(source.evidenceHash) ? source.evidenceHash : null;
+  const ready = source.ready === true
+    && scientificExecution
+    && validationStatus === 'pass'
+    && evidenceHash != null
+    && solverMatches;
   const runtimeObserved = ready
     || source.runtimeObserved === true
     || (backend != null && backend !== 'none');
-  const blockers = ready
-    ? []
-    : uniqueStrings(Array.isArray(source.blockers) && source.blockers.length > 0
-      ? source.blockers
-      : [source.blocker, requirement.blocker]);
+  const blockers = ready ? [] : uniqueStrings([
+    ...(Array.isArray(source.blockers) && source.blockers.length > 0 ? source.blockers : [source.blocker]),
+    !solverMatches ? `${requirement.id}-solver-mismatch` : null,
+    evidenceHash == null ? `${requirement.id}-evidence-hash-missing` : null,
+    requirement.blocker
+  ]);
   return {
     id: requirement.id,
     family: requirement.family,
-    solverId: source.solverId || requirement.solverId,
+    solverId,
     status: ready
       ? 'validated-runtime-ready'
       : (runtimeObserved ? 'proxy-runtime-observed' : 'runtime-evidence-missing'),
@@ -1179,7 +1279,7 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     backend,
     sequence: finiteOrNull(source.sequence),
     validationStatus,
-    evidenceHash: hasSha256Digest(source.evidenceHash) ? source.evidenceHash : null,
+    evidenceHash,
     observed: clonePlain(source.observed || source.diagnostics || null),
     blocker: blockers[0] || null,
     blockers

@@ -2376,8 +2376,77 @@ test('magnetar scenario records proxy runtime evidence without clearing the runt
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 
+test('magnetar runtime evidence manifest requires evidence hashes for validated entries', () => {
+  const model = new MultiscaleModel({ seed: 476 });
+  const manifest = createReadyMagnetarRuntimeEvidenceManifest();
+  manifest.entries = manifest.entries.map((entry) => (
+    entry.id === 'validated-radiation-transport-runtime'
+      ? { ...entry, evidenceHash: null }
+      : entry
+  ));
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(manifest);
+  const radiation = scenario.scientificRuntimeEvidence.entries.find((entry) => (
+    entry.id === 'validated-radiation-transport-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 4);
+  assert.equal(scenario.scientificRuntimeEvidence.invalidEntryCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.unknownCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.duplicateCount, 0);
+  assert.equal(radiation.ready, false);
+  assert.equal(radiation.scientificExecution, true);
+  assert.equal(radiation.validationStatus, 'pass');
+  assert.equal(radiation.evidenceHash, null);
+  assert.ok(radiation.blockers.includes('validated-radiation-transport-runtime-evidence-hash-missing'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+});
+
+test('magnetar runtime evidence manifest rejects unknown and duplicate entries', () => {
+  const model = new MultiscaleModel({ seed: 477 });
+  const manifest = createReadyMagnetarRuntimeEvidenceManifest();
+  manifest.entries = [
+    ...manifest.entries,
+    {
+      ...manifest.entries[0],
+      sequence: 99
+    },
+    {
+      id: 'unknown-runtime-evidence',
+      family: 'unknown-runtime-family',
+      solverId: 'unknown-runtime-solver',
+      status: 'validated-runtime-ready',
+      ready: true,
+      scientificExecution: true,
+      runtimeObserved: true,
+      backend: 'unknown-runtime-fixture',
+      sequence: 100,
+      validationStatus: 'pass',
+      evidenceHash: `sha256:${'a'.repeat(64)}`,
+      observed: { fixture: true },
+      validation: { status: 'pass' },
+      blockers: []
+    }
+  ];
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(manifest);
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-invalid');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.unknownCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.duplicateCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.unknownEntries[0].id, 'unknown-runtime-evidence');
+  assert.equal(scenario.scientificRuntimeEvidence.duplicateEntries[0].matchedRequirementId, 'validated-magnetosphere-mhd-runtime');
+  assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('runtime-evidence-entry-unknown'));
+  assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('runtime-evidence-entry-duplicate'));
+  assert.ok(scenario.scientificRuntimeEvidence.errors.includes('runtime evidence entry does not match a required magnetar runtime evidence family'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+});
+
 test('magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites', () => {
-  const model = new MultiscaleModel({ seed: 475 });
+  const model = new MultiscaleModel({ seed: 478 });
   model.ingestScenarioTransferManifest(createReadyUlgTransferManifest());
   model.ingestScenarioCalibrationSummary({
     schema: 'peercompute.ulg.artifact-summary.v0',

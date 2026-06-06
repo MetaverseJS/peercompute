@@ -49477,3 +49477,38 @@ User asked whether Infinite Context Coder is being used.
   not validate MHD/PIC/radiation/relativity scientific runtime execution.
 - Cross-family conservation/coupling validation remains missing.
 - No push was attempted.
+
+## 2026-06-06 03:26:15 AKDT - Multiscale runtime evidence manifest hardening
+
+### Prompt
+- User asked whether the overall plan remained on track and instructed continued
+  local-only work.
+
+### Actions
+- Hardened external magnetar runtime evidence manifests so validated runtime
+  entries must include a `sha256:` evidence hash.
+- Added diagnostics for unknown runtime evidence entries and duplicate entries
+  matching the same required family.
+- Manifests with unknown or duplicate records now report
+  `runtime-evidence-invalid` and do not clear the scientific runtime gate.
+- Added focused model tests for missing evidence hashes, unknown entries, and
+  duplicate entries.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/log.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`
+  passed `185/185`.
+
+### Open
+- This hardens trust boundaries but still does not create validated scientific
+  runtime artifacts. Real MHD/PIC/radiation/relativity runtime evidence and
+  cross-family conservation/coupling validation are still required.
+- No push was attempted.

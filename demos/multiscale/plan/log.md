@@ -22163,3 +22163,32 @@ User asked whether Infinite Context Coder is being used.
   proxy output. Validated scientific runtime artifacts for MHD/PIC/radiation/
   relativity plus cross-family conservation/coupling are still required.
 - No push was attempted.
+
+## 2026-06-06 03:26:15 AKDT - Runtime evidence manifest hardening
+
+### Prompt
+- User asked whether the overall implementation plan remained on track and
+  requested continued local-only work.
+
+### Actions
+- Tightened external magnetar runtime evidence manifest ingestion so validated
+  entries now require a `sha256:` evidence hash in addition to ready/scientific
+  execution and pass validation.
+- Added manifest diagnostics for unknown runtime evidence entries and duplicate
+  entries matching the same required family.
+- Made manifests with unknown or duplicate entries report
+  `runtime-evidence-invalid` instead of silently ignoring those records.
+- Added tests for missing evidence hashes, unknown entries, and duplicate
+  entries while keeping proxy runtime evidence blocked.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`
+  passed `185/185`.
+
+### Open
+- This is manifest trust hardening only. Live magnetar runtime evidence remains
+  proxy-only until real validated MHD/PIC/radiation/relativity runtime artifacts
+  and cross-family conservation/coupling validation are attached.
+- No push was attempted.
