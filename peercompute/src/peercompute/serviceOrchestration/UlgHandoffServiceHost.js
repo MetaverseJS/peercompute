@@ -8,6 +8,7 @@ export const ULG_HANDOFF_SERVICE_TASK_SCHEMA = 'peercompute.ulg.handoff-service-
 export const ULG_HANDOFF_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-result.v0';
 export const ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-plan.v0';
 export const ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-result.v0';
+export const ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA = 'peercompute.ulg.handoff-supervisor-service-executor.v0';
 
 const DEFAULT_DISPATCH_SERVICE_IDS = Object.freeze({
   eshkol: 'eshkol-ulg-fixture',
@@ -214,6 +215,67 @@ function createNotExecutedDispatchResult(dispatchPlan = {}) {
   };
 }
 
+export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
+  const getSupervisor = typeof options.getSupervisor === 'function'
+    ? options.getSupervisor
+    : () => options.supervisor;
+  const taskDefaults = clonePlain(options.taskDefaults || {});
+  const taskFactory = typeof options.taskFactory === 'function' ? options.taskFactory : null;
+  return async function executeUlgHandoffDispatch(context = {}) {
+    const supervisor = getSupervisor();
+    if (!supervisor || typeof supervisor.submitTask !== 'function') {
+      throw new Error('ULG handoff supervisor service executor requires a WorkerSupervisor-like submitTask');
+    }
+    const dispatch = context.dispatch || {};
+    const envelope = context.envelope || {};
+    const serviceTask = taskFactory
+      ? taskFactory(context)
+      : {
+        ...taskDefaults,
+        ...(clonePlain(dispatch.task || {})),
+        serviceId: dispatch.serviceId,
+        taskKind: dispatch.taskKind,
+        taskId: dispatch.dispatchId,
+        rootTaskId: dispatch.dispatchId,
+        handoffId: envelope.handoffId || dispatch.handoffId || null,
+        handoffEnvelope: {
+          schema: envelope.schema || null,
+          handoffId: envelope.handoffId || null,
+          status: envelope.status || null
+        },
+        dispatch: {
+          schema: ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
+          dispatchId: dispatch.dispatchId,
+          serviceId: dispatch.serviceId,
+          sourceService: dispatch.sourceService,
+          artifactKind: dispatch.artifactKind,
+          taskKind: dispatch.taskKind,
+          artifactRefUri: dispatch.artifactRefUri || null,
+          artifactContentHash: dispatch.artifactContentHash || null
+        }
+      };
+    const serviceResult = await supervisor.submitTask(serviceTask);
+    const serviceReady = serviceResult?.ready === true
+      || serviceResult?.status === 'complete'
+      || serviceResult?.status === 'accepted';
+    return {
+      schema: ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
+      dispatchId: dispatch.dispatchId,
+      serviceId: dispatch.serviceId,
+      sourceService: dispatch.sourceService,
+      artifactKind: dispatch.artifactKind,
+      taskKind: dispatch.taskKind,
+      status: serviceReady ? 'accepted' : (serviceResult?.status || 'pending'),
+      ready: serviceReady,
+      artifactRefUri: dispatch.artifactRefUri || null,
+      artifactContentHash: dispatch.artifactContentHash || null,
+      serviceTask: clonePlain(serviceTask),
+      serviceResult: clonePlain(serviceResult || null),
+      serviceArtifactRef: clonePlain(serviceResult?.artifactRef || null)
+    };
+  };
+}
+
 function createDefaultManifest(options = {}) {
   const serviceId = options.serviceId || 'ulg-handoff-service';
   return {
@@ -230,7 +292,12 @@ function createDefaultManifest(options = {}) {
       allowedModules: [],
       sameOriginOnly: true
     },
-    capabilities: ['ulg.handoff.normalize', 'ulg.handoff.relay-envelope', 'ulg.handoff.dispatch-plan'],
+    capabilities: [
+      'ulg.handoff.normalize',
+      'ulg.handoff.relay-envelope',
+      'ulg.handoff.dispatch-plan',
+      'ulg.handoff.dispatch-execute'
+    ],
     taskKinds: [ULG_HANDOFF_SERVICE_TASK_SCHEMA, 'peercompute.ulg.handoff.service'],
     abi: {
       inputEnvelopeSchema: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
@@ -244,7 +311,8 @@ function createDefaultManifest(options = {}) {
         ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
         ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
         ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
-        ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA
+        ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
+        ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA
       ],
       relaySafeArtifactsRequired: true,
       contentAddressedArtifactsRequired: true

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 07:54:23 AKDT
+Updated: 2026-06-06 08:02:07 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -11,6 +11,9 @@ Updated: 2026-06-06 07:54:23 AKDT
 - Eshkol closure artifacts dispatch as `eshkol.ulg.closure-artifact.ingest` or descriptor-bind tasks.
 - `UlgHandoffServiceHost` can optionally execute dispatches through an injected service executor.
 - WorkerSupervisor tests prove envelope, dispatch plan, dispatch result, and artifact-cache storage.
+- `createUlgHandoffSupervisorServiceExecutor()` can submit dispatch tasks to registered
+  MoonLab/Eshkol service hosts through `WorkerSupervisor`, preserving nested
+  service results in the handoff dispatch result.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -18,6 +21,7 @@ Updated: 2026-06-06 07:54:23 AKDT
 - `git diff --check` passed.
 
 ## Next
-- Wire dispatch plans to real registered Eshkol/MoonLab service hosts instead of the injected test executor.
+- Replace fixture service hosts with production Eshkol/MoonLab adapters that consume
+  the same dispatch task shape.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

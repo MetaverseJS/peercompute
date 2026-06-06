@@ -21,6 +21,7 @@ import {
   ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_TASK_SCHEMA,
   ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
+  ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -35,6 +36,7 @@ import {
   createUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceEnvelope,
   createUlgHandoffServiceManifest,
+  createUlgHandoffSupervisorServiceExecutor,
   createUlgV05ArtifactResult,
   ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
   normalizeUlgDemoHandoff,
@@ -1579,6 +1581,127 @@ test('ULG handoff service host dispatches envelope refs to Eshkol and MoonLab ex
   const cached = await artifactCache.get(result.artifactRef);
   assert.equal(cached.dispatchPlan.status, 'dispatch-ready');
   assert.equal(cached.dispatchResult.executedDispatchCount, 2);
+});
+
+test('ULG handoff service host submits dispatches to registered Eshkol and MoonLab services', async () => {
+  const handoff = {
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    createdAt: '2026-06-06T15:40:00.000Z',
+    artifactCount: 2,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://moonlab-calibration',
+        artifactHash: 'sha256:moonlab-calibration-artifact',
+        sourceService: 'moonlab'
+      },
+      artifactKind: 'quantum-response',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'quantum-response',
+        sourceService: 'moonlab',
+        magnetarDipoleIsingReady: true,
+        magnetarDipoleIsingStatus: 'pass',
+        magnetarDipoleIsingParityStatus: 'pass',
+        magnetarDipoleIsingGroundState: '000'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://eshkol-closure',
+        artifactHash: 'sha256:eshkol-closure-artifact',
+        sourceService: 'eshkol'
+      },
+      artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'descriptor-bound',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+        closureOutputSemanticsReady: true
+      },
+      artifact: {
+        closureId: 'eshkol:magnetar-closure-descriptor',
+        sourceService: 'eshkol'
+      },
+      wasmBytes: [0, 97, 115, 109],
+      wasmByteLength: 4
+    }]
+  };
+  const serviceIds = {
+    eshkol: 'eshkol-ulg-fixture',
+    moonlab: 'moonlab-ulg-fixture'
+  };
+  const handoffManifest = normalizeComputeServiceManifest(createUlgHandoffServiceManifest({
+    serviceId: 'ulg-handoff-registry-fixture'
+  }));
+  const registry = new ComputeServiceRegistry([
+    handoffManifest,
+    ...createUlgServiceFixtureManifests()
+  ]);
+  const artifactCache = new InMemoryArtifactCache(() => 4444);
+  let supervisor;
+  const serviceExecutor = createUlgHandoffSupervisorServiceExecutor({
+    getSupervisor: () => supervisor
+  });
+  supervisor = new WorkerSupervisor({
+    registry,
+    artifactCache,
+    workerFactory: (serviceManifest) => {
+      if (serviceManifest.serviceId === 'ulg-handoff-registry-fixture') {
+        return new UlgHandoffServiceHost(serviceManifest, {
+          origin: 'http://localhost:5173',
+          url: 'http://localhost:5173/',
+          receivedAt: '2026-06-06T15:40:01.000Z',
+          executeServices: true,
+          serviceIds,
+          serviceExecutor
+        });
+      }
+      return new UlgContractServiceHost(serviceManifest);
+    }
+  });
+
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'ulg-handoff-registry-fixture',
+    taskKind: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    taskId: 'task:ulg-handoff-registry-dispatch',
+    rootTaskId: 'root:ulg-handoff-registry-dispatch',
+    handoff
+  });
+
+  assert.equal(result.schema, ULG_HANDOFF_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.ready, true);
+  assert.equal(result.dispatchPlan.status, 'dispatch-ready');
+  assert.equal(result.dispatchResult.status, 'executed');
+  assert.equal(result.dispatchResult.executedDispatchCount, 2);
+  assert.equal(result.dispatchResult.acceptedDispatchCount, 2);
+  assert.equal(result.dispatchResult.results[0].output.schema, ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceId, 'moonlab-ulg-fixture');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.taskKind, 'moonlab.ulg.quantum-response.ingest');
+  assert.equal(result.dispatchResult.results[1].output.serviceId, 'eshkol-ulg-fixture');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.taskKind, 'eshkol.ulg.closure-artifact.ingest');
+  assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.hasTransferredWasmBytes, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.wasmByteLength, 4);
+
+  const telemetry = supervisor.getTreeTelemetry();
+  assert.deepEqual(telemetry.services.map((entry) => entry.serviceId).sort(), [
+    'eshkol-ulg-fixture',
+    'moonlab-ulg-fixture',
+    'ulg-handoff-registry-fixture'
+  ]);
+  assert.equal(telemetry.tasks.length, 3);
+  assert.equal(telemetry.tasks.filter((entry) => entry.status === 'complete').length, 3);
+  assert.equal(telemetry.artifacts.length, 1);
+  assert.equal(telemetry.artifacts[0].ref.uri, result.artifactRef.uri);
+
+  const cached = await artifactCache.get(result.artifactRef);
+  assert.equal(cached.dispatchResult.results[0].output.serviceResult.serviceId, 'moonlab-ulg-fixture');
+  assert.equal(cached.dispatchResult.results[1].output.serviceResult.serviceId, 'eshkol-ulg-fixture');
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

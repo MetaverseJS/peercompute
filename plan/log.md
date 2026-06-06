@@ -50399,3 +50399,59 @@ timeout 8s env \
   service-hosting step is to wire the plan to real registered Eshkol/MoonLab
   service hosts or an equivalent service registry adapter.
 - No push was attempted.
+
+## 2026-06-06 08:02:07 AKDT - Registry-backed ULG handoff dispatch executor
+
+### Prompt
+- Continue implementing the ULG service-hosting plan.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 08:02:07 AKDT`.
+
+### Actions
+- Added `peercompute.ulg.handoff-supervisor-service-executor.v0` and
+  `createUlgHandoffSupervisorServiceExecutor()`.
+- The executor converts each dispatch-plan entry into a WorkerSupervisor task,
+  submits it to the dispatch's registered `serviceId`, and preserves the nested
+  service task/result inside the handoff dispatch output.
+- Added a regression that registers the handoff host plus the existing
+  `moonlab-ulg-fixture` and `eshkol-ulg-fixture` services under one supervisor.
+  The handoff host now executes its dispatch plan by submitting nested MoonLab
+  and Eshkol service tasks through that same supervisor.
+- The test proves the nested service hosts complete, request/release child
+  leases, preserve transferred Eshkol WASM metadata in the service task, and
+  store the parent durable envelope plus dispatch plan/result in the artifact
+  cache.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host|ULG Eshkol and MoonLab fixtures|ULG handoff service envelope|ULG demo handoff adapter'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused service-orchestration run passed `16/16`.
+- PASS: full `serviceOrchestration.test.js` passed `16/16`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: `git diff --check` passed.
+
+### Open
+- The registered target services are still fixture hosts. The next step is a
+  production adapter for Eshkol and MoonLab services that consumes the same
+  dispatch task shape.
+- No push was attempted.
