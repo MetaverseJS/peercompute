@@ -10,6 +10,9 @@ export const ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA = 'peercompute.ulg.dispatch-se
 const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
 const ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.ulg.eshkol-host-runtime-execution.v0';
 const ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.ulg.eshkol-output-semantics-validation.v0';
+const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-interpolation-table.v0';
+const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
+const ESHKOL_INTERPOLATION_TABLE_STATUSES = new Set(['declared-not-computed', 'computed-fixture']);
 
 const DEFAULT_ADAPTERS = Object.freeze({
   moonlab: {
@@ -48,6 +51,10 @@ function stringOrNull(value) {
 
 function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
+}
+
+function canonicalSha256Digest(value) {
+  return /^sha256:[a-f0-9]{64}$/i.test(String(value || ''));
 }
 
 function createArtifactContentHash(payload = {}, task = {}, serviceId = 'ulg-dispatch-service') {
@@ -861,6 +868,10 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
     : moduleProbe.hasEntryExport === true;
   const referenceIds = Array.isArray(moonlabSuite?.referenceIds) ? [...moonlabSuite.referenceIds] : [];
   const sampleIds = Array.isArray(binding?.moonlabClosureSurfaceSampleIds) ? [...binding.moonlabClosureSurfaceSampleIds] : [];
+  const tableSampleIds = Array.isArray(interpolationTable?.sampleIds) ? [...interpolationTable.sampleIds] : [];
+  const tableSamples = Array.isArray(interpolationTable?.samples) ? interpolationTable.samples.filter(objectOrNull) : [];
+  const tableSampleCount = finiteNumberOrNull(interpolationTable?.sampleCount);
+  const interpolationTableComputedFixture = interpolationTable?.status === 'computed-fixture';
 
   if (summary.closureDescriptorSchema && descriptor.schema !== summary.closureDescriptorSchema) {
     blockers.push('eshkol-descriptor-schema-summary-mismatch');
@@ -887,8 +898,34 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
     if (!interpolationTableMatches) {
       blockers.push('eshkol-descriptor-interpolation-table-mismatch');
     }
-    if (interpolationTable?.status && interpolationTable.status !== 'declared-not-computed') {
-      blockers.push('eshkol-descriptor-interpolation-table-overstates-computation');
+    if (interpolationTable?.status && !ESHKOL_INTERPOLATION_TABLE_STATUSES.has(interpolationTable.status)) {
+      blockers.push('eshkol-descriptor-interpolation-table-status-unsupported');
+    }
+    if (interpolationTableComputedFixture) {
+      if (interpolationTable.schema !== ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA) {
+        blockers.push('eshkol-descriptor-interpolation-table-schema-mismatch');
+      }
+      if (interpolationTable.fixtureScope !== ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE) {
+        blockers.push('eshkol-descriptor-interpolation-table-fixture-scope-mismatch');
+      }
+      if (interpolationTable.scientificValidation !== false) {
+        blockers.push('eshkol-descriptor-interpolation-table-scientific-validation-overstated');
+      }
+      if (!Number.isInteger(tableSampleCount) || tableSampleCount <= 0) {
+        blockers.push('eshkol-descriptor-interpolation-table-sample-count-invalid');
+      }
+      if (!arraysEqual(tableSampleIds, sampleIds)) {
+        blockers.push('eshkol-descriptor-interpolation-table-sample-ids-mismatch');
+      }
+      if (Number.isInteger(tableSampleCount) && tableSampleCount !== tableSampleIds.length) {
+        blockers.push('eshkol-descriptor-interpolation-table-sample-count-mismatch');
+      }
+      if (tableSamples.length !== tableSampleIds.length) {
+        blockers.push('eshkol-descriptor-interpolation-table-sample-payload-mismatch');
+      }
+      if (!canonicalSha256Digest(interpolationTable.contentHash)) {
+        blockers.push('eshkol-descriptor-interpolation-table-content-hash-invalid');
+      }
     }
     if (moonlabSuite?.ready !== true) {
       blockers.push('eshkol-descriptor-moonlab-suite-not-ready');
@@ -956,8 +993,18 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       relaySafeTransfer: handoffEnvelope?.relaySafeTransfer || null
     } : null,
     interpolationTable: interpolationTable ? {
+      schema: interpolationTable.schema || null,
       id: interpolationTable.id || null,
       status: interpolationTable.status || null,
+      fixtureScope: interpolationTable.fixtureScope || null,
+      scientificValidation: typeof interpolationTable.scientificValidation === 'boolean'
+        ? interpolationTable.scientificValidation
+        : null,
+      computedFixture: interpolationTableComputedFixture,
+      sampleCount: tableSampleCount,
+      sampleIds: tableSampleIds,
+      samplePayloadCount: tableSamples.length,
+      contentHash: interpolationTable.contentHash || null,
       coordinateSystem: interpolationTable.coordinateSystem || null,
       inputTensorIds: tableInputIds,
       outputTensorIds: tableOutputIds,

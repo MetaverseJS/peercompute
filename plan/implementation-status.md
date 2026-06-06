@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 09:59:02 AKDT
+Updated: 2026-06-06 18:13:00 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -39,6 +39,12 @@ Updated: 2026-06-06 09:59:02 AKDT
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
+- Eshkol descriptor probes now accept the explicit
+  `computed-fixture` interpolation-table status only when the table carries the
+  expected non-scientific fixture schema/scope, four MoonLab-aligned sample ids,
+  a `sha256:` content hash, and `scientificValidation = false`. Compact service
+  summaries expose the table status, computed-fixture flag, sample count, and
+  hash.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -55,10 +61,15 @@ Updated: 2026-06-06 09:59:02 AKDT
   `host-runtime-output-semantics-validated`, `entryResult = 0`,
   output semantics status `output-semantics-validated`, expected stdout SHA-256,
   no summary-level `wasmBytes`, and `scientificExecution = false`.
+- Live probe confirmed the default ULG magnetar descriptor handoff reaches
+  Multiscale with table status `computed-fixture`, sample count `4`, content
+  hash `sha256:82ca16463d7ffe1d170adb266be61c3959b22a6c352751e99f0f510738a14165`,
+  Eshkol descriptor probe ready, no blockers, and service-summary
+  `scientificValidation = false`.
 - `git diff --check` passed.
 
 ## Next
-- Replace the Eshkol WASM compile probe with descriptor-aware execution or
-  table-probe logic once the closure runtime contract is ready.
+- Replace deterministic table-fixture acceptance with descriptor-aware
+  execution/table-probe logic once the closure runtime contract is ready.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

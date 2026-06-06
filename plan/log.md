@@ -50829,3 +50829,62 @@ timeout 8s env \
   It does not promote the Eshkol smoke fixture or the magnetar descriptor path to
   full scientific execution.
 - No push was attempted.
+
+## 2026-06-06 18:13:00 AKDT - Eshkol interpolation-table fixture guard
+
+### Prompt
+- Continue the ULG magnetar implementation plan with local commits only and
+  keep live demos inspectable.
+
+### Actions
+- Added a narrow PeerCompute descriptor-probe allowance for Eshkol
+  `ulgInterpolationTable.status = "computed-fixture"`.
+- Required the computed fixture table to carry
+  `eshkol.ulg.magnetar-closure-interpolation-table.v0`,
+  `fixtureScope = "reduced-smoke-fixture-not-magnetar-physics"`,
+  `scientificValidation = false`, a positive sample count, MoonLab-aligned
+  sample ids, matching sample payload count, and a `sha256:` content hash.
+- Exposed table status, computed-fixture flag, scientific-validation flag,
+  sample count, and hash in
+  `peercompute.ulg.handoff-supervisor-service-summary.v0`.
+- Added a negative unit test proving a computed fixture table with
+  `scientificValidation = true` blocks the Eshkol descriptor probe.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probe against `http://127.0.0.1:5173/` and
+  `https://127.0.0.1:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: full `serviceOrchestration.test.js` passed `21/21`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live ULG handoff exported `computed-fixture`, sample count `4`, content
+  hash `sha256:82ca16463d7ffe1d170adb266be61c3959b22a6c352751e99f0f510738a14165`,
+  and `scientificValidation = false`.
+- PASS: live Multiscale dispatch returned `dispatch-adapters-ready`, blocker
+  count `0`, accepted dispatch count `2`, Eshkol probe status `pass`,
+  descriptor ready `true`, service-summary table status `computed-fixture`, and
+  service-summary table sample count `4`.
+
+### Open
+- The table is deterministic fixture evidence only. Scientific readiness remains
+  blocked until validated magnetar runtime solver evidence exists.
+- No push was attempted.

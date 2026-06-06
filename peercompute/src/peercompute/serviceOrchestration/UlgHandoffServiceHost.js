@@ -273,6 +273,7 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
   const ingest = objectOrNull(result.ingest) || {};
   const probe = objectOrNull(result.probe) || {};
   const descriptorProbe = objectOrNull(probe.descriptorProbe) || {};
+  const interpolationTable = objectOrNull(descriptorProbe.interpolationTable) || {};
   const hostRuntimeProbe = objectOrNull(probe.hostRuntimeProbe) || {};
   const hostRuntimeExecution = objectOrNull(probe.hostRuntimeExecution) || {};
   const outputSemanticsValidation = objectOrNull(hostRuntimeExecution.outputSemanticsValidation) || {};
@@ -292,6 +293,11 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     moduleExportCount: finiteNumberOrNull(probe.exportCount ?? ingest.moduleExportCount),
     descriptorContractReady: booleanOrNull(ingest.descriptorContractReady ?? descriptorProbe.ready),
     descriptorContractStatus: ingest.descriptorContractStatus || descriptorProbe.status || null,
+    descriptorInterpolationTableStatus: interpolationTable.status || null,
+    descriptorInterpolationTableComputedFixture: booleanOrNull(interpolationTable.computedFixture),
+    descriptorInterpolationTableScientificValidation: booleanOrNull(interpolationTable.scientificValidation),
+    descriptorInterpolationTableSampleCount: finiteNumberOrNull(interpolationTable.sampleCount),
+    descriptorInterpolationTableContentHash: interpolationTable.contentHash || null,
     hostRuntimeProbeReady: booleanOrNull(ingest.hostRuntimeProbeReady ?? hostRuntimeProbe.ready),
     hostRuntimeProbeStatus: ingest.hostRuntimeProbeStatus || hostRuntimeProbe.status || null,
     hostRuntimeExecutionReady: booleanOrNull(ingest.hostRuntimeExecutionReady ?? hostRuntimeExecution.ready),
