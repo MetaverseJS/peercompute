@@ -22763,3 +22763,37 @@ User asked whether Infinite Context Coder is being used.
   not full-fidelity GRMHD, production PIC, spectral radiation transport, or
   full magnetar physics validation.
 - No push was attempted.
+
+## 2026-06-06 12:46:50 AKDT - Browser ULG handoff receiver
+
+### Actions
+- Added a Multiscale browser `message` receiver for
+  `ulg.peercompute.browser-handoff-post.v0`.
+- Restricted accepted senders to HTTP/HTTPS ULG demo origins on port `5173`
+  whose host matches the current Multiscale host or local dev hostnames.
+- Added `handoffId`-based dedupe so repeated ULG posts during popup load share
+  one import promise and reuse the final ack.
+- Routed received handoffs through
+  `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` so the same
+  calibrated magnetar runtime evidence gate and HUD updates run as the manual
+  paste flow.
+- Exposed `receiveUlgBrowserHandoff()` and
+  `getUlgBrowserHandoffImportState()` on `window.__multiscaleDemo` for live
+  browser probes.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `npm --prefix demos/multiscale test` passed `195/195`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: live browser bridge probe from ULG `http://127.0.0.1:5173/` to
+  Multiscale `https://127.0.0.1:5185/?scenario=magnetar` reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, and visible magnetar proxy visual on the solar
+  layer.
+
+### Open
+- This bridge removes manual clipboard import for the reduced calibrated
+  magnetar runtime demo. It is still not a full-fidelity GRMHD/PIC/radiation
+  transport magnetar simulation.
+- No push was attempted.

@@ -24,6 +24,8 @@ import { MultiscaleScene } from './visualization/multiscaleScene.js';
 import { MULTISCALE_RENDER_BUDGET_SCHEMA } from './visualization/renderBudget.js';
 
 const ULG_DISPATCH_SERVICE_ADAPTER_PROBE_SCHEMA = 'peercompute.multiscale.ulg-dispatch-service-adapter-probe.v0';
+const ULG_BROWSER_HANDOFF_POST_SCHEMA = 'ulg.peercompute.browser-handoff-post.v0';
+const ULG_BROWSER_HANDOFF_ACK_SCHEMA = 'peercompute.multiscale.browser-handoff-ack.v0';
 const ULG_DISPATCH_SERVICE_IDS = Object.freeze({
   moonlab: 'moonlab-ulg-fixture',
   eshkol: 'eshkol-ulg-fixture'
@@ -494,6 +496,11 @@ const scenarioAffordanceNote = document.querySelector('#scenario-affordance-note
 const scenarioFocusTarget = document.querySelector('#scenario-focus-target');
 const scenarioHandoffPaste = document.querySelector('#scenario-handoff-paste');
 const scenarioHandoffStatus = document.querySelector('#scenario-handoff-status');
+let ulgBrowserHandoffImportState = {
+  handoffId: null,
+  promise: null,
+  ack: null
+};
 
 const outputPanelRegistry = [
   { id: 'controls', label: 'controls', element: document.querySelector('.panel.left') },
@@ -1384,6 +1391,151 @@ async function importUlgScenarioHandoffFromClipboard() {
   return applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff, {
     scenarioId: 'magnetar'
   });
+}
+
+function isTrustedUlgBrowserHandoffOrigin(origin = '') {
+  try {
+    const url = new URL(origin);
+    const port = url.port || (url.protocol === 'http:' ? '80' : '443');
+    const allowedHosts = new Set([
+      window.location.hostname,
+      '127.0.0.1',
+      'localhost',
+      '0.0.0.0'
+    ].filter(Boolean));
+    return ['http:', 'https:'].includes(url.protocol)
+      && port === '5173'
+      && allowedHosts.has(url.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+function normalizeUlgBrowserHandoffId(payload = {}) {
+  return String(
+    payload.handoffId
+      || payload.handoff?.handoffId
+      || payload.handoff?.createdAt
+      || 'ulg-browser-handoff'
+  );
+}
+
+function createUlgBrowserHandoffAck({ handoffId, report = null, status = null, error = null } = {}) {
+  const readiness = report?.handoffReadiness || model.getScenario().handoffReadiness || {};
+  return {
+    schema: ULG_BROWSER_HANDOFF_ACK_SCHEMA,
+    handoffId: handoffId || null,
+    scenarioId: model.getScenario().id || 'magnetar',
+    status: status || readiness.status || 'handoff-imported',
+    blockerCount: readiness.blockerCount ?? null,
+    simulationStatus: readiness.simulationStatus || null,
+    artifactCount: report?.handoff?.artifactCount ?? report?.handoffReport?.handoff?.artifactCount ?? null,
+    error: error ? String(error.message || error) : null,
+    importedAt: new Date().toISOString()
+  };
+}
+
+function prepareMagnetarScenarioForBrowserHandoff() {
+  const scenario = model.getScenario();
+  if (scenario.id !== 'magnetar' || scenario.active !== true) {
+    applyScenarioPreset('magnetar');
+  }
+}
+
+async function receiveUlgBrowserHandoff(payload = {}) {
+  if (payload.schema && payload.schema !== ULG_BROWSER_HANDOFF_POST_SCHEMA) {
+    throw new Error(`unsupported browser handoff schema ${payload.schema}`);
+  }
+  if (!payload.handoff || typeof payload.handoff !== 'object') {
+    throw new Error('missing ULG handoff payload');
+  }
+
+  const handoffId = normalizeUlgBrowserHandoffId(payload);
+  if (ulgBrowserHandoffImportState.handoffId === handoffId) {
+    if (ulgBrowserHandoffImportState.ack) {
+      return ulgBrowserHandoffImportState.ack;
+    }
+    if (ulgBrowserHandoffImportState.promise) {
+      return ulgBrowserHandoffImportState.promise;
+    }
+  }
+
+  const importPromise = (async () => {
+    prepareMagnetarScenarioForBrowserHandoff();
+    if (scenarioHandoffStatus) {
+      scenarioHandoffStatus.textContent = 'handoff importing from ULG';
+    }
+    const report = await applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(payload.handoff, {
+      scenarioId: 'magnetar'
+    });
+    const ack = createUlgBrowserHandoffAck({ handoffId, report });
+    if (scenarioHandoffStatus) {
+      scenarioHandoffStatus.textContent = `status ${formatScenarioAffordanceValue(ack.status, 'imported')} / blockers ${ack.blockerCount ?? '?'}`;
+    }
+    renderScenarioAffordance(report.scenario || model.getScenario());
+    renderReadout();
+    return ack;
+  })();
+
+  ulgBrowserHandoffImportState = {
+    handoffId,
+    promise: importPromise,
+    ack: null
+  };
+
+  try {
+    const ack = await importPromise;
+    ulgBrowserHandoffImportState = {
+      handoffId,
+      promise: null,
+      ack
+    };
+    return ack;
+  } catch (error) {
+    const errorMessage = String(error?.message || error);
+    const ack = createUlgBrowserHandoffAck({
+      handoffId,
+      status: 'handoff-error',
+      error
+    });
+    ulgBrowserHandoffImportState = {
+      handoffId,
+      promise: null,
+      ack
+    };
+    if (scenarioHandoffStatus) {
+      scenarioHandoffStatus.textContent = `handoff import failed: ${errorMessage}`;
+    }
+    if (error && typeof error === 'object') {
+      error.ack = ack;
+    }
+    throw error;
+  }
+}
+
+function postUlgBrowserHandoffAck(event, ack) {
+  if (!event.source) return;
+  event.source.postMessage(ack, event.origin);
+}
+
+async function handleUlgBrowserHandoffMessage(event) {
+  const payload = event.data || {};
+  if (!payload || payload.schema !== ULG_BROWSER_HANDOFF_POST_SCHEMA) {
+    return;
+  }
+  if (!isTrustedUlgBrowserHandoffOrigin(event.origin)) {
+    return;
+  }
+  try {
+    const ack = await receiveUlgBrowserHandoff(payload);
+    postUlgBrowserHandoffAck(event, ack);
+  } catch (error) {
+    postUlgBrowserHandoffAck(event, error.ack || createUlgBrowserHandoffAck({
+      handoffId: normalizeUlgBrowserHandoffId(payload),
+      status: 'handoff-error',
+      error
+    }));
+  }
 }
 
 function readInitialScenarioPreset(search = '') {
@@ -11107,6 +11259,7 @@ molecularBufferAuto?.addEventListener('click', () => {
 });
 orbitalApply?.addEventListener('click', () => applyQuantumOrbitalControls({ reason: 'ui-apply-orbital' }));
 updateMolecularBufferWriterControls();
+window.addEventListener('message', handleUlgBrowserHandoffMessage);
 
 window.__multiscaleDemo = {
   setLayer,
@@ -11128,6 +11281,19 @@ window.__multiscaleDemo = {
   },
   importUlgScenarioHandoffFromClipboard() {
     return importUlgScenarioHandoffFromClipboard();
+  },
+  receiveUlgBrowserHandoff(payload = {}) {
+    return receiveUlgBrowserHandoff(payload);
+  },
+  getUlgBrowserHandoffImportState() {
+    return cloneJson({
+      handoffId: ulgBrowserHandoffImportState.handoffId,
+      ack: ulgBrowserHandoffImportState.ack,
+      importing: !!ulgBrowserHandoffImportState.promise
+    });
+  },
+  isTrustedUlgBrowserHandoffOrigin(origin = '') {
+    return isTrustedUlgBrowserHandoffOrigin(origin);
   },
   ingestScenarioCalibrationSummary(summary = {}, options = {}) {
     return ingestScenarioCalibrationSummary(summary, options);

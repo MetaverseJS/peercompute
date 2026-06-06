@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 10:41:00 AKDT
+Updated: 2026-06-06 12:46:50 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -45,6 +45,14 @@ Updated: 2026-06-06 10:41:00 AKDT
   a `sha256:` content hash, and `scientificValidation = false`. Compact service
   summaries expose the table status, computed-fixture flag, sample count, and
   hash.
+- Multiscale now accepts direct ULG browser handoffs over
+  `ulg.peercompute.browser-handoff-post.v0`, restricted to trusted ULG demo
+  origins on port `5173`, dedupes repeated popup-load posts by `handoffId`, and
+  replies with `peercompute.multiscale.browser-handoff-ack.v0`.
+- The received browser handoff uses the same
+  `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` path as manual
+  import, so the scenario HUD, handoff readiness, and reduced calibrated runtime
+  gate update together.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -98,10 +106,17 @@ Updated: 2026-06-06 10:41:00 AKDT
   `runtime-evidence-ready`, `validatedCount = 5`, `proxyOnlyCount = 0`,
   `missingCount = 0`, `scenarioScientificReady = true`, no blockers, and
   reduced-scope readiness for the `pic-kinetic-plasma` tolerance entry.
+- Direct browser launch probe passed from ULG `http://127.0.0.1:5173/` to
+  Multiscale `https://127.0.0.1:5185/?scenario=magnetar`: Multiscale reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, and visible magnetar proxy visual on the solar
+  layer.
 - `git diff --check` passed.
 
 ## Next
 - Replace deterministic table-fixture acceptance with descriptor-aware
   execution/table-probe logic once the closure runtime contract is ready.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
+- Add formal browser UI coverage for the postMessage receiver after the direct
+  launch bridge stabilizes across VPN and localhost hosts.
 - Keep commits local only.
