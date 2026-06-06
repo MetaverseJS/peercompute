@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 08:23:39 AKDT
+Updated: 2026-06-06 08:34:44 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -18,6 +18,9 @@ Updated: 2026-06-06 08:23:39 AKDT
   `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, carrying the
   materialized artifact body/summary and transferred Eshkol WASM bytes while
   keeping the dispatch plan ref-based.
+- Exported `UlgDispatchServiceHost` plus MoonLab/Eshkol dispatch service
+  manifests so registered service hosts can validate and cache materialized
+  dispatch payloads without relying on private test fixtures.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
@@ -30,7 +33,8 @@ Updated: 2026-06-06 08:23:39 AKDT
 - `git diff --check` passed.
 
 ## Next
-- Replace fixture service hosts with production Eshkol/MoonLab adapters that consume
-  the same dispatch task shape.
+- Wire the exported dispatch adapter hosts to real MoonLab/Eshkol browser worker
+  modules and service assets instead of the current deterministic acceptance
+  adapter.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

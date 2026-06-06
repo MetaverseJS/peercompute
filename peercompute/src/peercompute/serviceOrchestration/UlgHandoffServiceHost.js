@@ -299,9 +299,12 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
         }
       };
     const serviceResult = await supervisor.submitTask(serviceTask);
+    const serviceStatus = serviceResult?.serviceStatus || serviceResult?.adapterStatus || serviceResult?.status;
     const serviceReady = serviceResult?.ready === true
-      || serviceResult?.status === 'complete'
-      || serviceResult?.status === 'accepted';
+      || (serviceResult?.ready !== false && (
+        serviceStatus === 'complete'
+        || serviceStatus === 'accepted'
+      ));
     return {
       schema: ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
       dispatchId: dispatch.dispatchId,
@@ -311,6 +314,7 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
       taskKind: dispatch.taskKind,
       status: serviceReady ? 'accepted' : (serviceResult?.status || 'pending'),
       ready: serviceReady,
+      blockers: uniqueStrings(serviceResult?.blockers || []),
       artifactRefUri: dispatch.artifactRefUri || null,
       artifactContentHash: dispatch.artifactContentHash || null,
       serviceTask: clonePlain(serviceTask),

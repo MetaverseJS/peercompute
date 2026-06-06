@@ -31,6 +31,17 @@ export {
   createUlgHandoffSupervisorServiceExecutor
 } from './UlgHandoffServiceHost.js';
 export {
+  ULG_DISPATCH_SERVICE_ADAPTER_SCHEMA,
+  ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA,
+  ULG_DISPATCH_SERVICE_RESULT_SCHEMA,
+  ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA,
+  UlgDispatchServiceHost,
+  createUlgDispatchServiceHostFactory,
+  createUlgDispatchServiceManifests,
+  createUlgEshkolDispatchServiceManifest,
+  createUlgMoonLabDispatchServiceManifest
+} from './UlgDispatchServiceAdapters.js';
+export {
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,

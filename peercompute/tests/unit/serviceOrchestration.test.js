@@ -10,6 +10,9 @@ import {
   ComputeServiceRegistry,
   ChildWorkerLeaseManager,
   ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+  ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA,
+  ULG_DISPATCH_SERVICE_RESULT_SCHEMA,
+  ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA,
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
@@ -30,10 +33,12 @@ import {
   ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor,
+  UlgDispatchServiceHost,
   UlgHandoffServiceHost,
   adaptUlgV05ComputeServiceManifest,
   adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
+  createUlgDispatchServiceManifests,
   createUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceEnvelope,
   createUlgHandoffServiceManifest,
@@ -1639,7 +1644,7 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   }));
   const registry = new ComputeServiceRegistry([
     handoffManifest,
-    ...createUlgServiceFixtureManifests()
+    ...createUlgDispatchServiceManifests({ serviceIds })
   ]);
   const artifactCache = new InMemoryArtifactCache(() => 4444);
   let supervisor;
@@ -1660,7 +1665,7 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
           serviceExecutor
         });
       }
-      return new UlgContractServiceHost(serviceManifest);
+      return new UlgDispatchServiceHost(serviceManifest);
     }
   });
 
@@ -1681,8 +1686,13 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.acceptedDispatchCount, 2);
   assert.equal(result.dispatchResult.results[0].output.schema, ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceId, 'moonlab-ulg-fixture');
-  assert.equal(result.dispatchResult.results[0].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceStatus, 'accepted');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.taskKind, 'moonlab.ulg.quantum-response.ingest');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.schema, 'peercompute.ulg.moonlab-dispatch-ingest.v0');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.magnetarDipoleIsingReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceArtifactRef.sourceService, 'moonlab-ulg-fixture');
   assert.equal(
     result.dispatchResult.results[0].output.serviceTask.artifactPayload.schema,
     ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA
@@ -1694,8 +1704,14 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
     true
   );
   assert.equal(result.dispatchResult.results[1].output.serviceId, 'eshkol-ulg-fixture');
-  assert.equal(result.dispatchResult.results[1].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.serviceStatus, 'accepted');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.taskKind, 'eshkol.ulg.closure-artifact.ingest');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.schema, 'peercompute.ulg.eshkol-dispatch-ingest.v0');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.closureDescriptorReady, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.wasmByteLength, 4);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceArtifactRef.sourceService, 'eshkol-ulg-fixture');
   assert.equal(
     result.dispatchResult.results[1].output.serviceTask.artifactPayload.schema,
     ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA
@@ -1717,10 +1733,17 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
     'moonlab-ulg-fixture',
     'ulg-handoff-registry-fixture'
   ]);
+  assert.equal(telemetry.services.find((entry) => entry.serviceId === 'moonlab-ulg-fixture').telemetry.schema, ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA);
+  assert.equal(telemetry.services.find((entry) => entry.serviceId === 'eshkol-ulg-fixture').telemetry.schema, ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA);
   assert.equal(telemetry.tasks.length, 3);
   assert.equal(telemetry.tasks.filter((entry) => entry.status === 'complete').length, 3);
-  assert.equal(telemetry.artifacts.length, 1);
-  assert.equal(telemetry.artifacts[0].ref.uri, result.artifactRef.uri);
+  assert.equal(telemetry.artifacts.length, 3);
+  assert.deepEqual(telemetry.artifacts.map((entry) => entry.ref.sourceService).sort(), [
+    'eshkol-ulg-fixture',
+    'moonlab-ulg-fixture',
+    'ulg-handoff-registry-fixture'
+  ]);
+  assert.equal(telemetry.artifacts.find((entry) => entry.ref.uri === result.artifactRef.uri).ref.uri, result.artifactRef.uri);
 
   const cached = await artifactCache.get(result.artifactRef);
   assert.equal(cached.dispatchResult.results[0].output.serviceResult.serviceId, 'moonlab-ulg-fixture');
