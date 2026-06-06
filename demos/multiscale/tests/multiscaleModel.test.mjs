@@ -89,6 +89,8 @@ import {
   createKernelPassSpec
 } from '../src/simulation/ulgRuntime.js';
 import {
+  CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA,
+  CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCOPE,
   MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
   MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE,
   PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA,
@@ -97,6 +99,7 @@ import {
   RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
+  createCrossFamilyConservationCouplingRuntimeEvidenceEntry,
   createMagnetosphereMhdRuntimeEvidenceEntry,
   createPicKineticPlasmaRuntimeEvidenceEntry,
   createRadiationTransportRuntimeEvidenceEntry,
@@ -873,6 +876,72 @@ function createReadyEshkolClosureModuleProbe(overrides = {}) {
       scientificExecution: false
     },
     probeMode: 'browser-webassembly-module-abi-v0',
+    ...overrides
+  };
+}
+
+function createProxyMagnetarRuntimeEvidenceManifest(overrides = {}) {
+  return {
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [
+      [
+        'validated-magnetosphere-mhd-runtime',
+        'magnetosphere-mhd',
+        'magnetosphere-plasma',
+        MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
+        MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE,
+        'magnetosphere-plasma-runtime-proxy-only'
+      ],
+      [
+        'validated-pic-kinetic-plasma-runtime',
+        'pic-kinetic-plasma',
+        'pic-plasma-patch',
+        PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA,
+        PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE,
+        'pic-plasma-patch-runtime-proxy-only'
+      ],
+      [
+        'validated-radiation-transport-runtime',
+        'radiation-transport',
+        'radiation-opacity',
+        RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA,
+        RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE,
+        'radiation-transport-runtime-proxy-only'
+      ],
+      [
+        'validated-relativistic-correction-runtime',
+        'relativistic-correction',
+        'relativistic-correction',
+        RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
+        RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
+        'relativistic-correction-runtime-proxy-only'
+      ]
+    ].map(([id, family, solverId, validationSchema, validationScope, blocker], index) => ({
+      id,
+      family,
+      solverId,
+      status: 'proxy-runtime-validated',
+      ready: false,
+      scientificExecution: false,
+      runtimeObserved: true,
+      proxyOnly: true,
+      backend: `proxy-${solverId}-fixture`,
+      sequence: index + 1,
+      validationStatus: 'pass',
+      evidenceHash: `sha256:${String(index + 1).repeat(64)}`,
+      observed: { fixture: true, family },
+      validation: {
+        schema: validationSchema,
+        status: 'proxy-validation-pass',
+        pass: true,
+        ready: false,
+        scientificExecution: false,
+        scope: validationScope
+      },
+      scope: validationScope,
+      blockers: [blocker]
+    })),
     ...overrides
   };
 }
@@ -2760,6 +2829,64 @@ test('relativistic correction runtime evidence records bounded proxy validation 
   assert.equal(relativity.validation.schema, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA);
   assert.equal(relativity.validationScope, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE);
   assert.ok(relativity.blockers.includes('relativistic-correction-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+});
+
+test('cross-family conservation coupling runtime evidence records bounded proxy validation without scientific readiness', async () => {
+  const model = new MultiscaleModel({ seed: 483 });
+  model.applyScenarioPreset('magnetar');
+  const packet = model.createPacket();
+  const proxyManifest = createProxyMagnetarRuntimeEvidenceManifest();
+  const entry = await createCrossFamilyConservationCouplingRuntimeEvidenceEntry({
+    conservationAudit: packet.conservation,
+    crossScaleCoupling: packet.coupling,
+    runtimeEvidenceManifest: proxyManifest
+  });
+
+  assert.equal(entry.id, 'cross-family-conservation-and-coupling-validation');
+  assert.equal(entry.family, 'cross-family-conservation-coupling');
+  assert.equal(entry.solverId, 'multiscale-conservation-coupling');
+  assert.equal(entry.status, 'proxy-runtime-validated');
+  assert.equal(entry.ready, false);
+  assert.equal(entry.scientificExecution, false);
+  assert.equal(entry.validationStatus, 'pass');
+  assert.match(entry.evidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(entry.validation.schema, CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(entry.validation.scope, CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(entry.validation.pass, true);
+  assert.equal(entry.validation.ready, false);
+  assert.equal(entry.validation.scientificExecution, false);
+  assert.equal(entry.validation.checks.solverFamilyEvidencePresent, true);
+  assert.equal(entry.validation.checks.solverFamilyEvidenceProxyOnly, true);
+  assert.equal(entry.validation.checks.couplingRequiredLinksActive, true);
+  assert.equal(entry.observed.runtimeEvidenceObservedCount, 4);
+  assert.equal(entry.observed.missingRuntimeEvidenceIds.length, 0);
+  assert.equal(entry.observed.activeRequiredLinkCount, 5);
+  assert.ok(entry.blockers.includes('multiscale-conservation-coupling-runtime-proxy-only'));
+
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest({
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [...proxyManifest.entries, entry]
+  });
+  const crossFamily = scenario.scientificRuntimeEvidence.entries.find((candidate) => (
+    candidate.id === 'cross-family-conservation-and-coupling-validation'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.proxyOnlyCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 0);
+  assert.equal(crossFamily.status, 'proxy-runtime-observed');
+  assert.equal(crossFamily.ready, false);
+  assert.equal(crossFamily.scientificExecution, false);
+  assert.equal(crossFamily.evidenceHash, entry.evidenceHash);
+  assert.equal(crossFamily.validation.schema, CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(crossFamily.validationScope, CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(crossFamily.blockers.includes('multiscale-conservation-coupling-runtime-proxy-only'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
   assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });

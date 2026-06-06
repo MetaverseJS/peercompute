@@ -22,6 +22,12 @@ export const PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCHEMA =
 export const PIC_KINETIC_PLASMA_RUNTIME_VALIDATION_SCOPE =
   'bounded-pic-kinetic-plasma-proxy-validation';
 
+export const CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA =
+  'peercompute.multiscale.cross-family-conservation-coupling.runtime-validation.v0';
+
+export const CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCOPE =
+  'bounded-proxy-conservation-coupling-validation';
+
 const RUNTIME_EVIDENCE_ENTRY_ID = 'validated-relativistic-correction-runtime';
 const RUNTIME_EVIDENCE_FAMILY = 'relativistic-correction';
 const RUNTIME_EVIDENCE_SOLVER_ID = 'relativistic-correction';
@@ -34,6 +40,24 @@ const MAGNETOSPHERE_RUNTIME_EVIDENCE_SOLVER_ID = 'magnetosphere-plasma';
 const PIC_RUNTIME_EVIDENCE_ENTRY_ID = 'validated-pic-kinetic-plasma-runtime';
 const PIC_RUNTIME_EVIDENCE_FAMILY = 'pic-kinetic-plasma';
 const PIC_RUNTIME_EVIDENCE_SOLVER_ID = 'pic-plasma-patch';
+const CROSS_FAMILY_RUNTIME_EVIDENCE_ENTRY_ID = 'cross-family-conservation-and-coupling-validation';
+const CROSS_FAMILY_RUNTIME_EVIDENCE_FAMILY = 'cross-family-conservation-coupling';
+const CROSS_FAMILY_RUNTIME_EVIDENCE_SOLVER_ID = 'multiscale-conservation-coupling';
+
+const REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS = Object.freeze([
+  MAGNETOSPHERE_RUNTIME_EVIDENCE_ENTRY_ID,
+  PIC_RUNTIME_EVIDENCE_ENTRY_ID,
+  RADIATION_RUNTIME_EVIDENCE_ENTRY_ID,
+  RUNTIME_EVIDENCE_ENTRY_ID
+]);
+
+const REQUIRED_CROSS_FAMILY_LINK_IDS = Object.freeze([
+  'radiation-opacity-to-surface-heating',
+  'stellar-fusion-to-radiation-pressure',
+  'maxwell-field-to-magnetosphere',
+  'pic-kinetic-to-mhd-feedback',
+  'relativity-to-cosmology-galaxy'
+]);
 
 export function createRelativisticCorrectionRuntimeValidation(result = {}, options = {}) {
   const diagnostics = clonePlain(result.diagnostics || {});
@@ -419,6 +443,106 @@ export async function createPicKineticPlasmaRuntimeEvidenceEntry(result = {}, op
   };
 }
 
+export function createCrossFamilyConservationCouplingRuntimeValidation(source = {}, options = {}) {
+  const conservationAudit = clonePlain(source.conservationAudit || source.conservation || source.packet?.conservation || {});
+  const crossScaleCoupling = clonePlain(source.crossScaleCoupling || source.coupling || source.packet?.coupling || {});
+  const runtimeEvidenceManifest = clonePlain(source.runtimeEvidenceManifest || source.runtimeEvidence || {});
+  const runtimeEntries = Array.isArray(runtimeEvidenceManifest.entries) ? runtimeEvidenceManifest.entries : [];
+  const observed = summarizeCrossFamilyConservationCouplingRuntime({
+    conservationAudit,
+    crossScaleCoupling,
+    runtimeEntries
+  });
+  const checks = {
+    conservationAuditSchema: conservationAudit.schema === 'peercompute.multiscale.conservation-audit.v0',
+    conservationAuditProxyMode: conservationAudit.mode === 'interactive-proxy',
+    crossScaleCouplingSchema: crossScaleCoupling.schema === 'peercompute.multiscale.cross-scale-coupling.v0',
+    crossScaleCouplingProxyMode: crossScaleCoupling.mode === 'interactive-proxy',
+    couplingHasRequiredLinks: observed.missingRequiredLinkIds.length === 0,
+    couplingRequiredLinksActive: observed.inactiveRequiredLinkIds.length === 0,
+    couplingActiveLinkCountPositive: Number.isFinite(observed.activeLinkCount) && observed.activeLinkCount > 0,
+    solverFamilyEvidencePresent: observed.missingRuntimeEvidenceIds.length === 0,
+    solverFamilyEvidenceHashValid: observed.runtimeEvidenceHashValidCount === REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS.length,
+    solverFamilyEvidencePassesValidation: observed.runtimeEvidencePassCount === REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS.length,
+    solverFamilyEvidenceProxyOnly: observed.runtimeEvidenceScientificExecutionCount === 0,
+    conservationDriftFinite: finiteValues([
+      conservationAudit.solverDrift?.magnetosphereMassDrift,
+      conservationAudit.solverDrift?.magnetosphereDivergenceBProxy,
+      conservationAudit.solverDrift?.picChargeDrift,
+      conservationAudit.solverDrift?.picDivergenceEProxy,
+      conservationAudit.solverDrift?.relativisticEnergyDelta,
+      conservationAudit.solverDrift?.radiationEnergyDrift
+    ]),
+    couplingExchangeFinite: finiteValues([
+      conservationAudit.exchange?.surfaceRadiativeHeatFlux,
+      conservationAudit.exchange?.magnetosphereReconnectionRate,
+      conservationAudit.exchange?.picCurrentDensity,
+      conservationAudit.exchange?.relativisticLensingDeflectionArcsecProxy
+    ])
+  };
+  const blockers = validationBlockers('cross-family-conservation-coupling', checks);
+  const passed = blockers.length === 0;
+  return {
+    schema: CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA,
+    status: passed ? 'proxy-validation-pass' : 'proxy-validation-fail',
+    pass: passed,
+    ready: false,
+    scientificExecution: false,
+    proxyOnly: true,
+    scope: options.scope || CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCOPE,
+    solverId: CROSS_FAMILY_RUNTIME_EVIDENCE_SOLVER_ID,
+    backend: 'packet-conservation-coupling-proxy',
+    sequence: finiteOrNull(source.sequence || runtimeEvidenceManifest.sequence || crossScaleCoupling.timeSeconds),
+    observed,
+    checks,
+    blockerCount: blockers.length,
+    blockers,
+    note: 'This validates bounded packet-level proxy conservation/coupling telemetry only; it is not calibrated conservative multiphysics transfer or magnetar scientific execution.'
+  };
+}
+
+export async function createCrossFamilyConservationCouplingRuntimeEvidenceEntry(source = {}, options = {}) {
+  const validation = createCrossFamilyConservationCouplingRuntimeValidation(source, options);
+  const evidenceHash = validation.pass
+    ? await sha256CanonicalJson({
+      schema: CROSS_FAMILY_CONSERVATION_COUPLING_RUNTIME_VALIDATION_SCHEMA,
+      scope: validation.scope,
+      solverId: validation.solverId,
+      backend: validation.backend,
+      sequence: validation.sequence,
+      observed: validation.observed,
+      checks: validation.checks
+    })
+    : null;
+  return {
+    id: CROSS_FAMILY_RUNTIME_EVIDENCE_ENTRY_ID,
+    family: CROSS_FAMILY_RUNTIME_EVIDENCE_FAMILY,
+    solverId: CROSS_FAMILY_RUNTIME_EVIDENCE_SOLVER_ID,
+    status: validation.pass ? 'proxy-runtime-validated' : 'proxy-runtime-validation-failed',
+    ready: false,
+    scientificExecution: false,
+    runtimeObserved: validation.pass,
+    proxyOnly: true,
+    backend: validation.backend,
+    sequence: validation.sequence,
+    validationStatus: validation.pass ? 'pass' : 'fail',
+    evidenceHash,
+    observed: validation.observed,
+    validation,
+    scope: validation.scope,
+    blocker: 'multiscale-conservation-coupling-runtime-proxy-only',
+    blockers: validation.pass
+      ? [
+        'multiscale-conservation-coupling-runtime-proxy-only',
+        'cross-family-conservation-and-coupling-validation-missing'
+      ]
+      : [
+        ...validation.blockers,
+        'cross-family-conservation-and-coupling-validation-missing'
+      ]
+  };
+}
+
 function summarizeRelativisticCorrectionRuntime(result = {}) {
   const diagnostics = result.diagnostics || {};
   const conservation = result.conservation || {};
@@ -437,6 +561,56 @@ function summarizeRelativisticCorrectionRuntime(result = {}) {
     relativisticEnergyDelta: finiteOrNull(conservation.relativisticEnergyDelta),
     timeDilationDrift: finiteOrNull(conservation.timeDilationDrift),
     causalityClampCount: finiteOrNull(diagnostics.causalityClampCount)
+  };
+}
+
+function summarizeCrossFamilyConservationCouplingRuntime({
+  conservationAudit = {},
+  crossScaleCoupling = {},
+  runtimeEntries = []
+} = {}) {
+  const entriesById = new Map(runtimeEntries.map((entry) => [entry?.id, entry]));
+  const requiredEntries = REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS.map((id) => entriesById.get(id)).filter(Boolean);
+  const links = Array.isArray(crossScaleCoupling.links) ? crossScaleCoupling.links : [];
+  const linksById = new Map(links.map((link) => [link?.id, link]));
+  const requiredLinks = REQUIRED_CROSS_FAMILY_LINK_IDS.map((id) => linksById.get(id)).filter(Boolean);
+  return {
+    conservationStatus: conservationAudit.status || null,
+    conservationMode: conservationAudit.mode || null,
+    couplingStatus: crossScaleCoupling.status || null,
+    couplingMode: crossScaleCoupling.mode || null,
+    linkCount: finiteOrNull(crossScaleCoupling.linkCount),
+    activeLinkCount: finiteOrNull(crossScaleCoupling.activeLinkCount),
+    requiredLinkCount: REQUIRED_CROSS_FAMILY_LINK_IDS.length,
+    observedRequiredLinkCount: requiredLinks.length,
+    activeRequiredLinkCount: requiredLinks.filter((link) => link?.status === 'active').length,
+    missingRequiredLinkIds: REQUIRED_CROSS_FAMILY_LINK_IDS.filter((id) => !linksById.has(id)),
+    inactiveRequiredLinkIds: REQUIRED_CROSS_FAMILY_LINK_IDS.filter((id) => {
+      const link = linksById.get(id);
+      return link && link.status !== 'active';
+    }),
+    runtimeEvidenceRequiredCount: REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS.length,
+    runtimeEvidenceObservedCount: requiredEntries.length,
+    runtimeEvidenceHashValidCount: requiredEntries.filter((entry) => hasSha256Digest(entry?.evidenceHash)).length,
+    runtimeEvidencePassCount: requiredEntries.filter((entry) => entry?.validationStatus === 'pass').length,
+    runtimeEvidenceScientificExecutionCount: requiredEntries.filter((entry) => entry?.scientificExecution === true).length,
+    missingRuntimeEvidenceIds: REQUIRED_SOLVER_FAMILY_EVIDENCE_IDS.filter((id) => !entriesById.has(id)),
+    solverDrift: {
+      magnetosphereMassDrift: finiteOrNull(conservationAudit.solverDrift?.magnetosphereMassDrift),
+      magnetosphereDivergenceBProxy: finiteOrNull(conservationAudit.solverDrift?.magnetosphereDivergenceBProxy),
+      picChargeDrift: finiteOrNull(conservationAudit.solverDrift?.picChargeDrift),
+      picDivergenceEProxy: finiteOrNull(conservationAudit.solverDrift?.picDivergenceEProxy),
+      relativisticEnergyDelta: finiteOrNull(conservationAudit.solverDrift?.relativisticEnergyDelta),
+      radiationEnergyDrift: finiteOrNull(conservationAudit.solverDrift?.radiationEnergyDrift)
+    },
+    exchange: {
+      surfaceRadiativeHeatFlux: finiteOrNull(conservationAudit.exchange?.surfaceRadiativeHeatFlux),
+      magnetosphereReconnectionRate: finiteOrNull(conservationAudit.exchange?.magnetosphereReconnectionRate),
+      picCurrentDensity: finiteOrNull(conservationAudit.exchange?.picCurrentDensity),
+      relativisticLensingDeflectionArcsecProxy: finiteOrNull(
+        conservationAudit.exchange?.relativisticLensingDeflectionArcsecProxy
+      )
+    }
   };
 }
 
@@ -564,6 +738,14 @@ function clonePlain(value) {
 function finiteOrNull(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function finiteValues(values) {
+  return values.every((value) => Number.isFinite(Number(value)));
+}
+
+function hasSha256Digest(value) {
+  return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/i.test(value);
 }
 
 function byteToHex(byte) {
