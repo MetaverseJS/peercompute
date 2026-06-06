@@ -49424,3 +49424,56 @@ User asked whether Infinite Context Coder is being used.
   runtime solver evidence and cross-family conservation/coupling validation are
   attached.
 - No push was attempted.
+
+## 2026-06-06 02:46:03 AKDT - Multiscale runtime evidence manifest
+
+### Prompt
+- User asked whether the overall implementation plan remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-runtime-evidence-manifest.v0` for the
+  magnetar scientific runtime gate.
+- The manifest inventories five required evidence entries:
+  magnetosphere MHD, PIC kinetic plasma, radiation transport, relativistic
+  correction, and cross-family conservation/coupling validation.
+- Added model/browser APIs to ingest an external runtime-evidence manifest or
+  refresh proxy evidence from the current Multiscale solver state.
+- Exposed runtime-evidence status/counts through handoff readiness and
+  `scenarioRuntimeEvidence*` packet boundary conditions.
+- Added tests for current proxy-only evidence and for an explicit validated
+  five-entry fixture that clears the runtime gate only after transfer,
+  tolerance/reference, and closure prerequisites are ready.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: `node --check` passed for `demos/multiscale/src/simulation/multiscaleModel.js`,
+  `demos/multiscale/src/main.js`, and
+  `demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario|scientific runtime gate|runtime evidence|transfer manifests'`
+  passed `183/183`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings and refreshed `docs/multiscale/`.
+- PASS: live VPN probe against
+  `https://100.86.83.35:5185/?scenario=magnetar` using system Chrome and
+  ignored local HTTPS certificate errors reported
+  `runtime-evidence-proxy-only`, required count `5`, observed proxy count `4`,
+  validated count `0`, missing count `1`, gate runtime-evidence status
+  `runtime-evidence-proxy-only`, and `scenarioScientificReady: false`.
+
+### Open
+- The live four-family runtime evidence is reduced proxy output only. It does
+  not validate MHD/PIC/radiation/relativity scientific runtime execution.
+- Cross-family conservation/coupling validation remains missing.
+- No push was attempted.

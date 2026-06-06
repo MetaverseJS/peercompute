@@ -171,6 +171,7 @@ export const MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA = 'peercompute.multisc
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA = 'peercompute.multiscale.scenario-scientific-runtime-gate.v0';
+export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
@@ -203,6 +204,44 @@ const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
     provider: 'moonlab',
     toleranceKind: 'compact-object-orbital-and-redshift-error',
     blocker: 'calibrated-relativity-reference-missing'
+  }
+]);
+
+const MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS = Object.freeze([
+  {
+    id: 'validated-magnetosphere-mhd-runtime',
+    family: 'magnetosphere-mhd',
+    solverId: 'magnetosphere-plasma',
+    stateKey: 'magnetosphere',
+    blocker: 'validated-magnetosphere-mhd-runtime-missing'
+  },
+  {
+    id: 'validated-pic-kinetic-plasma-runtime',
+    family: 'pic-kinetic-plasma',
+    solverId: 'pic-plasma-patch',
+    stateKey: 'picPlasmaPatch',
+    blocker: 'validated-pic-kinetic-plasma-runtime-missing'
+  },
+  {
+    id: 'validated-radiation-transport-runtime',
+    family: 'radiation-transport',
+    solverId: 'radiation-opacity',
+    stateKey: 'radiationOpacity',
+    blocker: 'validated-radiation-transport-runtime-missing'
+  },
+  {
+    id: 'validated-relativistic-correction-runtime',
+    family: 'relativistic-correction',
+    solverId: 'relativistic-correction',
+    stateKey: 'relativity',
+    blocker: 'validated-relativistic-correction-runtime-missing'
+  },
+  {
+    id: 'cross-family-conservation-and-coupling-validation',
+    family: 'cross-family-conservation-coupling',
+    solverId: 'multiscale-conservation-coupling',
+    stateKey: 'crossFamily',
+    blocker: 'cross-family-conservation-and-coupling-validation-missing'
   }
 ]);
 
@@ -362,6 +401,7 @@ function createDefaultScenarioState() {
     closureIngest: null,
     closureModuleProbe: null,
     transferManifest: null,
+    scientificRuntimeEvidence: null,
     handoffReadiness: createScenarioHandoffReadinessReport({ id: 'default', active: false }),
     validation: {
       status: 'default',
@@ -1028,6 +1068,11 @@ function createScenarioScientificRuntimeGateReport({
     closureOutputSemanticsValidated: closureOutputSemanticsValidated === true,
     runtimeEvidenceSchema: runtimeEvidenceSource?.schema || null,
     runtimeEvidenceStatus: runtimeEvidenceSource?.status || null,
+    runtimeEvidenceRequiredCount: runtimeEvidenceSource?.requiredCount ?? null,
+    runtimeEvidenceObservedCount: runtimeEvidenceSource?.observedCount ?? null,
+    runtimeEvidenceValidatedCount: runtimeEvidenceSource?.validatedCount ?? null,
+    runtimeEvidenceProxyOnlyCount: runtimeEvidenceSource?.proxyOnlyCount ?? null,
+    runtimeEvidenceMissingCount: runtimeEvidenceSource?.missingCount ?? null,
     requiredRuntimeEvidence: [
       'validated-magnetosphere-mhd-runtime',
       'validated-pic-kinetic-plasma-runtime',
@@ -1039,6 +1084,223 @@ function createScenarioScientificRuntimeGateReport({
     blockers,
     note: 'Complete handoff/reference evidence is necessary but not sufficient; the current magnetar scenario remains proxy-only until validated runtime solver evidence is attached.'
   };
+}
+
+export function createScenarioRuntimeEvidenceManifestReport({
+  scenarioId = 'magnetar',
+  state = null,
+  manifest = null
+} = {}) {
+  if (scenarioId !== 'magnetar') {
+    return {
+      schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+      scenarioId: scenarioId || 'default',
+      status: 'not-applicable',
+      ready: false,
+      scientificExecution: false,
+      proxyOnly: false,
+      requiredCount: 0,
+      observedCount: 0,
+      validatedCount: 0,
+      proxyOnlyCount: 0,
+      missingCount: 0,
+      blockerCount: 0,
+      blockers: [],
+      entries: []
+    };
+  }
+
+  const sourceEntries = Array.isArray(manifest?.entries) ? manifest.entries : null;
+  const entries = MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.map((requirement) => (
+    sourceEntries
+      ? normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries)
+      : createScenarioRuntimeEvidenceEntryFromState(requirement, state)
+  ));
+  const requiredCount = entries.length;
+  const observedCount = entries.filter((entry) => entry.runtimeObserved).length;
+  const validatedCount = entries.filter((entry) => entry.ready).length;
+  const proxyOnlyCount = entries.filter((entry) => entry.proxyOnly).length;
+  const missingCount = entries.filter((entry) => !entry.runtimeObserved && !entry.ready).length;
+  const ready = requiredCount > 0 && validatedCount === requiredCount;
+  const blockers = ready ? [] : uniqueStrings(entries.flatMap((entry) => entry.blockers || []));
+  const status = ready
+    ? 'runtime-evidence-ready'
+    : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing');
+  return {
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId,
+    status,
+    ready,
+    scientificExecution: ready,
+    proxyOnly: !ready,
+    requiredCount,
+    observedCount,
+    validatedCount,
+    proxyOnlyCount,
+    missingCount,
+    blockerCount: blockers.length,
+    blockers,
+    entries,
+    note: ready
+      ? 'All required magnetar runtime evidence entries report validated scientific execution.'
+      : 'Current magnetar runtime evidence is proxy-only until validated solver execution and cross-family conservation/coupling artifacts are attached.'
+  };
+}
+
+function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) {
+  const source = sourceEntries.find((entry) => (
+    entry?.id === requirement.id
+    || entry?.family === requirement.family
+    || entry?.solverId === requirement.solverId
+  )) || {};
+  const validationStatus = source.validationStatus || source.validation?.status || null;
+  const scientificExecution = source.scientificExecution === true;
+  const ready = source.ready === true && scientificExecution && validationStatus === 'pass';
+  const backend = stringOrNull(source.backend);
+  const runtimeObserved = ready
+    || source.runtimeObserved === true
+    || (backend != null && backend !== 'none');
+  const blockers = ready
+    ? []
+    : uniqueStrings(Array.isArray(source.blockers) && source.blockers.length > 0
+      ? source.blockers
+      : [source.blocker, requirement.blocker]);
+  return {
+    id: requirement.id,
+    family: requirement.family,
+    solverId: source.solverId || requirement.solverId,
+    status: ready
+      ? 'validated-runtime-ready'
+      : (runtimeObserved ? 'proxy-runtime-observed' : 'runtime-evidence-missing'),
+    ready,
+    scientificExecution,
+    proxyOnly: !ready && runtimeObserved,
+    runtimeObserved,
+    backend,
+    sequence: finiteOrNull(source.sequence),
+    validationStatus,
+    evidenceHash: hasSha256Digest(source.evidenceHash) ? source.evidenceHash : null,
+    observed: clonePlain(source.observed || source.diagnostics || null),
+    blocker: blockers[0] || null,
+    blockers
+  };
+}
+
+function createScenarioRuntimeEvidenceEntryFromState(requirement, state = null) {
+  if (requirement.stateKey === 'crossFamily') {
+    return {
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId,
+      status: 'runtime-evidence-missing',
+      ready: false,
+      scientificExecution: false,
+      proxyOnly: false,
+      runtimeObserved: false,
+      backend: null,
+      sequence: null,
+      validationStatus: null,
+      evidenceHash: null,
+      observed: null,
+      blocker: requirement.blocker,
+      blockers: [requirement.blocker]
+    };
+  }
+  const source = state?.solar?.[requirement.stateKey] || {};
+  const backend = stringOrNull(source.backend);
+  const sequence = finiteOrNull(source.sequence);
+  const runtimeObserved = backend != null && backend !== 'none' && (sequence ?? 0) > 0;
+  const blockers = runtimeObserved
+    ? [`${requirement.solverId}-runtime-proxy-only`, requirement.blocker]
+    : [requirement.blocker];
+  return {
+    id: requirement.id,
+    family: requirement.family,
+    solverId: requirement.solverId,
+    status: runtimeObserved ? 'proxy-runtime-observed' : 'runtime-evidence-missing',
+    ready: false,
+    scientificExecution: false,
+    proxyOnly: runtimeObserved,
+    runtimeObserved,
+    backend: backend || null,
+    sequence,
+    validationStatus: null,
+    evidenceHash: null,
+    observed: runtimeObserved ? summarizeMagnetarRuntimeState(requirement, source) : null,
+    blocker: blockers[0],
+    blockers
+  };
+}
+
+function summarizeMagnetarRuntimeState(requirement, source = {}) {
+  if (requirement.stateKey === 'magnetosphere') {
+    return {
+      width: finiteOrNull(source.width),
+      height: finiteOrNull(source.height),
+      cellCount: finiteOrNull(source.cellCount),
+      meanDensity: finiteOrNull(source.meanDensity),
+      meanTemperatureK: finiteOrNull(source.meanTemperatureK),
+      meanIonizationFraction: finiteOrNull(source.meanIonizationFraction),
+      magneticEnergy: finiteOrNull(source.magneticEnergy),
+      plasmaEnergy: finiteOrNull(source.plasmaEnergy),
+      alfvenSpeed: finiteOrNull(source.alfvenSpeed),
+      divergenceBProxy: finiteOrNull(source.divergenceBProxy),
+      massDrift: finiteOrNull(source.massDrift),
+      magneticEnergyDelta: finiteOrNull(source.magneticEnergyDelta),
+      plasmaEnergyDelta: finiteOrNull(source.plasmaEnergyDelta)
+    };
+  }
+  if (requirement.stateKey === 'picPlasmaPatch') {
+    return {
+      particleCount: finiteOrNull(source.particleCount),
+      gridWidth: finiteOrNull(source.gridWidth),
+      gridHeight: finiteOrNull(source.gridHeight),
+      electronCount: finiteOrNull(source.electronCount),
+      ionCount: finiteOrNull(source.ionCount),
+      totalCharge: finiteOrNull(source.totalCharge),
+      chargeImbalance: finiteOrNull(source.chargeImbalance),
+      currentDensity: finiteOrNull(source.currentDensity),
+      chargeSeparation: finiteOrNull(source.chargeSeparation),
+      particleEscapeFraction: finiteOrNull(source.particleEscapeFraction),
+      reconnectionHeating: finiteOrNull(source.reconnectionHeating),
+      divergenceEProxy: finiteOrNull(source.divergenceEProxy),
+      chargeDrift: finiteOrNull(source.chargeDrift),
+      kineticEnergyDelta: finiteOrNull(source.kineticEnergyDelta),
+      fieldEnergyDelta: finiteOrNull(source.fieldEnergyDelta)
+    };
+  }
+  if (requirement.stateKey === 'radiationOpacity') {
+    return {
+      width: finiteOrNull(source.width),
+      height: finiteOrNull(source.height),
+      cellCount: finiteOrNull(source.cellCount),
+      meanTemperatureK: finiteOrNull(source.meanTemperatureK),
+      meanOpacity: finiteOrNull(source.meanOpacity),
+      opticalDepth: finiteOrNull(source.opticalDepth),
+      greenhouseFactor: finiteOrNull(source.greenhouseFactor),
+      netHeatingPower: finiteOrNull(source.netHeatingPower),
+      radiationEnergyDrift: finiteOrNull(source.radiationEnergyDrift)
+    };
+  }
+  if (requirement.stateKey === 'relativity') {
+    return {
+      sampleCount: finiteOrNull(source.sampleCount),
+      meanSpeedFractionC: finiteOrNull(source.meanSpeedFractionC),
+      maxSpeedFractionC: finiteOrNull(source.maxSpeedFractionC),
+      meanLorentzFactor: finiteOrNull(source.meanLorentzFactor),
+      maxLorentzFactor: finiteOrNull(source.maxLorentzFactor),
+      meanTimeDilation: finiteOrNull(source.meanTimeDilation),
+      gravitationalRedshiftProxy: finiteOrNull(source.gravitationalRedshiftProxy),
+      perihelionPrecessionArcsecProxy: finiteOrNull(source.perihelionPrecessionArcsecProxy),
+      frameDraggingProxy: finiteOrNull(source.frameDraggingProxy),
+      lensingDeflectionArcsecProxy: finiteOrNull(source.lensingDeflectionArcsecProxy),
+      relativisticEnergyProxy: finiteOrNull(source.relativisticEnergyProxy),
+      relativisticEnergyDelta: finiteOrNull(source.relativisticEnergyDelta),
+      timeDilationDrift: finiteOrNull(source.timeDilationDrift),
+      causalityClampCount: finiteOrNull(source.causalityClampCount)
+    };
+  }
+  return clonePlain(source);
 }
 
 export function createScenarioHandoffReadinessReport(scenario = {}) {
@@ -1086,6 +1348,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
+  const scientificRuntimeEvidence = scenario.scientificRuntimeEvidence || scenario.validation?.scientificRuntimeEvidence || null;
   const scientificRuntimeGate = createScenarioScientificRuntimeGateReport({
     scenarioId,
     allHandoffsReady,
@@ -1093,7 +1356,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     toleranceSuite,
     closureHostRuntimeExecutionReady,
     closureOutputSemanticsValidated,
-    runtimeEvidence: scenario.scientificRuntimeEvidence || scenario.validation?.scientificRuntimeEvidence || null
+    runtimeEvidence: scientificRuntimeEvidence
   });
   const scientificReady = allHandoffsReady && toleranceSuite.ready === true && scientificRuntimeGate.ready === true;
   const blockers = createScenarioHandoffBlockers({
@@ -1176,6 +1439,20 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     },
     referenceInventory,
     toleranceSuite,
+    scientificRuntimeEvidence: scientificRuntimeEvidence ? {
+      schema: scientificRuntimeEvidence.schema || MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+      ready: scientificRuntimeEvidence.ready === true,
+      status: scientificRuntimeEvidence.status || null,
+      scientificExecution: scientificRuntimeEvidence.scientificExecution === true,
+      proxyOnly: scientificRuntimeEvidence.proxyOnly === true,
+      requiredCount: scientificRuntimeEvidence.requiredCount ?? null,
+      observedCount: scientificRuntimeEvidence.observedCount ?? null,
+      validatedCount: scientificRuntimeEvidence.validatedCount ?? null,
+      proxyOnlyCount: scientificRuntimeEvidence.proxyOnlyCount ?? null,
+      missingCount: scientificRuntimeEvidence.missingCount ?? null,
+      blockerCount: Array.isArray(scientificRuntimeEvidence.blockers) ? scientificRuntimeEvidence.blockers.length : 0,
+      blockers: Array.isArray(scientificRuntimeEvidence.blockers) ? [...scientificRuntimeEvidence.blockers] : []
+    } : null,
     scientificRuntimeGate,
     closureHandoff: {
       provider: closureIngest?.provider || 'eshkol',
@@ -2462,6 +2739,52 @@ export class MultiscaleModel {
       handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
     };
     return this.getScenario();
+  }
+
+  ingestScenarioRuntimeEvidenceManifest(manifest = {}, options = {}) {
+    const scenarioId = options.scenarioId || manifest.scenarioId || this.scenario.id || 'magnetar';
+    const scientificRuntimeEvidence = createScenarioRuntimeEvidenceManifestReport({
+      scenarioId,
+      state: this.state,
+      manifest
+    });
+    if (options.applyPreset !== false && this.scenario.id !== scientificRuntimeEvidence.scenarioId) {
+      this.applyScenarioPreset(scientificRuntimeEvidence.scenarioId);
+    }
+    if (this.scenario.id !== scientificRuntimeEvidence.scenarioId) {
+      return this.getScenario();
+    }
+    this.scenario = {
+      ...this.scenario,
+      scientificRuntimeEvidence,
+      validation: {
+        ...(this.scenario.validation || {}),
+        status: this.scenario.validation?.status || 'proxy-only',
+        scientificRuntimeEvidenceStatus: scientificRuntimeEvidence.status,
+        scientificRuntimeEvidenceReady: scientificRuntimeEvidence.ready,
+        scientificRuntimeEvidenceObservedCount: scientificRuntimeEvidence.observedCount,
+        scientificRuntimeEvidenceValidatedCount: scientificRuntimeEvidence.validatedCount,
+        scientificRuntimeEvidenceProxyOnlyCount: scientificRuntimeEvidence.proxyOnlyCount,
+        scientificRuntimeEvidenceMissingCount: scientificRuntimeEvidence.missingCount,
+        simulationStatus: scientificRuntimeEvidence.ready ? 'scientific-runtime-ready' : 'proxy-only'
+      }
+    };
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
+    };
+    return this.getScenario();
+  }
+
+  refreshScenarioRuntimeEvidence(options = {}) {
+    const scenarioId = options.scenarioId || this.scenario.id || 'magnetar';
+    return this.ingestScenarioRuntimeEvidenceManifest(
+      createScenarioRuntimeEvidenceManifestReport({
+        scenarioId,
+        state: this.state
+      }),
+      options
+    );
   }
 
   clearScenarioPreset() {
@@ -7263,6 +7586,14 @@ export class MultiscaleModel {
           scenarioScientificRuntimeGateRuntimeEvidenceReady: scenario.handoffReadiness?.scientificRuntimeGate?.runtimeEvidenceReady === true,
           scenarioScientificRuntimeGateProxyOnly: scenario.handoffReadiness?.scientificRuntimeGate?.proxyOnly === true,
           scenarioScientificRuntimeGateBlockerCount: scenario.handoffReadiness?.scientificRuntimeGate?.blockerCount ?? null,
+          scenarioRuntimeEvidenceReady: scenario.handoffReadiness?.scientificRuntimeEvidence?.ready === true,
+          scenarioRuntimeEvidenceStatus: scenario.handoffReadiness?.scientificRuntimeEvidence?.status || null,
+          scenarioRuntimeEvidenceRequiredCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.requiredCount ?? null,
+          scenarioRuntimeEvidenceObservedCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.observedCount ?? null,
+          scenarioRuntimeEvidenceValidatedCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.validatedCount ?? null,
+          scenarioRuntimeEvidenceProxyOnlyCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.proxyOnlyCount ?? null,
+          scenarioRuntimeEvidenceMissingCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.missingCount ?? null,
+          scenarioRuntimeEvidenceBlockerCount: scenario.handoffReadiness?.scientificRuntimeEvidence?.blockerCount ?? null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

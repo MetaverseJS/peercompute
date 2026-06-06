@@ -22127,3 +22127,39 @@ User asked whether Infinite Context Coder is being used.
   `calibrated-mhd-pic-radiation-relativity-reference-missing`,
   `scientific-tolerance-suite-missing`, and `proxy-runtime-not-scientific`.
 - No push was attempted.
+
+## 2026-06-06 02:46:03 AKDT - Runtime evidence manifest
+
+### Prompt
+- User asked whether the overall implementation plan remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-runtime-evidence-manifest.v0` to
+  inventory magnetar runtime evidence for magnetosphere MHD, PIC kinetic plasma,
+  radiation transport, relativistic correction, and cross-family
+  conservation/coupling validation.
+- Added `refreshScenarioRuntimeEvidence()` and
+  `ingestScenarioRuntimeEvidenceManifest()` on the model and
+  `window.__multiscaleDemo`.
+- Exposed runtime-evidence readiness/status/counts through handoff readiness and
+  downward packet boundary conditions.
+- Added tests proving current reduced solver outputs are observed as proxy-only
+  evidence and that an explicit validated five-entry fixture clears the runtime
+  gate only after all other prerequisites are ready.
+- Rebuilt the checked-in docs bundle.
+
+### Validation
+- PASS: source/test syntax checks completed.
+- PASS: targeted Multiscale model invocation passed `183/183`.
+- PASS: Multiscale build completed with existing large-chunk warnings.
+- PASS: live VPN probe on `https://100.86.83.35:5185/?scenario=magnetar`
+  reported runtime evidence status `runtime-evidence-proxy-only`, required `5`,
+  observed proxy families `4`, validated `0`, missing `1`, and
+  `scenarioScientificReady: false`.
+
+### Open
+- Runtime evidence is now inspectable, but the live evidence remains reduced
+  proxy output. Validated scientific runtime artifacts for MHD/PIC/radiation/
+  relativity plus cross-family conservation/coupling are still required.
+- No push was attempted.

@@ -20,6 +20,7 @@ import {
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
+  MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
   MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
@@ -724,6 +725,39 @@ function createReadyUlgTransferManifest(overrides = {}) {
         blockers: []
       }
     ],
+    ...overrides
+  };
+}
+
+function createReadyMagnetarRuntimeEvidenceManifest(overrides = {}) {
+  return {
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [
+      ['validated-magnetosphere-mhd-runtime', 'magnetosphere-mhd', 'magnetosphere-plasma'],
+      ['validated-pic-kinetic-plasma-runtime', 'pic-kinetic-plasma', 'pic-plasma-patch'],
+      ['validated-radiation-transport-runtime', 'radiation-transport', 'radiation-opacity'],
+      ['validated-relativistic-correction-runtime', 'relativistic-correction', 'relativistic-correction'],
+      ['cross-family-conservation-and-coupling-validation', 'cross-family-conservation-coupling', 'multiscale-conservation-coupling']
+    ].map(([id, family, solverId], index) => ({
+      id,
+      family,
+      solverId,
+      status: 'validated-runtime-ready',
+      ready: true,
+      scientificExecution: true,
+      runtimeObserved: true,
+      backend: `validated-${solverId}-fixture`,
+      sequence: index + 1,
+      validationStatus: 'pass',
+      evidenceHash: `sha256:${String(index + 1).repeat(64)}`,
+      observed: { fixture: true, family },
+      validation: {
+        status: 'pass',
+        toleranceSuite: 'fixture'
+      },
+      blockers: []
+    })),
     ...overrides
   };
 }
@@ -2303,6 +2337,86 @@ test('magnetar scientific runtime gate blocks complete proxy handoffs without va
   assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scenario records proxy runtime evidence without clearing the runtime gate', () => {
+  const model = new MultiscaleModel({ seed: 474 });
+  model.applyScenarioPreset('magnetar');
+  const scenario = model.refreshScenarioRuntimeEvidence();
+
+  assert.equal(scenario.scientificRuntimeEvidence.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.scientificExecution, false);
+  assert.equal(scenario.scientificRuntimeEvidence.requiredCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 4);
+  assert.equal(scenario.scientificRuntimeEvidence.proxyOnlyCount, 4);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.entries.find((entry) => entry.solverId === 'magnetosphere-plasma').status, 'proxy-runtime-observed');
+  assert.equal(scenario.scientificRuntimeEvidence.entries.find((entry) => entry.solverId === 'magnetosphere-plasma').observed.divergenceBProxy, 0.42);
+  assert.equal(scenario.scientificRuntimeEvidence.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation').status, 'runtime-evidence-missing');
+  assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('magnetosphere-plasma-runtime-proxy-only'));
+  assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('cross-family-conservation-and-coupling-validation-missing'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceStatus, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceObservedCount, 4);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceStatus, 'runtime-evidence-proxy-only');
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceRequiredCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceObservedCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceProxyOnlyCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceMissingCount, 1);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites', () => {
+  const model = new MultiscaleModel({ seed: 475 });
+  model.ingestScenarioTransferManifest(createReadyUlgTransferManifest());
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    magnetarCalibratedReferences: createMagnetarCalibratedReferences()
+  });
+  model.ingestScenarioClosureSummary(createReadyEshkolClosureSummary());
+  model.ingestScenarioClosureModuleProbeReport(createReadyEshkolClosureModuleProbe());
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(createReadyMagnetarRuntimeEvidenceManifest());
+
+  assert.equal(scenario.scientificRuntimeEvidence.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-ready');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, true);
+  assert.equal(scenario.scientificRuntimeEvidence.scientificExecution, true);
+  assert.equal(scenario.scientificRuntimeEvidence.requiredCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 5);
+  assert.equal(scenario.scientificRuntimeEvidence.blockerCount, 0);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-ready');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.prerequisiteReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, true);
+  assert.deepEqual(scenario.handoffReadiness.blockers, []);
+  assert.equal(scenario.handoffReadiness.scientificReady, true);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceStatus, 'runtime-evidence-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceValidatedCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, true);
 });
 
 test('magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness', () => {

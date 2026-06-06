@@ -1377,6 +1377,30 @@ function ingestScenarioTransferManifest(manifest = {}, options = {}) {
   });
 }
 
+function ingestScenarioRuntimeEvidenceManifest(manifest = {}, options = {}) {
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(manifest, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    scientificRuntimeEvidence: scenario.scientificRuntimeEvidence || null,
+    handoffReadiness: scenario.handoffReadiness || null
+  });
+}
+
+function refreshScenarioRuntimeEvidence(options = {}) {
+  const scenario = model.refreshScenarioRuntimeEvidence(options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    scenario,
+    scientificRuntimeEvidence: scenario.scientificRuntimeEvidence || null,
+    handoffReadiness: scenario.handoffReadiness || null
+  });
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
@@ -10675,6 +10699,12 @@ window.__multiscaleDemo = {
   },
   ingestScenarioTransferManifest(manifest = {}, options = {}) {
     return ingestScenarioTransferManifest(manifest, options);
+  },
+  ingestScenarioRuntimeEvidenceManifest(manifest = {}, options = {}) {
+    return ingestScenarioRuntimeEvidenceManifest(manifest, options);
+  },
+  refreshScenarioRuntimeEvidence(options = {}) {
+    return refreshScenarioRuntimeEvidence(options);
   },
   probeScenarioClosureModule(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, options);
