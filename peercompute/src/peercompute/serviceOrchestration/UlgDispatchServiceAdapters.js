@@ -827,7 +827,18 @@ async function createMoonLabDispatchProbe(payload = {}) {
     magnetarCalibratedReferenceCount: summary.magnetarCalibratedReferenceCount ?? null,
     magnetarCalibratedReferenceReadyCount: summary.magnetarCalibratedReferenceReadyCount ?? null,
     magnetarCalibratedReferenceScientificCoverageCount:
-      summary.magnetarCalibratedReferenceScientificCoverageCount ?? null
+      summary.magnetarCalibratedReferenceScientificCoverageCount ?? null,
+    moonlabWebGpuParityScopeReady: summary.moonlabWebGpuParityScopeReady ?? null,
+    moonlabWebGpuParityScopeSchema: summary.moonlabWebGpuParityScopeSchema || null,
+    moonlabWebGpuParityScopeStatus: summary.moonlabWebGpuParityScopeStatus || null,
+    moonlabWebGpuParityScopeBackendAvailable: summary.moonlabWebGpuParityScopeBackendAvailable ?? null,
+    moonlabWebGpuParityScopeWebgpuParityExecuted:
+      summary.moonlabWebGpuParityScopeWebgpuParityExecuted ?? null,
+    moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+      summary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation ?? null,
+    moonlabWebGpuParityScopeFullPhysicsValidation:
+      summary.moonlabWebGpuParityScopeFullPhysicsValidation ?? null,
+    moonlabWebGpuParityScope: clonePlain(summary.moonlabWebGpuParityScope || null)
   };
 }
 
@@ -1383,6 +1394,17 @@ function createMoonLabIngestSummary(payload = {}, probe = null) {
     outputReferenceCount: summary.outputReferenceCount ?? outputReferences.length,
     magnetarCalibratedReferenceReadyCount: summary.magnetarCalibratedReferenceReadyCount ?? null,
     magnetarCalibratedReferenceCount: summary.magnetarCalibratedReferenceCount ?? null,
+    moonlabWebGpuParityScopeReady: summary.moonlabWebGpuParityScopeReady ?? null,
+    moonlabWebGpuParityScopeSchema: summary.moonlabWebGpuParityScopeSchema || null,
+    moonlabWebGpuParityScopeStatus: summary.moonlabWebGpuParityScopeStatus || null,
+    moonlabWebGpuParityScopeBackendAvailable: summary.moonlabWebGpuParityScopeBackendAvailable ?? null,
+    moonlabWebGpuParityScopeWebgpuParityExecuted:
+      summary.moonlabWebGpuParityScopeWebgpuParityExecuted ?? null,
+    moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+      summary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation ?? null,
+    moonlabWebGpuParityScopeFullPhysicsValidation:
+      summary.moonlabWebGpuParityScopeFullPhysicsValidation ?? null,
+    moonlabWebGpuParityScope: clonePlain(summary.moonlabWebGpuParityScope || null),
     adapterProbe: clonePlain(probe)
   };
 }

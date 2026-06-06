@@ -29,6 +29,7 @@ import {
   MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
   MOONLAB_MAGNETAR_REFERENCE_ROLE,
+  MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
   MultiscaleModel,
   SCALE_LAYERS,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
@@ -680,6 +681,39 @@ const MAGNETAR_REDUCED_FIDELITY_RUNTIME_SCOPE = Object.freeze({
     'validated-production-magnetar-closure'
   ]
 });
+
+function createMoonLabWebGpuComplex64ParityScope(overrides = {}) {
+  return {
+    schema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+    status: 'scope-ready-backend-unavailable',
+    contractReady: true,
+    contractValidation: {
+      valid: true
+    },
+    reducedFixtureOnly: true,
+    backendAvailable: false,
+    webgpuParity: {
+      executed: false,
+      passed: false
+    },
+    complex64Preflight: {
+      passed: true
+    },
+    fidelityRuntimeScope: {
+      ...MAGNETAR_REDUCED_FIDELITY_RUNTIME_SCOPE,
+      runtimeScope: 'moonlab-webgpu-complex64-no-backend-scope',
+      readinessClaim: 'complex64-contract-preflight-only'
+    },
+    fullFidelityMagnetarSimulation: false,
+    fullPhysicsValidation: false,
+    blockers: [
+      'browser-webgpu-adapter-unavailable',
+      'native-webgpu-operation-coverage-not-yet-recorded',
+      'browser-webgpu-kernel-parity-not-executed'
+    ],
+    ...overrides
+  };
+}
 
 const MAGNETAR_CALIBRATED_REFERENCE_FIXTURES = Object.freeze([
   {
@@ -2386,6 +2420,83 @@ test('magnetar scenario ingests ULG transfer manifests without promoting scienti
   assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferReady, false);
   assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferStatus, 'transfer-manifest-missing');
   assert.equal(emptyPacket.downward.boundaryConditions.scenarioHandoffTransferBlockerCount, 1);
+});
+
+test('magnetar scenario surfaces MoonLab WebGPU complex64 no-backend parity scope without scientific overclaims', () => {
+  const model = new MultiscaleModel({ seed: 4731 });
+  const scenario = model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    moonlabWebGpuParityScope: createMoonLabWebGpuComplex64ParityScope()
+  });
+
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.schema, MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.ready, true);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.status, 'scope-ready-backend-unavailable');
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.backendAvailable, false);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.webgpuParityExecuted, false);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.webgpuParityPassed, false);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.fullFidelityMagnetarSimulation, false);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.fullPhysicsValidation, false);
+  assert.equal(scenario.calibrationIngest.moonlabWebGpuParityScope.validationBlockerCount, 0);
+  assert.ok(scenario.calibrationIngest.moonlabWebGpuParityScope.blockers.includes(
+    'browser-webgpu-kernel-parity-not-executed'
+  ));
+  assert.equal(scenario.calibrationIngest.validation.webGpuParityScopeReady, true);
+  assert.equal(scenario.calibrationIngest.validation.webGpuParityScopeBackendAvailable, false);
+  assert.equal(scenario.calibrationIngest.validation.webGpuParityScopeWebgpuParityExecuted, false);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.webGpuParityScopeReady, true);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.webGpuParityScopeBackendAvailable, false);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.webGpuParityScopeWebgpuParityExecuted, false);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.webGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.webGpuParityScopeFullPhysicsValidation, false);
+  assert.equal(scenario.handoffReadiness.moonlabWebGpuParityScope.ready, true);
+  assert.equal(scenario.handoffReadiness.moonlabWebGpuParityScope.backendAvailable, false);
+  assert.equal(scenario.handoffReadiness.moonlabWebGpuParityScope.webgpuParityExecuted, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+  assert.equal(scenario.handoffReadiness.simulationStatus, 'proxy-only');
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabWebGpuParityScopeReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabWebGpuParityScopeStatus, 'scope-ready-backend-unavailable');
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabWebGpuBackendAvailable, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabWebGpuParityExecuted, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabFullFidelityMagnetarSimulation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioMoonLabFullPhysicsValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+
+  const overclaimModel = new MultiscaleModel({ seed: 4732 });
+  const overclaimScenario = overclaimModel.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    moonlabWebGpuParityScope: createMoonLabWebGpuComplex64ParityScope({
+      backendAvailable: true
+    })
+  });
+  assert.equal(overclaimScenario.calibrationIngest.moonlabWebGpuParityScope.ready, false);
+  assert.ok(overclaimScenario.calibrationIngest.moonlabWebGpuParityScope.validationBlockers.includes(
+    'moonlab-webgpu-complex64-backend-availability-overstated'
+  ));
+  assert.equal(overclaimScenario.handoffReadiness.moonlabWebGpuParityScope.ready, false);
 });
 
 test('magnetar scenario keeps tolerance suite partial when calibrated references are incomplete', () => {

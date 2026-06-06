@@ -51261,3 +51261,94 @@ timeout 8s env \
 - Handler output is now visible, but concrete production MoonLab/Eshkol runtime
   handlers still need to be wired.
 - No push was attempted.
+
+## 2026-06-06 13:36:14 AKDT - MoonLab WebGPU parity-scope evidence surfacing
+
+### Prompt
+- Work only in `/home/cos/projects/peercompute`, keep commits local, do not
+  push, inspect the current Multiscale ULG handoff ingestion/summarization path,
+  and apply a bounded PeerCompute patch if clear to surface MoonLab
+  `moonlab.webgpu.complex64-parity-scope.v0` no-backend evidence without
+  overclaiming WebGPU execution or full magnetar physics.
+
+### Actions
+- Traced the path from `summarizeUlgArtifact()` in
+  `ulgManifestAdapter.js`, through normalized ULG handoff artifacts, MoonLab
+  dispatch probes/ingest summaries, handoff supervisor summaries, Multiscale
+  scenario calibration ingest/readiness, and packet boundary conditions.
+- Added `MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA` plus a sanitized
+  MoonLab WebGPU complex64 parity-scope summary. The summary accepts the
+  no-backend scope only when `contractReady` and contract validation pass while
+  preserving `backendAvailable = false`, `webgpuParityExecuted = false`,
+  `webgpuParityPassed = false`, `fullFidelityMagnetarSimulation = false`, and
+  `fullPhysicsValidation = false`.
+- Split expected evidence blockers such as backend unavailable and
+  kernel-parity not executed from validation blockers, so no-backend evidence
+  can be ready without pretending WebGPU parity executed.
+- Surfaced the same fields through MoonLab dispatch probe/ingest summaries,
+  `peercompute.ulg.handoff-supervisor-service-summary.v0`, Multiscale
+  `peercompute.multiscale.ulg-dispatch-service-result-summary.v0`,
+  `peercompute.multiscale.scenario-calibration-ingest.v0`,
+  `peercompute.multiscale.scenario-handoff-readiness.v0`, and packet boundary
+  conditions.
+- Added regressions for artifact summary, dispatch summary, Multiscale scenario
+  ingest/readiness, packet fields, and an overclaim case where
+  `backendAvailable = true` is rejected.
+- Rebuilt the Multiscale docs bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'WebGPU complex64 no-backend parity scope|ULG handoff service host submits dispatches to registered Eshkol and MoonLab services'`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'MoonLab WebGPU complex64 no-backend parity scope|magnetar scenario combines ULG calibration and Eshkol closure handoffs|magnetar scenario clears calibrated reference blockers only when all scientific family references validate'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale test`
+- `npm --prefix demos/multiscale run build`
+- `ss -ltnp | rg ':(5173|5185)\b'`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+
+### Results
+- PASS: all changed JavaScript files passed syntax checks.
+- Initial focused service-orchestration run failed because the new assertions
+  were added to the registry-backed handoff test before the parity-scope
+  fixture was added to that handoff's MoonLab artifact summary. The fixture was
+  corrected and the focused service run then passed `24/24`.
+- PASS: full service-orchestration test passed `24/24`.
+- PASS: Multiscale npm test suite passed `196/196`, including the new
+  `magnetar scenario surfaces MoonLab WebGPU complex64 no-backend parity scope
+  without scientific overclaims` regression.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: listener check showed the live ULG and Multiscale Vite servers still
+  bound to `0.0.0.0:5173` and `0.0.0.0:5185`.
+- PASS: live ULG browser handoff smoke passed against `127.0.0.1:5173` and
+  `127.0.0.1:5185`, with `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, and the
+  visible magnetar proxy on the solar layer.
+
+### Open
+- This surfaces MoonLab no-backend complex64 scope evidence only. It does not
+  execute browser WebGPU parity, does not mark `backendAvailable`, and does not
+  promote full-fidelity magnetar simulation or full physics validation.
+- No push was attempted.

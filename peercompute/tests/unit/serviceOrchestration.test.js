@@ -28,6 +28,7 @@ import {
   ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
   ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
   ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA,
+  MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -82,6 +83,42 @@ const MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES = [
   0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00,
   0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x00, 0x0b
 ];
+
+function createMoonLabWebGpuComplex64ParityScope(overrides = {}) {
+  return {
+    schema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+    status: 'scope-ready-backend-unavailable',
+    contractReady: true,
+    contractValidation: {
+      valid: true
+    },
+    reducedFixtureOnly: true,
+    backendAvailable: false,
+    webgpuParity: {
+      executed: false,
+      passed: false
+    },
+    complex64Preflight: {
+      passed: true
+    },
+    fidelityRuntimeScope: {
+      schema: 'ulg.magnetar.fidelity-runtime-scope.v0',
+      fidelityTier: 'reduced-calibrated-runtime-fixture',
+      runtimeScope: 'moonlab-webgpu-complex64-no-backend-scope',
+      readinessClaim: 'complex64-contract-preflight-only',
+      fullFidelityMagnetarSimulation: false,
+      fullPhysicsValidation: false
+    },
+    fullFidelityMagnetarSimulation: false,
+    fullPhysicsValidation: false,
+    blockers: [
+      'browser-webgpu-adapter-unavailable',
+      'native-webgpu-operation-coverage-not-yet-recorded',
+      'browser-webgpu-kernel-parity-not-executed'
+    ],
+    ...overrides
+  };
+}
 
 function createEshkolMagnetarDescriptorArtifact() {
   return {
@@ -1081,6 +1118,46 @@ test('ULG artifact summary exposes calibrated magnetar reference inventory from 
   assert.equal(summary.magnetarCalibratedReferences[2].ready, false);
 });
 
+test('ULG artifact summary exposes MoonLab WebGPU complex64 no-backend parity scope without execution claims', () => {
+  const summary = summarizeUlgArtifact('quantum-response', {
+    sourceService: 'moonlab',
+    outputs: {
+      webGpuParityScope: createMoonLabWebGpuComplex64ParityScope()
+    }
+  });
+
+  assert.equal(summary.moonlabWebGpuParityScopeReady, true);
+  assert.equal(summary.moonlabWebGpuParityScopeSchema, MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA);
+  assert.equal(summary.moonlabWebGpuParityScopeStatus, 'scope-ready-backend-unavailable');
+  assert.equal(summary.moonlabWebGpuParityScopeContractReady, true);
+  assert.equal(summary.moonlabWebGpuParityScopeContractValidationValid, true);
+  assert.equal(summary.moonlabWebGpuParityScopeReducedFixtureOnly, true);
+  assert.equal(summary.moonlabWebGpuParityScopeBackendAvailable, false);
+  assert.equal(summary.moonlabWebGpuParityScopeWebgpuParityExecuted, false);
+  assert.equal(summary.moonlabWebGpuParityScopeWebgpuParityPassed, false);
+  assert.equal(summary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(summary.moonlabWebGpuParityScopeFullPhysicsValidation, false);
+  assert.equal(summary.moonlabWebGpuParityScopeBlockerCount, 3);
+  assert.equal(summary.moonlabWebGpuParityScopeValidationBlockerCount, 0);
+  assert.ok(summary.moonlabWebGpuParityScopeBlockers.includes('browser-webgpu-kernel-parity-not-executed'));
+  assert.equal(summary.moonlabWebGpuParityScope.ready, true);
+  assert.equal(summary.moonlabWebGpuParityScope.backendAvailable, false);
+  assert.equal(summary.moonlabWebGpuParityScope.webgpuParityExecuted, false);
+
+  const backendOverclaim = summarizeUlgArtifact('quantum-response', {
+    sourceService: 'moonlab',
+    outputs: {
+      webGpuParityScope: createMoonLabWebGpuComplex64ParityScope({
+        backendAvailable: true
+      })
+    }
+  });
+  assert.equal(backendOverclaim.moonlabWebGpuParityScopeReady, false);
+  assert.ok(backendOverclaim.moonlabWebGpuParityScopeValidationBlockers.includes(
+    'moonlab-webgpu-complex64-backend-availability-overstated'
+  ));
+});
+
 test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => {
   const task = adaptUlgV05TaskCapsule({
     taskId: 'task-eshkol-bundle-1',
@@ -1619,7 +1696,15 @@ test('ULG handoff service host stores durable envelopes through WorkerSupervisor
         magnetarDipoleIsingReady: true,
         magnetarDipoleIsingStatus: 'pass',
         magnetarDipoleIsingParityStatus: 'pass',
-        magnetarDipoleIsingGroundState: '000'
+        magnetarDipoleIsingGroundState: '000',
+        moonlabWebGpuParityScopeReady: true,
+        moonlabWebGpuParityScopeSchema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+        moonlabWebGpuParityScopeStatus: 'scope-ready-backend-unavailable',
+        moonlabWebGpuParityScopeBackendAvailable: false,
+        moonlabWebGpuParityScopeWebgpuParityExecuted: false,
+        moonlabWebGpuParityScopeFullFidelityMagnetarSimulation: false,
+        moonlabWebGpuParityScopeFullPhysicsValidation: false,
+        moonlabWebGpuParityScope: createMoonLabWebGpuComplex64ParityScope()
       }
     }, {
       ref: {
@@ -1713,7 +1798,15 @@ test('ULG handoff service host dispatches envelope refs to Eshkol and MoonLab ex
         magnetarDipoleIsingReady: true,
         magnetarDipoleIsingStatus: 'pass',
         magnetarDipoleIsingParityStatus: 'pass',
-        magnetarDipoleIsingGroundState: '000'
+        magnetarDipoleIsingGroundState: '000',
+        moonlabWebGpuParityScopeReady: true,
+        moonlabWebGpuParityScopeSchema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+        moonlabWebGpuParityScopeStatus: 'scope-ready-backend-unavailable',
+        moonlabWebGpuParityScopeBackendAvailable: false,
+        moonlabWebGpuParityScopeWebgpuParityExecuted: false,
+        moonlabWebGpuParityScopeFullFidelityMagnetarSimulation: false,
+        moonlabWebGpuParityScopeFullPhysicsValidation: false,
+        moonlabWebGpuParityScope: createMoonLabWebGpuComplex64ParityScope()
       }
     }, {
       ref: {
@@ -1851,7 +1944,15 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
         magnetarDipoleIsingReady: true,
         magnetarDipoleIsingStatus: 'pass',
         magnetarDipoleIsingParityStatus: 'pass',
-        magnetarDipoleIsingGroundState: '000'
+        magnetarDipoleIsingGroundState: '000',
+        moonlabWebGpuParityScopeReady: true,
+        moonlabWebGpuParityScopeSchema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+        moonlabWebGpuParityScopeStatus: 'scope-ready-backend-unavailable',
+        moonlabWebGpuParityScopeBackendAvailable: false,
+        moonlabWebGpuParityScopeWebgpuParityExecuted: false,
+        moonlabWebGpuParityScopeFullFidelityMagnetarSimulation: false,
+        moonlabWebGpuParityScopeFullPhysicsValidation: false,
+        moonlabWebGpuParityScope: createMoonLabWebGpuComplex64ParityScope()
       }
     }, {
       ref: {
@@ -1970,6 +2071,11 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.magnetarDipoleIsingReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.schema, 'peercompute.ulg.moonlab-dispatch-payload-probe.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.ready, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.moonlabWebGpuParityScopeReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.moonlabWebGpuParityScopeBackendAvailable, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.moonlabWebGpuParityScopeWebgpuParityExecuted, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.moonlabWebGpuParityScopeFullPhysicsValidation, false);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.payloadSchema, ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.serviceOutput.probeStatus, 'pass');
@@ -1983,6 +2089,12 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerOutputReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.probeStatus, 'pass');
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.magnetarDipoleIsingReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeSchema, MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeBackendAvailable, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeWebgpuParityExecuted, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.moonlabWebGpuParityScopeFullPhysicsValidation, false);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.hostRuntimeExecutionReady, null);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.serviceOutput.schema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');

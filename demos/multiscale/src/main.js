@@ -1962,6 +1962,41 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || serviceResult.serviceOutput?.serviceStatus
         || serviceResult.serviceOutput?.status
         || null,
+      moonlabWebGpuParityScopeReady:
+        serviceSummary?.moonlabWebGpuParityScopeReady
+        ?? serviceResult.ingest?.moonlabWebGpuParityScopeReady
+        ?? serviceResult.probe?.moonlabWebGpuParityScopeReady
+        ?? null,
+      moonlabWebGpuParityScopeSchema:
+        serviceSummary?.moonlabWebGpuParityScopeSchema
+        || serviceResult.ingest?.moonlabWebGpuParityScopeSchema
+        || serviceResult.probe?.moonlabWebGpuParityScopeSchema
+        || null,
+      moonlabWebGpuParityScopeStatus:
+        serviceSummary?.moonlabWebGpuParityScopeStatus
+        || serviceResult.ingest?.moonlabWebGpuParityScopeStatus
+        || serviceResult.probe?.moonlabWebGpuParityScopeStatus
+        || null,
+      moonlabWebGpuParityScopeBackendAvailable:
+        serviceSummary?.moonlabWebGpuParityScopeBackendAvailable
+        ?? serviceResult.ingest?.moonlabWebGpuParityScopeBackendAvailable
+        ?? serviceResult.probe?.moonlabWebGpuParityScopeBackendAvailable
+        ?? null,
+      moonlabWebGpuParityScopeWebgpuParityExecuted:
+        serviceSummary?.moonlabWebGpuParityScopeWebgpuParityExecuted
+        ?? serviceResult.ingest?.moonlabWebGpuParityScopeWebgpuParityExecuted
+        ?? serviceResult.probe?.moonlabWebGpuParityScopeWebgpuParityExecuted
+        ?? null,
+      moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+        serviceSummary?.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation
+        ?? serviceResult.ingest?.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation
+        ?? serviceResult.probe?.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation
+        ?? null,
+      moonlabWebGpuParityScopeFullPhysicsValidation:
+        serviceSummary?.moonlabWebGpuParityScopeFullPhysicsValidation
+        ?? serviceResult.ingest?.moonlabWebGpuParityScopeFullPhysicsValidation
+        ?? serviceResult.probe?.moonlabWebGpuParityScopeFullPhysicsValidation
+        ?? null,
       probeStatus: serviceSummary?.probeStatus || probe.status || null,
       probeReady: serviceSummary?.probeReady ?? (typeof probe.ready === 'boolean' ? probe.ready : null),
       probeMode: serviceSummary?.probeMode || probe.probeMode || null,

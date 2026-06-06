@@ -393,7 +393,18 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     outputReferenceReadyCount: finiteNumberOrNull(ingest.outputReferenceReadyCount),
     outputReferenceCount: finiteNumberOrNull(ingest.outputReferenceCount),
     magnetarCalibratedReferenceReadyCount: finiteNumberOrNull(ingest.magnetarCalibratedReferenceReadyCount),
-    magnetarCalibratedReferenceCount: finiteNumberOrNull(ingest.magnetarCalibratedReferenceCount)
+    magnetarCalibratedReferenceCount: finiteNumberOrNull(ingest.magnetarCalibratedReferenceCount),
+    moonlabWebGpuParityScopeReady: booleanOrNull(ingest.moonlabWebGpuParityScopeReady),
+    moonlabWebGpuParityScopeSchema: ingest.moonlabWebGpuParityScopeSchema || null,
+    moonlabWebGpuParityScopeStatus: ingest.moonlabWebGpuParityScopeStatus || null,
+    moonlabWebGpuParityScopeBackendAvailable:
+      booleanOrNull(ingest.moonlabWebGpuParityScopeBackendAvailable),
+    moonlabWebGpuParityScopeWebgpuParityExecuted:
+      booleanOrNull(ingest.moonlabWebGpuParityScopeWebgpuParityExecuted),
+    moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+      booleanOrNull(ingest.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation),
+    moonlabWebGpuParityScopeFullPhysicsValidation:
+      booleanOrNull(ingest.moonlabWebGpuParityScopeFullPhysicsValidation)
   };
 }
 

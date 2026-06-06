@@ -18,6 +18,7 @@ export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-cl
 const DEFAULT_PROTOCOL_VERSION = '0.5';
 const MOONLAB_MAGNETAR_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
+export const MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA = 'moonlab.webgpu.complex64-parity-scope.v0';
 const TASK_ARTIFACT_KIND = Object.freeze({
   'eshkol.closure.derive': 'closure',
   'moonlab.quantum.response': 'quantum-response'
@@ -228,6 +229,85 @@ function fieldDeltasWithinTolerances(observedDeltas = {}, tolerances = {}) {
   return checkedFieldCount > 0;
 }
 
+function findMoonLabWebGpuParityScope(artifact = {}, outputs = {}) {
+  const candidates = [
+    artifact.webGpuParityScope,
+    artifact.webgpuParityScope,
+    artifact.webGpuComplex64ParityScope,
+    artifact.webgpuComplex64ParityScope,
+    artifact.validation?.webGpuParityScope,
+    artifact.validation?.webgpuParityScope,
+    artifact.runtime?.webGpuParityScope,
+    artifact.runtime?.webgpuParityScope,
+    outputs.webGpuParityScope,
+    outputs.webgpuParityScope,
+    outputs.webGpuComplex64ParityScope,
+    outputs.webgpuComplex64ParityScope,
+    outputs.parityScope
+  ];
+  return candidates
+    .map((entry) => plainObjectOrNull(entry))
+    .find((entry) => entry?.schema === MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA)
+    || null;
+}
+
+function normalizeMoonLabWebGpuParityScope(scope = null) {
+  if (!scope) return null;
+  const contractValidation = plainObjectOrNull(scope.contractValidation) || {};
+  const fidelityRuntimeScope = plainObjectOrNull(scope.fidelityRuntimeScope) || null;
+  const webgpuParity = plainObjectOrNull(scope.webgpuParity) || {};
+  const complex64Preflight = plainObjectOrNull(scope.complex64Preflight) || {};
+  const contractValidationValid = contractValidation.valid === true || contractValidation.passed === true;
+  const evidenceBlockers = uniqueStrings([
+    ...(Array.isArray(scope.blockers) ? scope.blockers : []),
+    ...(Array.isArray(contractValidation.blockers) ? contractValidation.blockers : [])
+  ]);
+  const validationBlockers = uniqueStrings([
+    scope.schema === MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA
+      ? null
+      : 'moonlab-webgpu-complex64-parity-scope-schema-mismatch',
+    scope.contractReady === true ? null : 'moonlab-webgpu-complex64-contract-not-ready',
+    contractValidationValid ? null : 'moonlab-webgpu-complex64-contract-validation-not-ready',
+    scope.reducedFixtureOnly === true ? null : 'moonlab-webgpu-complex64-reduced-fixture-flag-missing',
+    scope.backendAvailable === false ? null : 'moonlab-webgpu-complex64-backend-availability-overstated',
+    webgpuParity.executed === false ? null : 'moonlab-webgpu-complex64-parity-execution-overstated',
+    webgpuParity.passed === false ? null : 'moonlab-webgpu-complex64-parity-pass-overstated',
+    scope.fullFidelityMagnetarSimulation === false
+      ? null
+      : 'moonlab-webgpu-complex64-full-fidelity-overstated',
+    scope.fullPhysicsValidation === false
+      ? null
+      : 'moonlab-webgpu-complex64-full-physics-validation-overstated',
+    complex64Preflight.passed === true
+      ? null
+      : 'moonlab-webgpu-complex64-preflight-not-ready'
+  ]);
+  const ready = validationBlockers.length === 0;
+  return {
+    schema: scope.schema || null,
+    status: scope.status || (ready ? 'scope-ready-backend-unavailable' : 'scope-blocked'),
+    ready,
+    contractReady: scope.contractReady === true,
+    contractValidationValid,
+    reducedFixtureOnly: scope.reducedFixtureOnly === true,
+    backendAvailable: scope.backendAvailable === true,
+    webgpuParityExecuted: webgpuParity.executed === true,
+    webgpuParityPassed: webgpuParity.passed === true,
+    complex64PreflightPassed: complex64Preflight.passed === true,
+    fullFidelityMagnetarSimulation: typeof scope.fullFidelityMagnetarSimulation === 'boolean'
+      ? scope.fullFidelityMagnetarSimulation
+      : null,
+    fullPhysicsValidation: typeof scope.fullPhysicsValidation === 'boolean'
+      ? scope.fullPhysicsValidation
+      : null,
+    fidelityRuntimeScope: clonePlain(fidelityRuntimeScope),
+    blockerCount: evidenceBlockers.length,
+    blockers: evidenceBlockers,
+    validationBlockerCount: validationBlockers.length,
+    validationBlockers
+  };
+}
+
 function normalizeMagnetarCalibratedReference(reference = {}, index = 0) {
   const fieldMap = plainObjectOrNull(reference.fieldMap);
   const fieldTolerances = plainObjectOrNull(reference.fieldTolerances || reference.tolerances);
@@ -428,6 +508,9 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
       .filter((reference) => reference && typeof reference === 'object')
       .map((reference, index) => normalizeMagnetarCalibratedReference(reference, index))
     : [];
+  const moonlabWebGpuParityScope = normalizeMoonLabWebGpuParityScope(
+    findMoonLabWebGpuParityScope(artifact, outputs)
+  );
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
@@ -558,6 +641,24 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     magnetarCalibratedReferenceScientificCoverageCount: magnetarCalibratedReferences
       .filter((entry) => entry.scientificCoverage === true).length,
     magnetarCalibratedReferences,
+    moonlabWebGpuParityScopeReady: moonlabWebGpuParityScope?.ready === true,
+    moonlabWebGpuParityScopeSchema: moonlabWebGpuParityScope?.schema || null,
+    moonlabWebGpuParityScopeStatus: moonlabWebGpuParityScope?.status || null,
+    moonlabWebGpuParityScopeContractReady: moonlabWebGpuParityScope?.contractReady ?? null,
+    moonlabWebGpuParityScopeContractValidationValid: moonlabWebGpuParityScope?.contractValidationValid ?? null,
+    moonlabWebGpuParityScopeReducedFixtureOnly: moonlabWebGpuParityScope?.reducedFixtureOnly ?? null,
+    moonlabWebGpuParityScopeBackendAvailable: moonlabWebGpuParityScope?.backendAvailable ?? null,
+    moonlabWebGpuParityScopeWebgpuParityExecuted: moonlabWebGpuParityScope?.webgpuParityExecuted ?? null,
+    moonlabWebGpuParityScopeWebgpuParityPassed: moonlabWebGpuParityScope?.webgpuParityPassed ?? null,
+    moonlabWebGpuParityScopeComplex64PreflightPassed: moonlabWebGpuParityScope?.complex64PreflightPassed ?? null,
+    moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+      moonlabWebGpuParityScope?.fullFidelityMagnetarSimulation ?? null,
+    moonlabWebGpuParityScopeFullPhysicsValidation: moonlabWebGpuParityScope?.fullPhysicsValidation ?? null,
+    moonlabWebGpuParityScopeBlockerCount: moonlabWebGpuParityScope?.blockerCount ?? null,
+    moonlabWebGpuParityScopeBlockers: moonlabWebGpuParityScope?.blockers || [],
+    moonlabWebGpuParityScopeValidationBlockerCount: moonlabWebGpuParityScope?.validationBlockerCount ?? null,
+    moonlabWebGpuParityScopeValidationBlockers: moonlabWebGpuParityScope?.validationBlockers || [],
+    moonlabWebGpuParityScope,
     calibrationArtifactCount: calibrationSummaries.length,
     calibrationReadyCount: calibrationSummaries.filter((entry) => entry.ready).length,
     calibrationArtifacts: calibrationSummaries,
