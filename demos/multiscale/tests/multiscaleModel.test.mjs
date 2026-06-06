@@ -10,7 +10,12 @@ import {
   ComputeManager
 } from '../../../peercompute/src/peercompute/computeManager/ComputeManager.js';
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
-import { MultiscaleModel, SCALE_LAYERS } from '../src/simulation/multiscaleModel.js';
+import {
+  MULTISCALE_SCENARIO_PRESET_SCHEMA,
+  MULTISCALE_SCENARIO_PRESETS,
+  MultiscaleModel,
+  SCALE_LAYERS
+} from '../src/simulation/multiscaleModel.js';
 import {
   MULTISCALE_COMPUTE_RESIZE_CONSERVATION_SCHEMA,
   MULTISCALE_CONSERVATION_AUDIT_SCHEMA,
@@ -1512,6 +1517,47 @@ test('model emits solver-agnostic multiscale packets', () => {
   assert.equal(clamped.oxygenFraction, 0.35);
   assert.equal(clamped.gravityMps2, 24);
   assert.equal(clamped.stellarFlux, 2.8);
+});
+
+test('magnetar scenario preset seeds normalized extreme-field packet state', () => {
+  const model = new MultiscaleModel({ seed: 44 });
+  const scenario = model.applyScenarioPreset('magnetar');
+  const preset = MULTISCALE_SCENARIO_PRESETS.magnetar;
+
+  assert.equal(scenario.schema, MULTISCALE_SCENARIO_PRESET_SCHEMA);
+  assert.equal(scenario.id, 'magnetar');
+  assert.equal(scenario.active, true);
+  assert.equal(scenario.normalization.status, 'normalized-to-demo-bounds');
+  assert.equal(scenario.environment.magneticFieldT, preset.environment.magneticFieldT);
+  assert.equal(model.environment.electricFieldVm, preset.environment.electricFieldVm);
+  assert.equal(model.environment.magneticFieldT, preset.environment.magneticFieldT);
+  assert.equal(model.environment.radiativeHeatFlux, preset.environment.radiativeHeatFlux);
+  assert.equal(model.state.surface.radiativeHeatFlux, preset.environment.radiativeHeatFlux);
+
+  assert.equal(model.state.solar.stellarFusion.backend, 'scenario-magnetar-proxy');
+  assert.equal(model.state.solar.magnetosphere.backend, 'scenario-magnetar-proxy');
+  assert.equal(model.state.solar.picPlasmaPatch.backend, 'scenario-magnetar-proxy');
+  assert.equal(model.state.solar.relativity.backend, 'scenario-magnetar-proxy');
+  assert.ok(model.state.solar.stellarFusion.coreTemperatureK > 24000000);
+  assert.ok(model.state.solar.magnetosphere.reconnectionRate > 1.1);
+  assert.ok(model.state.solar.picPlasmaPatch.particleEscapeFraction > 0.2);
+  assert.ok(model.state.solar.relativity.gravitationalRedshiftProxy > 0.006);
+
+  const refinementRequests = model.estimateRefinementRequests();
+  assert.ok(refinementRequests.includes('stellar-plasma-refinement'));
+  assert.ok(refinementRequests.includes('mhd-pic-refinement'));
+  assert.ok(refinementRequests.includes('pic-kinetic-refinement'));
+  assert.ok(refinementRequests.includes('relativistic-region-refinement'));
+
+  const packet = model.createPacket();
+  assert.equal(packet.scenario.id, 'magnetar');
+  assert.equal(packet.scenario.validation.status, 'proxy-only');
+  assert.equal(packet.upward.aggregateState.scenario.id, 'magnetar');
+  assert.equal(packet.upward.aggregateState.magnetosphere.backend, 'scenario-magnetar-proxy');
+  assert.equal(packet.downward.boundaryConditions.scenarioId, 'magnetar');
+  assert.equal(packet.downward.boundaryConditions.scenarioObjectClass, 'magnetar-neutron-star');
+  assert.equal(packet.downward.boundaryConditions.magneticFieldT, preset.environment.magneticFieldT);
+  assert.equal(packet.downward.boundaryConditions.radiativeHeatFlux, preset.environment.radiativeHeatFlux);
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {

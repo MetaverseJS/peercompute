@@ -27,6 +27,7 @@
             <button id="rupture" type="button">burst</button>
             <button id="quality-down" type="button">sim -</button>
             <button id="quality-up" type="button">sim +</button>
+            <button id="scenario-magnetar" type="button" aria-pressed="false">magnetar</button>
           </div>
           <div class="control-grid hud-mode-controls" aria-label="hud display mode">
             <button id="hud-focus" type="button" aria-pressed="true">focus</button>
@@ -59,19 +60,19 @@
           </label>
           <label class="range-row">
             <span>ambient K</span>
-            <input id="ambient-temperature" type="range" min="80" max="1200" step="1" value="294" />
+            <input id="ambient-temperature" type="range" min="80" max="3200" step="1" value="294" />
           </label>
           <label class="range-row">
             <span>pressure Pa</span>
-            <input id="ambient-pressure" type="range" min="1000" max="500000" step="25" value="101325" />
+            <input id="ambient-pressure" type="range" min="100" max="5000000" step="25" value="101325" />
           </label>
           <label class="range-row">
             <span>electric V/m</span>
-            <input id="electric-field" type="range" min="-1000000000" max="1000000000" step="1000000" value="0" />
+            <input id="electric-field" type="range" min="-10000000000" max="10000000000" step="1000000" value="0" />
           </label>
           <label class="range-row">
             <span>magnetic T</span>
-            <input id="magnetic-field" type="range" min="-25" max="25" step="0.1" value="0" />
+            <input id="magnetic-field" type="range" min="-100" max="100" step="0.1" value="0" />
           </label>
           <div class="molecule-builder" aria-label="molecular dynamics atom controls">
             <div class="eyebrow">molecular input</div>

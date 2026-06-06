@@ -7,7 +7,11 @@ import {
   createPlacementAdmissionPolicy,
   createRemoteResultQuorumValidator
 } from '@peercompute';
-import { MultiscaleModel, SCALE_LAYERS } from './simulation/multiscaleModel.js';
+import {
+  MULTISCALE_SCENARIO_PRESETS,
+  MultiscaleModel,
+  SCALE_LAYERS
+} from './simulation/multiscaleModel.js';
 import { MultiscaleScene } from './visualization/multiscaleScene.js';
 import { MULTISCALE_RENDER_BUDGET_SCHEMA } from './visualization/renderBudget.js';
 import {
@@ -459,6 +463,7 @@ const orbitalStatus = document.querySelector('#orbital-status');
 const autoTour = document.querySelector('#auto-tour');
 const qualityDown = document.querySelector('#quality-down');
 const qualityUp = document.querySelector('#quality-up');
+const scenarioMagnetar = document.querySelector('#scenario-magnetar');
 
 const outputPanelRegistry = [
   { id: 'controls', label: 'controls', element: document.querySelector('.panel.left') },
@@ -1271,6 +1276,54 @@ function setEnvironmentFromUi() {
     ambientPressurePa: Number(ambientPressure.value),
     electricFieldVm: Number(electricField?.value || 0),
     magneticFieldT: Number(magneticField?.value || 0)
+  });
+}
+
+function syncEnvironmentControls() {
+  oxygen.value = String(model.environment.oxygenFraction);
+  stellarFlux.value = String(model.environment.stellarFlux);
+  gravity.value = String(model.environment.gravityMps2);
+  ambientTemperature.value = String(model.environment.ambientTemperatureK);
+  ambientPressure.value = String(model.environment.ambientPressurePa);
+  if (electricField) electricField.value = String(model.environment.electricFieldVm);
+  if (magneticField) magneticField.value = String(model.environment.magneticFieldT);
+}
+
+function syncScenarioControls() {
+  const scenario = model.getScenario();
+  scenarioMagnetar?.classList.toggle('active', scenario.id === 'magnetar' && scenario.active === true);
+  scenarioMagnetar?.setAttribute('aria-pressed', String(scenario.id === 'magnetar' && scenario.active === true));
+}
+
+function readInitialScenarioPreset(search = '') {
+  try {
+    const params = new URLSearchParams(search || '');
+    const value = String(
+      params.get('scenario')
+        || params.get('scenarioPreset')
+        || params.get('objectPreset')
+        || ''
+    ).trim().toLowerCase();
+    return MULTISCALE_SCENARIO_PRESETS[value] ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function applyScenarioPreset(id = 'magnetar', options = {}) {
+  const scenario = model.applyScenarioPreset(id);
+  syncEnvironmentControls();
+  if (options.setLayer !== false && scenario.targetLayerId) {
+    model.setLayerById(scenario.targetLayerId);
+    setLayer(model.layerIndex);
+  } else {
+    renderReadout();
+  }
+  syncScenarioControls();
+  return cloneJson({
+    scenario,
+    environment: model.environment,
+    refinementRequests: model.estimateRefinementRequests()
   });
 }
 
@@ -2683,6 +2736,7 @@ const FOCUS_LAYER_READOUT_ROWS = new Set([
   'solver target',
   'compute',
   'environment',
+  'scenario',
   'law graph',
   'ulg spec',
   'root contracts',
@@ -2767,7 +2821,8 @@ function selectLayerReadoutRows(rows, layerId = null) {
     'zoom continuity',
     'solver target',
     'compute',
-    'environment'
+    'environment',
+    'scenario'
   ]);
   const layerLabels = new Set(layerRows);
   const leadingRows = filteredRows.filter(([key]) => leadingLabels.has(key));
@@ -5394,6 +5449,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
   const nbodyOverlay = scene.getNBodyOverlayStatus();
   const visualReference = scene.getVisualReferenceStatus();
   const packet = createUiPacket();
+  const scenario = packet.scenario || model.getScenario();
   const molecularResult = solverRuntimeStatus.molecularDynamics?.lastResult;
   const molecularTelemetry = packet.upward?.aggregateState?.molecularDynamics || molecularResult;
   const molecularBalance = packet.upward?.aggregateState?.molecularSourceSinkBalance || packet.sourceSinkBalance || null;
@@ -5600,6 +5656,9 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['task placement', formatTaskPlacement(managerStats?.taskPlacement)],
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
+    ['scenario', scenario?.active
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'}`
+      : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
       : 'unknown'],
@@ -9789,6 +9848,7 @@ autoTour.addEventListener('click', () => {
 });
 qualityDown.addEventListener('click', () => scaleSolverQuality(-1));
 qualityUp.addEventListener('click', () => scaleSolverQuality(1));
+scenarioMagnetar?.addEventListener('click', () => applyScenarioPreset('magnetar'));
 hudFocus?.addEventListener('click', () => {
   applyHudMode('focus');
   renderReadout();
@@ -9838,15 +9898,18 @@ window.__multiscaleDemo = {
   },
   setEnvironment(values) {
     const environment = model.setEnvironment(normalizeEnvironmentValues(values));
-    oxygen.value = String(model.environment.oxygenFraction);
-    stellarFlux.value = String(model.environment.stellarFlux);
-    gravity.value = String(model.environment.gravityMps2);
-    ambientTemperature.value = String(model.environment.ambientTemperatureK);
-    ambientPressure.value = String(model.environment.ambientPressurePa);
-    if (electricField) electricField.value = String(model.environment.electricFieldVm);
-    if (magneticField) magneticField.value = String(model.environment.magneticFieldT);
+    syncEnvironmentControls();
     renderReadout();
     return environment;
+  },
+  applyScenarioPreset(id = 'magnetar', options = {}) {
+    return applyScenarioPreset(id, options);
+  },
+  getScenario() {
+    return cloneJson(model.getScenario());
+  },
+  getScenarioPresets() {
+    return cloneJson(MULTISCALE_SCENARIO_PRESETS);
   },
   triggerRupture() {
     model.triggerRupture();
@@ -10345,6 +10408,7 @@ window.__multiscaleDemo = {
       layerIndex: model.layerIndex,
       layer: { ...model.activeLayer },
       environment: { ...model.environment },
+      scenario: model.getScenario(),
       state: cloneJson(model.state),
       compute: { ...computeStatus },
       computeBudget: cloneJson(computeBudget),
@@ -10631,7 +10695,13 @@ initializeMolecularControls();
 initializeQuantumOrbitalControls();
 initializeOutputPanelToggles();
 applyHudMode(readInitialHudMode(initialSearch));
-setLayer(0);
+const initialScenarioPreset = readInitialScenarioPreset(initialSearch);
+if (initialScenarioPreset) {
+  applyScenarioPreset(initialScenarioPreset);
+} else {
+  setLayer(0);
+  syncScenarioControls();
+}
 startNetVizRuntimeSessionBroadcast();
 if (peerNetworkRuntimeOverrides.enablePeerNetwork === true) {
   startPeerNetwork().catch((error) => {

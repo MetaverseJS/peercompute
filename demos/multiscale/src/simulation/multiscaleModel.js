@@ -160,6 +160,63 @@ export const SCALE_LAYERS = [
   }
 ];
 
+export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenario-preset.v0';
+
+export const MULTISCALE_SCENARIO_PRESETS = {
+  magnetar: {
+    schema: MULTISCALE_SCENARIO_PRESET_SCHEMA,
+    id: 'magnetar',
+    label: 'Magnetar proxy',
+    objectClass: 'magnetar-neutron-star',
+    modelTier: 'normalized-extreme-field-proxy-v0',
+    targetLayerId: 'solar',
+    environment: {
+      oxygenFraction: 0,
+      stellarFlux: 2.8,
+      gravityMps2: 24,
+      ambientTemperatureK: 3200,
+      ambientPressurePa: 5000000,
+      electricFieldVm: 1e10,
+      magneticFieldT: 100,
+      radiativeHeatFlux: 50000,
+      refinementThreshold: 0.48
+    },
+    physicalReference: {
+      surfaceMagneticFieldT: 1e8,
+      surfaceGravityMps2: 1e12,
+      flareElectricFieldVm: 1e12,
+      radiationFluxWm2: 1e25
+    },
+    normalization: {
+      status: 'normalized-to-demo-bounds',
+      magneticFieldT: { physical: 1e8, normalized: 100 },
+      gravityMps2: { physical: 1e12, normalized: 24 },
+      electricFieldVm: { physical: 1e12, normalized: 1e10 },
+      radiativeHeatFlux: { physical: 1e25, normalized: 50000 }
+    },
+    solverFocus: [
+      'stellar-fusion',
+      'magnetosphere-plasma',
+      'pic-plasma-patch',
+      'radiation-opacity',
+      'relativistic-correction',
+      'maxwell-em'
+    ],
+    calibrationArtifacts: [
+      {
+        provider: 'moonlab',
+        artifactKind: 'magnetar-dipole-ising-calibration',
+        parity: 'wasm-ising-energy-js-reference',
+        readiness: 'local-artifact'
+      }
+    ],
+    validation: {
+      status: 'proxy-only',
+      note: 'Fields are normalized into current demo solver bounds; this is not calibrated magnetar astrophysics.'
+    }
+  }
+};
+
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -171,6 +228,36 @@ function finite(value, fallback = 0) {
 
 function rounded(value, digits = 4) {
   return Number(finite(value).toFixed(digits));
+}
+
+function clonePlain(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function createDefaultScenarioState() {
+  return {
+    schema: MULTISCALE_SCENARIO_PRESET_SCHEMA,
+    id: 'default',
+    label: 'Default ladder environment',
+    objectClass: 'ambient-multiscale-demo',
+    modelTier: 'interactive-proxy-v0',
+    targetLayerId: null,
+    active: false,
+    environment: {},
+    physicalReference: {},
+    normalization: { status: 'none' },
+    solverFocus: [],
+    calibrationArtifacts: [],
+    validation: {
+      status: 'default',
+      note: 'No named astrophysical scenario is active.'
+    }
+  };
+}
+
+export function getMultiscaleScenarioPreset(id = '') {
+  const key = String(id || '').trim().toLowerCase();
+  return MULTISCALE_SCENARIO_PRESETS[key] ? clonePlain(MULTISCALE_SCENARIO_PRESETS[key]) : null;
 }
 
 export function createSeededRandom(seed = 1337) {
@@ -197,6 +284,7 @@ export class MultiscaleModel {
       radiativeHeatFlux: 0,
       refinementThreshold: 0.72
     };
+    this.scenario = createDefaultScenarioState();
     this.molecularTransferApplicationConfig = {
       applicationRequested: false,
       mutationEnabled: false,
@@ -1178,6 +1266,7 @@ export class MultiscaleModel {
   }
 
   setEnvironment(values = {}) {
+    const hasRadiativeHeatFlux = Number.isFinite(Number(values.radiativeHeatFlux));
     this.environment = {
       ...this.environment,
       ...Object.fromEntries(
@@ -1192,7 +1281,130 @@ export class MultiscaleModel {
     this.environment.electricFieldVm = clamp(this.environment.electricFieldVm || 0, -1e10, 1e10);
     this.environment.magneticFieldT = clamp(this.environment.magneticFieldT || 0, -100, 100);
     this.environment.radiativeHeatFlux = clamp(this.environment.radiativeHeatFlux || 0, 0, 50000);
+    if (hasRadiativeHeatFlux && this.state?.surface) {
+      this.state.surface.radiativeHeatFlux = this.environment.radiativeHeatFlux;
+    }
     return this.environment;
+  }
+
+  getScenario() {
+    return clonePlain(this.scenario);
+  }
+
+  applyScenarioPreset(id = 'magnetar') {
+    const preset = getMultiscaleScenarioPreset(id);
+    if (!preset) return this.getScenario();
+    const environment = this.setEnvironment(preset.environment || {});
+    this.scenario = {
+      ...preset,
+      active: true,
+      appliedAtTimeSeconds: rounded(this.time, 3),
+      environment: { ...environment },
+      validation: {
+        ...(preset.validation || {}),
+        status: preset.validation?.status || 'proxy-only'
+      }
+    };
+    this.applyScenarioProxyState(this.scenario);
+    return this.getScenario();
+  }
+
+  clearScenarioPreset() {
+    this.scenario = createDefaultScenarioState();
+    return this.getScenario();
+  }
+
+  applyScenarioProxyState(scenario = this.scenario) {
+    if (scenario.id !== 'magnetar') return;
+    this.state.surface.radiativeHeatFlux = this.environment.radiativeHeatFlux;
+    this.state.solar.radiationPressure = Math.max(this.state.solar.radiationPressure, 2.35);
+    this.state.galaxy.maxwell = {
+      ...this.state.galaxy.maxwell,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.galaxy.maxwell.sequence + 1,
+      fieldEnergy: Math.max(this.state.galaxy.maxwell.fieldEnergy, 12.5),
+      netCharge: this.state.galaxy.maxwell.netCharge,
+      poyntingFlux: [2.4e8, 0, 8.6e8]
+    };
+    this.state.solar.radiationOpacity = {
+      ...this.state.solar.radiationOpacity,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.solar.radiationOpacity.sequence + 1,
+      meanTemperatureK: Math.max(this.state.solar.radiationOpacity.meanTemperatureK, 3200),
+      meanOpacity: Math.max(this.state.solar.radiationOpacity.meanOpacity, 0.92),
+      opticalDepth: Math.max(this.state.solar.radiationOpacity.opticalDepth, 8.4),
+      greenhouseFactor: Math.max(this.state.solar.radiationOpacity.greenhouseFactor, 1.8),
+      netHeatingPower: Math.max(this.state.solar.radiationOpacity.netHeatingPower, 50000)
+    };
+    this.state.solar.stellarFusion = {
+      ...this.state.solar.stellarFusion,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.solar.stellarFusion.sequence + 1,
+      meanTemperatureK: Math.max(this.state.solar.stellarFusion.meanTemperatureK, 12000000),
+      coreTemperatureK: Math.max(this.state.solar.stellarFusion.coreTemperatureK, 32000000),
+      meanDensityKgM3: Math.max(this.state.solar.stellarFusion.meanDensityKgM3, 5.5e6),
+      coreDensityKgM3: Math.max(this.state.solar.stellarFusion.coreDensityKgM3, 1.2e9),
+      meanPressurePa: Math.max(this.state.solar.stellarFusion.meanPressurePa, 2.5e16),
+      fusionPowerProxy: Math.max(this.state.solar.stellarFusion.fusionPowerProxy, 8.8e4),
+      luminosityProxy: Math.max(this.state.solar.stellarFusion.luminosityProxy, 1.2e5),
+      luminosityFactor: Math.max(this.state.solar.stellarFusion.luminosityFactor, 2.45),
+      neutrinoLossProxy: Math.max(this.state.solar.stellarFusion.neutrinoLossProxy, 1200)
+    };
+    this.state.solar.magnetosphere = {
+      ...this.state.solar.magnetosphere,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.solar.magnetosphere.sequence + 1,
+      meanDensity: Math.max(this.state.solar.magnetosphere.meanDensity, 9.5e5),
+      meanTemperatureK: Math.max(this.state.solar.magnetosphere.meanTemperatureK, 12000000),
+      meanIonizationFraction: Math.max(this.state.solar.magnetosphere.meanIonizationFraction, 0.98),
+      magneticEnergy: Math.max(this.state.solar.magnetosphere.magneticEnergy, 4.5e8),
+      kineticEnergy: Math.max(this.state.solar.magnetosphere.kineticEnergy, 1.2e7),
+      plasmaEnergy: Math.max(this.state.solar.magnetosphere.plasmaEnergy, 3.6e7),
+      alfvenSpeed: Math.max(this.state.solar.magnetosphere.alfvenSpeed, 0.24),
+      solarWindPressure: Math.max(this.state.solar.magnetosphere.solarWindPressure, 28),
+      magnetopauseRadius: Math.min(this.state.solar.magnetosphere.magnetopauseRadius || 10, 1.8),
+      reconnectionRate: Math.max(this.state.solar.magnetosphere.reconnectionRate, 1.45),
+      currentSheetIntensity: Math.max(this.state.solar.magnetosphere.currentSheetIntensity, 3.2),
+      divergenceBProxy: Math.max(this.state.solar.magnetosphere.divergenceBProxy, 0.42)
+    };
+    this.state.solar.picPlasmaPatch = {
+      ...this.state.solar.picPlasmaPatch,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.solar.picPlasmaPatch.sequence + 1,
+      particleCount: Math.max(this.state.solar.picPlasmaPatch.particleCount, 1024),
+      electronCount: Math.max(this.state.solar.picPlasmaPatch.electronCount, 512),
+      ionCount: Math.max(this.state.solar.picPlasmaPatch.ionCount, 512),
+      totalMass: Math.max(this.state.solar.picPlasmaPatch.totalMass, 1),
+      totalCharge: this.state.solar.picPlasmaPatch.totalCharge,
+      chargeImbalance: Math.max(this.state.solar.picPlasmaPatch.chargeImbalance, 0.11),
+      kineticEnergy: Math.max(this.state.solar.picPlasmaPatch.kineticEnergy, 6.8e7),
+      fieldEnergy: Math.max(this.state.solar.picPlasmaPatch.fieldEnergy, 9.2e7),
+      currentDensity: Math.max(this.state.solar.picPlasmaPatch.currentDensity, 1.4e6),
+      chargeSeparation: Math.max(this.state.solar.picPlasmaPatch.chargeSeparation, 0.36),
+      particleEscapeFraction: Math.max(this.state.solar.picPlasmaPatch.particleEscapeFraction, 0.32),
+      debyeLengthProxy: Math.max(this.state.solar.picPlasmaPatch.debyeLengthProxy, 0.012),
+      larmorRadiusProxy: Math.max(this.state.solar.picPlasmaPatch.larmorRadiusProxy, 0.004),
+      reconnectionHeating: Math.max(this.state.solar.picPlasmaPatch.reconnectionHeating, 1.7e5),
+      divergenceEProxy: Math.max(this.state.solar.picPlasmaPatch.divergenceEProxy, 0.22)
+    };
+    this.state.solar.relativity = {
+      ...this.state.solar.relativity,
+      backend: 'scenario-magnetar-proxy',
+      sequence: this.state.solar.relativity.sequence + 1,
+      sampleCount: Math.max(this.state.solar.relativity.sampleCount, 128),
+      meanSpeedFractionC: Math.max(this.state.solar.relativity.meanSpeedFractionC, 0.18),
+      maxSpeedFractionC: Math.max(this.state.solar.relativity.maxSpeedFractionC, 0.32),
+      meanLorentzFactor: Math.max(this.state.solar.relativity.meanLorentzFactor, 1.02),
+      maxLorentzFactor: Math.max(this.state.solar.relativity.maxLorentzFactor, 1.08),
+      meanTimeDilation: Math.max(this.state.solar.relativity.meanTimeDilation, 1.02),
+      gravitationalRedshiftProxy: Math.max(this.state.solar.relativity.gravitationalRedshiftProxy, 0.012),
+      maxGravitationalRedshiftProxy: Math.max(this.state.solar.relativity.maxGravitationalRedshiftProxy, 0.018),
+      perihelionPrecessionArcsecProxy: Math.max(this.state.solar.relativity.perihelionPrecessionArcsecProxy, 72),
+      frameDraggingProxy: Math.max(this.state.solar.relativity.frameDraggingProxy, 0.05),
+      lensingDeflectionArcsecProxy: Math.max(this.state.solar.relativity.lensingDeflectionArcsecProxy, 240),
+      shapiroDelayProxy: Math.max(this.state.solar.relativity.shapiroDelayProxy, 0.006),
+      relativisticEnergyProxy: Math.max(this.state.solar.relativity.relativisticEnergyProxy, 1.8e6)
+    };
   }
 
   getMolecularTransferApplicationConfig() {
@@ -3993,6 +4205,7 @@ export class MultiscaleModel {
       ulgRuntimeStateDelta
     });
     this.state.ulgSpecContracts = ulgSpecContracts;
+    const scenario = this.getScenario();
     return {
       schema: 'peercompute.multiscale.packet.v0',
       modelId: 'multiscale-ladder-proxy-v0',
@@ -4001,6 +4214,7 @@ export class MultiscaleModel {
       modelTier: active.modelTier,
       layerIndex: this.layerIndex,
       scale: active.scale,
+      scenario,
       upward: {
         closures: {
           heatReleaseNorm: Number(this.state.molecular.heatReleaseNorm.toFixed(4)),
@@ -4601,6 +4815,7 @@ export class MultiscaleModel {
           phaseMix: { ...this.state.mpm.phaseMix }
         },
         aggregateState: {
+          scenario,
           fuelFraction: Number(this.state.surface.fuelFraction.toFixed(4)),
           waterMassKg: Number(this.state.balloon.waterMassKg.toFixed(4)),
           spillReleasedKg: Number(this.state.balloon.spillReleasedKg.toFixed(4)),
@@ -5830,7 +6045,10 @@ export class MultiscaleModel {
           ambientPressurePa: this.environment.ambientPressurePa,
           electricFieldVm: this.environment.electricFieldVm,
           magneticFieldT: this.environment.magneticFieldT,
-          radiativeHeatFlux: this.environment.radiativeHeatFlux
+          radiativeHeatFlux: this.environment.radiativeHeatFlux,
+          scenarioId: scenario.id,
+          scenarioObjectClass: scenario.objectClass,
+          scenarioModelTier: scenario.modelTier
         },
         refinementRequests
       },

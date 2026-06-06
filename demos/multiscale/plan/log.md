@@ -1,5 +1,54 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-05 17:55:24 AKDT - Magnetar scenario preset scaffold
+
+### Prompt
+User asked for an estimate on how many days remain until a complete working spec-adherent system can simulate a magnetar, then asked to keep going. Standing instruction remains local commits only and no push.
+
+### Actions Attempted
+- Added `peercompute.multiscale.scenario-preset.v0` with an opt-in `magnetar` preset.
+- Recorded physical magnetar reference fields separately from normalized demo solver fields so the packet is explicit about the proxy boundary.
+- Linked the preset to the MoonLab `magnetar-dipole-ising-calibration` handoff metadata.
+- Added model APIs to apply/clear/read the active scenario and seed normalized stellar-fusion, magnetosphere MHD, PIC plasma, radiation, Maxwell, and relativistic proxy state.
+- Exposed scenario metadata in top-level packets, aggregate state, downward boundary conditions, `getState()`, `getScenario()`, and `getScenarioPresets()`.
+- Added UI/query activation through the `magnetar` control and `?scenario=magnetar`, expanded the visible range controls to match model clamps, and kept the scenario row visible in focus HUD mode.
+- Rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/index.html`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test --test-name-pattern "magnetar scenario preset|model emits solver-agnostic multiscale packets" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `curl -k -fsSI https://127.0.0.1:5185/?scenario=magnetar`
+- Playwright browser probe against `https://127.0.0.1:5185/?scenario=magnetar`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks completed for the changed model, demo runtime, and model tests.
+- PASS: focused magnetar/model packet tests passed with `2/2`.
+- PASS: full Multiscale model suite passed with `172/172`.
+- PASS: Vite production build completed; existing large-chunk warnings remain non-fatal.
+- PASS: the live browser probe reported active layer `solar`, `magneticFieldT: 100`, `electricFieldVm: 10000000000`, `radiativeHeatFlux: 50000`, normalized scenario status, and the expected stellar/MHD/PIC/relativistic refinement requests.
+- PASS: whitespace check passed.
+
+### Failures / Open Questions
+- Initial browser probe showed the scenario row was filtered out by focus HUD mode; fixed by adding `scenario` to the focus readout allow-list and reran the probe successfully.
+- This is a normalized scenario/runtime contract and proxy-state scaffold, not calibrated magnetar astrophysics. Remaining work is calibrated tensors/tables, solver coupling, reference validation, and promotion of MoonLab/Eshkol artifacts into authoritative PeerCompute runtime inputs.
+
 ## 2026-06-05 17:29:25 AKDT - Remote solver cadence promotion handoff
 
 ### Prompt
