@@ -750,3 +750,19 @@
 - Switch to a different room and verify the theme is room-scoped (defaults to `Tron` until changed in that room).
 - Create/join a private room and verify the browser URL includes `room`, `privacy`, `password`, and `theme` query params.
 - Open that URL in a second client and verify it lands in the same private room/theme without manual re-entry.
+
+### Runtime browser harness system-Chrome gate
+- Syntax gates: `node --check demos/tests/runtime-smoke.mjs` and `node --check demos/tests/runtime-p2p.mjs`.
+: expected result is a full pass with no syntax errors.
+- Render smoke gate: `node demos/tests/runtime-smoke.mjs`.
+: expected result is a full pass under either the configured
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` / `CHROME_EXECUTABLE_PATH` or local
+  `/bin/google-chrome`, walking Hyperborea, CubeChat, SneakyWoods, DaddyGo,
+  PlanetGen, Universes, Fano Reactor, and WebGPU Phys. Relay bootstrap probe
+  404s and dial-denied relay setup noise should not fail this generic render
+  smoke; the dedicated P2P harness owns that behavior.
+- Targeted P2P gate:
+  `RUNTIME_P2P_DEMOS=cubechat RELAY_CONFIG_TIMEOUT_MS=15000 DEMO_TIMEOUT_MS=20000 npm run test:runtime:p2p`.
+: expected result is a full pass with an ephemeral local Go relay, CubeChat
+  peer connections observed, `Runtime P2P tests passed.`, a clean shell return,
+  and no leftover `runtime-p2p` or `peercompute-relay-go` process/listener.

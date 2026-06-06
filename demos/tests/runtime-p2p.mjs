@@ -13,6 +13,9 @@ const port = Number(process.env.DEMO_PORT || 4180);
 const baseUrl = `http://${host}:${port}`;
 const relayConfigTimeoutMs = Number(process.env.RELAY_CONFIG_TIMEOUT_MS || 10000);
 const demoTimeoutMs = Number(process.env.DEMO_TIMEOUT_MS || 30000);
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  || process.env.CHROME_EXECUTABLE_PATH
+  || (existsSync('/bin/google-chrome') ? '/bin/google-chrome' : undefined);
 
 const demos = [
   { name: 'cubechat', path: '/cubechat/' },
@@ -164,6 +167,7 @@ function startRelay() {
       RELAY_PUBLIC_HOST: host,
       RELAY_CONFIG_DIRS: relayConfigDirs.join(',')
     },
+    detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -179,6 +183,47 @@ function startRelay() {
     relayConfigPaths: relayConfigDirs.map((dir) => path.join(dir, 'relay-config.json')),
     relayConfigDirs
   };
+}
+
+function signalRelay(child, signal) {
+  if (!child?.pid) return;
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (err) {
+      if (err?.code === 'ESRCH') return;
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch (_) {
+    // ignore shutdown races
+  }
+}
+
+function stopRelay(relay) {
+  const child = relay?.child;
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let killTimer;
+    let doneTimer;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
+      clearTimeout(doneTimer);
+      child.off('exit', finish);
+      resolve();
+    };
+    child.once('exit', finish);
+    signalRelay(child, 'SIGTERM');
+    killTimer = setTimeout(() => signalRelay(child, 'SIGKILL'), 2000);
+    doneTimer = setTimeout(finish, 5000);
+  });
 }
 
 function attachPageErrorLogging(page, errors) {
@@ -624,6 +669,7 @@ async function main() {
     console.log('[runtime-p2p] Relay config ready:', relay.relayConfigDirs.join(', '));
 
     const browser = await chromium.launch({
+      ...(chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {}),
       headless: true,
       args: [
         '--use-fake-ui-for-media-stream',
@@ -697,7 +743,7 @@ async function main() {
     console.log('Runtime P2P tests passed.');
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    relay.child.kill('SIGTERM');
+    await stopRelay(relay);
   }
 }
 

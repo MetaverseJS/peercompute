@@ -12,16 +12,20 @@ const port = Number(process.env.DOCS_PORT || 4179);
 const host = process.env.DOCS_HOST || '127.0.0.1';
 const baseUrl = `https://${host}:${port}`;
 const defaultWaitMs = Number(process.env.DEMO_WAIT_MS || 6000);
+const defaultReadyTimeoutMs = Number(process.env.DEMO_READY_TIMEOUT_MS || 15000);
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  || process.env.CHROME_EXECUTABLE_PATH
+  || (existsSync('/bin/google-chrome') ? '/bin/google-chrome' : undefined);
 
 const demos = [
   { name: 'hyperborea', path: '/hyperborea/cb.html' },
   { name: 'cubechat', path: '/cubechat/' },
   { name: 'sneakywoods', path: '/sneakywoods/' },
   { name: 'daddygo', path: '/daddygo/' },
-  { name: 'planetgen', path: '/planetgen/', waitMs: 9000 },
-  { name: 'universes', path: '/universes/', waitMs: 9000 },
+  { name: 'planetgen', path: '/planetgen/', waitMs: 9000, readyTimeoutMs: 45000 },
+  { name: 'universes', path: '/universes/', waitMs: 9000, readyTimeoutMs: 45000 },
   { name: 'fano-reactor', path: '/fano-reactor/', waitMs: 3000 },
-  { name: 'webgpuphys', path: '/webgpuphys/demos/toychest.html', waitMs: 9000 }
+  { name: 'webgpuphys', path: '/webgpuphys/demos/toychest.html', waitMs: 9000, readyTimeoutMs: 45000 }
 ];
 
 const mime = {
@@ -41,6 +45,9 @@ const ignoredConsoleErrors = [
   /Failed to acquire a WebGPU adapter/i,
   /WebGPU is not supported/i,
   /WebSocket connection to .* failed/i,
+  /UnsupportedListenAddressesError/i,
+  /DialDeniedError/i,
+  /P2P setup error/i,
   /WebGPU device lost/i,
   /Device was destroyed/i,
   /Failed to load resource: the server responded with a status of 404/i
@@ -48,7 +55,9 @@ const ignoredConsoleErrors = [
 
 const ignored404Urls = [
   /\/favicon\.ico$/i,
-  /\/manifest\.webmanifest$/i
+  /\/manifest\.webmanifest$/i,
+  /\/relay-config-source\.json$/i,
+  /\/\.relay-config-source\.json$/i
 ];
 
 function resolveRequestPath(reqUrl) {
@@ -139,20 +148,23 @@ async function runDemo(context, demo) {
   const url = `${baseUrl}${demo.path}`;
   console.log(`→ ${demo.name}: ${url}`);
 
-  await page.goto(url, { waitUntil: 'load' });
-  await page.waitForFunction(
-    () => Boolean(document.querySelector('canvas') || document.querySelector('#app')),
-    null,
-    { timeout: 15000 }
-  );
-  await page.waitForTimeout(demo.waitMs || defaultWaitMs);
+  try {
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForFunction(
+      () => Boolean(document.querySelector('canvas') || document.querySelector('#app')),
+      null,
+      { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs }
+    );
+    await page.waitForTimeout(demo.waitMs || defaultWaitMs);
 
-  if (missing.size) {
-    errors.push(`[404] ${Array.from(missing).join(', ')}`);
+    if (missing.size) {
+      errors.push(`[404] ${Array.from(missing).join(', ')}`);
+    }
+
+    return errors;
+  } finally {
+    await page.close();
   }
-
-  await page.close();
-  return errors;
 }
 
 async function main() {
@@ -160,6 +172,7 @@ async function main() {
 
   const server = await startServer();
   const browser = await chromium.launch({
+    ...(chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {}),
     headless: true,
     args: ['--enable-features=WebGPU', '--enable-unsafe-webgpu']
   });

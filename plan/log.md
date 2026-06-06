@@ -49969,3 +49969,50 @@ timeout 8s env \
   `config/relay-peer-id.json`, `/tmp/peercompute-relay-smoke-cos.json`, and
   `/tmp/peercompute-relay-smoke.log`; no tracked config changed.
 - No push was attempted.
+
+## 2026-06-06 05:05:49 AKDT - Runtime browser harness system-Chrome fallback
+
+### Prompt
+- Continue the overall ULG/PeerCompute plan while keeping commits local and
+  without installing Playwright browser payloads.
+
+### Actions
+- Added `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` /
+  `CHROME_EXECUTABLE_PATH` support to the runtime smoke and runtime P2P
+  harnesses, with `/bin/google-chrome` as the local fallback when present.
+- Fixed the runtime P2P relay cleanup path by launching the relay wrapper in a
+  process group, signaling the group on shutdown, waiting for exit, and
+  escalating to `SIGKILL` if the `go run` child leaves the compiled relay binary
+  behind.
+- Gave heavy render demos in `runtime-smoke` a longer readiness timeout and
+  closed each page in a `finally` block so failed readiness checks do not leak
+  pages.
+- Kept relay/P2P bootstrap noise out of the generic render smoke by ignoring
+  `relay-config-source.json` probes and dial-denied relay setup messages; the
+  dedicated P2P harness remains the relay connectivity gate.
+
+### Files Touched
+- `demos/tests/runtime-p2p.mjs`
+- `demos/tests/runtime-smoke.mjs`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/tests/runtime-p2p.mjs`.
+- PASS: `node --check demos/tests/runtime-smoke.mjs`.
+- PASS: `RUNTIME_P2P_DEMOS=cubechat RELAY_CONFIG_TIMEOUT_MS=15000 DEMO_TIMEOUT_MS=20000 npm run test:runtime:p2p`
+  used system Chrome, started a local ephemeral Go relay, connected four peers
+  through CubeChat, printed `Runtime P2P tests passed.`, and returned cleanly.
+- PASS: follow-up process/socket inspection found no leftover
+  `runtime-p2p` or `peercompute-relay-go` process.
+- PASS: isolated `planetgen` probe reached `384² map · 80,000 steps` with
+  `<canvas id="viewport">` present under system Chrome.
+- PASS: `node demos/tests/runtime-smoke.mjs` walked Hyperborea, CubeChat,
+  SneakyWoods, DaddyGo, PlanetGen, Universes, Fano Reactor, and WebGPU Phys,
+  then printed `Runtime smoke tests passed.`
+
+### Open
+- Runtime browser validation is now usable on this host without Playwright's
+  bundled Chromium. The full browser P2P suite across every demo is still a
+  larger follow-up gate; this checkpoint proved the targeted CubeChat P2P path.
+- No push was attempted.
