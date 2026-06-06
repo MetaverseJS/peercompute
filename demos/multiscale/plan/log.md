@@ -1,5 +1,72 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-06 15:10:38 AKDT - Relay dispatch adapter worker asset fix
+
+### Prompt
+User asked to work in `/home/cos/projects/peercompute` on branch
+`multi-scale-physics-sim`, keep commits local, do not push, preserve strict
+runtime/scientific gates, and fix or further narrow the relay-served popup
+dispatch-adapter blocker from commit `16fe9296` where
+`ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+test:ulg-relay-handoff` reached `dispatch-plan-created` and first MoonLab
+`dispatch-start` before the popup evaluation context reset.
+
+### Actions
+- Reproduced the relay-served popup dispatch reset.
+- Switched the relay smoke to start dispatch adapter work through a
+  browser-owned async run record, then poll that record from Playwright.
+- Added compact supervisor diagnostics to the Multiscale dispatch adapter probe.
+- Used those diagnostics to narrow the actual failure to a MoonLab module worker
+  import error after `service-spawned` and before worker `ready`.
+- Fixed `ULG_DISPATCH_WORKER_MODULES` resolution for built `docs/multiscale`
+  pages so relay-served docs use stable bundled
+  `assets/ulgMoonLabDispatchServiceHost.js` and
+  `assets/ulgEshkolDispatchServiceHost.js`, not raw hashed source assets with a
+  bare `@peercompute` import.
+- Rebuilt `docs/multiscale` and updated top-level plus Multiscale plan/test
+  docs.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-DLVOhaVY.js`
+- `docs/multiscale/assets/index-r9rvU6e6.js`
+- `docs/multiscale/assets/ulgMoonLabDispatchServiceHost-DSJNURUx.js`
+- `docs/multiscale/assets/ulgEshkolDispatchServiceHost-CCTYMvwN.js`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
+  test:ulg-relay-handoff` now reports `dispatch-adapters-ready`,
+  `acceptedDispatchCount = 2`, and scientific scope flags `[false, false,
+  false, false, false, false]`.
+- PASS: default `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  still reports relay config `bootstrapPeerCount = 1`, `iceServerCount = 2`,
+  `hasStun = true`, `hasTurn = true`, `handoff-ready`,
+  `service-envelope-ready`, `relaySafeArtifactCount = 2`, and `dispatch-ready`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` still reports
+  Multiscale `handoff-ready`, blocker count `0`, `simulationStatus =
+  scientific-ready`, bridge ack `handoff-ready`, and visible magnetar proxy.
+- PASS: relay config restore diff was empty and no test-owned relay/server
+  process remained.
+- PASS: `git diff --check`.
+
+### Open
+- No remaining relay dispatch-adapter blocker in this checkpoint.
+- This executes the reduced handoff dispatch adapters over the relay-served
+  popup; it still does not claim full-fidelity magnetar physics.
+- No push was attempted.
+
 ## 2026-06-06 14:47:49 AKDT - Relay popup dispatch adapter diagnostics
 
 ### Prompt

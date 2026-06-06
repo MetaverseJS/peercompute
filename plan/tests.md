@@ -951,17 +951,16 @@
   full-fidelity/full-physics scientific overclaim flags, and restored
   `docs/multiscale/relay-config*.json` files after teardown.
 : `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` opts into the browser dispatch-adapter
-  probe with compact raw-result omission and stage diagnostics. Current result
-  on 2026-06-06 is a clean smoke exit with
-  `dispatchAdapterStatus = dispatch-adapter-popup-context-reset`: the probe
-  reaches `dispatch-plan-created` and `dispatch-start` for the first MoonLab
-  dispatch, then the relay-served popup evaluation context resets before
-  `dispatch-complete`. The diagnostic preserves the resolved worker module
-  URLs, peer/handoff state, blocker
-  `relay-popup-dispatch-execution-context-destroyed`, and
-  `runtimeGateRelaxed = false` / `scientificGateRelaxed = false`.
-  `ULG_RELAY_HANDOFF_REQUIRE_DISPATCH=1` can force this blocker to fail the
-  smoke while debugging the adapter execution itself.
+  probe with compact raw-result omission, a browser-owned async run record, and
+  stage/supervisor diagnostics. Current result on 2026-06-06 passes with
+  `dispatchAdapterStatus = dispatch-adapters-ready` and
+  `acceptedDispatchCount = 2`. The relay-served docs page must resolve the
+  MoonLab/Eshkol dispatch workers to the stable bundled
+  `assets/ulgMoonLabDispatchServiceHost.js` and
+  `assets/ulgEshkolDispatchServiceHost.js` entries; the prior raw hashed worker
+  module URLs failed with a worker import error before `ready`.
+  `ULG_RELAY_HANDOFF_REQUIRE_DISPATCH=1` can force any future adapter blocker
+  to fail the smoke while debugging the adapter execution itself.
 
 ### Eshkol production handler boundary gate
 - Focused service orchestration gate:

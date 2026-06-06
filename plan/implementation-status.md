@@ -175,14 +175,15 @@ Updated: 2026-06-06 14:47:49 AKDT
   verified `handoff-ready`, `service-envelope-ready`, `relaySafeArtifactCount=2`,
   `dispatch-ready`, canonical MoonLab/Eshkol hashes, and clean relay-config
   restoration after teardown.
-- Adapter-enabled relay smoke now exits cleanly as a diagnostic skip:
+- Adapter-enabled relay smoke passed on 2026-06-06:
   `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
-  test:ulg-relay-handoff` records
-  `dispatchAdapterStatus = dispatch-adapter-popup-context-reset`,
-  `relay-popup-dispatch-execution-context-destroyed`,
-  `runtimeGateRelaxed = false`, and `scientificGateRelaxed = false`. The probe
-  reaches `dispatch-plan-created` and first MoonLab `dispatch-start` with
-  resolved hashed worker module URLs before the popup context resets.
+  test:ulg-relay-handoff` now records
+  `dispatchAdapterStatus = dispatch-adapters-ready` and
+  `acceptedDispatchCount = 2` with scientific scope flags remaining false. The
+  blocker was the relay-served docs page resolving dispatch workers to raw
+  hashed source assets with bare `@peercompute` imports; Multiscale now points
+  the docs runtime at the stable bundled `assets/ulgMoonLabDispatchServiceHost.js`
+  and `assets/ulgEshkolDispatchServiceHost.js` worker entries.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host

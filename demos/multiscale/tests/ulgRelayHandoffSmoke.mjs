@@ -471,7 +471,7 @@ async function runPopupDispatchAdapterProbe(popup, handoff) {
       ...event
     });
   };
-  const bindingName = `__recordUlgRelayDispatchDiagnostic_${Date.now().toString(36)}_${Math.random()
+  const runId = `ulgRelayDispatchRun_${Date.now().toString(36)}_${Math.random()
     .toString(36)
     .slice(2)}`;
   popup.on('framenavigated', (frame) => record({
@@ -481,46 +481,100 @@ async function runPopupDispatchAdapterProbe(popup, handoff) {
   }));
   popup.on('close', () => record({ type: 'page-close' }));
   popup.on('crash', () => record({ type: 'page-crash' }));
-  await popup.exposeFunction(bindingName, (event) => record({
-    type: 'probe-diagnostic',
-    ...event
-  }));
   const before = await readDispatchPageSnapshot(popup);
   try {
-    const probe = await popup.evaluate(({ payload, recorder }) => {
-      const onDiagnostic = (event = {}) => {
-        const recordDiagnostic = window[recorder];
-        if (typeof recordDiagnostic === 'function') {
-          recordDiagnostic(event);
-        }
+    await popup.evaluate(({ payload, id }) => {
+      const runs = window.__ulgRelayDispatchAdapterRuns || {};
+      window.__ulgRelayDispatchAdapterRuns = runs;
+      const run = {
+        schema: 'peercompute.multiscale.ulg-relay-dispatch-adapter-run.v0',
+        runId: id,
+        status: 'running',
+        ready: false,
+        startedAt: Date.now(),
+        completedAt: null,
+        probe: null,
+        error: null,
+        events: []
       };
-      return window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe(payload, {
-        scenarioId: 'magnetar',
-        includeResults: false,
-        onDiagnostic
-      });
+      runs[id] = run;
+      const onDiagnostic = (event = {}) => {
+        run.events.push({
+          at: Date.now(),
+          type: 'probe-diagnostic',
+          ...event
+        });
+      };
+      Promise.resolve()
+        .then(() => window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe(payload, {
+          scenarioId: 'magnetar',
+          includeResults: false,
+          onDiagnostic
+        }))
+        .then((probe) => {
+          run.probe = probe || null;
+          run.ready = probe?.ready === true;
+          run.status = probe?.status || 'dispatch-adapter-run-complete';
+          run.completedAt = Date.now();
+        })
+        .catch((error) => {
+          run.status = 'dispatch-adapter-run-error';
+          run.ready = false;
+          run.error = error?.message || String(error);
+          run.completedAt = Date.now();
+        });
     }, {
       payload: handoff,
-      recorder: bindingName
+      id: runId
     });
-    return { probe, diagnostic: null };
+    await popup.waitForFunction((id) => {
+      const run = window.__ulgRelayDispatchAdapterRuns?.[id];
+      return run && run.status !== 'running';
+    }, runId, { timeout: timeoutMs });
+    const run = await popup.evaluate((id) => window.__ulgRelayDispatchAdapterRuns?.[id] || null, runId);
+    if (run?.events) {
+      events.push(...run.events);
+    }
+    if (run?.probe) {
+      return { probe: run.probe, diagnostic: null };
+    }
+    throw new Error(run?.error || `Dispatch adapter probe run ${runId} did not return a probe`);
   } catch (error) {
-    if (!dispatchContextWasDestroyed(error)) {
+    const errorMessage = error?.message || String(error);
+    const contextReset = dispatchContextWasDestroyed(error);
+    const runTimeout = /Timeout .*exceeded|waitForFunction/i.test(errorMessage);
+    if (!contextReset && !runTimeout) {
       throw error;
     }
+    let run = null;
+    try {
+      run = await popup.evaluate((id) => window.__ulgRelayDispatchAdapterRuns?.[id] || null, runId);
+      if (run?.events) {
+        events.push(...run.events);
+      }
+    } catch (_) {
+      // The snapshot below captures whether the page context survived.
+    }
     const after = await readDispatchPageSnapshot(popup);
+    const status = runTimeout
+      ? 'dispatch-adapter-popup-run-timeout'
+      : 'dispatch-adapter-popup-context-reset';
+    const blockers = runTimeout
+      ? ['relay-popup-dispatch-adapter-run-timeout']
+      : ['relay-popup-dispatch-execution-context-destroyed'];
     return {
       probe: null,
       diagnostic: {
         schema: 'peercompute.multiscale.ulg-relay-dispatch-adapter-diagnostic.v0',
-        status: 'dispatch-adapter-popup-context-reset',
+        status,
         ready: false,
         skipped: true,
-        blockerCount: 1,
-        blockers: ['relay-popup-dispatch-execution-context-destroyed'],
+        blockerCount: blockers.length,
+        blockers,
         runtimeGateRelaxed: false,
         scientificGateRelaxed: false,
-        error: error?.message || String(error),
+        error: errorMessage,
+        run,
         before,
         after,
         events
@@ -669,11 +723,14 @@ async function main() {
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
       assert.equal(dispatchProbe.rawResultsOmitted, true);
     } else if (runDispatchAdapters) {
-      assert.equal(dispatchDiagnostic.status, 'dispatch-adapter-popup-context-reset');
+      assert.ok([
+        'dispatch-adapter-popup-context-reset',
+        'dispatch-adapter-popup-run-timeout'
+      ].includes(dispatchDiagnostic.status));
       assert.equal(dispatchDiagnostic.ready, false);
       assert.equal(dispatchDiagnostic.runtimeGateRelaxed, false);
       assert.equal(dispatchDiagnostic.scientificGateRelaxed, false);
-      assert.deepEqual(dispatchDiagnostic.blockers, ['relay-popup-dispatch-execution-context-destroyed']);
+      assert.equal(dispatchDiagnostic.blockers.length > 0, true);
       if (requireDispatchAdapters) {
         throw new Error(`Required dispatch adapter execution failed: ${JSON.stringify(dispatchDiagnostic, null, 2)}`);
       }

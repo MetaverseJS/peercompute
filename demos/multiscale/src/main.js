@@ -30,9 +30,28 @@ const ULG_DISPATCH_SERVICE_IDS = Object.freeze({
   moonlab: 'moonlab-ulg-fixture',
   eshkol: 'eshkol-ulg-fixture'
 });
+
+function resolveUlgDispatchWorkerModuleUrl(assetName, sourcePath) {
+  const baseURI = globalThis.document?.baseURI || '';
+  try {
+    if (baseURI && new URL(baseURI).pathname.includes('/multiscale/')) {
+      return new URL(`./assets/${assetName}`, baseURI).href;
+    }
+  } catch (_) {
+    // Fall back to the source-relative URL below.
+  }
+  return new URL(sourcePath, import.meta.url).href;
+}
+
 const ULG_DISPATCH_WORKER_MODULES = Object.freeze({
-  moonlab: new URL('./compute/ulgMoonLabDispatchServiceHost.js', import.meta.url).href,
-  eshkol: new URL('./compute/ulgEshkolDispatchServiceHost.js', import.meta.url).href
+  moonlab: resolveUlgDispatchWorkerModuleUrl(
+    'ulgMoonLabDispatchServiceHost.js',
+    './compute/ulgMoonLabDispatchServiceHost.js'
+  ),
+  eshkol: resolveUlgDispatchWorkerModuleUrl(
+    'ulgEshkolDispatchServiceHost.js',
+    './compute/ulgEshkolDispatchServiceHost.js'
+  )
 });
 const ULG_DISPATCH_CHILD_WORKER_MODULES = Object.freeze({
   moonlab: ULG_DISPATCH_WORKER_MODULES.moonlab,
@@ -2082,6 +2101,56 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
   });
 }
 
+function summarizeUlgDispatchSupervisorDiagnostic(event = {}, telemetry = {}) {
+  const message = event.message && typeof event.message === 'object' ? event.message : {};
+  const services = Array.isArray(telemetry.services)
+    ? telemetry.services.map((service = {}) => ({
+      serviceId: service.serviceId || null,
+      status: service.status || null,
+      telemetryStatus: service.telemetry?.status || null,
+      telemetryProbeStatus: service.telemetry?.probeStatus || null,
+      telemetryProbeReady: service.telemetry?.probeReady ?? null,
+      telemetryBlockers: uniqueUlgStrings(service.telemetry?.blockers || [])
+    }))
+    : [];
+  const tasks = Array.isArray(telemetry.tasks)
+    ? telemetry.tasks.map((task = {}) => ({
+      taskId: task.taskId || null,
+      rootTaskId: task.rootTaskId || null,
+      serviceId: task.serviceId || null,
+      taskKind: task.taskKind || null,
+      status: task.status || null,
+      progress: task.progress ?? null,
+      error: task.error || null,
+      artifactRefUri: task.artifactRef?.uri || null
+    }))
+    : [];
+  return {
+    stage: 'supervisor-event',
+    eventType: event.type || null,
+    serviceId:
+      event.serviceId
+      || event.handle?.serviceId
+      || event.task?.serviceId
+      || message.serviceId
+      || null,
+    workerId: event.handle?.workerId || null,
+    handleStatus: event.handle?.status || null,
+    taskId: event.task?.taskId || message.rootTaskId || null,
+    taskStatus: event.task?.status || message.status || null,
+    messageType: message.type || null,
+    messageStatus: message.status || message.telemetry?.status || null,
+    messageProbeStatus: message.telemetry?.probeStatus || null,
+    messageProbeReady: message.telemetry?.probeReady ?? null,
+    messageError: message.error || null,
+    error: event.error || null,
+    serviceCount: services.length,
+    taskCount: tasks.length,
+    services,
+    tasks
+  };
+}
+
 function createUlgDispatchArtifactCache(now = () => Date.now()) {
   const records = new Map();
   return {
@@ -2160,6 +2229,9 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
     childWorkerModules
   }));
   const supervisor = new WorkerSupervisor({ registry, artifactCache });
+  const unsubscribeSupervisor = supervisor.subscribe((event, telemetry) => {
+    emitDiagnostic(summarizeUlgDispatchSupervisorDiagnostic(event, telemetry));
+  });
   const serviceExecutor = createPeerComputeUlgHandoffSupervisorServiceExecutor({ supervisor });
   const results = [];
   try {
@@ -2231,6 +2303,11 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       blockers
     });
   } finally {
+    try {
+      unsubscribeSupervisor?.();
+    } catch (_) {
+      // Diagnostics teardown should not affect dispatch adapter shutdown.
+    }
     emitDiagnostic({ stage: 'shutdown-start' });
     await supervisor.shutdown();
     emitDiagnostic({ stage: 'shutdown-complete' });
