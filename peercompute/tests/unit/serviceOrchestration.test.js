@@ -72,6 +72,13 @@ const MINIMAL_WASM_MAIN_EXPORT_BYTES = [
   0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00,
   0x0a, 0x04, 0x01, 0x02, 0x00, 0x0b
 ];
+const MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES = [
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
+  0x03, 0x02, 0x01, 0x00,
+  0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00,
+  0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x00, 0x0b
+];
 
 function createEshkolMagnetarDescriptorArtifact() {
   return {
@@ -2077,6 +2084,198 @@ test('ULG Eshkol dispatch adapter dry-instantiates complete WASM without invokin
   assert.equal(result.ingest.hostRuntimeProbeReady, true);
   assert.equal(result.ingest.hostRuntimeInstantiated, true);
   assert.equal(result.ingest.hostRuntimeStubCallCount, 0);
+});
+
+test('ULG Eshkol dispatch adapter executes only explicit smoke output semantics', async () => {
+  const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
+  const eshkolManifest = createUlgDispatchServiceManifests({ serviceIds })
+    .find((entry) => entry.serviceId === 'eshkol-ulg-fixture');
+  const registry = new ComputeServiceRegistry([eshkolManifest]);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    workerFactory: (serviceManifest) => new UlgDispatchServiceHost(serviceManifest, {
+      requestChildLease: false
+    })
+  });
+  const outputSemantics = {
+    schema: ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+    semanticScope: 'smoke-fixture',
+    scientificScope: 'none',
+    entryExport: 'main',
+    entryArgs: [],
+    expectedEntryResult: 0,
+    stdout: { byteLength: 0 },
+    scientificValidation: false
+  };
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'eshkol-ulg-fixture',
+    taskKind: 'eshkol.ulg.closure-artifact.ingest',
+    taskId: 'task:eshkol-output-semantics-execution',
+    rootTaskId: 'root:eshkol-output-semantics-execution',
+    artifactPayload: {
+      schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+      handoffId: 'handoff:eshkol-output-semantics-execution',
+      dispatchId: 'handoff:eshkol-output-semantics-execution:dispatch:0',
+      sourceService: 'eshkol',
+      artifactKind: 'closure',
+      artifactRefUri: 'artifact://eshkol-return-zero-wasm',
+      artifactContentHash: 'sha256:eshkol-return-zero-wasm',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'pass',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureOutputSemanticsReady: true,
+        closureOutputSemanticsSchema: ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+        closureOutputSemanticScope: 'smoke-fixture',
+        closureOutputScientificValidation: false,
+        closureOutputExpectedEntryExport: 'main',
+        closureOutputExpectedEntryArgs: [],
+        closureOutputExpectedEntryResult: 0,
+        closureOutputExpectedStdoutByteLength: 0,
+        closureImportCount: 0,
+        closureExportCount: 1,
+        closureEntryExport: 'main',
+        closureServiceWorkerSafe: true,
+        closureRequiresDynamicCode: false
+      },
+      artifact: {
+        closureId: 'eshkol:return-zero-wasm',
+        sourceService: 'eshkol',
+        closureKind: 'return-zero-wasm-main-export',
+        execution: {
+          serviceWorkerSafe: true,
+          entryExport: 'main',
+          entrySignature: { parameters: [], results: ['i32'] },
+          imports: [],
+          exports: [{ name: 'main', kind: 'function' }]
+        },
+        validity: {
+          requiresDynamicCode: false
+        },
+        validation: {
+          status: 'pass',
+          outputSemantics
+        }
+      },
+      wasmBytes: MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES,
+      wasmByteLength: MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES.length,
+      wasmSha256: 'sha256:eshkol-return-zero-wasm',
+      hasTransferredWasmBytes: true
+    }
+  });
+
+  assert.equal(result.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.serviceStatus, 'accepted');
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.probe.hostRuntimeProbe.ready, true);
+  assert.equal(result.probe.hostRuntimeExecution.schema, 'peercompute.ulg.eshkol-host-runtime-execution.v0');
+  assert.equal(result.probe.hostRuntimeExecution.status, 'host-runtime-output-semantics-validated');
+  assert.equal(result.probe.hostRuntimeExecution.ready, true);
+  assert.equal(result.probe.hostRuntimeExecution.entryInvoked, true);
+  assert.deepEqual(result.probe.hostRuntimeExecution.entryArgs, []);
+  assert.equal(result.probe.hostRuntimeExecution.entryResult, 0);
+  assert.equal(result.probe.hostRuntimeExecution.mainInvoked, true);
+  assert.equal(result.probe.hostRuntimeExecution.scientificExecution, false);
+  assert.equal(result.probe.hostRuntimeExecution.outputSemanticsValidation.schema, 'peercompute.ulg.eshkol-output-semantics-validation.v0');
+  assert.equal(result.probe.hostRuntimeExecution.outputSemanticsValidation.ready, true);
+  assert.equal(result.ingest.hostRuntimeExecutionReady, true);
+  assert.equal(result.ingest.hostRuntimeExecutionInvoked, true);
+  assert.equal(result.ingest.hostRuntimeExecutionScientificExecution, false);
+  assert.equal(result.ingest.outputSemanticsValidationReady, true);
+});
+
+test('ULG Eshkol dispatch adapter blocks malformed output semantics before invoking main', async () => {
+  const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
+  const eshkolManifest = createUlgDispatchServiceManifests({ serviceIds })
+    .find((entry) => entry.serviceId === 'eshkol-ulg-fixture');
+  const registry = new ComputeServiceRegistry([eshkolManifest]);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    workerFactory: (serviceManifest) => new UlgDispatchServiceHost(serviceManifest, {
+      requestChildLease: false
+    })
+  });
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'eshkol-ulg-fixture',
+    taskKind: 'eshkol.ulg.closure-artifact.ingest',
+    taskId: 'task:eshkol-malformed-output-semantics',
+    rootTaskId: 'root:eshkol-malformed-output-semantics',
+    artifactPayload: {
+      schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+      handoffId: 'handoff:eshkol-malformed-output-semantics',
+      dispatchId: 'handoff:eshkol-malformed-output-semantics:dispatch:0',
+      sourceService: 'eshkol',
+      artifactKind: 'closure',
+      artifactRefUri: 'artifact://eshkol-malformed-output-semantics',
+      artifactContentHash: 'sha256:eshkol-malformed-output-semantics',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'pass',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureOutputSemanticsReady: false,
+        closureImportCount: 0,
+        closureExportCount: 1,
+        closureEntryExport: 'main',
+        closureServiceWorkerSafe: true,
+        closureRequiresDynamicCode: false
+      },
+      artifact: {
+        closureId: 'eshkol:malformed-output-semantics',
+        sourceService: 'eshkol',
+        closureKind: 'malformed-output-semantics',
+        execution: {
+          serviceWorkerSafe: true,
+          entryExport: 'main',
+          entrySignature: { parameters: [], results: ['i32'] },
+          imports: [],
+          exports: [{ name: 'main', kind: 'function' }]
+        },
+        validity: {
+          requiresDynamicCode: false
+        },
+        validation: {
+          status: 'pass',
+          outputSemantics: {
+            schema: ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA,
+            semanticScope: 'scientific-fixture',
+            scientificScope: 'magnetar',
+            entryExport: 'main',
+            entryArgs: [],
+            expectedEntryResult: 0,
+            stdout: { byteLength: 0 },
+            scientificValidation: true
+          }
+        }
+      },
+      wasmBytes: MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES,
+      wasmByteLength: MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES.length,
+      wasmSha256: 'sha256:eshkol-malformed-output-semantics',
+      hasTransferredWasmBytes: true
+    }
+  });
+
+  assert.equal(result.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.serviceStatus, 'blocked');
+  assert.equal(result.ready, false);
+  assert.ok(result.blockers.includes('eshkol-output-semantics-scope-unsupported'));
+  assert.ok(result.blockers.includes('eshkol-output-semantics-scientific-scope-invalid'));
+  assert.ok(result.blockers.includes('eshkol-output-semantics-scientific-validation-overstated'));
+  assert.equal(result.probe.hostRuntimeExecution.status, 'host-runtime-execution-preflight-blocked');
+  assert.equal(result.probe.hostRuntimeExecution.entryInvoked, false);
+  assert.equal(result.probe.hostRuntimeExecution.mainInvoked, false);
+  assert.equal(result.probe.hostRuntimeExecution.scientificExecution, false);
+  assert.equal(result.probe.hostRuntimeExecution.preflight.ready, false);
+  assert.equal(result.ingest.hostRuntimeExecutionReady, false);
+  assert.equal(result.ingest.hostRuntimeExecutionInvoked, false);
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

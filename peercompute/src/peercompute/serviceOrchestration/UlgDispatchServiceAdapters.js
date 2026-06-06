@@ -7,6 +7,10 @@ export const ULG_DISPATCH_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.dispatch-serv
 export const ULG_DISPATCH_SERVICE_TELEMETRY_SCHEMA = 'peercompute.ulg.dispatch-service-telemetry.v0';
 export const ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA = 'peercompute.ulg.dispatch-service-artifact.v0';
 
+const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
+const ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.ulg.eshkol-host-runtime-execution.v0';
+const ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.ulg.eshkol-output-semantics-validation.v0';
+
 const DEFAULT_ADAPTERS = Object.freeze({
   moonlab: {
     sourceService: 'moonlab',
@@ -295,6 +299,316 @@ async function dryProbeEshkolHostRuntime({ module, wasmBytes, observedImports = 
     mainInvoked: false,
     scientificExecution: false,
     error
+  };
+}
+
+function entryArgsForSignature(signature = {}, fallbackExport = 'main') {
+  const parameters = Array.isArray(signature?.parameters) ? signature.parameters : [];
+  if (parameters.length === 0) return [];
+  if (parameters.length === 0 && fallbackExport === 'main') return [0, 0];
+  return parameters.map((type) => (type === 'i64' ? 0n : 0));
+}
+
+function serializeWasmValue(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || value == null) return value;
+  return String(value);
+}
+
+function compareSerializedScalar(actual, expected) {
+  if (actual == null || expected == null) return actual == null && expected == null;
+  return String(serializeWasmValue(actual)) === String(serializeWasmValue(expected));
+}
+
+function compareSerializedArray(actual = [], expected = []) {
+  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return false;
+  return actual.every((value, index) => compareSerializedScalar(value, expected[index]));
+}
+
+function entryArgsMatchSignature(entryArgs = [], signature = {}) {
+  const parameters = Array.isArray(signature?.parameters) ? signature.parameters : [];
+  return Array.isArray(entryArgs) && entryArgs.length === parameters.length;
+}
+
+async function sha256Utf8(text) {
+  if (!globalThis.crypto?.subtle) return null;
+  const encoded = new TextEncoder().encode(String(text));
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded);
+  return `sha256:${Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+function createEshkolHostRuntimeExecutionImports(observedImports = [], declaredImports = [], options = {}) {
+  const stub = createEshkolHostRuntimeStubImports(observedImports, declaredImports, {
+    ...options,
+    memoryInitialPages: options.memoryInitialPages || 256,
+    tableInitial: options.tableInitial || 256,
+    stackPointerValue: options.stackPointerValue || 1048576
+  });
+  const output = [];
+  const calls = [];
+  const env = stub.importObject.env || {};
+  stub.importObject.env = env;
+  const record = (name, args) => {
+    calls.push({ name, argCount: args.length });
+  };
+  const pushChar = (value) => {
+    const charCode = Number(value) & 0xff;
+    output.push(String.fromCharCode(charCode));
+    return charCode;
+  };
+
+  env.__eshkol_register_parallel_workers = (...args) => { record('__eshkol_register_parallel_workers', args); };
+  env.eshkol_init_stack_size = (...args) => { record('eshkol_init_stack_size', args); };
+  env.eshkol_runtime_init = (...args) => { record('eshkol_runtime_init', args); return 0; };
+  env.get_global_arena = (...args) => { record('get_global_arena', args); return options.globalArenaPtr || 1; };
+  env.eshkol_lambda_registry_init = (...args) => { record('eshkol_lambda_registry_init', args); };
+  env.__eshkol_lib_init__ = (...args) => { record('__eshkol_lib_init__', args); };
+  env.eshkol_display_value = (value, ...args) => {
+    record('eshkol_display_value', [value, ...args]);
+    output.push(String(value));
+  };
+  env.eshkol_runtime_current_output_fp = (...args) => {
+    record('eshkol_runtime_current_output_fp', args);
+    return options.outputFilePointer || 0;
+  };
+  env.fputc = (charCode, fp) => {
+    record('fputc', [charCode, fp]);
+    return pushChar(charCode);
+  };
+
+  return { ...stub, output, calls };
+}
+
+async function validateEshkolOutputSemantics(execution = {}, outputSemantics = null) {
+  const blockers = [];
+  const semantics = objectOrNull(outputSemantics);
+  const stdout = objectOrNull(semantics?.stdout) || {};
+  const outputText = String(execution.outputText || '');
+  const outputByteLength = new TextEncoder().encode(outputText).length;
+  const outputSha256 = await sha256Utf8(outputText);
+  if (!semantics) {
+    blockers.push('eshkol-output-semantics-missing');
+  }
+  if (semantics && semantics.schema !== ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA) {
+    blockers.push('eshkol-output-semantics-schema-unrecognized');
+  }
+  if (semantics && semantics.semanticScope !== 'smoke-fixture') {
+    blockers.push('eshkol-output-semantics-scope-unsupported');
+  }
+  if (semantics && semantics.scientificValidation !== false) {
+    blockers.push('eshkol-output-semantics-scientific-scope-invalid');
+  }
+  if (semantics?.entryExport && semantics.entryExport !== execution.entryExport) {
+    blockers.push('eshkol-output-entry-export-mismatch');
+  }
+  if (Array.isArray(semantics?.entryArgs) && !compareSerializedArray(execution.entryArgs || [], semantics.entryArgs)) {
+    blockers.push('eshkol-output-entry-args-mismatch');
+  }
+  if (
+    semantics
+    && Object.prototype.hasOwnProperty.call(semantics, 'expectedEntryResult')
+    && !compareSerializedScalar(execution.entryResult, semantics.expectedEntryResult)
+  ) {
+    blockers.push('eshkol-output-entry-result-mismatch');
+  }
+  if (Number.isFinite(Number(stdout.byteLength)) && Number(stdout.byteLength) !== outputByteLength) {
+    blockers.push('eshkol-output-stdout-byte-length-mismatch');
+  }
+  if (stdout.sha256 && (!outputSha256 || stdout.sha256 !== outputSha256)) {
+    blockers.push(outputSha256 ? 'eshkol-output-stdout-sha256-mismatch' : 'eshkol-output-stdout-sha256-unavailable');
+  }
+  if (typeof stdout.expectedText === 'string' && stdout.expectedText !== outputText) {
+    blockers.push('eshkol-output-stdout-text-mismatch');
+  }
+  if (execution.ready !== true) {
+    blockers.push('eshkol-host-runtime-execution-not-ready');
+  }
+  return {
+    schema: ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
+    status: blockers.length === 0 ? 'output-semantics-validated' : 'output-semantics-pending',
+    ready: blockers.length === 0,
+    sourceSchema: semantics?.schema || null,
+    semanticScope: semantics?.semanticScope || null,
+    scientificScope: semantics?.scientificScope || null,
+    scientificValidation: semantics?.scientificValidation === true,
+    expected: {
+      entryExport: semantics?.entryExport || null,
+      entryArgs: Array.isArray(semantics?.entryArgs) ? [...semantics.entryArgs] : null,
+      entryResult: semantics?.expectedEntryResult ?? null,
+      stdoutSha256: stdout.sha256 || null,
+      stdoutByteLength: Number.isFinite(Number(stdout.byteLength)) ? Number(stdout.byteLength) : null,
+      stdoutExpectedTextProvided: typeof stdout.expectedText === 'string'
+    },
+    observed: {
+      entryExport: execution.entryExport || null,
+      entryArgs: Array.isArray(execution.entryArgs) ? [...execution.entryArgs.map(serializeWasmValue)] : [],
+      entryResult: serializeWasmValue(execution.entryResult),
+      stdoutSha256: outputSha256,
+      stdoutByteLength: outputByteLength
+    },
+    blockers: uniqueStrings(blockers)
+  };
+}
+
+function preflightEshkolOutputSemantics({
+  outputSemantics = null,
+  artifact = {},
+  entryExport = 'main',
+  hasEntryExport = false,
+  startFunctionIndex = null,
+  importMetadataMatches = null,
+  exportMetadataMatches = null
+} = {}) {
+  const blockers = [];
+  const semantics = objectOrNull(outputSemantics);
+  const stdout = objectOrNull(semantics?.stdout) || {};
+  const artifactEntryExport = artifact.execution?.entryExport || entryExport;
+  if (!semantics) {
+    blockers.push('eshkol-output-semantics-missing');
+  }
+  if (semantics && semantics.schema !== ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA) {
+    blockers.push('eshkol-output-semantics-schema-unrecognized');
+  }
+  if (semantics && semantics.semanticScope !== 'smoke-fixture') {
+    blockers.push('eshkol-output-semantics-scope-unsupported');
+  }
+  if (semantics && semantics.scientificScope !== 'none') {
+    blockers.push('eshkol-output-semantics-scientific-scope-invalid');
+  }
+  if (semantics && semantics.scientificValidation !== false) {
+    blockers.push('eshkol-output-semantics-scientific-validation-overstated');
+  }
+  if (!semantics?.entryExport || semantics.entryExport !== artifactEntryExport) {
+    blockers.push('eshkol-output-entry-export-mismatch');
+  }
+  if (!Array.isArray(semantics?.entryArgs) || !entryArgsMatchSignature(semantics.entryArgs, artifact.execution?.entrySignature || {})) {
+    blockers.push('eshkol-output-entry-args-mismatch');
+  }
+  if (!semantics || !Object.prototype.hasOwnProperty.call(semantics, 'expectedEntryResult')) {
+    blockers.push('eshkol-output-expected-entry-result-missing');
+  }
+  if (!stdout.sha256 && !Number.isFinite(Number(stdout.byteLength)) && typeof stdout.expectedText !== 'string') {
+    blockers.push('eshkol-output-stdout-expectation-missing');
+  }
+  if (startFunctionIndex !== null || artifact.execution?.hasStartSection === true) {
+    blockers.push('eshkol-output-start-section-present');
+  }
+  if (artifact.execution?.serviceWorkerSafe !== true) {
+    blockers.push('eshkol-output-service-worker-safe-missing');
+  }
+  if (artifact.validity?.requiresDynamicCode !== false) {
+    blockers.push('eshkol-output-dynamic-code-policy-invalid');
+  }
+  if (hasEntryExport !== true) {
+    blockers.push('eshkol-output-entry-export-unavailable');
+  }
+  if (importMetadataMatches === false) {
+    blockers.push('eshkol-output-import-metadata-mismatch');
+  }
+  if (exportMetadataMatches === false) {
+    blockers.push('eshkol-output-export-metadata-mismatch');
+  }
+  return {
+    schema: 'peercompute.ulg.eshkol-output-semantics-preflight.v0',
+    status: blockers.length === 0 ? 'output-semantics-execution-allowed' : 'output-semantics-execution-blocked',
+    ready: blockers.length === 0,
+    blockers: uniqueStrings(blockers),
+    sourceSchema: semantics?.schema || null,
+    semanticScope: semantics?.semanticScope || null,
+    scientificScope: semantics?.scientificScope || null,
+    scientificValidation: semantics?.scientificValidation === true,
+    entryExport: semantics?.entryExport || null,
+    entryArgs: Array.isArray(semantics?.entryArgs) ? [...semantics.entryArgs] : null,
+    expectedEntryResultDeclared: semantics
+      ? Object.prototype.hasOwnProperty.call(semantics, 'expectedEntryResult')
+      : false,
+    stdoutExpectationDeclared: Boolean(
+      stdout.sha256 || Number.isFinite(Number(stdout.byteLength)) || typeof stdout.expectedText === 'string'
+    ),
+    startFunctionIndex,
+    hasEntryExport
+  };
+}
+
+async function executeEshkolHostRuntime({ module, observedImports = [], declaredImports = [], entryExport = 'main', entrySignature = null, outputSemantics = null, preflight = null }) {
+  if (preflight?.ready !== true) {
+    return {
+      schema: ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA,
+      status: 'host-runtime-execution-preflight-blocked',
+      ready: false,
+      mode: 'dom-free-eshkol-host-imports-v0',
+      instantiated: false,
+      entryInvoked: false,
+      entryExport,
+      entryArgs: Array.isArray(outputSemantics?.entryArgs) ? [...outputSemantics.entryArgs] : [],
+      entryResult: null,
+      outputPreview: '',
+      outputByteLength: 0,
+      runtimeCallCount: 0,
+      calledImports: [],
+      mainInvoked: false,
+      scientificExecution: false,
+      preflight: clonePlain(preflight),
+      outputSemanticsValidation: null,
+      blockers: clonePlain(preflight?.blockers || ['eshkol-output-semantics-preflight-blocked']),
+      error: null
+    };
+  }
+  const stub = createEshkolHostRuntimeExecutionImports(observedImports, declaredImports);
+  let instance = null;
+  let entryInvoked = false;
+  let entryResult = null;
+  let error = null;
+  const entryArgs = Array.isArray(outputSemantics?.entryArgs)
+    ? [...outputSemantics.entryArgs]
+    : entryArgsForSignature(entrySignature, entryExport);
+  try {
+    instance = await WebAssembly.instantiate(module, stub.importObject);
+    const entry = instance.exports?.[entryExport];
+    if (typeof entry !== 'function') {
+      throw new Error(`Entry export ${entryExport} is unavailable`);
+    }
+    entryResult = entry(...entryArgs);
+    entryInvoked = true;
+  } catch (err) {
+    error = err?.message || String(err);
+  }
+  const outputText = stub.output.join('');
+  const execution = {
+    schema: ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA,
+    status: entryInvoked && !error ? 'host-runtime-executed' : 'host-runtime-execution-blocked',
+    ready: entryInvoked && !error,
+    mode: 'dom-free-eshkol-host-imports-v0',
+    instantiated: Boolean(instance),
+    entryInvoked,
+    entryExport,
+    entryArgs: entryArgs.map(serializeWasmValue),
+    entryResult: serializeWasmValue(entryResult),
+    outputPreview: outputText.slice(0, 120),
+    outputByteLength: new TextEncoder().encode(outputText).length,
+    outputText,
+    runtimeCallCount: stub.calls.length,
+    calledImports: stub.calls.map((entry) => entry.name),
+    mainInvoked: entryExport === 'main' && entryInvoked,
+    scientificExecution: false,
+    preflight: clonePlain(preflight),
+    error
+  };
+  const outputSemanticsValidation = await validateEshkolOutputSemantics(execution, outputSemantics);
+  return {
+    ...execution,
+    outputText: undefined,
+    outputSemanticsValidation,
+    ready: execution.ready === true && outputSemanticsValidation.ready === true,
+    status: execution.ready === true && outputSemanticsValidation.ready === true
+      ? 'host-runtime-output-semantics-validated'
+      : execution.status,
+    blockers: uniqueStrings([
+      ...(outputSemanticsValidation.blockers || []),
+      execution.ready === true ? null : 'eshkol-host-runtime-execution-not-ready'
+    ])
   };
 }
 
@@ -800,6 +1114,32 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
   if (hostRuntimeProbe.ready !== true) {
     blockers.push('eshkol-host-runtime-dry-probe-not-ready');
   }
+  const outputSemantics = objectOrNull(artifact.validation?.outputSemantics);
+  const outputSemanticsPreflight = outputSemantics
+    ? preflightEshkolOutputSemantics({
+      outputSemantics,
+      artifact,
+      entryExport: outputSemantics.entryExport || entryExport,
+      hasEntryExport,
+      startFunctionIndex: hostRuntimeProbe.startFunctionIndex ?? null,
+      importMetadataMatches,
+      exportMetadataMatches
+    })
+    : null;
+  const hostRuntimeExecution = outputSemantics
+    ? await executeEshkolHostRuntime({
+      module,
+      observedImports: imports,
+      declaredImports,
+      entryExport: outputSemantics.entryExport || entryExport,
+      entrySignature: artifact.execution?.entrySignature || null,
+      outputSemantics,
+      preflight: outputSemanticsPreflight
+    })
+    : null;
+  if (hostRuntimeExecution && hostRuntimeExecution.ready !== true) {
+    blockers.push(...(hostRuntimeExecution.blockers || ['eshkol-host-runtime-output-semantics-not-ready']));
+  }
   const uniqueBlockers = uniqueStrings(blockers);
 
   return {
@@ -825,7 +1165,8 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
     serviceWorkerSafe: summary.closureServiceWorkerSafe === true || artifact.execution?.serviceWorkerSafe === true,
     requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null,
     descriptorProbe: compiledDescriptorProbe,
-    hostRuntimeProbe
+    hostRuntimeProbe,
+    hostRuntimeExecution
   };
 }
 
@@ -885,6 +1226,13 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     hostRuntimeProbeStatus: probe?.hostRuntimeProbe?.status || null,
     hostRuntimeInstantiated: probe?.hostRuntimeProbe?.instantiated === true,
     hostRuntimeStubCallCount: probe?.hostRuntimeProbe?.stubCallCount ?? null,
+    hostRuntimeExecutionReady: probe?.hostRuntimeExecution?.ready === true,
+    hostRuntimeExecutionSchema: probe?.hostRuntimeExecution?.schema || null,
+    hostRuntimeExecutionStatus: probe?.hostRuntimeExecution?.status || null,
+    hostRuntimeExecutionInvoked: probe?.hostRuntimeExecution?.entryInvoked === true,
+    hostRuntimeExecutionScientificExecution: probe?.hostRuntimeExecution?.scientificExecution === true,
+    outputSemanticsValidationReady: probe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
+    outputSemanticsValidationSchema: probe?.hostRuntimeExecution?.outputSemanticsValidation?.schema || null,
     adapterProbe: clonePlain(probe)
   };
 }
