@@ -261,6 +261,14 @@ const MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS = Object.freeze([
   }
 ]);
 
+const MAGNETAR_REQUIRED_CROSS_FAMILY_LINK_IDS = Object.freeze([
+  'radiation-opacity-to-surface-heating',
+  'stellar-fusion-to-radiation-pressure',
+  'maxwell-field-to-magnetosphere',
+  'pic-kinetic-to-mhd-feedback',
+  'relativity-to-cosmology-galaxy'
+]);
+
 export function createScenarioRuntimeEvidenceRequirementsManifest({ scenarioId = 'magnetar' } = {}) {
   if (scenarioId !== 'magnetar') {
     return {
@@ -1909,6 +1917,10 @@ function summarizeRuntimeOutputFields(observed = {}) {
   );
 }
 
+function finiteValues(values = []) {
+  return values.every((value) => Number.isFinite(Number(value)));
+}
+
 async function createCalibratedRuntimeEvidenceEntryFromState({
   requirement,
   state = {},
@@ -2033,17 +2045,199 @@ async function createCalibratedRuntimeEvidenceEntryFromState({
   };
 }
 
+function summarizeCalibratedCrossFamilyRuntime({
+  solverEntries = [],
+  packet = {}
+} = {}) {
+  const conservationAudit = packet.conservation || {};
+  const crossScaleCoupling = packet.coupling || {};
+  const links = Array.isArray(crossScaleCoupling.links) ? crossScaleCoupling.links : [];
+  const linksById = new Map(links.map((link) => [link?.id, link]));
+  const requiredLinks = MAGNETAR_REQUIRED_CROSS_FAMILY_LINK_IDS.map((id) => linksById.get(id)).filter(Boolean);
+  return {
+    conservationStatus: conservationAudit.status || null,
+    conservationMode: conservationAudit.mode || null,
+    couplingStatus: crossScaleCoupling.status || null,
+    couplingMode: crossScaleCoupling.mode || null,
+    solverFamilyValidatedCount: solverEntries.filter((entry) => entry.ready === true).length,
+    solverFamilyEvidenceHashValidCount: solverEntries.filter((entry) => hasSha256Digest(entry.evidenceHash)).length,
+    requiredLinkCount: MAGNETAR_REQUIRED_CROSS_FAMILY_LINK_IDS.length,
+    observedRequiredLinkCount: requiredLinks.length,
+    activeRequiredLinkCount: requiredLinks.filter((link) => link?.status === 'active').length,
+    missingRequiredLinkIds: MAGNETAR_REQUIRED_CROSS_FAMILY_LINK_IDS.filter((id) => !linksById.has(id)),
+    inactiveRequiredLinkIds: MAGNETAR_REQUIRED_CROSS_FAMILY_LINK_IDS.filter((id) => {
+      const link = linksById.get(id);
+      return link && link.status !== 'active';
+    }),
+    solverDrift: {
+      magnetosphereMassDrift: finiteOrNull(conservationAudit.solverDrift?.magnetosphereMassDrift),
+      magnetosphereDivergenceBProxy: finiteOrNull(conservationAudit.solverDrift?.magnetosphereDivergenceBProxy),
+      picChargeDrift: finiteOrNull(conservationAudit.solverDrift?.picChargeDrift),
+      picDivergenceEProxy: finiteOrNull(conservationAudit.solverDrift?.picDivergenceEProxy),
+      relativisticEnergyDelta: finiteOrNull(conservationAudit.solverDrift?.relativisticEnergyDelta),
+      radiationEnergyDrift: finiteOrNull(conservationAudit.solverDrift?.radiationEnergyDrift)
+    },
+    exchange: {
+      surfaceRadiativeHeatFlux: finiteOrNull(conservationAudit.exchange?.surfaceRadiativeHeatFlux),
+      magnetosphereReconnectionRate: finiteOrNull(conservationAudit.exchange?.magnetosphereReconnectionRate),
+      picCurrentDensity: finiteOrNull(conservationAudit.exchange?.picCurrentDensity),
+      relativisticLensingDeflectionArcsecProxy: finiteOrNull(
+        conservationAudit.exchange?.relativisticLensingDeflectionArcsecProxy
+      )
+    }
+  };
+}
+
+async function createCalibratedCrossFamilyRuntimeEvidenceEntry({
+  solverEntries = [],
+  packet = {}
+} = {}) {
+  const requirement = MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.find((entry) => entry.stateKey === 'crossFamily');
+  const observed = summarizeCalibratedCrossFamilyRuntime({ solverEntries, packet });
+  const solverEntriesReady = solverEntries.length === calibratedRuntimeEvidenceRequirements().length
+    && solverEntries.every((entry) => entry.ready === true && entry.scientificExecution === true);
+  const solverEvidenceHashesReady = solverEntries.every((entry) => hasSha256Digest(entry.evidenceHash));
+  const referenceHashInputs = solverEntries.map((entry) => (
+    entry.validation?.scientificReferenceHash || entry.scientificReferenceHash
+  ));
+  const toleranceHashInputs = solverEntries.map((entry) => (
+    entry.validation?.scientificToleranceHash || entry.scientificToleranceHash
+  ));
+  const runtimeOutputHashInputs = solverEntries.map((entry) => (
+    entry.validation?.scientificRuntimeOutputHash || entry.scientificRuntimeOutputHash
+  ));
+  const hashesReady = [
+    ...referenceHashInputs,
+    ...toleranceHashInputs,
+    ...runtimeOutputHashInputs
+  ].every(hasSha256Digest);
+  const conservationDriftFinite = finiteValues([
+    observed.solverDrift.magnetosphereMassDrift,
+    observed.solverDrift.magnetosphereDivergenceBProxy,
+    observed.solverDrift.picChargeDrift,
+    observed.solverDrift.picDivergenceEProxy,
+    observed.solverDrift.relativisticEnergyDelta,
+    observed.solverDrift.radiationEnergyDrift
+  ]);
+  const couplingExchangeFinite = finiteValues([
+    observed.exchange.surfaceRadiativeHeatFlux,
+    observed.exchange.magnetosphereReconnectionRate,
+    observed.exchange.picCurrentDensity,
+    observed.exchange.relativisticLensingDeflectionArcsecProxy
+  ]);
+  const checks = {
+    solverEntriesReady,
+    solverEvidenceHashesReady,
+    solverValidationHashesReady: hashesReady,
+    conservationAuditPresent: packet.conservation?.schema === 'peercompute.multiscale.conservation-audit.v0',
+    crossScaleCouplingPresent: packet.coupling?.schema === 'peercompute.multiscale.cross-scale-coupling.v0',
+    couplingHasRequiredLinks: observed.missingRequiredLinkIds.length === 0,
+    couplingRequiredLinksActive: observed.inactiveRequiredLinkIds.length === 0,
+    conservationDriftFinite,
+    couplingExchangeFinite
+  };
+  const referenceHash = checks.solverValidationHashesReady
+    ? await sha256CanonicalJson({ kind: 'cross-family-reference-hash-set', hashes: referenceHashInputs })
+    : null;
+  const toleranceHash = checks.solverValidationHashesReady
+    ? await sha256CanonicalJson({ kind: 'cross-family-tolerance-hash-set', hashes: toleranceHashInputs })
+    : null;
+  const runtimeOutputHash = checks.solverValidationHashesReady
+    ? await sha256CanonicalJson({
+      kind: 'cross-family-runtime-output-set',
+      solverRuntimeOutputHashes: runtimeOutputHashInputs,
+      observed
+    })
+    : null;
+  const validation = {
+    schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+    status: 'pass',
+    scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    scientificValidation: true,
+    proxyOnly: false,
+    modelTier: 'reduced-calibrated-cross-family-coupling-v0',
+    scientificReferenceHash: referenceHash,
+    scientificToleranceHash: toleranceHash,
+    scientificRuntimeOutputHash: runtimeOutputHash,
+    referenceHash,
+    toleranceHash,
+    runtimeOutputHash,
+    checks,
+    note: 'This validates reduced cross-family conservation and coupling telemetry across the four calibrated magnetar solver-family entries.'
+  };
+  const evidenceHash = Object.values(checks).every(Boolean) && referenceHash && toleranceHash && runtimeOutputHash
+    ? await sha256CanonicalJson({
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId,
+      validation,
+      observed
+    })
+    : null;
+  const ready = Object.values(checks).every(Boolean)
+    && hasSha256Digest(referenceHash)
+    && hasSha256Digest(toleranceHash)
+    && hasSha256Digest(runtimeOutputHash)
+    && hasSha256Digest(evidenceHash);
+  const blockers = ready ? [] : uniqueStrings([
+    checks.solverEntriesReady ? null : `${requirement.id}-solver-entries-not-ready`,
+    checks.solverEvidenceHashesReady ? null : `${requirement.id}-solver-evidence-hashes-missing`,
+    checks.solverValidationHashesReady ? null : `${requirement.id}-solver-validation-hashes-missing`,
+    checks.conservationAuditPresent ? null : `${requirement.id}-conservation-audit-missing`,
+    checks.crossScaleCouplingPresent ? null : `${requirement.id}-cross-scale-coupling-missing`,
+    checks.couplingHasRequiredLinks ? null : `${requirement.id}-required-links-missing`,
+    checks.couplingRequiredLinksActive ? null : `${requirement.id}-required-links-inactive`,
+    checks.conservationDriftFinite ? null : `${requirement.id}-conservation-drift-not-finite`,
+    checks.couplingExchangeFinite ? null : `${requirement.id}-coupling-exchange-not-finite`,
+    evidenceHash ? null : `${requirement.id}-evidence-hash-missing`,
+    requirement.blocker
+  ]);
+  return {
+    id: requirement.id,
+    family: requirement.family,
+    solverId: requirement.solverId,
+    status: ready ? 'validated-runtime-ready' : 'scientific-runtime-validation-incomplete',
+    ready,
+    scientificExecution: true,
+    runtimeObserved: true,
+    proxyOnly: false,
+    backend: 'reduced-calibrated-cross-family-coupling',
+    sequence: Math.max(1, ...solverEntries.map((entry) => finite(entry.sequence, 0))),
+    validationStatus: ready ? 'pass' : 'fail',
+    evidenceHash,
+    observed,
+    validation: {
+      ...validation,
+      status: ready ? 'pass' : 'fail',
+      ready
+    },
+    scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    blocker: blockers[0] || null,
+    blockers
+  };
+}
+
 async function createCalibratedRuntimeEvidenceEntriesFromState({
   state = {},
-  scenario = {}
+  scenario = {},
+  packet = null,
+  includeCrossFamily = true
 } = {}) {
   const references = calibratedRuntimeReferencesFromScenario(scenario);
-  return Promise.all(calibratedRuntimeEvidenceRequirements().map((requirement) => {
+  const solverEntries = await Promise.all(calibratedRuntimeEvidenceRequirements().map((requirement) => {
     const reference = references.find((entry) => (
       entry.family === requirement.family || entry.id === requirement.id
     ));
     return createCalibratedRuntimeEvidenceEntryFromState({ requirement, state, reference });
   }));
+  if (includeCrossFamily !== true) {
+    return solverEntries;
+  }
+  const crossFamilyEntry = await createCalibratedCrossFamilyRuntimeEvidenceEntry({
+    solverEntries,
+    packet
+  });
+  return [...solverEntries, crossFamilyEntry];
 }
 
 async function sha256CanonicalJson(value) {
@@ -3632,19 +3826,27 @@ export class MultiscaleModel {
         entries: []
       };
     }
+    const packet = options.packet && typeof options.packet === 'object'
+      ? options.packet
+      : this.createPacket();
     const entries = await createCalibratedRuntimeEvidenceEntriesFromState({
       state: this.state,
-      scenario: this.scenario
+      scenario: this.scenario,
+      packet,
+      includeCrossFamily: options.includeCrossFamily !== false
     });
     return {
       schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
       scenarioId,
       source: MULTISCALE_SCENARIO_CALIBRATED_RUNTIME_EVIDENCE_SOURCE,
       proxyOnly: false,
-      scientificExecution: false,
+      scientificExecution: entries.length === MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.length
+        && entries.every((entry) => entry.ready === true && entry.scientificExecution === true),
       sequence: Math.max(1, ...entries.map((entry) => finite(entry.sequence, 0))),
       entries,
-      note: 'This manifest validates the four reduced solver-family runtime entries against MoonLab calibrated references. Cross-family conservation/coupling remains a separate required runtime evidence entry.'
+      note: options.includeCrossFamily === false
+        ? 'This manifest validates the four reduced solver-family runtime entries against MoonLab calibrated references. Cross-family conservation/coupling was intentionally omitted by caller option.'
+        : 'This manifest validates the four reduced solver-family runtime entries plus reduced cross-family conservation/coupling evidence against MoonLab calibrated references and packet telemetry.'
     };
   }
 

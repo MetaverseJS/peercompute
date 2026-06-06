@@ -22639,3 +22639,39 @@ User asked whether Infinite Context Coder is being used.
 - Cross-family conservation/coupling scientific runtime evidence is still
   missing; this is now the next blocker toward a complete reduced magnetar run.
 - No push was attempted.
+
+## 2026-06-06 06:15:42 AKDT - Reduced cross-family runtime evidence clears gate
+
+### Actions
+- Extended the calibrated runtime evidence manifest to derive the fifth required
+  `cross-family-conservation-and-coupling-validation` entry from the four
+  validated solver-family entries plus packet conservation/coupling telemetry.
+- The cross-family entry hashes the solver reference/tolerance/runtime-output
+  hash sets, checks required coupling links, finite conservation drift, finite
+  coupling exchange terms, and emits
+  `peercompute.multiscale.scenario-scientific-runtime-validation.v0`.
+- Kept `includeCrossFamily: false` available for inspecting the four-family
+  partial validation set.
+
+### Live ULG Bridge
+- ULG `http://100.86.83.35:5173/` exported the current MoonLab reference suite
+  and Eshkol descriptor handoff.
+- PeerCompute `https://100.86.83.35:5185/?scenario=magnetar` accepted the ULG
+  handoff, then `refreshScenarioCalibratedRuntimeEvidence()` reported
+  `manifestEntryCount = 5`, `manifestScientificExecution = true`,
+  `runtime-evidence-ready`, `scientificExecution = true`,
+  `validatedCount = 5`, `missingCount = 0`, `proxyOnlyCount = 0`,
+  `scientific-runtime-ready`, `scenarioScientificReady = true`, and no blockers.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'calibrated reduced runtime evidence|runtime evidence manifest|scientific runtime gate|runtime evidence requirements'` passed `195/195`.
+- PASS: live browser probe with system Chrome against the VPN demos reported the
+  same reduced calibrated runtime-ready state.
+
+### Open
+- This is a reduced calibrated magnetar runtime gate, not a claim of
+  full-fidelity GRMHD, production PIC, or spectral radiation transport.
+- No push was attempted.

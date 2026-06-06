@@ -2644,12 +2644,20 @@ test('magnetar scenario creates calibrated reduced runtime evidence from MoonLab
     }
   });
 
+  const partialManifest = await model.createScenarioCalibratedRuntimeEvidenceManifest({ includeCrossFamily: false });
+
+  assert.equal(partialManifest.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(partialManifest.source, 'calibrated-reference-runtime-adapter-v0');
+  assert.equal(partialManifest.scientificExecution, false);
+  assert.equal(partialManifest.entries.length, 4);
+  assert.equal(partialManifest.entries.every((entry) => entry.ready === true), true);
+
   const manifest = await model.createScenarioCalibratedRuntimeEvidenceManifest();
 
   assert.equal(manifest.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
   assert.equal(manifest.source, 'calibrated-reference-runtime-adapter-v0');
-  assert.equal(manifest.scientificExecution, false);
-  assert.equal(manifest.entries.length, 4);
+  assert.equal(manifest.scientificExecution, true);
+  assert.equal(manifest.entries.length, 5);
   assert.equal(manifest.entries.every((entry) => entry.ready === true), true);
   assert.equal(manifest.entries.every((entry) => entry.scientificExecution === true), true);
   assert.equal(manifest.entries.every((entry) => entry.proxyOnly === false), true);
@@ -2663,34 +2671,39 @@ test('magnetar scenario creates calibrated reduced runtime evidence from MoonLab
   assert.ok(magnetosphere.validation.scientificReferenceHash.startsWith('sha256:'));
   assert.match(magnetosphere.validation.scientificToleranceHash, /^sha256:[a-f0-9]{64}$/);
   assert.match(magnetosphere.validation.scientificRuntimeOutputHash, /^sha256:[a-f0-9]{64}$/);
+  const crossFamily = manifest.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation');
+  assert.equal(crossFamily.status, 'validated-runtime-ready');
+  assert.equal(crossFamily.validation.modelTier, 'reduced-calibrated-cross-family-coupling-v0');
+  assert.equal(crossFamily.validation.checks.solverEntriesReady, true);
+  assert.equal(crossFamily.validation.checks.couplingRequiredLinksActive, true);
 
   const scenario = await model.refreshScenarioCalibratedRuntimeEvidence();
   const runtimeEvidence = scenario.scientificRuntimeEvidence;
 
-  assert.equal(runtimeEvidence.status, 'runtime-evidence-incomplete');
-  assert.equal(runtimeEvidence.ready, false);
-  assert.equal(runtimeEvidence.scientificExecution, false);
+  assert.equal(runtimeEvidence.status, 'runtime-evidence-ready');
+  assert.equal(runtimeEvidence.ready, true);
+  assert.equal(runtimeEvidence.scientificExecution, true);
   assert.equal(runtimeEvidence.requiredCount, 5);
-  assert.equal(runtimeEvidence.observedCount, 4);
-  assert.equal(runtimeEvidence.validatedCount, 4);
+  assert.equal(runtimeEvidence.observedCount, 5);
+  assert.equal(runtimeEvidence.validatedCount, 5);
   assert.equal(runtimeEvidence.proxyOnlyCount, 0);
-  assert.equal(runtimeEvidence.missingCount, 1);
+  assert.equal(runtimeEvidence.missingCount, 0);
   assert.equal(
     runtimeEvidence.entries.find((entry) => entry.id === 'cross-family-conservation-and-coupling-validation').status,
-    'runtime-evidence-missing'
+    'validated-runtime-ready'
   );
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.prerequisiteReady, true);
-  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
-  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceValidatedCount, 4);
-  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
-  assert.equal(scenario.handoffReadiness.scientificReady, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceValidatedCount, 5);
+  assert.deepEqual(scenario.handoffReadiness.blockers, []);
+  assert.equal(scenario.handoffReadiness.scientificReady, true);
 
   const packet = model.createPacket();
-  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceStatus, 'runtime-evidence-incomplete');
-  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceValidatedCount, 4);
-  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceMissingCount, 1);
-  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
-  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceStatus, 'runtime-evidence-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceValidatedCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioRuntimeEvidenceMissingCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, true);
 });
 
 test('magnetar runtime evidence manifest requires evidence hashes for validated entries', () => {
