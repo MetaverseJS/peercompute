@@ -153,6 +153,10 @@ Updated: 2026-06-06 13:25:59 AKDT
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay
   on a dynamic localhost port, wrote Hyperborea `relay-config.json`, connected
   multiple headless browser peers, and exited with `Runtime P2P tests passed`.
+- `demos/tests/runtime-p2p.mjs` now snapshots and restores generated
+  `relay-config.json` / `.relay-config.json` files around relay-backed smoke
+  runs, preventing transient localhost bootstrap addresses from dirtying the
+  tracked docs tree.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host

@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { createReadStream, existsSync, statSync, unlinkSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -139,6 +139,25 @@ function waitForFiles(filePaths, timeoutMs) {
   });
 }
 
+function snapshotFiles(filePaths) {
+  return new Map(filePaths.map((filePath) => {
+    if (!existsSync(filePath)) {
+      return [filePath, { existed: false, content: null }];
+    }
+    return [filePath, { existed: true, content: readFileSync(filePath) }];
+  }));
+}
+
+function restoreFiles(snapshots) {
+  for (const [filePath, snapshot] of snapshots.entries()) {
+    if (snapshot.existed) {
+      writeFileSync(filePath, snapshot.content);
+    } else if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+  }
+}
+
 function startRelay() {
   const relayConfigDirs = selectedDemos
     .map((demo) => path.join(docsRoot, demo.name))
@@ -149,6 +168,7 @@ function startRelay() {
     path.join(dir, 'relay-config-source.json'),
     path.join(dir, '.relay-config-source.json')
   ]));
+  const relayConfigSnapshots = snapshotFiles(relayConfigPaths);
   relayConfigPaths.forEach((filePath) => {
     if (existsSync(filePath)) {
       try {
@@ -181,7 +201,8 @@ function startRelay() {
   return {
     child,
     relayConfigPaths: relayConfigDirs.map((dir) => path.join(dir, 'relay-config.json')),
-    relayConfigDirs
+    relayConfigDirs,
+    relayConfigSnapshots
   };
 }
 
@@ -744,6 +765,7 @@ async function main() {
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await stopRelay(relay);
+    restoreFiles(relay.relayConfigSnapshots);
   }
 }
 

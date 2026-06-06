@@ -935,3 +935,6 @@
 : current result on 2026-06-06 passed. The smoke started the Go relay on a
   dynamic localhost port, wrote Hyperborea relay config, connected multiple
   browser peers, disconnected cleanly, and printed `Runtime P2P tests passed`.
+- Relay-config restore regression:
+  after the focused runtime P2P smoke, `git diff -- docs/hyperborea/relay-config.json`
+  returned empty, proving the smoke restored generated relay config files.

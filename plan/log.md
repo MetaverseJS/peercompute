@@ -51399,3 +51399,39 @@ timeout 8s env \
 - This is focused Hyperborea relay/P2P coverage, not a full ULG/Multiscale
   distributed service adapter room test yet.
 - No push was attempted.
+
+## 2026-06-06 13:57:46 AKDT - Runtime P2P relay-config restore hardening
+
+### Actions
+- Hardened `demos/tests/runtime-p2p.mjs` so relay-backed smoke tests snapshot
+  any existing `relay-config.json`, `.relay-config.json`,
+  `relay-config-source.json`, and `.relay-config-source.json` files before
+  starting the relay and restore or remove those files after relay shutdown.
+- Re-ran the focused Hyperborea runtime P2P smoke to verify the cleanup path.
+
+### Files Touched
+- `demos/tests/runtime-p2p.mjs`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Commands Run
+- `node --check demos/tests/runtime-p2p.mjs`
+- `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000 DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs`
+- `git diff -- docs/hyperborea/relay-config.json`
+- `git diff --check`
+
+### Results
+- PASS: syntax check completed.
+- PASS: focused runtime P2P smoke started the Go relay, advertised
+  `/ip4/127.0.0.1/tcp/36097/ws/p2p/12D3KooWEdPHryeiVKLujCJYbJzEUPHX9SPPaqdvobU5zG8aU5Bw`,
+  connected headless browser peers, disconnected cleanly, and printed
+  `Runtime P2P tests passed`.
+- PASS: `docs/hyperborea/relay-config.json` had no diff after the smoke,
+  proving transient localhost relay config restoration worked.
+- PASS: `git diff --check` passed.
+
+### Open
+- This is test-harness hygiene for relay smoke runs; it does not add full
+  ULG/Multiscale distributed service-room coverage yet.
+- No push was attempted.
