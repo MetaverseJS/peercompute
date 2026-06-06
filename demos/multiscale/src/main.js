@@ -6,6 +6,7 @@ import {
   StateManager,
   createPlacementAdmissionPolicy,
   createRemoteResultQuorumValidator,
+  createUlgHandoffServiceEnvelope as createPeerComputeUlgHandoffServiceEnvelope,
   normalizeUlgDemoHandoff as normalizePeerComputeUlgDemoHandoff,
   summarizeUlgArtifact as summarizePeerComputeUlgArtifact
 } from '@peercompute';
@@ -1544,6 +1545,12 @@ function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options =
 
 async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
   const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
+  const serviceEnvelope = createPeerComputeUlgHandoffServiceEnvelope(normalized, {
+    origin: window.location.origin,
+    url: window.location.href,
+    ...options,
+    receivedAt: normalized.receivedAt
+  });
   const transfer = normalized.transferManifest
     ? ingestScenarioTransferManifest(normalized.transferManifest, {
       ...options,
@@ -1580,6 +1587,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     : null;
   return cloneJson({
     handoff: normalized,
+    serviceEnvelope,
     transfer,
     calibration,
     closure,
@@ -10840,6 +10848,20 @@ window.__multiscaleDemo = {
   },
   normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     return cloneJson(normalizePeerComputeUlgDemoHandoff(handoff, options));
+  },
+  createUlgHandoffServiceEnvelope(handoff = {}, options = {}) {
+    return cloneJson(createPeerComputeUlgHandoffServiceEnvelope(handoff, {
+      origin: window.location.origin,
+      url: window.location.href,
+      ...options
+    }));
+  },
+  normalizeUlgHandoffServiceEnvelope(handoff = {}, options = {}) {
+    return cloneJson(createPeerComputeUlgHandoffServiceEnvelope(handoff, {
+      origin: window.location.origin,
+      url: window.location.href,
+      ...options
+    }));
   },
   summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
     return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));

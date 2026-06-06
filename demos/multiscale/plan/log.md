@@ -22675,3 +22675,32 @@ User asked whether Infinite Context Coder is being used.
 - This is a reduced calibrated magnetar runtime gate, not a claim of
   full-fidelity GRMHD, production PIC, or spectral radiation transport.
 - No push was attempted.
+
+## 2026-06-06 06:29:28 AKDT - Durable ULG handoff service envelope
+
+### Actions
+- `window.__multiscaleDemo.createUlgHandoffServiceEnvelope()` and
+  `normalizeUlgHandoffServiceEnvelope()` now expose the PeerCompute
+  `peercompute.ulg.handoff-service-envelope.v0` wrapper in the browser.
+- `applyUlgDemoHandoffForScenario()` now returns `serviceEnvelope` beside the
+  normalized handoff, transfer ingest, calibration ingest, closure ingest/probe,
+  and packet.
+- The envelope preserves the normalized handoff and transfer manifest while
+  surfacing content-addressed artifact refs, relay-safe counts, provenance,
+  ready counts, and blockers for downstream PeerCompute service adapters.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service envelope|ULG demo handoff adapter'` passed `13/13`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: live system-Chrome ULG-to-PeerCompute probe reported
+  `service-envelope-ready`, `relaySafeArtifactCount=2`,
+  `contentAddressedArtifactCount=2`, no envelope blockers,
+  `runtime-evidence-ready`, `validatedCount=5`, `scientific-runtime-ready`,
+  `scenarioScientificReady=true`, and no blockers.
+
+### Open
+- This is relay/provenance packaging for the ULG handoff, not a new fidelity
+  claim beyond the reduced calibrated magnetar runtime gate.
+- No push was attempted.

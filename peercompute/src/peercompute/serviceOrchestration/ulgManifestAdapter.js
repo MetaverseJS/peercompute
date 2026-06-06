@@ -8,6 +8,7 @@ export const ULG_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.ulg.artifact-summary.v0'
 export const ULG_DEMO_HANDOFF_SCHEMA = 'peercompute.ulg.demo-handoff.v0';
 export const ULG_DEMO_HANDOFF_ADAPTER_SCHEMA = 'peercompute.ulg.demo-handoff-adapter.v0';
 export const ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA = 'peercompute.ulg.handoff-transfer-manifest.v0';
+export const ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA = 'peercompute.ulg.handoff-service-envelope.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -764,3 +765,152 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     blockers: uniqueBlockers
   };
 }
+
+function normalizeUlgHandoffEnvelopeArtifactRef(entry = {}) {
+  const transfer = entry.transfer && typeof entry.transfer === 'object' ? entry.transfer : {};
+  const artifactSummary = entry.artifactSummary && typeof entry.artifactSummary === 'object'
+    ? entry.artifactSummary
+    : {};
+  const artifactRefUri = stringOrNull(transfer.artifactRefUri || entry.ref?.uri);
+  const artifactRefHash = stringOrNull(
+    transfer.artifactRefHash
+    || entry.ref?.artifactHash
+    || entry.ref?.hash
+  );
+  const artifactContentHash = stringOrNull(
+    transfer.artifactContentHash
+    || entry.artifact?.contentHash
+    || entry.artifact?.hash
+    || artifactSummary.contentHash
+    || artifactRefHash
+  );
+  const artifactKind = stringOrNull(entry.artifactKind || transfer.artifactKind || artifactSummary.artifactKind)
+    || 'artifact';
+  const sourceService = stringOrNull(
+    transfer.sourceService
+    || entry.sourceService
+    || artifactSummary.sourceService
+    || entry.ref?.sourceService
+  );
+  const contentAddressed = artifactRefUri != null && (artifactContentHash != null || artifactRefHash != null);
+  const relaySafe = transfer.relaySafe === true && contentAddressed;
+  const classificationReady = artifactKind === 'closure'
+    ? entry.closureReady === true
+    : (artifactKind === 'quantum-response' ? entry.magnetarCalibrationReady === true : true);
+  const blockers = uniqueStrings([
+    ...(Array.isArray(transfer.blockers) ? transfer.blockers : []),
+    artifactRefUri ? null : 'ulg-artifact-ref-uri-missing',
+    artifactContentHash || artifactRefHash ? null : 'ulg-artifact-content-hash-missing',
+    transfer.relaySafe === false ? 'ulg-artifact-transfer-not-relay-safe' : null,
+    artifactKind === 'closure' && entry.closureReady !== true ? 'eshkol-closure-bundle-summary-missing' : null,
+    artifactKind === 'quantum-response' && entry.magnetarCalibrationReady !== true
+      ? 'moonlab-magnetar-calibration-summary-missing'
+      : null
+  ]);
+  return {
+    index: entry.index,
+    sourceService,
+    artifactKind,
+    artifactRefUri,
+    artifactRefHash,
+    artifactContentHash,
+    contentAddressed,
+    digestAddressed: hasSha256Digest(artifactContentHash) || hasSha256Digest(artifactRefHash),
+    relaySafe,
+    ready: relaySafe && classificationReady && blockers.length === 0,
+    transferMode: transfer.wasmTransferMode || null,
+    wasmTransferMode: transfer.wasmTransferMode || null,
+    wasmByteLength: transfer.wasmByteLength ?? entry.wasmByteLength ?? null,
+    wasmSha256: transfer.wasmSha256 || artifactSummary.closureModuleSha256 || null,
+    wasmSourceUrl: transfer.wasmSourceUrl || entry.wasmSourceUrl || null,
+    hasTransferredWasmBytes: transfer.hasTransferredWasmBytes === true || entry.hasTransferredWasmBytes === true,
+    summarySchema: artifactSummary.schema || null,
+    artifactId: artifactSummary.artifactId || entry.artifact?.artifactId || entry.artifact?.closureId || null,
+    validationStatus: entry.validationStatus || artifactSummary.validationStatus || null,
+    magnetarCalibrationReady: entry.magnetarCalibrationReady === true,
+    closureReady: entry.closureReady === true,
+    closureDescriptorReady: entry.closureDescriptorReady === true,
+    closureOutputSemanticsReady: entry.closureOutputSemanticsReady === true,
+    blockers
+  };
+}
+
+function createUlgHandoffEnvelopeId(normalizedHandoff = {}, artifactRefs = [], options = {}) {
+  const explicitId = stringOrNull(options.handoffId || normalizedHandoff.handoffId || normalizedHandoff.id);
+  if (explicitId) return explicitId;
+  const addressBasis = artifactRefs
+    .map((entry) => entry.artifactContentHash || entry.artifactRefHash || entry.artifactRefUri || `index:${entry.index}`)
+    .join('|');
+  const timeBasis = normalizedHandoff.createdAt || normalizedHandoff.receivedAt || 'undated';
+  return `ulg-handoff:${timeBasis}:${artifactRefs.length}:${addressBasis || 'empty'}`;
+}
+
+export function createUlgHandoffServiceEnvelope(handoff = {}, options = {}) {
+  if (!handoff || typeof handoff !== 'object') {
+    throw new Error('ULG handoff is required');
+  }
+  const receivedAt = options.receivedAt || handoff.receivedAt || new Date().toISOString();
+  const normalizedHandoff = handoff.schema === ULG_DEMO_HANDOFF_ADAPTER_SCHEMA
+    ? { ...clonePlain(handoff), receivedAt }
+    : normalizeUlgDemoHandoff(handoff, { ...options, receivedAt });
+  const artifactRefs = normalizedHandoff.artifacts.map((entry) => normalizeUlgHandoffEnvelopeArtifactRef(entry));
+  const contentAddressedArtifactCount = artifactRefs.filter((entry) => entry.contentAddressed).length;
+  const relaySafeArtifactCount = artifactRefs.filter((entry) => entry.relaySafe).length;
+  const readyArtifactCount = artifactRefs.filter((entry) => entry.ready).length;
+  const transferManifest = clonePlain(normalizedHandoff.transferManifest || null);
+  const blockers = uniqueStrings([
+    ...(Array.isArray(normalizedHandoff.blockers) ? normalizedHandoff.blockers : []),
+    artifactRefs.length > 0 ? null : 'ulg-handoff-artifacts-missing',
+    ...artifactRefs.flatMap((entry) => entry.blockers || []),
+    transferManifest?.ready === false ? 'ulg-handoff-transfer-manifest-not-ready' : null
+  ]);
+  const artifactCount = artifactRefs.length;
+  const contentAddressed = artifactCount > 0 && contentAddressedArtifactCount === artifactCount;
+  const relaySafe = artifactCount > 0 && relaySafeArtifactCount === artifactCount;
+  const ready = normalizedHandoff.ready === true
+    && normalizedHandoff.transferReady === true
+    && contentAddressed
+    && relaySafe
+    && readyArtifactCount === artifactCount
+    && blockers.length === 0;
+  return {
+    schema: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
+    handoffId: createUlgHandoffEnvelopeId(normalizedHandoff, artifactRefs, options),
+    sourceSchema: normalizedHandoff.sourceSchema,
+    adapterSchema: normalizedHandoff.schema,
+    createdAt: normalizedHandoff.createdAt,
+    receivedAt,
+    source: {
+      origin: stringOrNull(options.origin || handoff.origin || handoff.source?.origin),
+      url: stringOrNull(options.url || handoff.url || handoff.source?.url),
+      sourceSchema: normalizedHandoff.sourceSchema,
+      adapterSchema: normalizedHandoff.schema,
+      serviceIds: uniqueStrings(artifactRefs.map((entry) => entry.sourceService)),
+      declaredArtifactCount: normalizedHandoff.declaredArtifactCount,
+      artifactCount
+    },
+    provenance: {
+      adapter: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
+      handoffAdapter: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+      source: stringOrNull(options.source) || 'ulg-demo-browser-cache',
+      receivedAt,
+      contentAddressed,
+      relaySafe,
+      transferManifestReady: normalizedHandoff.transferReady === true,
+      readyArtifactCount,
+      blockerCount: blockers.length
+    },
+    artifactCount,
+    contentAddressedArtifactCount,
+    relaySafeArtifactCount,
+    readyArtifactCount,
+    artifactRefs,
+    transferManifest,
+    handoff: normalizedHandoff,
+    status: ready ? 'service-envelope-ready' : 'service-envelope-pending',
+    ready,
+    blockers
+  };
+}
+
+export const normalizeUlgHandoffServiceEnvelope = createUlgHandoffServiceEnvelope;

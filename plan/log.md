@@ -50233,3 +50233,73 @@ timeout 8s env \
 - This is a reduced calibrated magnetar runtime gate, not a claim of
   full-fidelity GRMHD, production PIC, or spectral radiation transport.
 - No push was attempted.
+
+## 2026-06-06 06:29:28 AKDT - Durable ULG handoff service envelope
+
+### Prompt
+- User asked for current status and whether the overall plan remained on track,
+  with standing instruction to keep going.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine:
+  `2026-06-06 06:29:28 AKDT`.
+
+### Actions
+- Added `peercompute.ulg.handoff-service-envelope.v0` as the service-facing
+  wrapper for normalized ULG demo handoffs.
+- Added `createUlgHandoffServiceEnvelope()` and
+  `normalizeUlgHandoffServiceEnvelope()` to preserve the normalized handoff and
+  transfer manifest while exposing content-addressed artifact refs, relay-safe
+  artifact counts, ready counts, source/provenance metadata, and blockers.
+- Exported the new schema and helpers from the service-orchestration and package
+  barrels.
+- Added Multiscale browser access through
+  `window.__multiscaleDemo.createUlgHandoffServiceEnvelope()` /
+  `normalizeUlgHandoffServiceEnvelope()`, and made
+  `applyUlgDemoHandoffForScenario()` return `serviceEnvelope` beside the
+  handoff ingest result.
+- Rebuilt the tracked Multiscale docs bundle so the browser entry points at the
+  updated hashed asset.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-B6Rpyz0Z.js`
+- `docs/multiscale/assets/index-C5jihGqr.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/index.js`.
+- PASS: `node --check peercompute/src/peercompute/index.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service envelope|ULG demo handoff adapter'` passed `13/13`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: live system-Chrome probe against ULG
+  `http://100.86.83.35:5173/` and PeerCompute
+  `https://100.86.83.35:5185/?scenario=magnetar` exported two ULG artifacts
+  and returned `peercompute.ulg.handoff-service-envelope.v0` with
+  `ready=true`, `relaySafeArtifactCount=2`,
+  `contentAddressedArtifactCount=2`, and no envelope blockers.
+- PASS: the same live probe, after awaited
+  `refreshScenarioCalibratedRuntimeEvidence()`, reported
+  `runtime-evidence-ready`, `validatedCount=5`, `observedCount=5`,
+  `missingCount=0`, `proxyOnlyCount=0`, `scientific-runtime-ready`,
+  `scenarioScientificReady=true`, and no blockers.
+- PASS: `git diff --check`.
+
+### Open
+- The durable envelope is ready for service relay/provenance. The next
+  non-conflicting slice identified by the side-agent read-only pass is
+  Eshkol-side descriptor binding metadata that names this envelope schema while
+  keeping `scientificValidation: false`.
+- No push was attempted.
