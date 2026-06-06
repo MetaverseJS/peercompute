@@ -9,6 +9,7 @@ export const ULG_HANDOFF_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.handoff-servic
 export const ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-plan.v0';
 export const ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-result.v0';
 export const ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA = 'peercompute.ulg.handoff-supervisor-service-executor.v0';
+export const ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA = 'peercompute.ulg.handoff-dispatch-artifact-payload.v0';
 
 const DEFAULT_DISPATCH_SERVICE_IDS = Object.freeze({
   eshkol: 'eshkol-ulg-fixture',
@@ -112,6 +113,45 @@ function normalizeDispatchOutput(output, dispatch = {}) {
     ready,
     blockers,
     output: body
+  };
+}
+
+function findDispatchArtifactEntry(envelope = {}, dispatch = {}) {
+  const artifacts = Array.isArray(envelope.handoff?.artifacts) ? envelope.handoff.artifacts : [];
+  return artifacts.find((entry) => entry.index === dispatch.index)
+    || artifacts.find((entry) => (
+      entry.artifactKind === dispatch.artifactKind
+      && (entry.sourceService === dispatch.sourceService || entry.sourceService === dispatch.sourceKey)
+    ))
+    || null;
+}
+
+function createDispatchArtifactPayload(envelope = {}, dispatch = {}) {
+  const entry = findDispatchArtifactEntry(envelope, dispatch);
+  if (!entry) return null;
+  return {
+    schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+    handoffId: envelope.handoffId || dispatch.handoffId || null,
+    dispatchId: dispatch.dispatchId || null,
+    index: entry.index ?? dispatch.index ?? null,
+    sourceService: entry.sourceService || dispatch.sourceService || null,
+    artifactKind: entry.artifactKind || dispatch.artifactKind || null,
+    artifactRefUri: dispatch.artifactRefUri || entry.transfer?.artifactRefUri || entry.ref?.uri || null,
+    artifactContentHash: dispatch.artifactContentHash
+      || entry.transfer?.artifactContentHash
+      || entry.ref?.artifactHash
+      || entry.ref?.hash
+      || null,
+    artifactSummary: clonePlain(entry.artifactSummary || null),
+    artifact: clonePlain(entry.artifact || null),
+    bundleManifest: clonePlain(entry.bundleManifest || null),
+    validationStatus: entry.validationStatus || null,
+    wasmBytes: clonePlain(entry.wasmBytes || null),
+    wasmByteLength: entry.wasmByteLength ?? dispatch.wasmByteLength ?? null,
+    wasmSha256: entry.transfer?.wasmSha256 || dispatch.wasmSha256 || null,
+    wasmTransferMode: entry.transfer?.wasmTransferMode || dispatch.wasmTransferMode || null,
+    wasmSourceUrl: entry.wasmSourceUrl || dispatch.wasmSourceUrl || null,
+    hasTransferredWasmBytes: entry.hasTransferredWasmBytes === true || dispatch.hasTransferredWasmBytes === true
   };
 }
 
@@ -228,6 +268,9 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
     }
     const dispatch = context.dispatch || {};
     const envelope = context.envelope || {};
+    const artifactPayload = options.includeArtifactPayload === false
+      ? null
+      : createDispatchArtifactPayload(envelope, dispatch);
     const serviceTask = taskFactory
       ? taskFactory(context)
       : {
@@ -243,6 +286,7 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
           handoffId: envelope.handoffId || null,
           status: envelope.status || null
         },
+        artifactPayload,
         dispatch: {
           schema: ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
           dispatchId: dispatch.dispatchId,

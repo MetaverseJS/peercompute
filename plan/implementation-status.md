@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 08:11:06 AKDT
+Updated: 2026-06-06 08:23:39 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -14,6 +14,10 @@ Updated: 2026-06-06 08:11:06 AKDT
 - `createUlgHandoffSupervisorServiceExecutor()` can submit dispatch tasks to registered
   MoonLab/Eshkol service hosts through `WorkerSupervisor`, preserving nested
   service results in the handoff dispatch result.
+- Supervisor-submitted dispatch service tasks now include
+  `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, carrying the
+  materialized artifact body/summary and transferred Eshkol WASM bytes while
+  keeping the dispatch plan ref-based.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.

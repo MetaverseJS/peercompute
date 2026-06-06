@@ -50513,3 +50513,55 @@ timeout 8s env \
 - The browser API exposes dispatch planning only. Actual production service
   execution still needs real Eshkol/MoonLab adapters behind the supervisor.
 - No push was attempted.
+
+## 2026-06-06 08:23:39 AKDT - ULG dispatch artifact payloads
+
+### Prompt
+- Continue implementing the ULG service-hosting plan.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 08:23:39 AKDT`.
+
+### Actions
+- Added `peercompute.ulg.handoff-dispatch-artifact-payload.v0`.
+- `createUlgHandoffSupervisorServiceExecutor()` now materializes the matching
+  normalized handoff artifact into each default submitted service task unless
+  `includeArtifactPayload: false` is supplied.
+- Payloads preserve source service, artifact kind, artifact ref/content hash,
+  artifact summary/body, bundle metadata, validation status, and transferred
+  Eshkol WASM bytes/length/hash/source metadata for registered MoonLab/Eshkol
+  adapters while leaving dispatch plans ref-based.
+- Added fixture assertions proving MoonLab receives a quantum-response payload
+  and Eshkol receives a closure payload with `[0, 97, 115, 109]` transferred
+  WASM bytes.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host|ULG Eshkol and MoonLab fixtures|ULG handoff service envelope|ULG demo handoff adapter'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused service-orchestration run passed `16/16`.
+- PASS: full `serviceOrchestration.test.js` passed `16/16`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+
+### Open
+- The payload is now available to registered fixture targets. The next step is
+  replacing fixture hosts with production MoonLab/Eshkol adapters that consume
+  this exact task payload.
+- No push was attempted.

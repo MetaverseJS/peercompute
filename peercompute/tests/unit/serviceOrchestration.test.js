@@ -14,6 +14,7 @@ import {
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
   ULG_DEMO_HANDOFF_SCHEMA,
+  ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
   ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
   ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
   ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
@@ -1682,9 +1683,31 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceId, 'moonlab-ulg-fixture');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.taskKind, 'moonlab.ulg.quantum-response.ingest');
+  assert.equal(
+    result.dispatchResult.results[0].output.serviceTask.artifactPayload.schema,
+    ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA
+  );
+  assert.equal(result.dispatchResult.results[0].output.serviceTask.artifactPayload.artifactKind, 'quantum-response');
+  assert.equal(result.dispatchResult.results[0].output.serviceTask.artifactPayload.sourceService, 'moonlab');
+  assert.equal(
+    result.dispatchResult.results[0].output.serviceTask.artifactPayload.artifactSummary.magnetarDipoleIsingReady,
+    true
+  );
   assert.equal(result.dispatchResult.results[1].output.serviceId, 'eshkol-ulg-fixture');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.schema, ULG_SERVICE_TASK_RESULT_SCHEMA);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.taskKind, 'eshkol.ulg.closure-artifact.ingest');
+  assert.equal(
+    result.dispatchResult.results[1].output.serviceTask.artifactPayload.schema,
+    ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA
+  );
+  assert.equal(result.dispatchResult.results[1].output.serviceTask.artifactPayload.artifactKind, 'closure');
+  assert.equal(result.dispatchResult.results[1].output.serviceTask.artifactPayload.sourceService, 'eshkol');
+  assert.equal(result.dispatchResult.results[1].output.serviceTask.artifactPayload.wasmByteLength, 4);
+  assert.deepEqual(result.dispatchResult.results[1].output.serviceTask.artifactPayload.wasmBytes, [0, 97, 115, 109]);
+  assert.equal(
+    result.dispatchResult.results[1].output.serviceTask.artifactPayload.artifactSummary.closureDescriptorReady,
+    true
+  );
   assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.hasTransferredWasmBytes, true);
   assert.equal(result.dispatchResult.results[1].output.serviceTask.transfer.wasmByteLength, 4);
 
