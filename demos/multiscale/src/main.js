@@ -1401,6 +1401,12 @@ function refreshScenarioRuntimeEvidence(options = {}) {
   });
 }
 
+function getScenarioRuntimeEvidenceRequirements(options = {}) {
+  return cloneJson({
+    requirements: model.getScenarioRuntimeEvidenceRequirements(options)
+  });
+}
+
 async function createScenarioBoundedProxyRuntimeEvidenceManifest(options = {}) {
   const manifest = await model.createScenarioBoundedProxyRuntimeEvidenceManifest(options);
   return cloneJson({
@@ -10727,6 +10733,9 @@ window.__multiscaleDemo = {
   refreshScenarioRuntimeEvidence(options = {}) {
     return refreshScenarioRuntimeEvidence(options);
   },
+  getScenarioRuntimeEvidenceRequirements(options = {}) {
+    return getScenarioRuntimeEvidenceRequirements(options);
+  },
   createScenarioBoundedProxyRuntimeEvidenceManifest(options = {}) {
     return createScenarioBoundedProxyRuntimeEvidenceManifest(options);
   },
@@ -11282,6 +11291,7 @@ window.__multiscaleDemo = {
       layer: { ...model.activeLayer },
       environment: { ...model.environment },
       scenario: model.getScenario(),
+      scenarioRuntimeEvidenceRequirements: model.getScenarioRuntimeEvidenceRequirements(),
       state: cloneJson(model.state),
       compute: { ...computeStatus },
       computeBudget: cloneJson(computeBudget),

@@ -21,6 +21,7 @@ import {
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
   MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+  MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA,
   MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
   MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
   MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
@@ -2999,6 +3000,59 @@ test('cross-family conservation coupling runtime evidence records bounded proxy 
   assert.ok(crossFamily.blockers.includes('multiscale-conservation-coupling-runtime-proxy-only'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
   assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+});
+
+test('magnetar runtime evidence requirements manifest exposes the scientific producer contract', () => {
+  const model = new MultiscaleModel({ seed: 4771 });
+  const requirements = model.getScenarioRuntimeEvidenceRequirements();
+
+  assert.equal(requirements.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA);
+  assert.equal(requirements.scenarioId, 'magnetar');
+  assert.equal(requirements.status, 'runtime-evidence-requirements-ready');
+  assert.equal(requirements.ready, true);
+  assert.equal(requirements.manifestSchema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(requirements.scientificValidationSchema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(requirements.scientificValidationScope, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(requirements.requiredCount, 5);
+  assert.deepEqual(requirements.entries.map((entry) => entry.id), [
+    'validated-magnetosphere-mhd-runtime',
+    'validated-pic-kinetic-plasma-runtime',
+    'validated-radiation-transport-runtime',
+    'validated-relativistic-correction-runtime',
+    'cross-family-conservation-and-coupling-validation'
+  ]);
+
+  const magnetosphere = requirements.entries.find((entry) => (
+    entry.id === 'validated-magnetosphere-mhd-runtime'
+  ));
+  assert.equal(magnetosphere.matchKeys.family, 'magnetosphere-mhd');
+  assert.equal(magnetosphere.matchKeys.solverId, 'magnetosphere-plasma');
+  assert.equal(magnetosphere.requiredEntry.ready, true);
+  assert.equal(magnetosphere.requiredEntry.runtimeObserved, true);
+  assert.equal(magnetosphere.requiredEntry.scientificExecution, true);
+  assert.equal(magnetosphere.requiredEntry.validationStatus, 'pass');
+  assert.equal(magnetosphere.requiredEntry.evidenceHash, 'sha256:<entry-validation-evidence-hash>');
+  assert.equal(magnetosphere.requiredValidation.schema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(magnetosphere.requiredValidation.scope, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(magnetosphere.requiredValidation.scientificValidation, true);
+  assert.equal(magnetosphere.requiredValidation.proxyOnly, false);
+  assert.deepEqual(magnetosphere.requiredHashFields, [
+    'evidenceHash',
+    'scientificReferenceHash',
+    'scientificToleranceHash',
+    'scientificRuntimeOutputHash'
+  ]);
+
+  const crossFamily = requirements.entries.find((entry) => (
+    entry.id === 'cross-family-conservation-and-coupling-validation'
+  ));
+  assert.equal(crossFamily.family, 'cross-family-conservation-coupling');
+  assert.match(crossFamily.note, /conservation and coupling/);
+
+  const notApplicable = model.getScenarioRuntimeEvidenceRequirements({ scenarioId: 'default' });
+  assert.equal(notApplicable.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA);
+  assert.equal(notApplicable.status, 'not-applicable');
+  assert.equal(notApplicable.requiredCount, 0);
 });
 
 test('magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites', () => {

@@ -179,6 +179,8 @@ export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multisc
 export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA = 'peercompute.multiscale.scenario-scientific-runtime-gate.v0';
 export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0';
+export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA =
+  'peercompute.multiscale.scenario-runtime-evidence-requirements.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA =
   'peercompute.multiscale.scenario-scientific-runtime-validation.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE =
@@ -255,6 +257,69 @@ const MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS = Object.freeze([
     blocker: 'cross-family-conservation-and-coupling-validation-missing'
   }
 ]);
+
+export function createScenarioRuntimeEvidenceRequirementsManifest({ scenarioId = 'magnetar' } = {}) {
+  if (scenarioId !== 'magnetar') {
+    return {
+      schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA,
+      scenarioId: scenarioId || 'default',
+      status: 'not-applicable',
+      ready: false,
+      requiredCount: 0,
+      entries: []
+    };
+  }
+  const entries = MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.map((requirement) => ({
+    id: requirement.id,
+    family: requirement.family,
+    solverId: requirement.solverId,
+    stateKey: requirement.stateKey,
+    blocker: requirement.blocker,
+    matchKeys: {
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId
+    },
+    requiredEntry: {
+      manifestSchema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+      ready: true,
+      runtimeObserved: true,
+      scientificExecution: true,
+      validationStatus: 'pass',
+      evidenceHash: 'sha256:<entry-validation-evidence-hash>'
+    },
+    requiredValidation: {
+      schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+      scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+      scientificValidation: true,
+      proxyOnly: false,
+      scientificReferenceHash: 'sha256:<calibrated-reference-contract-hash>',
+      scientificToleranceHash: 'sha256:<scientific-tolerance-contract-hash>',
+      scientificRuntimeOutputHash: 'sha256:<validated-runtime-output-hash>'
+    },
+    requiredHashFields: [
+      'evidenceHash',
+      'scientificReferenceHash',
+      'scientificToleranceHash',
+      'scientificRuntimeOutputHash'
+    ],
+    note: requirement.stateKey === 'crossFamily'
+      ? 'Cross-family evidence must validate conservation and coupling across the four magnetar runtime families.'
+      : 'Solver evidence must come from validated scientific execution for this magnetar family, not bounded proxy state.'
+  }));
+  return {
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA,
+    scenarioId,
+    status: 'runtime-evidence-requirements-ready',
+    ready: true,
+    manifestSchema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scientificValidationSchema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+    scientificValidationScope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    requiredCount: entries.length,
+    entries,
+    note: 'All entries must be present with sha256 hashes and the scientific runtime validation contract before magnetar scientific readiness can clear.'
+  };
+}
 
 export const MULTISCALE_SCENARIO_PRESETS = {
   magnetar: {
@@ -3239,6 +3304,12 @@ export class MultiscaleModel {
       handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
     };
     return this.getScenario();
+  }
+
+  getScenarioRuntimeEvidenceRequirements(options = {}) {
+    return createScenarioRuntimeEvidenceRequirementsManifest({
+      scenarioId: options.scenarioId || 'magnetar'
+    });
   }
 
   async createScenarioBoundedProxyRuntimeEvidenceManifest(options = {}) {

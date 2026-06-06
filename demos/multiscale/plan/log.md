@@ -22469,3 +22469,37 @@ User asked whether Infinite Context Coder is being used.
   validation for MHD, PIC, radiation, relativity, and cross-family
   conservation/coupling remains open.
 - No push was attempted.
+
+## 2026-06-06 05:14:39 AKDT - Magnetar runtime evidence requirements manifest
+
+### Actions
+- Added `peercompute.multiscale.scenario-runtime-evidence-requirements.v0`
+  as a read-only producer contract for the five validated magnetar runtime
+  evidence entries required by the scientific runtime gate.
+- Exposed the requirements through `MultiscaleModel.getScenarioRuntimeEvidenceRequirements()`,
+  `window.__multiscaleDemo.getScenarioRuntimeEvidenceRequirements()`, and the
+  live `getState().scenarioRuntimeEvidenceRequirements` payload.
+- Kept the existing runtime gate unchanged: proxy evidence still reports
+  `proxy-runtime-not-scientific`, and only explicit validated scientific runtime
+  evidence can clear `scenarioScientificReady`.
+- Rebuilt `docs/multiscale/` from the updated Multiscale demo.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence requirements|runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|magnetar scenario records proxy runtime evidence|magnetar scenario creates bounded proxy runtime evidence manifest|magnetar scientific runtime gate accepts explicit validated runtime evidence'`
+  passed `193/193`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large-chunk warning.
+- PASS: live browser probe against `https://100.86.83.35:5185/?scenario=magnetar`
+  reported requirement schema
+  `peercompute.multiscale.scenario-runtime-evidence-requirements.v0`,
+  `requiredCount=5`, the four solver-family runtime ids plus
+  `cross-family-conservation-and-coupling-validation`, and runtime gate status
+  `scientific-runtime-pending`.
+
+### Open
+- This exposes the producer contract for authoritative runtime artifacts; it
+  does not provide those artifacts.
+- No push was attempted.

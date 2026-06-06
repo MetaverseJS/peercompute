@@ -50016,3 +50016,48 @@ timeout 8s env \
   bundled Chromium. The full browser P2P suite across every demo is still a
   larger follow-up gate; this checkpoint proved the targeted CubeChat P2P path.
 - No push was attempted.
+
+## 2026-06-06 05:14:39 AKDT - Magnetar runtime evidence requirements manifest
+
+### Prompt
+- Continue advancing the ULG/PeerCompute magnetar plan after the runtime
+  browser harness checkpoint, keeping commits local and avoiding any push.
+
+### Actions
+- Added a producer-facing
+  `peercompute.multiscale.scenario-runtime-evidence-requirements.v0` contract
+  for the five entries required by the magnetar scientific runtime gate:
+  MHD, PIC, radiation, relativity, and cross-family conservation/coupling.
+- Exposed the contract from `MultiscaleModel`,
+  `window.__multiscaleDemo.getScenarioRuntimeEvidenceRequirements()`, and
+  `window.__multiscaleDemo.getState().scenarioRuntimeEvidenceRequirements`.
+- Rebuilt tracked `docs/multiscale/` assets from the updated demo.
+- Left the scientific gate strict: proxy runtime evidence still cannot clear
+  scientific readiness.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `docs/multiscale/`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: focused runtime-evidence Node gate passed `193/193`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large-chunk warning.
+- PASS: live probe on `https://100.86.83.35:5185/?scenario=magnetar` returned
+  requirement schema `peercompute.multiscale.scenario-runtime-evidence-requirements.v0`,
+  `requiredCount=5`, all required runtime evidence ids, and
+  `scientific-runtime-pending`.
+
+### Open
+- The contract is now visible to producers, but real validated runtime artifacts
+  still need to be generated and attached.
+- No push was attempted.

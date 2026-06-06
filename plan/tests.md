@@ -766,3 +766,21 @@
 : expected result is a full pass with an ephemeral local Go relay, CubeChat
   peer connections observed, `Runtime P2P tests passed.`, a clean shell return,
   and no leftover `runtime-p2p` or `peercompute-relay-go` process/listener.
+
+### Magnetar runtime evidence requirements gate
+- Focused Node gate:
+  `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence requirements|runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|magnetar scenario records proxy runtime evidence|magnetar scenario creates bounded proxy runtime evidence manifest|magnetar scientific runtime gate accepts explicit validated runtime evidence'`.
+: expected result is a full pass proving
+  `peercompute.multiscale.scenario-runtime-evidence-requirements.v0` names all
+  five validated magnetar runtime evidence entries, exposes the scientific
+  runtime validation schema/scope and required sha256 hash fields, keeps
+  proxy-only evidence blocked, and still accepts an explicit validated manifest
+  after all prerequisites are present.
+- Live browser gate: on `https://100.86.83.35:5185/?scenario=magnetar`, call
+  `window.__multiscaleDemo.getScenarioRuntimeEvidenceRequirements()` and
+  `window.__multiscaleDemo.getState().scenarioRuntimeEvidenceRequirements`.
+: expected result is schema
+  `peercompute.multiscale.scenario-runtime-evidence-requirements.v0`,
+  `requiredCount=5`, the MHD/PIC/radiation/relativity/cross-family runtime ids,
+  and the scenario runtime gate still pending or blocked until validated
+  scientific runtime evidence is attached.
