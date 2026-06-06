@@ -13,6 +13,7 @@ import { StateManager } from '../../../peercompute/src/peercompute/stateManager/
 import {
   MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
   MultiscaleModel,
@@ -1643,6 +1644,66 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(packet.downward.boundaryConditions.scenarioClosureReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureStatus, 'closure-artifact-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureKind, 'wasm-reference');
+});
+
+test('magnetar scenario combines ULG calibration and Eshkol closure handoffs into proxy readiness manifest', () => {
+  const model = new MultiscaleModel({ seed: 47 });
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true
+  });
+  const scenario = model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    validationStatus: 'pass',
+    closureKind: 'wasm-reference',
+    closureModuleUrl: 'hello.wasm',
+    closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: true,
+    closureBundleManifestSchema: 'eshkol.ulg.closure-bundle.v0',
+    closureBundleCopyFileCount: 3,
+    closureBundlePreserveRelativeUrls: true,
+    closureReady: true
+  });
+
+  assert.equal(scenario.handoffReadiness.schema, MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA);
+  assert.equal(scenario.handoffReadiness.status, 'handoff-ready');
+  assert.equal(scenario.handoffReadiness.requiredHandoffCount, 2);
+  assert.equal(scenario.handoffReadiness.readyHandoffCount, 2);
+  assert.equal(scenario.handoffReadiness.allHandoffsReady, true);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+  assert.equal(scenario.handoffReadiness.proxyOnly, true);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.provider, 'moonlab');
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.schema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
+  assert.equal(scenario.handoffReadiness.calibrationHandoff.groundStateBitString, '000');
+  assert.equal(scenario.handoffReadiness.closureHandoff.provider, 'eshkol');
+  assert.equal(scenario.handoffReadiness.closureHandoff.closureKind, 'wasm-reference');
+  assert.equal(scenario.handoffReadiness.closureHandoff.moduleUrl, 'hello.wasm');
+  assert.equal(scenario.handoffReadiness.closureHandoff.requiresHostImports, true);
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-not-executed-in-multiscale-runtime'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+
+  const packet = model.createPacket();
+  assert.equal(packet.scenario.handoffReadiness.allHandoffsReady, true);
+  assert.equal(packet.scenario.handoffReadiness.scientificReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffStatus, 'handoff-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
 });
 
 test('ULG live kernel passes are WebGPU-only', () => {

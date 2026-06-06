@@ -1335,7 +1335,8 @@ function ingestScenarioCalibrationSummary(summary = {}, options = {}) {
   renderReadout();
   return cloneJson({
     scenario,
-    calibrationIngest: scenario.calibrationIngest || null
+    calibrationIngest: scenario.calibrationIngest || null,
+    handoffReadiness: scenario.handoffReadiness || null
   });
 }
 
@@ -1346,7 +1347,8 @@ function ingestScenarioClosureSummary(summary = {}, options = {}) {
   renderReadout();
   return cloneJson({
     scenario,
-    closureIngest: scenario.closureIngest || null
+    closureIngest: scenario.closureIngest || null,
+    handoffReadiness: scenario.handoffReadiness || null
   });
 }
 
@@ -5697,7 +5699,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -9950,6 +9952,9 @@ window.__multiscaleDemo = {
   },
   ingestScenarioClosureSummary(summary = {}, options = {}) {
     return ingestScenarioClosureSummary(summary, options);
+  },
+  getScenarioHandoffReadiness() {
+    return cloneJson(model.getScenario().handoffReadiness || null);
   },
   ingestUlgArtifactForScenario(artifact = {}, options = {}) {
     return ingestUlgArtifactForScenario(artifact, options);

@@ -163,6 +163,7 @@ export const SCALE_LAYERS = [
 export const MULTISCALE_SCENARIO_PRESET_SCHEMA = 'peercompute.multiscale.scenario-preset.v0';
 export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multiscale.scenario-calibration-ingest.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale.scenario-closure-ingest.v0';
+export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
 export const MULTISCALE_SCENARIO_PRESETS = {
@@ -253,6 +254,7 @@ function createDefaultScenarioState() {
     calibrationArtifacts: [],
     calibrationIngest: null,
     closureIngest: null,
+    handoffReadiness: createScenarioHandoffReadinessReport({ id: 'default', active: false }),
     validation: {
       status: 'default',
       note: 'No named astrophysical scenario is active.'
@@ -385,6 +387,77 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
       simulationStatus: 'proxy-only',
       note: 'Closure artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
     }
+  };
+}
+
+function createScenarioHandoffBlockers({ scenarioId, calibrationReady, closureReady, closureRequiresHostImports, closureHandoffReady }) {
+  if (scenarioId !== 'magnetar') return [];
+  const blockers = [];
+  if (!calibrationReady) blockers.push('moonlab-magnetar-calibration-summary-missing');
+  if (!closureReady) blockers.push('eshkol-closure-bundle-summary-missing');
+  if (closureRequiresHostImports === true) blockers.push('eshkol-closure-requires-host-imports');
+  if (closureHandoffReady === true) blockers.push('eshkol-closure-not-executed-in-multiscale-runtime');
+  blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
+  blockers.push('scientific-tolerance-suite-missing');
+  return blockers;
+}
+
+export function createScenarioHandoffReadinessReport(scenario = {}) {
+  const scenarioId = scenario.id || 'default';
+  const calibrationIngest = scenario.calibrationIngest || null;
+  const closureIngest = scenario.closureIngest || null;
+  const calibrationReady = calibrationIngest?.ready === true || scenario.validation?.calibrationReady === true;
+  const closureReady = closureIngest?.ready === true || scenario.validation?.closureReady === true;
+  const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
+  const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
+  const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
+  const blockers = createScenarioHandoffBlockers({
+    scenarioId,
+    calibrationReady,
+    closureReady,
+    closureRequiresHostImports: closureIngest?.closure?.requiresHostImports,
+    closureHandoffReady: closureReady
+  });
+  return {
+    schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
+    scenarioId,
+    status: allHandoffsReady ? 'handoff-ready' : 'handoff-pending',
+    active: scenario.active === true,
+    requiredHandoffCount,
+    readyHandoffCount,
+    allHandoffsReady,
+    proxyOnly: true,
+    scientificReady: false,
+    simulationStatus: 'proxy-only',
+    validationStatus: scenario.validation?.status || (scenarioId === 'default' ? 'default' : 'proxy-only'),
+    blockerCount: blockers.length,
+    blockers,
+    calibrationHandoff: {
+      provider: calibrationIngest?.provider || 'moonlab',
+      ready: calibrationReady,
+      status: scenario.validation?.calibrationStatus || calibrationIngest?.validation?.status || 'handoff-pending',
+      schema: calibrationIngest?.magnetarDipoleIsing?.schema || null,
+      sourceSchema: calibrationIngest?.sourceSchema || null,
+      groundStateBitString: calibrationIngest?.magnetarDipoleIsing?.groundStateBitString || null,
+      maxEnergyDelta: calibrationIngest?.magnetarDipoleIsing?.maxEnergyDelta ?? null,
+      evaluatedBitstrings: calibrationIngest?.magnetarDipoleIsing?.evaluatedBitstrings ?? null
+    },
+    closureHandoff: {
+      provider: closureIngest?.provider || 'eshkol',
+      ready: closureReady,
+      status: scenario.validation?.closureStatus || closureIngest?.validation?.status || 'handoff-pending',
+      sourceSchema: closureIngest?.sourceSchema || null,
+      closureKind: closureIngest?.closure?.kind || null,
+      moduleUrl: closureIngest?.closure?.moduleUrl || null,
+      moduleSha256: closureIngest?.closure?.moduleSha256 || null,
+      serviceWorkerSafe: closureIngest?.closure?.serviceWorkerSafe === true,
+      requiresDynamicCode: closureIngest?.closure?.requiresDynamicCode ?? null,
+      requiresHostImports: closureIngest?.closure?.requiresHostImports ?? null,
+      bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true
+    },
+    note: allHandoffsReady
+      ? 'ULG/MoonLab and Eshkol handoffs are staged for the scenario, but magnetar simulation remains proxy-only until scientific blockers clear.'
+      : 'Scenario handoff inputs are incomplete; magnetar simulation remains proxy-only.'
   };
 }
 
@@ -1462,6 +1535,10 @@ export class MultiscaleModel {
       }
     };
     this.applyScenarioProxyState(this.scenario);
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
+    };
     return this.getScenario();
   }
 
@@ -1486,6 +1563,10 @@ export class MultiscaleModel {
         simulationStatus: 'proxy-only'
       }
     };
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
+    };
     return this.getScenario();
   }
 
@@ -1508,6 +1589,10 @@ export class MultiscaleModel {
         closureKind: ingest.closure.kind,
         simulationStatus: 'proxy-only'
       }
+    };
+    this.scenario = {
+      ...this.scenario,
+      handoffReadiness: createScenarioHandoffReadinessReport(this.scenario)
     };
     return this.getScenario();
   }
@@ -6257,7 +6342,11 @@ export class MultiscaleModel {
           scenarioCalibrationSchema: scenario.calibrationIngest?.magnetarDipoleIsing?.schema || null,
           scenarioClosureReady: scenario.closureIngest?.ready === true,
           scenarioClosureStatus: scenario.validation?.closureStatus || null,
-          scenarioClosureKind: scenario.closureIngest?.closure?.kind || null
+          scenarioClosureKind: scenario.closureIngest?.closure?.kind || null,
+          scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
+          scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
+          scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,
+          scenarioHandoffBlockerCount: scenario.handoffReadiness?.blockerCount ?? null
         },
         refinementRequests
       },

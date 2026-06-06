@@ -47654,6 +47654,40 @@ User asked whether Infinite Context Coder is being used.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
 
+## 2026-06-05 22:03:41 AKDT - Multiscale magnetar handoff readiness manifest
+
+### Prompt
+- User asked why work had stopped; resumed the current PeerCompute/ULG/Eshkol implementation plan.
+- Local commits only; no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-handoff-readiness.v0` to combine ULG/MoonLab calibration readiness and staged Eshkol closure readiness into one magnetar scenario manifest.
+- Exposed readiness through scenario state, browser API, HUD text, and downward packet boundary conditions.
+- Kept the scientific boundary explicit: both handoffs can be ready while `scientificReady` remains false and blocker details stay packet-visible.
+- Rebuilt the checked-in `docs/multiscale` bundle after the source change.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `docs/multiscale/`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: syntax checks completed for changed Multiscale source/test files.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `175/175`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed `8/8`.
+- PASS: `npm run build` completed; existing bundle-size warnings remain.
+- PASS: live ULG and Multiscale endpoints returned HTTP `200`.
+- PASS: live browser handoff probe ingested current ULG MoonLab/Eshkol artifacts into Multiscale and observed `scenarioHandoffReady: true`, `scenarioScientificReady: false`, blocker count `4`, MoonLab ground state `000`, and Eshkol `hello.wasm` closure metadata.
+
+### Open
+- This improves readiness reporting and cross-project handoff evidence; it does not make the magnetar scenario spec-complete or scientifically validated.
+
 ## 2026-06-05 16:46:32 AKDT - ULG child-worker lease type preservation
 
 ### Prompt

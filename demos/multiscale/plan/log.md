@@ -20888,6 +20888,57 @@ User asked whether Infinite Context Coder is being used.
 - Demo overview remains reachable at `https://100.86.83.35:4173/`.
 - Existing live servers were left running for user review.
 
+## 2026-06-05 22:03:41 AKDT - Magnetar handoff readiness manifest
+
+### Prompt
+- User asked why work had stopped and reiterated the long-running implementation plan context.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-handoff-readiness.v0` to combine MoonLab calibration ingest and Eshkol closure ingest for the magnetar scenario.
+- Exposed combined handoff readiness, scientific readiness, blocker count, calibration handoff, and closure handoff details in scenario state.
+- Propagated `scenarioHandoffReady`, `scenarioHandoffStatus`, `scenarioScientificReady`, and `scenarioHandoffBlockerCount` into downward packet boundary conditions.
+- Added `window.__multiscaleDemo.getScenarioHandoffReadiness()` and included the handoff manifest in calibration/closure ingest API responses.
+- Updated the HUD scenario row to show handoff status and blocker count.
+- Kept `scientificReady: false` with explicit blockers for host imports, unexecuted Eshkol closure integration, calibrated MHD/PIC/radiation/relativity references, and scientific tolerance coverage.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `docs/multiscale/`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm run build`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code}\n' https://100.86.83.35:5185/?scenario=magnetar`
+- `curl -sS -o /dev/null -w 'ulg %{http_code}\n' http://100.86.83.35:5173/`
+- Live Playwright probe that loaded ULG on `5173`, read MoonLab/Eshkol artifact summaries from `window.__ulgDemo.artifactCache`, ingested them into Multiscale on `5185`, and asserted the combined handoff manifest plus packet boundary fields.
+
+### Test Results
+- PASS: syntax checks completed for the changed Multiscale source and test files.
+- PASS: full Multiscale model suite passed with `175/175`.
+- PASS: PeerCompute service-orchestration regression passed with `8/8`.
+- PASS: `npm run build` completed the repo build chain; existing bundle-size warnings remain.
+- PASS: live endpoints returned HTTP `200` for Multiscale and ULG.
+- PASS: live browser handoff probe reported MoonLab ready, ground state `000`, evaluated bitstrings `8`, Eshkol closure kind `wasm-reference`, module URL `hello.wasm`, `scenarioHandoffReady: true`, `scenarioScientificReady: false`, and blocker count `4`.
+
+### Failures / Open Questions
+- The handoff manifest is ready but still proxy-only. Scientific magnetar readiness remains blocked by Eshkol closure execution inside Multiscale, host-import handling, calibrated MHD/PIC/radiation/relativity references, and scientific tolerance tests.
+
+### Demo Server State
+- ULG remains reachable at `http://100.86.83.35:5173/`.
+- Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
+
 ## 2026-06-05 13:57:21 AKDT - Reduced qmat product topology mutation checkpoint
 
 ### Prompt
