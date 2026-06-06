@@ -261,6 +261,47 @@ button.active {
   margin-top: 8px;
 }
 
+.scenario-affordance {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 91, 141, 0.42);
+  color: rgba(216, 255, 228, 0.92);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.scenario-affordance-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.scenario-affordance-title {
+  color: #ffeaf2;
+  font-size: 0.84rem;
+  text-transform: uppercase;
+}
+
+.scenario-affordance-readiness {
+  color: var(--hot);
+  text-transform: uppercase;
+}
+
+.scenario-affordance-target,
+.scenario-affordance-note {
+  border-left: 3px solid rgba(255, 91, 141, 0.78);
+  padding-left: 8px;
+}
+
+.scenario-affordance-note {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
 .molecule-builder {
   margin-top: 12px;
   padding-top: 12px;

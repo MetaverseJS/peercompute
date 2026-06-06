@@ -486,6 +486,11 @@ const autoTour = document.querySelector('#auto-tour');
 const qualityDown = document.querySelector('#quality-down');
 const qualityUp = document.querySelector('#quality-up');
 const scenarioMagnetar = document.querySelector('#scenario-magnetar');
+const scenarioAffordance = document.querySelector('#scenario-affordance');
+const scenarioAffordanceTitle = document.querySelector('#scenario-affordance-title');
+const scenarioAffordanceReadiness = document.querySelector('#scenario-affordance-readiness');
+const scenarioAffordanceTarget = document.querySelector('#scenario-affordance-target');
+const scenarioAffordanceNote = document.querySelector('#scenario-affordance-note');
 
 const outputPanelRegistry = [
   { id: 'controls', label: 'controls', element: document.querySelector('.panel.left') },
@@ -1311,10 +1316,50 @@ function syncEnvironmentControls() {
   if (magneticField) magneticField.value = String(model.environment.magneticFieldT);
 }
 
+function formatScenarioAffordanceValue(value, fallback = 'pending') {
+  const normalized = String(value || fallback).trim();
+  return normalized ? normalized.replace(/[-_]+/g, ' ') : fallback;
+}
+
+function getScenarioLayerLabel(layerId, fallback = 'unknown') {
+  const layer = SCALE_LAYERS.find((entry) => entry.id === layerId);
+  return layer?.label || layerId || fallback;
+}
+
+function renderScenarioAffordance(scenario = model.getScenario()) {
+  if (!scenarioAffordance) return;
+  const activeMagnetar = scenario?.id === 'magnetar' && scenario.active === true;
+  scenarioAffordance.hidden = !activeMagnetar;
+  scenarioAffordance.classList.toggle('active', activeMagnetar);
+  if (!activeMagnetar) return;
+
+  const activeLayer = model.activeLayer || {};
+  const targetLayerId = scenario.targetLayerId || activeLayer.id || 'solar';
+  const readiness = scenario.handoffReadiness?.simulationStatus
+    || scenario.validation?.simulationStatus
+    || scenario.validation?.status
+    || 'proxy-only';
+  const handoffStatus = scenario.handoffReadiness?.status || 'handoff-pending';
+  const blockerCount = scenario.handoffReadiness?.blockerCount ?? '?';
+  if (scenarioAffordanceTitle) {
+    scenarioAffordanceTitle.textContent = scenario.label || 'Magnetar proxy';
+  }
+  if (scenarioAffordanceReadiness) {
+    scenarioAffordanceReadiness.textContent = `readiness: ${formatScenarioAffordanceValue(readiness)}`;
+  }
+  if (scenarioAffordanceTarget) {
+    scenarioAffordanceTarget.textContent = `active layer: ${getScenarioLayerLabel(activeLayer.id, 'unknown')} / target ${getScenarioLayerLabel(targetLayerId, targetLayerId)}`;
+  }
+  if (scenarioAffordanceNote) {
+    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / handoff ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
+  }
+}
+
 function syncScenarioControls() {
   const scenario = model.getScenario();
   scenarioMagnetar?.classList.toggle('active', scenario.id === 'magnetar' && scenario.active === true);
   scenarioMagnetar?.setAttribute('aria-pressed', String(scenario.id === 'magnetar' && scenario.active === true));
+  renderScenarioAffordance(scenario);
 }
 
 function readInitialScenarioPreset(search = '') {
@@ -6569,6 +6614,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
   const visualReference = scene.getVisualReferenceStatus();
   const packet = createUiPacket();
   const scenario = packet.scenario || model.getScenario();
+  renderScenarioAffordance(scenario);
   const molecularResult = solverRuntimeStatus.molecularDynamics?.lastResult;
   const molecularTelemetry = packet.upward?.aggregateState?.molecularDynamics || molecularResult;
   const molecularBalance = packet.upward?.aggregateState?.molecularSourceSinkBalance || packet.sourceSinkBalance || null;
