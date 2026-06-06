@@ -50455,3 +50455,61 @@ timeout 8s env \
   production adapter for Eshkol and MoonLab services that consumes the same
   dispatch task shape.
 - No push was attempted.
+
+## 2026-06-06 08:11:06 AKDT - Multiscale exposes ULG handoff dispatch plans
+
+### Prompt
+- Continue implementing the ULG service-hosting plan and keep live VPN demos
+  inspectable.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 08:11:06 AKDT`.
+
+### Actions
+- Imported `createUlgHandoffServiceDispatchPlan()` into Multiscale's browser
+  entrypoint.
+- `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` now returns
+  `serviceDispatchPlan` beside the durable service envelope.
+- Added direct browser API
+  `window.__multiscaleDemo.createUlgHandoffServiceDispatchPlan()` for inspecting
+  the derived MoonLab/Eshkol service tasks from a raw ULG handoff or a prebuilt
+  service envelope.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-*.js`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright probe against `http://100.86.83.35:5173/` and
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+- `git diff --check`
+
+### Results
+- PASS: Multiscale main syntax check passed.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live VPN probe waited for ULG `artifactCache.list().length >= 2`, then
+  exported `peercompute.ulg.demo-handoff.v0` with two artifacts:
+  `quantum-response` and `closure`; Eshkol transferred WASM byte length was
+  `53066`.
+- PASS: live Multiscale `applyUlgDemoHandoffForScenario()` and direct
+  `createUlgHandoffServiceDispatchPlan()` both returned
+  `peercompute.ulg.handoff-service-dispatch-plan.v0`,
+  `dispatch-ready`, `dispatchCount = 2`, `readyDispatchCount = 2`, service ids
+  `moonlab-ulg-fixture` / `eshkol-ulg-fixture`, task kinds
+  `moonlab.ulg.quantum-response.ingest` /
+  `eshkol.ulg.closure-artifact.ingest`, Eshkol WASM byte length `53066`, and no
+  dispatch blockers.
+- PASS: `git diff --check` passed.
+
+### Open
+- The browser API exposes dispatch planning only. Actual production service
+  execution still needs real Eshkol/MoonLab adapters behind the supervisor.
+- No push was attempted.

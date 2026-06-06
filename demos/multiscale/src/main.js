@@ -6,6 +6,7 @@ import {
   StateManager,
   createPlacementAdmissionPolicy,
   createRemoteResultQuorumValidator,
+  createUlgHandoffServiceDispatchPlan as createPeerComputeUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceEnvelope as createPeerComputeUlgHandoffServiceEnvelope,
   normalizeUlgDemoHandoff as normalizePeerComputeUlgDemoHandoff,
   summarizeUlgArtifact as summarizePeerComputeUlgArtifact
@@ -1551,6 +1552,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     ...options,
     receivedAt: normalized.receivedAt
   });
+  const serviceDispatchPlan = createPeerComputeUlgHandoffServiceDispatchPlan(serviceEnvelope, options);
   const transfer = normalized.transferManifest
     ? ingestScenarioTransferManifest(normalized.transferManifest, {
       ...options,
@@ -1588,6 +1590,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
   return cloneJson({
     handoff: normalized,
     serviceEnvelope,
+    serviceDispatchPlan,
     transfer,
     calibration,
     closure,
@@ -10862,6 +10865,16 @@ window.__multiscaleDemo = {
       url: window.location.href,
       ...options
     }));
+  },
+  createUlgHandoffServiceDispatchPlan(handoff = {}, options = {}) {
+    const envelope = handoff?.schema === 'peercompute.ulg.handoff-service-envelope.v0'
+      ? handoff
+      : createPeerComputeUlgHandoffServiceEnvelope(handoff, {
+        origin: window.location.origin,
+        url: window.location.href,
+        ...options
+      });
+    return cloneJson(createPeerComputeUlgHandoffServiceDispatchPlan(envelope, options));
   },
   summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
     return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));

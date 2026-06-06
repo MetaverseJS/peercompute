@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 08:02:07 AKDT
+Updated: 2026-06-06 08:11:06 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -14,10 +14,15 @@ Updated: 2026-06-06 08:02:07 AKDT
 - `createUlgHandoffSupervisorServiceExecutor()` can submit dispatch tasks to registered
   MoonLab/Eshkol service hosts through `WorkerSupervisor`, preserving nested
   service results in the handoff dispatch result.
+- The Multiscale live browser API now returns `serviceDispatchPlan` from
+  `applyUlgDemoHandoffForScenario()` and exposes
+  `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
 - `npm --prefix demos/multiscale run build` passed with the existing large-chunk warning.
+- Live VPN probe confirmed ULG `5173` exports two artifacts and Multiscale `5185`
+  derives a ready two-dispatch service plan with no blockers.
 - `git diff --check` passed.
 
 ## Next
