@@ -491,6 +491,9 @@ const scenarioAffordanceTitle = document.querySelector('#scenario-affordance-tit
 const scenarioAffordanceReadiness = document.querySelector('#scenario-affordance-readiness');
 const scenarioAffordanceTarget = document.querySelector('#scenario-affordance-target');
 const scenarioAffordanceNote = document.querySelector('#scenario-affordance-note');
+const scenarioFocusTarget = document.querySelector('#scenario-focus-target');
+const scenarioHandoffPaste = document.querySelector('#scenario-handoff-paste');
+const scenarioHandoffStatus = document.querySelector('#scenario-handoff-status');
 
 const outputPanelRegistry = [
   { id: 'controls', label: 'controls', element: document.querySelector('.panel.left') },
@@ -1351,7 +1354,10 @@ function renderScenarioAffordance(scenario = model.getScenario()) {
     scenarioAffordanceTarget.textContent = `active layer: ${getScenarioLayerLabel(activeLayer.id, 'unknown')} / target ${getScenarioLayerLabel(targetLayerId, targetLayerId)}`;
   }
   if (scenarioAffordanceNote) {
-    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / handoff ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
+    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
+  }
+  if (scenarioHandoffStatus) {
+    scenarioHandoffStatus.textContent = `status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
   }
 }
 
@@ -1360,6 +1366,24 @@ function syncScenarioControls() {
   scenarioMagnetar?.classList.toggle('active', scenario.id === 'magnetar' && scenario.active === true);
   scenarioMagnetar?.setAttribute('aria-pressed', String(scenario.id === 'magnetar' && scenario.active === true));
   renderScenarioAffordance(scenario);
+}
+
+function focusScenarioTargetLayer() {
+  const scenario = model.getScenario();
+  const targetLayerId = scenario.targetLayerId || 'solar';
+  model.setLayerById(targetLayerId);
+  return setLayer(model.layerIndex);
+}
+
+async function importUlgScenarioHandoffFromClipboard() {
+  if (!navigator.clipboard?.readText) {
+    throw new Error('clipboard read unavailable');
+  }
+  const text = await navigator.clipboard.readText();
+  const handoff = JSON.parse(text);
+  return applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff, {
+    scenarioId: 'magnetar'
+  });
 }
 
 function readInitialScenarioPreset(search = '') {
@@ -11014,6 +11038,34 @@ autoTour.addEventListener('click', () => {
 qualityDown.addEventListener('click', () => scaleSolverQuality(-1));
 qualityUp.addEventListener('click', () => scaleSolverQuality(1));
 scenarioMagnetar?.addEventListener('click', () => applyScenarioPreset('magnetar'));
+scenarioFocusTarget?.addEventListener('click', () => {
+  const layer = focusScenarioTargetLayer();
+  if (scenarioHandoffStatus) {
+    scenarioHandoffStatus.textContent = `focused ${getScenarioLayerLabel(layer.id, layer.id)}`;
+  }
+});
+scenarioHandoffPaste?.addEventListener('click', async () => {
+  scenarioHandoffPaste.disabled = true;
+  if (scenarioHandoffStatus) {
+    scenarioHandoffStatus.textContent = 'handoff importing';
+  }
+  try {
+    const report = await importUlgScenarioHandoffFromClipboard();
+    const readiness = report.handoffReadiness || model.getScenario().handoffReadiness || {};
+    const blockerCount = readiness.blockerCount ?? '?';
+    if (scenarioHandoffStatus) {
+      scenarioHandoffStatus.textContent = `status ${formatScenarioAffordanceValue(readiness.status, 'imported')} / blockers ${blockerCount}`;
+    }
+    renderScenarioAffordance(report.scenario || model.getScenario());
+    renderReadout();
+  } catch (error) {
+    if (scenarioHandoffStatus) {
+      scenarioHandoffStatus.textContent = `handoff import failed: ${error.message}`;
+    }
+  } finally {
+    scenarioHandoffPaste.disabled = false;
+  }
+});
 hudFocus?.addEventListener('click', () => {
   applyHudMode('focus');
   renderReadout();
@@ -11069,6 +11121,12 @@ window.__multiscaleDemo = {
   },
   applyScenarioPreset(id = 'magnetar', options = {}) {
     return applyScenarioPreset(id, options);
+  },
+  focusScenarioTargetLayer() {
+    return cloneJson(focusScenarioTargetLayer());
+  },
+  importUlgScenarioHandoffFromClipboard() {
+    return importUlgScenarioHandoffFromClipboard();
   },
   ingestScenarioCalibrationSummary(summary = {}, options = {}) {
     return ingestScenarioCalibrationSummary(summary, options);

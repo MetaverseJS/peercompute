@@ -302,6 +302,20 @@ button.active {
   color: var(--muted);
 }
 
+.scenario-affordance-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.scenario-handoff-status {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
 .molecule-builder {
   margin-top: 12px;
   padding-top: 12px;
