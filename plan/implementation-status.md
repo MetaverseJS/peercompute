@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 13:25:59 AKDT
+Updated: 2026-06-06 14:31:50 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -164,6 +164,14 @@ Updated: 2026-06-06 13:25:59 AKDT
   `relay-config.json` / `.relay-config.json` files around relay-backed smoke
   runs, preventing transient localhost bootstrap addresses from dirtying the
   tracked docs tree.
+- Relay-backed ULG/Multiscale handoff smoke passed on 2026-06-06:
+  `npm --prefix demos/multiscale run test:ulg-relay-handoff` started a dynamic
+  Go relay, served `docs/multiscale`, injected STUN/TURN ICE config into the
+  generated relay config, connected two Multiscale browser peers in one relay
+  room, imported the live ULG `5173` handoff by browser `postMessage`, and
+  verified `handoff-ready`, `service-envelope-ready`, `relaySafeArtifactCount=2`,
+  `dispatch-ready`, canonical MoonLab/Eshkol hashes, and clean relay-config
+  restoration after teardown.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host
@@ -176,8 +184,9 @@ Updated: 2026-06-06 13:25:59 AKDT
   once the closure runtime contract can produce non-fixture table evidence.
 - Wire concrete MoonLab/Eshkol production handlers into the handler-backed
   dispatch host once those services expose their runtime entry points.
-- Extend relay-backed runtime P2P smoke coverage from focused Hyperborea to the
-  full selected ULG/Multiscale service path once the browser service adapters
-  can participate in room discovery without manual handoff.
+- Promote the new relay-backed ULG/Multiscale handoff smoke from durable
+  envelope/dispatch-plan coverage to full browser dispatch-adapter execution
+  once the relay-served popup no longer destroys the execution context during
+  `runUlgDispatchServiceAdapterProbe()`.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

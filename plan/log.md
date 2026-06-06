@@ -51520,3 +51520,115 @@ timeout 8s env \
   does not implement a production Eshkol runtime handler and does not claim
   full-fidelity magnetar physics.
 - No push was attempted.
+
+## 2026-06-06 14:19:57 AKDT - Relay-backed ULG/Multiscale handoff smoke harness
+
+### Prompt
+- Work only in `/home/cos/projects/peercompute` on branch
+  `multi-scale-physics-sim`, continue from local commit `cd85fd9e`, keep commits
+  local, do not push, do not touch ULG/MoonLab/Eshkol, and build the smallest
+  credible next slice toward distributed PeerCompute ULG/Multiscale coverage
+  over relay/STUN/TURN. Investigate a relay-backed ULG/Multiscale browser smoke
+  through the existing relay stack or at minimum formalize a reusable dynamic
+  relay harness/config around current ULG handoff. Preserve relay configs after
+  tests and do not relax scientific/runtime gates.
+
+### Actions
+- Added `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- Wired `npm --prefix demos/multiscale run test:ulg-relay-handoff`.
+- The new harness serves the built `docs/multiscale` bundle on a local HTTP
+  port, snapshots Multiscale `relay-config*.json` files, starts a dynamic local
+  Go relay, injects STUN/TURN ICE config into the generated relay config, opens
+  a live ULG `5173` page, and opens two Multiscale browser peers in the same
+  isolated relay room.
+- The smoke waits for both Multiscale peers to see each other as non-relay
+  `connectedPeerIds`, posts the ULG handoff into the relay-backed Multiscale
+  popup, verifies browser ack/readiness, and checks the durable
+  `peercompute.ulg.handoff-service-envelope.v0` plus
+  `peercompute.ulg.handoff-service-dispatch-plan.v0` path.
+- Kept browser dispatch-adapter execution available behind
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` but out of the default gate after the
+  relay-served popup destroyed its execution context during
+  `runUlgDispatchServiceAdapterProbe()`.
+- Added a named-window recovery plus direct receiver fallback for the headless
+  ULG popup reference, but the final passing run used real `ulg-post-message`.
+- Updated `plan/tests.md`, `plan/implementation-status.md`, and
+  `demos/multiscale/plan/plan.md` with the new relay-backed ULG handoff gate and
+  remaining adapter blocker.
+
+### Files Touched
+- `demos/multiscale/package.json`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `demos/multiscale/plan/plan.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Commands Run
+- `git -C /home/cos/projects/peercompute status --short --branch`
+- `git -C /home/cos/projects/peercompute rev-parse --short HEAD`
+- `git -C /home/cos/projects/peercompute branch --show-current`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `node -e "JSON.parse(require('fs').readFileSync('demos/multiscale/package.json','utf8')); console.log('package json ok')"`
+- `ss -ltnp | rg ':(5173|4196)\b' || true`
+- `curl -fsS --max-time 5 http://127.0.0.1:5173/ >/dev/null && echo 'ulg 5173 reachable' || echo 'ulg 5173 not reachable'`
+- `test -f docs/multiscale/index.html && echo 'docs/multiscale build present' || echo 'docs/multiscale build missing'`
+- `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `git diff -- docs/multiscale/relay-config.json docs/multiscale/.relay-config.json docs/multiscale/relay-config-source.json docs/multiscale/.relay-config-source.json`
+- `ss -ltnp | rg ':4196\b' || true && pgrep -af 'ulgRelayHandoffSmoke|run-relay|relay-go' || true`
+- `git diff --check`
+
+### Results
+- PASS: branch and start point were confirmed as `multi-scale-physics-sim` at
+  `cd85fd9e`.
+- PASS: ULG was reachable on `0.0.0.0:5173`; the test-owned `4196` port was
+  free; `docs/multiscale/index.html` existed.
+- PASS: syntax and package JSON checks completed.
+- PASS: final `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  started a dynamic Go relay at
+  `/ip4/127.0.0.1/tcp/34359/ws/p2p/12D3KooWKufHzhUejsDUJovSeYai6E6w9dBeTA2X3h6D1peEzTSr`,
+  wrote temporary `docs/multiscale/relay-config.json`, and generated a relay
+  config with `bootstrapPeerCount = 1`, `iceServerCount = 2`, `hasStun = true`,
+  and `hasTurn = true`.
+- PASS: two Multiscale peers joined room `ulg-relay-handoff-mq2xg099`; room peer
+  `12D3KooWCYANJroTywiaY32SWVQT6ckRD2Lg5FvTaz9zt5LNNcpP` saw the handoff peer
+  `12D3KooWMm3o53FisX4okjWvCPyj2G2pBG3eSnhTbDu48xey1b9H`, and the handoff peer
+  saw the room peer.
+- PASS: live ULG handoff verification preserved artifact count `2`, canonical
+  MoonLab suite hash
+  `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`,
+  Eshkol source hash
+  `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
+  and Eshkol WASM hash
+  `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
+- PASS: final handoff mode was `ulg-post-message`; Multiscale ack reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  artifact count `2`, and no error.
+- PASS: service envelope reported `service-envelope-ready`,
+  `relaySafeArtifactCount = 2`; dispatch plan reported `dispatch-ready`; no
+  full-fidelity/full-physics scientific overclaim flags were present.
+- PASS: `docs/multiscale/relay-config*.json` files had no diff after teardown,
+  and no test-owned relay or `4196` listener remained.
+- PASS: existing `npm --prefix demos/multiscale run test:ulg-handoff` still
+  passed against live ULG `5173` and Multiscale `5185`, reporting
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, trusted ULG origin, and visible magnetar proxy on
+  the solar layer.
+- PASS: `git diff --check` completed.
+
+### Failures / Open
+- First adapter-enabled attempt connected both browser peers and completed the
+  ULG ack, but `runUlgDispatchServiceAdapterProbe()` destroyed the popup
+  execution context under the relay-served docs page. The adapter path is
+  preserved as `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` for focused debugging, but is
+  not in the default passing gate yet.
+- A later attempt exposed a flaky headless ULG opener reference
+  (`ULG relay handoff popup missing`); the harness now names the popup and has a
+  direct receiver fallback. The final passing run used the real ULG
+  `postMessage` path.
+- This slice proves relay/STUN/TURN-configured room connectivity plus durable
+  ULG handoff envelope/dispatch-plan readiness. It does not yet execute
+  MoonLab/Eshkol browser dispatch adapters over the relay room and does not
+  claim full-fidelity magnetar physics.
+- No push was attempted.

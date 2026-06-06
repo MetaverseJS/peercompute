@@ -938,6 +938,22 @@
 - Relay-config restore regression:
   after the focused runtime P2P smoke, `git diff -- docs/hyperborea/relay-config.json`
   returned empty, proving the smoke restored generated relay config files.
+- Relay-backed ULG/Multiscale handoff gate:
+  `npm --prefix demos/multiscale run test:ulg-relay-handoff`.
+: current result on 2026-06-06 passed. The smoke serves the built
+  `docs/multiscale` bundle, starts a dynamic local Go relay, injects STUN/TURN
+  ICE config into the generated Multiscale relay config, opens a live ULG
+  `5173` page, opens two Multiscale browser peers in the same relay room, waits
+  for each non-relay peer id to appear in `connectedPeerIds`, posts the ULG
+  handoff into the relay-backed Multiscale popup, and verifies `handoff-ready`,
+  blocker count `0`, canonical MoonLab suite hash, Eshkol source/WASM hashes,
+  `service-envelope-ready`, `relaySafeArtifactCount=2`, `dispatch-ready`, no
+  full-fidelity/full-physics scientific overclaim flags, and restored
+  `docs/multiscale/relay-config*.json` files after teardown.
+: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` can opt into browser dispatch-adapter
+  execution while debugging; it is not part of the default gate yet because the
+  relay-served popup currently destroys the execution context during
+  `runUlgDispatchServiceAdapterProbe()`.
 
 ### Eshkol production handler boundary gate
 - Focused service orchestration gate:

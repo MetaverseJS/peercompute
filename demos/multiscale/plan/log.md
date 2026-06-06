@@ -22862,3 +22862,58 @@ User asked whether Infinite Context Coder is being used.
 - The boundary is still metadata-only. It does not make an Eshkol production
   handler ready or claim full-fidelity magnetar physics.
 - No push was attempted.
+
+## 2026-06-06 14:19:57 AKDT - Relay-backed ULG handoff browser smoke
+
+### Actions
+- Added `tests/ulgRelayHandoffSmoke.mjs` for a focused live browser ULG handoff
+  path over a temporary Multiscale relay room.
+- Added `npm run test:ulg-relay-handoff`.
+- The smoke serves `docs/multiscale`, snapshots/restores Multiscale relay config
+  files, starts a dynamic local Go relay, injects STUN/TURN ICE config, opens
+  live ULG on `http://127.0.0.1:5173/`, opens two Multiscale pages in an
+  isolated room, waits for mutual non-relay peer visibility, then imports the
+  ULG handoff into the relay-backed Multiscale popup.
+- The default gate verifies handoff ack/readiness, service-envelope readiness,
+  relay-safe artifact count, dispatch-plan readiness, canonical MoonLab/Eshkol
+  hashes, and absence of full-fidelity/full-physics overclaim flags. Browser
+  dispatch-adapter execution remains opt-in with
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1`.
+
+### Files Touched
+- `demos/multiscale/package.json`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-relay-handoff`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff`.
+- PASS: `git diff --check`.
+- PASS: final relay config summary in the smoke reported
+  `bootstrapPeerCount = 1`, `iceServerCount = 2`, `hasStun = true`,
+  `hasTurn = true`, and temporary relay address
+  `/ip4/127.0.0.1/tcp/34359/ws/p2p/12D3KooWKufHzhUejsDUJovSeYai6E6w9dBeTA2X3h6D1peEzTSr`.
+- PASS: two Multiscale peers saw each other in relay room
+  `ulg-relay-handoff-mq2xg099`.
+- PASS: final handoff mode was `ulg-post-message`; Multiscale ack reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  and artifact count `2`.
+- PASS: the service path reported `service-envelope-ready`,
+  `relaySafeArtifactCount = 2`, and `dispatch-ready`.
+- PASS: relay config restore check showed no diff in
+  `docs/multiscale/relay-config*.json`, and cleanup left no test-owned `4196`
+  server or relay process.
+
+### Open
+- `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` currently exposes a browser popup
+  execution-context reset during `runUlgDispatchServiceAdapterProbe()` under the
+  relay-served docs page. Keep the default gate at durable envelope/dispatch
+  plan coverage until that is fixed.
+- This is a reduced calibrated handoff/runtime smoke harness, not a
+  full-fidelity magnetar simulation or full physics validation.
+- No push was attempted.
