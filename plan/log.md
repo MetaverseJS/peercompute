@@ -48930,3 +48930,36 @@ User asked whether Infinite Context Coder is being used.
   `9/9`.
 - PASS: `git diff --check`.
 - No push was attempted; changes are ready for the requested local commit.
+
+## 2026-06-06 00:29:55 AKDT - MoonLab reference readiness guard
+
+### Prompt
+- Continued after sidecar commit `39833bf0` added MoonLab reference summary
+  fields to the PeerCompute ULG adapter.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Tightened `magnetarReferenceReady` so PeerCompute only marks a MoonLab
+  reference contract ready when the schema and role match, the contract hash is
+  `sha256:` shaped, energy units are `normalized-ising`, the ground-state
+  bitstring and reference energy are present, numeric tolerance and observed
+  delta are present, validation passes, and observed delta is within tolerance.
+- Updated the unit fixture to use a digest-shaped reference contract hash.
+- Added a guardrail test proving placeholder hashes, missing tolerances, and
+  over-tolerance deltas do not report reference readiness.
+- Updated plan/test docs for the stricter reference inventory gate.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed
+  `10/10`.
+- PASS: `git diff --check`.
+- No push was attempted; all commits remain local per user instruction.

@@ -26,7 +26,8 @@ import {
   createComputeManagerServiceFactory,
   createUlgV05ArtifactResult,
   normalizeUlgDemoHandoff,
-  normalizeComputeServiceManifest
+  normalizeComputeServiceManifest,
+  summarizeUlgArtifact
 } from '../../src/peercompute/serviceOrchestration/index.js';
 import {
   ULG_COMPACT_DELTA_SCHEMA,
@@ -40,6 +41,8 @@ import {
   createUlgServiceFixtureManifests,
   createUlgServiceFixtureTasks
 } from '../fixtures/ulgServiceFixtures.js';
+
+const MOONLAB_REFERENCE_CONTRACT_HASH = 'sha256:fixture-moonlab-reference-001';
 
 function serviceManifest(overrides = {}) {
   return {
@@ -407,7 +410,7 @@ class UlgV05ArtifactServiceHost {
           reference: {
             schema: 'moonlab.magnetar-dipole-ising-reference.v0',
             role: 'peercompute-reference-tolerance-input',
-            contractHash: task.capsule.inputHash,
+            contractHash: MOONLAB_REFERENCE_CONTRACT_HASH,
             energyUnits: 'normalized-ising',
             hamiltonian: {
               localFields: [0.25, 0.125, 0.0625],
@@ -707,7 +710,7 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   assert.equal(result.artifactSummary.magnetarReferenceReady, true);
   assert.equal(result.artifactSummary.magnetarReferenceSchema, 'moonlab.magnetar-dipole-ising-reference.v0');
   assert.equal(result.artifactSummary.magnetarReferenceRole, 'peercompute-reference-tolerance-input');
-  assert.equal(result.artifactSummary.magnetarReferenceContractHash, moonlabCapsule.inputHash);
+  assert.equal(result.artifactSummary.magnetarReferenceContractHash, MOONLAB_REFERENCE_CONTRACT_HASH);
   assert.equal(result.artifactSummary.magnetarReferenceEnergyUnits, 'normalized-ising');
   assert.equal(result.artifactSummary.magnetarReferenceGroundStateBitString, '000');
   assert.equal(result.artifactSummary.magnetarReferenceGroundStateEnergy, -0.9375);
@@ -739,6 +742,47 @@ test('ULG v0.5 adapter normalizes copied fixtures and stores artifact refs throu
   const telemetry = supervisor.getTreeTelemetry();
   assert.equal(telemetry.artifacts[0].ref.uri, result.artifactRef.uri);
   assert.equal(telemetry.tasks[0].artifactRef.uri, result.artifactRef.uri);
+});
+
+test('ULG artifact summary requires complete MoonLab reference contract before readiness', () => {
+  const baseArtifact = {
+    outputs: {
+      reference: {
+        schema: 'moonlab.magnetar-dipole-ising-reference.v0',
+        role: 'peercompute-reference-tolerance-input',
+        contractHash: MOONLAB_REFERENCE_CONTRACT_HASH,
+        energyUnits: 'normalized-ising',
+        observables: {
+          groundState: {
+            bitString: '000',
+            referenceEnergy: -0.9375
+          }
+        },
+        tolerances: {
+          energyAbs: 1e-9,
+          maxObservedEnergyDelta: 0
+        },
+        validation: {
+          parityPassed: true
+        }
+      }
+    }
+  };
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+
+  assert.equal(summarizeUlgArtifact('quantum-response', baseArtifact).magnetarReferenceReady, true);
+
+  const placeholderHash = clone(baseArtifact);
+  placeholderHash.outputs.reference.contractHash = 'ulg:fixture-input-moonlab-001';
+  assert.equal(summarizeUlgArtifact('quantum-response', placeholderHash).magnetarReferenceReady, false);
+
+  const missingTolerance = clone(baseArtifact);
+  delete missingTolerance.outputs.reference.tolerances.energyAbs;
+  assert.equal(summarizeUlgArtifact('quantum-response', missingTolerance).magnetarReferenceReady, false);
+
+  const overTolerance = clone(baseArtifact);
+  overTolerance.outputs.reference.tolerances.maxObservedEnergyDelta = 1e-6;
+  assert.equal(summarizeUlgArtifact('quantum-response', overTolerance).magnetarReferenceReady, false);
 });
 
 test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => {

@@ -255,6 +255,15 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     ? magnetarReference.validation
     : {};
   const magnetarReferenceValidationStatus = normalizeValidationStatus(magnetarReferenceValidation);
+  const magnetarReferenceGroundStateBitString = stringOrNull(
+    magnetarReferenceGroundState.bitString ?? magnetarReferenceGroundState.bitstring
+  );
+  const magnetarReferenceGroundStateEnergy = finiteNumberOrNull(magnetarReferenceGroundState.referenceEnergy);
+  const magnetarReferenceToleranceEnergyAbs = finiteNumberOrNull(magnetarReferenceTolerances.energyAbs);
+  const magnetarReferenceMaxObservedEnergyDelta = finiteNumberOrNull(
+    magnetarReferenceTolerances.maxObservedEnergyDelta
+      ?? magnetarReferenceValidation.maxEnergyDelta
+  );
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
@@ -351,20 +360,23 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     magnetarReferenceReady: artifactKind === 'quantum-response'
       && magnetarReference?.schema === MOONLAB_MAGNETAR_REFERENCE_SCHEMA
       && magnetarReference?.role === MOONLAB_MAGNETAR_REFERENCE_ROLE
-      && magnetarReferenceValidationStatus === 'pass',
+      && typeof magnetarReference?.contractHash === 'string'
+      && magnetarReference.contractHash.startsWith('sha256:')
+      && magnetarReference?.energyUnits === 'normalized-ising'
+      && magnetarReferenceGroundStateBitString != null
+      && magnetarReferenceGroundStateEnergy != null
+      && magnetarReferenceToleranceEnergyAbs != null
+      && magnetarReferenceMaxObservedEnergyDelta != null
+      && magnetarReferenceValidationStatus === 'pass'
+      && magnetarReferenceMaxObservedEnergyDelta <= magnetarReferenceToleranceEnergyAbs,
     magnetarReferenceSchema: magnetarReference?.schema || null,
     magnetarReferenceRole: magnetarReference?.role || null,
     magnetarReferenceContractHash: magnetarReference?.contractHash || null,
     magnetarReferenceEnergyUnits: magnetarReference?.energyUnits || null,
-    magnetarReferenceGroundStateBitString: stringOrNull(
-      magnetarReferenceGroundState.bitString ?? magnetarReferenceGroundState.bitstring
-    ),
-    magnetarReferenceGroundStateEnergy: finiteNumberOrNull(magnetarReferenceGroundState.referenceEnergy),
-    magnetarReferenceToleranceEnergyAbs: finiteNumberOrNull(magnetarReferenceTolerances.energyAbs),
-    magnetarReferenceMaxObservedEnergyDelta: finiteNumberOrNull(
-      magnetarReferenceTolerances.maxObservedEnergyDelta
-        ?? magnetarReferenceValidation.maxEnergyDelta
-    ),
+    magnetarReferenceGroundStateBitString,
+    magnetarReferenceGroundStateEnergy,
+    magnetarReferenceToleranceEnergyAbs,
+    magnetarReferenceMaxObservedEnergyDelta,
     magnetarReferenceValidationStatus,
     calibrationArtifactCount: calibrationSummaries.length,
     calibrationReadyCount: calibrationSummaries.filter((entry) => entry.ready).length,
