@@ -89,6 +89,11 @@ import {
   createKernelPassSpec
 } from '../src/simulation/ulgRuntime.js';
 import {
+  RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
+  RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
+  createRelativisticCorrectionRuntimeEvidenceEntry
+} from '../src/simulation/magnetarRuntimeEvidence.js';
+import {
   WEBGPU_PARTICLE_COUNT,
   WEBGPU_PARTICLE_FLOATS,
   WEBGPU_PARTICLE_RECORD_BYTES,
@@ -2443,6 +2448,84 @@ test('magnetar runtime evidence manifest rejects unknown and duplicate entries',
   assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('runtime-evidence-entry-duplicate'));
   assert.ok(scenario.scientificRuntimeEvidence.errors.includes('runtime evidence entry does not match a required magnetar runtime evidence family'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+});
+
+test('relativistic correction runtime evidence records bounded proxy validation without scientific readiness', async () => {
+  resetRelativisticCorrection();
+  const runtime = await stepRelativisticCorrection({
+    stateKey: 'relativity:evidence:bounded',
+    input: {
+      stateKey: 'relativity:evidence:bounded',
+      state: makeRelativisticCorrectionInitialState({
+        sampleCount: 40,
+        seed: 20260606,
+        environment: { stellarFlux: 1.4 },
+        coupling: {
+          compactness: 0.018,
+          radiationPressure: 1.8,
+          maxwellFieldEnergy: 1.4,
+          alfvenSpeed: 1.2,
+          picKineticEnergy: 0.8
+        }
+      }),
+      dt: 0.05,
+      environment: { stellarFlux: 1.4 },
+      coupling: {
+        compactness: 0.018,
+        radiationPressure: 1.8,
+        maxwellFieldEnergy: 1.4,
+        poyntingFlux: [0.4, 0.1, 0],
+        alfvenSpeed: 1.2,
+        picKineticEnergy: 0.8,
+        picParticleEscapeFraction: 0.08
+      },
+      enableWebGPU: false
+    }
+  });
+  const entry = await createRelativisticCorrectionRuntimeEvidenceEntry(runtime);
+
+  assert.equal(entry.id, 'validated-relativistic-correction-runtime');
+  assert.equal(entry.family, 'relativistic-correction');
+  assert.equal(entry.solverId, 'relativistic-correction');
+  assert.equal(entry.status, 'proxy-runtime-validated');
+  assert.equal(entry.ready, false);
+  assert.equal(entry.scientificExecution, false);
+  assert.equal(entry.validationStatus, 'pass');
+  assert.match(entry.evidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(entry.validation.schema, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(entry.validation.scope, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(entry.validation.pass, true);
+  assert.equal(entry.validation.ready, false);
+  assert.equal(entry.validation.scientificExecution, false);
+  assert.equal(entry.validation.checks.maxSpeedBelowC, true);
+  assert.equal(entry.validation.checks.lorentzFactorFinite, true);
+  assert.ok(entry.observed.maxSpeedFractionC < 1);
+  assert.ok(entry.blockers.includes('relativistic-correction-runtime-proxy-only'));
+
+  const model = new MultiscaleModel({ seed: 479 });
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest({
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [entry]
+  });
+  const relativity = scenario.scientificRuntimeEvidence.entries.find((candidate) => (
+    candidate.id === 'validated-relativistic-correction-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 4);
+  assert.equal(relativity.status, 'proxy-runtime-observed');
+  assert.equal(relativity.ready, false);
+  assert.equal(relativity.scientificExecution, false);
+  assert.equal(relativity.evidenceHash, entry.evidenceHash);
+  assert.equal(relativity.validation.schema, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(relativity.validationScope, RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(relativity.blockers.includes('relativistic-correction-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });
 
 test('magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites', () => {

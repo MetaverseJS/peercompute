@@ -1244,13 +1244,36 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     entry?.id === requirement.id
     || entry?.family === requirement.family
     || entry?.solverId === requirement.solverId
-  )) || {};
+  ));
+  if (!source) {
+    return {
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId,
+      status: 'runtime-evidence-missing',
+      ready: false,
+      scientificExecution: false,
+      proxyOnly: false,
+      runtimeObserved: false,
+      backend: null,
+      sequence: null,
+      validationStatus: null,
+      evidenceHash: null,
+      observed: null,
+      validation: null,
+      validationScope: null,
+      blocker: requirement.blocker,
+      blockers: [requirement.blocker]
+    };
+  }
   const validationStatus = source.validationStatus || source.validation?.status || null;
   const scientificExecution = source.scientificExecution === true;
   const backend = stringOrNull(source.backend);
   const solverId = stringOrNull(source.solverId) || requirement.solverId;
   const solverMatches = solverId === requirement.solverId;
   const evidenceHash = hasSha256Digest(source.evidenceHash) ? source.evidenceHash : null;
+  const validation = clonePlain(source.validation || null);
+  const validationScope = stringOrNull(source.validationScope || source.scope || validation?.scope);
   const ready = source.ready === true
     && scientificExecution
     && validationStatus === 'pass'
@@ -1281,6 +1304,8 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     validationStatus,
     evidenceHash,
     observed: clonePlain(source.observed || source.diagnostics || null),
+    validation,
+    validationScope,
     blocker: blockers[0] || null,
     blockers
   };

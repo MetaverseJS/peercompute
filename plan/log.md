@@ -2,6 +2,62 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 03:38:00 AKDT - Relativistic runtime proxy validation
+
+### Prompt
+- User asked how the overall plan was going and whether the work remained on
+  track.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 03:38:00 AKDT`.
+
+### Actions
+- Added `peercompute.multiscale.relativistic-correction.runtime-validation.v0`
+  as a bounded runtime validation artifact for the reduced
+  relativistic-correction solver.
+- Added hashable runtime evidence entries for the relativistic-correction
+  family with schema/scope/check metadata, observed scalar summaries, and
+  explicit `scientificExecution: false` / `proxyOnly: true` status.
+- Preserved normalized runtime evidence `validation` and `validationScope`
+  fields through magnetar scenario runtime-evidence ingestion.
+- Kept missing runtime evidence distinct from present-but-invalid evidence so
+  absent required families do not receive misleading evidence-hash blockers.
+- Added a regression proving the bounded relativistic proxy evidence can be
+  observed and hashed while still leaving validated runtime count and scenario
+  scientific readiness blocked.
+- Rebuilt the checked-in Multiscale demo assets.
+
+### Files Touched
+- `demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused Multiscale model run passed `186/186`.
+- PASS: Multiscale production build completed and refreshed
+  `docs/multiscale/`; Vite emitted only the existing large-chunk warning.
+- PASS: `git diff --check` passed before local commit.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The new relativistic runtime artifact is a bounded post-Newtonian proxy
+  validation report. It improves runtime evidence provenance but intentionally
+  does not satisfy the scientific magnetar runtime gate.
+
 ## 2026-06-06 01:38:16 AKDT - ULG handoff transfer manifest
 
 ### Prompt

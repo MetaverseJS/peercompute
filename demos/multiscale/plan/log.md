@@ -22192,3 +22192,42 @@ User asked whether Infinite Context Coder is being used.
   proxy-only until real validated MHD/PIC/radiation/relativity runtime artifacts
   and cross-family conservation/coupling validation are attached.
 - No push was attempted.
+
+## 2026-06-06 03:38:00 AKDT - Relativistic runtime proxy validation
+
+### Prompt
+- User asked how the overall implementation plan was going and whether work
+  remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.relativistic-correction.runtime-validation.v0`
+  for bounded post-Newtonian proxy validation of the existing reduced
+  relativistic-correction runtime.
+- Added a hashable relativistic-correction runtime evidence entry with
+  validation schema, scope, pass/fail checks, observed speed/redshift/lensing
+  summaries, and explicit proxy-only blockers.
+- Preserved `validation` and `validationScope` on normalized scenario runtime
+  evidence entries so the manifest can retain bounded validation provenance.
+- Split absent required runtime evidence from present invalid runtime evidence
+  to avoid misleading evidence-hash blockers for missing families.
+- Added a regression that ingests the bounded relativistic proxy evidence into
+  the magnetar scenario and proves it remains proxy-only with
+  `scenarioScientificReady: false`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`.
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+  passed `186/186`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings and refreshed `docs/multiscale/`.
+- PASS: `git diff --check`.
+
+### Open
+- This is runtime provenance for a reduced relativistic proxy, not validated
+  GR/GRMHD or force-free magnetar science. Full MHD/PIC/radiation/relativity
+  scientific runtime artifacts plus cross-family conservation/coupling
+  validation are still required before the magnetar runtime gate can clear.
+- No push was attempted.
