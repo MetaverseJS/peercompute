@@ -49896,3 +49896,76 @@ User asked whether Infinite Context Coder is being used.
   it does not create validated MHD/PIC/radiation/relativity/cross-family
   magnetar runtime artifacts by itself.
 - No push was attempted.
+
+## 2026-06-06 04:47:45 AKDT - Local relay/TURN smoke without disturbing live demos
+
+### Prompt
+- Continue the ULG/PeerCompute plan and verify local relay/STUN/TURN readiness
+  where possible while keeping the live Vite demos available on the VPN.
+
+### Actions
+- Inspected PeerCompute backend scripts: `scripts/pcserver.sh`,
+  `scripts/dev-vpn-coturn.sh`, `scripts/dev-local-relay.sh`,
+  `scripts/start-turn-prod.sh`, `scripts/start-relay-prod.sh`, and
+  `scripts/run-go-relay.sh`.
+- Confirmed `turnserver` and Go are installed.
+- Confirmed an existing system coturn process is listening on port `3478`, so no
+  second TURN service was started.
+- Avoided `npm run dev:vpn-coturn` because it would start the whole demo stack
+  and collide with the live Multiscale Vite server on `5185`.
+- Ran backend and VPN wrapper dry-runs, then launched only the Go relay with
+  explicit ephemeral-port overrides under `timeout`.
+
+### Files Touched
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+```bash
+npm run backend:dry-run
+npm run dev:vpn-coturn -- --dry-run
+command -v turnserver
+command -v go
+ss -ltnup | rg ':3478|peercompute|turnserver|relay'
+ps -eo pid,ppid,stat,cmd | rg 'turnserver|relay-go|pcserver|dev-local-relay|peercompute.*relay'
+timeout 8s env \
+  RELAY_IMPL=go \
+  RELAY_REQUIRE_GO=1 \
+  RELAY_PUBLIC_HOST=100.86.83.35 \
+  RELAY_PUBLIC_PORT= \
+  RELAY_PUBLIC_PROTOCOL=ws \
+  RELAY_LISTEN_HOST=0.0.0.0 \
+  RELAY_LISTEN_PORT=0 \
+  RELAY_IDENTITY_FILE=/home/cos/projects/peercompute/config/relay-peer-id.json \
+  RELAY_CONFIG_FILE=/tmp/peercompute-relay-smoke-cos.json \
+  RELAY_CONFIG_DIRS= \
+  RELAY_PUBSUB_TYPE=gossipsub \
+  RELAY_WEBRTC_CONFIG='{"iceServers":[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:100.86.83.35:3478?transport=udp","turn:100.86.83.35:3478?transport=tcp"],"username":"peer","credential":"compute"}],"preferDirect":true,"dropRelayOnDirect":true}' \
+  bash /home/cos/projects/peercompute/scripts/run-relay.sh
+```
+
+### Results
+- PASS: `npm run backend:dry-run` reported the relay launcher and coturn config
+  without starting new services.
+- PASS: `npm run dev:vpn-coturn -- --dry-run` resolved
+  `RELAY_PUBLIC_HOST=100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and
+  `RELAY_TURN_HOST=100.86.83.35`.
+- PASS: `/bin/turnserver` and `/bin/go` are available.
+- PASS: existing coturn process `/usr/bin/turnserver -c /etc/turnserver.conf`
+  was already active on `3478`.
+- PASS: ephemeral Go relay smoke started on port `40933`, wrote
+  `/tmp/peercompute-relay-smoke-cos.json`, advertised
+  `/ip4/100.86.83.35/tcp/40933/ws/p2p/...`, and included WebRTC ICE servers for
+  `stun:stun.l.google.com:19302` plus `turn:100.86.83.35:3478` over UDP/TCP.
+- PASS: `timeout` stopped the relay smoke, and follow-up socket check showed no
+  listener remaining on `40933`; live ULG and Multiscale Vite listeners on
+  `5173` and `5185` remained up.
+
+### Open
+- This was a relay/TURN launch smoke only, not a full browser P2P connection
+  test. The full `dev:vpn-coturn` stack should be run in a separate window or
+  with adjusted ports if the live Multiscale server on `5185` must remain up.
+- The relay smoke created/used ignored local files
+  `config/relay-peer-id.json`, `/tmp/peercompute-relay-smoke-cos.json`, and
+  `/tmp/peercompute-relay-smoke.log`; no tracked config changed.
+- No push was attempted.
