@@ -736,6 +736,14 @@
   blockers, and `scenarioScientificReady = true` for the reduced calibrated
   runtime. Keep the demo language explicit that this is reduced calibrated
   runtime evidence, not full-fidelity GRMHD/PIC/radiation transport.
+- Live ULG one-call reduced calibrated demo gate: after waiting for ULG
+  `telemetry.artifacts` to include both MoonLab and Eshkol, export
+  `window.__ulgDemo.createPeerComputeHandoff()` and call
+  `window.__multiscaleDemo.runUlgMagnetarCalibratedDemo(handoff)`.
+  Expected result is `serviceDispatchPlan.status = "dispatch-ready"`,
+  `scientificRuntimeEvidence.status = "runtime-evidence-ready"`,
+  `validatedCount = 5`, no handoff blockers, `scenarioScientificReady = true`,
+  and `calibratedRuntimeScope.fullFidelityMagnetarSimulation = false`.
 - Scientific runtime gate Node gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'scientific runtime gate|magnetar scenario'`.
 : expected result is a full pass proving incomplete live-like handoffs report `scientific-runtime-pending`, complete proxy fixtures report `scientific-runtime-blocked`, `proxy-runtime-not-scientific` remains the only blocker once transfer/reference/closure prerequisites are all present, and packet boundary conditions expose runtime gate readiness/status/prerequisite/runtime-evidence fields.
 - Runtime evidence manifest hardening gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'bounded proxy runtime evidence|runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`.

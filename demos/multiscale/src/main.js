@@ -1469,6 +1469,31 @@ async function refreshScenarioCalibratedRuntimeEvidence(options = {}) {
   });
 }
 
+function createUlgCalibratedRuntimeScope(report = {}, options = {}) {
+  const manifest = report.manifest && typeof report.manifest === 'object' ? report.manifest : null;
+  const evidence = report.scientificRuntimeEvidence && typeof report.scientificRuntimeEvidence === 'object'
+    ? report.scientificRuntimeEvidence
+    : null;
+  const modelTiers = uniqueUlgStrings((manifest?.entries || [])
+    .map((entry) => entry?.validation?.modelTier));
+  return {
+    schema: 'peercompute.multiscale.ulg-calibrated-demo-runtime-scope.v0',
+    scenarioId: options.scenarioId || 'magnetar',
+    status: evidence?.status || null,
+    ready: evidence?.ready === true,
+    source: manifest?.source || null,
+    modelTiers,
+    scientificExecution: evidence?.scientificExecution === true,
+    reducedCalibratedRuntimeEvidence: manifest?.source === 'calibrated-reference-runtime-adapter-v0',
+    fullFidelityMagnetarSimulation: false,
+    limitations: [
+      'not-full-fidelity-grmhd',
+      'not-production-pic',
+      'not-spectral-radiation-transport'
+    ]
+  };
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
@@ -1636,6 +1661,32 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     calibration,
     closure,
     closureDescriptorProbe,
+    packet: createUiPacket()
+  });
+}
+
+async function applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff = {}, options = {}) {
+  const scenarioOptions = {
+    ...options,
+    scenarioId: options.scenarioId || 'magnetar'
+  };
+  const handoffReport = await applyUlgDemoHandoffForScenario(handoff, scenarioOptions);
+  const calibratedRuntimeReport = await refreshScenarioCalibratedRuntimeEvidence(scenarioOptions);
+  return cloneJson({
+    handoffReport,
+    calibratedRuntimeReport,
+    calibratedRuntimeScope: createUlgCalibratedRuntimeScope(calibratedRuntimeReport, scenarioOptions),
+    handoff: handoffReport.handoff,
+    serviceEnvelope: handoffReport.serviceEnvelope,
+    serviceDispatchPlan: handoffReport.serviceDispatchPlan,
+    transfer: handoffReport.transfer,
+    calibration: handoffReport.calibration,
+    closure: handoffReport.closure,
+    closureDescriptorProbe: handoffReport.closureDescriptorProbe,
+    manifest: calibratedRuntimeReport.manifest,
+    scenario: calibratedRuntimeReport.scenario,
+    scientificRuntimeEvidence: calibratedRuntimeReport.scientificRuntimeEvidence,
+    handoffReadiness: calibratedRuntimeReport.handoffReadiness,
     packet: createUiPacket()
   });
 }
@@ -11038,6 +11089,12 @@ window.__multiscaleDemo = {
   },
   ingestUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     return applyUlgDemoHandoffForScenario(handoff, options);
+  },
+  applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff = {}, options = {}) {
+    return applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff, options);
+  },
+  runUlgMagnetarCalibratedDemo(handoff = {}, options = {}) {
+    return applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence(handoff, options);
   },
   normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     return cloneJson(normalizePeerComputeUlgDemoHandoff(handoff, options));

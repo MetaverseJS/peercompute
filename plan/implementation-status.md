@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 18:35:00 AKDT
+Updated: 2026-06-06 10:41:00 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -81,6 +81,13 @@ Updated: 2026-06-06 18:35:00 AKDT
   reports `runtime-evidence-ready`, `validatedCount = 5`,
   `scientific-runtime-ready`, and `scenarioScientificReady = true` for the
   reduced calibrated magnetar runtime.
+- The Multiscale browser API now exposes
+  `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` plus
+  `runUlgMagnetarCalibratedDemo()` so a live ULG handoff can apply MoonLab/Eshkol
+  artifacts and refresh the reduced calibrated runtime gate in one call. The
+  return payload carries `peercompute.multiscale.ulg-calibrated-demo-runtime-scope.v0`
+  with `reducedCalibratedRuntimeEvidence = true` and
+  `fullFidelityMagnetarSimulation = false`.
 - `git diff --check` passed.
 
 ## Next

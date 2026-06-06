@@ -50992,3 +50992,40 @@ timeout 8s env \
   the plan. It is not full-fidelity GRMHD, production PIC, or spectral radiation
   transport.
 - No push was attempted.
+
+## 2026-06-06 10:41:00 AKDT - One-call reduced calibrated ULG demo handoff
+
+### Prompt
+- Continue from the two-step ULG handoff plus calibrated runtime refresh path.
+
+### Actions
+- Added `window.__multiscaleDemo.runUlgMagnetarCalibratedDemo()` and the
+  underlying `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` wrapper.
+- The wrapper applies the live ULG handoff, refreshes reduced calibrated runtime
+  evidence, returns both reports, and includes an explicit
+  `peercompute.multiscale.ulg-calibrated-demo-runtime-scope.v0` payload.
+- Rebuilt the Multiscale docs bundle.
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario creates calibrated reduced runtime evidence|magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites|magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness'`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probe against `http://127.0.0.1:5173/` and
+  `https://127.0.0.1:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript passed syntax check.
+- PASS: Multiscale model test command passed `195/195`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live one-call handoff exported two ULG artifacts, returned
+  `dispatch-ready`, `runtime-evidence-ready`, `validatedCount = 5`,
+  `proxyOnlyCount = 0`, `missingCount = 0`, `scientific-runtime-ready`,
+  `scenarioScientificReady = true`, no blockers, and
+  `fullFidelityMagnetarSimulation = false`.
+
+### Open
+- The one-call path is ergonomic demo plumbing for the reduced calibrated
+  runtime. It is still not full-fidelity GRMHD, production PIC, or spectral
+  radiation transport.
+- No push was attempted.

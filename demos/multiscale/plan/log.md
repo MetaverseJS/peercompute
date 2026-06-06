@@ -22704,3 +22704,27 @@ User asked whether Infinite Context Coder is being used.
 - This is relay/provenance packaging for the ULG handoff, not a new fidelity
   claim beyond the reduced calibrated magnetar runtime gate.
 - No push was attempted.
+
+## 2026-06-06 10:41:00 AKDT - One-call ULG calibrated magnetar demo API
+
+### Actions
+- Added `window.__multiscaleDemo.runUlgMagnetarCalibratedDemo()` as an alias for
+  the new `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` browser API.
+- The API applies a ULG handoff, refreshes reduced calibrated runtime evidence,
+  and returns an explicit calibrated runtime scope object with
+  `fullFidelityMagnetarSimulation = false`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario creates calibrated reduced runtime evidence|magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites|magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness'` passed `195/195`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: live system-Chrome ULG-to-PeerCompute probe reported
+  `dispatch-ready`, `runtime-evidence-ready`, `validatedCount = 5`,
+  `scientific-runtime-ready`, `scenarioScientificReady = true`, no blockers,
+  and `fullFidelityMagnetarSimulation = false`.
+
+### Open
+- This remains the reduced calibrated runtime demo path, not a full-fidelity
+  magnetar simulation.
+- No push was attempted.
