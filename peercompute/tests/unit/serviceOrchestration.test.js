@@ -11,6 +11,8 @@ import {
   ChildWorkerLeaseManager,
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
+  ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+  ULG_DEMO_HANDOFF_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -22,6 +24,7 @@ import {
   adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
   createUlgV05ArtifactResult,
+  normalizeUlgDemoHandoff,
   normalizeComputeServiceManifest
 } from '../../src/peercompute/serviceOrchestration/index.js';
 import {
@@ -812,6 +815,106 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
   assert.equal(result.artifactSummary.closureHostImportsDomFree, true);
   assert.equal(result.artifactSummary.closureReady, true);
   assert.equal(result.outputs[0].artifactSummary.closureReady, true);
+});
+
+test('ULG demo handoff adapter classifies calibration, closure, and transferred WASM bytes', () => {
+  const handoff = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    createdAt: '2026-06-05T23:31:11.000Z',
+    artifactCount: 2,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://moonlab-calibration',
+        sourceService: 'moonlab',
+        createdAt: 10
+      },
+      artifactKind: 'quantum-response',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'quantum-response',
+        sourceService: 'moonlab',
+        magnetarDipoleIsingReady: true,
+        magnetarDipoleIsingStatus: 'pass',
+        magnetarDipoleIsingParityStatus: 'pass',
+        magnetarDipoleIsingGroundState: '000',
+        magnetarDipoleIsingMaxEnergyDelta: 0,
+        magnetarDipoleIsingEvaluatedBitstrings: 8
+      },
+      artifact: {
+        artifactId: 'artifact:moonlab-calibration',
+        sourceService: 'moonlab'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://eshkol-closure',
+        sourceService: 'eshkol',
+        createdAt: 11
+      },
+      artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        artifactId: 'eshkol:881d9a92d523921d',
+        sourceService: 'eshkol',
+        validationStatus: 'pass',
+        closureReady: true,
+        closureKind: 'wasm-reference',
+        closureModuleUrl: 'hello.wasm',
+        closureEntryExport: 'main',
+        closureHostImportsFactory: 'createEshkolHostImportObject',
+        closureHostImportsDomFree: true
+      },
+      artifact: {
+        closureId: 'eshkol:881d9a92d523921d',
+        sourceService: 'eshkol',
+        runtime: {
+          bundleManifest: {
+            schema: 'eshkol.ulg.closure-bundle.v0',
+            preserveRelativeUrls: true
+          }
+        }
+      },
+      wasmBytes: [0, 97, 115, 109],
+      wasmByteLength: 4,
+      wasmSourceUrl: '/service-assets/eshkol/closures/hello/hello.wasm'
+    }]
+  }, { receivedAt: '2026-06-05T23:32:00.000Z' });
+
+  assert.equal(handoff.schema, ULG_DEMO_HANDOFF_ADAPTER_SCHEMA);
+  assert.equal(handoff.sourceSchema, ULG_DEMO_HANDOFF_SCHEMA);
+  assert.equal(handoff.acceptedSourceSchema, true);
+  assert.equal(handoff.status, 'handoff-ready');
+  assert.equal(handoff.ready, true);
+  assert.deepEqual(handoff.blockers, []);
+  assert.equal(handoff.declaredArtifactCount, 2);
+  assert.equal(handoff.artifactCount, 2);
+  assert.equal(handoff.calibrationArtifacts.length, 1);
+  assert.equal(handoff.closureArtifacts.length, 1);
+  assert.equal(handoff.closureArtifactsWithBytes.length, 1);
+  assert.equal(handoff.readyCalibrationArtifact.sourceService, 'moonlab');
+  assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarDipoleIsingGroundState, '000');
+  assert.equal(handoff.readyClosureArtifact.sourceService, 'eshkol');
+  assert.equal(handoff.readyClosureArtifact.hasTransferredWasmBytes, true);
+  assert.equal(handoff.readyClosureArtifact.wasmByteLength, 4);
+  assert.deepEqual(handoff.readyClosureArtifact.wasmBytes, [0, 97, 115, 109]);
+  assert.equal(handoff.readyClosureArtifact.bundleManifest.schema, 'eshkol.ulg.closure-bundle.v0');
+
+  const blocked = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    artifacts: [{
+      artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        closureReady: true
+      },
+      artifact: { sourceService: 'eshkol' }
+    }]
+  }, { receivedAt: '2026-06-05T23:33:00.000Z' });
+  assert.equal(blocked.ready, false);
+  assert.ok(blocked.blockers.includes('moonlab-magnetar-calibration-summary-missing'));
+  assert.ok(blocked.blockers.includes('eshkol-closure-wasm-bytes-missing'));
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

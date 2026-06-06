@@ -6,6 +6,7 @@ import {
   StateManager,
   createPlacementAdmissionPolicy,
   createRemoteResultQuorumValidator,
+  normalizeUlgDemoHandoff as normalizePeerComputeUlgDemoHandoff,
   summarizeUlgArtifact as summarizePeerComputeUlgArtifact
 } from '@peercompute';
 import {
@@ -1427,6 +1428,40 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
     artifactSummary,
     closureIngest: closureIngest.closureIngest || null,
     closureHandoffReadiness: closureIngest.handoffReadiness || null,
+    packet: createUiPacket()
+  });
+}
+
+async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
+  const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
+  const calibrationArtifact = normalized.readyCalibrationArtifact || normalized.calibrationArtifacts[0] || null;
+  const closureArtifact = normalized.readyClosureArtifact || normalized.closureArtifacts[0] || null;
+  const calibration = calibrationArtifact
+    ? ingestUlgArtifactForScenario(calibrationArtifact.artifact, {
+      ...options,
+      artifactKind: calibrationArtifact.artifactKind,
+      artifactSummary: calibrationArtifact.artifactSummary,
+      provider: options.calibrationProvider || calibrationArtifact.sourceService || 'moonlab'
+    })
+    : null;
+  const closureOptions = closureArtifact ? {
+    ...options,
+    artifactKind: closureArtifact.artifactKind,
+    artifactSummary: closureArtifact.artifactSummary,
+    bundleManifest: closureArtifact.bundleManifest,
+    validationStatus: closureArtifact.validationStatus,
+    wasmBytes: closureArtifact.wasmBytes,
+    provider: options.closureProvider || closureArtifact.sourceService || 'eshkol'
+  } : null;
+  const closure = closureArtifact?.hasTransferredWasmBytes && options.executeClosure !== false
+    ? await executeUlgClosureArtifactForScenario(closureArtifact.artifact, closureOptions)
+    : (closureArtifact
+      ? ingestUlgArtifactForScenario(closureArtifact.artifact, closureOptions)
+      : null);
+  return cloneJson({
+    handoff: normalized,
+    calibration,
+    closure,
     packet: createUiPacket()
   });
 }
@@ -10501,6 +10536,15 @@ window.__multiscaleDemo = {
   },
   executeUlgClosureArtifactForScenarioProbe(artifact = {}, options = {}) {
     return executeUlgClosureArtifactForScenario(artifact, options);
+  },
+  applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
+    return applyUlgDemoHandoffForScenario(handoff, options);
+  },
+  ingestUlgDemoHandoffForScenario(handoff = {}, options = {}) {
+    return applyUlgDemoHandoffForScenario(handoff, options);
+  },
+  normalizeUlgDemoHandoff(handoff = {}, options = {}) {
+    return cloneJson(normalizePeerComputeUlgDemoHandoff(handoff, options));
   },
   summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
     return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));

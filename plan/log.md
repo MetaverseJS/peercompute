@@ -48696,3 +48696,97 @@ User asked whether Infinite Context Coder is being used.
 ### Open
 - HTTPS Multiscale cannot browser-fetch HTTP ULG WASM directly; transferred bytes, an HTTPS ULG endpoint, or a same-origin/proxy path is required.
 - The execution handoff still preserves `scientificReady: false`; closure output semantics, calibrated references, and tolerance gates remain unvalidated.
+
+## 2026-06-05 23:38:18 AKDT - ULG demo handoff packet adapter
+
+### Prompt
+- User asked why work was not still continuing after the ULG handoff-exporter
+  slice; resumed implementation from the current PeerCompute/ULG/Eshkol/MoonLab
+  plan.
+- Prompt time/date recorded from the local machine: `2026-06-05 23:38:18 AKDT`.
+- Local commits only; no push.
+
+### Actions
+- Added `peercompute.ulg.demo-handoff.v0` and
+  `peercompute.ulg.demo-handoff-adapter.v0` exports to the ULG
+  service-orchestration adapter.
+- Added `normalizeUlgDemoHandoff()` and
+  `normalizeUlgDemoHandoffArtifact()` to classify ready MoonLab magnetar
+  calibration summaries, ready Eshkol closure summaries, transferred closure
+  WASM bytes, and explicit handoff blockers.
+- Exported the adapter through `peercompute/src/peercompute/serviceOrchestration`
+  and the package root.
+- Added Multiscale browser APIs
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`,
+  `ingestUlgDemoHandoffForScenario()`, and `normalizeUlgDemoHandoff()`.
+- The new Multiscale API ingests the ready MoonLab calibration, executes the
+  ready Eshkol closure when transferred WASM bytes are present, and returns the
+  updated scenario packet without a caller manually splitting ULG artifacts.
+- Added focused service-orchestration unit coverage for the packet adapter and
+  blocker behavior.
+- Updated root plan/test docs and the Multiscale demo plan.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `sed -n '1,220p' AGENTS.md`
+- `sed -n '1,380p' peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `sed -n '1320,1455p' demos/multiscale/src/main.js`
+- `sed -n '1680,1945p' demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js && node --check peercompute/src/peercompute/serviceOrchestration/index.js && node --check peercompute/src/peercompute/index.js`
+- `node --check demos/multiscale/src/main.js && node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `git diff --check`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- Live Playwright probe from ULG `http://100.86.83.35:5173/` to Multiscale
+  `https://100.86.83.35:5185/?scenario=magnetar` using
+  `window.__ulgDemo.createPeerComputeHandoff()` and
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+- `rg -n "ULG|handoff|Eshkol|demo-handoff|closure execution|artifact-summary|Current ULG|Next" plan/plan.md plan/tests.md demos/multiscale/plan/plan.md demos/multiscale/plan/log.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `curl -sS -o /dev/null -w 'ulg %{http_code} %{url_effective}\n' 'http://100.86.83.35:5173/'`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- `git diff --check && git status --short --branch`
+- `git diff --stat`
+
+### Validation
+- PASS: changed-file syntax checks completed.
+- PASS: `git diff --check` reported no whitespace errors before doc updates.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `9/9`, including the new ULG demo handoff adapter test.
+- PASS: live whole-packet handoff normalized the ULG packet as
+  `handoff-ready`, found four artifacts, two ready calibration artifacts, and
+  two closure artifacts with transferred bytes.
+- PASS: Multiscale ingested the MoonLab calibration, executed Eshkol
+  `main(0, 0)` from transferred bytes, returned `entryResult = 0`, captured
+  output preview `1048560\n1048544\n`, set `scenarioHandoffReady` and
+  `scenarioClosureHostRuntimeExecutionReady` to `true`, and kept
+  `scenarioScientificReady: false`.
+- PASS: final `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `9/9`.
+- PASS: final `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+  passed `176/176`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings and refreshed the checked-in docs bundle.
+- PASS: final ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: final `git diff --check` reported no whitespace errors.
+
+### Open
+- The packet adapter still uses the ULG demo handoff schema. The next durable
+  PeerCompute path should add content-addressed artifact transfer/provenance and
+  service-hosted relay-safe ingestion.
+- Magnetar scientific readiness remains blocked by Eshkol closure output
+  semantics, calibrated MHD/PIC/radiation/relativity references, and tolerance
+  coverage.

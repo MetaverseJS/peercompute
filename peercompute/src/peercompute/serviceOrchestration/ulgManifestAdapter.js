@@ -5,6 +5,8 @@ export const ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA = 'peercompute.ulg.service-cont
 export const ULG_TASK_CAPSULE_ADAPTER_SCHEMA = 'peercompute.ulg.task-capsule-adapter.v0';
 export const ULG_ARTIFACT_RESULT_SCHEMA = 'peercompute.ulg.artifact-result.v0';
 export const ULG_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.ulg.artifact-summary.v0';
+export const ULG_DEMO_HANDOFF_SCHEMA = 'peercompute.ulg.demo-handoff.v0';
+export const ULG_DEMO_HANDOFF_ADAPTER_SCHEMA = 'peercompute.ulg.demo-handoff-adapter.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -183,6 +185,23 @@ function countWasmEntries(entries = [], kind) {
     : 0;
 }
 
+function normalizeWasmByteArray(input) {
+  if (input == null) return null;
+  if (Array.isArray(input)) {
+    return input.map((byte) => Number(byte) & 0xff);
+  }
+  if (input instanceof ArrayBuffer) {
+    return Array.from(new Uint8Array(input));
+  }
+  if (ArrayBuffer.isView(input)) {
+    return Array.from(new Uint8Array(input.buffer, input.byteOffset, input.byteLength));
+  }
+  if (input?.type === 'Buffer' && Array.isArray(input.data)) {
+    return input.data.map((byte) => Number(byte) & 0xff);
+  }
+  return null;
+}
+
 export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const validationStatus = artifact.validation?.status || artifact.validationStatus || null;
   const parity = artifact.parity && typeof artifact.parity === 'object' ? artifact.parity : null;
@@ -339,3 +358,97 @@ export function createUlgArtifactResult(task = {}, artifact = {}, options = {}) 
 }
 
 export const createUlgV05ArtifactResult = createUlgArtifactResult;
+
+export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
+  if (!entry || typeof entry !== 'object') {
+    throw new Error('ULG demo handoff artifact entry is required');
+  }
+  const artifact = clonePlain(entry.artifact || {});
+  const artifactKind = String(
+    entry.artifactKind
+      || entry.artifactSummary?.artifactKind
+      || artifact.artifactKind
+      || 'artifact'
+  ).trim();
+  const artifactSummary = clonePlain(entry.artifactSummary || summarizeUlgArtifact(artifactKind, artifact));
+  const wasmBytes = normalizeWasmByteArray(entry.wasmBytes);
+  const wasmByteLength = wasmBytes?.length ?? finiteNumberOrNull(entry.wasmByteLength);
+  const sourceService = artifactSummary.sourceService
+    || artifact.sourceService
+    || entry.ref?.sourceService
+    || null;
+  const validationStatus = artifactSummary.validationStatus
+    || artifact.validation?.status
+    || artifact.validationStatus
+    || null;
+  const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
+    ? artifact.runtime.bundleManifest
+    : null;
+  return {
+    schema: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+    index,
+    ref: clonePlain(entry.ref || null),
+    sourceService,
+    artifactKind,
+    artifactSummary,
+    artifact,
+    validationStatus,
+    bundleManifest: clonePlain(bundleManifest),
+    wasmBytes,
+    wasmByteLength,
+    wasmSourceUrl: entry.wasmSourceUrl || null,
+    hasTransferredWasmBytes: artifactKind === 'closure' && Number(wasmByteLength) > 0,
+    magnetarCalibrationReady: artifactSummary.magnetarDipoleIsingReady === true,
+    closureReady: artifactSummary.closureReady === true
+  };
+}
+
+export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
+  if (!handoff || typeof handoff !== 'object') {
+    throw new Error('ULG demo handoff is required');
+  }
+  const artifacts = Array.isArray(handoff.artifacts)
+    ? handoff.artifacts.map((entry, index) => normalizeUlgDemoHandoffArtifact(entry, index))
+    : [];
+  const calibrationArtifacts = artifacts.filter((entry) => (
+    entry.artifactKind === 'quantum-response'
+    && entry.magnetarCalibrationReady
+  ));
+  const closureArtifacts = artifacts.filter((entry) => (
+    entry.artifactKind === 'closure'
+    && entry.closureReady
+  ));
+  const closureArtifactsWithBytes = closureArtifacts.filter((entry) => entry.hasTransferredWasmBytes);
+  const blockers = [];
+  if (calibrationArtifacts.length === 0) {
+    blockers.push('moonlab-magnetar-calibration-summary-missing');
+  }
+  if (closureArtifacts.length === 0) {
+    blockers.push('eshkol-closure-bundle-summary-missing');
+  }
+  if (options.requireClosureWasmBytes !== false && closureArtifactsWithBytes.length === 0) {
+    blockers.push('eshkol-closure-wasm-bytes-missing');
+  }
+  const acceptedSourceSchema = handoff.schema === ULG_DEMO_HANDOFF_SCHEMA;
+  if (!acceptedSourceSchema) {
+    blockers.push('ulg-demo-handoff-schema-unrecognized');
+  }
+  return {
+    schema: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+    sourceSchema: handoff.schema || null,
+    acceptedSourceSchema,
+    createdAt: handoff.createdAt || null,
+    receivedAt: options.receivedAt || new Date().toISOString(),
+    declaredArtifactCount: finiteNumberOrNull(handoff.artifactCount),
+    artifactCount: artifacts.length,
+    artifacts,
+    calibrationArtifacts,
+    closureArtifacts,
+    closureArtifactsWithBytes,
+    readyCalibrationArtifact: calibrationArtifacts[0] || null,
+    readyClosureArtifact: closureArtifactsWithBytes[0] || closureArtifacts[0] || null,
+    status: blockers.length === 0 ? 'handoff-ready' : 'handoff-pending',
+    ready: blockers.length === 0,
+    blockers
+  };
+}

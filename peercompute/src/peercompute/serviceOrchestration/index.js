@@ -20,6 +20,8 @@ export {
 export {
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
+  ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+  ULG_DEMO_HANDOFF_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_MANIFEST_ADAPTER_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
@@ -30,6 +32,8 @@ export {
   adaptUlgV05TaskCapsule,
   createUlgArtifactResult,
   createUlgV05ArtifactResult,
+  normalizeUlgDemoHandoff,
+  normalizeUlgDemoHandoffArtifact,
   normalizeUlgArtifactOutputs,
   normalizeUlgServiceManifest,
   normalizeUlgTaskCapsule,

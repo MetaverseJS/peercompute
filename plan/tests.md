@@ -656,6 +656,9 @@
 - Containernet IPv6 failure-diagnostics expectation (extended): failed `ipv6-only` payloads should also include `agent_ip6_link`, `agent_ip6_addr`, `router_ip6_neigh_lan`, and `router_ipv6_forwarding`.
 
 ### Multiscale Bottom-Up Qmat Source-Buffer Gate
+- ULG demo handoff packet gate: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG demo handoff adapter'`.
+: expected result is a full pass proving `peercompute.ulg.demo-handoff.v0` normalizes into `peercompute.ulg.demo-handoff-adapter.v0`, classifies ready MoonLab magnetar calibration summaries, ready Eshkol closure summaries, transferred closure WASM bytes, and blocker states for missing calibration or missing transferred bytes. Live browser smoke should use `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` with a packet from `window.__ulgDemo.createPeerComputeHandoff()` and verify `scenarioHandoffReady`, `scenarioClosureHostRuntimeExecutionReady`, and `scenarioScientificReady: false`.
+
 - Focused Node gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'quantum material|qmat|source-buffer|ULG state deltas|molecular closure drives reactive'`.
 : expected result is a full pass with qmat property and response-derivative side-band fields active on molecular conservative source buffers, reactive thermal source-buffer consumers, and SPH material source-buffer consumers while keeping `sourceVectorF32.length === 8`.
 - Focused qmat product-topology gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'molecular dynamics applies qmat Na-water product topology overlay'`.

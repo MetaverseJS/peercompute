@@ -20939,6 +20939,58 @@ User asked whether Infinite Context Coder is being used.
 - ULG remains reachable at `http://100.86.83.35:5173/`.
 - Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
 
+## 2026-06-05 23:38:18 AKDT - ULG demo handoff packet adapter
+
+### Prompt
+- Continued the PeerCompute/ULG/Eshkol/MoonLab implementation plan after the ULG
+  browser demo exported `peercompute.ulg.demo-handoff.v0` packets.
+- Prompt time/date recorded from the local machine: `2026-06-05 23:38:18 AKDT`.
+- Local commits only; no push.
+
+### Actions
+- Added a PeerCompute adapter for the ULG browser demo handoff packet.
+- Added Multiscale APIs to normalize and apply the whole ULG handoff packet in
+  one call, selecting the ready MoonLab calibration and Eshkol closure entries.
+- The whole-packet API executes the Eshkol closure path when transferred WASM
+  bytes are present and otherwise falls back to summary ingest.
+- Updated the demo plan to describe the packet path.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- Root PeerCompute service-orchestration adapter, exports, unit tests, and
+  planning docs.
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- Live Playwright probe from ULG `5173` to Multiscale `5185` using
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- Final ULG/Multiscale endpoint checks and `git diff --check`.
+
+### Test Results
+- PASS: Multiscale main syntax check completed.
+- PASS: service-orchestration regression passed `9/9`.
+- PASS: full Multiscale model suite passed `176/176`.
+- PASS: Multiscale build completed with existing large chunk warnings.
+- PASS: live whole-packet API reported `handoff-ready`, calibration ingest ready,
+  closure ingest ready, Eshkol host-runtime execution ready, `entryResult = 0`,
+  packet `scenarioHandoffReady: true`, packet
+  `scenarioClosureHostRuntimeExecutionReady: true`, and packet
+  `scenarioScientificReady: false`.
+- PASS: final ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: final `git diff --check` reported no whitespace errors.
+
+### Failures / Open Questions
+- The whole-packet path is still a demo handoff adapter. Durable PeerCompute
+  service transfer still needs content addressing, provenance, and relay-safe
+  artifact transport.
+- Scientific magnetar readiness remains blocked by output-semantics/reference
+  validation and tolerance gates.
+
 ## 2026-06-05 23:15:01 AKDT - ULG closure artifact summary execution handoff
 
 ### Prompt
