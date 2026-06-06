@@ -19,9 +19,12 @@ export {
 } from './ComputeManagerServiceAdapter.js';
 export {
   ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
+  ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
+  ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_TASK_SCHEMA,
   UlgHandoffServiceHost,
+  createUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceManifest
 } from './UlgHandoffServiceHost.js';
 export {

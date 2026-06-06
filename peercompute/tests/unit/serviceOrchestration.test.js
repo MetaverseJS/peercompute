@@ -15,6 +15,8 @@ import {
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
   ULG_DEMO_HANDOFF_SCHEMA,
   ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
+  ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
+  ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
   ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
   ULG_HANDOFF_SERVICE_TASK_SCHEMA,
@@ -30,6 +32,7 @@ import {
   adaptUlgV05ComputeServiceManifest,
   adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
+  createUlgHandoffServiceDispatchPlan,
   createUlgHandoffServiceEnvelope,
   createUlgHandoffServiceManifest,
   createUlgV05ArtifactResult,
@@ -1438,6 +1441,144 @@ test('ULG handoff service host stores durable envelopes through WorkerSupervisor
   assert.equal(telemetry.services[0].contract.schema, ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA);
   assert.equal(telemetry.artifacts[0].ref.uri, result.artifactRef.uri);
   assert.equal(telemetry.tasks[0].artifactRef.uri, result.artifactRef.uri);
+});
+
+test('ULG handoff service host dispatches envelope refs to Eshkol and MoonLab executors', async () => {
+  const handoff = {
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    createdAt: '2026-06-06T15:20:00.000Z',
+    artifactCount: 2,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://moonlab-calibration',
+        artifactHash: 'sha256:moonlab-calibration-artifact',
+        sourceService: 'moonlab'
+      },
+      artifactKind: 'quantum-response',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'quantum-response',
+        sourceService: 'moonlab',
+        magnetarDipoleIsingReady: true,
+        magnetarDipoleIsingStatus: 'pass',
+        magnetarDipoleIsingParityStatus: 'pass',
+        magnetarDipoleIsingGroundState: '000'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://eshkol-closure',
+        artifactHash: 'sha256:eshkol-closure-artifact',
+        sourceService: 'eshkol'
+      },
+      artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'descriptor-bound',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+        closureOutputSemanticsReady: true
+      },
+      artifact: {
+        closureId: 'eshkol:magnetar-closure-descriptor',
+        sourceService: 'eshkol'
+      },
+      wasmBytes: [0, 97, 115, 109],
+      wasmByteLength: 4
+    }]
+  };
+  const serviceIds = {
+    eshkol: 'eshkol-ulg-fixture',
+    moonlab: 'moonlab-ulg-fixture'
+  };
+  const envelope = createUlgHandoffServiceEnvelope(handoff, {
+    receivedAt: '2026-06-06T15:20:01.000Z'
+  });
+  const directPlan = createUlgHandoffServiceDispatchPlan(envelope, { serviceIds });
+
+  assert.equal(directPlan.schema, ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA);
+  assert.equal(directPlan.status, 'dispatch-ready');
+  assert.equal(directPlan.ready, true);
+  assert.equal(directPlan.dispatchCount, 2);
+  assert.deepEqual(directPlan.serviceIds, ['moonlab-ulg-fixture', 'eshkol-ulg-fixture']);
+  assert.deepEqual(directPlan.taskKinds, [
+    'moonlab.ulg.quantum-response.ingest',
+    'eshkol.ulg.closure-artifact.ingest'
+  ]);
+  assert.equal(directPlan.dispatches[0].serviceId, 'moonlab-ulg-fixture');
+  assert.equal(directPlan.dispatches[0].artifactRefUri, 'artifact://moonlab-calibration');
+  assert.equal(directPlan.dispatches[1].serviceId, 'eshkol-ulg-fixture');
+  assert.equal(directPlan.dispatches[1].hasTransferredWasmBytes, true);
+  assert.equal(directPlan.dispatches[1].task.transfer.wasmByteLength, 4);
+  assert.deepEqual(directPlan.blockers, []);
+
+  const executedDispatches = [];
+  const manifest = normalizeComputeServiceManifest(createUlgHandoffServiceManifest({
+    serviceId: 'ulg-handoff-dispatch-fixture'
+  }));
+  const registry = new ComputeServiceRegistry([manifest]);
+  const artifactCache = new InMemoryArtifactCache(() => 4343);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    artifactCache,
+    workerFactory: (serviceManifest) => new UlgHandoffServiceHost(serviceManifest, {
+      origin: 'http://localhost:5173',
+      url: 'http://localhost:5173/',
+      receivedAt: '2026-06-06T15:20:02.000Z',
+      executeServices: true,
+      serviceIds,
+      serviceExecutor: async ({ dispatch }) => {
+        executedDispatches.push(dispatch);
+        return {
+          schema: 'peercompute.ulg.fixture.service-dispatch-output.v0',
+          dispatchId: dispatch.dispatchId,
+          serviceId: dispatch.serviceId,
+          sourceService: dispatch.sourceService,
+          artifactKind: dispatch.artifactKind,
+          taskKind: dispatch.taskKind,
+          status: 'accepted',
+          ready: true,
+          artifactRefUri: dispatch.artifactRefUri
+        };
+      }
+    })
+  });
+
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'ulg-handoff-dispatch-fixture',
+    taskKind: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    taskId: 'task:ulg-handoff-dispatch',
+    rootTaskId: 'root:ulg-handoff-dispatch',
+    handoff
+  });
+
+  assert.equal(result.schema, ULG_HANDOFF_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.status, 'complete');
+  assert.equal(result.ready, true);
+  assert.equal(result.dispatchPlan.schema, ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA);
+  assert.equal(result.dispatchPlan.status, 'dispatch-ready');
+  assert.equal(result.dispatchPlan.readyDispatchCount, 2);
+  assert.equal(result.dispatchResult.schema, ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA);
+  assert.equal(result.dispatchResult.status, 'executed');
+  assert.equal(result.dispatchResult.executed, true);
+  assert.equal(result.dispatchResult.executedDispatchCount, 2);
+  assert.equal(result.dispatchResult.acceptedDispatchCount, 2);
+  assert.equal(result.dispatchResult.failedDispatchCount, 0);
+  assert.deepEqual(result.dispatchResult.blockers, []);
+  assert.equal(executedDispatches.length, 2);
+  assert.equal(executedDispatches[0].serviceId, 'moonlab-ulg-fixture');
+  assert.equal(executedDispatches[1].serviceId, 'eshkol-ulg-fixture');
+  assert.equal(executedDispatches[1].task.transfer.hasTransferredWasmBytes, true);
+  assert.equal(result.dispatchResult.results[1].output.artifactRefUri, 'artifact://eshkol-closure');
+  assert.equal(result.artifact.dispatchPlan.schema, ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA);
+  assert.equal(result.artifact.dispatchResult.status, 'executed');
+
+  const cached = await artifactCache.get(result.artifactRef);
+  assert.equal(cached.dispatchPlan.status, 'dispatch-ready');
+  assert.equal(cached.dispatchResult.executedDispatchCount, 2);
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

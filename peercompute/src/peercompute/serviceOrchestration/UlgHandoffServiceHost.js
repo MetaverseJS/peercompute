@@ -6,6 +6,13 @@ import {
 export const ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA = 'peercompute.ulg.handoff-service-adapter.v0';
 export const ULG_HANDOFF_SERVICE_TASK_SCHEMA = 'peercompute.ulg.handoff-service-task.v0';
 export const ULG_HANDOFF_SERVICE_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-result.v0';
+export const ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-plan.v0';
+export const ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA = 'peercompute.ulg.handoff-service-dispatch-result.v0';
+
+const DEFAULT_DISPATCH_SERVICE_IDS = Object.freeze({
+  eshkol: 'eshkol-ulg-fixture',
+  moonlab: 'moonlab-ulg-fixture'
+});
 
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -21,6 +28,190 @@ function scheduleMicrotask(fn) {
 
 function normalizeRootTaskId(task = {}) {
   return String(task.rootTaskId || task.taskId || task.id || `ulg-handoff-${Date.now()}`).trim();
+}
+
+function stringOrNull(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
+}
+
+function normalizeDispatchServiceIds(options = {}) {
+  return {
+    ...DEFAULT_DISPATCH_SERVICE_IDS,
+    ...clonePlain(options.serviceIds || options.serviceIdBySource || {})
+  };
+}
+
+function normalizeSourceKey(artifactRef = {}) {
+  const sourceService = String(artifactRef.sourceService || '').trim().toLowerCase();
+  if (sourceService.includes('eshkol') || artifactRef.artifactKind === 'closure') return 'eshkol';
+  if (sourceService.includes('moonlab') || artifactRef.artifactKind === 'quantum-response') return 'moonlab';
+  return sourceService || null;
+}
+
+function inferDispatchTaskKind(artifactRef = {}) {
+  if (artifactRef.artifactKind === 'closure' || normalizeSourceKey(artifactRef) === 'eshkol') {
+    return artifactRef.closureDescriptorReady === true && artifactRef.hasTransferredWasmBytes !== true
+      ? 'eshkol.ulg.closure.descriptor-bind'
+      : 'eshkol.ulg.closure-artifact.ingest';
+  }
+  if (artifactRef.artifactKind === 'quantum-response' || normalizeSourceKey(artifactRef) === 'moonlab') {
+    return 'moonlab.ulg.quantum-response.ingest';
+  }
+  return 'ulg.artifact.ingest';
+}
+
+function createArtifactDispatchTask(envelope = {}, artifactRef = {}, dispatch = {}) {
+  return {
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    taskId: dispatch.dispatchId,
+    rootTaskId: dispatch.dispatchId,
+    taskKind: dispatch.taskKind,
+    serviceId: dispatch.serviceId,
+    handoffId: envelope.handoffId || null,
+    envelopeSchema: envelope.schema || null,
+    artifactRef: {
+      index: artifactRef.index ?? null,
+      uri: artifactRef.artifactRefUri || null,
+      artifactHash: artifactRef.artifactRefHash || null,
+      contentHash: artifactRef.artifactContentHash || null,
+      sourceService: artifactRef.sourceService || null,
+      artifactKind: artifactRef.artifactKind || null
+    },
+    transfer: {
+      relaySafe: artifactRef.relaySafe === true,
+      contentAddressed: artifactRef.contentAddressed === true,
+      digestAddressed: artifactRef.digestAddressed === true,
+      hasTransferredWasmBytes: artifactRef.hasTransferredWasmBytes === true,
+      wasmByteLength: artifactRef.wasmByteLength ?? null,
+      wasmSha256: artifactRef.wasmSha256 || null,
+      wasmTransferMode: artifactRef.wasmTransferMode || null,
+      wasmSourceUrl: artifactRef.wasmSourceUrl || null
+    }
+  };
+}
+
+function normalizeDispatchOutput(output, dispatch = {}) {
+  const body = output && typeof output === 'object' ? clonePlain(output) : { value: output };
+  const blockers = uniqueStrings(Array.isArray(body.blockers) ? body.blockers : []);
+  const status = stringOrNull(body.status) || 'accepted';
+  const ready = body.ready !== false && status !== 'error' && status !== 'blocked' && blockers.length === 0;
+  return {
+    dispatchId: dispatch.dispatchId,
+    serviceId: dispatch.serviceId,
+    sourceService: dispatch.sourceService,
+    artifactKind: dispatch.artifactKind,
+    taskKind: dispatch.taskKind,
+    status,
+    ready,
+    blockers,
+    output: body
+  };
+}
+
+export function createUlgHandoffServiceDispatchPlan(envelope = {}, options = {}) {
+  const normalizedEnvelope = envelope?.schema === ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA
+    ? clonePlain(envelope)
+    : createUlgHandoffServiceEnvelope(envelope, options);
+  const serviceIds = normalizeDispatchServiceIds(options);
+  const artifactRefs = Array.isArray(normalizedEnvelope.artifactRefs) ? normalizedEnvelope.artifactRefs : [];
+  const dispatches = artifactRefs.map((artifactRef, index) => {
+    const sourceKey = normalizeSourceKey(artifactRef);
+    const serviceId = stringOrNull(serviceIds[sourceKey] || artifactRef.sourceService);
+    const taskKind = inferDispatchTaskKind(artifactRef);
+    const dispatchId = `${normalizedEnvelope.handoffId || 'ulg-handoff'}:dispatch:${index}`;
+    const blockers = uniqueStrings([
+      ...(Array.isArray(artifactRef.blockers) ? artifactRef.blockers : []),
+      serviceId ? null : 'ulg-dispatch-service-missing',
+      artifactRef.artifactRefUri ? null : 'ulg-dispatch-artifact-ref-uri-missing',
+      artifactRef.contentAddressed === true ? null : 'ulg-dispatch-artifact-not-content-addressed',
+      artifactRef.relaySafe === true ? null : 'ulg-dispatch-artifact-not-relay-safe',
+      artifactRef.ready === true ? null : 'ulg-dispatch-artifact-not-ready'
+    ]);
+    const dispatch = {
+      dispatchId,
+      handoffId: normalizedEnvelope.handoffId || null,
+      index,
+      serviceId,
+      sourceService: artifactRef.sourceService || sourceKey,
+      sourceKey,
+      artifactKind: artifactRef.artifactKind || 'artifact',
+      taskKind,
+      artifactRefUri: artifactRef.artifactRefUri || null,
+      artifactRefHash: artifactRef.artifactRefHash || null,
+      artifactContentHash: artifactRef.artifactContentHash || null,
+      contentAddressed: artifactRef.contentAddressed === true,
+      digestAddressed: artifactRef.digestAddressed === true,
+      relaySafe: artifactRef.relaySafe === true,
+      hasTransferredWasmBytes: artifactRef.hasTransferredWasmBytes === true,
+      wasmByteLength: artifactRef.wasmByteLength ?? null,
+      wasmSha256: artifactRef.wasmSha256 || null,
+      wasmTransferMode: artifactRef.wasmTransferMode || null,
+      wasmSourceUrl: artifactRef.wasmSourceUrl || null,
+      validationStatus: artifactRef.validationStatus || null,
+      magnetarCalibrationReady: artifactRef.magnetarCalibrationReady === true,
+      closureReady: artifactRef.closureReady === true,
+      closureDescriptorReady: artifactRef.closureDescriptorReady === true,
+      closureOutputSemanticsReady: artifactRef.closureOutputSemanticsReady === true,
+      blockers,
+      ready: blockers.length === 0
+    };
+    return {
+      ...dispatch,
+      task: createArtifactDispatchTask(normalizedEnvelope, artifactRef, dispatch)
+    };
+  });
+  const dispatchBlockers = uniqueStrings(dispatches.flatMap((entry) => entry.blockers || []));
+  const blockers = uniqueStrings([
+    normalizedEnvelope.ready === true ? null : 'ulg-handoff-service-envelope-not-ready',
+    ...(Array.isArray(normalizedEnvelope.blockers) ? normalizedEnvelope.blockers : []),
+    artifactRefs.length > 0 ? null : 'ulg-handoff-dispatch-artifacts-missing',
+    ...dispatchBlockers
+  ]);
+  const readyDispatchCount = dispatches.filter((entry) => entry.ready).length;
+  const ready = normalizedEnvelope.ready === true
+    && dispatches.length > 0
+    && readyDispatchCount === dispatches.length
+    && blockers.length === 0;
+  return {
+    schema: ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
+    handoffId: normalizedEnvelope.handoffId || null,
+    envelopeSchema: normalizedEnvelope.schema || null,
+    envelopeStatus: normalizedEnvelope.status || null,
+    createdAt: options.createdAt || normalizedEnvelope.receivedAt || new Date().toISOString(),
+    dispatchCount: dispatches.length,
+    readyDispatchCount,
+    blockedDispatchCount: dispatches.length - readyDispatchCount,
+    serviceIds: uniqueStrings(dispatches.map((entry) => entry.serviceId)),
+    taskKinds: uniqueStrings(dispatches.map((entry) => entry.taskKind)),
+    dispatches,
+    status: ready ? 'dispatch-ready' : 'dispatch-blocked',
+    ready,
+    blockers
+  };
+}
+
+function createNotExecutedDispatchResult(dispatchPlan = {}) {
+  return {
+    schema: ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
+    handoffId: dispatchPlan.handoffId || null,
+    planSchema: dispatchPlan.schema || null,
+    status: 'not-executed',
+    executed: false,
+    ready: dispatchPlan.ready === true,
+    dispatchCount: dispatchPlan.dispatchCount || 0,
+    executedDispatchCount: 0,
+    acceptedDispatchCount: 0,
+    failedDispatchCount: 0,
+    blockedDispatchCount: dispatchPlan.blockedDispatchCount || 0,
+    results: [],
+    blockers: []
+  };
 }
 
 function createDefaultManifest(options = {}) {
@@ -39,7 +230,7 @@ function createDefaultManifest(options = {}) {
       allowedModules: [],
       sameOriginOnly: true
     },
-    capabilities: ['ulg.handoff.normalize', 'ulg.handoff.relay-envelope'],
+    capabilities: ['ulg.handoff.normalize', 'ulg.handoff.relay-envelope', 'ulg.handoff.dispatch-plan'],
     taskKinds: [ULG_HANDOFF_SERVICE_TASK_SCHEMA, 'peercompute.ulg.handoff.service'],
     abi: {
       inputEnvelopeSchema: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
@@ -49,7 +240,12 @@ function createDefaultManifest(options = {}) {
       schema: ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
       serviceId,
       inputSchemas: ['peercompute.ulg.demo-handoff.v0', ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA],
-      outputSchemas: [ULG_HANDOFF_SERVICE_RESULT_SCHEMA, ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA],
+      outputSchemas: [
+        ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
+        ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
+        ULG_HANDOFF_SERVICE_DISPATCH_PLAN_SCHEMA,
+        ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA
+      ],
       relaySafeArtifactsRequired: true,
       contentAddressedArtifactsRequired: true
     },
@@ -59,7 +255,8 @@ function createDefaultManifest(options = {}) {
     },
     metadata: {
       adapter: ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
-      domain: 'ulg-handoff'
+      domain: 'ulg-handoff',
+      dispatchServices: clonePlain(options.dispatchServices || DEFAULT_DISPATCH_SERVICE_IDS)
     }
   };
 }
@@ -126,7 +323,7 @@ export class UlgHandoffServiceHost {
     this.closed = true;
   }
 
-  #runTask(task = {}) {
+  async #runTask(task = {}) {
     const rootTaskId = normalizeRootTaskId(task);
     if (this.closed) return;
     this.#emitMessage({
@@ -139,7 +336,9 @@ export class UlgHandoffServiceHost {
 
     try {
       const envelope = this.#createEnvelope(task);
-      const result = this.#createResult(task, envelope, rootTaskId);
+      const dispatchPlan = this.#createDispatchPlan(task, envelope);
+      const dispatchResult = await this.#createDispatchResult(task, envelope, dispatchPlan);
+      const result = this.#createResult(task, envelope, rootTaskId, dispatchPlan, dispatchResult);
       this.#emitMessage({
         type: 'task-status',
         rootTaskId,
@@ -178,8 +377,120 @@ export class UlgHandoffServiceHost {
     });
   }
 
-  #createResult(task = {}, envelope = {}, rootTaskId) {
+  #createDispatchPlan(task = {}, envelope = {}) {
+    return createUlgHandoffServiceDispatchPlan(envelope, {
+      ...this.options,
+      ...(task.options || {}),
+      serviceIds: task.serviceIds
+        || task.serviceIdBySource
+        || task.options?.serviceIds
+        || task.options?.serviceIdBySource
+        || this.options.serviceIds
+        || this.options.serviceIdBySource
+    });
+  }
+
+  async #createDispatchResult(task = {}, envelope = {}, dispatchPlan = {}) {
+    const shouldExecute = task.executeServices === true
+      || task.options?.executeServices === true
+      || this.options.executeServices === true;
+    if (!shouldExecute) {
+      return createNotExecutedDispatchResult(dispatchPlan);
+    }
+    if (dispatchPlan.ready !== true) {
+      return {
+        schema: ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
+        handoffId: dispatchPlan.handoffId || envelope.handoffId || null,
+        planSchema: dispatchPlan.schema || null,
+        status: 'blocked',
+        executed: false,
+        ready: false,
+        dispatchCount: dispatchPlan.dispatchCount || 0,
+        executedDispatchCount: 0,
+        acceptedDispatchCount: 0,
+        failedDispatchCount: 0,
+        blockedDispatchCount: dispatchPlan.blockedDispatchCount || 0,
+        results: [],
+        blockers: clonePlain(dispatchPlan.blockers || [])
+      };
+    }
+    const executor = task.serviceExecutor || task.options?.serviceExecutor || this.options.serviceExecutor;
+    if (typeof executor !== 'function') {
+      return {
+        schema: ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
+        handoffId: dispatchPlan.handoffId || envelope.handoffId || null,
+        planSchema: dispatchPlan.schema || null,
+        status: 'blocked',
+        executed: false,
+        ready: false,
+        dispatchCount: dispatchPlan.dispatchCount || 0,
+        executedDispatchCount: 0,
+        acceptedDispatchCount: 0,
+        failedDispatchCount: 0,
+        blockedDispatchCount: dispatchPlan.blockedDispatchCount || 0,
+        results: [],
+        blockers: ['ulg-handoff-service-executor-missing']
+      };
+    }
+    const results = [];
+    for (const dispatch of dispatchPlan.dispatches || []) {
+      try {
+        const output = await executor({
+          dispatch: clonePlain(dispatch),
+          dispatchPlan: clonePlain(dispatchPlan),
+          envelope: clonePlain(envelope),
+          manifest: clonePlain(this.manifest),
+          task: clonePlain(task)
+        });
+        results.push(normalizeDispatchOutput(output, dispatch));
+      } catch (error) {
+        results.push({
+          dispatchId: dispatch.dispatchId,
+          serviceId: dispatch.serviceId,
+          sourceService: dispatch.sourceService,
+          artifactKind: dispatch.artifactKind,
+          taskKind: dispatch.taskKind,
+          status: 'error',
+          ready: false,
+          blockers: ['ulg-dispatch-executor-error'],
+          error: error?.message || String(error)
+        });
+      }
+    }
+    const failedDispatchCount = results.filter((entry) => entry.ready !== true).length;
+    const acceptedDispatchCount = results.filter((entry) => entry.ready === true).length;
+    const blockers = uniqueStrings(results.flatMap((entry) => [
+      ...(Array.isArray(entry.blockers) ? entry.blockers : []),
+      entry.error ? `ulg-dispatch-executor-error:${entry.dispatchId}` : null
+    ]));
+    const ready = failedDispatchCount === 0
+      && acceptedDispatchCount === dispatchPlan.readyDispatchCount
+      && blockers.length === 0;
+    return {
+      schema: ULG_HANDOFF_SERVICE_DISPATCH_RESULT_SCHEMA,
+      handoffId: dispatchPlan.handoffId || envelope.handoffId || null,
+      planSchema: dispatchPlan.schema || null,
+      status: ready ? 'executed' : 'partial',
+      executed: true,
+      ready,
+      dispatchCount: dispatchPlan.dispatchCount || 0,
+      executedDispatchCount: results.length,
+      acceptedDispatchCount,
+      failedDispatchCount,
+      blockedDispatchCount: 0,
+      results,
+      blockers
+    };
+  }
+
+  #createResult(task = {}, envelope = {}, rootTaskId, dispatchPlan = {}, dispatchResult = {}) {
     const taskKind = task.taskKind || task.kind || ULG_HANDOFF_SERVICE_TASK_SCHEMA;
+    const dispatchBlocked = dispatchResult?.status === 'blocked' || dispatchResult?.status === 'partial';
+    const blockers = uniqueStrings([
+      ...(Array.isArray(envelope.blockers) ? envelope.blockers : []),
+      ...(Array.isArray(dispatchPlan.blockers) ? dispatchPlan.blockers : []),
+      ...(Array.isArray(dispatchResult.blockers) ? dispatchResult.blockers : [])
+    ]);
     const artifact = {
       schema: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
       artifactKind: 'ulg-handoff-service-envelope',
@@ -188,8 +499,10 @@ export class UlgHandoffServiceHost {
       handoffId: envelope.handoffId,
       ready: envelope.ready === true,
       status: envelope.status,
-      blockers: clonePlain(envelope.blockers || []),
+      blockers,
       envelope: clonePlain(envelope),
+      dispatchPlan: clonePlain(dispatchPlan),
+      dispatchResult: clonePlain(dispatchResult),
       provenance: clonePlain(envelope.provenance || null)
     };
     return {
@@ -199,10 +512,12 @@ export class UlgHandoffServiceHost {
       taskKind,
       taskId: task.taskId || rootTaskId,
       rootTaskId,
-      status: envelope.ready ? 'complete' : 'pending',
-      ready: envelope.ready === true,
-      blockerCount: envelope.blockers?.length || 0,
+      status: envelope.ready && !dispatchBlocked ? 'complete' : 'pending',
+      ready: envelope.ready === true && !dispatchBlocked,
+      blockerCount: blockers.length,
       envelope,
+      dispatchPlan,
+      dispatchResult,
       artifact
     };
   }
