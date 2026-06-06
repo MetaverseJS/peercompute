@@ -838,6 +838,29 @@
   and no leftover `runtime-p2p` or `peercompute-relay-go` process/listener.
 
 ### Magnetar runtime evidence requirements gate
+- Descriptor adapter summary gate:
+  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only Eshkol closures|descriptor probe blocks interpolation fixture scientific overclaims|executes only explicit smoke output semantics'`.
+: expected result is a full pass proving descriptor-only Eshkol magnetar closure
+  handoffs accept tensor/product-topology/runtime-binding metadata through
+  `peercompute.ulg.handoff-supervisor-service-summary.v0`, report descriptor
+  scientific execution and validation as false, keep runtime status
+  `declared-not-executed`, accept explicit `closureTensorRuntimeContract`
+  metadata only when its hash/ABI/tensor descriptor/interpolation/sample-shape
+  gates match, block interpolation-table and tensor-runtime scientific
+  overclaims, and keep explicit smoke output semantics gated separately from
+  descriptor metadata.
+- Live browser adapter-summary gate: on
+  `https://100.86.83.35:5185/?scenario=magnetar`, call
+  `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe()` with a synthetic
+  descriptor handoff carrying `eshkol.ulg.magnetar-closure-descriptor.v0`.
+: expected result is `dispatch-adapters-ready`, an Eshkol
+  `peercompute.multiscale.ulg-dispatch-service-result-summary.v0` entry with
+  `descriptorTensorContract`, `descriptorProductTopologyBinding`,
+  `descriptorTensorRuntimeContract`, and `descriptorRuntimeBinding`,
+  `descriptorTensorRuntimeContract.ready = true`,
+  `descriptorRuntimeDeclaredNotExecuted = true`, and no host/scientific
+  execution claim.
+
 - Focused Node gate:
   `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence requirements|runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|magnetar scenario records proxy runtime evidence|magnetar scenario creates bounded proxy runtime evidence manifest|magnetar scientific runtime gate accepts explicit validated runtime evidence'`.
 : expected result is a full pass proving

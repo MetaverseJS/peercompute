@@ -1709,6 +1709,9 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
     const probe = serviceResult.probe && typeof serviceResult.probe === 'object'
       ? serviceResult.probe
       : {};
+    const descriptorProbe = probe.descriptorProbe && typeof probe.descriptorProbe === 'object'
+      ? probe.descriptorProbe
+      : null;
     const hostRuntimeExecution = probe.hostRuntimeExecution && typeof probe.hostRuntimeExecution === 'object'
       ? probe.hostRuntimeExecution
       : null;
@@ -1727,6 +1730,11 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
       probeStatus: serviceSummary?.probeStatus || probe.status || null,
       probeReady: serviceSummary?.probeReady ?? (typeof probe.ready === 'boolean' ? probe.ready : null),
       probeMode: serviceSummary?.probeMode || probe.probeMode || null,
+      descriptorProbe: cloneJson(descriptorProbe),
+      descriptorTensorContract: cloneJson(descriptorProbe?.tensorContract || null),
+      descriptorProductTopologyBinding: cloneJson(descriptorProbe?.productTopologyBinding || null),
+      descriptorTensorRuntimeContract: cloneJson(descriptorProbe?.tensorRuntimeContract || null),
+      descriptorRuntimeBinding: cloneJson(descriptorProbe?.runtimeBinding || null),
       hostRuntimeProbe: cloneJson(probe.hostRuntimeProbe || null),
       hostRuntimeExecution: cloneJson(hostRuntimeExecution),
       outputSemanticsValidation: cloneJson(hostRuntimeExecution?.outputSemanticsValidation || null)

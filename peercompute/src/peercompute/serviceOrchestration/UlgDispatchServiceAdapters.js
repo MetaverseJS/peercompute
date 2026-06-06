@@ -12,6 +12,7 @@ const ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.ulg.eshkol-host-runtim
 const ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.ulg.eshkol-output-semantics-validation.v0';
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-interpolation-table.v0';
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
+const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
 const ESHKOL_INTERPOLATION_TABLE_STATUSES = new Set(['declared-not-computed', 'computed-fixture']);
 
 const DEFAULT_ADAPTERS = Object.freeze({
@@ -107,6 +108,20 @@ function arraysEqual(left = [], right = []) {
     && Array.isArray(right)
     && left.length === right.length
     && left.every((value, index) => value === right[index]);
+}
+
+function arrayProduct(values = []) {
+  return Array.isArray(values) && values.length > 0
+    ? values.reduce((product, value) => product * Number(value), 1)
+    : null;
+}
+
+function expectedTensorByteLength(descriptor = {}) {
+  const elementCount = arrayProduct(descriptor.shape);
+  if (!Number.isFinite(elementCount) || elementCount <= 0) return null;
+  if (descriptor.dtype === 'f64') return elementCount * 8;
+  if (descriptor.dtype === 'f32') return elementCount * 4;
+  return null;
 }
 
 function wasmImportKey(entry = {}) {
@@ -842,6 +857,10 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
   const interpolationTable = objectOrNull(binding?.ulgInterpolationTable);
   const moonlabSuite = objectOrNull(binding?.moonlabNormalizedReferenceSuite);
   const productTopologyBinding = objectOrNull(binding?.peercomputeProductTopologyBinding);
+  const tensorRuntimeContract = objectOrNull(binding?.closureTensorRuntimeContract);
+  const tensorRuntimeInterpolationTable = objectOrNull(tensorRuntimeContract?.interpolationTable);
+  const tensorRuntimeSampleShapeValidation = objectOrNull(tensorRuntimeContract?.sampleShapeValidation);
+  const tensorRuntimeDescriptors = objectOrNull(tensorRuntimeContract?.tensorDescriptors) || {};
   const runtimeBinding = objectOrNull(binding?.runtimeBinding);
   const artifactInputIds = idsFromDescriptors(artifact.inputs);
   const artifactOutputIds = idsFromDescriptors(artifact.outputs);
@@ -851,6 +870,8 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
   const tableOutputIds = Array.isArray(interpolationTable?.outputTensorIds) ? [...interpolationTable.outputTensorIds] : [];
   const productInputIds = Array.isArray(productTopologyBinding?.inputTensorIds) ? [...productTopologyBinding.inputTensorIds] : [];
   const productOutputIds = Array.isArray(productTopologyBinding?.outputTensorIds) ? [...productTopologyBinding.outputTensorIds] : [];
+  const tensorRuntimeInputIds = Array.isArray(tensorRuntimeContract?.inputTensorIds) ? [...tensorRuntimeContract.inputTensorIds] : [];
+  const tensorRuntimeOutputIds = Array.isArray(tensorRuntimeContract?.outputTensorIds) ? [...tensorRuntimeContract.outputTensorIds] : [];
   const descriptorEntryExport = descriptor.entryExport || null;
   const moduleEntryExport = moduleProbe.entryExport || summary.closureEntryExport || artifact.execution?.entryExport || null;
   const tensorContractMatches = arraysEqual(artifactInputIds, tensorInputIds)
@@ -872,6 +893,26 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
   const tableSamples = Array.isArray(interpolationTable?.samples) ? interpolationTable.samples.filter(objectOrNull) : [];
   const tableSampleCount = finiteNumberOrNull(interpolationTable?.sampleCount);
   const interpolationTableComputedFixture = interpolationTable?.status === 'computed-fixture';
+  const tensorRuntimeDescriptorIds = [...tensorRuntimeInputIds, ...tensorRuntimeOutputIds];
+  const tensorRuntimeDescriptorsReady = tensorRuntimeDescriptorIds.length > 0
+    && tensorRuntimeDescriptorIds.every((id) => {
+      const descriptorEntry = objectOrNull(tensorRuntimeDescriptors[id]);
+      const expectedDirection = tensorRuntimeInputIds.includes(id) ? 'input' : 'output';
+      const expectedByteLength = expectedTensorByteLength(descriptorEntry || {});
+      return descriptorEntry
+        && descriptorEntry.direction === expectedDirection
+        && descriptorEntry.dtype === 'f64'
+        && descriptorEntry.layout === 'dense-row-major'
+        && Number.isInteger(descriptorEntry.componentCount)
+        && descriptorEntry.componentCount > 0
+        && expectedByteLength === descriptorEntry.byteLength;
+    });
+  const tensorRuntimeMatchesTensorContract = arraysEqual(tensorRuntimeInputIds, tensorInputIds)
+    && arraysEqual(tensorRuntimeOutputIds, tensorOutputIds);
+  const tensorRuntimeMatchesInterpolationTable = tensorRuntimeInterpolationTable?.id === interpolationTable?.id
+    && tensorRuntimeInterpolationTable?.schema === interpolationTable?.schema
+    && tensorRuntimeInterpolationTable?.contentHash === interpolationTable?.contentHash
+    && finiteNumberOrNull(tensorRuntimeInterpolationTable?.sampleCount) === tableSampleCount;
 
   if (summary.closureDescriptorSchema && descriptor.schema !== summary.closureDescriptorSchema) {
     blockers.push('eshkol-descriptor-schema-summary-mismatch');
@@ -941,6 +982,46 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
     }
     if (productTopologyBinding?.scientificValidation !== false) {
       blockers.push('eshkol-descriptor-product-topology-scientific-validation-overstated');
+    }
+    if (!tensorRuntimeContract) {
+      blockers.push('eshkol-descriptor-tensor-runtime-contract-missing');
+    } else {
+      if (tensorRuntimeContract.schema !== ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA) {
+        blockers.push('eshkol-descriptor-tensor-runtime-contract-schema-mismatch');
+      }
+      if (tensorRuntimeContract.status !== 'declared-fixture-contract') {
+        blockers.push('eshkol-descriptor-tensor-runtime-contract-status-unsupported');
+      }
+      if (!canonicalSha256Digest(tensorRuntimeContract.contractHash)) {
+        blockers.push('eshkol-descriptor-tensor-runtime-contract-hash-invalid');
+      }
+      if (tensorRuntimeContract.entryExport !== descriptorEntryExport) {
+        blockers.push('eshkol-descriptor-tensor-runtime-entry-export-mismatch');
+      }
+      if (tensorRuntimeContract.coordinateSystem !== tensorContract?.coordinateSystem) {
+        blockers.push('eshkol-descriptor-tensor-runtime-coordinate-system-mismatch');
+      }
+      if (!tensorRuntimeMatchesTensorContract) {
+        blockers.push('eshkol-descriptor-tensor-runtime-ids-mismatch');
+      }
+      if (!tensorRuntimeDescriptorsReady) {
+        blockers.push('eshkol-descriptor-tensor-runtime-descriptors-invalid');
+      }
+      if (!tensorRuntimeMatchesInterpolationTable) {
+        blockers.push('eshkol-descriptor-tensor-runtime-interpolation-table-mismatch');
+      }
+      if (tensorRuntimeSampleShapeValidation?.schema !== 'eshkol.ulg.tensor-sample-shape-validation.v0'
+        || tensorRuntimeSampleShapeValidation?.status !== 'pass'
+        || finiteNumberOrNull(tensorRuntimeSampleShapeValidation?.validatedSampleCount) !== tableSampleCount
+        || tensorRuntimeSampleShapeValidation?.scientificValidation !== false) {
+        blockers.push('eshkol-descriptor-tensor-runtime-sample-shape-validation-not-ready');
+      }
+      if (tensorRuntimeContract.runtimeStatus !== 'declared-not-executed') {
+        blockers.push('eshkol-descriptor-tensor-runtime-overstates-execution');
+      }
+      if (tensorRuntimeContract.scientificValidation !== false || tensorRuntimeContract.fullPhysicsValidation !== false) {
+        blockers.push('eshkol-descriptor-tensor-runtime-scientific-validation-overstated');
+      }
     }
     if (runtimeBinding?.runtimeStatus && runtimeBinding.runtimeStatus !== 'declared-not-executed') {
       blockers.push('eshkol-descriptor-runtime-overstates-execution');
@@ -1032,6 +1113,36 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       inputTensorIds: productInputIds,
       outputTensorIds: productOutputIds,
       matchesTensorContract: productTopologyMatches
+    } : null,
+    tensorRuntimeContract: tensorRuntimeContract ? {
+      schema: tensorRuntimeContract.schema || null,
+      contractId: tensorRuntimeContract.contractId || null,
+      status: tensorRuntimeContract.status || null,
+      ready: blockers.length === 0
+        && tensorRuntimeContract.schema === ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA
+        && tensorRuntimeMatchesTensorContract
+        && tensorRuntimeMatchesInterpolationTable
+        && tensorRuntimeDescriptorsReady,
+      contractHash: tensorRuntimeContract.contractHash || null,
+      runtimeAbi: tensorRuntimeContract.runtimeAbi || null,
+      executionClaim: tensorRuntimeContract.executionClaim || null,
+      entryExport: tensorRuntimeContract.entryExport || null,
+      tensorMemoryModel: tensorRuntimeContract.tensorMemoryModel || null,
+      coordinateSystem: tensorRuntimeContract.coordinateSystem || null,
+      inputTensorIds: tensorRuntimeInputIds,
+      outputTensorIds: tensorRuntimeOutputIds,
+      descriptorCount: tensorRuntimeDescriptorIds.length,
+      descriptorsReady: tensorRuntimeDescriptorsReady,
+      matchesTensorContract: tensorRuntimeMatchesTensorContract,
+      matchesInterpolationTable: tensorRuntimeMatchesInterpolationTable,
+      interpolationTableId: tensorRuntimeInterpolationTable?.id || null,
+      interpolationTableContentHash: tensorRuntimeInterpolationTable?.contentHash || null,
+      interpolationTableSampleCount: finiteNumberOrNull(tensorRuntimeInterpolationTable?.sampleCount),
+      sampleShapeValidationSchema: tensorRuntimeSampleShapeValidation?.schema || null,
+      sampleShapeValidationStatus: tensorRuntimeSampleShapeValidation?.status || null,
+      sampleShapeValidatedSampleCount: finiteNumberOrNull(tensorRuntimeSampleShapeValidation?.validatedSampleCount),
+      scientificValidation: tensorRuntimeContract.scientificValidation === true,
+      fullPhysicsValidation: tensorRuntimeContract.fullPhysicsValidation === true
     } : null,
     runtimeBinding: runtimeBinding ? {
       schema: runtimeBinding.schema || null,
@@ -1269,6 +1380,10 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     descriptorContractReady: probe?.descriptorProbe?.ready === true,
     descriptorContractSchema: probe?.descriptorProbe?.schema || null,
     descriptorContractStatus: probe?.descriptorProbe?.status || null,
+    descriptorTensorRuntimeContractReady: probe?.descriptorProbe?.tensorRuntimeContract?.ready === true,
+    descriptorTensorRuntimeContractSchema: probe?.descriptorProbe?.tensorRuntimeContract?.schema || null,
+    descriptorTensorRuntimeContractStatus: probe?.descriptorProbe?.tensorRuntimeContract?.status || null,
+    descriptorTensorRuntimeContractHash: probe?.descriptorProbe?.tensorRuntimeContract?.contractHash || null,
     hostRuntimeProbeReady: probe?.hostRuntimeProbe?.ready === true,
     hostRuntimeProbeSchema: probe?.hostRuntimeProbe?.schema || null,
     hostRuntimeProbeStatus: probe?.hostRuntimeProbe?.status || null,

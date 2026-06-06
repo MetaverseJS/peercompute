@@ -110,7 +110,7 @@ function createEshkolMagnetarDescriptorArtifact() {
           inputIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
           outputIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
           coordinateSystem: 'normalized-radial-cell',
-          interpolation: 'not-declared'
+          interpolation: 'reduced-fixture-table-contract'
         },
         descriptorBinding: {
           schema: 'eshkol.ulg.magnetar-closure-descriptor-binding.v0',
@@ -199,6 +199,74 @@ function createEshkolMagnetarDescriptorArtifact() {
             outputTensorIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
             status: 'descriptor-bound-not-executed',
             scientificValidation: false
+          },
+          closureTensorRuntimeContract: {
+            schema: 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0',
+            contractId: 'eshkol:magnetar-closure-tensor-runtime-contract:v0',
+            status: 'declared-fixture-contract',
+            runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
+            executionClaim: 'metadata-and-smoke-output-only',
+            entryExport: 'main',
+            tensorMemoryModel: 'host-managed-linear-f64',
+            coordinateSystem: 'normalized-radial-cell',
+            inputTensorIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
+            outputTensorIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
+            tensorDescriptors: {
+              'magnetar-state-vector': {
+                direction: 'input',
+                dtype: 'f64',
+                shape: [8],
+                layout: 'dense-row-major',
+                units: 'normalized',
+                componentCount: 8,
+                byteLength: 64
+              },
+              'closure-control-vector': {
+                direction: 'input',
+                dtype: 'f64',
+                shape: [4],
+                layout: 'dense-row-major',
+                units: 'normalized',
+                componentCount: 4,
+                byteLength: 32
+              },
+              'magnetar-closure-update': {
+                direction: 'output',
+                dtype: 'f64',
+                shape: [8],
+                layout: 'dense-row-major',
+                units: 'normalized delta',
+                componentCount: 8,
+                byteLength: 64
+              },
+              'closure-residual': {
+                direction: 'output',
+                dtype: 'f64',
+                shape: [1],
+                layout: 'dense-row-major',
+                units: 'normalized',
+                componentCount: 1,
+                byteLength: 8
+              }
+            },
+            interpolationTable: {
+              id: 'ulg:magnetar-radial-cell-interpolation-table:v0',
+              schema: 'eshkol.ulg.magnetar-closure-interpolation-table.v0',
+              contentHash: 'sha256:82ca16463d7ffe1d170adb266be61c3959b22a6c352751e99f0f510738a14165',
+              sampleCount: 4
+            },
+            sampleShapeValidation: {
+              schema: 'eshkol.ulg.tensor-sample-shape-validation.v0',
+              status: 'pass',
+              validatedSampleCount: 4,
+              validatedInputTensorIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
+              validatedOutputTensorIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
+              scientificValidation: false
+            },
+            contractHash: 'sha256:4b0d9c61ae83f1695978fd2f6b918bdbcab1ccca550b520c0467e7159c805d28',
+            runtimeStatus: 'declared-not-executed',
+            scientificValidation: false,
+            fullPhysicsValidation: false
           },
           runtimeBinding: {
             schema: 'eshkol.ulg.magnetar-closure-runtime-binding.v0',
@@ -2063,6 +2131,19 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.fullFidelityMagnetarSimulation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.fullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productTopologyBinding.status, 'descriptor-bound-not-executed');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.schema, 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.status, 'declared-fixture-contract');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.ready, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.contractHash, 'sha256:4b0d9c61ae83f1695978fd2f6b918bdbcab1ccca550b520c0467e7159c805d28');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.runtimeAbi, 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.executionClaim, 'metadata-and-smoke-output-only');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.descriptorsReady, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.matchesTensorContract, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.matchesInterpolationTable, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.sampleShapeValidationStatus, 'pass');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.sampleShapeValidatedSampleCount, 4);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.scientificValidation, false);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.fullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'declared-not-executed');
   assert.equal(eshkol.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
   assert.equal(eshkol.serviceSummary.probeStatus, 'descriptor-contract-ready');
@@ -2070,11 +2151,39 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.moduleCompiled, false);
   assert.equal(eshkol.serviceSummary.descriptorContractReady, true);
   assert.equal(eshkol.serviceSummary.descriptorContractStatus, 'descriptor-contract-ready');
+  assert.equal(eshkol.serviceSummary.descriptorScientificExecution, false);
+  assert.equal(eshkol.serviceSummary.descriptorScientificValidation, false);
+  assert.equal(eshkol.serviceSummary.descriptorTensorInputCount, ESHKOL_DESCRIPTOR_INPUT_IDS.length);
+  assert.equal(eshkol.serviceSummary.descriptorTensorOutputCount, ESHKOL_DESCRIPTOR_OUTPUT_IDS.length);
+  assert.equal(eshkol.serviceSummary.descriptorTensorCoordinateSystem, 'normalized-radial-cell');
+  assert.equal(eshkol.serviceSummary.descriptorTensorInterpolation, 'reduced-fixture-table-contract');
+  assert.equal(eshkol.serviceSummary.descriptorTensorMatchesArtifactDescriptors, true);
   assert.equal(eshkol.serviceSummary.descriptorInterpolationTableStatus, 'computed-fixture');
   assert.equal(eshkol.serviceSummary.descriptorInterpolationTableComputedFixture, true);
   assert.equal(eshkol.serviceSummary.descriptorInterpolationTableScientificValidation, false);
   assert.equal(eshkol.serviceSummary.descriptorInterpolationTableSampleCount, 4);
   assert.equal(eshkol.serviceSummary.descriptorInterpolationTableContentHash, 'sha256:82ca16463d7ffe1d170adb266be61c3959b22a6c352751e99f0f510738a14165');
+  assert.equal(eshkol.serviceSummary.descriptorMoonLabReferenceSuiteReady, true);
+  assert.equal(eshkol.serviceSummary.descriptorMoonLabReferenceSuiteStatus, null);
+  assert.equal(eshkol.serviceSummary.descriptorMoonLabReferenceCount, 4);
+  assert.equal(eshkol.serviceSummary.descriptorProductTopologyStatus, 'descriptor-bound-not-executed');
+  assert.equal(eshkol.serviceSummary.descriptorProductTopologyMatchesTensorContract, true);
+  assert.equal(eshkol.serviceSummary.descriptorProductTopologyScientificValidation, false);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractReady, true);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractStatus, 'declared-fixture-contract');
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractHash, 'sha256:4b0d9c61ae83f1695978fd2f6b918bdbcab1ccca550b520c0467e7159c805d28');
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeRuntimeAbi, 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0');
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeExecutionClaim, 'metadata-and-smoke-output-only');
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeMatchesTensorContract, true);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeMatchesInterpolationTable, true);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeSampleShapeValidationStatus, 'pass');
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeSampleShapeValidatedSampleCount, 4);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeScientificValidation, false);
+  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeFullPhysicsValidation, false);
+  assert.equal(eshkol.serviceSummary.descriptorRuntimeStatus, 'declared-not-executed');
+  assert.equal(eshkol.serviceSummary.descriptorDerivativeStatus, 'declared-not-computed');
+  assert.equal(eshkol.serviceSummary.descriptorRuntimeScientificValidation, false);
+  assert.equal(eshkol.serviceSummary.descriptorRuntimeDeclaredNotExecuted, true);
   assert.equal(eshkol.serviceSummary.hostRuntimeExecutionReady, false);
   assert.equal(eshkol.serviceSummary.hostRuntimeExecutionScientificExecution, false);
 
@@ -2130,6 +2239,59 @@ test('ULG Eshkol descriptor probe blocks interpolation fixture scientific overcl
   assert.equal(result.probe.descriptorProbe.ready, false);
   assert.equal(result.probe.descriptorProbe.interpolationTable.scientificValidation, true);
   assert.equal(result.probe.descriptorProbe.interpolationTable.computedFixture, true);
+});
+
+test('ULG Eshkol descriptor probe blocks tensor runtime contract overclaims', async () => {
+  const artifact = JSON.parse(JSON.stringify(createEshkolMagnetarDescriptorArtifact()));
+  const runtimeContract = artifact.validation.closureDescriptor.descriptorBinding.closureTensorRuntimeContract;
+  runtimeContract.fullPhysicsValidation = true;
+  runtimeContract.sampleShapeValidation.status = 'blocked';
+  const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
+  const eshkolManifest = createUlgDispatchServiceManifests({ serviceIds })
+    .find((entry) => entry.serviceId === 'eshkol-ulg-fixture');
+  const registry = new ComputeServiceRegistry([eshkolManifest]);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    workerFactory: (serviceManifest) => new UlgDispatchServiceHost(serviceManifest, {
+      requestChildLease: false
+    })
+  });
+
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'eshkol-ulg-fixture',
+    taskKind: 'eshkol.ulg.closure.descriptor-bind',
+    taskId: 'task:eshkol-tensor-runtime-overclaim',
+    rootTaskId: 'root:eshkol-tensor-runtime-overclaim',
+    artifactPayload: {
+      schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+      handoffId: 'handoff:eshkol-tensor-runtime-overclaim',
+      dispatchId: 'handoff:eshkol-tensor-runtime-overclaim:dispatch:0',
+      sourceService: 'eshkol',
+      artifactKind: 'closure',
+      artifactRefUri: 'artifact://eshkol-tensor-runtime-overclaim',
+      artifactContentHash: 'sha256:eshkol-tensor-runtime-overclaim',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureDescriptorSchema: ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA
+      },
+      artifact,
+      hasTransferredWasmBytes: false,
+      wasmBytes: null
+    }
+  });
+
+  assert.equal(result.serviceStatus, 'blocked');
+  assert.equal(result.ready, false);
+  assert.ok(result.blockers.includes('eshkol-descriptor-tensor-runtime-sample-shape-validation-not-ready'));
+  assert.ok(result.blockers.includes('eshkol-descriptor-tensor-runtime-scientific-validation-overstated'));
+  assert.equal(result.probe.descriptorProbe.ready, false);
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.sampleShapeValidationStatus, 'blocked');
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.fullPhysicsValidation, true);
 });
 
 test('ULG Eshkol dispatch adapter dry-instantiates complete WASM without invoking main', async () => {

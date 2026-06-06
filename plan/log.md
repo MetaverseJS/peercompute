@@ -51029,3 +51029,88 @@ timeout 8s env \
   runtime. It is still not full-fidelity GRMHD, production PIC, or spectral
   radiation transport.
 - No push was attempted.
+
+## 2026-06-06 11:30:54 AKDT - Eshkol descriptor adapter summaries
+
+### Prompt
+- "You are the PeerCompute sidecar for the ULG work. Keep commits local and do
+  not push. Please inspect /home/cos/projects/peercompute on its current branch
+  and identify or patch the next bounded acceptance step for explicit Eshkol
+  magnetar closure tensor/runtime contracts in the Multiscale ULG adapter path.
+  Scope: PeerCompute only. Do not duplicate existing fidelity runtime scope
+  work. Focus on adapter validation/probe summaries that can accept descriptor
+  metadata without claiming scientific execution. Report changed files, commands
+  run, and blockers."
+
+### Actions
+- Re-read `/home/cos/projects/ulg/agents.md` and `AGENTS.md`, then inspected
+  current ULG dispatch adapter, handoff supervisor, Multiscale browser probe,
+  and service-orchestration tests.
+- Found the bounded gap in summary surfaces rather than runtime execution:
+  descriptor probes already validate tensor, interpolation table,
+  product-topology, and runtime-binding metadata without executing scientific
+  code, but compact service summaries did not expose tensor/runtime acceptance.
+- Added explicit `closureTensorRuntimeContract` validation in the Eshkol
+  descriptor probe for schema/status/hash, entry export, tensor descriptor byte
+  shape, interpolation-table identity, sample-shape validation, declared
+  not-executed runtime status, and false scientific/full-physics validation.
+- Added compact descriptor fields to
+  `summarizeUlgHandoffSupervisorServiceResult()`: tensor input/output counts,
+  coordinate/interpolation labels, tensor descriptor match, MoonLab reference
+  suite readiness/count, product-topology binding status/match/scientific flag,
+  tensor-runtime contract readiness/hash/ABI/execution-claim/sample-shape
+  fields, runtime/derivative status, runtime scientific flag, and
+  `descriptorRuntimeDeclaredNotExecuted`.
+- Added descriptor probe, tensor contract, product-topology binding,
+  tensor-runtime contract, and runtime binding objects to Multiscale
+  `peercompute.multiscale.ulg-dispatch-service-result-summary.v0` entries.
+- Updated focused service-orchestration assertions, including an overclaim
+  blocker for tensor-runtime full-physics/sample-shape claims, plus plan/test
+  notes.
+
+### Commands Run
+- `git status --short --branch`
+- `sed -n '1,220p' /home/cos/projects/ulg/agents.md`
+- `sed -n '1,220p' AGENTS.md`
+- `rg -n "descriptorProbe|tensorContract|runtimeBinding|productTopologyBinding|moonlabNormalizedReferenceSuite|serviceResultSummaries|runUlgDispatchServiceAdapterProbe|createEshkolIngestSummary|descriptorContract" demos/multiscale/src/main.js peercompute/src/peercompute/serviceOrchestration peercompute/tests/unit/serviceOrchestration.test.js demos/multiscale/tests -S`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only Eshkol closures|descriptor probe blocks interpolation fixture scientific overclaims|executes only explicit smoke output semantics'`
+- `git diff --check`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probes against `http://100.86.83.35:5173/` and
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused descriptor/output-semantics service-orchestration gate passed
+  `22/22`.
+- PASS: full `serviceOrchestration.test.js` passed `22/22`.
+- PASS: `git diff --check` passed.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live synthetic descriptor handoff returned `dispatch-adapters-ready`,
+  accepted `2/2` dispatches, Eshkol `descriptor-contract-ready`,
+  `descriptorTensorInputCount = 2`, `descriptorTensorOutputCount = 2`,
+  `descriptorTensorMatchesArtifactDescriptors = true`,
+  `descriptorTensorRuntimeContractReady = true`,
+  `descriptorTensorRuntimeContractStatus = declared-fixture-contract`,
+  `descriptorTensorRuntimeExecutionClaim = metadata-and-smoke-output-only`,
+  tensor-runtime tensor/interpolation matches true, tensor-runtime scientific
+  and full-physics validation false,
+  product-topology status `descriptor-bound-not-executed`, runtime status
+  `declared-not-executed`, `descriptorRuntimeDeclaredNotExecuted = true`,
+  descriptor scientific execution/validation false, host runtime execution
+  ready false, and host runtime scientific execution false.
+
+### Open
+- The live ULG `createPeerComputeHandoff()` probe exported only the MoonLab
+  artifact during this prompt, so the live Eshkol summary validation used a
+  synthetic descriptor handoff in the live Multiscale browser.
+- This patch only exposes and tests descriptor metadata acceptance. It does not
+  duplicate calibrated runtime evidence or full-fidelity magnetar simulation
+  scope.
+- No push was attempted.
