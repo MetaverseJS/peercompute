@@ -170,6 +170,7 @@ export const MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'p
 export const MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-transfer-manifest.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
+export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA = 'peercompute.multiscale.scenario-scientific-runtime-gate.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
@@ -939,7 +940,9 @@ function createScenarioHandoffBlockers({
   closureOutputSemanticsValidated,
   magnetarReferenceReady,
   calibratedReferenceSuiteReady,
-  toleranceSuiteReady
+  toleranceSuiteReady,
+  scientificRuntimeGateReady,
+  scientificRuntimeGateBlockers = []
 }) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
@@ -966,7 +969,76 @@ function createScenarioHandoffBlockers({
   if (toleranceSuiteReady !== true) {
     blockers.push('scientific-tolerance-suite-missing');
   }
+  if (scientificRuntimeGateReady !== true) {
+    blockers.push(...scientificRuntimeGateBlockers);
+  }
   return blockers;
+}
+
+function createScenarioScientificRuntimeGateReport({
+  scenarioId,
+  allHandoffsReady,
+  transferManifest,
+  toleranceSuite,
+  closureHostRuntimeExecutionReady,
+  closureOutputSemanticsValidated,
+  runtimeEvidence
+} = {}) {
+  if (scenarioId !== 'magnetar') {
+    return {
+      schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
+      scenarioId: scenarioId || 'default',
+      status: 'not-applicable',
+      ready: false,
+      proxyOnly: false,
+      runtimeEvidenceReady: false,
+      prerequisiteReady: false,
+      blockerCount: 0,
+      blockers: []
+    };
+  }
+  const transferReady = transferManifest?.ready === true;
+  const toleranceSuiteReady = toleranceSuite?.ready === true;
+  const runtimeEvidenceSource = runtimeEvidence && typeof runtimeEvidence === 'object' ? runtimeEvidence : null;
+  const runtimeEvidenceReady = runtimeEvidenceSource?.ready === true
+    && runtimeEvidenceSource.scientificExecution === true;
+  const prerequisiteReady = allHandoffsReady === true
+    && transferReady
+    && toleranceSuiteReady
+    && closureHostRuntimeExecutionReady === true
+    && closureOutputSemanticsValidated === true;
+  const ready = prerequisiteReady && runtimeEvidenceReady;
+  const blockers = ready ? [] : ['proxy-runtime-not-scientific'];
+  return {
+    schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
+    scenarioId,
+    status: ready
+      ? 'scientific-runtime-ready'
+      : (prerequisiteReady ? 'scientific-runtime-blocked' : 'scientific-runtime-pending'),
+    ready,
+    proxyOnly: !ready,
+    simulationStatus: ready ? 'scientific-runtime-ready' : 'proxy-only',
+    scientificExecution: ready,
+    runtimeEvidenceReady,
+    prerequisiteReady,
+    allHandoffsReady: allHandoffsReady === true,
+    transferReady,
+    toleranceSuiteReady,
+    closureHostRuntimeExecutionReady: closureHostRuntimeExecutionReady === true,
+    closureOutputSemanticsValidated: closureOutputSemanticsValidated === true,
+    runtimeEvidenceSchema: runtimeEvidenceSource?.schema || null,
+    runtimeEvidenceStatus: runtimeEvidenceSource?.status || null,
+    requiredRuntimeEvidence: [
+      'validated-magnetosphere-mhd-runtime',
+      'validated-pic-kinetic-plasma-runtime',
+      'validated-radiation-transport-runtime',
+      'validated-relativistic-correction-runtime',
+      'cross-family-conservation-and-coupling-validation'
+    ],
+    blockerCount: blockers.length,
+    blockers,
+    note: 'Complete handoff/reference evidence is necessary but not sufficient; the current magnetar scenario remains proxy-only until validated runtime solver evidence is attached.'
+  };
 }
 
 export function createScenarioHandoffReadinessReport(scenario = {}) {
@@ -1014,6 +1086,16 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
+  const scientificRuntimeGate = createScenarioScientificRuntimeGateReport({
+    scenarioId,
+    allHandoffsReady,
+    transferManifest,
+    toleranceSuite,
+    closureHostRuntimeExecutionReady,
+    closureOutputSemanticsValidated,
+    runtimeEvidence: scenario.scientificRuntimeEvidence || scenario.validation?.scientificRuntimeEvidence || null
+  });
+  const scientificReady = allHandoffsReady && toleranceSuite.ready === true && scientificRuntimeGate.ready === true;
   const blockers = createScenarioHandoffBlockers({
     scenarioId,
     calibrationReady,
@@ -1026,7 +1108,9 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureOutputSemanticsValidated,
     magnetarReferenceReady,
     calibratedReferenceSuiteReady,
-    toleranceSuiteReady: toleranceSuite.ready === true
+    toleranceSuiteReady: toleranceSuite.ready === true,
+    scientificRuntimeGateReady: scientificRuntimeGate.ready === true,
+    scientificRuntimeGateBlockers: scientificRuntimeGate.blockers
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -1036,9 +1120,9 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     requiredHandoffCount,
     readyHandoffCount,
     allHandoffsReady,
-    proxyOnly: true,
-    scientificReady: false,
-    simulationStatus: 'proxy-only',
+    proxyOnly: scientificRuntimeGate.proxyOnly === true,
+    scientificReady,
+    simulationStatus: scientificReady ? 'scientific-ready' : 'proxy-only',
     validationStatus: scenario.validation?.status || (scenarioId === 'default' ? 'default' : 'proxy-only'),
     blockerCount: blockers.length,
     blockers,
@@ -1092,6 +1176,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     },
     referenceInventory,
     toleranceSuite,
+    scientificRuntimeGate,
     closureHandoff: {
       provider: closureIngest?.provider || 'eshkol',
       ready: closureReady,
@@ -7172,6 +7257,12 @@ export class MultiscaleModel {
           scenarioHandoffTransferredWasmArtifactCount: scenario.handoffReadiness?.transferManifest?.transferredWasmArtifactCount ?? null,
           scenarioHandoffTransferredWasmByteLength: scenario.handoffReadiness?.transferManifest?.transferredWasmByteLength ?? null,
           scenarioHandoffTransferBlockerCount: scenario.handoffReadiness?.transferManifest?.blockerCount ?? null,
+          scenarioScientificRuntimeGateReady: scenario.handoffReadiness?.scientificRuntimeGate?.ready === true,
+          scenarioScientificRuntimeGateStatus: scenario.handoffReadiness?.scientificRuntimeGate?.status || null,
+          scenarioScientificRuntimeGatePrerequisiteReady: scenario.handoffReadiness?.scientificRuntimeGate?.prerequisiteReady === true,
+          scenarioScientificRuntimeGateRuntimeEvidenceReady: scenario.handoffReadiness?.scientificRuntimeGate?.runtimeEvidenceReady === true,
+          scenarioScientificRuntimeGateProxyOnly: scenario.handoffReadiness?.scientificRuntimeGate?.proxyOnly === true,
+          scenarioScientificRuntimeGateBlockerCount: scenario.handoffReadiness?.scientificRuntimeGate?.blockerCount ?? null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,

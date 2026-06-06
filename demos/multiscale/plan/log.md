@@ -22086,3 +22086,44 @@ User asked whether Infinite Context Coder is being used.
   `calibrated-mhd-pic-radiation-relativity-reference-missing` and
   `scientific-tolerance-suite-missing`.
 - No push was attempted.
+
+## 2026-06-06 02:28:17 AKDT - Scientific runtime gate manifest
+
+### Prompt
+- User asked how things were going and whether the overall implementation plan
+  remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-scientific-runtime-gate.v0` to the
+  magnetar handoff readiness report.
+- Exposed runtime-gate readiness, status, prerequisite readiness, runtime
+  evidence readiness, proxy-only state, and blocker count in downward packet
+  boundary conditions.
+- Added the runtime-gate status to the magnetar HUD scenario row.
+- Added model tests proving complete transfer/reference/closure prerequisites
+  still block on `proxy-runtime-not-scientific` without validated runtime solver
+  evidence.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Validation
+- PASS: `node --check` passed for `demos/multiscale/src/simulation/multiscaleModel.js`,
+  `demos/multiscale/src/main.js`, and
+  `demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario|scientific runtime gate|transfer manifests'`
+  passed `181/181`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `11/11`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings and refreshed `docs/multiscale/`.
+- PASS: live VPN bridge from ULG `5173` to Multiscale `5185` reported
+  `scientific-runtime-pending`, runtime gate ready `false`, runtime evidence
+  ready `false`, transfer ready `true`, Eshkol execution/output semantics ready
+  `true`, tolerance ready `2/5`, calibrated reference ready `1/4`, and
+  `scenarioScientificReady: false`.
+
+### Open
+- Live scientific readiness now has three explicit blockers:
+  `calibrated-mhd-pic-radiation-relativity-reference-missing`,
+  `scientific-tolerance-suite-missing`, and `proxy-runtime-not-scientific`.
+- No push was attempted.

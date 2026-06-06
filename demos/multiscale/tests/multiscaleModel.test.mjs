@@ -20,6 +20,7 @@ import {
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
+  MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
   MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
@@ -685,6 +686,147 @@ function createMagnetarCalibratedReferences(overridesByFamily = {}) {
   return MAGNETAR_CALIBRATED_REFERENCE_FIXTURES.map((fixture) => (
     createMagnetarCalibratedReference(fixture, overridesByFamily[fixture.family] || {})
   ));
+}
+
+function createReadyUlgTransferManifest(overrides = {}) {
+  return {
+    schema: 'peercompute.ulg.handoff-transfer-manifest.v0',
+    sourceSchema: 'peercompute.ulg.demo-handoff.v0',
+    artifactCount: 2,
+    relaySafeArtifactCount: 2,
+    transferredWasmArtifactCount: 1,
+    transferredWasmByteLength: 33907,
+    ready: true,
+    blockers: [],
+    artifacts: [
+      {
+        index: 0,
+        sourceService: 'moonlab',
+        artifactKind: 'quantum-response',
+        artifactRefUri: 'artifact://moonlab/magnetar-calibration',
+        artifactRefHash: 'sha256:moonlab-ref',
+        artifactContentHash: 'sha256:moonlab-content',
+        relaySafe: true,
+        blockers: []
+      },
+      {
+        index: 1,
+        sourceService: 'eshkol',
+        artifactKind: 'closure',
+        artifactRefUri: 'artifact://eshkol/hello-wasm-reference',
+        artifactRefHash: 'sha256:eshkol-ref',
+        artifactContentHash: 'sha256:eshkol-content',
+        wasmTransferMode: 'inline-byte-array',
+        wasmByteLength: 33907,
+        wasmSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+        hasTransferredWasmBytes: true,
+        relaySafe: true,
+        blockers: []
+      }
+    ],
+    ...overrides
+  };
+}
+
+function createReadyEshkolClosureSummary(overrides = {}) {
+  return {
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:881d9a92d523921d',
+    sourceService: 'eshkol',
+    validationStatus: 'pass',
+    closureKind: 'wasm-reference',
+    closureModuleUrl: 'hello.wasm',
+    closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: true,
+    closureBundlePreserveRelativeUrls: true,
+    ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
+    closureReady: true,
+    ...overrides
+  };
+}
+
+function createReadyEshkolClosureModuleProbe(overrides = {}) {
+  return {
+    artifactId: 'eshkol:881d9a92d523921d',
+    closureKind: 'wasm-reference',
+    moduleUrl: 'http://100.86.83.35:5173/service-assets/eshkol/closures/hello/hello.wasm',
+    moduleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
+    entryExport: 'main',
+    importSummary: {
+      expectedCount: 12,
+      observedCount: 12,
+      functionCount: 9,
+      memoryCount: 1,
+      globalCount: 1,
+      tableCount: 1
+    },
+    exportSummary: {
+      expectedCount: 1,
+      observedCount: 1,
+      functionCount: 1
+    },
+    observedExports: [{ name: 'main', kind: 'function' }],
+    importMetadataMatches: true,
+    exportMetadataMatches: true,
+    entryExportAvailable: true,
+    startFunctionIndex: null,
+    moduleCompiled: true,
+    serviceWorkerSafe: true,
+    requiresHostImports: true,
+    hostRuntimeRequired: true,
+    hostRuntimeProbe: {
+      schema: MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
+      status: 'host-runtime-probe-ready',
+      ready: true,
+      mode: 'stub-import-dry-instantiate-v0',
+      stubbed: true,
+      importObjectCreated: true,
+      instantiated: true,
+      importCount: 12,
+      functionStubCount: 9,
+      memoryStubCount: 1,
+      globalStubCount: 1,
+      tableStubCount: 1,
+      stubCallCount: 0,
+      startFunctionIndex: null,
+      entryExport: 'main',
+      entryExportAvailable: true,
+      mainInvoked: false,
+      scientificExecution: false
+    },
+    hostRuntimeExecution: {
+      schema: MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
+      status: 'host-runtime-execution-ready',
+      ready: true,
+      mode: 'dom-free-eshkol-host-imports-v0',
+      instantiated: true,
+      entryInvoked: true,
+      entryExport: 'main',
+      entryArgs: [0, 0],
+      entryResult: 0,
+      outputPreview: '1048560\n1048544\n',
+      outputByteLength: 16,
+      outputSemanticsValidation: {
+        schema: MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
+        status: 'output-semantics-validated',
+        ready: true,
+        sourceSchema: 'eshkol.ulg.closure-output-semantics.v0',
+        semanticScope: 'smoke-fixture',
+        scientificScope: 'none',
+        scientificValidation: false,
+        blockers: []
+      },
+      runtimeCallCount: 11,
+      startFunctionIndex: null,
+      mainInvoked: true,
+      scientificExecution: false
+    },
+    probeMode: 'browser-webassembly-module-abi-v0',
+    ...overrides
+  };
 }
 
 test('scale ladder spans atomic through supergalactic levels', () => {
@@ -1843,6 +1985,12 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.allHandoffsReady, true);
   assert.equal(scenario.handoffReadiness.scientificReady, false);
   assert.equal(scenario.handoffReadiness.proxyOnly, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.schema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-pending');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.proxyOnly, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.scientificRuntimeGate.blockers.includes('proxy-runtime-not-scientific'));
   assert.equal(scenario.handoffReadiness.calibrationHandoff.provider, 'moonlab');
   assert.equal(scenario.handoffReadiness.calibrationHandoff.schema, ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA);
   assert.equal(scenario.handoffReadiness.calibrationHandoff.groundStateBitString, '000');
@@ -1895,6 +2043,7 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.ok(!scenario.handoffReadiness.blockers.includes('moonlab-magnetar-dipole-ising-reference-contract-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 
   const packet = model.createPacket();
   assert.equal(packet.scenario.handoffReadiness.allHandoffsReady, true);
@@ -1916,6 +2065,11 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceRequiredCount, 4);
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceReadyCount, 0);
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceScientificReadyCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateStatus, 'scientific-runtime-pending');
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateProxyOnly, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateBlockerCount, 1);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
 });
@@ -1977,6 +2131,9 @@ test('magnetar scenario ingests ULG transfer manifests without promoting scienti
   assert.equal(scenario.handoffReadiness.transferManifest.transferredWasmArtifactCount, 1);
   assert.equal(scenario.handoffReadiness.transferManifest.transferredWasmByteLength, 33907);
   assert.equal(scenario.handoffReadiness.scientificReady, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.transferReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-pending');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
 
   const packet = model.createPacket();
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferReady, true);
@@ -1986,6 +2143,8 @@ test('magnetar scenario ingests ULG transfer manifests without promoting scienti
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferredWasmArtifactCount, 1);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferredWasmByteLength, 33907);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferBlockerCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateStatus, 'scientific-runtime-pending');
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 
   const emptyScenarioModel = new MultiscaleModel({ seed: 472 });
@@ -2050,6 +2209,7 @@ test('magnetar scenario keeps tolerance suite partial when calibrated references
   assert.equal(picEntry.blocker, 'calibrated-pic-reference-missing');
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
   assert.equal(scenario.handoffReadiness.scientificReady, false);
 });
 
@@ -2084,6 +2244,9 @@ test('magnetar scenario clears calibrated reference blockers only when all scien
   assert.ok(!scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-bundle-summary-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-pending');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
   assert.equal(scenario.handoffReadiness.scientificReady, false);
 
   const packet = model.createPacket();
@@ -2092,6 +2255,53 @@ test('magnetar scenario clears calibrated reference blockers only when all scien
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceSuiteReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceReadyCount, 4);
   assert.equal(packet.downward.boundaryConditions.scenarioCalibratedReferenceScientificReadyCount, 4);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateStatus, 'scientific-runtime-pending');
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scientific runtime gate blocks complete proxy handoffs without validated runtime evidence', () => {
+  const model = new MultiscaleModel({ seed: 473 });
+  model.ingestScenarioTransferManifest(createReadyUlgTransferManifest());
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY,
+    magnetarCalibratedReferences: createMagnetarCalibratedReferences()
+  });
+  model.ingestScenarioClosureSummary(createReadyEshkolClosureSummary());
+  const scenario = model.ingestScenarioClosureModuleProbeReport(createReadyEshkolClosureModuleProbe());
+
+  assert.equal(scenario.handoffReadiness.allHandoffsReady, true);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.ready, true);
+  assert.equal(scenario.handoffReadiness.transferManifest.ready, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionOutputSemanticsReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.schema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-blocked');
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.prerequisiteReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
+  assert.deepEqual(scenario.handoffReadiness.scientificRuntimeGate.blockers, ['proxy-runtime-not-scientific']);
+  assert.deepEqual(scenario.handoffReadiness.blockers, ['proxy-runtime-not-scientific']);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffTransferReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeOutputSemanticsReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateStatus, 'scientific-runtime-blocked');
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGatePrerequisiteReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateRuntimeEvidenceReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificRuntimeGateReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 

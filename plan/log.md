@@ -49390,3 +49390,37 @@ User asked whether Infinite Context Coder is being used.
   missing, leaving only the calibrated-reference and scientific-tolerance live
   blockers while the scenario remains proxy-only.
 - No push was attempted.
+
+## 2026-06-06 02:28:17 AKDT - Multiscale scientific runtime gate manifest
+
+### Prompt
+- User asked how things were going and whether the overall implementation plan
+  remained on track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-scientific-runtime-gate.v0` so proxy
+  runtime status is an explicit blocker instead of only an implicit hardcoded
+  `scientificReady: false`.
+- Threaded runtime-gate status through handoff readiness, packet boundary
+  conditions, and the Multiscale HUD scenario row.
+- Added a complete proxy fixture proving transfer/reference/closure prerequisites
+  can all be ready while scientific readiness remains blocked on
+  `proxy-runtime-not-scientific`.
+- Rebuilt the checked-in Multiscale docs bundle.
+
+### Validation
+- PASS: source/test syntax checks completed.
+- PASS: Multiscale model suite passed `181/181`.
+- PASS: PeerCompute service-orchestration unit test passed `11/11`.
+- PASS: Multiscale build completed with existing large-chunk warnings.
+- PASS: live VPN bridge reported `scientific-runtime-pending`, runtime gate
+  ready `false`, runtime evidence ready `false`, transfer ready `true`, Eshkol
+  host-runtime/output-semantics ready `true`, tolerance ready `2/5`, calibrated
+  reference ready `1/4`, and `scenarioScientificReady: false`.
+
+### Open
+- The runtime gate will stay blocked until validated MHD/PIC/radiation/relativity
+  runtime solver evidence and cross-family conservation/coupling validation are
+  attached.
+- No push was attempted.
