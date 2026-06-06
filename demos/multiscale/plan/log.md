@@ -22601,3 +22601,41 @@ User asked whether Infinite Context Coder is being used.
 - Descriptor-only ULG closure handoff is ready as a prerequisite bridge only;
   a complete magnetar simulation still needs validated runtime solver evidence.
 - No push was attempted.
+
+## 2026-06-06 06:04:33 AKDT - Calibrated reduced runtime evidence manifest
+
+### Actions
+- Added `createScenarioCalibratedRuntimeEvidenceManifest()` and
+  `refreshScenarioCalibratedRuntimeEvidence()` to Multiscale.
+- The new path validates the four reduced solver-family runtime summaries
+  against MoonLab calibrated reference contracts and emits
+  `peercompute.multiscale.scenario-scientific-runtime-validation.v0` records with
+  reference, tolerance, runtime-output, and evidence hashes.
+- Kept the existing bounded proxy runtime evidence path unchanged and still
+  blocked.
+- Left cross-family conservation/coupling validation as a separate missing
+  required evidence entry, so the scientific runtime gate remains blocked until
+  that fifth artifact exists.
+
+### Live ULG Bridge
+- ULG `http://100.86.83.35:5173/` exported the current MoonLab reference suite
+  and Eshkol descriptor handoff.
+- PeerCompute `https://100.86.83.35:5185/?scenario=magnetar` accepted the ULG
+  handoff, then `refreshScenarioCalibratedRuntimeEvidence()` reported
+  `runtime-evidence-incomplete`, `validatedCount = 4`, `observedCount = 4`,
+  `missingCount = 1`, `proxyOnlyCount = 0`, and the missing
+  `cross-family-conservation-and-coupling-validation` entry. The only scenario
+  blocker remained `proxy-runtime-not-scientific`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'calibrated reduced runtime evidence|bounded proxy runtime evidence|runtime evidence manifest|scientific runtime gate|runtime evidence requirements'` passed `195/195`.
+- PASS: live browser probe with system Chrome against the VPN demos reported the
+  same `validated=4`, `missing=1`, gate-blocked state.
+
+### Open
+- Cross-family conservation/coupling scientific runtime evidence is still
+  missing; this is now the next blocker toward a complete reduced magnetar run.
+- No push was attempted.

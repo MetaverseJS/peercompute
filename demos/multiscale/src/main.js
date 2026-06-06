@@ -1428,6 +1428,27 @@ async function refreshScenarioBoundedProxyRuntimeEvidence(options = {}) {
   });
 }
 
+async function createScenarioCalibratedRuntimeEvidenceManifest(options = {}) {
+  const manifest = await model.createScenarioCalibratedRuntimeEvidenceManifest(options);
+  return cloneJson({
+    manifest
+  });
+}
+
+async function refreshScenarioCalibratedRuntimeEvidence(options = {}) {
+  const manifest = await model.createScenarioCalibratedRuntimeEvidenceManifest(options);
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(manifest, options);
+  syncEnvironmentControls();
+  syncScenarioControls();
+  renderReadout();
+  return cloneJson({
+    manifest,
+    scenario,
+    scientificRuntimeEvidence: scenario.scientificRuntimeEvidence || null,
+    handoffReadiness: scenario.handoffReadiness || null
+  });
+}
+
 function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'quantum-response';
   const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, artifact);
@@ -10771,6 +10792,15 @@ window.__multiscaleDemo = {
   },
   refreshBoundedProxyRuntimeEvidence(options = {}) {
     return refreshScenarioBoundedProxyRuntimeEvidence(options);
+  },
+  createScenarioCalibratedRuntimeEvidenceManifest(options = {}) {
+    return createScenarioCalibratedRuntimeEvidenceManifest(options);
+  },
+  refreshScenarioCalibratedRuntimeEvidence(options = {}) {
+    return refreshScenarioCalibratedRuntimeEvidence(options);
+  },
+  refreshCalibratedRuntimeEvidence(options = {}) {
+    return refreshScenarioCalibratedRuntimeEvidence(options);
   },
   probeScenarioClosureModule(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, options);

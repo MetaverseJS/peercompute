@@ -185,6 +185,8 @@ export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA =
   'peercompute.multiscale.scenario-scientific-runtime-validation.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE =
   'magnetar-scientific-runtime-reference-validation';
+const MULTISCALE_SCENARIO_CALIBRATED_RUNTIME_EVIDENCE_SOURCE =
+  'calibrated-reference-runtime-adapter-v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
@@ -1274,13 +1276,14 @@ export function createScenarioRuntimeEvidenceManifestReport({
     ...entries.flatMap((entry) => entry.blockers || []),
     ...manifestDiagnostics.blockers
   ]);
+  const hasValidatedScientificEntries = validatedCount > 0;
   const status = ready
     ? 'runtime-evidence-ready'
     : (
       manifestInvalid
         ? 'runtime-evidence-invalid'
         : (
-          scientificValidationIncompleteCount > 0
+          scientificValidationIncompleteCount > 0 || (sourceEntries && hasValidatedScientificEntries)
             ? 'runtime-evidence-incomplete'
             : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing')
         )
@@ -1883,6 +1886,193 @@ async function createBoundedProxyRuntimeEvidenceEntriesFromState(state = {}) {
       createBoundedRelativisticCorrectionRuntimeResultFromState(solar.relativity)
     )
   ]);
+}
+
+function calibratedRuntimeEvidenceRequirements() {
+  return MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.filter((requirement) => requirement.stateKey !== 'crossFamily');
+}
+
+function calibratedRuntimeReferencesFromScenario(scenario = {}) {
+  const entries = Array.isArray(scenario.handoffReadiness?.toleranceSuite?.entries)
+    ? scenario.handoffReadiness.toleranceSuite.entries
+    : [];
+  return entries.filter((entry) => MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS.some((requirement) => (
+    requirement.family === entry?.family || requirement.id === entry?.id
+  )));
+}
+
+function summarizeRuntimeOutputFields(observed = {}) {
+  return Object.fromEntries(
+    Object.entries(observed || {})
+      .filter(([, value]) => finiteOrNull(value) != null)
+      .map(([key, value]) => [key, finiteOrNull(value)])
+  );
+}
+
+async function createCalibratedRuntimeEvidenceEntryFromState({
+  requirement,
+  state = {},
+  reference = null
+} = {}) {
+  const source = state?.solar?.[requirement.stateKey] || {};
+  const backend = runtimeBackendFromState(source, `calibrated-${requirement.solverId}-state`);
+  const sequence = runtimeSequenceFromState(source);
+  const runtimeObserved = backend != null && backend !== 'none' && sequence > 0;
+  const observed = runtimeObserved ? summarizeMagnetarRuntimeState(requirement, source) : null;
+  const runtimeOutputFields = observed ? summarizeRuntimeOutputFields(observed) : {};
+  const referenceReady = reference?.ready === true
+    && reference.scientificCoverage === true
+    && hasSha256Digest(reference.contractHash)
+    && hasSha256Digest(reference.unitsHash)
+    && reference.validationStatus === 'pass'
+    && plainObjectOrNull(reference.fieldMap) != null
+    && plainObjectOrNull(reference.fieldTolerances) != null
+    && plainObjectOrNull(reference.fieldObservedDeltas) != null
+    && fieldDeltasWithinTolerances(reference.fieldObservedDeltas, reference.fieldTolerances);
+  const runtimeOutputReady = Object.keys(runtimeOutputFields).length > 0;
+  const referenceHash = referenceReady ? reference.contractHash : null;
+  const toleranceHash = referenceReady
+    ? await sha256CanonicalJson({
+      referenceId: reference.id,
+      family: reference.family,
+      solverId: reference.solverId,
+      unitsHash: reference.unitsHash,
+      fieldMap: reference.fieldMap,
+      fieldTolerances: reference.fieldTolerances
+    })
+    : null;
+  const runtimeOutputHash = runtimeObserved && runtimeOutputReady
+    ? await sha256CanonicalJson({
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId,
+      backend,
+      sequence,
+      observed: runtimeOutputFields
+    })
+    : null;
+  const validation = {
+    schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+    status: 'pass',
+    scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    scientificValidation: true,
+    proxyOnly: false,
+    modelTier: 'reduced-calibrated-magnetar-runtime-v0',
+    referenceId: reference?.id || null,
+    referenceFamily: reference?.family || requirement.family,
+    referenceProvider: reference?.provider || null,
+    referenceSolverId: reference?.solverId || null,
+    scientificReferenceHash: referenceHash,
+    scientificToleranceHash: toleranceHash,
+    scientificRuntimeOutputHash: runtimeOutputHash,
+    referenceHash,
+    toleranceHash,
+    runtimeOutputHash,
+    checks: {
+      runtimeObserved,
+      runtimeOutputReady,
+      calibratedReferenceReady: referenceReady,
+      calibratedReferenceFamilyMatches: reference?.family === requirement.family,
+      calibratedReferenceScientificCoverage: reference?.scientificCoverage === true,
+      calibratedReferenceDeltasWithinTolerance: reference
+        ? fieldDeltasWithinTolerances(reference.fieldObservedDeltas || {}, reference.fieldTolerances || {})
+        : false
+    },
+    note: 'This validates reduced PeerCompute solver telemetry against a MoonLab calibrated reference contract; it is a reduced magnetar runtime validation, not full GRMHD or production PIC/radiation transport.'
+  };
+  const evidenceHash = runtimeObserved && referenceReady && runtimeOutputHash && toleranceHash
+    ? await sha256CanonicalJson({
+      id: requirement.id,
+      family: requirement.family,
+      solverId: requirement.solverId,
+      backend,
+      sequence,
+      validation,
+      observed: runtimeOutputFields
+    })
+    : null;
+  const ready = runtimeObserved
+    && referenceReady
+    && runtimeOutputReady
+    && hasSha256Digest(referenceHash)
+    && hasSha256Digest(toleranceHash)
+    && hasSha256Digest(runtimeOutputHash)
+    && hasSha256Digest(evidenceHash);
+  const blockers = ready ? [] : uniqueStrings([
+    runtimeObserved ? null : `${requirement.id}-runtime-not-observed`,
+    runtimeOutputReady ? null : `${requirement.id}-runtime-output-missing`,
+    referenceReady ? null : `${requirement.id}-calibrated-reference-not-ready`,
+    referenceHash ? null : `${requirement.id}-scientific-reference-hash-missing`,
+    toleranceHash ? null : `${requirement.id}-scientific-tolerance-hash-missing`,
+    runtimeOutputHash ? null : `${requirement.id}-scientific-runtime-output-hash-missing`,
+    evidenceHash ? null : `${requirement.id}-evidence-hash-missing`,
+    requirement.blocker
+  ]);
+  return {
+    id: requirement.id,
+    family: requirement.family,
+    solverId: requirement.solverId,
+    status: ready ? 'validated-runtime-ready' : 'scientific-runtime-validation-incomplete',
+    ready,
+    scientificExecution: true,
+    runtimeObserved,
+    proxyOnly: false,
+    backend,
+    sequence,
+    validationStatus: ready ? 'pass' : 'fail',
+    evidenceHash,
+    observed: runtimeOutputFields,
+    validation: {
+      ...validation,
+      status: ready ? 'pass' : 'fail',
+      ready
+    },
+    scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    blocker: blockers[0] || null,
+    blockers
+  };
+}
+
+async function createCalibratedRuntimeEvidenceEntriesFromState({
+  state = {},
+  scenario = {}
+} = {}) {
+  const references = calibratedRuntimeReferencesFromScenario(scenario);
+  return Promise.all(calibratedRuntimeEvidenceRequirements().map((requirement) => {
+    const reference = references.find((entry) => (
+      entry.family === requirement.family || entry.id === requirement.id
+    ));
+    return createCalibratedRuntimeEvidenceEntryFromState({ requirement, state, reference });
+  }));
+}
+
+async function sha256CanonicalJson(value) {
+  if (!globalThis.crypto?.subtle) {
+    return null;
+  }
+  const encoded = new TextEncoder().encode(canonicalJson(value));
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded);
+  return `sha256:${Array.from(new Uint8Array(digest), byteToHex).join('')}`;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJson);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, sortJson(value[key])])
+    );
+  }
+  return value;
+}
+
+function byteToHex(byte) {
+  return byte.toString(16).padStart(2, '0');
 }
 
 export function createScenarioHandoffReadinessReport(scenario = {}) {
@@ -3427,6 +3617,39 @@ export class MultiscaleModel {
 
   async refreshScenarioBoundedProxyRuntimeEvidence(options = {}) {
     const manifest = await this.createScenarioBoundedProxyRuntimeEvidenceManifest(options);
+    return this.ingestScenarioRuntimeEvidenceManifest(manifest, options);
+  }
+
+  async createScenarioCalibratedRuntimeEvidenceManifest(options = {}) {
+    const scenarioId = options.scenarioId || this.scenario.id || 'magnetar';
+    if (scenarioId !== 'magnetar') {
+      return {
+        schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+        scenarioId,
+        source: MULTISCALE_SCENARIO_CALIBRATED_RUNTIME_EVIDENCE_SOURCE,
+        proxyOnly: false,
+        scientificExecution: false,
+        entries: []
+      };
+    }
+    const entries = await createCalibratedRuntimeEvidenceEntriesFromState({
+      state: this.state,
+      scenario: this.scenario
+    });
+    return {
+      schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+      scenarioId,
+      source: MULTISCALE_SCENARIO_CALIBRATED_RUNTIME_EVIDENCE_SOURCE,
+      proxyOnly: false,
+      scientificExecution: false,
+      sequence: Math.max(1, ...entries.map((entry) => finite(entry.sequence, 0))),
+      entries,
+      note: 'This manifest validates the four reduced solver-family runtime entries against MoonLab calibrated references. Cross-family conservation/coupling remains a separate required runtime evidence entry.'
+    };
+  }
+
+  async refreshScenarioCalibratedRuntimeEvidence(options = {}) {
+    const manifest = await this.createScenarioCalibratedRuntimeEvidenceManifest(options);
     return this.ingestScenarioRuntimeEvidenceManifest(manifest, options);
   }
 
