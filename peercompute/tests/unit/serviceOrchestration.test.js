@@ -26,6 +26,7 @@ import {
   adaptUlgV05TaskCapsule,
   createComputeManagerServiceFactory,
   createUlgV05ArtifactResult,
+  ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
   normalizeUlgDemoHandoff,
   normalizeComputeServiceManifest,
   summarizeUlgArtifact
@@ -984,6 +985,64 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
   assert.equal(result.artifactSummary.closureOutputExpectedStdoutByteLength, 16);
   assert.equal(result.artifactSummary.closureReady, true);
   assert.equal(result.outputs[0].artifactSummary.closureReady, true);
+});
+
+test('Eshkol descriptor-only closure summary is accepted without output semantics', () => {
+  const artifact = {
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    artifactKind: 'closure',
+    sourceService: 'eshkol',
+    closureKind: 'magnetar-closure-descriptor',
+    validation: {
+      status: 'descriptor-only',
+      validationMode: 'eshkol-magnetar-closure-descriptor',
+      closureDescriptor: {
+        schema: ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
+        status: 'closure-descriptor-ready',
+        scope: 'magnetar-descriptor-fixture',
+        scientificValidation: false
+      }
+    },
+    execution: {
+      serviceWorkerSafe: true
+    },
+    validity: {
+      requiresDynamicCode: false,
+      requiresHostImports: false
+    },
+    contentHash: 'ulg:fixture-magnetar-descriptor-001'
+  };
+  const summary = summarizeUlgArtifact('closure', artifact);
+
+  assert.equal(summary.artifactKind, 'closure');
+  assert.equal(summary.artifactId, 'eshkol:magnetar-closure-descriptor');
+  assert.equal(summary.validationStatus, 'descriptor-only');
+  assert.equal(summary.closureKind, 'magnetar-closure-descriptor');
+  assert.equal(summary.closureDescriptorSchema, ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA);
+  assert.equal(summary.closureDescriptorReady, true);
+  assert.equal(summary.closureDescriptorStatus, 'closure-descriptor-ready');
+  assert.equal(summary.closureDescriptorScope, 'magnetar-descriptor-fixture');
+  assert.equal(summary.closureDescriptorScientificValidation, false);
+  assert.equal(summary.closureOutputSemanticsSchema, null);
+  assert.equal(summary.closureOutputSemanticsReady, false);
+  assert.equal(summary.closureReady, true);
+
+  const handoff = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    artifactCount: 1,
+    artifacts: [{
+      artifactKind: 'closure',
+      artifact,
+      wasmBytes: [0, 97, 115, 109]
+    }]
+  }, {
+    requireTransferManifest: false
+  });
+
+  assert.equal(handoff.closureArtifacts[0].closureDescriptorReady, true);
+  assert.equal(handoff.closureArtifacts[0].closureReady, true);
+  assert.equal(handoff.closureArtifacts[0].hasTransferredWasmBytes, true);
+  assert.equal(handoff.blockers.includes('eshkol-closure-wasm-bytes-missing'), false);
 });
 
 test('ULG demo handoff adapter classifies calibration, closure, and transferred WASM bytes', () => {

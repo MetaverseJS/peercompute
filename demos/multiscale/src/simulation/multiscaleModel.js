@@ -188,6 +188,7 @@ export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE =
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
+export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
 
 const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
   {
@@ -459,6 +460,32 @@ function normalizeScenarioClosureOutputSemanticsValidation(source = null) {
     observed: clonePlain(source.observed || null),
     checks: clonePlain(source.checks || null),
     blockers: Array.isArray(source.blockers) ? [...source.blockers] : [],
+    scientificExecution: false
+  };
+}
+
+function normalizeScenarioClosureDescriptorSummary(source = {}) {
+  const descriptor = source.closureDescriptor && typeof source.closureDescriptor === 'object'
+    ? source.closureDescriptor
+    : {};
+  const schema = stringOrNull(source.closureDescriptorSchema || descriptor.schema);
+  if (!schema) return null;
+  const scientificValidation = typeof source.closureDescriptorScientificValidation === 'boolean'
+    ? source.closureDescriptorScientificValidation
+    : (typeof descriptor.scientificValidation === 'boolean' ? descriptor.scientificValidation : null);
+  const ready = (
+    source.closureDescriptorReady === true
+    || descriptor.ready === true
+    || schema === ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA
+  ) && schema === ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA
+    && scientificValidation === false;
+  return {
+    schema,
+    ready,
+    status: source.closureDescriptorStatus || descriptor.status || (ready ? 'closure-descriptor-ready' : 'closure-descriptor-pending'),
+    scope: source.closureDescriptorScope || descriptor.scope || descriptor.semanticScope || null,
+    scientificValidation,
+    probeMode: source.closureDescriptorProbeMode || descriptor.probeMode || 'descriptor-only-closure-v0',
     scientificExecution: false
   };
 }
@@ -813,7 +840,11 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
   const source = input?.artifactSummary && typeof input.artifactSummary === 'object'
     ? input.artifactSummary
     : input || {};
-  const ready = source.closureReady === true;
+  const descriptor = normalizeScenarioClosureDescriptorSummary(source);
+  const descriptorHandoffReady = descriptor?.ready === true
+    && source.closureServiceWorkerSafe === true
+    && source.closureRequiresDynamicCode === false;
+  const ready = source.closureReady === true || descriptorHandoffReady;
   return {
     schema: MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
     scenarioId: options.scenarioId || 'magnetar',
@@ -853,7 +884,8 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
         global: source.closureHostImportsGlobal || null,
         domFree: source.closureHostImportsDomFree === true
       },
-      outputSemantics: normalizeScenarioClosureOutputSemanticsSummary(source)
+      outputSemantics: normalizeScenarioClosureOutputSemanticsSummary(source),
+      descriptor
     },
     validation: {
       status: ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
@@ -874,11 +906,15 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     ? source.exportSummary
     : {};
   const moduleCompiled = source.moduleCompiled === true;
+  const descriptor = normalizeScenarioClosureDescriptorSummary(source);
+  const descriptorProbeReady = descriptor?.ready === true;
   const importMetadataMatches = source.importMetadataMatches === true;
   const exportMetadataMatches = source.exportMetadataMatches === true;
   const entryExportAvailable = source.entryExportAvailable === true
     || (Array.isArray(source.observedExports) && source.observedExports.some((entry) => entry.name === (source.entryExport || 'main')));
-  const ready = source.ready === true || (moduleCompiled && importMetadataMatches && exportMetadataMatches && entryExportAvailable);
+  const ready = source.ready === true
+    || descriptorProbeReady
+    || (moduleCompiled && importMetadataMatches && exportMetadataMatches && entryExportAvailable);
   const hostRuntimeSource = source.hostRuntimeProbe && typeof source.hostRuntimeProbe === 'object'
     ? source.hostRuntimeProbe
     : null;
@@ -973,12 +1009,16 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     hostRuntimeRequired: source.hostRuntimeRequired === true || source.requiresHostImports === true,
     hostRuntimeProbe,
     hostRuntimeExecution,
+    closureDescriptor: descriptor,
+    descriptorProbeReady,
     scientificExecution: false,
-    probeMode: source.probeMode || 'browser-webassembly-module-abi-v0',
+    probeMode: source.probeMode || descriptor?.probeMode || 'browser-webassembly-module-abi-v0',
     validation: {
       status: ready ? 'closure-module-probe-ready' : 'closure-module-probe-pending',
       simulationStatus: 'proxy-only',
-      note: 'The Eshkol WASM module compiled and its declared import/export ABI was checked; scientific closure execution remains unvalidated.'
+      note: descriptorProbeReady
+        ? 'The Eshkol closure descriptor was accepted as a descriptor-only probe; scientific closure execution remains unvalidated.'
+        : 'The Eshkol WASM module compiled and its declared import/export ABI was checked; scientific closure execution remains unvalidated.'
     },
     error: source.error || null
   };
@@ -1055,6 +1095,7 @@ function createScenarioHandoffBlockers({
   closureRequiresHostImports,
   closureHandoffReady,
   closureModuleProbeReady,
+  closureDescriptorReady,
   closureHostRuntimeRequired,
   closureHostRuntimeExecutionReady,
   closureOutputSemanticsValidated,
@@ -1068,16 +1109,20 @@ function createScenarioHandoffBlockers({
   const blockers = [];
   if (!calibrationReady) blockers.push('moonlab-magnetar-calibration-summary-missing');
   if (!closureReady) blockers.push('eshkol-closure-bundle-summary-missing');
-  if (closureHandoffReady === true && closureModuleProbeReady !== true) {
+  if (closureHandoffReady === true && closureModuleProbeReady !== true && closureDescriptorReady !== true) {
     blockers.push('eshkol-closure-module-abi-probe-missing');
   }
-  if ((closureRequiresHostImports === true || closureHostRuntimeRequired === true) && closureHostRuntimeExecutionReady !== true) {
+  if (
+    closureDescriptorReady !== true
+    && (closureRequiresHostImports === true || closureHostRuntimeRequired === true)
+    && closureHostRuntimeExecutionReady !== true
+  ) {
     blockers.push('eshkol-closure-host-runtime-required');
   }
-  if (closureModuleProbeReady === true && closureHostRuntimeExecutionReady !== true) {
+  if (closureDescriptorReady !== true && closureModuleProbeReady === true && closureHostRuntimeExecutionReady !== true) {
     blockers.push('eshkol-closure-scientific-execution-not-validated');
   }
-  if (closureHostRuntimeExecutionReady === true && closureOutputSemanticsValidated !== true) {
+  if (closureDescriptorReady !== true && closureHostRuntimeExecutionReady === true && closureOutputSemanticsValidated !== true) {
     blockers.push('eshkol-closure-output-semantics-unvalidated');
   }
   if (calibrationReady && magnetarReferenceReady !== true) {
@@ -1100,6 +1145,7 @@ function createScenarioScientificRuntimeGateReport({
   allHandoffsReady,
   transferManifest,
   toleranceSuite,
+  closureDescriptorReady,
   closureHostRuntimeExecutionReady,
   closureOutputSemanticsValidated,
   runtimeEvidence
@@ -1122,11 +1168,15 @@ function createScenarioScientificRuntimeGateReport({
   const runtimeEvidenceSource = runtimeEvidence && typeof runtimeEvidence === 'object' ? runtimeEvidence : null;
   const runtimeEvidenceReady = runtimeEvidenceSource?.ready === true
     && runtimeEvidenceSource.scientificExecution === true;
+  const closurePrerequisiteReady = closureDescriptorReady === true
+    || (
+      closureHostRuntimeExecutionReady === true
+      && closureOutputSemanticsValidated === true
+    );
   const prerequisiteReady = allHandoffsReady === true
     && transferReady
     && toleranceSuiteReady
-    && closureHostRuntimeExecutionReady === true
-    && closureOutputSemanticsValidated === true;
+    && closurePrerequisiteReady;
   const ready = prerequisiteReady && runtimeEvidenceReady;
   const blockers = ready ? [] : ['proxy-runtime-not-scientific'];
   return {
@@ -1144,6 +1194,8 @@ function createScenarioScientificRuntimeGateReport({
     allHandoffsReady: allHandoffsReady === true,
     transferReady,
     toleranceSuiteReady,
+    closureDescriptorReady: closureDescriptorReady === true,
+    closurePrerequisiteReady,
     closureHostRuntimeExecutionReady: closureHostRuntimeExecutionReady === true,
     closureOutputSemanticsValidated: closureOutputSemanticsValidated === true,
     runtimeEvidenceSchema: runtimeEvidenceSource?.schema || null,
@@ -1844,6 +1896,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
   const closureHostRuntimeExecutionReady = closureModuleProbe?.hostRuntimeExecution?.ready === true;
   const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
+  const closureDescriptor = closureIngest?.closure?.descriptor || closureModuleProbe?.closureDescriptor || null;
+  const closureDescriptorReady = closureDescriptor?.ready === true || scenario.validation?.closureDescriptorReady === true;
   const magnetarReference = calibrationIngest?.magnetarReference || null;
   const magnetarReferenceReady = magnetarReference?.ready === true || scenario.validation?.magnetarReferenceReady === true;
   const calibratedReferences = Array.isArray(calibrationIngest?.calibratedReferences)
@@ -1884,6 +1938,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     allHandoffsReady,
     transferManifest,
     toleranceSuite,
+    closureDescriptorReady,
     closureHostRuntimeExecutionReady,
     closureOutputSemanticsValidated,
     runtimeEvidence: scientificRuntimeEvidence
@@ -1896,6 +1951,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureRequiresHostImports: closureIngest?.closure?.requiresHostImports,
     closureHandoffReady: closureReady,
     closureModuleProbeReady,
+    closureDescriptorReady,
     closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
     closureHostRuntimeExecutionReady,
     closureOutputSemanticsValidated,
@@ -2011,6 +2067,14 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       hostImportsFactory: closureIngest?.closure?.hostImports?.factory || null,
       hostImportsDomFree: closureIngest?.closure?.hostImports?.domFree === true,
       bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true,
+      descriptorReady: closureDescriptorReady,
+      descriptorSchema: closureDescriptor?.schema || null,
+      descriptorStatus: closureDescriptor?.status || null,
+      descriptorScope: closureDescriptor?.scope || null,
+      descriptorScientificValidation: typeof closureDescriptor?.scientificValidation === 'boolean'
+        ? closureDescriptor.scientificValidation
+        : null,
+      descriptorProbeMode: closureDescriptor?.probeMode || null,
       outputSemanticsReady: closureIngest?.closure?.outputSemantics?.ready === true,
       outputSemanticScope: closureIngest?.closure?.outputSemantics?.semanticScope || null,
       outputScientificScope: closureIngest?.closure?.outputSemantics?.scientificScope || null,
@@ -2026,6 +2090,10 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       status: scenario.validation?.closureModuleProbeStatus || closureModuleProbe?.validation?.status || 'module-probe-pending',
       schema: closureModuleProbe?.schema || null,
       probeMode: closureModuleProbe?.probeMode || null,
+      descriptorProbeReady: closureDescriptorReady,
+      descriptorSchema: closureDescriptor?.schema || null,
+      descriptorStatus: closureDescriptor?.status || null,
+      descriptorScientificValidation: closureDescriptor?.scientificValidation === true,
       entryExport: closureModuleProbe?.entryExport || null,
       moduleCompiled: closureModuleProbe?.moduleCompiled === true,
       importMetadataMatches: closureModuleProbe?.importMetadataMatches === true,
@@ -3205,6 +3273,9 @@ export class MultiscaleModel {
         closureStatus: ingest.ready ? 'closure-artifact-ready' : 'closure-artifact-pending',
         closureReady: ingest.ready,
         closureKind: ingest.closure.kind,
+        closureDescriptorStatus: ingest.closure.descriptor?.status || null,
+        closureDescriptorReady: ingest.closure.descriptor?.ready === true,
+        closureDescriptorSchema: ingest.closure.descriptor?.schema || null,
         simulationStatus: 'proxy-only'
       }
     };
@@ -3231,6 +3302,9 @@ export class MultiscaleModel {
         status: this.scenario.validation?.status || 'proxy-only',
         closureModuleProbeStatus: probe.ready ? 'closure-module-probe-ready' : 'closure-module-probe-pending',
         closureModuleProbeReady: probe.ready,
+        closureDescriptorStatus: probe.closureDescriptor?.status || null,
+        closureDescriptorReady: probe.closureDescriptor?.ready === true,
+        closureDescriptorSchema: probe.closureDescriptor?.schema || null,
         closureOutputSemanticsStatus: probe.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
         closureOutputSemanticsReady: probe.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
         simulationStatus: 'proxy-only'
@@ -8138,6 +8212,16 @@ export class MultiscaleModel {
           scenarioClosureImportCount: scenario.closureIngest?.closure?.importCount ?? null,
           scenarioClosureExportCount: scenario.closureIngest?.closure?.exportCount ?? null,
           scenarioClosureHostImportsDomFree: scenario.closureIngest?.closure?.hostImports?.domFree === true,
+          scenarioClosureDescriptorReady: scenario.closureIngest?.closure?.descriptor?.ready === true
+            || scenario.closureModuleProbe?.closureDescriptor?.ready === true,
+          scenarioClosureDescriptorSchema: scenario.closureIngest?.closure?.descriptor?.schema
+            || scenario.closureModuleProbe?.closureDescriptor?.schema
+            || null,
+          scenarioClosureDescriptorStatus: scenario.closureIngest?.closure?.descriptor?.status
+            || scenario.closureModuleProbe?.closureDescriptor?.status
+            || null,
+          scenarioClosureDescriptorScientificValidation: scenario.closureIngest?.closure?.descriptor?.scientificValidation === true
+            || scenario.closureModuleProbe?.closureDescriptor?.scientificValidation === true,
           scenarioClosureOutputSemanticsReady: scenario.closureIngest?.closure?.outputSemantics?.ready === true,
           scenarioClosureOutputSemanticScope: scenario.closureIngest?.closure?.outputSemantics?.semanticScope || null,
           scenarioClosureOutputScientificValidation: scenario.closureIngest?.closure?.outputSemantics?.scientificValidation === true,

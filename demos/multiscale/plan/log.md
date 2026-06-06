@@ -22503,3 +22503,101 @@ User asked whether Infinite Context Coder is being used.
 - This exposes the producer contract for authoritative runtime artifacts; it
   does not provide those artifacts.
 - No push was attempted.
+
+## 2026-06-06 05:41:21 AKDT - Descriptor-only Eshkol closure handoff support
+
+### Prompt
+- User asked this PeerCompute sidecar to work only in
+  `/home/cos/projects/peercompute`, avoid branch switching and pushing, read
+  `/home/cos/projects/ulg/agents.md` and `/home/cos/projects/AGENTS.md`, then
+  add minimal support for Eshkol descriptor-only magnetar closure fixtures that
+  carry `validation.closureDescriptor.schema =
+  "eshkol.ulg.magnetar-closure-descriptor.v0"` with `scientificValidation:
+  false` and no `validation.outputSemantics`.
+
+### Actions
+- Added descriptor-only closure summary normalization for
+  `eshkol.ulg.magnetar-closure-descriptor.v0`.
+- Let descriptor-only closures satisfy the Multiscale closure descriptor/probe
+  handoff path with or without transferred WASM bytes, while preserving any
+  transferred bytes in the transfer manifest and avoiding host-runtime
+  execution or smoke output-semantics validation claims.
+- Kept the existing hello `wasm-reference` output-semantics path intact:
+  executed output validation still clears only the smoke-output blocker and
+  still reports `scientificExecution: false`.
+- Updated packet boundary conditions, handoff readiness, and runtime-gate
+  prerequisite telemetry with descriptor-ready fields while leaving scenario
+  scientific readiness false.
+- Updated Multiscale/root plan and test notes.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'descriptor-only Eshkol closure|Eshkol closure bundle summary|output semantics blocker|closure module ABI probe'` passed `194/194`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only closure summary|Eshkol closure bundle readiness|ULG demo handoff adapter'` passed `12/12`.
+
+### Open
+- Descriptor-only closure readiness is a handoff/probe prerequisite only. It
+  does not execute a closure, does not validate magnetar science, and does not
+  clear the scientific runtime evidence gate.
+- No push was attempted.
+
+## 2026-06-06 05:52:56 AKDT - Descriptor-only ULG bridge live verification
+
+### Actions
+- Tightened the ULG demo handoff path so descriptor-ready Eshkol magnetar
+  closures are ingested through descriptor probe readiness even when transferred
+  WASM bytes are present.
+- Preserved the transferred Eshkol WASM bytes in the handoff transfer manifest
+  while routing descriptor-only closures around host-runtime execution and smoke
+  output-semantics claims.
+- Kept the scientific runtime gate blocked on validated solver evidence; the
+  descriptor fixture records `scientificValidation: false`.
+- Updated Multiscale/root plan and test notes to distinguish descriptor-only
+  readiness from executable smoke-fixture readiness.
+
+### Live ULG Bridge
+- ULG `http://100.86.83.35:5173/` exported five MoonLab references and the
+  staged Eshkol `magnetar-closure` descriptor fixture with
+  `eshkol.ulg.magnetar-closure-descriptor.v0`, descriptor readiness true,
+  `scientificValidation: false`, no output semantics, and transferred WASM byte
+  length `53066`.
+- PeerCompute `https://100.86.83.35:5185/?scenario=magnetar` accepted the
+  browser handoff through `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`,
+  returned `closureDescriptorProbeReady: true`, preserved the transferred WASM
+  byte length `53066`, reported `scientific-tolerance-suite-ready`, and left
+  `proxy-runtime-not-scientific` as the only scenario blocker after bounded
+  proxy runtime evidence refresh.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'descriptor-only closure|closure bundle readiness|ULG demo handoff adapter'` passed `12/12`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'descriptor-only Eshkol closure|Eshkol closure bundle|proxy readiness manifest|closure module'` passed `194/194`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large chunk warning.
+- PASS: `git diff --check`.
+
+### Open
+- Descriptor-only ULG closure handoff is ready as a prerequisite bridge only;
+  a complete magnetar simulation still needs validated runtime solver evidence.
+- No push was attempted.

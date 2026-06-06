@@ -12,6 +12,7 @@ export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-r
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
+export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
 
 const DEFAULT_PROTOCOL_VERSION = '0.5';
 const MOONLAB_MAGNETAR_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
@@ -383,9 +384,16 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const outputSemantics = artifact.validation?.outputSemantics && typeof artifact.validation.outputSemantics === 'object'
     ? artifact.validation.outputSemantics
     : null;
+  const closureDescriptor = artifact.validation?.closureDescriptor && typeof artifact.validation.closureDescriptor === 'object'
+    ? artifact.validation.closureDescriptor
+    : null;
+  const closureDescriptorReady = closureDescriptor?.schema === ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA
+    && closureDescriptor?.scientificValidation === false;
   const outputSemanticsStdout = outputSemantics?.stdout && typeof outputSemantics.stdout === 'object'
     ? outputSemantics.stdout
     : {};
+  const closureValidationReady = validationStatus === 'pass'
+    || (validationStatus === 'descriptor-only' && closureDescriptorReady);
   const magnetarReference = outputs.reference && typeof outputs.reference === 'object' ? outputs.reference : null;
   const magnetarReferenceObservables = magnetarReference?.observables && typeof magnetarReference.observables === 'object'
     ? magnetarReference.observables
@@ -420,6 +428,9 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
+  const bundleCopyFiles = Array.isArray(bundleManifest?.copyFiles)
+    ? bundleManifest.copyFiles
+    : (Array.isArray(bundleManifest?.manualDeploy?.copyFiles) ? bundleManifest.manualDeploy.copyFiles : []);
   const hostImports = bundleManifest?.hostImports && typeof bundleManifest.hostImports === 'object'
     ? bundleManifest.hostImports
     : (artifact.runtime?.hostImports && typeof artifact.runtime.hostImports === 'object' ? artifact.runtime.hostImports : null);
@@ -474,8 +485,9 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     closureWasmFunctionCount: finiteNumberOrNull(wasmMetadata.functionCount),
     closureWasmTypeCount: Array.isArray(wasmMetadata.types) ? wasmMetadata.types.length : 0,
     closureBundleManifestSchema: bundleManifest?.schema || null,
-    closureBundleCopyFileCount: Array.isArray(bundleManifest?.copyFiles) ? bundleManifest.copyFiles.length : 0,
-    closureBundlePreserveRelativeUrls: bundleManifest?.preserveRelativeUrls === true,
+    closureBundleCopyFileCount: bundleCopyFiles.length,
+    closureBundlePreserveRelativeUrls: bundleManifest?.preserveRelativeUrls === true
+      || bundleManifest?.manualDeploy?.preserveRelativeUrls === true,
     closureHostImportsPath: hostImports?.path || null,
     closureHostImportsSha256: hostImports?.sha256 || null,
     closureHostImportsFactory: hostImports?.factory || null,
@@ -495,8 +507,15 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     closureOutputExpectedEntryResult: outputSemantics?.expectedEntryResult ?? null,
     closureOutputExpectedStdoutSha256: outputSemanticsStdout.sha256 || null,
     closureOutputExpectedStdoutByteLength: finiteNumberOrNull(outputSemanticsStdout.byteLength),
+    closureDescriptorSchema: closureDescriptor?.schema || null,
+    closureDescriptorReady,
+    closureDescriptorStatus: closureDescriptor?.status || (closureDescriptorReady ? 'closure-descriptor-ready' : null),
+    closureDescriptorScope: closureDescriptor?.scope || closureDescriptor?.semanticScope || null,
+    closureDescriptorScientificValidation: typeof closureDescriptor?.scientificValidation === 'boolean'
+      ? closureDescriptor.scientificValidation
+      : null,
     closureReady: artifactKind === 'closure'
-      && validationStatus === 'pass'
+      && closureValidationReady
       && execution.serviceWorkerSafe === true
       && validity.requiresDynamicCode === false,
     responseDescriptorSchema: responseDescriptor?.schema || null,
@@ -659,6 +678,7 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
     hasTransferredWasmBytes: artifactKind === 'closure' && Number(wasmByteLength) > 0,
     magnetarCalibrationReady: artifactSummary.magnetarDipoleIsingReady === true,
     closureOutputSemanticsReady: artifactSummary.closureOutputSemanticsReady === true,
+    closureDescriptorReady: artifactSummary.closureDescriptorReady === true,
     closureReady: artifactSummary.closureReady === true
   };
 }
@@ -704,7 +724,12 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
   if (closureArtifacts.length === 0) {
     blockers.push('eshkol-closure-bundle-summary-missing');
   }
-  if (options.requireClosureWasmBytes !== false && closureArtifactsWithBytes.length === 0) {
+  const descriptorOnlyClosureReady = closureArtifacts.some((entry) => entry.closureDescriptorReady === true);
+  if (
+    options.requireClosureWasmBytes !== false
+    && closureArtifactsWithBytes.length === 0
+    && descriptorOnlyClosureReady !== true
+  ) {
     blockers.push('eshkol-closure-wasm-bytes-missing');
   }
   const acceptedSourceSchema = handoff.schema === ULG_DEMO_HANDOFF_SCHEMA;

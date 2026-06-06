@@ -642,6 +642,14 @@ const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY = Object.freeze({
   closureOutputExpectedStdoutByteLength: 16
 });
 
+const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY = Object.freeze({
+  closureDescriptorSchema: 'eshkol.ulg.magnetar-closure-descriptor.v0',
+  closureDescriptorReady: true,
+  closureDescriptorStatus: 'closure-descriptor-ready',
+  closureDescriptorScope: 'magnetar-descriptor-fixture',
+  closureDescriptorScientificValidation: false
+});
+
 const MOONLAB_MAGNETAR_REFERENCE_SUMMARY = Object.freeze({
   magnetarReferenceReady: true,
   magnetarReferenceSchema: MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
@@ -2051,6 +2059,75 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticScope, 'smoke-fixture');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputScientificValidation, false);
+});
+
+test('magnetar scenario accepts descriptor-only Eshkol closure without output semantics', () => {
+  const model = new MultiscaleModel({ seed: 52 });
+  model.ingestScenarioCalibrationSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'quantum-response',
+    calibrationArtifactCount: 1,
+    calibrationReadyCount: 1,
+    magnetarDipoleIsingStatus: 'pass',
+    magnetarDipoleIsingParityStatus: 'pass',
+    magnetarDipoleIsingGroundState: '000',
+    magnetarDipoleIsingMaxEnergyDelta: 0,
+    magnetarDipoleIsingEvaluatedBitstrings: 8,
+    magnetarDipoleIsingReady: true,
+    ...MOONLAB_MAGNETAR_REFERENCE_SUMMARY
+  });
+  const scenario = model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    validationStatus: 'descriptor-only',
+    closureKind: 'magnetar-closure-descriptor',
+    closureReady: true,
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: false,
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY
+  });
+
+  assert.equal(scenario.validation.status, 'proxy-only');
+  assert.equal(scenario.validation.closureStatus, 'closure-artifact-ready');
+  assert.equal(scenario.validation.closureDescriptorReady, true);
+  assert.equal(scenario.validation.closureDescriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
+  assert.equal(scenario.closureIngest.ready, true);
+  assert.equal(scenario.closureIngest.closure.kind, 'magnetar-closure-descriptor');
+  assert.equal(scenario.closureIngest.closure.outputSemantics, null);
+  assert.equal(scenario.closureIngest.closure.descriptor.schema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
+  assert.equal(scenario.closureIngest.closure.descriptor.ready, true);
+  assert.equal(scenario.closureIngest.closure.descriptor.status, 'closure-descriptor-ready');
+  assert.equal(scenario.closureIngest.closure.descriptor.scientificValidation, false);
+  assert.equal(scenario.handoffReadiness.status, 'handoff-ready');
+  assert.equal(scenario.handoffReadiness.closureHandoff.descriptorReady, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.descriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
+  assert.equal(scenario.handoffReadiness.closureHandoff.descriptorScientificValidation, false);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.descriptorProbeReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closureDescriptorReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closurePrerequisiteReady, true);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.ready, false);
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.proxyOnly, true);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureKind, 'magnetar-closure-descriptor');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorScientificValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 
 test('magnetar scenario combines ULG calibration and Eshkol closure handoffs into proxy readiness manifest', () => {

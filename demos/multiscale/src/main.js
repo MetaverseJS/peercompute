@@ -1499,6 +1499,28 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
   });
 }
 
+function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options = {}) {
+  if (!summary?.closureDescriptorSchema) return null;
+  return ingestScenarioClosureModuleProbeReport({
+    artifactId: summary.artifactId || null,
+    closureKind: summary.closureKind || null,
+    moduleUrl: summary.closureModuleUrl || null,
+    moduleSha256: summary.closureModuleSha256 || null,
+    provider: options.provider || summary.sourceService || 'eshkol',
+    closureDescriptorSchema: summary.closureDescriptorSchema,
+    closureDescriptorReady: summary.closureDescriptorReady === true,
+    closureDescriptorStatus: summary.closureDescriptorStatus || null,
+    closureDescriptorScope: summary.closureDescriptorScope || null,
+    closureDescriptorScientificValidation: typeof summary.closureDescriptorScientificValidation === 'boolean'
+      ? summary.closureDescriptorScientificValidation
+      : null,
+    probeMode: 'descriptor-only-closure-v0'
+  }, {
+    ...options,
+    scenarioId: options.scenarioId || 'magnetar'
+  });
+}
+
 async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
   const normalized = normalizePeerComputeUlgDemoHandoff(handoff, options);
   const transfer = normalized.transferManifest
@@ -1526,16 +1548,21 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     wasmBytes: closureArtifact.wasmBytes,
     provider: options.closureProvider || closureArtifact.sourceService || 'eshkol'
   } : null;
-  const closure = closureArtifact?.hasTransferredWasmBytes && options.executeClosure !== false
+  const descriptorClosureReady = closureArtifact?.artifactSummary?.closureDescriptorReady === true;
+  const closure = closureArtifact?.hasTransferredWasmBytes && descriptorClosureReady !== true && options.executeClosure !== false
     ? await executeUlgClosureArtifactForScenario(closureArtifact.artifact, closureOptions)
     : (closureArtifact
       ? ingestUlgArtifactForScenario(closureArtifact.artifact, closureOptions)
       : null);
+  const closureDescriptorProbe = descriptorClosureReady
+    ? createClosureDescriptorProbeFromArtifactSummary(closureArtifact.artifactSummary, closureOptions || {})
+    : null;
   return cloneJson({
     handoff: normalized,
     transfer,
     calibration,
     closure,
+    closureDescriptorProbe,
     packet: createUiPacket()
   });
 }
