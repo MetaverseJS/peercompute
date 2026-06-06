@@ -938,3 +938,28 @@
 - Relay-config restore regression:
   after the focused runtime P2P smoke, `git diff -- docs/hyperborea/relay-config.json`
   returned empty, proving the smoke restored generated relay config files.
+
+### Eshkol production handler boundary gate
+- Focused service orchestration gate:
+  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes'`.
+: current result on 2026-06-06 was `26/26` passing. The run proved
+  `eshkol.ulg.production-handler-boundary.v0` is surfaced from Eshkol closure
+  metadata with `handlerReady = false`, `runtimeExecution = false`,
+  `scientificValidation = false`, `fullPhysicsValidation = false`, and
+  `fullFidelityMagnetarSimulation = false`; overclaimed runtime execution
+  blocks the Eshkol dispatch adapter.
+- Focused Multiscale gate:
+  `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production handler boundary|descriptor-only Eshkol closure'`.
+: current result on 2026-06-06 was `197/197` passing. The run proved
+  Multiscale closure ingest, handoff readiness, and packet boundary conditions
+  preserve the same false boundary flags and keep overclaimed handler readiness
+  bounded without clearing scientific readiness.
+- Build gate:
+  `npm --prefix demos/multiscale run build`.
+: current result on 2026-06-06 passed with only the existing large-chunk
+  warning and refreshed `docs/multiscale`.
+- Live handoff smoke:
+  `npm --prefix demos/multiscale run test:ulg-handoff`.
+: current result on 2026-06-06 passed against ULG `5173` and Multiscale `5185`
+  with `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, and visible magnetar proxy visual.

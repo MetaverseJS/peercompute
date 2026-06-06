@@ -14,6 +14,7 @@ export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-respo
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
 export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
+export const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
 
 const DEFAULT_PROTOCOL_VERSION = '0.5';
 const MOONLAB_MAGNETAR_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
@@ -308,6 +309,73 @@ function normalizeMoonLabWebGpuParityScope(scope = null) {
   };
 }
 
+function findEshkolProductionHandlerBoundary(artifact = {}, closureDescriptor = null) {
+  const descriptor = plainObjectOrNull(closureDescriptor);
+  const binding = plainObjectOrNull(descriptor?.descriptorBinding);
+  const candidates = [
+    artifact.productionHandlerBoundary,
+    artifact.validation?.productionHandlerBoundary,
+    artifact.runtime?.productionHandlerBoundary,
+    artifact.metadata?.productionHandlerBoundary,
+    descriptor?.productionHandlerBoundary,
+    binding?.productionHandlerBoundary,
+    binding?.runtimeBinding?.productionHandlerBoundary,
+    binding?.closureTensorRuntimeContract?.productionHandlerBoundary
+  ];
+  return candidates
+    .map((entry) => plainObjectOrNull(entry))
+    .find((entry) => entry?.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA)
+    || null;
+}
+
+function normalizeEshkolProductionHandlerBoundary(boundary = null) {
+  if (!boundary) return null;
+  const runtimeExecution = typeof boundary.runtimeExecution === 'boolean'
+    ? boundary.runtimeExecution
+    : (typeof boundary.runtimeExecuted === 'boolean' ? boundary.runtimeExecuted : null);
+  const validationBlockers = uniqueStrings([
+    boundary.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
+      ? null
+      : 'eshkol-production-handler-boundary-schema-mismatch',
+    boundary.handlerReady === false
+      ? null
+      : 'eshkol-production-handler-boundary-handler-readiness-overstated',
+    runtimeExecution === false
+      ? null
+      : 'eshkol-production-handler-boundary-runtime-execution-overstated',
+    boundary.scientificValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-scientific-validation-overstated',
+    boundary.fullPhysicsValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-physics-validation-overstated',
+    boundary.fullFidelityMagnetarSimulation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-fidelity-overstated'
+  ]);
+  const ready = validationBlockers.length === 0;
+  return {
+    schema: boundary.schema || null,
+    status: boundary.status || (ready ? 'production-handler-boundary-declared-not-executed' : 'production-handler-boundary-blocked'),
+    ready,
+    handlerReady: typeof boundary.handlerReady === 'boolean' ? boundary.handlerReady : null,
+    runtimeExecution,
+    scientificValidation: typeof boundary.scientificValidation === 'boolean'
+      ? boundary.scientificValidation
+      : null,
+    fullPhysicsValidation: typeof boundary.fullPhysicsValidation === 'boolean'
+      ? boundary.fullPhysicsValidation
+      : null,
+    fullFidelityMagnetarSimulation: typeof boundary.fullFidelityMagnetarSimulation === 'boolean'
+      ? boundary.fullFidelityMagnetarSimulation
+      : null,
+    boundaryId: stringOrNull(boundary.boundaryId || boundary.id),
+    handlerProtocol: stringOrNull(boundary.handlerProtocol || boundary.protocol),
+    validationBlockerCount: validationBlockers.length,
+    validationBlockers
+  };
+}
+
 function normalizeMagnetarCalibratedReference(reference = {}, index = 0) {
   const fieldMap = plainObjectOrNull(reference.fieldMap);
   const fieldTolerances = plainObjectOrNull(reference.fieldTolerances || reference.tolerances);
@@ -470,6 +538,9 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const closureDescriptor = artifact.validation?.closureDescriptor && typeof artifact.validation.closureDescriptor === 'object'
     ? artifact.validation.closureDescriptor
     : null;
+  const eshkolProductionHandlerBoundary = normalizeEshkolProductionHandlerBoundary(
+    findEshkolProductionHandlerBoundary(artifact, closureDescriptor)
+  );
   const closureDescriptorReady = closureDescriptor?.schema === ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA
     && closureDescriptor?.scientificValidation === false;
   const outputSemanticsStdout = outputSemantics?.stdout && typeof outputSemantics.stdout === 'object'
@@ -600,6 +671,22 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     closureDescriptorScientificValidation: typeof closureDescriptor?.scientificValidation === 'boolean'
       ? closureDescriptor.scientificValidation
       : null,
+    eshkolProductionHandlerBoundaryReady: eshkolProductionHandlerBoundary?.ready === true,
+    eshkolProductionHandlerBoundarySchema: eshkolProductionHandlerBoundary?.schema || null,
+    eshkolProductionHandlerBoundaryStatus: eshkolProductionHandlerBoundary?.status || null,
+    eshkolProductionHandlerBoundaryHandlerReady: eshkolProductionHandlerBoundary?.handlerReady ?? null,
+    eshkolProductionHandlerBoundaryRuntimeExecution: eshkolProductionHandlerBoundary?.runtimeExecution ?? null,
+    eshkolProductionHandlerBoundaryScientificValidation:
+      eshkolProductionHandlerBoundary?.scientificValidation ?? null,
+    eshkolProductionHandlerBoundaryFullPhysicsValidation:
+      eshkolProductionHandlerBoundary?.fullPhysicsValidation ?? null,
+    eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation:
+      eshkolProductionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
+    eshkolProductionHandlerBoundaryValidationBlockerCount:
+      eshkolProductionHandlerBoundary?.validationBlockerCount ?? null,
+    eshkolProductionHandlerBoundaryValidationBlockers:
+      eshkolProductionHandlerBoundary?.validationBlockers || [],
+    eshkolProductionHandlerBoundary,
     closureReady: artifactKind === 'closure'
       && closureValidationReady
       && execution.serviceWorkerSafe === true

@@ -148,6 +148,13 @@ Updated: 2026-06-06 13:25:59 AKDT
 - Handler summary regression proves compact service summaries surface handler
   readiness and output schema/status/ready for both MoonLab and Eshkol dispatch
   results without copying raw artifact payloads.
+- Eshkol production handler boundary ingestion now consumes
+  `eshkol.ulg.production-handler-boundary.v0` as optional declared-not-executed
+  evidence. Artifact, dispatch, supervisor, browser adapter, and Multiscale
+  summaries preserve `handlerReady = false`, `runtimeExecution = false`,
+  `scientificValidation = false`, `fullPhysicsValidation = false`, and
+  `fullFidelityMagnetarSimulation = false`; overclaims are surfaced as boundary
+  blockers and do not relax runtime or scientific gates.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay

@@ -30,6 +30,7 @@ import {
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
   MOONLAB_MAGNETAR_REFERENCE_ROLE,
   MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+  ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
   MultiscaleModel,
   SCALE_LAYERS,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA
@@ -649,6 +650,27 @@ const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY = Object.freeze({
   closureDescriptorStatus: 'closure-descriptor-ready',
   closureDescriptorScope: 'magnetar-descriptor-fixture',
   closureDescriptorScientificValidation: false
+});
+
+const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
+  eshkolProductionHandlerBoundarySchema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
+  eshkolProductionHandlerBoundaryStatus: 'production-handler-boundary-declared-not-executed',
+  eshkolProductionHandlerBoundaryHandlerReady: false,
+  eshkolProductionHandlerBoundaryRuntimeExecution: false,
+  eshkolProductionHandlerBoundaryScientificValidation: false,
+  eshkolProductionHandlerBoundaryFullPhysicsValidation: false,
+  eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation: false,
+  eshkolProductionHandlerBoundary: {
+    schema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
+    status: 'production-handler-boundary-declared-not-executed',
+    ready: true,
+    handlerReady: false,
+    runtimeExecution: false,
+    scientificValidation: false,
+    fullPhysicsValidation: false,
+    fullFidelityMagnetarSimulation: false,
+    validationBlockers: []
+  }
 });
 
 const MOONLAB_MAGNETAR_REFERENCE_SUMMARY = Object.freeze({
@@ -2140,7 +2162,8 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
     closureServiceWorkerSafe: true,
     closureRequiresDynamicCode: false,
     closureRequiresHostImports: false,
-    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY,
+    ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY
   });
 
   assert.equal(scenario.validation.status, 'proxy-only');
@@ -2154,11 +2177,33 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.equal(scenario.closureIngest.closure.descriptor.ready, true);
   assert.equal(scenario.closureIngest.closure.descriptor.status, 'closure-descriptor-ready');
   assert.equal(scenario.closureIngest.closure.descriptor.scientificValidation, false);
+  assert.equal(scenario.validation.closureProductionHandlerBoundaryReady, true);
+  assert.equal(
+    scenario.closureIngest.closure.productionHandlerBoundary.schema,
+    ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
+  );
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.ready, true);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.handlerReady, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.scientificValidation, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullPhysicsValidation, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
   assert.equal(scenario.handoffReadiness.status, 'handoff-ready');
   assert.equal(scenario.handoffReadiness.closureHandoff.descriptorReady, true);
   assert.equal(scenario.handoffReadiness.closureHandoff.descriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
   assert.equal(scenario.handoffReadiness.closureHandoff.descriptorScientificValidation, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryReady, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryHandlerReady, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryScientificValidation, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryFullPhysicsValidation, false);
+  assert.equal(
+    scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryFullFidelityMagnetarSimulation,
+    false
+  );
   assert.equal(scenario.handoffReadiness.closureModuleProbe.descriptorProbeReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.productionHandlerBoundaryReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.productionHandlerBoundaryHandlerReady, false);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, false);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closureDescriptorReady, true);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closurePrerequisiteReady, true);
@@ -2177,9 +2222,64 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureDescriptorScientificValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionHandlerBoundaryReady, true);
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolProductionHandlerBoundaryStatus,
+    'production-handler-boundary-declared-not-executed'
+  );
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionHandlerReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionRuntimeExecution, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionScientificValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullPhysicsValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullFidelityMagnetarSimulation, false);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scenario keeps Eshkol production handler boundary overclaims bounded', () => {
+  const model = new MultiscaleModel({ seed: 521 });
+  const scenario = model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    validationStatus: 'descriptor-only',
+    closureKind: 'magnetar-closure-descriptor',
+    closureReady: true,
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: false,
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY,
+    ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY,
+    eshkolProductionHandlerBoundaryHandlerReady: true,
+    eshkolProductionHandlerBoundary: {
+      ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY.eshkolProductionHandlerBoundary,
+      handlerReady: true
+    }
+  });
+
+  assert.equal(scenario.closureIngest.ready, true);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.ready, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.handlerReady, true);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.scientificValidation, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullPhysicsValidation, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
+  assert.ok(scenario.closureIngest.closure.productionHandlerBoundary.validationBlockers.includes(
+    'eshkol-production-handler-boundary-handler-readiness-overstated'
+  ));
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryReady, false);
+  assert.equal(scenario.handoffReadiness.scientificReady, false);
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionHandlerBoundaryReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionHandlerReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionRuntimeExecution, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionScientificValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullPhysicsValidation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullFidelityMagnetarSimulation, false);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });
 

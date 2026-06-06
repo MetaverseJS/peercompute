@@ -51435,3 +51435,88 @@ timeout 8s env \
 - This is test-harness hygiene for relay smoke runs; it does not add full
   ULG/Multiscale distributed service-room coverage yet.
 - No push was attempted.
+
+## 2026-06-06 14:11:38 AKDT - Eshkol production handler boundary consumer
+
+### Prompt
+- Work only in `/home/cos/projects/peercompute`; keep commits local and do not
+  push. Now that Eshkol commit `f06973c Add ULG production handler boundary`
+  exists, inspect PeerCompute's ULG/Eshkol handoff summarization path and add a
+  bounded consumer for `eshkol.ulg.production-handler-boundary.v0` if clear.
+  Preserve `handlerReady = false`, `runtimeExecution = false`,
+  `scientificValidation = false`, `fullPhysicsValidation = false`, and
+  `fullFidelityMagnetarSimulation = false`; do not relax runtime/scientific
+  gates.
+
+### Actions
+- Added `ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA` to the ULG artifact adapter
+  and exported it through service orchestration.
+- Added optional production-handler-boundary discovery from closure artifact,
+  validation metadata, descriptor binding, runtime binding, and tensor runtime
+  contract metadata.
+- Normalized the boundary as declared-not-executed evidence only. Present
+  boundary metadata must keep handler readiness, runtime execution,
+  scientific validation, full-physics validation, and full-fidelity magnetar
+  simulation false; overclaims add explicit blockers.
+- Threaded the normalized boundary through Eshkol dispatch probes, ingest
+  summaries, handoff supervisor summaries, live browser dispatch summaries,
+  Multiscale closure ingest, handoff readiness, and packet boundary conditions.
+- Added positive and overclaim tests for artifact summary, Eshkol dispatch
+  blocking, descriptor-only handoff propagation, and Multiscale packet fields.
+- Rebuilt `docs/multiscale` after changing `demos/multiscale/src/main.js`.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes'`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production handler boundary|descriptor-only Eshkol closure'`
+- `npm --prefix demos/multiscale run build`
+- `ss -ltnp | rg ':(5173|5185)\b' || true`
+- `git diff --check`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+
+### Results
+- PASS: syntax checks completed.
+- PASS: service orchestration focused run reported `26/26` passing. It includes
+  the new Eshkol production handler boundary summary test, boundary-overclaim
+  dispatch blocking test, and descriptor-only Eshkol handoff propagation test.
+- PASS: Multiscale model run reported `197/197` passing. It includes
+  descriptor-only boundary propagation and overclaim-bounded scenario tests.
+- PASS: `npm --prefix demos/multiscale run build` completed with only the
+  existing large-chunk warning and refreshed `docs/multiscale`.
+- PASS: `git diff --check` completed.
+- PASS: live servers stayed reachable on `0.0.0.0:5173` and `0.0.0.0:5185`.
+- PASS: live ULG handoff smoke reported `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, visible
+  magnetar proxy visual, canonical MoonLab suite hash
+  `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`,
+  Eshkol source hash
+  `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
+  and Eshkol WASM hash
+  `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
+
+### Open
+- This is a bounded metadata consumer for the production handler boundary. It
+  does not implement a production Eshkol runtime handler and does not claim
+  full-fidelity magnetar physics.
+- No push was attempted.

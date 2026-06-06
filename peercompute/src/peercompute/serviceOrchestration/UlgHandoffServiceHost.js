@@ -281,6 +281,9 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
   const productTopologyBinding = objectOrNull(descriptorProbe.productTopologyBinding) || {};
   const tensorRuntimeContract = objectOrNull(descriptorProbe.tensorRuntimeContract) || {};
   const runtimeBinding = objectOrNull(descriptorProbe.runtimeBinding) || {};
+  const productionHandlerBoundary = objectOrNull(descriptorProbe.productionHandlerBoundary)
+    || objectOrNull(ingest.eshkolProductionHandlerBoundary)
+    || null;
   const hostRuntimeProbe = objectOrNull(probe.hostRuntimeProbe) || {};
   const hostRuntimeExecution = objectOrNull(probe.hostRuntimeExecution) || {};
   const outputSemanticsValidation = objectOrNull(hostRuntimeExecution.outputSemanticsValidation) || {};
@@ -365,6 +368,32 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     descriptorDerivativeStatus: runtimeBinding.derivativeStatus || null,
     descriptorRuntimeScientificValidation: booleanOrNull(runtimeBinding.scientificValidation),
     descriptorRuntimeDeclaredNotExecuted: runtimeBinding.runtimeStatus === 'declared-not-executed',
+    eshkolProductionHandlerBoundaryReady: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryReady ?? productionHandlerBoundary?.ready
+    ),
+    eshkolProductionHandlerBoundarySchema:
+      ingest.eshkolProductionHandlerBoundarySchema || productionHandlerBoundary?.schema || null,
+    eshkolProductionHandlerBoundaryStatus:
+      ingest.eshkolProductionHandlerBoundaryStatus || productionHandlerBoundary?.status || null,
+    eshkolProductionHandlerBoundaryHandlerReady: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryHandlerReady ?? productionHandlerBoundary?.handlerReady
+    ),
+    eshkolProductionHandlerBoundaryRuntimeExecution: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryRuntimeExecution ?? productionHandlerBoundary?.runtimeExecution
+    ),
+    eshkolProductionHandlerBoundaryScientificValidation: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryScientificValidation ?? productionHandlerBoundary?.scientificValidation
+    ),
+    eshkolProductionHandlerBoundaryFullPhysicsValidation: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryFullPhysicsValidation ?? productionHandlerBoundary?.fullPhysicsValidation
+    ),
+    eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation: booleanOrNull(
+      ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+        ?? productionHandlerBoundary?.fullFidelityMagnetarSimulation
+    ),
+    eshkolProductionHandlerBoundary: clonePlain(
+      objectOrNull(ingest.eshkolProductionHandlerBoundary) || objectOrNull(productionHandlerBoundary)
+    ),
     hostRuntimeProbeReady: booleanOrNull(ingest.hostRuntimeProbeReady ?? hostRuntimeProbe.ready),
     hostRuntimeProbeStatus: ingest.hostRuntimeProbeStatus || hostRuntimeProbe.status || null,
     hostRuntimeExecutionReady: booleanOrNull(ingest.hostRuntimeExecutionReady ?? hostRuntimeExecution.ready),

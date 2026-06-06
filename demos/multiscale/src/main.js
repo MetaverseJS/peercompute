@@ -1820,6 +1820,29 @@ function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options =
     closureDescriptorScientificValidation: typeof summary.closureDescriptorScientificValidation === 'boolean'
       ? summary.closureDescriptorScientificValidation
       : null,
+    eshkolProductionHandlerBoundary: cloneJson(summary.eshkolProductionHandlerBoundary || null),
+    eshkolProductionHandlerBoundarySchema: summary.eshkolProductionHandlerBoundarySchema || null,
+    eshkolProductionHandlerBoundaryStatus: summary.eshkolProductionHandlerBoundaryStatus || null,
+    eshkolProductionHandlerBoundaryHandlerReady:
+      typeof summary.eshkolProductionHandlerBoundaryHandlerReady === 'boolean'
+        ? summary.eshkolProductionHandlerBoundaryHandlerReady
+        : null,
+    eshkolProductionHandlerBoundaryRuntimeExecution:
+      typeof summary.eshkolProductionHandlerBoundaryRuntimeExecution === 'boolean'
+        ? summary.eshkolProductionHandlerBoundaryRuntimeExecution
+        : null,
+    eshkolProductionHandlerBoundaryScientificValidation:
+      typeof summary.eshkolProductionHandlerBoundaryScientificValidation === 'boolean'
+        ? summary.eshkolProductionHandlerBoundaryScientificValidation
+        : null,
+    eshkolProductionHandlerBoundaryFullPhysicsValidation:
+      typeof summary.eshkolProductionHandlerBoundaryFullPhysicsValidation === 'boolean'
+        ? summary.eshkolProductionHandlerBoundaryFullPhysicsValidation
+        : null,
+    eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation:
+      typeof summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation === 'boolean'
+        ? summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+        : null,
     probeMode: 'descriptor-only-closure-v0'
   }, {
     ...options,
@@ -2006,6 +2029,52 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
       descriptorProductTopologyBinding: cloneJson(descriptorProbe?.productTopologyBinding || null),
       descriptorTensorRuntimeContract: cloneJson(descriptorProbe?.tensorRuntimeContract || null),
       descriptorRuntimeBinding: cloneJson(descriptorProbe?.runtimeBinding || null),
+      eshkolProductionHandlerBoundaryReady:
+        serviceSummary?.eshkolProductionHandlerBoundaryReady
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryReady
+        ?? descriptorProbe?.productionHandlerBoundary?.ready
+        ?? null,
+      eshkolProductionHandlerBoundarySchema:
+        serviceSummary?.eshkolProductionHandlerBoundarySchema
+        || serviceResult.ingest?.eshkolProductionHandlerBoundarySchema
+        || descriptorProbe?.productionHandlerBoundary?.schema
+        || null,
+      eshkolProductionHandlerBoundaryStatus:
+        serviceSummary?.eshkolProductionHandlerBoundaryStatus
+        || serviceResult.ingest?.eshkolProductionHandlerBoundaryStatus
+        || descriptorProbe?.productionHandlerBoundary?.status
+        || null,
+      eshkolProductionHandlerBoundaryHandlerReady:
+        serviceSummary?.eshkolProductionHandlerBoundaryHandlerReady
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryHandlerReady
+        ?? descriptorProbe?.productionHandlerBoundary?.handlerReady
+        ?? null,
+      eshkolProductionHandlerBoundaryRuntimeExecution:
+        serviceSummary?.eshkolProductionHandlerBoundaryRuntimeExecution
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryRuntimeExecution
+        ?? descriptorProbe?.productionHandlerBoundary?.runtimeExecution
+        ?? null,
+      eshkolProductionHandlerBoundaryScientificValidation:
+        serviceSummary?.eshkolProductionHandlerBoundaryScientificValidation
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryScientificValidation
+        ?? descriptorProbe?.productionHandlerBoundary?.scientificValidation
+        ?? null,
+      eshkolProductionHandlerBoundaryFullPhysicsValidation:
+        serviceSummary?.eshkolProductionHandlerBoundaryFullPhysicsValidation
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryFullPhysicsValidation
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidation
+        ?? null,
+      eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation:
+        serviceSummary?.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+        ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+        ?? descriptorProbe?.productionHandlerBoundary?.fullFidelityMagnetarSimulation
+        ?? null,
+      eshkolProductionHandlerBoundary: cloneJson(
+        serviceSummary?.eshkolProductionHandlerBoundary
+        || serviceResult.ingest?.eshkolProductionHandlerBoundary
+        || descriptorProbe?.productionHandlerBoundary
+        || null
+      ),
       hostRuntimeProbe: cloneJson(probe.hostRuntimeProbe || null),
       hostRuntimeExecution: cloneJson(hostRuntimeExecution),
       outputSemanticsValidation: cloneJson(hostRuntimeExecution?.outputSemanticsValidation || null)

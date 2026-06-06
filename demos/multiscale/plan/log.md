@@ -22831,3 +22831,34 @@ User asked whether Infinite Context Coder is being used.
   demo path. It still depends on ULG/Multiscale live servers and does not claim
   full-fidelity magnetar physics.
 - No push was attempted.
+
+## 2026-06-06 14:11:38 AKDT - Eshkol production handler boundary surfaced in Multiscale
+
+### Actions
+- Added Multiscale normalization for
+  `eshkol.ulg.production-handler-boundary.v0` as declared-not-executed evidence.
+- Surfaced boundary status through closure ingest, closure module probe,
+  handoff readiness, browser dispatch summaries, and packet boundary
+  conditions.
+- Preserved `handlerReady = false`, `runtimeExecution = false`,
+  `scientificValidation = false`, `fullPhysicsValidation = false`, and
+  `fullFidelityMagnetarSimulation = false`.
+- Added an overclaim regression proving handler readiness overclaims make the
+  boundary not ready while the scenario scientific gate remains false.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production handler boundary|descriptor-only Eshkol closure'`
+  reported `197/197` passing.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning and refreshed `docs/multiscale`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, and visible magnetar proxy visual.
+
+### Open
+- The boundary is still metadata-only. It does not make an Eshkol production
+  handler ready or claim full-fidelity magnetar physics.
+- No push was attempted.

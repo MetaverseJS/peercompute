@@ -14,6 +14,7 @@ const ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.ulg.eshkol-output
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-interpolation-table.v0';
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
 const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
+const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
 const ESHKOL_INTERPOLATION_TABLE_STATUSES = new Set(['declared-not-computed', 'computed-fixture']);
 
 const DEFAULT_ADAPTERS = Object.freeze({
@@ -96,6 +97,86 @@ function countReadyReferences(references = []) {
 
 function objectOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function createBoundaryFromSummaryFields(summary = {}) {
+  if (summary.eshkolProductionHandlerBoundarySchema !== ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA) return null;
+  return {
+    schema: summary.eshkolProductionHandlerBoundarySchema,
+    status: summary.eshkolProductionHandlerBoundaryStatus || null,
+    handlerReady: summary.eshkolProductionHandlerBoundaryHandlerReady,
+    runtimeExecution: summary.eshkolProductionHandlerBoundaryRuntimeExecution,
+    scientificValidation: summary.eshkolProductionHandlerBoundaryScientificValidation,
+    fullPhysicsValidation: summary.eshkolProductionHandlerBoundaryFullPhysicsValidation,
+    fullFidelityMagnetarSimulation: summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+  };
+}
+
+function findEshkolProductionHandlerBoundary({ artifact = {}, summary = {}, descriptor = null, binding = null } = {}) {
+  const candidates = [
+    summary.eshkolProductionHandlerBoundary,
+    createBoundaryFromSummaryFields(summary),
+    artifact.productionHandlerBoundary,
+    artifact.validation?.productionHandlerBoundary,
+    artifact.runtime?.productionHandlerBoundary,
+    artifact.metadata?.productionHandlerBoundary,
+    descriptor?.productionHandlerBoundary,
+    binding?.productionHandlerBoundary,
+    binding?.runtimeBinding?.productionHandlerBoundary,
+    binding?.closureTensorRuntimeContract?.productionHandlerBoundary
+  ];
+  return candidates
+    .map((entry) => objectOrNull(entry))
+    .find((entry) => entry?.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA)
+    || null;
+}
+
+function normalizeEshkolProductionHandlerBoundary(boundary = null) {
+  if (!boundary) return null;
+  const runtimeExecution = typeof boundary.runtimeExecution === 'boolean'
+    ? boundary.runtimeExecution
+    : (typeof boundary.runtimeExecuted === 'boolean' ? boundary.runtimeExecuted : null);
+  const validationBlockers = uniqueStrings([
+    boundary.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
+      ? null
+      : 'eshkol-production-handler-boundary-schema-mismatch',
+    boundary.handlerReady === false
+      ? null
+      : 'eshkol-production-handler-boundary-handler-readiness-overstated',
+    runtimeExecution === false
+      ? null
+      : 'eshkol-production-handler-boundary-runtime-execution-overstated',
+    boundary.scientificValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-scientific-validation-overstated',
+    boundary.fullPhysicsValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-physics-validation-overstated',
+    boundary.fullFidelityMagnetarSimulation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-fidelity-overstated'
+  ]);
+  const ready = validationBlockers.length === 0;
+  return {
+    schema: boundary.schema || null,
+    status: boundary.status || (ready ? 'production-handler-boundary-declared-not-executed' : 'production-handler-boundary-blocked'),
+    ready,
+    handlerReady: typeof boundary.handlerReady === 'boolean' ? boundary.handlerReady : null,
+    runtimeExecution,
+    scientificValidation: typeof boundary.scientificValidation === 'boolean'
+      ? boundary.scientificValidation
+      : null,
+    fullPhysicsValidation: typeof boundary.fullPhysicsValidation === 'boolean'
+      ? boundary.fullPhysicsValidation
+      : null,
+    fullFidelityMagnetarSimulation: typeof boundary.fullFidelityMagnetarSimulation === 'boolean'
+      ? boundary.fullFidelityMagnetarSimulation
+      : null,
+    boundaryId: stringOrNull(boundary.boundaryId || boundary.id),
+    handlerProtocol: stringOrNull(boundary.handlerProtocol || boundary.protocol),
+    validationBlockerCount: validationBlockers.length,
+    validationBlockers
+  };
 }
 
 function idsFromDescriptors(entries = []) {
@@ -874,6 +955,9 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
   const tensorRuntimeSampleShapeValidation = objectOrNull(tensorRuntimeContract?.sampleShapeValidation);
   const tensorRuntimeDescriptors = objectOrNull(tensorRuntimeContract?.tensorDescriptors) || {};
   const runtimeBinding = objectOrNull(binding?.runtimeBinding);
+  const productionHandlerBoundary = normalizeEshkolProductionHandlerBoundary(
+    findEshkolProductionHandlerBoundary({ artifact, summary, descriptor, binding })
+  );
   const artifactInputIds = idsFromDescriptors(artifact.inputs);
   const artifactOutputIds = idsFromDescriptors(artifact.outputs);
   const tensorInputIds = Array.isArray(tensorContract?.inputIds) ? [...tensorContract.inputIds] : [];
@@ -1065,6 +1149,9 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       blockers.push('eshkol-descriptor-runtime-scientific-validation-overstated');
     }
   }
+  if (productionHandlerBoundary && productionHandlerBoundary.ready !== true) {
+    blockers.push(...productionHandlerBoundary.validationBlockers);
+  }
   if (!entryExportMatches) {
     blockers.push('eshkol-descriptor-entry-export-mismatch');
   }
@@ -1188,7 +1275,8 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       runtimeStatus: runtimeBinding.runtimeStatus || null,
       derivativeStatus: runtimeBinding.derivativeStatus || null,
       scientificValidation: runtimeBinding.scientificValidation === true
-    } : null
+    } : null,
+    productionHandlerBoundary
   };
 }
 
@@ -1434,6 +1522,34 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     descriptorTensorRuntimeContractSchema: probe?.descriptorProbe?.tensorRuntimeContract?.schema || null,
     descriptorTensorRuntimeContractStatus: probe?.descriptorProbe?.tensorRuntimeContract?.status || null,
     descriptorTensorRuntimeContractHash: probe?.descriptorProbe?.tensorRuntimeContract?.contractHash || null,
+    eshkolProductionHandlerBoundaryReady:
+      summary.eshkolProductionHandlerBoundaryReady ?? probe?.descriptorProbe?.productionHandlerBoundary?.ready ?? null,
+    eshkolProductionHandlerBoundarySchema:
+      summary.eshkolProductionHandlerBoundarySchema || probe?.descriptorProbe?.productionHandlerBoundary?.schema || null,
+    eshkolProductionHandlerBoundaryStatus:
+      summary.eshkolProductionHandlerBoundaryStatus || probe?.descriptorProbe?.productionHandlerBoundary?.status || null,
+    eshkolProductionHandlerBoundaryHandlerReady:
+      summary.eshkolProductionHandlerBoundaryHandlerReady
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.handlerReady
+      ?? null,
+    eshkolProductionHandlerBoundaryRuntimeExecution:
+      summary.eshkolProductionHandlerBoundaryRuntimeExecution
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.runtimeExecution
+      ?? null,
+    eshkolProductionHandlerBoundaryScientificValidation:
+      summary.eshkolProductionHandlerBoundaryScientificValidation
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.scientificValidation
+      ?? null,
+    eshkolProductionHandlerBoundaryFullPhysicsValidation:
+      summary.eshkolProductionHandlerBoundaryFullPhysicsValidation
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidation
+      ?? null,
+    eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation:
+      summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.fullFidelityMagnetarSimulation
+      ?? null,
+    eshkolProductionHandlerBoundary:
+      clonePlain(summary.eshkolProductionHandlerBoundary || probe?.descriptorProbe?.productionHandlerBoundary || null),
     hostRuntimeProbeReady: probe?.hostRuntimeProbe?.ready === true,
     hostRuntimeProbeSchema: probe?.hostRuntimeProbe?.schema || null,
     hostRuntimeProbeStatus: probe?.hostRuntimeProbe?.status || null,

@@ -192,6 +192,7 @@ export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
 export const MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA = 'moonlab.webgpu.complex64-parity-scope.v0';
 export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
+export const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
 
 const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
   {
@@ -498,6 +499,76 @@ function normalizeScenarioClosureDescriptorSummary(source = {}) {
     scientificValidation,
     probeMode: source.closureDescriptorProbeMode || descriptor.probeMode || 'descriptor-only-closure-v0',
     scientificExecution: false
+  };
+}
+
+function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
+  const directBoundary = plainObjectOrNull(source)?.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
+    ? source
+    : null;
+  const boundary = plainObjectOrNull(source.eshkolProductionHandlerBoundary)
+    || plainObjectOrNull(source.productionHandlerBoundary)
+    || plainObjectOrNull(source.closureProductionHandlerBoundary)
+    || directBoundary;
+  const schema = stringOrNull(boundary?.schema || source.eshkolProductionHandlerBoundarySchema);
+  if (schema == null && boundary == null) return null;
+  const runtimeExecution = typeof boundary?.runtimeExecution === 'boolean'
+    ? boundary.runtimeExecution
+    : (
+        typeof boundary?.runtimeExecuted === 'boolean'
+          ? boundary.runtimeExecuted
+          : source.eshkolProductionHandlerBoundaryRuntimeExecution
+      );
+  const handlerReady = typeof boundary?.handlerReady === 'boolean'
+    ? boundary.handlerReady
+    : source.eshkolProductionHandlerBoundaryHandlerReady;
+  const scientificValidation = typeof boundary?.scientificValidation === 'boolean'
+    ? boundary.scientificValidation
+    : source.eshkolProductionHandlerBoundaryScientificValidation;
+  const fullPhysicsValidation = typeof boundary?.fullPhysicsValidation === 'boolean'
+    ? boundary.fullPhysicsValidation
+    : source.eshkolProductionHandlerBoundaryFullPhysicsValidation;
+  const fullFidelityMagnetarSimulation = typeof boundary?.fullFidelityMagnetarSimulation === 'boolean'
+    ? boundary.fullFidelityMagnetarSimulation
+    : source.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation;
+  const validationBlockers = uniqueStrings([
+    ...(Array.isArray(boundary?.validationBlockers) ? boundary.validationBlockers : []),
+    ...(Array.isArray(source.eshkolProductionHandlerBoundaryValidationBlockers)
+      ? source.eshkolProductionHandlerBoundaryValidationBlockers
+      : []),
+    schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
+      ? null
+      : 'eshkol-production-handler-boundary-schema-mismatch',
+    handlerReady === false
+      ? null
+      : 'eshkol-production-handler-boundary-handler-readiness-overstated',
+    runtimeExecution === false
+      ? null
+      : 'eshkol-production-handler-boundary-runtime-execution-overstated',
+    scientificValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-scientific-validation-overstated',
+    fullPhysicsValidation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-physics-validation-overstated',
+    fullFidelityMagnetarSimulation === false
+      ? null
+      : 'eshkol-production-handler-boundary-full-fidelity-overstated'
+  ]);
+  const ready = validationBlockers.length === 0;
+  return {
+    schema,
+    status: stringOrNull(boundary?.status || source.eshkolProductionHandlerBoundaryStatus)
+      || (ready ? 'production-handler-boundary-declared-not-executed' : 'production-handler-boundary-blocked'),
+    ready,
+    handlerReady: handlerReady == null ? null : handlerReady === true,
+    runtimeExecution: runtimeExecution == null ? null : runtimeExecution === true,
+    scientificValidation: scientificValidation == null ? null : scientificValidation === true,
+    fullPhysicsValidation: fullPhysicsValidation == null ? null : fullPhysicsValidation === true,
+    fullFidelityMagnetarSimulation:
+      fullFidelityMagnetarSimulation == null ? null : fullFidelityMagnetarSimulation === true,
+    validationBlockerCount: validationBlockers.length,
+    validationBlockers
   };
 }
 
@@ -991,6 +1062,7 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
     ? input.artifactSummary
     : input || {};
   const descriptor = normalizeScenarioClosureDescriptorSummary(source);
+  const productionHandlerBoundary = normalizeScenarioEshkolProductionHandlerBoundary(source);
   const descriptorHandoffReady = descriptor?.ready === true
     && source.closureServiceWorkerSafe === true
     && source.closureRequiresDynamicCode === false;
@@ -1035,6 +1107,7 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
         domFree: source.closureHostImportsDomFree === true
       },
       outputSemantics: normalizeScenarioClosureOutputSemanticsSummary(source),
+      productionHandlerBoundary,
       descriptor
     },
     validation: {
@@ -1057,6 +1130,7 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     : {};
   const moduleCompiled = source.moduleCompiled === true;
   const descriptor = normalizeScenarioClosureDescriptorSummary(source);
+  const productionHandlerBoundary = normalizeScenarioEshkolProductionHandlerBoundary(source);
   const descriptorProbeReady = descriptor?.ready === true;
   const importMetadataMatches = source.importMetadataMatches === true;
   const exportMetadataMatches = source.exportMetadataMatches === true;
@@ -1160,6 +1234,7 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     hostRuntimeProbe,
     hostRuntimeExecution,
     closureDescriptor: descriptor,
+    productionHandlerBoundary,
     descriptorProbeReady,
     scientificExecution: false,
     probeMode: source.probeMode || descriptor?.probeMode || 'browser-webassembly-module-abi-v0',
@@ -2421,6 +2496,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureHostRuntimeExecutionReady = closureModuleProbe?.hostRuntimeExecution?.ready === true;
   const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
   const closureDescriptor = closureIngest?.closure?.descriptor || closureModuleProbe?.closureDescriptor || null;
+  const productionHandlerBoundary =
+    closureIngest?.closure?.productionHandlerBoundary || closureModuleProbe?.productionHandlerBoundary || null;
   const closureDescriptorReady = closureDescriptor?.ready === true || scenario.validation?.closureDescriptorReady === true;
   const magnetarReference = calibrationIngest?.magnetarReference || null;
   const magnetarReferenceReady = magnetarReference?.ready === true || scenario.validation?.magnetarReferenceReady === true;
@@ -2618,7 +2695,16 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         ? closureIngest.closure.outputSemantics.scientificValidation
         : null,
       outputExpectedStdoutSha256: closureIngest?.closure?.outputSemantics?.expectedStdoutSha256 || null,
-      outputExpectedStdoutByteLength: closureIngest?.closure?.outputSemantics?.expectedStdoutByteLength ?? null
+      outputExpectedStdoutByteLength: closureIngest?.closure?.outputSemantics?.expectedStdoutByteLength ?? null,
+      productionHandlerBoundaryReady: productionHandlerBoundary?.ready === true,
+      productionHandlerBoundarySchema: productionHandlerBoundary?.schema || null,
+      productionHandlerBoundaryStatus: productionHandlerBoundary?.status || null,
+      productionHandlerBoundaryHandlerReady: productionHandlerBoundary?.handlerReady ?? null,
+      productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
+      productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
+      productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+      productionHandlerBoundaryFullFidelityMagnetarSimulation:
+        productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null
     },
     closureModuleProbe: {
       provider: closureModuleProbe?.provider || 'eshkol',
@@ -2630,6 +2716,15 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       descriptorSchema: closureDescriptor?.schema || null,
       descriptorStatus: closureDescriptor?.status || null,
       descriptorScientificValidation: closureDescriptor?.scientificValidation === true,
+      productionHandlerBoundaryReady: productionHandlerBoundary?.ready === true,
+      productionHandlerBoundarySchema: productionHandlerBoundary?.schema || null,
+      productionHandlerBoundaryStatus: productionHandlerBoundary?.status || null,
+      productionHandlerBoundaryHandlerReady: productionHandlerBoundary?.handlerReady ?? null,
+      productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
+      productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
+      productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+      productionHandlerBoundaryFullFidelityMagnetarSimulation:
+        productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
       entryExport: closureModuleProbe?.entryExport || null,
       moduleCompiled: closureModuleProbe?.moduleCompiled === true,
       importMetadataMatches: closureModuleProbe?.importMetadataMatches === true,
@@ -3819,6 +3914,8 @@ export class MultiscaleModel {
         closureDescriptorStatus: ingest.closure.descriptor?.status || null,
         closureDescriptorReady: ingest.closure.descriptor?.ready === true,
         closureDescriptorSchema: ingest.closure.descriptor?.schema || null,
+        closureProductionHandlerBoundaryReady: ingest.closure.productionHandlerBoundary?.ready === true,
+        closureProductionHandlerBoundaryStatus: ingest.closure.productionHandlerBoundary?.status || null,
         simulationStatus: 'proxy-only'
       }
     };
@@ -3848,6 +3945,8 @@ export class MultiscaleModel {
         closureDescriptorStatus: probe.closureDescriptor?.status || null,
         closureDescriptorReady: probe.closureDescriptor?.ready === true,
         closureDescriptorSchema: probe.closureDescriptor?.schema || null,
+        closureProductionHandlerBoundaryReady: probe.productionHandlerBoundary?.ready === true,
+        closureProductionHandlerBoundaryStatus: probe.productionHandlerBoundary?.status || null,
         closureOutputSemanticsStatus: probe.hostRuntimeExecution?.outputSemanticsValidation?.status || null,
         closureOutputSemanticsReady: probe.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
         simulationStatus: 'proxy-only'
@@ -8816,6 +8915,33 @@ export class MultiscaleModel {
             || null,
           scenarioClosureDescriptorScientificValidation: scenario.closureIngest?.closure?.descriptor?.scientificValidation === true
             || scenario.closureModuleProbe?.closureDescriptor?.scientificValidation === true,
+          scenarioEshkolProductionHandlerBoundaryReady:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryReady === true
+            || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryReady === true,
+          scenarioEshkolProductionHandlerBoundaryStatus:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryStatus
+            || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryStatus
+            || null,
+          scenarioEshkolProductionHandlerReady:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryHandlerReady
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryHandlerReady
+            ?? null,
+          scenarioEshkolProductionRuntimeExecution:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryRuntimeExecution
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryRuntimeExecution
+            ?? null,
+          scenarioEshkolProductionScientificValidation:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryScientificValidation
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryScientificValidation
+            ?? null,
+          scenarioEshkolProductionFullPhysicsValidation:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryFullPhysicsValidation
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryFullPhysicsValidation
+            ?? null,
+          scenarioEshkolProductionFullFidelityMagnetarSimulation:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryFullFidelityMagnetarSimulation
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryFullFidelityMagnetarSimulation
+            ?? null,
           scenarioClosureOutputSemanticsReady: scenario.closureIngest?.closure?.outputSemantics?.ready === true,
           scenarioClosureOutputSemanticScope: scenario.closureIngest?.closure?.outputSemantics?.semanticScope || null,
           scenarioClosureOutputScientificValidation: scenario.closureIngest?.closure?.outputSemantics?.scientificValidation === true,
