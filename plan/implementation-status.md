@@ -88,6 +88,16 @@ Updated: 2026-06-06 10:41:00 AKDT
   return payload carries `peercompute.multiscale.ulg-calibrated-demo-runtime-scope.v0`
   with `reducedCalibratedRuntimeEvidence = true` and
   `fullFidelityMagnetarSimulation = false`.
+- Multiscale calibrated-reference ingest now requires
+  `ulg.magnetar.fidelity-runtime-scope.v0` before ready MoonLab magnetar
+  references can clear the tolerance suite. The live one-call API now returns
+  both `fullFidelityMagnetarSimulation = false` and
+  `fullPhysicsValidation = false` in the calibrated runtime scope, and tolerance
+  suite entries preserve `fidelityRuntimeScopeReady = true`.
+- Strict live ULG `5173` to PeerCompute `5185` probe passed with
+  `runtime-evidence-ready`, `validatedCount = 5`, `proxyOnlyCount = 0`,
+  `missingCount = 0`, `scenarioScientificReady = true`, no blockers, and
+  reduced-scope readiness for the `pic-kinetic-plasma` tolerance entry.
 - `git diff --check` passed.
 
 ## Next

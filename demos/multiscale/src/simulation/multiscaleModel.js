@@ -583,10 +583,29 @@ function fieldDeltasWithinTolerances(observedDeltas = {}, tolerances = {}) {
   return checkedFieldCount > 0;
 }
 
+function normalizeMagnetarFidelityRuntimeScope(entry = {}) {
+  const scope = plainObjectOrNull(entry.fidelityRuntimeScope);
+  return scope == null ? null : clonePlain(scope);
+}
+
+function magnetarFidelityRuntimeScopeReady(scope = null) {
+  return scope?.schema === 'ulg.magnetar.fidelity-runtime-scope.v0'
+    && typeof scope.fidelityTier === 'string'
+    && scope.fidelityTier.length > 0
+    && typeof scope.runtimeScope === 'string'
+    && scope.runtimeScope.length > 0
+    && typeof scope.readinessClaim === 'string'
+    && scope.readinessClaim.length > 0
+    && scope.fullFidelityMagnetarSimulation === false
+    && scope.fullPhysicsValidation === false;
+}
+
 function normalizeCalibratedMagnetarReference(entry = {}, fallbackIndex = 0) {
   const fieldMap = plainObjectOrNull(entry.fieldMap);
   const fieldTolerances = plainObjectOrNull(entry.fieldTolerances || entry.tolerances);
   const fieldObservedDeltas = plainObjectOrNull(entry.fieldObservedDeltas || entry.observedDeltas);
+  const fidelityRuntimeScope = normalizeMagnetarFidelityRuntimeScope(entry);
+  const fidelityRuntimeScopeReady = magnetarFidelityRuntimeScopeReady(fidelityRuntimeScope);
   const id = stringOrNull(entry.id) || `magnetar-calibrated-reference-${fallbackIndex + 1}`;
   const family = stringOrNull(entry.family);
   const solverId = stringOrNull(entry.solverId);
@@ -612,7 +631,8 @@ function normalizeCalibratedMagnetarReference(entry = {}, fallbackIndex = 0) {
     && hasSha256Digest(contractHash)
     && hasSha256Digest(unitsHash)
     && validationStatus === 'pass'
-    && fieldContractReady;
+    && fieldContractReady
+    && fidelityRuntimeScopeReady;
   return {
     id,
     family,
@@ -625,6 +645,10 @@ function normalizeCalibratedMagnetarReference(entry = {}, fallbackIndex = 0) {
     fieldMap: clonePlain(fieldMap),
     fieldTolerances: clonePlain(fieldTolerances),
     fieldObservedDeltas: clonePlain(fieldObservedDeltas),
+    fidelityRuntimeScope,
+    fidelityRuntimeScopeReady,
+    fullFidelityMagnetarSimulation: fidelityRuntimeScope?.fullFidelityMagnetarSimulation ?? null,
+    fullPhysicsValidation: fidelityRuntimeScope?.fullPhysicsValidation ?? null,
     validationStatus,
     ready,
     scientificCoverage,
@@ -731,6 +755,10 @@ function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory, ca
       fieldMap: clonePlain(reference?.fieldMap || null),
       fieldTolerances: clonePlain(reference?.fieldTolerances || null),
       fieldObservedDeltas: clonePlain(reference?.fieldObservedDeltas || null),
+      fidelityRuntimeScope: clonePlain(reference?.fidelityRuntimeScope || null),
+      fidelityRuntimeScopeReady: reference?.fidelityRuntimeScopeReady === true,
+      fullFidelityMagnetarSimulation: reference?.fullFidelityMagnetarSimulation ?? null,
+      fullPhysicsValidation: reference?.fullPhysicsValidation ?? null,
       validationStatus: reference?.validationStatus || null,
       toleranceKind: requirement.toleranceKind,
       toleranceValue: null,

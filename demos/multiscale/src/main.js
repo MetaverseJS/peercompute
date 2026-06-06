@@ -1486,6 +1486,7 @@ function createUlgCalibratedRuntimeScope(report = {}, options = {}) {
     scientificExecution: evidence?.scientificExecution === true,
     reducedCalibratedRuntimeEvidence: manifest?.source === 'calibrated-reference-runtime-adapter-v0',
     fullFidelityMagnetarSimulation: false,
+    fullPhysicsValidation: false,
     limitations: [
       'not-full-fidelity-grmhd',
       'not-production-pic',

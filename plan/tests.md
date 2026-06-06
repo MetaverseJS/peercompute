@@ -854,3 +854,22 @@
   `requiredCount=5`, the MHD/PIC/radiation/relativity/cross-family runtime ids,
   and the scenario runtime gate still pending or blocked until validated
   scientific runtime evidence is attached.
+
+### Magnetar fidelity/runtime scope gate
+- Focused Node gate:
+  `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario clears calibrated reference blockers only when all scientific family references validate|magnetar scenario creates calibrated reduced runtime evidence from MoonLab references|magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites'`.
+: expected result is a full pass proving calibrated MoonLab references carry
+  `ulg.magnetar.fidelity-runtime-scope.v0`, tolerance-suite entries expose
+  `fidelityRuntimeScopeReady = true`, and reduced calibrated runtime readiness
+  does not claim `fullFidelityMagnetarSimulation` or `fullPhysicsValidation`.
+- Build gate: `npm --prefix demos/multiscale run build`.
+: expected result is a full pass with only the existing large-chunk warning.
+- Live browser gate: export a ULG handoff from `http://127.0.0.1:5173/`, apply it
+  with `window.__multiscaleDemo.runUlgMagnetarCalibratedDemo()` on
+  `https://127.0.0.1:5185/?scenario=magnetar`, and inspect the returned
+  handoff readiness.
+: current result on 2026-06-06 was `runtime-evidence-ready`,
+  `validatedCount = 5`, `proxyOnlyCount = 0`, `missingCount = 0`,
+  `scientificReady = true`, no blockers, `pic-kinetic-plasma`
+  `fidelityRuntimeScopeReady = true`, and calibrated runtime scope flags
+  `fullFidelityMagnetarSimulation = false` and `fullPhysicsValidation = false`.

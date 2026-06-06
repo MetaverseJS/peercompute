@@ -663,6 +663,24 @@ const MOONLAB_MAGNETAR_REFERENCE_SUMMARY = Object.freeze({
   magnetarReferenceValidationStatus: 'pass'
 });
 
+const MAGNETAR_REDUCED_FIDELITY_RUNTIME_SCOPE = Object.freeze({
+  schema: 'ulg.magnetar.fidelity-runtime-scope.v0',
+  fidelityTier: 'reduced-calibrated-runtime-fixture',
+  runtimeScope: 'reduced-scalar-reference-contract',
+  readinessClaim: 'integration-tolerance-gate-only',
+  reducedCalibratedRuntimeFixture: true,
+  hostRuntimeSmokeFixture: false,
+  fullFidelityMagnetarSimulation: false,
+  fullPhysicsValidation: false,
+  excludedPhysics: [
+    'charge-conserving-pic',
+    'spectral-angular-radiation-transport',
+    'gr-or-grmhd-spacetime-solve',
+    'full-resistive-mhd-or-force-free-magnetosphere',
+    'validated-production-magnetar-closure'
+  ]
+});
+
 const MAGNETAR_CALIBRATED_REFERENCE_FIXTURES = Object.freeze([
   {
     id: 'magnetosphere-mhd-reference',
@@ -704,6 +722,7 @@ function createMagnetarCalibratedReference(fixture, overrides = {}) {
     fieldMap: Object.fromEntries(fields.map((field) => [field, `${fixture.family}.${field}`])),
     fieldTolerances: Object.fromEntries(fields.map((field) => [field, { abs: 0.01 }])),
     fieldObservedDeltas: Object.fromEntries(fields.map((field, index) => [field, 0.002 + index * 0.001])),
+    fidelityRuntimeScope: MAGNETAR_REDUCED_FIDELITY_RUNTIME_SCOPE,
     validationStatus: 'pass',
     ready: true,
     scientificCoverage: true,
@@ -2437,6 +2456,9 @@ test('magnetar scenario clears calibrated reference blockers only when all scien
   assert.equal(scenario.calibrationIngest.calibratedReferenceCount, 4);
   assert.equal(scenario.calibrationIngest.calibratedReferenceReadyCount, 4);
   assert.equal(scenario.calibrationIngest.calibratedReferenceScientificCoverageCount, 4);
+  assert.equal(scenario.calibrationIngest.calibratedReferences[0].fidelityRuntimeScopeReady, true);
+  assert.equal(scenario.calibrationIngest.calibratedReferences[0].fullFidelityMagnetarSimulation, false);
+  assert.equal(scenario.calibrationIngest.calibratedReferences[0].fullPhysicsValidation, false);
   assert.equal(scenario.handoffReadiness.toleranceSuite.status, 'scientific-tolerance-suite-ready');
   assert.equal(scenario.handoffReadiness.toleranceSuite.ready, true);
   assert.equal(scenario.handoffReadiness.toleranceSuite.requiredCount, 5);
@@ -2444,6 +2466,8 @@ test('magnetar scenario clears calibrated reference blockers only when all scien
   assert.equal(scenario.handoffReadiness.toleranceSuite.scientificReadyCount, 4);
   assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 0);
   assert.equal(scenario.handoffReadiness.toleranceSuite.calibratedReferenceSuiteReady, true);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.entries[1].fidelityRuntimeScopeReady, true);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.entries[1].fidelityRuntimeScope.fullFidelityMagnetarSimulation, false);
   assert.equal(scenario.handoffReadiness.toleranceSuite.blockers.length, 0);
   assert.ok(!scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));

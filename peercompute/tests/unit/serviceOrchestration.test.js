@@ -153,8 +153,25 @@ function createEshkolMagnetarDescriptorArtifact() {
           moonlabNormalizedReferenceSuite: {
             schema: 'moonlab.magnetar.normalized-reference-suite.v0',
             assetId: 'moonlab:magnetar-reference-contracts:normalized-suite:v0',
-            contentHash: 'sha256:5cef4349b2bdbfe619ca60a00de91297f4b0b3c050cc1a82858f61f6c2941de3',
+            contentHash: 'sha256:87e078026a9c2233afcccfd5c13f4ceb5d46cd301eb51fa7d0c15ef106a8e029',
             ready: true,
+            fidelityRuntimeScope: {
+              schema: 'ulg.magnetar.fidelity-runtime-scope.v0',
+              fidelityTier: 'reduced-calibrated-runtime-fixture',
+              runtimeScope: 'reduced-scalar-reference-suite',
+              readinessClaim: 'integration-tolerance-gate-only',
+              reducedCalibratedRuntimeFixture: true,
+              hostRuntimeSmokeFixture: false,
+              fullFidelityMagnetarSimulation: false,
+              fullPhysicsValidation: false,
+              excludedPhysics: [
+                'charge-conserving-pic',
+                'spectral-angular-radiation-transport',
+                'gr-or-grmhd-spacetime-solve',
+                'full-resistive-mhd-or-force-free-magnetosphere',
+                'validated-production-magnetar-closure'
+              ]
+            },
             referenceIds: [
               'magnetosphere-mhd-reference',
               'pic-kinetic-plasma-reference',
@@ -2040,6 +2057,11 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     'moonlab:relativistic-correction-reference'
   ]);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.referenceCount, 4);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.contentHash, 'sha256:87e078026a9c2233afcccfd5c13f4ceb5d46cd301eb51fa7d0c15ef106a8e029');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.schema, 'ulg.magnetar.fidelity-runtime-scope.v0');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.runtimeScope, 'reduced-scalar-reference-suite');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.fullFidelityMagnetarSimulation, false);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.fidelityRuntimeScope.fullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productTopologyBinding.status, 'descriptor-bound-not-executed');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'declared-not-executed');
   assert.equal(eshkol.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);

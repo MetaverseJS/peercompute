@@ -22728,3 +22728,38 @@ User asked whether Infinite Context Coder is being used.
 - This remains the reduced calibrated runtime demo path, not a full-fidelity
   magnetar simulation.
 - No push was attempted.
+
+## 2026-06-06 11:06:16 AKDT - Magnetar fidelity/runtime scope gate
+
+### Actions
+- Added calibrated-reference fidelity/runtime scope gating to the Multiscale
+  MoonLab reference ingest path. Ready calibrated magnetar references now need
+  `ulg.magnetar.fidelity-runtime-scope.v0`, `fullFidelityMagnetarSimulation = false`,
+  and `fullPhysicsValidation = false`.
+- Propagated the scope through scenario tolerance-suite entries so downstream
+  handoff readiness can prove reduced fixture scope instead of inferring it from
+  labels.
+- Extended the one-call ULG calibrated runtime API scope with
+  `fullPhysicsValidation = false` alongside the existing
+  `fullFidelityMagnetarSimulation = false`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `195/195`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: strict live browser probe from ULG `5173` to PeerCompute `5185`
+  reported `runtime-evidence-ready`, `validatedCount = 5`,
+  `proxyOnlyCount = 0`, `missingCount = 0`, `scientificReady = true`, no
+  blockers, tolerance-scope readiness for `pic-kinetic-plasma`, and calibrated
+  runtime scope flags `fullFidelityMagnetarSimulation = false` and
+  `fullPhysicsValidation = false`.
+
+### Open
+- This gate proves reduced calibrated runtime fixture scope only. It is still
+  not full-fidelity GRMHD, production PIC, spectral radiation transport, or
+  full magnetar physics validation.
+- No push was attempted.

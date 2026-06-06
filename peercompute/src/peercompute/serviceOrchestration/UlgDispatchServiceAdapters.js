@@ -1016,6 +1016,7 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       contentHash: moonlabSuite.contentHash || null,
       status: moonlabSuite.status || null,
       ready: moonlabSuite.ready === true,
+      fidelityRuntimeScope: clonePlain(objectOrNull(moonlabSuite.fidelityRuntimeScope)),
       referenceCount: referenceIds.length,
       referenceFamilyCount: Array.isArray(moonlabSuite.referenceFamilies)
         ? moonlabSuite.referenceFamilies.length
