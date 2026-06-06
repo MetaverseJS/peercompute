@@ -137,9 +137,14 @@ Updated: 2026-06-06 14:47:49 AKDT
   ULG/Multiscale servers and confirmed canonical suite hash
   `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`,
   Eshkol source hash
-  `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
-  and Eshkol WASM hash
-  `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  Eshkol WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  byte length `169528`, tensor runtime claim
+  `deterministic-tensor-runtime-smoke-only`, linear memory status
+  `entry-export-runtime-smoke-passed`, offset probe `runtime-smoke-passed`,
+  changed bytes `64`, and production handler boundary
+  `declared-not-executed`.
 - PeerCompute descriptor regression now blocks tensor-runtime/table binding
   drift even when the interpolation table itself still reports
   `computed-fixture`: mismatched runtime table hashes and mismatched
@@ -173,8 +178,9 @@ Updated: 2026-06-06 14:47:49 AKDT
   generated relay config, connected two Multiscale browser peers in one relay
   room, imported the live ULG `5173` handoff by browser `postMessage`, and
   verified `handoff-ready`, `service-envelope-ready`, `relaySafeArtifactCount=2`,
-  `dispatch-ready`, canonical MoonLab/Eshkol hashes, and clean relay-config
-  restoration after teardown.
+  `dispatch-ready`, the deterministic Eshkol tensor-offset runtime-smoke
+  artifact (`169528` bytes, offset consumption true, changed bytes `64`), and
+  clean relay-config restoration after teardown.
 - Adapter-enabled relay smoke passed on 2026-06-06:
   `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run
   test:ulg-relay-handoff` now records

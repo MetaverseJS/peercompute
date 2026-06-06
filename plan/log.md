@@ -51859,3 +51859,59 @@ timeout 8s env \
   MoonLab/Eshkol browser dispatch adapters over the relay room and does not
   claim full-fidelity magnetar physics.
 - No push was attempted.
+
+## 2026-06-06 15:34:53 AKDT - PeerCompute sidecar Eshkol handoff expectation refresh
+
+### Actions
+- Inspected Multiscale ULG handoff smoke expectations for old Eshkol artifact
+  hashes and contract fields.
+- Updated `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs` and
+  `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs` to expect the new Eshkol
+  deterministic tensor-offset runtime-smoke artifact.
+- Added assertions for source hash
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  byte length `169528`, execution claim
+  `deterministic-tensor-runtime-smoke-only`, linear-memory status
+  `entry-export-runtime-smoke-passed`, entry-export offset consumption,
+  offset-probe status `runtime-smoke-passed`, changed bytes `64`, and the
+  non-production handler boundary.
+- Updated `plan/tests.md`, `plan/implementation-status.md`, and
+  `demos/multiscale/plan/plan.md` with the new gate expectations.
+
+### Files Touched
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Commands Run
+- `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `git diff -- docs/multiscale/relay-config.json docs/multiscale/.relay-config.json docs/multiscale/relay-config-source.json docs/multiscale/.relay-config-source.json`
+- `ss -ltnp | rg ':4196\b' || true`
+
+### Results
+- PASS: both touched tests passed syntax checks.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, visible magnetar proxy visual, and the new Eshkol
+  deterministic runtime-smoke fields.
+- PASS: `npm --prefix demos/multiscale run test:ulg-relay-handoff` reported
+  relay room `ulg-relay-handoff-mq2zp76q`, `handoff-ready`,
+  `service-envelope-ready`, `dispatch-ready`, and the same new Eshkol
+  runtime-smoke fields.
+- PASS: relay config restore check was clean and no persistent test-owned
+  `4196` listener remained.
+
+### Failures / Open
+- None for this PeerCompute expectation refresh. The Eshkol artifact remains a
+  deterministic runtime-smoke handoff only; production host imports and full
+  physics validation are still not claimed.
+- No push was attempted.

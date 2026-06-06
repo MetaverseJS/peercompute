@@ -45,8 +45,19 @@ const relayWebrtcConfig = process.env.ULG_RELAY_HANDOFF_WEBRTC_CONFIG
   });
 
 const EXPECTED_CANONICAL_SUITE_HASH = 'sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455';
-const EXPECTED_ESHKOL_SOURCE_HASH = 'sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052';
-const EXPECTED_ESHKOL_WASM_HASH = 'sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947';
+const EXPECTED_ESHKOL_SOURCE_HASH = 'sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69';
+const EXPECTED_ESHKOL_WASM_HASH = 'sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa';
+const EXPECTED_ESHKOL_WASM_BYTE_LENGTH = 169528;
+const EXPECTED_ESHKOL_TENSOR_CONTRACT_HASH = 'sha256:2289b8c8068f1a033cda20f09f30a33f2e41588b8ee2ccd1143100f2fe87dd64';
+const EXPECTED_ESHKOL_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
+const EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS = 'entry-export-runtime-smoke-passed';
+const EXPECTED_ESHKOL_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
+const EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER = 'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
+const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
+  'production-magnetar-handler-not-implemented',
+  'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
+  'full-physics-validation-not-run'
+];
 
 const mime = {
   '.html': 'text/html',
@@ -245,6 +256,43 @@ function attachDiagnostics(page, label, errors) {
   });
 }
 
+function assertEshkolRuntimeSmokeProbe(handoffProbe) {
+  assert.equal(handoffProbe.artifactCount, 2);
+  assert.equal(handoffProbe.canonicalSuiteHash, EXPECTED_CANONICAL_SUITE_HASH);
+  assert.equal(handoffProbe.sourceSha256, EXPECTED_ESHKOL_SOURCE_HASH);
+  assert.equal(handoffProbe.wasmSha256, EXPECTED_ESHKOL_WASM_HASH);
+  assert.equal(handoffProbe.executionModuleSha256, EXPECTED_ESHKOL_WASM_HASH);
+  assert.equal(handoffProbe.wasmByteLength, EXPECTED_ESHKOL_WASM_BYTE_LENGTH);
+  assert.equal(handoffProbe.tensorRuntimeContractHash, EXPECTED_ESHKOL_TENSOR_CONTRACT_HASH);
+  assert.equal(handoffProbe.tensorRuntimeStatus, 'declared-fixture-contract');
+  assert.equal(handoffProbe.tensorRuntimeRuntimeStatus, 'deterministic-runtime-smoke-executed');
+  assert.equal(handoffProbe.tensorRuntimeExecutionClaim, EXPECTED_ESHKOL_RUNTIME_CLAIM);
+  assert.equal(handoffProbe.tensorRuntimeScientificValidation, false);
+  assert.equal(handoffProbe.tensorRuntimeFullPhysicsValidation, false);
+  assert.equal(handoffProbe.linearMemoryStatus, EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS);
+  assert.equal(handoffProbe.linearMemoryRuntimeStatus, 'deterministic-host-runtime-smoke-executed');
+  assert.equal(handoffProbe.linearMemoryExecutionClaim, EXPECTED_ESHKOL_RUNTIME_CLAIM);
+  assert.equal(handoffProbe.linearMemoryEntryExportConsumesOffsets, true);
+  assert.deepEqual(handoffProbe.linearMemoryTensorConsumedByEntryExport, [true, true, true, true]);
+  assert.equal(handoffProbe.smokeBindingStatus, EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS);
+  assert.equal(handoffProbe.smokeBindingEntryExportConsumesOffsets, true);
+  assert.equal(handoffProbe.smokeBindingOutputInitialization, 'entry-export-produced');
+  assert.equal(handoffProbe.offsetProbeStatus, EXPECTED_ESHKOL_OFFSET_PROBE_STATUS);
+  assert.equal(handoffProbe.offsetProbeBlocker, EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER);
+  assert.equal(handoffProbe.offsetProbeChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(handoffProbe.offsetProbeEntryExportConsumesOffsets, true);
+  assert.equal(handoffProbe.offsetProbeOutputTensorsProducedByEntryExport, true);
+  assert.equal(handoffProbe.offsetProbeObservedStdoutInvariantAcrossArgs, false);
+  assert.equal(handoffProbe.productionHandlerBoundaryStatus, 'declared-not-executed');
+  assert.deepEqual(handoffProbe.productionHandlerBoundaryBlockers, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
+  assert.deepEqual(handoffProbe.productionHandlerBoundaryAllowedExecutionClaims, [EXPECTED_ESHKOL_RUNTIME_CLAIM]);
+  assert.equal(handoffProbe.productionHandlerBoundaryTensorMemoryStatus, EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS);
+  assert.equal(handoffProbe.productionHandlerBoundaryTensorMemoryEntryExportConsumesOffsets, true);
+  assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
+  assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+}
+
 function buildMultiscaleUrl(roomId) {
   const params = new URLSearchParams({
     scenario: 'magnetar',
@@ -319,6 +367,12 @@ async function readUlgHandoff(ulgPage) {
     const handoff = await window.__ulgDemo.createPeerComputeHandoff();
     const eshkol = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'eshkol');
     const moonlab = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'moonlab');
+    const descriptorBinding = eshkol?.artifact?.validation?.closureDescriptor?.descriptorBinding || null;
+    const tensorRuntimeContract = descriptorBinding?.closureTensorRuntimeContract || null;
+    const linearMemoryBinding = tensorRuntimeContract?.linearMemoryBinding || null;
+    const smokeBinding = linearMemoryBinding?.smokeBinding || null;
+    const offsetProbe = linearMemoryBinding?.entryExportOffsetProbe || null;
+    const productionHandlerBoundary = descriptorBinding?.productionHandlerBoundary || null;
     return {
       handoff,
       probe: {
@@ -326,6 +380,43 @@ async function readUlgHandoff(ulgPage) {
         canonicalSuiteHash: eshkol?.artifact?.validation?.closureDescriptor?.descriptorBinding?.moonlabNormalizedReferenceSuite?.contentHash || null,
         sourceSha256: eshkol?.artifact?.provenance?.sourceSha256 || null,
         wasmSha256: eshkol?.artifact?.provenance?.wasmSha256 || null,
+        executionModuleSha256: eshkol?.artifact?.execution?.module?.sha256 || null,
+        wasmByteLength: eshkol?.artifact?.execution?.module?.byteLength || null,
+        tensorRuntimeContractHash: tensorRuntimeContract?.contractHash || null,
+        tensorRuntimeStatus: tensorRuntimeContract?.status || null,
+        tensorRuntimeRuntimeStatus: tensorRuntimeContract?.runtimeStatus || null,
+        tensorRuntimeExecutionClaim: tensorRuntimeContract?.executionClaim || null,
+        tensorRuntimeScientificValidation: tensorRuntimeContract?.scientificValidation ?? null,
+        tensorRuntimeFullPhysicsValidation: tensorRuntimeContract?.fullPhysicsValidation ?? null,
+        linearMemoryStatus: linearMemoryBinding?.status || null,
+        linearMemoryRuntimeStatus: linearMemoryBinding?.runtimeStatus || null,
+        linearMemoryExecutionClaim: linearMemoryBinding?.executionClaim || null,
+        linearMemoryEntryExportConsumesOffsets: linearMemoryBinding?.entryExportConsumesOffsets ?? null,
+        linearMemoryTensorConsumedByEntryExport: Array.isArray(linearMemoryBinding?.tensors)
+          ? linearMemoryBinding.tensors.map((tensor) => tensor.consumedByEntryExport === true)
+          : [],
+        smokeBindingStatus: smokeBinding?.status || null,
+        smokeBindingEntryExportConsumesOffsets: smokeBinding?.entryExportConsumesOffsets ?? null,
+        smokeBindingOutputInitialization: smokeBinding?.outputInitialization || null,
+        offsetProbeStatus: offsetProbe?.status || null,
+        offsetProbeBlocker: offsetProbe?.blocker || null,
+        offsetProbeChangedBytesInDeclaredTensorRange: offsetProbe?.changedBytesInDeclaredTensorRange ?? null,
+        offsetProbeEntryExportConsumesOffsets: offsetProbe?.entryExportConsumesOffsets ?? null,
+        offsetProbeOutputTensorsProducedByEntryExport: offsetProbe?.outputTensorsProducedByEntryExport ?? null,
+        offsetProbeObservedStdoutInvariantAcrossArgs: offsetProbe?.observedStdoutInvariantAcrossArgs ?? null,
+        productionHandlerBoundaryStatus: productionHandlerBoundary?.status || null,
+        productionHandlerBoundaryBlockers: Array.isArray(productionHandlerBoundary?.blockers)
+          ? [...productionHandlerBoundary.blockers]
+          : [],
+        productionHandlerBoundaryAllowedExecutionClaims: Array.isArray(productionHandlerBoundary?.allowedExecutionClaims)
+          ? [...productionHandlerBoundary.allowedExecutionClaims]
+          : [],
+        productionHandlerBoundaryTensorMemoryStatus: productionHandlerBoundary?.tensorMemoryBinding?.status || null,
+        productionHandlerBoundaryTensorMemoryEntryExportConsumesOffsets:
+          productionHandlerBoundary?.tensorMemoryBinding?.entryExportConsumesOffsets ?? null,
+        productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
+        productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
+        productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
         moonlabSourceService: moonlab?.ref?.sourceService || null,
         eshkolSourceService: eshkol?.ref?.sourceService || null
       }
@@ -623,10 +714,7 @@ async function main() {
     const ulgPage = await context.newPage();
     attachDiagnostics(ulgPage, 'ulg', errors);
     const { handoff, probe: handoffProbe } = await readUlgHandoff(ulgPage);
-    assert.equal(handoffProbe.artifactCount, 2);
-    assert.equal(handoffProbe.canonicalSuiteHash, EXPECTED_CANONICAL_SUITE_HASH);
-    assert.equal(handoffProbe.sourceSha256, EXPECTED_ESHKOL_SOURCE_HASH);
-    assert.equal(handoffProbe.wasmSha256, EXPECTED_ESHKOL_WASM_HASH);
+    assertEshkolRuntimeSmokeProbe(handoffProbe);
 
     const popup = await openPopupFromUlg(ulgPage, multiscaleUrl);
     attachDiagnostics(popup, 'handoff-popup', errors);

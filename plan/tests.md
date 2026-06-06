@@ -946,10 +946,19 @@
   `5173` page, opens two Multiscale browser peers in the same relay room, waits
   for each non-relay peer id to appear in `connectedPeerIds`, posts the ULG
   handoff into the relay-backed Multiscale popup, and verifies `handoff-ready`,
-  blocker count `0`, canonical MoonLab suite hash, Eshkol source/WASM hashes,
-  `service-envelope-ready`, `relaySafeArtifactCount=2`, `dispatch-ready`, no
-  full-fidelity/full-physics scientific overclaim flags, and restored
-  `docs/multiscale/relay-config*.json` files after teardown.
+  blocker count `0`, canonical MoonLab suite hash, the deterministic Eshkol
+  tensor-offset runtime-smoke artifact, `service-envelope-ready`,
+  `relaySafeArtifactCount=2`, `dispatch-ready`, no full-fidelity/full-physics
+  scientific overclaim flags, and restored `docs/multiscale/relay-config*.json`
+  files after teardown. The Eshkol gate asserts source hash
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  WASM byte length `169528`, runtime claim
+  `deterministic-tensor-runtime-smoke-only`, linear-memory status
+  `entry-export-runtime-smoke-passed`, offset-probe status
+  `runtime-smoke-passed`, `entryExportConsumesOffsets = true`, changed bytes
+  `64`, and production handler boundary status `declared-not-executed`.
 : `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` opts into the browser dispatch-adapter
   probe with compact raw-result omission, a browser-owned async run record, and
   stage/supervisor diagnostics. Current result on 2026-06-06 passes with
@@ -985,4 +994,12 @@
   `npm --prefix demos/multiscale run test:ulg-handoff`.
 : current result on 2026-06-06 passed against ULG `5173` and Multiscale `5185`
   with `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
-  bridge ack `handoff-ready`, and visible magnetar proxy visual.
+  bridge ack `handoff-ready`, visible magnetar proxy visual, Eshkol source hash
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  Eshkol WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  byte length `169528`, runtime claim
+  `deterministic-tensor-runtime-smoke-only`, linear-memory status
+  `entry-export-runtime-smoke-passed`, offset-probe status
+  `runtime-smoke-passed`, changed bytes `64`, and production handler boundary
+  status `declared-not-executed`.

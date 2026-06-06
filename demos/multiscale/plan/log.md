@@ -23061,3 +23061,61 @@ User asked whether Infinite Context Coder is being used.
 - This is a reduced calibrated handoff/runtime smoke harness, not a
   full-fidelity magnetar simulation or full physics validation.
 - No push was attempted.
+
+## 2026-06-06 15:34:53 AKDT - Eshkol tensor-offset handoff expectation refresh
+
+### Actions
+- Updated the ULG browser handoff smoke and relay-backed handoff smoke to expect
+  the new deterministic Eshkol tensor-offset runtime-smoke artifact instead of
+  the older ABI-blocked closure artifact.
+- Added live handoff assertions for Eshkol source/WASM hashes, WASM byte length,
+  tensor runtime claim, linear-memory status, entry-export offset consumption,
+  offset-probe changed bytes, and production-handler boundary non-execution.
+- Checked the current ULG public service asset to confirm the live Vite server
+  should expose the new artifact while the built `dist` copy still had the old
+  artifact.
+- Updated Multiscale plan/test/status docs with the new handoff gate evidence.
+
+### Files Touched
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Commands Run
+- `rg -n "38902bb4|e0a3c7d|630b20dd|53066|169528|abi-blocked|host-layout-smoke|metadata-and-smoke|tensor-buffer-layout|entry-export-runtime-smoke|runtime-smoke-passed|changedBytesInDeclaredTensorRange|entryExportConsumesOffsets|sourceSha256|wasmSha256|byteLength" demos/multiscale --glob '!**/docs/**' --glob '!**/dist/**' --glob '!**/node_modules/**'`
+- `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `git diff -- docs/multiscale/relay-config.json docs/multiscale/.relay-config.json docs/multiscale/relay-config-source.json docs/multiscale/.relay-config-source.json`
+- `ss -ltnp | rg ':4196\b' || true`
+
+### Results
+- PASS: syntax checks completed for both touched handoff smoke files.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed against
+  ULG `http://127.0.0.1:5173/` and Multiscale
+  `https://127.0.0.1:5185/?scenario=magnetar`. The handoff reported source hash
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  byte length `169528`, runtime claim
+  `deterministic-tensor-runtime-smoke-only`, linear-memory status
+  `entry-export-runtime-smoke-passed`, offset probe `runtime-smoke-passed`,
+  `entryExportConsumesOffsets = true`, changed bytes `64`, production boundary
+  `declared-not-executed`, and visible magnetar proxy visual.
+- PASS: `npm --prefix demos/multiscale run test:ulg-relay-handoff` passed over
+  relay room `ulg-relay-handoff-mq2zp76q`, verified the same Eshkol runtime-smoke
+  fields, imported the ULG handoff by `postMessage`, reported `handoff-ready`,
+  `service-envelope-ready`, `dispatch-ready`, and restored relay config files.
+- PASS: no `docs/multiscale/relay-config*.json` diff remained after relay smoke
+  teardown, and no persistent `4196` listener was left.
+
+### Open
+- PeerCompute now accepts the new deterministic runtime-smoke artifact through
+  its handoff smokes. This still does not claim full-fidelity magnetar physics,
+  production Eshkol host imports, or full physics validation.
+- No push was attempted.
