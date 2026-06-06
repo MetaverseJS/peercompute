@@ -21799,3 +21799,53 @@ User asked whether Infinite Context Coder is being used.
 ### Demo Server State
 - ULG remains reachable at `http://100.86.83.35:5173/`.
 - Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
+
+## 2026-06-06 00:37:58 AKDT - MoonLab reference inventory handoff
+
+### Prompt
+- Continued after ULG and PeerCompute exposed MoonLab
+  `moonlab.magnetar-dipole-ising-reference.v0` contract summaries.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added Multiscale normalization for PeerCompute/ULG `magnetarReference*`
+  summary fields.
+- Added `scenario.handoffReadiness.referenceInventory` and mirrored compact
+  reference fields into packet boundary conditions.
+- Added the partial blocker
+  `moonlab-magnetar-dipole-ising-reference-contract-missing`, which clears only
+  when the MoonLab reference contract carries the expected schema/role,
+  `sha256:` contract hash, normalized Ising units, ground-state reference
+  energy, numeric tolerance/delta fields, pass validation, and delta within
+  tolerance.
+- Kept the larger calibrated-reference and scientific-tolerance blockers, so
+  the magnetar scenario remains proxy-only.
+- Updated the scenario HUD row with reference inventory status and rebuilt the
+  docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: Multiscale source/test syntax checks completed.
+- PASS: full Multiscale model suite passed with `177/177`.
+- PASS: `git diff --check` reported no whitespace errors.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings.
+- PASS: live ULG-to-Multiscale VPN probe reported
+  `reference-contract-ready`, packet `scenarioMagnetarReferenceReady: true`,
+  output-semantics execution ready, `scenarioScientificReady: false`, and only
+  the calibrated multiphysics reference plus scientific tolerance blockers.
+
+### Open
+- This is a partial normalized Ising reference/tolerance input only. It does not
+  supply calibrated multiphysics magnetar references or a scientific tolerance
+  suite.

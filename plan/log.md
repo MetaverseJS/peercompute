@@ -48963,3 +48963,62 @@ User asked whether Infinite Context Coder is being used.
   `10/10`.
 - PASS: `git diff --check`.
 - No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 00:37:58 AKDT - Multiscale MoonLab reference inventory
+
+### Prompt
+- Continued after ULG and PeerCompute exposed MoonLab
+  `moonlab.magnetar-dipole-ising-reference.v0` contract summaries.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Extended Multiscale scenario calibration ingest to normalize PeerCompute ULG
+  `magnetarReference*` fields into a `magnetarReference` contract summary.
+- Added handoff `referenceInventory` status and packet boundary-condition fields
+  for MoonLab reference readiness, schema, contract hash, normalized energy
+  units, ground-state reference energy, tolerance, and observed energy delta.
+- Added a specific
+  `moonlab-magnetar-dipole-ising-reference-contract-missing` blocker that
+  clears only for the complete digest-shaped normalized Ising reference
+  contract.
+- Kept `scientificReady: false` and preserved the calibrated
+  MHD/PIC/radiation/relativity reference and scientific tolerance blockers.
+- Updated the HUD scenario row to include reference inventory status and rebuilt
+  the checked-in Multiscale docs bundle.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `177/177`.
+- PASS: `git diff --check`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings and refreshed the checked-in docs bundle.
+- PASS: live ULG-to-Multiscale VPN probe using
+  `window.__ulgDemo.createPeerComputeHandoff()` and
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` reported MoonLab
+  reference contract hash
+  `sha256:f85763af06f271c414d55e29884ee7b0d5738a4a7ec9351493964b98f8d4e1ec`,
+  Multiscale `reference-contract-ready`, packet
+  `scenarioMagnetarReferenceReady: true`, output-semantics execution ready,
+  `scenarioScientificReady: false`, and blockers only
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` plus
+  `scientific-tolerance-suite-missing`.
+
+### Open
+- The reference inventory is only the MoonLab normalized dipole Ising tolerance
+  contract. Full magnetar scientific readiness still needs calibrated
+  MHD/PIC/radiation/relativity references and a scientific tolerance suite.
+- No push was attempted; all commits remain local per user instruction.

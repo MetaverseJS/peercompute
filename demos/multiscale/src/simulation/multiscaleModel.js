@@ -169,6 +169,8 @@ export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA = 'peerco
 export const MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.multiscale.scenario-closure-output-semantics-validation.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
+export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
+export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
 
 export const MULTISCALE_SCENARIO_PRESETS = {
   magnetar: {
@@ -232,6 +234,12 @@ export function clamp(value, min, max) {
 function finite(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function finiteOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function rounded(value, digits = 4) {
@@ -348,6 +356,44 @@ function findMagnetarCalibrationEntry(source = {}) {
   )) || null;
 }
 
+function normalizeMagnetarReferenceContract(source = {}) {
+  const schema = source.magnetarReferenceSchema || null;
+  const role = source.magnetarReferenceRole || null;
+  const contractHash = source.magnetarReferenceContractHash || null;
+  const energyUnits = source.magnetarReferenceEnergyUnits || null;
+  const groundStateBitString = source.magnetarReferenceGroundStateBitString || null;
+  const groundStateEnergy = finiteOrNull(source.magnetarReferenceGroundStateEnergy);
+  const toleranceEnergyAbs = finiteOrNull(source.magnetarReferenceToleranceEnergyAbs);
+  const maxObservedEnergyDelta = finiteOrNull(source.magnetarReferenceMaxObservedEnergyDelta);
+  const validationStatus = source.magnetarReferenceValidationStatus || null;
+  const ready = source.magnetarReferenceReady === true
+    && schema === MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA
+    && role === MOONLAB_MAGNETAR_REFERENCE_ROLE
+    && typeof contractHash === 'string'
+    && contractHash.startsWith('sha256:')
+    && energyUnits === 'normalized-ising'
+    && groundStateBitString != null
+    && groundStateEnergy != null
+    && toleranceEnergyAbs != null
+    && maxObservedEnergyDelta != null
+    && validationStatus === 'pass'
+    && maxObservedEnergyDelta <= toleranceEnergyAbs;
+  return {
+    schema,
+    role,
+    contractHash,
+    energyUnits,
+    groundStateBitString,
+    groundStateEnergy,
+    toleranceEnergyAbs,
+    maxObservedEnergyDelta,
+    validationStatus,
+    ready,
+    scope: 'moonlab-dipole-ising-reference-tolerance',
+    scientificScope: 'partial-calibration-reference-not-full-magnetar'
+  };
+}
+
 export function createScenarioCalibrationIngestReport(input = {}, options = {}) {
   const source = input?.artifactSummary && typeof input.artifactSummary === 'object'
     ? input.artifactSummary
@@ -377,6 +423,7 @@ export function createScenarioCalibrationIngestReport(input = {}, options = {}) 
     ? Number(source.calibrationReadyCount)
     : (entry.ready ? 1 : 0);
   const ready = source.magnetarDipoleIsingReady === true || entry.ready === true;
+  const magnetarReference = normalizeMagnetarReferenceContract(source);
   return {
     schema: MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
     scenarioId: options.scenarioId || 'magnetar',
@@ -397,8 +444,11 @@ export function createScenarioCalibrationIngestReport(input = {}, options = {}) 
       evaluatedBitstrings: entry.evaluatedBitstrings,
       ready
     },
+    magnetarReference,
     validation: {
       status: ready ? 'calibration-artifact-ready' : 'calibration-artifact-pending',
+      referenceStatus: magnetarReference.ready ? 'reference-contract-ready' : 'reference-contract-pending',
+      referenceReady: magnetarReference.ready,
       simulationStatus: 'proxy-only',
       note: 'Calibration artifact is accepted as a scenario handoff; the magnetar runtime remains a normalized proxy until physics gates pass.'
     }
@@ -589,7 +639,8 @@ function createScenarioHandoffBlockers({
   closureModuleProbeReady,
   closureHostRuntimeRequired,
   closureHostRuntimeExecutionReady,
-  closureOutputSemanticsValidated
+  closureOutputSemanticsValidated,
+  magnetarReferenceReady
 }) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
@@ -607,6 +658,9 @@ function createScenarioHandoffBlockers({
   if (closureHostRuntimeExecutionReady === true && closureOutputSemanticsValidated !== true) {
     blockers.push('eshkol-closure-output-semantics-unvalidated');
   }
+  if (calibrationReady && magnetarReferenceReady !== true) {
+    blockers.push('moonlab-magnetar-dipole-ising-reference-contract-missing');
+  }
   blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
   blockers.push('scientific-tolerance-suite-missing');
   return blockers;
@@ -622,6 +676,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
   const closureHostRuntimeExecutionReady = closureModuleProbe?.hostRuntimeExecution?.ready === true;
   const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
+  const magnetarReference = calibrationIngest?.magnetarReference || null;
+  const magnetarReferenceReady = magnetarReference?.ready === true || scenario.validation?.magnetarReferenceReady === true;
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -634,7 +690,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureModuleProbeReady,
     closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
     closureHostRuntimeExecutionReady,
-    closureOutputSemanticsValidated
+    closureOutputSemanticsValidated,
+    magnetarReferenceReady
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -658,7 +715,33 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       sourceSchema: calibrationIngest?.sourceSchema || null,
       groundStateBitString: calibrationIngest?.magnetarDipoleIsing?.groundStateBitString || null,
       maxEnergyDelta: calibrationIngest?.magnetarDipoleIsing?.maxEnergyDelta ?? null,
-      evaluatedBitstrings: calibrationIngest?.magnetarDipoleIsing?.evaluatedBitstrings ?? null
+      evaluatedBitstrings: calibrationIngest?.magnetarDipoleIsing?.evaluatedBitstrings ?? null,
+      referenceReady: magnetarReferenceReady,
+      referenceSchema: magnetarReference?.schema || null,
+      referenceRole: magnetarReference?.role || null,
+      referenceContractHash: magnetarReference?.contractHash || null,
+      referenceEnergyUnits: magnetarReference?.energyUnits || null,
+      referenceGroundStateBitString: magnetarReference?.groundStateBitString || null,
+      referenceGroundStateEnergy: magnetarReference?.groundStateEnergy ?? null,
+      referenceToleranceEnergyAbs: magnetarReference?.toleranceEnergyAbs ?? null,
+      referenceMaxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
+      referenceValidationStatus: magnetarReference?.validationStatus || null
+    },
+    referenceInventory: {
+      provider: calibrationIngest?.provider || 'moonlab',
+      ready: magnetarReferenceReady,
+      status: magnetarReferenceReady ? 'reference-contract-ready' : 'reference-contract-pending',
+      schema: magnetarReference?.schema || null,
+      role: magnetarReference?.role || null,
+      contractHash: magnetarReference?.contractHash || null,
+      energyUnits: magnetarReference?.energyUnits || null,
+      groundStateBitString: magnetarReference?.groundStateBitString || null,
+      groundStateEnergy: magnetarReference?.groundStateEnergy ?? null,
+      toleranceEnergyAbs: magnetarReference?.toleranceEnergyAbs ?? null,
+      maxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
+      validationStatus: magnetarReference?.validationStatus || null,
+      scope: magnetarReference?.scope || 'moonlab-dipole-ising-reference-tolerance',
+      scientificScope: magnetarReference?.scientificScope || 'partial-calibration-reference-not-full-magnetar'
     },
     closureHandoff: {
       provider: closureIngest?.provider || 'eshkol',
@@ -749,6 +832,15 @@ function mergeScenarioCalibrationArtifacts(artifacts = [], ingest) {
     groundStateBitString: ingest.magnetarDipoleIsing.groundStateBitString,
     maxEnergyDelta: ingest.magnetarDipoleIsing.maxEnergyDelta,
     evaluatedBitstrings: ingest.magnetarDipoleIsing.evaluatedBitstrings,
+    referenceReady: ingest.magnetarReference.ready,
+    referenceSchema: ingest.magnetarReference.schema,
+    referenceContractHash: ingest.magnetarReference.contractHash,
+    referenceEnergyUnits: ingest.magnetarReference.energyUnits,
+    referenceGroundStateBitString: ingest.magnetarReference.groundStateBitString,
+    referenceGroundStateEnergy: ingest.magnetarReference.groundStateEnergy,
+    referenceToleranceEnergyAbs: ingest.magnetarReference.toleranceEnergyAbs,
+    referenceMaxObservedEnergyDelta: ingest.magnetarReference.maxObservedEnergyDelta,
+    referenceValidationStatus: ingest.magnetarReference.validationStatus,
     sourceSchema: ingest.sourceSchema
   };
   let replaced = false;
@@ -1836,6 +1928,9 @@ export class MultiscaleModel {
         calibrationStatus: ingest.ready ? 'artifact-summary-ready' : 'artifact-summary-pending',
         calibrationReady: ingest.ready,
         calibrationSchema: ingest.magnetarDipoleIsing.schema,
+        magnetarReferenceStatus: ingest.magnetarReference.ready ? 'reference-contract-ready' : 'reference-contract-pending',
+        magnetarReferenceReady: ingest.magnetarReference.ready,
+        magnetarReferenceSchema: ingest.magnetarReference.schema,
         simulationStatus: 'proxy-only'
       }
     };
@@ -6644,6 +6739,15 @@ export class MultiscaleModel {
           scenarioCalibrationReady: scenario.calibrationIngest?.ready === true,
           scenarioCalibrationStatus: scenario.validation?.calibrationStatus || null,
           scenarioCalibrationSchema: scenario.calibrationIngest?.magnetarDipoleIsing?.schema || null,
+          scenarioMagnetarReferenceReady: scenario.handoffReadiness?.referenceInventory?.ready === true,
+          scenarioMagnetarReferenceStatus: scenario.handoffReadiness?.referenceInventory?.status || null,
+          scenarioMagnetarReferenceSchema: scenario.handoffReadiness?.referenceInventory?.schema || null,
+          scenarioMagnetarReferenceContractHash: scenario.handoffReadiness?.referenceInventory?.contractHash || null,
+          scenarioMagnetarReferenceEnergyUnits: scenario.handoffReadiness?.referenceInventory?.energyUnits || null,
+          scenarioMagnetarReferenceGroundStateBitString: scenario.handoffReadiness?.referenceInventory?.groundStateBitString || null,
+          scenarioMagnetarReferenceGroundStateEnergy: scenario.handoffReadiness?.referenceInventory?.groundStateEnergy ?? null,
+          scenarioMagnetarReferenceToleranceEnergyAbs: scenario.handoffReadiness?.referenceInventory?.toleranceEnergyAbs ?? null,
+          scenarioMagnetarReferenceMaxObservedEnergyDelta: scenario.handoffReadiness?.referenceInventory?.maxObservedEnergyDelta ?? null,
           scenarioClosureReady: scenario.closureIngest?.ready === true,
           scenarioClosureStatus: scenario.validation?.closureStatus || null,
           scenarioClosureKind: scenario.closureIngest?.closure?.kind || null,
