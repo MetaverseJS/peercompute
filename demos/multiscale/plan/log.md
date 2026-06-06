@@ -22422,3 +22422,50 @@ User asked whether Infinite Context Coder is being used.
 - This is browser-visible bounded proxy provenance only. Authoritative
   scientific solver execution and calibrated magnetar validation remain open.
 - No push was attempted.
+
+## 2026-06-06 04:39:11 AKDT - Magnetar scientific runtime validation contract hardening
+
+### Prompt
+- User asked this sidecar agent to inspect the current magnetar scientific
+  runtime gate in `demos/multiscale` and make the next bounded code change that
+  moves from proxy-only runtime evidence toward validated scientific runtime
+  evidence without overclaiming. Standing instruction remains local commits
+  only and no push.
+
+### Actions
+- Reviewed the root and Multiscale plan/log/test files before editing.
+- Tightened `peercompute.multiscale.scenario-runtime-evidence-manifest.v0`
+  normalization so entries claiming scientific execution must also carry
+  `peercompute.multiscale.scenario-scientific-runtime-validation.v0`,
+  `magnetar-scientific-runtime-reference-validation` scope, reference hash,
+  tolerance hash, runtime-output hash, and an entry evidence hash.
+- Added `runtime-evidence-incomplete` status for scientific-looking entries
+  that are observed but missing part of that validation contract.
+- Kept bounded proxy runtime artifacts unchanged: they remain proxy-only,
+  visible to the packet/runtime gate, and blocked from scientific readiness.
+- Added model tests for missing scientific runtime-output hash and for the
+  positive synthetic validated-manifest fixture preserving the new fields.
+- Updated the Multiscale/root plan and test notes.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|scientific validation contract'`
+  passed `192/192`.
+- PASS: `git diff --check` passed before and after the log update.
+
+### Open
+- This hardens the scientific runtime gate but still does not provide
+  authoritative magnetar scientific runtime artifacts. Real solver/runtime
+  validation for MHD, PIC, radiation, relativity, and cross-family
+  conservation/coupling remains open.
+- No push was attempted.

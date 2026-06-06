@@ -179,6 +179,10 @@ export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multisc
 export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA = 'peercompute.multiscale.scenario-scientific-runtime-gate.v0';
 export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0';
+export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA =
+  'peercompute.multiscale.scenario-scientific-runtime-validation.v0';
+export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE =
+  'magnetar-scientific-runtime-reference-validation';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
@@ -338,6 +342,10 @@ function plainObjectOrNull(value) {
 
 function hasSha256Digest(value) {
   return typeof value === 'string' && value.startsWith('sha256:');
+}
+
+function firstSha256Digest(...values) {
+  return values.find((value) => hasSha256Digest(value)) || null;
 }
 
 function rounded(value, digits = 4) {
@@ -1138,6 +1146,9 @@ export function createScenarioRuntimeEvidenceManifestReport({
   const proxyOnlyCount = entries.filter((entry) => entry.proxyOnly).length;
   const missingCount = entries.filter((entry) => !entry.runtimeObserved && !entry.ready).length;
   const invalidEntryCount = sourceEntries ? entries.filter((entry) => !entry.ready).length : 0;
+  const scientificValidationIncompleteCount = entries.filter((entry) => (
+    entry.scientificExecution && !entry.ready
+  )).length;
   const manifestInvalid =
     manifestDiagnostics.unknownEntries.length > 0 ||
     manifestDiagnostics.duplicateEntries.length > 0;
@@ -1148,7 +1159,15 @@ export function createScenarioRuntimeEvidenceManifestReport({
   ]);
   const status = ready
     ? 'runtime-evidence-ready'
-    : (manifestInvalid ? 'runtime-evidence-invalid' : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing'));
+    : (
+      manifestInvalid
+        ? 'runtime-evidence-invalid'
+        : (
+          scientificValidationIncompleteCount > 0
+            ? 'runtime-evidence-incomplete'
+            : (observedCount > 0 ? 'runtime-evidence-proxy-only' : 'runtime-evidence-missing')
+        )
+    );
   return {
     schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
     scenarioId,
@@ -1162,6 +1181,7 @@ export function createScenarioRuntimeEvidenceManifestReport({
     proxyOnlyCount,
     missingCount,
     invalidEntryCount,
+    scientificValidationIncompleteCount,
     unknownCount: manifestDiagnostics.unknownEntries.length,
     duplicateCount: manifestDiagnostics.duplicateEntries.length,
     blockerCount: blockers.length,
@@ -1281,11 +1301,18 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
   const evidenceHash = hasSha256Digest(source.evidenceHash) ? source.evidenceHash : null;
   const validation = clonePlain(source.validation || null);
   const validationScope = stringOrNull(source.validationScope || source.scope || validation?.scope);
+  const scientificValidationReadiness = createScientificRuntimeValidationReadiness({
+    requirement,
+    source,
+    validation,
+    validationScope
+  });
   const ready = source.ready === true
     && scientificExecution
     && validationStatus === 'pass'
     && evidenceHash != null
-    && solverMatches;
+    && solverMatches
+    && scientificValidationReadiness.ready;
   const runtimeObserved = ready
     || source.runtimeObserved === true
     || (backend != null && backend !== 'none');
@@ -1293,6 +1320,7 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     ...(Array.isArray(source.blockers) && source.blockers.length > 0 ? source.blockers : [source.blocker]),
     !solverMatches ? `${requirement.id}-solver-mismatch` : null,
     evidenceHash == null ? `${requirement.id}-evidence-hash-missing` : null,
+    scientificExecution ? scientificValidationReadiness.blockers : null,
     requirement.blocker
   ]);
   return {
@@ -1301,10 +1329,14 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     solverId,
     status: ready
       ? 'validated-runtime-ready'
-      : (runtimeObserved ? 'proxy-runtime-observed' : 'runtime-evidence-missing'),
+      : (
+        scientificExecution && runtimeObserved
+          ? 'scientific-runtime-validation-incomplete'
+          : (runtimeObserved ? 'proxy-runtime-observed' : 'runtime-evidence-missing')
+      ),
     ready,
     scientificExecution,
-    proxyOnly: !ready && runtimeObserved,
+    proxyOnly: !ready && runtimeObserved && !scientificExecution,
     runtimeObserved,
     backend,
     sequence: finiteOrNull(source.sequence),
@@ -1313,7 +1345,72 @@ function normalizeScenarioRuntimeEvidenceEntry(requirement, sourceEntries = []) 
     observed: clonePlain(source.observed || source.diagnostics || null),
     validation,
     validationScope,
+    scientificValidationReady: scientificValidationReadiness.ready,
+    scientificValidationIncomplete: scientificExecution && !scientificValidationReadiness.ready,
+    scientificValidationSchema: scientificValidationReadiness.schema,
+    scientificValidationScope: scientificValidationReadiness.scope,
+    scientificReferenceHash: scientificValidationReadiness.referenceHash,
+    scientificToleranceHash: scientificValidationReadiness.toleranceHash,
+    scientificRuntimeOutputHash: scientificValidationReadiness.runtimeOutputHash,
+    scientificValidationBlockers: scientificValidationReadiness.blockers,
     blocker: blockers[0] || null,
+    blockers
+  };
+}
+
+function createScientificRuntimeValidationReadiness({
+  requirement,
+  source = {},
+  validation = null,
+  validationScope = null
+} = {}) {
+  const validationRecord = validation && typeof validation === 'object' && !Array.isArray(validation)
+    ? validation
+    : {};
+  const schema = stringOrNull(source.validationSchema || validationRecord.schema);
+  const scope = stringOrNull(validationScope || validationRecord.scope);
+  const referenceHash = firstSha256Digest(
+    source.scientificReferenceHash,
+    source.referenceHash,
+    validationRecord.scientificReferenceHash,
+    validationRecord.referenceHash
+  );
+  const toleranceHash = firstSha256Digest(
+    source.scientificToleranceHash,
+    source.toleranceHash,
+    validationRecord.scientificToleranceHash,
+    validationRecord.toleranceHash
+  );
+  const runtimeOutputHash = firstSha256Digest(
+    source.scientificRuntimeOutputHash,
+    source.runtimeOutputHash,
+    validationRecord.scientificRuntimeOutputHash,
+    validationRecord.runtimeOutputHash
+  );
+  const blockers = uniqueStrings([
+    schema === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA
+      ? null
+      : `${requirement.id}-scientific-validation-schema-missing`,
+    scope === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE
+      ? null
+      : `${requirement.id}-scientific-validation-scope-missing`,
+    referenceHash ? null : `${requirement.id}-scientific-reference-hash-missing`,
+    toleranceHash ? null : `${requirement.id}-scientific-tolerance-hash-missing`,
+    runtimeOutputHash ? null : `${requirement.id}-scientific-runtime-output-hash-missing`,
+    validationRecord.scientificValidation === true || source.scientificValidation === true
+      ? null
+      : `${requirement.id}-scientific-validation-flag-missing`,
+    validationRecord.proxyOnly === true || source.proxyOnly === true
+      ? `${requirement.id}-scientific-validation-proxy-only`
+      : null
+  ]);
+  return {
+    ready: blockers.length === 0,
+    schema,
+    scope,
+    referenceHash,
+    toleranceHash,
+    runtimeOutputHash,
     blockers
   };
 }

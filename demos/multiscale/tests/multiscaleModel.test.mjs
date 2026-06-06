@@ -22,6 +22,8 @@ import {
   MULTISCALE_SCENARIO_PRESETS,
   MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA,
+  MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+  MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
   MULTISCALE_SCENARIO_TRANSFER_MANIFEST_SCHEMA,
   MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
@@ -770,7 +772,14 @@ function createReadyMagnetarRuntimeEvidenceManifest(overrides = {}) {
       evidenceHash: `sha256:${String(index + 1).repeat(64)}`,
       observed: { fixture: true, family },
       validation: {
+        schema: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
         status: 'pass',
+        scope: MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+        scientificValidation: true,
+        proxyOnly: false,
+        referenceHash: `sha256:${'abcde'[index].repeat(64)}`,
+        toleranceHash: `sha256:${'f1234'[index].repeat(64)}`,
+        runtimeOutputHash: `sha256:${'6789a'[index].repeat(64)}`,
         toleranceSuite: 'fixture'
       },
       blockers: []
@@ -2532,17 +2541,58 @@ test('magnetar runtime evidence manifest requires evidence hashes for validated 
     entry.id === 'validated-radiation-transport-runtime'
   ));
 
-  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-incomplete');
   assert.equal(scenario.scientificRuntimeEvidence.ready, false);
   assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 4);
   assert.equal(scenario.scientificRuntimeEvidence.invalidEntryCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.scientificValidationIncompleteCount, 1);
   assert.equal(scenario.scientificRuntimeEvidence.unknownCount, 0);
   assert.equal(scenario.scientificRuntimeEvidence.duplicateCount, 0);
+  assert.equal(radiation.status, 'scientific-runtime-validation-incomplete');
   assert.equal(radiation.ready, false);
   assert.equal(radiation.scientificExecution, true);
   assert.equal(radiation.validationStatus, 'pass');
   assert.equal(radiation.evidenceHash, null);
+  assert.equal(radiation.scientificValidationReady, true);
   assert.ok(radiation.blockers.includes('validated-radiation-transport-runtime-evidence-hash-missing'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
+});
+
+test('magnetar runtime evidence manifest requires scientific validation contract hashes', () => {
+  const model = new MultiscaleModel({ seed: 4761 });
+  const manifest = createReadyMagnetarRuntimeEvidenceManifest();
+  manifest.entries = manifest.entries.map((entry) => (
+    entry.id === 'validated-pic-kinetic-plasma-runtime'
+      ? {
+        ...entry,
+        validation: {
+          ...entry.validation,
+          runtimeOutputHash: null
+        }
+      }
+      : entry
+  ));
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(manifest);
+  const pic = scenario.scientificRuntimeEvidence.entries.find((entry) => (
+    entry.id === 'validated-pic-kinetic-plasma-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-incomplete');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 4);
+  assert.equal(scenario.scientificRuntimeEvidence.scientificValidationIncompleteCount, 1);
+  assert.equal(pic.status, 'scientific-runtime-validation-incomplete');
+  assert.equal(pic.ready, false);
+  assert.equal(pic.scientificExecution, true);
+  assert.equal(pic.scientificValidationReady, false);
+  assert.equal(pic.scientificValidationSchema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(pic.scientificValidationScope, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(pic.scientificReferenceHash.startsWith('sha256:'));
+  assert.ok(pic.scientificToleranceHash.startsWith('sha256:'));
+  assert.equal(pic.scientificRuntimeOutputHash, null);
+  assert.ok(pic.scientificValidationBlockers.includes('validated-pic-kinetic-plasma-runtime-scientific-runtime-output-hash-missing'));
+  assert.ok(pic.blockers.includes('validated-pic-kinetic-plasma-runtime-scientific-runtime-output-hash-missing'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
   assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });
@@ -2979,6 +3029,15 @@ test('magnetar scientific runtime gate accepts explicit validated runtime eviden
   assert.equal(scenario.scientificRuntimeEvidence.requiredCount, 5);
   assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 5);
   assert.equal(scenario.scientificRuntimeEvidence.blockerCount, 0);
+  const magnetosphereRuntime = scenario.scientificRuntimeEvidence.entries.find((entry) => (
+    entry.id === 'validated-magnetosphere-mhd-runtime'
+  ));
+  assert.equal(magnetosphereRuntime.scientificValidationReady, true);
+  assert.equal(magnetosphereRuntime.scientificValidationSchema, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(magnetosphereRuntime.scientificValidationScope, MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(magnetosphereRuntime.scientificReferenceHash.startsWith('sha256:'));
+  assert.ok(magnetosphereRuntime.scientificToleranceHash.startsWith('sha256:'));
+  assert.ok(magnetosphereRuntime.scientificRuntimeOutputHash.startsWith('sha256:'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.status, 'scientific-runtime-ready');
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.prerequisiteReady, true);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, true);
