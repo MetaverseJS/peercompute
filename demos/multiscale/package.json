@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "test:visual": "node tests/visualSmoke.mjs",
+    "test:ulg-handoff": "node tests/ulgBrowserHandoffSmoke.mjs",
     "test:perf": "node tests/performanceProbe.mjs",
     "test:remote-placement": "node tests/liveRemotePlacementSmoke.mjs"
   },

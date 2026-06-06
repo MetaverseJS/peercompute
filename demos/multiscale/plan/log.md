@@ -22797,3 +22797,37 @@ User asked whether Infinite Context Coder is being used.
   magnetar runtime demo. It is still not a full-fidelity GRMHD/PIC/radiation
   transport magnetar simulation.
 - No push was attempted.
+
+## 2026-06-06 13:00:36 AKDT - Browser ULG handoff smoke coverage
+
+### Actions
+- Added `tests/ulgBrowserHandoffSmoke.mjs` as a focused live browser smoke for
+  the ULG-to-Multiscale `postMessage` bridge.
+- Wired it into `demos/multiscale/package.json` as `npm run test:ulg-handoff`.
+- The smoke opens the live ULG demo, verifies the emitted handoff's canonical
+  MoonLab suite hash and Eshkol source/WASM hashes, clicks `Launch Magnetar`,
+  then verifies Multiscale origin filtering, browser ack state, handoff
+  readiness, HUD status, and magnetar proxy visibility.
+
+### Validation
+- PASS: `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` against
+  ULG `http://127.0.0.1:5173/` and Multiscale
+  `https://127.0.0.1:5185/?scenario=magnetar` reported
+  `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
+  bridge ack `handoff-ready`, visible magnetar proxy visual on the solar layer,
+  canonical suite hash
+  `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`,
+  Eshkol source hash
+  `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
+  and Eshkol WASM hash
+  `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
+- PASS: `npm --prefix demos/multiscale test` passed `195/195`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+
+### Open
+- This is live receiver coverage for the reduced calibrated magnetar runtime
+  demo path. It still depends on ULG/Multiscale live servers and does not claim
+  full-fidelity magnetar physics.
+- No push was attempted.

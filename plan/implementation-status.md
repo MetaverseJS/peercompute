@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 12:46:50 AKDT
+Updated: 2026-06-06 13:00:36 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -53,6 +53,10 @@ Updated: 2026-06-06 12:46:50 AKDT
   `applyUlgDemoHandoffAndRefreshCalibratedRuntimeEvidence()` path as manual
   import, so the scenario HUD, handoff readiness, and reduced calibrated runtime
   gate update together.
+- Added formal live browser coverage for the ULG browser handoff receiver:
+  `npm --prefix demos/multiscale run test:ulg-handoff` verifies the ULG launcher,
+  Multiscale origin filtering, browser ack state, `handoff-ready` readiness,
+  magnetar proxy visibility, and canonical suite/source/WASM hashes.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -111,12 +115,17 @@ Updated: 2026-06-06 12:46:50 AKDT
   `handoff-ready`, blocker count `0`, `simulationStatus = scientific-ready`,
   bridge ack `handoff-ready`, and visible magnetar proxy visual on the solar
   layer.
+- `npm --prefix demos/multiscale run test:ulg-handoff` passed against the live
+  ULG/Multiscale servers and confirmed canonical suite hash
+  `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`,
+  Eshkol source hash
+  `sha256:73f2a89ffe3434d995ffe1174185462cf0c2edb653fbe4d1286342b788763052`,
+  and Eshkol WASM hash
+  `sha256:38902bb4b3f5ed8abf513a4d739ff9ca99727696df271c3ff17127575785b947`.
 - `git diff --check` passed.
 
 ## Next
 - Replace deterministic table-fixture acceptance with descriptor-aware
   execution/table-probe logic once the closure runtime contract is ready.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
-- Add formal browser UI coverage for the postMessage receiver after the direct
-  launch bridge stabilizes across VPN and localhost hosts.
 - Keep commits local only.
