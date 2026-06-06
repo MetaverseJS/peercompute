@@ -1976,6 +1976,11 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceResult.validation.serviceHandlerReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceStatus, 'accepted');
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerReady, true);
+  assert.deepEqual(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerBlockers, []);
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerOutputSchema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerOutputStatus, 'accepted');
+  assert.equal(result.dispatchResult.results[0].output.serviceSummary.serviceHandlerOutputReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.probeStatus, 'pass');
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.magnetarDipoleIsingReady, true);
   assert.equal(result.dispatchResult.results[0].output.serviceSummary.hostRuntimeExecutionReady, null);
@@ -2009,6 +2014,11 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[1].output.serviceResult.validation.serviceHandlerReady, true);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.moduleCompiled, false);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.schema, ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.serviceHandlerReady, true);
+  assert.deepEqual(result.dispatchResult.results[1].output.serviceSummary.serviceHandlerBlockers, []);
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.serviceHandlerOutputSchema, 'peercompute.ulg.real-service-adapter-output-fixture.v0');
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.serviceHandlerOutputStatus, 'accepted');
+  assert.equal(result.dispatchResult.results[1].output.serviceSummary.serviceHandlerOutputReady, true);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.probeStatus, 'skipped-short-wasm-header');
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.moduleCompiled, false);
   assert.equal(result.dispatchResult.results[1].output.serviceSummary.closureDescriptorReady, true);

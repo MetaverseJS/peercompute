@@ -1948,6 +1948,20 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
       blockers: uniqueUlgStrings(entry.blockers || []),
       serviceSummary: cloneJson(serviceSummary),
       ingest: cloneJson(serviceResult.ingest || null),
+      serviceOutput: cloneJson(serviceResult.serviceOutput || null),
+      serviceHandlerReady:
+        serviceSummary?.serviceHandlerReady
+        ?? serviceResult.validation?.serviceHandlerReady
+        ?? null,
+      serviceHandlerOutputSchema:
+        serviceSummary?.serviceHandlerOutputSchema
+        || serviceResult.serviceOutput?.schema
+        || null,
+      serviceHandlerOutputStatus:
+        serviceSummary?.serviceHandlerOutputStatus
+        || serviceResult.serviceOutput?.serviceStatus
+        || serviceResult.serviceOutput?.status
+        || null,
       probeStatus: serviceSummary?.probeStatus || probe.status || null,
       probeReady: serviceSummary?.probeReady ?? (typeof probe.ready === 'boolean' ? probe.ready : null),
       probeMode: serviceSummary?.probeMode || probe.probeMode || null,

@@ -51216,3 +51216,48 @@ timeout 8s env \
 - This is the adapter entry point for real services; it does not yet wire actual
   MoonLab WebGPU or Eshkol closure-runtime production handlers.
 - No push was attempted.
+
+## 2026-06-06 13:25:59 AKDT - Handler summary visibility
+
+### Prompt
+- Continue the local-only ULG/PeerCompute/MoonLab/Eshkol magnetar plan.
+
+### Actions
+- Added compact handler status fields to
+  `peercompute.ulg.handoff-supervisor-service-summary.v0`:
+  `serviceHandlerReady`, handler blockers, handler output schema/status, and
+  handler output ready state.
+- Exposed full `serviceOutput` plus handler readiness/schema/status fields in
+  Multiscale `peercompute.multiscale.ulg-dispatch-service-result-summary.v0`
+  entries so browser callers can inspect real service-handler output without
+  traversing raw nested dispatch results.
+- Extended the handler-backed dispatch regression to assert summary readiness
+  and handler output schema/status for both MoonLab and Eshkol dispatch results.
+- Rebuilt the Multiscale docs bundle.
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host submits dispatches to registered Eshkol and MoonLab services'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale test`
+- `npm --prefix demos/multiscale run build`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused handler summary test passed `23/23`.
+- PASS: full service-orchestration test passed `23/23`.
+- PASS: Multiscale test suite passed `195/195`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live ULG browser handoff smoke passed against `127.0.0.1:5173` and
+  `127.0.0.1:5185`, with `handoff-ready`, blocker count `0`,
+  `simulationStatus = scientific-ready`, bridge ack `handoff-ready`, and the
+  visible magnetar proxy on the solar layer.
+
+### Open
+- Handler output is now visible, but concrete production MoonLab/Eshkol runtime
+  handlers still need to be wired.
+- No push was attempted.

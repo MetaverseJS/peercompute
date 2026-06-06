@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 13:16:06 AKDT
+Updated: 2026-06-06 13:25:59 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -68,6 +68,10 @@ Updated: 2026-06-06 13:16:06 AKDT
   probe, ingest summary, task, manifest, and lease context, then attach service
   output to the standard dispatch result/artifact without changing the durable
   ULG handoff envelope.
+- Handoff supervisor service summaries now expose compact handler status:
+  `serviceHandlerReady`, handler blockers, handler output schema/status/ready,
+  and Multiscale per-dispatch summaries include the full handler
+  `serviceOutput` for browser inspection.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -141,6 +145,9 @@ Updated: 2026-06-06 13:16:06 AKDT
   hosts receive `peercompute.ulg.handoff-dispatch-artifact-payload.v0` through
   `peercompute.ulg.dispatch-service-handler-context.v0`, preserve probe/ingest
   status, and store handler service output in the standard dispatch artifact.
+- Handler summary regression proves compact service summaries surface handler
+  readiness and output schema/status/ready for both MoonLab and Eshkol dispatch
+  results without copying raw artifact payloads.
 - `git diff --check` passed.
 
 ## Next

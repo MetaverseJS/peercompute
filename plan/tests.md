@@ -868,8 +868,9 @@
   hosts can attach `dispatchHandlers`, receive
   `peercompute.ulg.dispatch-service-handler-context.v0` with the materialized
   `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, preserve probe and
-  ingest status, and store handler service output in the standard dispatch
-  result and cached dispatch artifact.
+  ingest status, store handler service output in the standard dispatch result
+  and cached dispatch artifact, and expose compact handler readiness plus output
+  schema/status through `peercompute.ulg.handoff-supervisor-service-summary.v0`.
 
 - Focused Node gate:
   `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'runtime evidence requirements|runtime evidence manifest|scientific runtime gate|bounded proxy runtime evidence|magnetar scenario records proxy runtime evidence|magnetar scenario creates bounded proxy runtime evidence manifest|magnetar scientific runtime gate accepts explicit validated runtime evidence'`.

@@ -272,6 +272,8 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
   const result = objectOrNull(serviceResult) || {};
   const ingest = objectOrNull(result.ingest) || {};
   const probe = objectOrNull(result.probe) || {};
+  const validation = objectOrNull(result.validation) || {};
+  const serviceOutput = objectOrNull(result.serviceOutput) || {};
   const descriptorProbe = objectOrNull(probe.descriptorProbe) || {};
   const tensorContract = objectOrNull(descriptorProbe.tensorContract) || {};
   const interpolationTable = objectOrNull(descriptorProbe.interpolationTable) || {};
@@ -295,6 +297,11 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     probeStatus: probe.status || null,
     probeReady: booleanOrNull(probe.ready),
     probeMode: probe.probeMode || null,
+    serviceHandlerReady: booleanOrNull(validation.serviceHandlerReady),
+    serviceHandlerBlockers: uniqueStrings(validation.serviceHandlerBlockers || []),
+    serviceHandlerOutputSchema: serviceOutput.schema || null,
+    serviceHandlerOutputStatus: serviceOutput.serviceStatus || serviceOutput.status || null,
+    serviceHandlerOutputReady: booleanOrNull(serviceOutput.ready),
     moduleCompiled: booleanOrNull(probe.moduleCompiled),
     moduleImportCount: finiteNumberOrNull(probe.importCount ?? ingest.moduleImportCount),
     moduleExportCount: finiteNumberOrNull(probe.exportCount ?? ingest.moduleExportCount),
