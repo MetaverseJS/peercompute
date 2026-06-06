@@ -1,5 +1,50 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-06 01:32:46 AKDT - Live calibrated-reference inventory handoff
+
+### Prompt
+User asked for status and to keep going on the overall ULG/MoonLab/Eshkol/
+PeerCompute plan. Standing instruction remains local commits only and no push.
+
+### Actions Attempted
+- Exported a fresh browser ULG demo handoff from
+  `http://100.86.83.35:5173/` after ULG commit `5608aa2` started carrying
+  MoonLab's calibrated reference-family inventory in raw `outputs.references[]`.
+- Applied that handoff to the live Multiscale magnetar page at
+  `https://100.86.83.35:5185/?scenario=magnetar` with
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+- Verified the normalized handoff preserves four calibrated reference families
+  and still keeps scenario scientific readiness blocked.
+
+### Files Touched
+- `demos/multiscale/plan/log.md`
+- `plan/log.md`
+- `plan/tests.md`
+
+### Commands Run
+- Live Playwright ULG-to-Multiscale handoff probe from the ULG repo using
+  package-managed Chromium.
+
+### Results
+- PASS: ULG handoff exported raw MoonLab calibrated reference families
+  `magnetosphere-mhd`, `pic-kinetic-plasma`, `radiation-transport`, and
+  `relativistic-correction`.
+- PASS: Multiscale reported `handoff-ready`, `allHandoffsReady = true`, and
+  closure host-runtime execution ready.
+- PASS: Multiscale kept `scientificReady = false` with only
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` and
+  `scientific-tolerance-suite-missing` blockers.
+- PASS: tolerance-suite counters were `requiredCount = 5`, `readyCount = 1`,
+  `scientificReadyCount = 0`, `calibratedReferenceRequiredCount = 4`,
+  `calibratedReferenceReadyCount = 0`, and
+  `calibratedReferenceScientificReadyCount = 0`.
+
+### Failures / Open Questions
+- No live bridge failures in this checkpoint.
+- The magnetar path remains proxy-only until the four calibrated reference
+  families carry real scientific coverage and the runtime leaves proxy
+  execution.
+
 ## 2026-06-06 00:06:22 AKDT - Closure output-semantics validation
 
 ### Prompt

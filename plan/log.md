@@ -2,6 +2,58 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 01:32:46 AKDT - Live ULG calibrated-reference inventory bridge
+
+### Prompt
+- User asked for status and to keep going on the overall ULG/MoonLab/Eshkol/PeerCompute plan.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 01:32:46 AKDT`.
+
+### Actions
+- After ULG commit `5608aa2` updated the live browser artifact to expose the
+  four MoonLab calibrated reference-family blockers in raw `outputs.references[]`,
+  exported a fresh ULG handoff from `http://100.86.83.35:5173/`.
+- Applied that handoff to the live Multiscale magnetar page at
+  `https://100.86.83.35:5185/?scenario=magnetar` through
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`.
+- Verified PeerCompute/Multiscale normalization sees the four calibrated
+  families from the full artifact body while preserving the ready MoonLab
+  dipole-Ising tolerance contract and transferred Eshkol closure execution.
+
+### Files Touched
+- `plan/log.md`
+- `plan/tests.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- Live Playwright ULG-to-Multiscale probe from the ULG repo using
+  package-managed Chromium:
+  - ULG source: `http://100.86.83.35:5173/`
+  - Multiscale target: `https://100.86.83.35:5185/?scenario=magnetar`
+
+### Results
+- PASS: ULG handoff exported two artifacts and the MoonLab artifact carried
+  raw `outputs.references[]` families `magnetosphere-mhd`,
+  `pic-kinetic-plasma`, `radiation-transport`, and
+  `relativistic-correction`.
+- PASS: Multiscale reported `readinessStatus = "handoff-ready"`,
+  `allHandoffsReady = true`, closure host-runtime execution ready, and
+  `scientificReady = false`.
+- PASS: tolerance suite remained `scientific-tolerance-suite-partial` with
+  `requiredCount = 5`, `readyCount = 1`, `scientificReadyCount = 0`,
+  `calibratedReferenceRequiredCount = 4`, `calibratedReferenceReadyCount = 0`,
+  and `calibratedReferenceScientificReadyCount = 0`.
+- PASS: live blockers are exactly
+  `calibrated-mhd-pic-radiation-relativity-reference-missing` and
+  `scientific-tolerance-suite-missing`.
+
+### Failures / Open Questions
+- No live bridge failures in this checkpoint.
+- The calibrated reference inventory remains blockers-only until MoonLab
+  supplies real solver IDs, digest-shaped contract/unit hashes, field maps,
+  tolerances, observed deltas, pass validation, and scientific coverage for all
+  four families.
+
 ## 2026-06-05 18:43:44 AKDT - Magnetar Eshkol closure ingest
 
 ### Prompt
