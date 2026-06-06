@@ -1623,9 +1623,27 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
     closureServiceWorkerSafe: true,
     closureRequiresDynamicCode: false,
     closureRequiresHostImports: true,
+    closureEntryExport: 'main',
+    closureEntrySignature: {
+      parameters: ['i32', 'i32'],
+      results: ['i32']
+    },
+    closureHasStartSection: false,
+    closureStartFunctionIndex: null,
+    closureImportCount: 12,
+    closureExportCount: 1,
+    closureRuntimeFunctionImportCount: 9,
+    closureRuntimeMemoryImportCount: 1,
+    closureRuntimeGlobalImportCount: 1,
+    closureRuntimeTableImportCount: 1,
+    closureWasmFunctionCount: 18,
+    closureWasmTypeCount: 104,
     closureBundleManifestSchema: 'eshkol.ulg.closure-bundle.v0',
-    closureBundleCopyFileCount: 3,
+    closureBundleCopyFileCount: 4,
     closureBundlePreserveRelativeUrls: true,
+    closureHostImportsPath: 'eshkol-host-imports.js',
+    closureHostImportsFactory: 'createEshkolHostImportObject',
+    closureHostImportsDomFree: true,
     closureReady: true
   });
 
@@ -1640,6 +1658,19 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(scenario.closureIngest.closure.kind, 'wasm-reference');
   assert.equal(scenario.closureIngest.closure.moduleUrl, 'hello.wasm');
   assert.equal(scenario.closureIngest.closure.serviceWorkerSafe, true);
+  assert.equal(scenario.closureIngest.closure.entryExport, 'main');
+  assert.deepEqual(scenario.closureIngest.closure.entrySignature, {
+    parameters: ['i32', 'i32'],
+    results: ['i32']
+  });
+  assert.equal(scenario.closureIngest.closure.hasStartSection, false);
+  assert.equal(scenario.closureIngest.closure.startFunctionIndex, null);
+  assert.equal(scenario.closureIngest.closure.importCount, 12);
+  assert.equal(scenario.closureIngest.closure.exportCount, 1);
+  assert.equal(scenario.closureIngest.closure.runtimeFunctionImportCount, 9);
+  assert.equal(scenario.closureIngest.closure.hostImports.path, 'eshkol-host-imports.js');
+  assert.equal(scenario.closureIngest.closure.hostImports.factory, 'createEshkolHostImportObject');
+  assert.equal(scenario.closureIngest.closure.hostImports.domFree, true);
   assert.equal(scenario.closureIngest.closure.bundlePreserveRelativeUrls, true);
 
   const packet = model.createPacket();
@@ -1647,6 +1678,11 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(packet.downward.boundaryConditions.scenarioClosureReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureStatus, 'closure-artifact-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureKind, 'wasm-reference');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureEntryExport, 'main');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHasStartSection, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureImportCount, 12);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureExportCount, 1);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsDomFree, true);
 });
 
 test('magnetar scenario combines ULG calibration and Eshkol closure handoffs into proxy readiness manifest', () => {
@@ -1675,9 +1711,27 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
     closureServiceWorkerSafe: true,
     closureRequiresDynamicCode: false,
     closureRequiresHostImports: true,
+    closureEntryExport: 'main',
+    closureEntrySignature: {
+      parameters: ['i32', 'i32'],
+      results: ['i32']
+    },
+    closureHasStartSection: false,
+    closureStartFunctionIndex: null,
+    closureImportCount: 12,
+    closureExportCount: 1,
+    closureRuntimeFunctionImportCount: 9,
+    closureRuntimeMemoryImportCount: 1,
+    closureRuntimeGlobalImportCount: 1,
+    closureRuntimeTableImportCount: 1,
+    closureWasmFunctionCount: 18,
+    closureWasmTypeCount: 104,
     closureBundleManifestSchema: 'eshkol.ulg.closure-bundle.v0',
-    closureBundleCopyFileCount: 3,
+    closureBundleCopyFileCount: 4,
     closureBundlePreserveRelativeUrls: true,
+    closureHostImportsPath: 'eshkol-host-imports.js',
+    closureHostImportsFactory: 'createEshkolHostImportObject',
+    closureHostImportsDomFree: true,
     closureReady: true
   });
 
@@ -1695,6 +1749,11 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.closureHandoff.closureKind, 'wasm-reference');
   assert.equal(scenario.handoffReadiness.closureHandoff.moduleUrl, 'hello.wasm');
   assert.equal(scenario.handoffReadiness.closureHandoff.requiresHostImports, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.entryExport, 'main');
+  assert.equal(scenario.handoffReadiness.closureHandoff.hasStartSection, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.importCount, 12);
+  assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsFactory, 'createEshkolHostImportObject');
+  assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsDomFree, true);
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
   assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));

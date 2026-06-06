@@ -171,6 +171,18 @@ export function normalizeUlgTaskCapsule(capsule = {}, options = {}) {
 
 export const adaptUlgV05TaskCapsule = normalizeUlgTaskCapsule;
 
+function finiteNumberOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function countWasmEntries(entries = [], kind) {
+  return Array.isArray(entries)
+    ? entries.filter((entry) => entry?.kind === kind).length
+    : 0;
+}
+
 export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const validationStatus = artifact.validation?.status || artifact.validationStatus || null;
   const parity = artifact.parity && typeof artifact.parity === 'object' ? artifact.parity : null;
@@ -179,10 +191,16 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     : null;
   const execution = artifact.execution && typeof artifact.execution === 'object' ? artifact.execution : {};
   const module = execution.module && typeof execution.module === 'object' ? execution.module : {};
+  const executionImports = Array.isArray(execution.imports) ? execution.imports : [];
+  const executionExports = Array.isArray(execution.exports) ? execution.exports : [];
+  const wasmMetadata = execution.wasmMetadata && typeof execution.wasmMetadata === 'object' ? execution.wasmMetadata : {};
   const validity = artifact.validity && typeof artifact.validity === 'object' ? artifact.validity : {};
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
-    : null;
+    : (artifact.bundleManifest && typeof artifact.bundleManifest === 'object' ? artifact.bundleManifest : null);
+  const hostImports = bundleManifest?.hostImports && typeof bundleManifest.hostImports === 'object'
+    ? bundleManifest.hostImports
+    : (artifact.runtime?.hostImports && typeof artifact.runtime.hostImports === 'object' ? artifact.runtime.hostImports : null);
   const parityComparisons = Array.isArray(parity?.comparisons) ? parity.comparisons : [];
   const unsupportedParityModeCount = parityComparisons.filter((entry) => entry?.status === 'unsupported').length;
   const calibrationArtifacts = artifact.calibrationArtifacts && typeof artifact.calibrationArtifacts === 'object'
@@ -219,9 +237,28 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     closureServiceWorkerSafe: execution.serviceWorkerSafe === true,
     closureRequiresDynamicCode: validity.requiresDynamicCode ?? null,
     closureRequiresHostImports: validity.requiresHostImports ?? null,
+    closureEntryExport: execution.entryExport || null,
+    closureEntrySignature: clonePlain(execution.entrySignature || null),
+    closureHasStartSection: typeof execution.hasStartSection === 'boolean'
+      ? execution.hasStartSection
+      : (execution.startFunctionIndex == null ? null : true),
+    closureStartFunctionIndex: finiteNumberOrNull(execution.startFunctionIndex),
+    closureImportCount: executionImports.length,
+    closureExportCount: executionExports.length,
+    closureRuntimeFunctionImportCount: countWasmEntries(executionImports, 'function'),
+    closureRuntimeMemoryImportCount: countWasmEntries(executionImports, 'memory'),
+    closureRuntimeGlobalImportCount: countWasmEntries(executionImports, 'global'),
+    closureRuntimeTableImportCount: countWasmEntries(executionImports, 'table'),
+    closureWasmFunctionCount: finiteNumberOrNull(wasmMetadata.functionCount),
+    closureWasmTypeCount: Array.isArray(wasmMetadata.types) ? wasmMetadata.types.length : 0,
     closureBundleManifestSchema: bundleManifest?.schema || null,
     closureBundleCopyFileCount: Array.isArray(bundleManifest?.copyFiles) ? bundleManifest.copyFiles.length : 0,
     closureBundlePreserveRelativeUrls: bundleManifest?.preserveRelativeUrls === true,
+    closureHostImportsPath: hostImports?.path || null,
+    closureHostImportsSha256: hostImports?.sha256 || null,
+    closureHostImportsFactory: hostImports?.factory || null,
+    closureHostImportsGlobal: hostImports?.global || null,
+    closureHostImportsDomFree: hostImports?.domFree === true,
     closureReady: artifactKind === 'closure'
       && validationStatus === 'pass'
       && execution.serviceWorkerSafe === true

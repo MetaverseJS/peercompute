@@ -20939,6 +20939,70 @@ User asked whether Infinite Context Coder is being used.
 - ULG remains reachable at `http://100.86.83.35:5173/`.
 - Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
 
+## 2026-06-05 23:15:01 AKDT - ULG closure artifact summary execution handoff
+
+### Prompt
+- Continued after the local `Add Eshkol host runtime execution probe` commit.
+- Prompt time/date recorded from the local machine: `2026-06-05 23:15:01 AKDT`.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Extended `peercompute.ulg.artifact-summary.v0` for staged Eshkol closures with entry export/signature, start-section state, import/export counts, WASM metadata counts, and DOM-free host-import bundle metadata.
+- Preserved the new closure metadata through `peercompute.multiscale.scenario-closure-ingest.v0`, handoff readiness, and packet boundary conditions.
+- Added `window.__multiscaleDemo.executeUlgClosureArtifactForScenario()` / `executeUlgClosureArtifactForScenarioProbe()` to ingest a full ULG closure artifact summary and run the closure module/host-runtime execution probe with optional `bundleManifest`, `validationStatus`, and transferred `wasmBytes`.
+- Confirmed the raw served `hello.ulg.json` has signature/start/import metadata but no validation wrapper, and that the DOM-free host-import asset metadata lives in `ulg_bundle_manifest.json`.
+- Confirmed browser-side HTTPS Multiscale cannot fetch HTTP ULG WASM directly; the working handoff path transfers bytes from ULG-owned fetch/cache into Multiscale.
+- Updated demo/root plans and test strategy, then rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --input-type=module` probes against ULG `hello.ulg.json` and `ulg_bundle_manifest.json` on `5173`.
+- Playwright probe against `window.__ulgDemo.artifactCache` on ULG `5173`.
+- Read-only sidecar inspection in `/home/cos/projects/ulg` for service asset/cache contract details.
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js && node --check peercompute/tests/unit/serviceOrchestration.test.js && node --check demos/multiscale/src/simulation/multiscaleModel.js && node --check demos/multiscale/src/main.js && node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'Eshkol closure bundle readiness'`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'closure bundle summary|combines ULG calibration'`
+- Failed Playwright probe that attempted browser fetch of HTTP ULG WASM from HTTPS Multiscale.
+- Passing Playwright probe that passed ULG `hello.ulg.json`, `ulg_bundle_manifest.json`, validation status `pass`, and transferred `hello.wasm` bytes to `window.__multiscaleDemo.executeUlgClosureArtifactForScenario()`.
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- `curl -sS -o /dev/null -w 'ulg %{http_code} %{url_effective}\n' 'http://100.86.83.35:5173/'`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- `git diff --check`
+
+### Test Results
+- PASS: changed-file syntax checks completed.
+- PASS: focused service-orchestration Eshkol closure bundle summary coverage passed after preserving null start-section indices.
+- PASS: focused Multiscale closure-ingest/handoff tests passed.
+- PASS: live ULG-owned transferred-byte execution handoff reported closure summary ready, `entryExport: "main"`, signature `i32,i32 -> i32`, no start section, import count `12`, DOM-free host-import metadata, module source `provided-wasm-bytes`, `host-runtime-execution-ready`, `entryResult: 0`, output preview `1048560\n1048544\n`, packet `scenarioClosureHostRuntimeExecutionReady: true`, and packet `scenarioScientificReady: false`.
+- PASS: full Multiscale model suite passed with `176/176`.
+- PASS: PeerCompute service-orchestration regression passed with `8/8`.
+- PASS: Multiscale build completed; existing large chunk warnings remain.
+- PASS: final ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: `git diff --check` reported no whitespace errors.
+
+### Failures / Open Questions
+- A browser fetch from HTTPS Multiscale to HTTP ULG WASM fails as mixed content. The live working path must use transferred bytes, a same-origin/proxied artifact, or serve ULG assets over HTTPS.
+- The raw Eshkol artifact JSON alone is not a ready closure handoff because validation status and bundle host-import metadata arrive from ULG runtime/cache context.
+- Host-runtime execution is still not scientific validation; Eshkol closure output semantics, calibrated references, and tolerance gates remain blockers.
+
+### Demo Server State
+- ULG remains reachable at `http://100.86.83.35:5173/`.
+- Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
+
 ## 2026-06-05 23:01:15 AKDT - Eshkol host-runtime execution probe
 
 ### Prompt

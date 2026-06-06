@@ -714,6 +714,32 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
     execution: {
       backend: 'llvm-wasm',
       serviceWorkerSafe: true,
+      entryExport: 'main',
+      entrySignature: {
+        parameters: ['i32', 'i32'],
+        results: ['i32']
+      },
+      hasStartSection: false,
+      startFunctionIndex: null,
+      imports: [
+        { module: 'env', name: 'memory', kind: 'memory' },
+        { module: 'env', name: '__stack_pointer', kind: 'global' },
+        { module: 'env', name: '__indirect_function_table', kind: 'table' },
+        { module: 'env', name: 'eshkol_runtime_init', kind: 'function' },
+        { module: 'env', name: 'fputc', kind: 'function' }
+      ],
+      exports: [
+        { name: 'main', kind: 'function' }
+      ],
+      wasmMetadata: {
+        functionCount: 18,
+        hasStartSection: false,
+        startFunctionIndex: null,
+        types: [
+          { parameters: [], results: [] },
+          { parameters: ['i32', 'i32'], results: ['i32'] }
+        ]
+      },
       module: {
         url: 'hello.wasm',
         sha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c'
@@ -729,8 +755,16 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
         copyFiles: [
           'hello.ulg.json',
           'hello.wasm',
+          'eshkol-host-imports.js',
           'schemas/ulg/closure_artifact.schema.json'
         ],
+        hostImports: {
+          path: 'eshkol-host-imports.js',
+          sha256: 'sha256:a769ff71f1d1695d512c4197ea6e0169884450deff60376fd90f6ceecd826b4d',
+          factory: 'createEshkolHostImportObject',
+          global: 'EshkolHostImports',
+          domFree: true
+        },
         preserveRelativeUrls: true
       }
     },
@@ -753,9 +787,29 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
   assert.equal(result.artifactSummary.closureServiceWorkerSafe, true);
   assert.equal(result.artifactSummary.closureRequiresDynamicCode, false);
   assert.equal(result.artifactSummary.closureRequiresHostImports, true);
+  assert.equal(result.artifactSummary.closureEntryExport, 'main');
+  assert.deepEqual(result.artifactSummary.closureEntrySignature, {
+    parameters: ['i32', 'i32'],
+    results: ['i32']
+  });
+  assert.equal(result.artifactSummary.closureHasStartSection, false);
+  assert.equal(result.artifactSummary.closureStartFunctionIndex, null);
+  assert.equal(result.artifactSummary.closureImportCount, 5);
+  assert.equal(result.artifactSummary.closureExportCount, 1);
+  assert.equal(result.artifactSummary.closureRuntimeFunctionImportCount, 2);
+  assert.equal(result.artifactSummary.closureRuntimeMemoryImportCount, 1);
+  assert.equal(result.artifactSummary.closureRuntimeGlobalImportCount, 1);
+  assert.equal(result.artifactSummary.closureRuntimeTableImportCount, 1);
+  assert.equal(result.artifactSummary.closureWasmFunctionCount, 18);
+  assert.equal(result.artifactSummary.closureWasmTypeCount, 2);
   assert.equal(result.artifactSummary.closureBundleManifestSchema, 'eshkol.ulg.closure-bundle.v0');
-  assert.equal(result.artifactSummary.closureBundleCopyFileCount, 3);
+  assert.equal(result.artifactSummary.closureBundleCopyFileCount, 4);
   assert.equal(result.artifactSummary.closureBundlePreserveRelativeUrls, true);
+  assert.equal(result.artifactSummary.closureHostImportsPath, 'eshkol-host-imports.js');
+  assert.equal(result.artifactSummary.closureHostImportsSha256, 'sha256:a769ff71f1d1695d512c4197ea6e0169884450deff60376fd90f6ceecd826b4d');
+  assert.equal(result.artifactSummary.closureHostImportsFactory, 'createEshkolHostImportObject');
+  assert.equal(result.artifactSummary.closureHostImportsGlobal, 'EshkolHostImports');
+  assert.equal(result.artifactSummary.closureHostImportsDomFree, true);
   assert.equal(result.artifactSummary.closureReady, true);
   assert.equal(result.outputs[0].artifactSummary.closureReady, true);
 });

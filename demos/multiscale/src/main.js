@@ -1381,6 +1381,56 @@ function ingestUlgArtifactForScenario(artifact = {}, options = {}) {
   });
 }
 
+function resolveUlgArtifactBaseUrl(artifact = {}, options = {}) {
+  if (options.baseUrl || options.artifactBaseUrl) return options.baseUrl || options.artifactBaseUrl;
+  if (artifact.runtime?.assetProbe?.baseUrl) return artifact.runtime.assetProbe.baseUrl;
+  if (artifact.artifactBaseUrl || artifact.baseUrl) return artifact.artifactBaseUrl || artifact.baseUrl;
+  if (artifact.artifactUrl) return new URL('.', artifact.artifactUrl).href;
+  return null;
+}
+
+function prepareUlgClosureArtifactForScenario(artifact = {}, options = {}) {
+  const runtime = {
+    ...(artifact.runtime && typeof artifact.runtime === 'object' ? artifact.runtime : {})
+  };
+  if (options.bundleManifest) runtime.bundleManifest = options.bundleManifest;
+  const prepared = { ...artifact, runtime };
+  if (!prepared.validation && options.validationStatus) {
+    prepared.validation = { status: String(options.validationStatus) };
+  }
+  return prepared;
+}
+
+async function executeUlgClosureArtifactForScenario(artifact = {}, options = {}) {
+  const artifactKind = options.artifactKind || 'closure';
+  const preparedArtifact = prepareUlgClosureArtifactForScenario(artifact, options);
+  const artifactSummary = options.artifactSummary || summarizePeerComputeUlgArtifact(artifactKind, preparedArtifact);
+  const provider = options.provider || preparedArtifact.sourceService || artifactSummary.sourceService || 'eshkol';
+  const closureIngest = ingestScenarioClosureSummary(artifactSummary, {
+    ...options,
+    artifactKind,
+    provider
+  });
+  const baseUrl = resolveUlgArtifactBaseUrl(preparedArtifact, options);
+  const probe = await probeScenarioClosureModule(preparedArtifact, {
+    ...options,
+    artifactKind,
+    provider,
+    baseUrl,
+    dryInstantiateHostRuntime: true,
+    executeHostRuntime: options.executeHostRuntime !== false,
+    entryExport: options.entryExport || artifactSummary.closureEntryExport || preparedArtifact.execution?.entryExport || 'main',
+    entrySignature: options.entrySignature || artifactSummary.closureEntrySignature || preparedArtifact.execution?.entrySignature || null
+  });
+  return cloneJson({
+    ...probe,
+    artifactSummary,
+    closureIngest: closureIngest.closureIngest || null,
+    closureHandoffReadiness: closureIngest.handoffReadiness || null,
+    packet: createUiPacket()
+  });
+}
+
 function resolveScenarioClosureModuleUrl(artifact = {}, options = {}) {
   const moduleUrl = options.moduleUrl || artifact.execution?.module?.url || artifact.closureModuleUrl || null;
   if (!moduleUrl) return null;
@@ -10445,6 +10495,12 @@ window.__multiscaleDemo = {
   },
   ingestUlgArtifactForScenario(artifact = {}, options = {}) {
     return ingestUlgArtifactForScenario(artifact, options);
+  },
+  executeUlgClosureArtifactForScenario(artifact = {}, options = {}) {
+    return executeUlgClosureArtifactForScenario(artifact, options);
+  },
+  executeUlgClosureArtifactForScenarioProbe(artifact = {}, options = {}) {
+    return executeUlgClosureArtifactForScenario(artifact, options);
   },
   summarizeUlgArtifact(artifact = {}, artifactKind = 'quantum-response') {
     return cloneJson(summarizePeerComputeUlgArtifact(artifactKind, artifact));
