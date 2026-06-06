@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 08:43:17 AKDT
+Updated: 2026-06-06 08:50:30 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -24,6 +24,9 @@ Updated: 2026-06-06 08:43:17 AKDT
 - Multiscale now builds browser module-worker shims for those dispatch adapters
   and exposes `runUlgDispatchServiceAdapterProbe()` /
   `executeUlgHandoffDispatchServices()` for live VPN execution.
+- Dispatch adapters now run source-specific probes: MoonLab validates the
+  materialized quantum-response calibration payload and Eshkol compiles complete
+  transferred WASM modules to record import/export/entry-export metadata.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
@@ -36,10 +39,12 @@ Updated: 2026-06-06 08:43:17 AKDT
 - Live VPN probe confirmed Multiscale `5185` launches the MoonLab/Eshkol dispatch
   adapter workers, accepts two dispatches, caches two nested dispatch artifacts,
   and preserves Eshkol `53066` transferred WASM bytes with no blockers.
+- Live VPN probe confirmed the Eshkol adapter worker compiled the transferred
+  `53066`-byte WASM module with `33` imports, `1` export, and `main` present.
 - `git diff --check` passed.
 
 ## Next
-- Replace deterministic dispatch acceptance with MoonLab/Eshkol execution/probe
-  code inside the browser worker adapter path.
+- Replace the Eshkol WASM compile probe with descriptor-aware execution or
+  table-probe logic once the closure runtime contract is ready.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

@@ -1691,6 +1691,8 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[0].output.serviceResult.taskKind, 'moonlab.ulg.quantum-response.ingest');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.schema, 'peercompute.ulg.moonlab-dispatch-ingest.v0');
   assert.equal(result.dispatchResult.results[0].output.serviceResult.ingest.magnetarDipoleIsingReady, true);
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.schema, 'peercompute.ulg.moonlab-dispatch-payload-probe.v0');
+  assert.equal(result.dispatchResult.results[0].output.serviceResult.probe.ready, true);
   assert.equal(result.dispatchResult.results[0].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
   assert.equal(result.dispatchResult.results[0].output.serviceArtifactRef.sourceService, 'moonlab-ulg-fixture');
   assert.equal(
@@ -1710,6 +1712,10 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.schema, 'peercompute.ulg.eshkol-dispatch-ingest.v0');
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.closureDescriptorReady, true);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.wasmByteLength, 4);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.schema, 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.status, 'skipped-short-wasm-header');
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.probe.ready, true);
+  assert.equal(result.dispatchResult.results[1].output.serviceResult.ingest.moduleCompiled, false);
   assert.equal(result.dispatchResult.results[1].output.serviceResult.artifact.schema, ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA);
   assert.equal(result.dispatchResult.results[1].output.serviceArtifactRef.sourceService, 'eshkol-ulg-fixture');
   assert.equal(

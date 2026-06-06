@@ -50694,3 +50694,67 @@ timeout 8s env \
   step is to move MoonLab/Eshkol execution or probe logic behind these worker
   shims while keeping the same PeerCompute supervisor/lease/artifact contracts.
 - No push was attempted.
+
+## 2026-06-06 08:50:30 AKDT - ULG dispatch adapter payload probes
+
+### Prompt
+- Continue implementing the ULG service-hosting plan and keep live VPN demos
+  inspectable.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 08:50:30 AKDT`.
+
+### Actions
+- Added source-specific probe logic behind `UlgDispatchServiceHost`.
+- MoonLab dispatch adapters now record
+  `peercompute.ulg.moonlab-dispatch-payload-probe.v0` with response/parity,
+  magnetar calibration, output-reference, and calibrated-reference readiness
+  metadata from the materialized payload. Summary-only ready calibration
+  dispatches remain valid.
+- Eshkol dispatch adapters now record
+  `peercompute.ulg.eshkol-dispatch-wasm-probe.v0`. Complete transferred WASM
+  byte arrays are compiled with `WebAssembly.compile()` and report import/export
+  counts plus entry-export availability. The short `\0asm` unit fixture is
+  treated as a non-blocking probe skip.
+- Adapter results, ingest summaries, cached dispatch artifacts, and telemetry
+  now include probe schema/status/readiness.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host|ULG Eshkol and MoonLab fixtures|ULG handoff service envelope|ULG demo handoff adapter'`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probe against `http://100.86.83.35:5173/` and
+  `https://100.86.83.35:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused service-orchestration run passed `16/16`.
+- PASS: full `serviceOrchestration.test.js` passed `16/16`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live VPN probe returned `dispatch-adapters-ready`, `ready = true`,
+  `dispatchCount = 2`, `acceptedDispatchCount = 2`, and no blockers.
+- PASS: live MoonLab dispatch result carried
+  `peercompute.ulg.moonlab-dispatch-payload-probe.v0`, `probeStatus = pass`,
+  and `magnetarDipoleIsingReady = true`.
+- PASS: live Eshkol dispatch result carried
+  `peercompute.ulg.eshkol-dispatch-wasm-probe.v0`, `probeStatus = pass`,
+  `moduleCompiled = true`, `importCount = 33`, `exportCount = 1`,
+  `hasEntryExport = true`, and `wasmByteLength = 53066`.
+
+### Open
+- Eshkol still only compiles and inspects the descriptor WASM module. Descriptor
+  execution/table-probe semantics remain future work until the closure runtime
+  contract is ready.
+- No push was attempted.

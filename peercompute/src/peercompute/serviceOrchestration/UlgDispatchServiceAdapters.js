@@ -52,6 +52,35 @@ function createArtifactContentHash(payload = {}, task = {}, serviceId = 'ulg-dis
     || `${serviceId}:${payload.dispatchId || task.taskId || 'dispatch-artifact'}`;
 }
 
+function finiteNumberOrNull(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
+
+function normalizeWasmBytes(value) {
+  if (!value) return null;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+  }
+  if (Array.isArray(value)) return new Uint8Array(value);
+  if (value?.type === 'Buffer' && Array.isArray(value.data)) return new Uint8Array(value.data);
+  return null;
+}
+
+function wasmEntriesByKind(entries = []) {
+  return entries.reduce((counts, entry) => {
+    const kind = entry?.kind || 'unknown';
+    counts[kind] = (counts[kind] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function countReadyReferences(references = []) {
+  return Array.isArray(references)
+    ? references.filter((entry) => entry?.ready === true).length
+    : 0;
+}
+
 function adapterConfig(sourceService, options = {}) {
   const key = String(sourceService || '').trim().toLowerCase();
   const defaults = DEFAULT_ADAPTERS[key];
@@ -216,7 +245,133 @@ function validateDispatchPayload(task = {}, manifest = {}) {
   };
 }
 
-function createMoonLabIngestSummary(payload = {}) {
+async function createMoonLabDispatchProbe(payload = {}) {
+  const artifact = payload.artifact || {};
+  const summary = payload.artifactSummary || {};
+  const outputReferences = Array.isArray(artifact.outputs?.references)
+    ? artifact.outputs.references
+    : [];
+  const outputReferenceReadyCount = countReadyReferences(outputReferences);
+  const calibration = artifact.calibrationArtifacts?.magnetarDipoleIsing || null;
+  const blockers = uniqueStrings([
+    summary.magnetarDipoleIsingReady === true
+      ? null
+      : 'moonlab-magnetar-dipole-ising-not-ready'
+  ]);
+  return {
+    schema: 'peercompute.ulg.moonlab-dispatch-payload-probe.v0',
+    status: blockers.length === 0 ? 'pass' : 'blocked',
+    ready: blockers.length === 0,
+    blockers,
+    responseDescriptorSchema: artifact.responseDescriptor?.schema || summary.responseDescriptorSchema || null,
+    paritySchema: artifact.parity?.schema || summary.paritySchema || null,
+    parityStatus: artifact.parity?.status || summary.parityStatus || null,
+    calibrationSchema: calibration?.schema || null,
+    calibrationStatus: calibration?.validation?.status || summary.magnetarDipoleIsingStatus || null,
+    outputReferenceCount: summary.outputReferenceCount ?? outputReferences.length,
+    outputReferenceReadyCount: summary.outputReferenceReadyCount ?? outputReferenceReadyCount,
+    magnetarCalibratedReferenceCount: summary.magnetarCalibratedReferenceCount ?? null,
+    magnetarCalibratedReferenceReadyCount: summary.magnetarCalibratedReferenceReadyCount ?? null,
+    magnetarCalibratedReferenceScientificCoverageCount:
+      summary.magnetarCalibratedReferenceScientificCoverageCount ?? null
+  };
+}
+
+async function createEshkolDispatchProbe(payload = {}) {
+  const bytes = normalizeWasmBytes(payload.wasmBytes);
+  const declaredLength = finiteNumberOrNull(payload.wasmByteLength);
+  const summary = payload.artifactSummary || {};
+  const artifact = payload.artifact || {};
+  const declaredImports = Array.isArray(artifact.execution?.imports) ? artifact.execution.imports : [];
+  const declaredExports = Array.isArray(artifact.execution?.exports) ? artifact.execution.exports : [];
+  const blockers = [];
+  if (!bytes || bytes.byteLength === 0) {
+    blockers.push('eshkol-wasm-bytes-missing');
+    return {
+      schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
+      status: 'blocked',
+      ready: false,
+      blockers,
+      wasmByteLength: declaredLength,
+      moduleCompiled: false,
+      probeMode: 'wasm-module-compile'
+    };
+  }
+  if (declaredLength != null && declaredLength !== bytes.byteLength) {
+    blockers.push('eshkol-wasm-byte-length-mismatch');
+  }
+  if (bytes.byteLength < 8) {
+    return {
+      schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
+      status: blockers.length === 0 ? 'skipped-short-wasm-header' : 'blocked',
+      ready: blockers.length === 0,
+      blockers,
+      wasmByteLength: bytes.byteLength,
+      declaredWasmByteLength: declaredLength,
+      moduleCompiled: false,
+      probeMode: 'wasm-module-compile',
+      notes: ['WASM bytes contain a magic-header fixture but not a complete module.']
+    };
+  }
+
+  let imports = [];
+  let exports = [];
+  try {
+    const module = await WebAssembly.compile(bytes);
+    imports = WebAssembly.Module.imports(module);
+    exports = WebAssembly.Module.exports(module);
+  } catch (error) {
+    blockers.push('eshkol-wasm-module-compile-failed');
+    return {
+      schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
+      status: 'blocked',
+      ready: false,
+      blockers,
+      error: error?.message || String(error),
+      wasmByteLength: bytes.byteLength,
+      declaredWasmByteLength: declaredLength,
+      moduleCompiled: false,
+      probeMode: 'wasm-module-compile'
+    };
+  }
+
+  return {
+    schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
+    status: blockers.length === 0 ? 'pass' : 'blocked',
+    ready: blockers.length === 0,
+    blockers,
+    wasmByteLength: bytes.byteLength,
+    declaredWasmByteLength: declaredLength,
+    wasmSha256: payload.wasmSha256 || null,
+    moduleCompiled: true,
+    probeMode: 'wasm-module-compile',
+    importCount: imports.length,
+    exportCount: exports.length,
+    importKinds: wasmEntriesByKind(imports),
+    exportKinds: wasmEntriesByKind(exports),
+    declaredImportCount: summary.closureImportCount ?? declaredImports.length,
+    declaredExportCount: summary.closureExportCount ?? declaredExports.length,
+    entryExport: summary.closureEntryExport || artifact.execution?.entryExport || null,
+    hasEntryExport: imports.length >= 0 && exports.some((entry) => (
+      entry.name === (summary.closureEntryExport || artifact.execution?.entryExport || 'main')
+    )),
+    serviceWorkerSafe: summary.closureServiceWorkerSafe === true || artifact.execution?.serviceWorkerSafe === true,
+    requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null
+  };
+}
+
+async function createDispatchAdapterProbe(payload = {}) {
+  if (payload.sourceService === 'moonlab') return createMoonLabDispatchProbe(payload);
+  if (payload.sourceService === 'eshkol') return createEshkolDispatchProbe(payload);
+  return {
+    schema: 'peercompute.ulg.dispatch-payload-probe.v0',
+    status: 'pass',
+    ready: true,
+    blockers: []
+  };
+}
+
+function createMoonLabIngestSummary(payload = {}, probe = null) {
   const summary = payload.artifactSummary || {};
   const artifact = payload.artifact || {};
   const outputReferences = Array.isArray(artifact.outputs?.references)
@@ -230,11 +385,12 @@ function createMoonLabIngestSummary(payload = {}) {
     outputReferenceReadyCount: summary.outputReferenceReadyCount ?? null,
     outputReferenceCount: summary.outputReferenceCount ?? outputReferences.length,
     magnetarCalibratedReferenceReadyCount: summary.magnetarCalibratedReferenceReadyCount ?? null,
-    magnetarCalibratedReferenceCount: summary.magnetarCalibratedReferenceCount ?? null
+    magnetarCalibratedReferenceCount: summary.magnetarCalibratedReferenceCount ?? null,
+    adapterProbe: clonePlain(probe)
   };
 }
 
-function createEshkolIngestSummary(payload = {}) {
+function createEshkolIngestSummary(payload = {}, probe = null) {
   const summary = payload.artifactSummary || {};
   return {
     schema: 'peercompute.ulg.eshkol-dispatch-ingest.v0',
@@ -246,21 +402,26 @@ function createEshkolIngestSummary(payload = {}) {
     wasmByteLength: payload.wasmByteLength ?? null,
     wasmSha256: payload.wasmSha256 || null,
     wasmTransferMode: payload.wasmTransferMode || null,
-    hasTransferredWasmBytes: payload.hasTransferredWasmBytes === true
+    hasTransferredWasmBytes: payload.hasTransferredWasmBytes === true,
+    moduleCompiled: probe?.moduleCompiled === true,
+    moduleImportCount: probe?.importCount ?? null,
+    moduleExportCount: probe?.exportCount ?? null,
+    adapterProbe: clonePlain(probe)
   };
 }
 
-function createIngestSummary(payload = {}) {
-  if (payload.sourceService === 'moonlab') return createMoonLabIngestSummary(payload);
-  if (payload.sourceService === 'eshkol') return createEshkolIngestSummary(payload);
+function createIngestSummary(payload = {}, probe = null) {
+  if (payload.sourceService === 'moonlab') return createMoonLabIngestSummary(payload, probe);
+  if (payload.sourceService === 'eshkol') return createEshkolIngestSummary(payload, probe);
   return {
     schema: 'peercompute.ulg.dispatch-ingest.v0',
     artifactKind: payload.artifactKind || null,
-    sourceService: payload.sourceService || null
+    sourceService: payload.sourceService || null,
+    adapterProbe: clonePlain(probe)
   };
 }
 
-function createResultArtifact({ manifest, task, payload, ingest, validation, lease }) {
+function createResultArtifact({ manifest, task, payload, ingest, validation, lease, probe }) {
   return {
     schema: ULG_DISPATCH_SERVICE_ARTIFACT_SCHEMA,
     artifactKind: `${payload.sourceService || 'ulg'}-dispatch-ingest`,
@@ -282,6 +443,7 @@ function createResultArtifact({ manifest, task, payload, ingest, validation, lea
       workerType: lease.workerType,
       count: lease.count
     } : null,
+    probe: clonePlain(probe),
     artifactPayload: clonePlain(payload)
   };
 }
@@ -297,6 +459,7 @@ export class UlgDispatchServiceHost {
     this.workerId = null;
     this.task = null;
     this.validation = null;
+    this.probe = null;
     this.closed = false;
   }
 
@@ -322,7 +485,13 @@ export class UlgDispatchServiceHost {
       return;
     }
     if (message.type === 'submit-task') {
-      this.#startTask(message.task || {});
+      this.#startTask(message.task || {}).catch((error) => {
+        this.#emit({
+          type: 'task-error',
+          rootTaskId: message.task?.rootTaskId,
+          error: error?.message || String(error)
+        });
+      });
       return;
     }
     if (message.type === 'lease-granted') {
@@ -355,9 +524,10 @@ export class UlgDispatchServiceHost {
     this.closed = true;
   }
 
-  #startTask(task = {}) {
+  async #startTask(task = {}) {
     this.task = task;
     this.validation = validateDispatchPayload(task, this.manifest);
+    this.probe = null;
     this.#emitHeartbeat('validating-dispatch');
     this.#emit({
       type: 'task-status',
@@ -367,6 +537,26 @@ export class UlgDispatchServiceHost {
       children: []
     });
     if (!this.validation.ready) {
+      this.#emit({
+        type: 'task-result',
+        rootTaskId: task.rootTaskId,
+        result: this.#createResult({
+          status: 'blocked',
+          ready: false,
+          blockers: this.validation.blockers,
+          lease: null
+        })
+      });
+      return;
+    }
+    this.probe = await createDispatchAdapterProbe(this.validation.payload, task, this.manifest);
+    const probeBlockers = uniqueStrings(this.probe?.blockers || []);
+    if (probeBlockers.length > 0) {
+      this.validation = {
+        ...this.validation,
+        blockers: uniqueStrings([...(this.validation.blockers || []), ...probeBlockers]),
+        ready: false
+      };
       this.#emit({
         type: 'task-result',
         rootTaskId: task.rootTaskId,
@@ -447,17 +637,20 @@ export class UlgDispatchServiceHost {
   #createResult({ status, ready, blockers, lease }) {
     const task = this.task || {};
     const payload = this.validation?.payload || task.artifactPayload || {};
-    const ingest = payload && typeof payload === 'object' ? createIngestSummary(payload) : null;
+    const ingest = payload && typeof payload === 'object' ? createIngestSummary(payload, this.probe) : null;
     const validation = {
       schema: 'peercompute.ulg.dispatch-service-validation.v0',
       status: ready ? 'pass' : 'blocked',
       ready,
       blockers: clonePlain(blockers || []),
       expectedSourceService: this.validation?.expectedSource || null,
-      acceptedArtifactKinds: clonePlain(this.validation?.acceptedKinds || [])
+      acceptedArtifactKinds: clonePlain(this.validation?.acceptedKinds || []),
+      adapterProbeSchema: this.probe?.schema || null,
+      adapterProbeStatus: this.probe?.status || null,
+      adapterProbeReady: this.probe?.ready === true
     };
     const artifact = ready && payload
-      ? createResultArtifact({ manifest: this.manifest, task, payload, ingest, validation, lease })
+      ? createResultArtifact({ manifest: this.manifest, task, payload, ingest, validation, lease, probe: this.probe })
       : null;
     return {
       schema: ULG_DISPATCH_SERVICE_RESULT_SCHEMA,
@@ -475,6 +668,7 @@ export class UlgDispatchServiceHost {
       artifactRefUri: payload.artifactRefUri || null,
       artifactContentHash: payload.artifactContentHash || null,
       ingest,
+      probe: clonePlain(this.probe),
       validation,
       childLease: lease ? {
         schema: lease.schema,
@@ -499,6 +693,9 @@ export class UlgDispatchServiceHost {
         payloadSchema: this.task?.artifactPayload?.schema || null,
         artifactKind: this.task?.artifactPayload?.artifactKind || null,
         taskKind: this.task?.taskKind || null,
+        probeSchema: this.probe?.schema || null,
+        probeStatus: this.probe?.status || null,
+        probeReady: this.probe?.ready === true,
         blockers: clonePlain(this.validation?.blockers || []),
         activeLeaseId: lease?.leaseId || null
       }
