@@ -20,6 +20,7 @@ import {
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
+  MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
   MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
   MOONLAB_MAGNETAR_REFERENCE_ROLE,
   MultiscaleModel,
@@ -1801,6 +1802,21 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.referenceInventory.ready, true);
   assert.equal(scenario.handoffReadiness.referenceInventory.status, 'reference-contract-ready');
   assert.equal(scenario.handoffReadiness.referenceInventory.scientificScope, 'partial-calibration-reference-not-full-magnetar');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.schema, MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.status, 'scientific-tolerance-suite-partial');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.ready, false);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.requiredCount, 5);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.readyCount, 1);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.scientificReadyCount, 0);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 4);
+  const moonlabToleranceEntry = scenario.handoffReadiness.toleranceSuite.entries.find((entry) => entry.id === 'moonlab-dipole-ising-reference');
+  assert.equal(moonlabToleranceEntry.ready, true);
+  assert.equal(moonlabToleranceEntry.scientificCoverage, false);
+  assert.equal(moonlabToleranceEntry.toleranceValue, 1e-9);
+  assert.ok(scenario.handoffReadiness.toleranceSuite.blockers.includes('calibrated-mhd-reference-missing'));
+  assert.ok(scenario.handoffReadiness.toleranceSuite.blockers.includes('calibrated-pic-reference-missing'));
+  assert.ok(scenario.handoffReadiness.toleranceSuite.blockers.includes('calibrated-radiation-reference-missing'));
+  assert.ok(scenario.handoffReadiness.toleranceSuite.blockers.includes('calibrated-relativity-reference-missing'));
   assert.equal(scenario.handoffReadiness.closureHandoff.provider, 'eshkol');
   assert.equal(scenario.handoffReadiness.closureHandoff.closureKind, 'wasm-reference');
   assert.equal(scenario.handoffReadiness.closureHandoff.moduleUrl, 'hello.wasm');
@@ -1831,6 +1847,12 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(packet.downward.boundaryConditions.scenarioMagnetarReferenceSchema, MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA);
   assert.equal(packet.downward.boundaryConditions.scenarioMagnetarReferenceEnergyUnits, 'normalized-ising');
   assert.equal(packet.downward.boundaryConditions.scenarioMagnetarReferenceToleranceEnergyAbs, 1e-9);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteStatus, 'scientific-tolerance-suite-partial');
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteRequiredCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReadyCount, 1);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteScientificReadyCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteMissingCount, 4);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffBlockerCount, scenario.handoffReadiness.blockerCount);
 });
@@ -2042,6 +2064,10 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
   assert.equal(scenario.handoffReadiness.referenceInventory.ready, false);
   assert.equal(scenario.handoffReadiness.referenceInventory.status, 'reference-contract-pending');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.status, 'scientific-tolerance-suite-missing');
+  assert.equal(scenario.handoffReadiness.toleranceSuite.readyCount, 0);
+  assert.equal(scenario.handoffReadiness.toleranceSuite.missingCount, 5);
+  assert.ok(scenario.handoffReadiness.toleranceSuite.blockers.includes('moonlab-magnetar-dipole-ising-reference-contract-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('moonlab-magnetar-dipole-ising-reference-contract-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('calibrated-mhd-pic-radiation-relativity-reference-missing'));
   assert.ok(scenario.handoffReadiness.blockers.includes('scientific-tolerance-suite-missing'));
@@ -2063,6 +2089,9 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeOutputSemanticScope, 'smoke-fixture');
   assert.equal(packet.downward.boundaryConditions.scenarioMagnetarReferenceReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioMagnetarReferenceStatus, 'reference-contract-pending');
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteStatus, 'scientific-tolerance-suite-missing');
+  assert.equal(packet.downward.boundaryConditions.scenarioToleranceSuiteReadyCount, 0);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });

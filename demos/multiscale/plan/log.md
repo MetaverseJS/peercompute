@@ -21849,3 +21849,46 @@ User asked whether Infinite Context Coder is being used.
 - This is a partial normalized Ising reference/tolerance input only. It does not
   supply calibrated multiphysics magnetar references or a scientific tolerance
   suite.
+
+## 2026-06-06 00:50:01 AKDT - Scientific tolerance-suite manifest
+
+### Prompt
+- Continued after the MoonLab reference inventory handoff.
+- Remaining live blockers were calibrated MHD/PIC/radiation/relativity
+  references and a scientific tolerance suite.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-scientific-tolerance-suite.v0` under
+  magnetar handoff readiness.
+- Enumerated the partial MoonLab normalized dipole Ising tolerance input and
+  the missing MHD, PIC, radiation, and relativistic calibrated tolerance
+  families.
+- Mirrored suite status and counts into packet boundary conditions and the HUD
+  scenario row.
+- Kept `scientificReady: false`; `scientific-tolerance-suite-missing` remains
+  blocked because the suite is partial and has zero scientific-coverage entries.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: Multiscale source/test syntax checks completed.
+- PASS: full Multiscale model suite passed with `177/177`.
+- PASS: `git diff --check` reported no whitespace errors.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings.
+- PASS: live ULG-to-Multiscale VPN probe reported
+  `scientific-tolerance-suite-partial`, `requiredCount: 5`, `readyCount: 1`,
+  `scientificReadyCount: 0`, and `scenarioScientificReady: false`.
+
+### Open
+- The scientific tolerance suite remains blocked until calibrated
+  MHD/PIC/radiation/relativity reference tolerances are supplied and validated.

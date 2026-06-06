@@ -49006,6 +49006,15 @@ User asked whether Infinite Context Coder is being used.
 - PASS: `git diff --check`.
 - PASS: `npm --prefix demos/multiscale run build` completed with existing large
   chunk warnings and refreshed the checked-in docs bundle.
+- PASS: live ULG-to-Multiscale VPN probe reported tolerance-suite schema
+  `peercompute.multiscale.scenario-scientific-tolerance-suite.v0`, status
+  `scientific-tolerance-suite-partial`, `requiredCount: 5`, `readyCount: 1`,
+  `scientificReadyCount: 0`, packet
+  `scenarioToleranceSuiteStatus: "scientific-tolerance-suite-partial"`, and
+  `scenarioScientificReady: false` with `scientific-tolerance-suite-missing`
+  still present.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large
+  chunk warnings and refreshed the checked-in docs bundle.
 - PASS: live ULG-to-Multiscale VPN probe using
   `window.__ulgDemo.createPeerComputeHandoff()` and
   `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` reported MoonLab
@@ -49021,4 +49030,48 @@ User asked whether Infinite Context Coder is being used.
 - The reference inventory is only the MoonLab normalized dipole Ising tolerance
   contract. Full magnetar scientific readiness still needs calibrated
   MHD/PIC/radiation/relativity references and a scientific tolerance suite.
+- No push was attempted; all commits remain local per user instruction.
+
+## 2026-06-06 00:50:01 AKDT - Multiscale scientific tolerance-suite manifest
+
+### Prompt
+- Continued after the MoonLab reference inventory slice.
+- Remaining live blockers were calibrated MHD/PIC/radiation/relativity
+  references and a scientific tolerance suite.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.scenario-scientific-tolerance-suite.v0` under
+  magnetar handoff readiness.
+- The suite enumerates the partial MoonLab normalized dipole Ising tolerance
+  input plus missing MHD, PIC, radiation, and relativistic calibrated tolerance
+  families.
+- Threaded tolerance-suite status, required/ready/scientific-ready/missing
+  counts, and HUD `tol` status through packets and scenario readout.
+- Changed the `scientific-tolerance-suite-missing` blocker from unconditional
+  to conditional on the suite's `ready` flag, while the current suite remains
+  not ready because no entry has full scientific coverage.
+
+### Files Touched
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `177/177`.
+- PASS: `git diff --check`.
+
+### Open
+- This adds the manifest and counters only. The scientific tolerance suite still
+  remains blocked until calibrated MHD/PIC/radiation/relativity reference
+  tolerances are supplied and validated.
 - No push was attempted; all commits remain local per user instruction.

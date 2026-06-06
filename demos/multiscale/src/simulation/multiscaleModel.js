@@ -168,6 +168,7 @@ export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA = 'peercomput
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.multiscale.scenario-closure-output-semantics-validation.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
+export const MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA = 'peercompute.multiscale.scenario-scientific-tolerance-suite.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
@@ -391,6 +392,106 @@ function normalizeMagnetarReferenceContract(source = {}) {
     ready,
     scope: 'moonlab-dipole-ising-reference-tolerance',
     scientificScope: 'partial-calibration-reference-not-full-magnetar'
+  };
+}
+
+function createScenarioToleranceSuiteReport({ scenarioId, referenceInventory } = {}) {
+  if (scenarioId !== 'magnetar') {
+    return {
+      schema: MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
+      scenarioId: scenarioId || 'default',
+      status: 'not-applicable',
+      ready: false,
+      requiredCount: 0,
+      readyCount: 0,
+      scientificReadyCount: 0,
+      missingCount: 0,
+      entries: [],
+      blockers: []
+    };
+  }
+  const referenceReady = referenceInventory?.ready === true;
+  const entries = [{
+    id: 'moonlab-dipole-ising-reference',
+    family: 'quantum-calibration',
+    provider: 'moonlab',
+    schema: referenceInventory?.schema || MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA,
+    role: referenceInventory?.role || MOONLAB_MAGNETAR_REFERENCE_ROLE,
+    toleranceKind: 'normalized-ising-energy-absolute',
+    toleranceValue: referenceInventory?.toleranceEnergyAbs ?? null,
+    observedDelta: referenceInventory?.maxObservedEnergyDelta ?? null,
+    energyUnits: referenceInventory?.energyUnits || null,
+    ready: referenceReady,
+    scientificCoverage: false,
+    status: referenceReady ? 'partial-reference-ready' : 'reference-contract-missing',
+    blocker: referenceReady ? null : 'moonlab-magnetar-dipole-ising-reference-contract-missing'
+  }, {
+    id: 'magnetosphere-mhd-reference',
+    family: 'magnetosphere-mhd',
+    provider: null,
+    toleranceKind: 'magnetic-field-energy-flux-conservation',
+    toleranceValue: null,
+    observedDelta: null,
+    energyUnits: null,
+    ready: false,
+    scientificCoverage: false,
+    status: 'calibrated-reference-missing',
+    blocker: 'calibrated-mhd-reference-missing'
+  }, {
+    id: 'pic-kinetic-plasma-reference',
+    family: 'pic-kinetic-plasma',
+    provider: null,
+    toleranceKind: 'particle-distribution-and-reconnection-rate',
+    toleranceValue: null,
+    observedDelta: null,
+    energyUnits: null,
+    ready: false,
+    scientificCoverage: false,
+    status: 'calibrated-reference-missing',
+    blocker: 'calibrated-pic-reference-missing'
+  }, {
+    id: 'radiation-transport-reference',
+    family: 'radiation-transport',
+    provider: null,
+    toleranceKind: 'radiative-transfer-energy-balance',
+    toleranceValue: null,
+    observedDelta: null,
+    energyUnits: null,
+    ready: false,
+    scientificCoverage: false,
+    status: 'calibrated-reference-missing',
+    blocker: 'calibrated-radiation-reference-missing'
+  }, {
+    id: 'relativistic-correction-reference',
+    family: 'relativistic-correction',
+    provider: null,
+    toleranceKind: 'compact-object-orbital-and-redshift-error',
+    toleranceValue: null,
+    observedDelta: null,
+    energyUnits: null,
+    ready: false,
+    scientificCoverage: false,
+    status: 'calibrated-reference-missing',
+    blocker: 'calibrated-relativity-reference-missing'
+  }];
+  const readyCount = entries.filter((entry) => entry.ready).length;
+  const scientificReadyCount = entries.filter((entry) => entry.ready && entry.scientificCoverage).length;
+  const blockers = entries.map((entry) => entry.blocker).filter(Boolean);
+  const ready = entries.length > 0 && entries.every((entry) => entry.ready && entry.scientificCoverage === true);
+  return {
+    schema: MULTISCALE_SCENARIO_TOLERANCE_SUITE_SCHEMA,
+    scenarioId,
+    status: ready
+      ? 'scientific-tolerance-suite-ready'
+      : (readyCount > 0 ? 'scientific-tolerance-suite-partial' : 'scientific-tolerance-suite-missing'),
+    ready,
+    requiredCount: entries.length,
+    readyCount,
+    scientificReadyCount,
+    missingCount: entries.length - readyCount,
+    entries,
+    blockers,
+    note: 'Only entries with scientificCoverage=true can clear the scientific tolerance-suite blocker.'
   };
 }
 
@@ -640,7 +741,8 @@ function createScenarioHandoffBlockers({
   closureHostRuntimeRequired,
   closureHostRuntimeExecutionReady,
   closureOutputSemanticsValidated,
-  magnetarReferenceReady
+  magnetarReferenceReady,
+  toleranceSuiteReady
 }) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
@@ -662,7 +764,9 @@ function createScenarioHandoffBlockers({
     blockers.push('moonlab-magnetar-dipole-ising-reference-contract-missing');
   }
   blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
-  blockers.push('scientific-tolerance-suite-missing');
+  if (toleranceSuiteReady !== true) {
+    blockers.push('scientific-tolerance-suite-missing');
+  }
   return blockers;
 }
 
@@ -678,6 +782,23 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const closureOutputSemanticsValidated = closureModuleProbe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true;
   const magnetarReference = calibrationIngest?.magnetarReference || null;
   const magnetarReferenceReady = magnetarReference?.ready === true || scenario.validation?.magnetarReferenceReady === true;
+  const referenceInventory = {
+    provider: calibrationIngest?.provider || 'moonlab',
+    ready: magnetarReferenceReady,
+    status: magnetarReferenceReady ? 'reference-contract-ready' : 'reference-contract-pending',
+    schema: magnetarReference?.schema || null,
+    role: magnetarReference?.role || null,
+    contractHash: magnetarReference?.contractHash || null,
+    energyUnits: magnetarReference?.energyUnits || null,
+    groundStateBitString: magnetarReference?.groundStateBitString || null,
+    groundStateEnergy: magnetarReference?.groundStateEnergy ?? null,
+    toleranceEnergyAbs: magnetarReference?.toleranceEnergyAbs ?? null,
+    maxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
+    validationStatus: magnetarReference?.validationStatus || null,
+    scope: magnetarReference?.scope || 'moonlab-dipole-ising-reference-tolerance',
+    scientificScope: magnetarReference?.scientificScope || 'partial-calibration-reference-not-full-magnetar'
+  };
+  const toleranceSuite = createScenarioToleranceSuiteReport({ scenarioId, referenceInventory });
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -691,7 +812,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
     closureHostRuntimeExecutionReady,
     closureOutputSemanticsValidated,
-    magnetarReferenceReady
+    magnetarReferenceReady,
+    toleranceSuiteReady: toleranceSuite.ready === true
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -727,22 +849,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       referenceMaxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
       referenceValidationStatus: magnetarReference?.validationStatus || null
     },
-    referenceInventory: {
-      provider: calibrationIngest?.provider || 'moonlab',
-      ready: magnetarReferenceReady,
-      status: magnetarReferenceReady ? 'reference-contract-ready' : 'reference-contract-pending',
-      schema: magnetarReference?.schema || null,
-      role: magnetarReference?.role || null,
-      contractHash: magnetarReference?.contractHash || null,
-      energyUnits: magnetarReference?.energyUnits || null,
-      groundStateBitString: magnetarReference?.groundStateBitString || null,
-      groundStateEnergy: magnetarReference?.groundStateEnergy ?? null,
-      toleranceEnergyAbs: magnetarReference?.toleranceEnergyAbs ?? null,
-      maxObservedEnergyDelta: magnetarReference?.maxObservedEnergyDelta ?? null,
-      validationStatus: magnetarReference?.validationStatus || null,
-      scope: magnetarReference?.scope || 'moonlab-dipole-ising-reference-tolerance',
-      scientificScope: magnetarReference?.scientificScope || 'partial-calibration-reference-not-full-magnetar'
-    },
+    referenceInventory,
+    toleranceSuite,
     closureHandoff: {
       provider: closureIngest?.provider || 'eshkol',
       ready: closureReady,
@@ -6748,6 +6856,12 @@ export class MultiscaleModel {
           scenarioMagnetarReferenceGroundStateEnergy: scenario.handoffReadiness?.referenceInventory?.groundStateEnergy ?? null,
           scenarioMagnetarReferenceToleranceEnergyAbs: scenario.handoffReadiness?.referenceInventory?.toleranceEnergyAbs ?? null,
           scenarioMagnetarReferenceMaxObservedEnergyDelta: scenario.handoffReadiness?.referenceInventory?.maxObservedEnergyDelta ?? null,
+          scenarioToleranceSuiteReady: scenario.handoffReadiness?.toleranceSuite?.ready === true,
+          scenarioToleranceSuiteStatus: scenario.handoffReadiness?.toleranceSuite?.status || null,
+          scenarioToleranceSuiteRequiredCount: scenario.handoffReadiness?.toleranceSuite?.requiredCount ?? null,
+          scenarioToleranceSuiteReadyCount: scenario.handoffReadiness?.toleranceSuite?.readyCount ?? null,
+          scenarioToleranceSuiteScientificReadyCount: scenario.handoffReadiness?.toleranceSuite?.scientificReadyCount ?? null,
+          scenarioToleranceSuiteMissingCount: scenario.handoffReadiness?.toleranceSuite?.missingCount ?? null,
           scenarioClosureReady: scenario.closureIngest?.ready === true,
           scenarioClosureStatus: scenario.validation?.closureStatus || null,
           scenarioClosureKind: scenario.closureIngest?.closure?.kind || null,
