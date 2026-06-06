@@ -1564,6 +1564,102 @@ async function dryProbeScenarioClosureHostRuntime(module, observedImports = [], 
   };
 }
 
+function createScenarioClosureHostRuntimeExecutionImports(observedImports = [], options = {}) {
+  const stub = createScenarioClosureHostRuntimeStubImports(observedImports, {
+    ...options,
+    memoryInitialPages: options.memoryInitialPages || 256,
+    tableInitial: options.tableInitial || 256,
+    stackPointerValue: options.stackPointerValue || 1048576
+  });
+  const output = [];
+  const calls = [];
+  const env = stub.importObject.env || {};
+  const record = (name, args) => {
+    calls.push({ name, argCount: args.length });
+  };
+  const pushChar = (value) => {
+    const charCode = Number(value) & 0xff;
+    output.push(String.fromCharCode(charCode));
+    return charCode;
+  };
+
+  env.__eshkol_register_parallel_workers = (...args) => { record('__eshkol_register_parallel_workers', args); };
+  env.eshkol_init_stack_size = (...args) => { record('eshkol_init_stack_size', args); };
+  env.eshkol_runtime_init = (...args) => { record('eshkol_runtime_init', args); return 0; };
+  env.get_global_arena = (...args) => { record('get_global_arena', args); return options.globalArenaPtr || 1; };
+  env.eshkol_lambda_registry_init = (...args) => { record('eshkol_lambda_registry_init', args); };
+  env.__eshkol_lib_init__ = (...args) => { record('__eshkol_lib_init__', args); };
+  env.eshkol_display_value = (value, ...args) => {
+    record('eshkol_display_value', [value, ...args]);
+    output.push(String(value));
+  };
+  env.eshkol_runtime_current_output_fp = (...args) => {
+    record('eshkol_runtime_current_output_fp', args);
+    return options.outputFilePointer || 0;
+  };
+  env.fputc = (charCode, fp) => {
+    record('fputc', [charCode, fp]);
+    return pushChar(charCode);
+  };
+
+  return { ...stub, output, calls };
+}
+
+function entryArgsForSignature(signature = {}, fallbackExport = 'main') {
+  const parameters = Array.isArray(signature?.parameters) ? signature.parameters : [];
+  if (parameters.length === 0 && fallbackExport === 'main') return [0, 0];
+  return parameters.map((type) => (type === 'i64' ? 0n : 0));
+}
+
+function serializeWasmValue(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || value === null) return value;
+  return String(value);
+}
+
+async function executeScenarioClosureHostRuntime(module, observedImports = [], options = {}) {
+  const runtime = createScenarioClosureHostRuntimeExecutionImports(observedImports, options);
+  const entryExport = options.entryExport || 'main';
+  const entryArgs = Array.isArray(options.entryArgs)
+    ? options.entryArgs
+    : entryArgsForSignature(options.entrySignature || {}, entryExport);
+  let instance = null;
+  let entryResult = null;
+  let error = null;
+  let entryInvoked = false;
+  try {
+    instance = await WebAssembly.instantiate(module, runtime.importObject);
+    const entry = instance?.exports?.[entryExport];
+    if (typeof entry !== 'function') {
+      throw new Error(`Eshkol entry export is not callable: ${entryExport}`);
+    }
+    entryResult = serializeWasmValue(entry(...entryArgs));
+    entryInvoked = true;
+  } catch (err) {
+    error = err?.message || String(err);
+  }
+  const outputText = runtime.output.join('');
+  const ready = Boolean(instance && entryInvoked && !error);
+  return {
+    schema: 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0',
+    status: ready ? 'host-runtime-execution-ready' : 'host-runtime-execution-pending',
+    ready,
+    mode: 'dom-free-eshkol-host-imports-v0',
+    instantiated: Boolean(instance),
+    entryInvoked,
+    entryExport,
+    entryArgs: entryArgs.map(serializeWasmValue),
+    entryResult,
+    outputPreview: outputText.slice(0, 160),
+    outputByteLength: new TextEncoder().encode(outputText).length,
+    runtimeCallCount: runtime.calls.length,
+    calledImports: [...new Set(runtime.calls.map((call) => call.name))],
+    mainInvoked: entryExport === 'main' && entryInvoked,
+    scientificExecution: false,
+    error
+  };
+}
+
 async function probeScenarioClosureModule(artifact = {}, options = {}) {
   const execution = artifact.execution && typeof artifact.execution === 'object' ? artifact.execution : {};
   const importEntries = Array.isArray(execution.imports) ? execution.imports : [];
@@ -1642,6 +1738,33 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
               error: 'WASM start section present; dry instantiate with inert host imports is blocked.'
             })
       : null;
+    const hostRuntimeExecution = (options.executeHostRuntime === true || options.executeScenarioClosure === true)
+      ? (startFunctionIndex === null
+          ? await executeScenarioClosureHostRuntime(module, observedImports, {
+              ...options,
+              entryExport,
+              entrySignature: options.entrySignature || execution.entrySignature || null
+            })
+          : {
+              schema: 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0',
+              status: 'host-runtime-execution-blocked-start-section',
+              ready: false,
+              mode: 'dom-free-eshkol-host-imports-v0',
+              instantiated: false,
+              entryInvoked: false,
+              entryExport,
+              entryArgs: [],
+              entryResult: null,
+              outputPreview: '',
+              outputByteLength: 0,
+              runtimeCallCount: 0,
+              calledImports: [],
+              startFunctionIndex,
+              mainInvoked: false,
+              scientificExecution: false,
+              error: 'WASM start section present; host-runtime execution is blocked.'
+            })
+      : null;
     report = {
       scenarioId: options.scenarioId || 'magnetar',
       provider: options.provider || artifact.sourceService || 'eshkol',
@@ -1665,6 +1788,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || observedImports.length > 0,
       hostRuntimeProbe,
+      hostRuntimeExecution,
       probeMode: 'browser-webassembly-module-abi-v0',
       error: null
     };
@@ -1702,6 +1826,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || expectedImports.length > 0,
       hostRuntimeProbe: null,
+      hostRuntimeExecution: null,
       probeMode: 'browser-webassembly-module-abi-v0',
       error: error?.message || String(error)
     };
@@ -6040,7 +6165,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
     ['device tier', computeStatus.peercompute?.computeBudget?.resourceTier || 'unknown'],
     ['environment', `${formatFixed(model.environment.ambientTemperatureK, 0)}K / ${formatFixed(model.environment.ambientPressurePa, 0)}Pa / O2 ${formatFixed(model.environment.oxygenFraction * 100, 0)}% / g ${formatFixed(model.environment.gravityMps2, 1)} / E ${formatExp(model.environment.electricFieldVm || 0, 2)}V/m / B ${formatFixed(model.environment.magneticFieldT || 0, 2)}T`],
     ['scenario', scenario?.active
-      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
+      ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / exec ${scenario.closureModuleProbe?.hostRuntimeExecution?.status || 'exec-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
@@ -10302,6 +10427,12 @@ window.__multiscaleDemo = {
   },
   probeScenarioClosureHostRuntime(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true });
+  },
+  executeScenarioClosureHostRuntime(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true, executeHostRuntime: true });
+  },
+  executeScenarioClosureHostRuntimeProbe(artifact = {}, options = {}) {
+    return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true, executeHostRuntime: true });
   },
   probeScenarioClosureHostRuntimeProbe(artifact = {}, options = {}) {
     return probeScenarioClosureModule(artifact, { ...options, dryInstantiateHostRuntime: true });

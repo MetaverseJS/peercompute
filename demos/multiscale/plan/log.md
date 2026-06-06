@@ -20939,6 +20939,70 @@ User asked whether Infinite Context Coder is being used.
 - ULG remains reachable at `http://100.86.83.35:5173/`.
 - Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
 
+## 2026-06-05 23:01:15 AKDT - Eshkol host-runtime execution probe
+
+### Prompt
+- User asked why work had stopped; resumed the long-running PeerCompute/ULG/Eshkol implementation plan from the context handoff.
+- Prompt time/date recorded from the local machine: `2026-06-05 23:01:15 AKDT`.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Continued after the Eshkol host-runtime dry-probe checkpoint.
+- Added nested `peercompute.multiscale.scenario-closure-host-runtime-execution.v0` under the closure module probe.
+- Added DOM-free Eshkol-style host imports for the staged `hello.wasm` runtime imports, including memory/table defaults, stack/global stubs, runtime lifecycle functions, display capture, `fputc` output capture, and call telemetry.
+- Added a guarded browser execution API, `window.__multiscaleDemo.executeScenarioClosureHostRuntime()`, that compiles transferred Eshkol WASM bytes, dry-probes no-start-section host instantiation, invokes `main(0, 0)` through the host imports, records result/output/import calls, and keeps `scientificExecution: false`.
+- Threaded host-runtime execution readiness into scenario handoff readiness, packet boundary conditions, and the HUD scenario row.
+- Updated blockers so a ready host-runtime execution clears the host-runtime-required and unvalidated-execution blockers, but preserves `eshkol-closure-output-semantics-unvalidated` plus calibrated-reference/tolerance blockers.
+- Updated demo/root plans and test strategy, then rebuilt the checked-in `docs/multiscale` bundle.
+
+### Files Touched
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `git status --short --branch`
+- `git diff -- demos/multiscale/src/simulation/multiscaleModel.js demos/multiscale/src/main.js demos/multiscale/tests/multiscaleModel.test.mjs`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- `curl -sS -o /dev/null -w 'ulg %{http_code} %{url_effective}\n' 'http://100.86.83.35:5173/'`
+- Live Playwright execution probe that loaded ULG `hello.ulg.json` and `hello.wasm` from `5173`, transferred WASM bytes to Multiscale `5185`, ran `window.__multiscaleDemo.executeScenarioClosureHostRuntime()`, and checked full packet boundary conditions.
+- `date '+%Y-%m-%d %H:%M:%S %Z (%z)'`
+- `rg -n "host-runtime|closure module|scenario-closure|Eshkol|magnetar" plan/plan.md demos/multiscale/plan/plan.md plan/tests.md demos/multiscale/plan/log.md plan/log.md`
+- `tail -n 80 demos/multiscale/plan/log.md`
+- `tail -n 80 plan/log.md`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js && node --check demos/multiscale/src/main.js && node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run build`
+- `curl -sS -o /dev/null -w 'ulg %{http_code} %{url_effective}\n' 'http://100.86.83.35:5173/'`
+- `curl -k -sS -o /dev/null -w 'multiscale %{http_code} %{url_effective}\n' 'https://100.86.83.35:5185/?scenario=magnetar'`
+- `git diff --check`
+
+### Test Results
+- PASS: initial ULG endpoint check returned HTTP `200`.
+- PASS: initial Multiscale magnetar endpoint check returned HTTP `200`.
+- PASS: live browser execution probe reported `moduleReady: true`, `startFunctionIndex: null`, `hostProbeReady: true`, `host-runtime-execution-ready`, `entryInvoked: true`, `mainInvoked: true`, `entryResult: 0`, output preview `1048560\n1048544\n`, `runtimeCallCount: 11`, observed `eshkol_runtime_init` and `fputc`, packet `scenarioClosureHostRuntimeExecutionReady: true`, and packet `scenarioScientificReady: false`.
+- PASS: changed-file syntax checks completed for Multiscale source and test files.
+- PASS: full Multiscale model suite passed with `176/176`.
+- PASS: PeerCompute service-orchestration regression passed with `8/8`.
+- PASS: Multiscale build completed; existing large chunk warnings remain.
+- PASS: final ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: `git diff --check` reported no whitespace errors.
+
+### Failures / Open Questions
+- The browser can now execute the staged Eshkol closure entry with DOM-free host imports, but the captured output semantics are not validated against magnetar physics.
+- Magnetar scientific readiness remains blocked by calibrated MHD/PIC/radiation/relativity references and scientific tolerance coverage.
+
+### Demo Server State
+- ULG remains reachable at `http://100.86.83.35:5173/`.
+- Multiscale remains reachable at `https://100.86.83.35:5185/?scenario=magnetar`.
+
 ## 2026-06-05 13:57:21 AKDT - Reduced qmat product topology mutation checkpoint
 
 ### Prompt

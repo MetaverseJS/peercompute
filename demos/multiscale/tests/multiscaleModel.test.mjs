@@ -12,6 +12,7 @@ import {
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import {
   MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
@@ -1797,6 +1798,33 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
       mainInvoked: false,
       scientificExecution: false
     },
+    hostRuntimeExecution: {
+      schema: MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
+      status: 'host-runtime-execution-ready',
+      ready: true,
+      mode: 'dom-free-eshkol-host-imports-v0',
+      instantiated: true,
+      entryInvoked: true,
+      entryExport: 'main',
+      entryArgs: [0, 0],
+      entryResult: 0,
+      outputPreview: '1048560\n1048544\n',
+      outputByteLength: 16,
+      runtimeCallCount: 11,
+      calledImports: [
+        'eshkol_init_stack_size',
+        'eshkol_runtime_init',
+        'get_global_arena',
+        'eshkol_lambda_registry_init',
+        '__eshkol_lib_init__',
+        'eshkol_display_value',
+        'eshkol_runtime_current_output_fp',
+        'fputc'
+      ],
+      startFunctionIndex: null,
+      mainInvoked: true,
+      scientificExecution: false
+    },
     probeMode: 'browser-webassembly-module-abi-v0'
   });
 
@@ -1816,13 +1844,24 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.startFunctionIndex, null);
   assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.mainInvoked, false);
   assert.equal(scenario.closureModuleProbe.hostRuntimeProbe.scientificExecution, false);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.schema, MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.ready, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.entryInvoked, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.entryExport, 'main');
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.entryResult, 0);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.mainInvoked, true);
+  assert.equal(scenario.closureModuleProbe.hostRuntimeExecution.scientificExecution, false);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeReady, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeStatus, 'host-runtime-probe-ready');
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeProbeMode, 'stub-import-dry-instantiate-v0');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, true);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionStatus, 'host-runtime-execution-ready');
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionMode, 'dom-free-eshkol-host-imports-v0');
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-module-abi-probe-missing'));
   assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-requires-host-imports'));
-  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
-  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-scientific-execution-not-validated'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-host-runtime-required'));
+  assert.ok(!scenario.handoffReadiness.blockers.includes('eshkol-closure-scientific-execution-not-validated'));
+  assert.ok(scenario.handoffReadiness.blockers.includes('eshkol-closure-output-semantics-unvalidated'));
   assert.equal(scenario.handoffReadiness.scientificReady, false);
 
   const packet = model.createPacket();
@@ -1833,6 +1872,9 @@ test('magnetar scenario records Eshkol closure module ABI probe without promotin
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeStatus, 'host-runtime-probe-ready');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeProbeMode, 'stub-import-dry-instantiate-v0');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionStatus, 'host-runtime-execution-ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionMode, 'dom-free-eshkol-host-imports-v0');
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
 });

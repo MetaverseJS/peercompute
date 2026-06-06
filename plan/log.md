@@ -48608,6 +48608,8 @@ User asked whether Infinite Context Coder is being used.
 - PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `176/176`.
 - PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed `8/8`.
 - PASS: `npm --prefix demos/multiscale run build` completed with existing large chunk warnings.
+- PASS: final ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: `git diff --check` reported no whitespace errors.
 - PASS: live browser probe transferred Eshkol `hello.wasm` bytes from ULG `5173` to Multiscale `5185`, observed `moduleCompiled: true`, import metadata `12/12`, export metadata `1/1`, `entryExport: "main"`, `scenarioClosureModuleProbeReady: true`, and `scenarioScientificReady: false`.
 
 ### Open
@@ -48638,3 +48640,30 @@ User asked whether Infinite Context Coder is being used.
 
 ### Open
 - Dry instantiate is still non-execution. Real Eshkol execution needs a DOM-free runtime import provider, signature metadata, output capture, and scientific validation before it can reduce magnetar blockers.
+
+## 2026-06-05 23:01:15 AKDT - Multiscale Eshkol host-runtime execution probe
+
+### Prompt
+- User asked why work had stopped; resumed the current PeerCompute/ULG/Eshkol implementation plan from the context handoff.
+- Prompt time/date recorded from the local machine: `2026-06-05 23:01:15 AKDT`.
+- Local commits only; no push.
+
+### Actions
+- Added nested `peercompute.multiscale.scenario-closure-host-runtime-execution.v0` to the Eshkol module-probe report.
+- Added DOM-free Eshkol host imports in the Multiscale browser path so transferred Eshkol WASM can instantiate with runtime lifecycle stubs, memory/table defaults, output capture, and import-call telemetry.
+- Added `executeScenarioClosureHostRuntime()` / `executeScenarioClosureHostRuntimeProbe()` browser APIs that dry-probe no-start modules, invoke `main(0, 0)`, record entry result/output/import calls, and keep `scientificExecution: false`.
+- Exposed host-runtime execution state through scenario handoff readiness, packet boundary conditions, and HUD text.
+- Updated readiness blockers so host-runtime execution clears the host-runtime-required/unvalidated-execution blockers but preserves an explicit output-semantics blocker.
+- Updated plan/test docs and rebuilt the Multiscale docs bundle.
+
+### Validation
+- PASS: initial ULG and Multiscale endpoint checks returned HTTP `200`.
+- PASS: live browser execution probe transferred Eshkol `hello.wasm` bytes from ULG `5173` to Multiscale `5185`, observed `startFunctionIndex: null`, dry host probe ready, `host-runtime-execution-ready`, `entryInvoked: true`, `mainInvoked: true`, `entryResult: 0`, output preview `1048560\n1048544\n`, `runtimeCallCount: 11`, packet `scenarioClosureHostRuntimeExecutionReady: true`, and packet `scenarioScientificReady: false`.
+- PASS: changed-file syntax checks.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `176/176`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed `8/8`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing large chunk warnings.
+
+### Open
+- Host-runtime execution now proves the staged Eshkol entry can run under DOM-free imports, but the captured output semantics are not validated as magnetar closure physics.
+- Magnetar scientific readiness still requires calibrated MHD/PIC/radiation/relativity references and scientific tolerance coverage.

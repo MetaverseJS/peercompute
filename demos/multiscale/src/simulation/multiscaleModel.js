@@ -165,6 +165,7 @@ export const MULTISCALE_SCENARIO_CALIBRATION_INGEST_SCHEMA = 'peercompute.multis
 export const MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA = 'peercompute.multiscale.scenario-closure-ingest.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-module-probe.v0';
 export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_PROBE_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-probe.v0';
+export const MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.multiscale.scenario-closure-host-runtime-execution.v0';
 export const MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA = 'peercompute.multiscale.scenario-handoff-readiness.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
 
@@ -439,6 +440,34 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
         error: hostRuntimeSource.error || null
       }
     : null;
+  const hostRuntimeExecutionSource = source.hostRuntimeExecution && typeof source.hostRuntimeExecution === 'object'
+    ? source.hostRuntimeExecution
+    : null;
+  const hostRuntimeExecution = hostRuntimeExecutionSource
+    ? {
+        schema: hostRuntimeExecutionSource.schema || MULTISCALE_SCENARIO_CLOSURE_HOST_RUNTIME_EXECUTION_SCHEMA,
+        status: hostRuntimeExecutionSource.status || (hostRuntimeExecutionSource.ready === true ? 'host-runtime-execution-ready' : 'host-runtime-execution-pending'),
+        ready: hostRuntimeExecutionSource.ready === true || hostRuntimeExecutionSource.entryInvoked === true,
+        mode: hostRuntimeExecutionSource.mode || 'dom-free-eshkol-host-imports-v0',
+        instantiated: hostRuntimeExecutionSource.instantiated === true,
+        entryInvoked: hostRuntimeExecutionSource.entryInvoked === true,
+        entryExport: hostRuntimeExecutionSource.entryExport || source.entryExport || 'main',
+        entryArgs: Array.isArray(hostRuntimeExecutionSource.entryArgs) ? [...hostRuntimeExecutionSource.entryArgs] : [],
+        entryResult: hostRuntimeExecutionSource.entryResult ?? null,
+        outputPreview: String(hostRuntimeExecutionSource.outputPreview || ''),
+        outputByteLength: Number.isFinite(Number(hostRuntimeExecutionSource.outputByteLength)) ? Number(hostRuntimeExecutionSource.outputByteLength) : 0,
+        runtimeCallCount: Number.isFinite(Number(hostRuntimeExecutionSource.runtimeCallCount)) ? Number(hostRuntimeExecutionSource.runtimeCallCount) : 0,
+        calledImports: Array.isArray(hostRuntimeExecutionSource.calledImports) ? [...hostRuntimeExecutionSource.calledImports] : [],
+        startFunctionIndex: hostRuntimeExecutionSource.startFunctionIndex == null
+          ? null
+          : Number.isFinite(Number(hostRuntimeExecutionSource.startFunctionIndex))
+          ? Number(hostRuntimeExecutionSource.startFunctionIndex)
+          : null,
+        mainInvoked: hostRuntimeExecutionSource.mainInvoked === true || hostRuntimeExecutionSource.entryInvoked === true,
+        scientificExecution: false,
+        error: hostRuntimeExecutionSource.error || null
+      }
+    : null;
   return {
     schema: MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
     scenarioId: options.scenarioId || source.scenarioId || 'magnetar',
@@ -473,6 +502,7 @@ export function createScenarioClosureModuleProbeReport(input = {}, options = {})
     requiresHostImports: source.requiresHostImports ?? null,
     hostRuntimeRequired: source.hostRuntimeRequired === true || source.requiresHostImports === true,
     hostRuntimeProbe,
+    hostRuntimeExecution,
     scientificExecution: false,
     probeMode: source.probeMode || 'browser-webassembly-module-abi-v0',
     validation: {
@@ -491,7 +521,8 @@ function createScenarioHandoffBlockers({
   closureRequiresHostImports,
   closureHandoffReady,
   closureModuleProbeReady,
-  closureHostRuntimeRequired
+  closureHostRuntimeRequired,
+  closureHostRuntimeExecutionReady
 }) {
   if (scenarioId !== 'magnetar') return [];
   const blockers = [];
@@ -500,12 +531,13 @@ function createScenarioHandoffBlockers({
   if (closureHandoffReady === true && closureModuleProbeReady !== true) {
     blockers.push('eshkol-closure-module-abi-probe-missing');
   }
-  if (closureRequiresHostImports === true || closureHostRuntimeRequired === true) {
+  if ((closureRequiresHostImports === true || closureHostRuntimeRequired === true) && closureHostRuntimeExecutionReady !== true) {
     blockers.push('eshkol-closure-host-runtime-required');
   }
-  if (closureModuleProbeReady === true) {
+  if (closureModuleProbeReady === true && closureHostRuntimeExecutionReady !== true) {
     blockers.push('eshkol-closure-scientific-execution-not-validated');
   }
+  if (closureHostRuntimeExecutionReady === true) blockers.push('eshkol-closure-output-semantics-unvalidated');
   blockers.push('calibrated-mhd-pic-radiation-relativity-reference-missing');
   blockers.push('scientific-tolerance-suite-missing');
   return blockers;
@@ -519,6 +551,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const calibrationReady = calibrationIngest?.ready === true || scenario.validation?.calibrationReady === true;
   const closureReady = closureIngest?.ready === true || scenario.validation?.closureReady === true;
   const closureModuleProbeReady = closureModuleProbe?.ready === true || scenario.validation?.closureModuleProbeReady === true;
+  const closureHostRuntimeExecutionReady = closureModuleProbe?.hostRuntimeExecution?.ready === true;
   const requiredHandoffCount = scenarioId === 'magnetar' ? 2 : 0;
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
@@ -529,7 +562,8 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
     closureRequiresHostImports: closureIngest?.closure?.requiresHostImports,
     closureHandoffReady: closureReady,
     closureModuleProbeReady,
-    closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true
+    closureHostRuntimeRequired: closureModuleProbe?.hostRuntimeRequired === true,
+    closureHostRuntimeExecutionReady
   });
   return {
     schema: MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
@@ -585,6 +619,13 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       hostRuntimeProbeStubbed: closureModuleProbe?.hostRuntimeProbe?.stubbed === true,
       hostRuntimeProbeInstantiated: closureModuleProbe?.hostRuntimeProbe?.instantiated === true,
       hostRuntimeProbeStubCallCount: closureModuleProbe?.hostRuntimeProbe?.stubCallCount ?? null,
+      hostRuntimeExecutionReady: closureHostRuntimeExecutionReady,
+      hostRuntimeExecutionStatus: closureModuleProbe?.hostRuntimeExecution?.status || null,
+      hostRuntimeExecutionMode: closureModuleProbe?.hostRuntimeExecution?.mode || null,
+      hostRuntimeExecutionEntryInvoked: closureModuleProbe?.hostRuntimeExecution?.entryInvoked === true,
+      hostRuntimeExecutionResult: closureModuleProbe?.hostRuntimeExecution?.entryResult ?? null,
+      hostRuntimeExecutionOutputByteLength: closureModuleProbe?.hostRuntimeExecution?.outputByteLength ?? null,
+      hostRuntimeExecutionCallCount: closureModuleProbe?.hostRuntimeExecution?.runtimeCallCount ?? null,
       scientificExecution: false,
       moduleUrl: closureModuleProbe?.moduleUrl || null,
       moduleSource: closureModuleProbe?.moduleSource || null
@@ -6509,6 +6550,9 @@ export class MultiscaleModel {
           scenarioClosureHostRuntimeProbeReady: scenario.closureModuleProbe?.hostRuntimeProbe?.ready === true,
           scenarioClosureHostRuntimeProbeStatus: scenario.closureModuleProbe?.hostRuntimeProbe?.status || null,
           scenarioClosureHostRuntimeProbeMode: scenario.closureModuleProbe?.hostRuntimeProbe?.mode || null,
+          scenarioClosureHostRuntimeExecutionReady: scenario.closureModuleProbe?.hostRuntimeExecution?.ready === true,
+          scenarioClosureHostRuntimeExecutionStatus: scenario.closureModuleProbe?.hostRuntimeExecution?.status || null,
+          scenarioClosureHostRuntimeExecutionMode: scenario.closureModuleProbe?.hostRuntimeExecution?.mode || null,
           scenarioHandoffReady: scenario.handoffReadiness?.allHandoffsReady === true,
           scenarioHandoffStatus: scenario.handoffReadiness?.status || null,
           scenarioScientificReady: scenario.handoffReadiness?.scientificReady === true,
