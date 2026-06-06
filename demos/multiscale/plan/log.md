@@ -22266,3 +22266,40 @@ User asked whether Infinite Context Coder is being used.
   scientific runtime artifacts plus cross-family conservation/coupling
   validation are still required before the magnetar runtime gate can clear.
 - No push was attempted.
+
+## 2026-06-06 03:49:09 AKDT - Magnetosphere MHD runtime proxy validation
+
+### Prompt
+- User asked how progress was going and whether the overall plan remained on
+  track.
+- Standing instruction remains local commits only and no push.
+
+### Actions
+- Added `peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0` for
+  bounded proxy validation of the reduced ideal-MHD magnetosphere runtime.
+- Added a hashable magnetosphere-MHD runtime evidence entry with validation
+  schema, scope, pass/fail checks, observed density/temperature/ionization,
+  magnetic/plasma energy, divergence-B, Alfven speed, and conservation-delta
+  summaries.
+- Preserved the same validation schema/scope path used by radiation and
+  relativistic runtime evidence so all three bounded proxy artifacts survive
+  manifest normalization.
+- Added a regression that ingests bounded MHD proxy evidence into the magnetar
+  scenario and proves it remains proxy-only with `scenarioScientificReady:
+  false`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+  passed `188/188`.
+- PASS: `npm --prefix demos/multiscale run build` completed with existing
+  large-chunk warnings.
+- PASS: `git diff --check`.
+
+### Open
+- This is runtime provenance for a reduced ideal-MHD proxy, not validated
+  resistive MHD, force-free, GRMHD, or magnetar science. PIC runtime evidence
+  and cross-family conservation/coupling validation remain open before the
+  live manifest has bounded proxy artifacts for every required family.
+- No push was attempted.

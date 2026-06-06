@@ -2,6 +2,57 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 03:49:09 AKDT - Magnetosphere MHD runtime proxy validation
+
+### Prompt
+- User asked how the overall plan was going and whether the work remained on
+  track, with standing instruction to keep going.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 03:49:09 AKDT`.
+
+### Actions
+- Added `peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0` as a
+  bounded runtime validation artifact for the reduced ideal-MHD magnetosphere
+  proxy worker.
+- Added hashable runtime evidence entries for the magnetosphere-MHD family with
+  validation schema/scope/check metadata, observed plasma/field/conservation
+  summaries, and explicit `scientificExecution: false` / `proxyOnly: true`
+  status.
+- Preserved the same magnetar manifest normalization path now used by MHD,
+  radiation, and relativistic proxy-validation artifacts.
+- Added a regression proving bounded MHD proxy evidence can be observed and
+  hashed while still leaving validated runtime count and scenario scientific
+  readiness blocked.
+
+### Files Touched
+- `demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/simulation/magnetarRuntimeEvidence.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetosphere MHD runtime evidence|radiation transport runtime evidence|relativistic correction runtime evidence|runtime evidence manifest|scientific runtime gate'`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: focused Multiscale model run passed `188/188`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: `git diff --check` passed before local commit.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The new MHD artifact is a bounded ideal-MHD proxy validation report. It does
+  not satisfy calibrated resistive MHD, force-free, GRMHD, or magnetar
+  scientific execution requirements.
+
 ## 2026-06-06 03:44:30 AKDT - Radiation runtime proxy validation
 
 ### Prompt

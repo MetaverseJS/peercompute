@@ -89,10 +89,13 @@ import {
   createKernelPassSpec
 } from '../src/simulation/ulgRuntime.js';
 import {
+  MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
+  MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE,
   RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA,
   RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCHEMA,
   RELATIVISTIC_CORRECTION_RUNTIME_VALIDATION_SCOPE,
+  createMagnetosphereMhdRuntimeEvidenceEntry,
   createRadiationTransportRuntimeEvidenceEntry,
   createRelativisticCorrectionRuntimeEvidenceEntry
 } from '../src/simulation/magnetarRuntimeEvidence.js';
@@ -2451,6 +2454,84 @@ test('magnetar runtime evidence manifest rejects unknown and duplicate entries',
   assert.ok(scenario.scientificRuntimeEvidence.blockers.includes('runtime-evidence-entry-duplicate'));
   assert.ok(scenario.scientificRuntimeEvidence.errors.includes('runtime evidence entry does not match a required magnetar runtime evidence family'));
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+});
+
+test('magnetosphere MHD runtime evidence records bounded proxy validation without scientific readiness', async () => {
+  resetMagnetospherePlasma();
+  const runtime = await stepMagnetospherePlasma({
+    stateKey: 'mhd:evidence:bounded',
+    input: {
+      stateKey: 'mhd:evidence:bounded',
+      state: makeMagnetospherePlasmaInitialState({
+        width: 8,
+        height: 4,
+        seed: 20260606,
+        environment: { stellarFlux: 1.6, gravityMps2: 9.8, ambientPressurePa: 101325 },
+        coupling: {
+          stellarLuminosityFactor: 1.7,
+          radiationPressure: 1.4,
+          maxwellFieldEnergy: 1.2,
+          poyntingFlux: [0.35, 0.08, 0]
+        }
+      }),
+      dt: 0.05,
+      environment: { stellarFlux: 1.6, gravityMps2: 9.8, ambientPressurePa: 101325 },
+      coupling: {
+        stellarLuminosityFactor: 1.7,
+        radiationPressure: 1.4,
+        maxwellFieldEnergy: 1.2,
+        poyntingFlux: [0.35, 0.08, 0],
+        magneticSeed: 0.5
+      },
+      enableWebGPU: false
+    }
+  });
+  const entry = await createMagnetosphereMhdRuntimeEvidenceEntry(runtime);
+
+  assert.equal(entry.id, 'validated-magnetosphere-mhd-runtime');
+  assert.equal(entry.family, 'magnetosphere-mhd');
+  assert.equal(entry.solverId, 'magnetosphere-plasma');
+  assert.equal(entry.status, 'proxy-runtime-validated');
+  assert.equal(entry.ready, false);
+  assert.equal(entry.scientificExecution, false);
+  assert.equal(entry.validationStatus, 'pass');
+  assert.match(entry.evidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(entry.validation.schema, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(entry.validation.scope, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE);
+  assert.equal(entry.validation.pass, true);
+  assert.equal(entry.validation.ready, false);
+  assert.equal(entry.validation.scientificExecution, false);
+  assert.equal(entry.validation.checks.ionizationBounded, true);
+  assert.equal(entry.validation.checks.divergenceBFinite, true);
+  assert.equal(entry.validation.checks.proxyConservationMode, true);
+  assert.ok(entry.observed.magneticEnergy >= 0);
+  assert.ok(entry.observed.plasmaEnergy >= 0);
+  assert.ok(entry.blockers.includes('magnetosphere-plasma-runtime-proxy-only'));
+
+  const model = new MultiscaleModel({ seed: 481 });
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest({
+    schema: MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    scenarioId: 'magnetar',
+    entries: [entry]
+  });
+  const magnetosphere = scenario.scientificRuntimeEvidence.entries.find((candidate) => (
+    candidate.id === 'validated-magnetosphere-mhd-runtime'
+  ));
+
+  assert.equal(scenario.scientificRuntimeEvidence.status, 'runtime-evidence-proxy-only');
+  assert.equal(scenario.scientificRuntimeEvidence.ready, false);
+  assert.equal(scenario.scientificRuntimeEvidence.observedCount, 1);
+  assert.equal(scenario.scientificRuntimeEvidence.validatedCount, 0);
+  assert.equal(scenario.scientificRuntimeEvidence.missingCount, 4);
+  assert.equal(magnetosphere.status, 'proxy-runtime-observed');
+  assert.equal(magnetosphere.ready, false);
+  assert.equal(magnetosphere.scientificExecution, false);
+  assert.equal(magnetosphere.evidenceHash, entry.evidenceHash);
+  assert.equal(magnetosphere.validation.schema, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA);
+  assert.equal(magnetosphere.validationScope, MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE);
+  assert.ok(magnetosphere.blockers.includes('magnetosphere-plasma-runtime-proxy-only'));
+  assert.equal(scenario.handoffReadiness.scientificRuntimeGate.runtimeEvidenceReady, false);
+  assert.ok(scenario.handoffReadiness.blockers.includes('proxy-runtime-not-scientific'));
 });
 
 test('radiation transport runtime evidence records bounded proxy validation without scientific readiness', async () => {

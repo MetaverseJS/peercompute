@@ -10,12 +10,21 @@ export const RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCHEMA =
 export const RADIATION_TRANSPORT_RUNTIME_VALIDATION_SCOPE =
   'bounded-grey-radiation-opacity-proxy-validation';
 
+export const MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA =
+  'peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0';
+
+export const MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE =
+  'bounded-ideal-mhd-plasma-proxy-validation';
+
 const RUNTIME_EVIDENCE_ENTRY_ID = 'validated-relativistic-correction-runtime';
 const RUNTIME_EVIDENCE_FAMILY = 'relativistic-correction';
 const RUNTIME_EVIDENCE_SOLVER_ID = 'relativistic-correction';
 const RADIATION_RUNTIME_EVIDENCE_ENTRY_ID = 'validated-radiation-transport-runtime';
 const RADIATION_RUNTIME_EVIDENCE_FAMILY = 'radiation-transport';
 const RADIATION_RUNTIME_EVIDENCE_SOLVER_ID = 'radiation-opacity';
+const MAGNETOSPHERE_RUNTIME_EVIDENCE_ENTRY_ID = 'validated-magnetosphere-mhd-runtime';
+const MAGNETOSPHERE_RUNTIME_EVIDENCE_FAMILY = 'magnetosphere-mhd';
+const MAGNETOSPHERE_RUNTIME_EVIDENCE_SOLVER_ID = 'magnetosphere-plasma';
 
 export function createRelativisticCorrectionRuntimeValidation(result = {}, options = {}) {
   const diagnostics = clonePlain(result.diagnostics || {});
@@ -196,6 +205,108 @@ export async function createRadiationTransportRuntimeEvidenceEntry(result = {}, 
   };
 }
 
+export function createMagnetosphereMhdRuntimeValidation(result = {}, options = {}) {
+  const diagnostics = clonePlain(result.diagnostics || {});
+  const conservation = clonePlain(result.conservation || {});
+  const observed = summarizeMagnetosphereMhdRuntime(result);
+  const checks = {
+    resultOk: result.ok === true,
+    backendObserved: typeof result.backend === 'string' && result.backend !== 'none',
+    sequenceAdvanced: Number.isFinite(Number(result.sequence)) && Number(result.sequence) > 0,
+    diagnosticsSchema: diagnostics.schema === 'peercompute.multiscale.magnetosphere-plasma.diagnostics.v0',
+    cellCountPositive: Number.isFinite(Number(diagnostics.cellCount)) && Number(diagnostics.cellCount) > 0,
+    dimensionsPositive: Number.isFinite(Number(diagnostics.width)) && Number(diagnostics.width) > 0
+      && Number.isFinite(Number(diagnostics.height)) && Number(diagnostics.height) > 0,
+    densityNonnegative: Number.isFinite(Number(diagnostics.meanDensity))
+      && Number(diagnostics.meanDensity) >= 0,
+    temperatureBounded: Number.isFinite(Number(diagnostics.meanTemperatureK))
+      && Number(diagnostics.meanTemperatureK) >= 80
+      && Number(diagnostics.meanTemperatureK) <= 4800000,
+    ionizationBounded: Number.isFinite(Number(diagnostics.meanIonizationFraction))
+      && Number(diagnostics.meanIonizationFraction) >= 0
+      && Number(diagnostics.meanIonizationFraction) <= 1,
+    magneticEnergyNonnegative: Number.isFinite(Number(diagnostics.magneticEnergy))
+      && Number(diagnostics.magneticEnergy) >= 0,
+    plasmaEnergyNonnegative: Number.isFinite(Number(diagnostics.plasmaEnergy))
+      && Number(diagnostics.plasmaEnergy) >= 0,
+    alfvenSpeedFinite: Number.isFinite(Number(diagnostics.alfvenSpeed))
+      && Number(diagnostics.alfvenSpeed) >= 0,
+    divergenceBFinite: Number.isFinite(Number(diagnostics.divergenceBProxy))
+      && Number(diagnostics.divergenceBProxy) >= 0,
+    magnetopauseRadiusBounded: Number.isFinite(Number(diagnostics.magnetopauseRadius))
+      && Number(diagnostics.magnetopauseRadius) >= 2.4
+      && Number(diagnostics.magnetopauseRadius) <= 10,
+    reconnectionRateBounded: Number.isFinite(Number(diagnostics.reconnectionRate))
+      && Number(diagnostics.reconnectionRate) >= 0
+      && Number(diagnostics.reconnectionRate) <= 4,
+    massDriftFinite: Number.isFinite(Number(conservation.massDrift)),
+    magneticEnergyDeltaFinite: Number.isFinite(Number(conservation.magneticEnergyDelta)),
+    plasmaEnergyDeltaFinite: Number.isFinite(Number(conservation.plasmaEnergyDelta)),
+    proxyConservationMode: conservation.energyMode === 'reduced-ideal-mhd-plasma'
+  };
+  const blockers = validationBlockers('magnetosphere-mhd', checks);
+  const passed = blockers.length === 0;
+  return {
+    schema: MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
+    status: passed ? 'proxy-validation-pass' : 'proxy-validation-fail',
+    pass: passed,
+    ready: false,
+    scientificExecution: false,
+    proxyOnly: true,
+    scope: options.scope || MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCOPE,
+    solverId: MAGNETOSPHERE_RUNTIME_EVIDENCE_SOLVER_ID,
+    backend: typeof result.backend === 'string' ? result.backend : null,
+    sequence: finiteOrNull(result.sequence),
+    observed,
+    checks,
+    blockerCount: blockers.length,
+    blockers,
+    note: 'This validates bounded scalar invariants for the reduced ideal-MHD proxy runtime only; it is not calibrated resistive MHD, force-free, GRMHD, or magnetar scientific execution.'
+  };
+}
+
+export async function createMagnetosphereMhdRuntimeEvidenceEntry(result = {}, options = {}) {
+  const validation = createMagnetosphereMhdRuntimeValidation(result, options);
+  const evidenceHash = validation.pass
+    ? await sha256CanonicalJson({
+      schema: MAGNETOSPHERE_MHD_RUNTIME_VALIDATION_SCHEMA,
+      scope: validation.scope,
+      solverId: validation.solverId,
+      backend: validation.backend,
+      sequence: validation.sequence,
+      observed: validation.observed,
+      checks: validation.checks
+    })
+    : null;
+  return {
+    id: MAGNETOSPHERE_RUNTIME_EVIDENCE_ENTRY_ID,
+    family: MAGNETOSPHERE_RUNTIME_EVIDENCE_FAMILY,
+    solverId: MAGNETOSPHERE_RUNTIME_EVIDENCE_SOLVER_ID,
+    status: validation.pass ? 'proxy-runtime-validated' : 'proxy-runtime-validation-failed',
+    ready: false,
+    scientificExecution: false,
+    runtimeObserved: validation.pass,
+    proxyOnly: true,
+    backend: validation.backend,
+    sequence: validation.sequence,
+    validationStatus: validation.pass ? 'pass' : 'fail',
+    evidenceHash,
+    observed: validation.observed,
+    validation,
+    scope: validation.scope,
+    blocker: 'magnetosphere-plasma-runtime-proxy-only',
+    blockers: validation.pass
+      ? [
+        'magnetosphere-plasma-runtime-proxy-only',
+        'validated-magnetosphere-mhd-runtime-missing'
+      ]
+      : [
+        ...validation.blockers,
+        'validated-magnetosphere-mhd-runtime-missing'
+      ]
+  };
+}
+
 function summarizeRelativisticCorrectionRuntime(result = {}) {
   const diagnostics = result.diagnostics || {};
   const conservation = result.conservation || {};
@@ -214,6 +325,35 @@ function summarizeRelativisticCorrectionRuntime(result = {}) {
     relativisticEnergyDelta: finiteOrNull(conservation.relativisticEnergyDelta),
     timeDilationDrift: finiteOrNull(conservation.timeDilationDrift),
     causalityClampCount: finiteOrNull(diagnostics.causalityClampCount)
+  };
+}
+
+function summarizeMagnetosphereMhdRuntime(result = {}) {
+  const diagnostics = result.diagnostics || {};
+  const conservation = result.conservation || {};
+  return {
+    width: finiteOrNull(diagnostics.width),
+    height: finiteOrNull(diagnostics.height),
+    cellCount: finiteOrNull(diagnostics.cellCount),
+    totalMass: finiteOrNull(diagnostics.totalMass),
+    meanDensity: finiteOrNull(diagnostics.meanDensity),
+    meanTemperatureK: finiteOrNull(diagnostics.meanTemperatureK),
+    meanIonizationFraction: finiteOrNull(diagnostics.meanIonizationFraction),
+    magneticEnergy: finiteOrNull(diagnostics.magneticEnergy),
+    kineticEnergy: finiteOrNull(diagnostics.kineticEnergy),
+    thermalEnergy: finiteOrNull(diagnostics.thermalEnergy),
+    plasmaEnergy: finiteOrNull(diagnostics.plasmaEnergy),
+    currentSheetIntensity: finiteOrNull(diagnostics.currentSheetIntensity),
+    maxCurrentDensity: finiteOrNull(diagnostics.maxCurrentDensity),
+    divergenceBProxy: finiteOrNull(diagnostics.divergenceBProxy),
+    alfvenSpeed: finiteOrNull(diagnostics.alfvenSpeed),
+    maxSpeed: finiteOrNull(diagnostics.maxSpeed),
+    solarWindPressure: finiteOrNull(diagnostics.solarWindPressure),
+    magnetopauseRadius: finiteOrNull(diagnostics.magnetopauseRadius),
+    reconnectionRate: finiteOrNull(diagnostics.reconnectionRate),
+    massDrift: finiteOrNull(conservation.massDrift),
+    magneticEnergyDelta: finiteOrNull(conservation.magneticEnergyDelta),
+    plasmaEnergyDelta: finiteOrNull(conservation.plasmaEnergyDelta)
   };
 }
 
