@@ -7,6 +7,7 @@ export const ULG_ARTIFACT_RESULT_SCHEMA = 'peercompute.ulg.artifact-result.v0';
 export const ULG_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.ulg.artifact-summary.v0';
 export const ULG_DEMO_HANDOFF_SCHEMA = 'peercompute.ulg.demo-handoff.v0';
 export const ULG_DEMO_HANDOFF_ADAPTER_SCHEMA = 'peercompute.ulg.demo-handoff-adapter.v0';
+export const ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA = 'peercompute.ulg.handoff-transfer-manifest.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -188,6 +189,10 @@ function stringOrNull(value) {
   return text || null;
 }
 
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
+}
+
 function normalizeValidationStatus(validation = {}) {
   const explicitStatus = stringOrNull(validation?.status);
   if (explicitStatus) return explicitStatus;
@@ -294,6 +299,72 @@ function normalizeWasmByteArray(input) {
     return input.data.map((byte) => Number(byte) & 0xff);
   }
   return null;
+}
+
+function normalizeUlgHandoffArtifactTransfer({
+  index = 0,
+  ref = null,
+  sourceService = null,
+  artifactKind = 'artifact',
+  artifactSummary = {},
+  artifact = {},
+  wasmBytes = null,
+  wasmByteLength = null,
+  wasmSourceUrl = null
+} = {}) {
+  const artifactRefUri = stringOrNull(ref?.uri);
+  const artifactRefHash = stringOrNull(ref?.artifactHash || ref?.hash);
+  const artifactContentHash = stringOrNull(
+    artifact?.contentHash
+    || artifact?.hash
+    || artifactSummary?.contentHash
+    || artifactRefHash
+  );
+  const normalizedWasmByteLength = finiteNumberOrNull(wasmByteLength);
+  const hasTransferredWasmBytes = artifactKind === 'closure'
+    && wasmBytes != null
+    && normalizedWasmByteLength > 0;
+  const wasmSha256 = artifactKind === 'closure'
+    ? stringOrNull(
+      artifactSummary?.closureModuleSha256
+      || artifact?.execution?.module?.sha256
+      || artifact?.runtime?.module?.sha256
+      || artifact?.module?.sha256
+    )
+    : null;
+  const blockers = [];
+  if (!artifactRefUri) {
+    blockers.push('ulg-artifact-ref-uri-missing');
+  }
+  if (!artifactContentHash) {
+    blockers.push('ulg-artifact-content-hash-missing');
+  }
+  if (artifactKind === 'closure') {
+    if (!hasTransferredWasmBytes) {
+      blockers.push('eshkol-closure-wasm-bytes-missing');
+    }
+    if (!hasSha256Digest(wasmSha256)) {
+      blockers.push('eshkol-closure-wasm-sha256-missing');
+    }
+  }
+  return {
+    schema: ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
+    index,
+    sourceService,
+    artifactKind,
+    artifactRefUri,
+    artifactRefHash,
+    artifactContentHash,
+    wasmTransferMode: hasTransferredWasmBytes
+      ? 'inline-byte-array'
+      : (wasmSourceUrl ? 'source-url-reference' : 'artifact-metadata-only'),
+    wasmByteLength: normalizedWasmByteLength,
+    wasmSha256,
+    wasmSourceUrl: stringOrNull(wasmSourceUrl),
+    hasTransferredWasmBytes,
+    relaySafe: blockers.length === 0,
+    blockers
+  };
 }
 
 export function summarizeUlgArtifact(artifactKind, artifact = {}) {
@@ -559,6 +630,18 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
   const bundleManifest = artifact.runtime?.bundleManifest && typeof artifact.runtime.bundleManifest === 'object'
     ? artifact.runtime.bundleManifest
     : null;
+  const wasmSourceUrl = entry.wasmSourceUrl || null;
+  const transfer = normalizeUlgHandoffArtifactTransfer({
+    index,
+    ref: entry.ref || null,
+    sourceService,
+    artifactKind,
+    artifactSummary,
+    artifact,
+    wasmBytes,
+    wasmByteLength,
+    wasmSourceUrl
+  });
   return {
     schema: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
     index,
@@ -571,7 +654,8 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
     bundleManifest: clonePlain(bundleManifest),
     wasmBytes,
     wasmByteLength,
-    wasmSourceUrl: entry.wasmSourceUrl || null,
+    wasmSourceUrl,
+    transfer,
     hasTransferredWasmBytes: artifactKind === 'closure' && Number(wasmByteLength) > 0,
     magnetarCalibrationReady: artifactSummary.magnetarDipoleIsingReady === true,
     closureOutputSemanticsReady: artifactSummary.closureOutputSemanticsReady === true,
@@ -595,6 +679,21 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     && entry.closureReady
   ));
   const closureArtifactsWithBytes = closureArtifacts.filter((entry) => entry.hasTransferredWasmBytes);
+  const artifactTransfers = artifacts.map((entry) => entry.transfer).filter(Boolean);
+  const transferBlockers = uniqueStrings(artifactTransfers.flatMap((entry) => entry.blockers || []));
+  const transferManifest = {
+    schema: ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
+    sourceSchema: handoff.schema || null,
+    createdAt: handoff.createdAt || null,
+    receivedAt: options.receivedAt || new Date().toISOString(),
+    artifactCount: artifactTransfers.length,
+    relaySafeArtifactCount: artifactTransfers.filter((entry) => entry.relaySafe).length,
+    transferredWasmArtifactCount: artifactTransfers.filter((entry) => entry.hasTransferredWasmBytes).length,
+    transferredWasmByteLength: artifactTransfers.reduce((total, entry) => total + (entry.wasmByteLength || 0), 0),
+    artifacts: artifactTransfers,
+    ready: transferBlockers.length === 0,
+    blockers: transferBlockers
+  };
   const blockers = [];
   if (calibrationArtifacts.length === 0) {
     blockers.push('moonlab-magnetar-calibration-summary-missing');
@@ -609,6 +708,12 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
   if (!acceptedSourceSchema) {
     blockers.push('ulg-demo-handoff-schema-unrecognized');
   }
+  if (options.requireTransferManifest !== false) {
+    for (const blocker of transferManifest.blockers) {
+      blockers.push(blocker);
+    }
+  }
+  const uniqueBlockers = uniqueStrings(blockers);
   return {
     schema: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
     sourceSchema: handoff.schema || null,
@@ -623,8 +728,11 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     closureArtifactsWithBytes,
     readyCalibrationArtifact: calibrationArtifacts[0] || null,
     readyClosureArtifact: closureArtifactsWithBytes[0] || closureArtifacts[0] || null,
-    status: blockers.length === 0 ? 'handoff-ready' : 'handoff-pending',
-    ready: blockers.length === 0,
-    blockers
+    transferManifest,
+    transferReady: transferManifest.ready,
+    transferBlockers,
+    status: uniqueBlockers.length === 0 ? 'handoff-ready' : 'handoff-pending',
+    ready: uniqueBlockers.length === 0,
+    blockers: uniqueBlockers
   };
 }

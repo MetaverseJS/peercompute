@@ -2,6 +2,69 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 01:38:16 AKDT - ULG handoff transfer manifest
+
+### Prompt
+- User asked for status and to keep going on the overall ULG/MoonLab/Eshkol/PeerCompute plan.
+- Standing instruction remains local commits only; no push.
+- Prompt time/date recorded from the local machine: `2026-06-06 01:38:16 AKDT`.
+
+### Actions
+- Added `peercompute.ulg.handoff-transfer-manifest.v0` to the ULG handoff
+  adapter path.
+- Extended `normalizeUlgDemoHandoffArtifact()` so each normalized artifact
+  carries transfer metadata for artifact ref URI/hash, artifact content hash,
+  closure WASM transfer mode, transferred byte length, declared module
+  SHA-256, source URL, relay-safe state, and transfer blockers.
+- Extended `normalizeUlgDemoHandoff()` with an aggregate transfer manifest,
+  transfer-ready flag, relay-safe counts, total transferred WASM byte length,
+  and deduplicated transfer blockers.
+- Exported the transfer manifest schema through service orchestration and the
+  package root.
+- Updated the ULG demo handoff unit fixture to include artifact ref hashes and
+  closure module SHA-256, then asserted both the ready and blocked transfer
+  manifest paths.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix peercompute run test:unit`
+- Live Playwright ULG-to-Multiscale probe from the ULG repo:
+  - ULG source: `http://100.86.83.35:5173/`
+  - Multiscale target: `https://100.86.83.35:5185/?scenario=magnetar`
+
+### Results
+- PASS: changed JavaScript files passed syntax checks.
+- PASS: service-orchestration unit suite passed with `11/11` tests.
+- PASS: broad PeerCompute unit suite passed with `127/127` tests.
+- PASS: live ULG-to-Multiscale handoff remained `handoff-ready` with
+  `transferReady = true`, `relaySafeArtifactCount = 2`,
+  `transferredWasmByteLength = 33907`, closure transfer mode
+  `inline-byte-array`, closure module SHA-256
+  `sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c`,
+  and no transfer blockers.
+- PASS: live Multiscale scenario still reported `scientificReady = false` with
+  only the calibrated-reference and scientific-tolerance blockers.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The transfer manifest preserves existing artifact and declared module hashes;
+  it does not compute new cryptographic hashes synchronously. Future relay
+  transfer code can add asynchronous byte verification before accepting remote
+  payloads.
+
 ## 2026-06-06 01:32:46 AKDT - Live ULG calibrated-reference inventory bridge
 
 ### Prompt

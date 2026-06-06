@@ -14,6 +14,7 @@ import {
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
   ULG_DEMO_HANDOFF_SCHEMA,
+  ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -993,6 +994,7 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
     artifacts: [{
       ref: {
         uri: 'artifact://moonlab-calibration',
+        artifactHash: 'sha256:moonlab-calibration-artifact',
         sourceService: 'moonlab',
         createdAt: 10
       },
@@ -1038,6 +1040,7 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
     }, {
       ref: {
         uri: 'artifact://eshkol-closure',
+        artifactHash: 'sha256:eshkol-closure-artifact',
         sourceService: 'eshkol',
         createdAt: 11
       },
@@ -1051,6 +1054,7 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
         closureReady: true,
         closureKind: 'wasm-reference',
         closureModuleUrl: 'hello.wasm',
+        closureModuleSha256: 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c',
         closureEntryExport: 'main',
         closureHostImportsFactory: 'createEshkolHostImportObject',
         closureHostImportsDomFree: true,
@@ -1092,6 +1096,19 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.equal(handoff.calibrationArtifacts.length, 1);
   assert.equal(handoff.closureArtifacts.length, 1);
   assert.equal(handoff.closureArtifactsWithBytes.length, 1);
+  assert.equal(handoff.transferManifest.schema, ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA);
+  assert.equal(handoff.transferManifest.ready, true);
+  assert.equal(handoff.transferManifest.artifactCount, 2);
+  assert.equal(handoff.transferManifest.relaySafeArtifactCount, 2);
+  assert.equal(handoff.transferManifest.transferredWasmArtifactCount, 1);
+  assert.equal(handoff.transferManifest.transferredWasmByteLength, 4);
+  assert.deepEqual(handoff.transferBlockers, []);
+  assert.equal(handoff.transferReady, true);
+  assert.equal(handoff.artifacts[0].transfer.artifactContentHash, 'sha256:moonlab-calibration-artifact');
+  assert.equal(handoff.artifacts[0].transfer.relaySafe, true);
+  assert.equal(handoff.readyClosureArtifact.transfer.wasmTransferMode, 'inline-byte-array');
+  assert.equal(handoff.readyClosureArtifact.transfer.wasmSha256, 'sha256:1a4699680cc14ba3cefa78634c1d52425c4d4158e590aa2e3658d3c7cae9f79c');
+  assert.equal(handoff.readyClosureArtifact.transfer.relaySafe, true);
   assert.equal(handoff.readyCalibrationArtifact.sourceService, 'moonlab');
   assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarDipoleIsingGroundState, '000');
   assert.equal(handoff.readyCalibrationArtifact.artifactSummary.magnetarReferenceReady, true);
@@ -1125,6 +1142,11 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.equal(blocked.ready, false);
   assert.ok(blocked.blockers.includes('moonlab-magnetar-calibration-summary-missing'));
   assert.ok(blocked.blockers.includes('eshkol-closure-wasm-bytes-missing'));
+  assert.ok(blocked.blockers.includes('ulg-artifact-ref-uri-missing'));
+  assert.ok(blocked.blockers.includes('ulg-artifact-content-hash-missing'));
+  assert.ok(blocked.blockers.includes('eshkol-closure-wasm-sha256-missing'));
+  assert.equal(blocked.transferReady, false);
+  assert.equal(blocked.transferManifest.relaySafeArtifactCount, 0);
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {
