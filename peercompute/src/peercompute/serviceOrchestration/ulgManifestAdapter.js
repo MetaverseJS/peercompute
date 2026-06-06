@@ -326,6 +326,8 @@ function normalizeUlgHandoffArtifactTransfer({
   const hasTransferredWasmBytes = artifactKind === 'closure'
     && wasmBytes != null
     && normalizedWasmByteLength > 0;
+  const descriptorReadyClosure = artifactKind === 'closure'
+    && artifactSummary?.closureDescriptorReady === true;
   const wasmSha256 = artifactKind === 'closure'
     ? stringOrNull(
       artifactSummary?.closureModuleSha256
@@ -341,7 +343,7 @@ function normalizeUlgHandoffArtifactTransfer({
   if (!artifactContentHash) {
     blockers.push('ulg-artifact-content-hash-missing');
   }
-  if (artifactKind === 'closure') {
+  if (artifactKind === 'closure' && descriptorReadyClosure !== true) {
     if (!hasTransferredWasmBytes) {
       blockers.push('eshkol-closure-wasm-bytes-missing');
     }

@@ -63,6 +63,105 @@ import {
 } from '../fixtures/ulgServiceFixtures.js';
 
 const MOONLAB_REFERENCE_CONTRACT_HASH = 'sha256:fixture-moonlab-reference-001';
+const ESHKOL_DESCRIPTOR_INPUT_IDS = ['magnetar-state-vector', 'closure-control-vector'];
+const ESHKOL_DESCRIPTOR_OUTPUT_IDS = ['magnetar-closure-update', 'closure-residual'];
+
+function createEshkolMagnetarDescriptorArtifact() {
+  return {
+    closureId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    closureKind: 'magnetar-closure-descriptor-fixture',
+    inputs: ESHKOL_DESCRIPTOR_INPUT_IDS.map((id) => ({ id, kind: 'tensor' })),
+    outputs: ESHKOL_DESCRIPTOR_OUTPUT_IDS.map((id) => ({ id, kind: 'tensor' })),
+    execution: {
+      target: 'wasm32-unknown-unknown',
+      serviceWorkerSafe: true,
+      entryExport: 'main'
+    },
+    validity: {
+      requiresJit: false,
+      requiresEval: false,
+      requiresDynamicCode: false,
+      requiresNetwork: false
+    },
+    validation: {
+      status: 'descriptor-only',
+      closureDescriptor: {
+        schema: ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
+        descriptorRole: 'magnetar-closure-contract-seed',
+        entryExport: 'main',
+        tensorContract: {
+          inputIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
+          outputIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
+          coordinateSystem: 'normalized-radial-cell',
+          interpolation: 'not-declared'
+        },
+        descriptorBinding: {
+          schema: 'eshkol.ulg.magnetar-closure-descriptor-binding.v0',
+          bindingId: 'eshkol:magnetar-closure-descriptor-binding:v0',
+          handoffEnvelope: {
+            schema: ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA,
+            sourceSchema: ULG_DEMO_HANDOFF_SCHEMA,
+            adapterSchema: ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
+            transferManifestSchema: ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA,
+            artifactKind: 'closure',
+            sourceService: 'eshkol',
+            contentAddressing: 'required',
+            relaySafeTransfer: 'required'
+          },
+          ulgInterpolationTable: {
+            id: 'ulg:magnetar-radial-cell-interpolation-table:v0',
+            status: 'declared-not-computed',
+            coordinateSystem: 'normalized-radial-cell',
+            inputTensorIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
+            outputTensorIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS]
+          },
+          moonlabNormalizedReferenceSuite: {
+            schema: 'moonlab.magnetar.normalized-reference-suite.v0',
+            assetId: 'moonlab:magnetar-reference-contracts:normalized-suite:v0',
+            contentHash: 'sha256:5cef4349b2bdbfe619ca60a00de91297f4b0b3c050cc1a82858f61f6c2941de3',
+            ready: true,
+            referenceIds: [
+              'magnetosphere-mhd-reference',
+              'pic-kinetic-plasma-reference',
+              'radiation-transport-reference',
+              'relativistic-correction-reference'
+            ],
+            referenceFamilies: [
+              'magnetosphere-mhd',
+              'pic-kinetic-plasma',
+              'radiation-transport',
+              'relativistic-correction'
+            ]
+          },
+          moonlabClosureSurfaceSampleIds: [
+            'moonlab:magnetosphere-mhd-reference',
+            'moonlab:pic-kinetic-plasma-reference',
+            'moonlab:radiation-transport-reference',
+            'moonlab:relativistic-correction-reference'
+          ],
+          peercomputeProductTopologyBinding: {
+            schema: 'peercompute.multiscale.product-topology-binding.v0',
+            bindingId: 'peercompute:magnetar-closure-product-topology:v0',
+            topologyId: 'peercompute.multiscale.magnetar-reduced-product-topology.v0',
+            inputTensorIds: [...ESHKOL_DESCRIPTOR_INPUT_IDS],
+            outputTensorIds: [...ESHKOL_DESCRIPTOR_OUTPUT_IDS],
+            status: 'descriptor-bound-not-executed',
+            scientificValidation: false
+          },
+          runtimeBinding: {
+            schema: 'eshkol.ulg.magnetar-closure-runtime-binding.v0',
+            runtimeStatus: 'declared-not-executed',
+            derivativeStatus: 'declared-not-computed',
+            scientificValidation: false
+          }
+        },
+        scientificValidation: false
+      }
+    },
+    contentHash: 'ulg:fixture-magnetar-descriptor-001'
+  };
+}
 
 function serviceManifest(overrides = {}) {
   return {
@@ -1061,6 +1160,30 @@ test('Eshkol descriptor-only closure summary is accepted without output semantic
   assert.equal(handoff.closureArtifacts[0].closureReady, true);
   assert.equal(handoff.closureArtifacts[0].hasTransferredWasmBytes, true);
   assert.equal(handoff.blockers.includes('eshkol-closure-wasm-bytes-missing'), false);
+
+  const descriptorArtifact = createEshkolMagnetarDescriptorArtifact();
+  const metadataOnlyHandoff = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    artifactCount: 1,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://eshkol-magnetar-descriptor',
+        artifactHash: descriptorArtifact.contentHash,
+        sourceService: 'eshkol'
+      },
+      artifactKind: 'closure',
+      artifact: descriptorArtifact
+    }]
+  }, {
+    requireTransferManifest: false
+  });
+
+  assert.equal(metadataOnlyHandoff.closureArtifacts[0].closureDescriptorReady, true);
+  assert.equal(metadataOnlyHandoff.closureArtifacts[0].hasTransferredWasmBytes, false);
+  assert.equal(metadataOnlyHandoff.closureArtifacts[0].transfer.wasmTransferMode, 'artifact-metadata-only');
+  assert.equal(metadataOnlyHandoff.closureArtifacts[0].transfer.relaySafe, true);
+  assert.equal(metadataOnlyHandoff.blockers.includes('eshkol-closure-wasm-bytes-missing'), false);
+  assert.equal(metadataOnlyHandoff.blockers.includes('eshkol-closure-wasm-sha256-missing'), false);
 });
 
 test('ULG demo handoff adapter classifies calibration, closure, and transferred WASM bytes', () => {
@@ -1754,6 +1877,115 @@ test('ULG handoff service host submits dispatches to registered Eshkol and MoonL
   const cached = await artifactCache.get(result.artifactRef);
   assert.equal(cached.dispatchResult.results[0].output.serviceResult.serviceId, 'moonlab-ulg-fixture');
   assert.equal(cached.dispatchResult.results[1].output.serviceResult.serviceId, 'eshkol-ulg-fixture');
+});
+
+test('ULG handoff service host dispatches descriptor-only Eshkol closures without WASM bytes', async () => {
+  const descriptorArtifact = createEshkolMagnetarDescriptorArtifact();
+  const handoff = {
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    createdAt: '2026-06-06T16:05:00.000Z',
+    artifactCount: 2,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://moonlab-calibration',
+        artifactHash: 'sha256:moonlab-calibration-artifact',
+        sourceService: 'moonlab'
+      },
+      artifactKind: 'quantum-response',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'quantum-response',
+        sourceService: 'moonlab',
+        magnetarDipoleIsingReady: true,
+        magnetarDipoleIsingStatus: 'pass'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://eshkol-magnetar-descriptor',
+        artifactHash: descriptorArtifact.contentHash,
+        sourceService: 'eshkol'
+      },
+      artifactKind: 'closure',
+      artifact: descriptorArtifact
+    }]
+  };
+  const serviceIds = {
+    eshkol: 'eshkol-ulg-fixture',
+    moonlab: 'moonlab-ulg-fixture'
+  };
+  const handoffManifest = normalizeComputeServiceManifest(createUlgHandoffServiceManifest({
+    serviceId: 'ulg-handoff-descriptor-fixture'
+  }));
+  const registry = new ComputeServiceRegistry([
+    handoffManifest,
+    ...createUlgDispatchServiceManifests({ serviceIds })
+  ]);
+  const artifactCache = new InMemoryArtifactCache(() => 5555);
+  let supervisor;
+  const serviceExecutor = createUlgHandoffSupervisorServiceExecutor({
+    getSupervisor: () => supervisor
+  });
+  supervisor = new WorkerSupervisor({
+    registry,
+    artifactCache,
+    workerFactory: (serviceManifest) => {
+      if (serviceManifest.serviceId === 'ulg-handoff-descriptor-fixture') {
+        return new UlgHandoffServiceHost(serviceManifest, {
+          origin: 'http://localhost:5173',
+          url: 'http://localhost:5173/',
+          receivedAt: '2026-06-06T16:05:01.000Z',
+          executeServices: true,
+          serviceIds,
+          serviceExecutor
+        });
+      }
+      return new UlgDispatchServiceHost(serviceManifest);
+    }
+  });
+
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'ulg-handoff-descriptor-fixture',
+    taskKind: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    taskId: 'task:ulg-handoff-descriptor-dispatch',
+    rootTaskId: 'root:ulg-handoff-descriptor-dispatch',
+    handoff
+  });
+
+  assert.equal(result.ready, true);
+  assert.equal(result.dispatchPlan.ready, true);
+  assert.equal(result.dispatchPlan.dispatches[1].taskKind, 'eshkol.ulg.closure.descriptor-bind');
+  assert.equal(result.dispatchPlan.dispatches[1].hasTransferredWasmBytes, false);
+  assert.equal(result.dispatchResult.status, 'executed');
+  assert.equal(result.dispatchResult.acceptedDispatchCount, 2);
+  assert.deepEqual(result.dispatchResult.blockers, []);
+
+  const eshkol = result.dispatchResult.results[1].output;
+  assert.equal(eshkol.serviceId, 'eshkol-ulg-fixture');
+  assert.equal(eshkol.taskKind, 'eshkol.ulg.closure.descriptor-bind');
+  assert.equal(eshkol.serviceTask.transfer.hasTransferredWasmBytes, false);
+  assert.equal(eshkol.serviceTask.artifactPayload.hasTransferredWasmBytes, false);
+  assert.equal(eshkol.serviceTask.artifactPayload.wasmBytes, null);
+  assert.equal(eshkol.serviceResult.serviceStatus, 'accepted');
+  assert.equal(eshkol.serviceResult.probe.status, 'descriptor-contract-ready');
+  assert.equal(eshkol.serviceResult.probe.probeMode, 'descriptor-contract-metadata-only');
+  assert.equal(eshkol.serviceResult.probe.moduleCompiled, false);
+  assert.equal(eshkol.serviceResult.ingest.moduleCompiled, false);
+  assert.equal(eshkol.serviceResult.ingest.descriptorContractReady, true);
+  assert.equal(eshkol.serviceResult.ingest.descriptorContractStatus, 'descriptor-contract-ready');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.schema, 'peercompute.ulg.eshkol-descriptor-contract-probe.v0');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.ready, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.scientificExecution, false);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.scientificValidation, false);
+  assert.deepEqual(eshkol.serviceResult.probe.descriptorProbe.tensorContract.inputIds, ESHKOL_DESCRIPTOR_INPUT_IDS);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorContract.matchesArtifactDescriptors, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.interpolationTable.matchesTensorContract, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.moonlabNormalizedReferenceSuite.referenceCount, 4);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productTopologyBinding.status, 'descriptor-bound-not-executed');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'declared-not-executed');
+
+  const cached = await artifactCache.get(result.artifactRef);
+  assert.equal(cached.dispatchResult.results[1].output.serviceResult.probe.probeMode, 'descriptor-contract-metadata-only');
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

@@ -81,6 +81,44 @@ function countReadyReferences(references = []) {
     : 0;
 }
 
+function objectOrNull(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function idsFromDescriptors(entries = []) {
+  return Array.isArray(entries)
+    ? entries.map((entry) => stringOrNull(entry?.id)).filter(Boolean)
+    : [];
+}
+
+function arraysEqual(left = [], right = []) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function wasmImportKey(entry = {}) {
+  return `${entry.module || ''}:${entry.name || ''}:${entry.kind || ''}`;
+}
+
+function wasmExportKey(entry = {}) {
+  return `${entry.name || ''}:${entry.kind || ''}`;
+}
+
+function wasmMetadataMatches(observed = [], declared = [], keyFn) {
+  if (!Array.isArray(declared) || declared.length === 0) return null;
+  const observedKeys = new Set(observed.map(keyFn));
+  const declaredKeys = declared.map(keyFn);
+  return observed.length === declared.length && declaredKeys.every((key) => observedKeys.has(key));
+}
+
+function declaredCount(summaryValue, declaredEntries = []) {
+  const summaryCount = finiteNumberOrNull(summaryValue);
+  if (summaryCount != null) return summaryCount;
+  return Array.isArray(declaredEntries) && declaredEntries.length > 0 ? declaredEntries.length : null;
+}
+
 function adapterConfig(sourceService, options = {}) {
   const key = String(sourceService || '').trim().toLowerCase();
   const defaults = DEFAULT_ADAPTERS[key];
@@ -277,24 +315,233 @@ async function createMoonLabDispatchProbe(payload = {}) {
   };
 }
 
-async function createEshkolDispatchProbe(payload = {}) {
+function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
+  const summary = payload.artifactSummary || {};
+  const artifact = payload.artifact || {};
+  const descriptor = objectOrNull(artifact.validation?.closureDescriptor);
+  const blockers = [];
+  const summaryReady = summary.closureDescriptorReady === true;
+
+  if (!descriptor) {
+    return {
+      schema: 'peercompute.ulg.eshkol-descriptor-contract-probe.v0',
+      status: summaryReady ? 'summary-only-ready' : 'descriptor-not-present',
+      ready: summaryReady,
+      blockers: [],
+      descriptorPresent: false,
+      closureDescriptorReady: summaryReady,
+      closureDescriptorSchema: summary.closureDescriptorSchema || null,
+      scientificExecution: false,
+      scientificValidation: false
+    };
+  }
+
+  const binding = objectOrNull(descriptor.descriptorBinding);
+  const tensorContract = objectOrNull(descriptor.tensorContract);
+  const handoffEnvelope = objectOrNull(binding?.handoffEnvelope);
+  const interpolationTable = objectOrNull(binding?.ulgInterpolationTable);
+  const moonlabSuite = objectOrNull(binding?.moonlabNormalizedReferenceSuite);
+  const productTopologyBinding = objectOrNull(binding?.peercomputeProductTopologyBinding);
+  const runtimeBinding = objectOrNull(binding?.runtimeBinding);
+  const artifactInputIds = idsFromDescriptors(artifact.inputs);
+  const artifactOutputIds = idsFromDescriptors(artifact.outputs);
+  const tensorInputIds = Array.isArray(tensorContract?.inputIds) ? [...tensorContract.inputIds] : [];
+  const tensorOutputIds = Array.isArray(tensorContract?.outputIds) ? [...tensorContract.outputIds] : [];
+  const tableInputIds = Array.isArray(interpolationTable?.inputTensorIds) ? [...interpolationTable.inputTensorIds] : [];
+  const tableOutputIds = Array.isArray(interpolationTable?.outputTensorIds) ? [...interpolationTable.outputTensorIds] : [];
+  const productInputIds = Array.isArray(productTopologyBinding?.inputTensorIds) ? [...productTopologyBinding.inputTensorIds] : [];
+  const productOutputIds = Array.isArray(productTopologyBinding?.outputTensorIds) ? [...productTopologyBinding.outputTensorIds] : [];
+  const descriptorEntryExport = descriptor.entryExport || null;
+  const moduleEntryExport = moduleProbe.entryExport || summary.closureEntryExport || artifact.execution?.entryExport || null;
+  const tensorContractMatches = arraysEqual(artifactInputIds, tensorInputIds)
+    && arraysEqual(artifactOutputIds, tensorOutputIds);
+  const interpolationTableMatches = arraysEqual(tableInputIds, tensorInputIds)
+    && arraysEqual(tableOutputIds, tensorOutputIds)
+    && (!interpolationTable?.coordinateSystem || interpolationTable.coordinateSystem === tensorContract?.coordinateSystem);
+  const productTopologyMatches = arraysEqual(productInputIds, tensorInputIds)
+    && arraysEqual(productOutputIds, tensorOutputIds);
+  const entryExportMatches = !descriptorEntryExport
+    || !moduleEntryExport
+    || descriptorEntryExport === moduleEntryExport;
+  const moduleEntryExportAvailable = moduleProbe.hasEntryExport == null
+    ? null
+    : moduleProbe.hasEntryExport === true;
+  const referenceIds = Array.isArray(moonlabSuite?.referenceIds) ? [...moonlabSuite.referenceIds] : [];
+  const sampleIds = Array.isArray(binding?.moonlabClosureSurfaceSampleIds) ? [...binding.moonlabClosureSurfaceSampleIds] : [];
+
+  if (summary.closureDescriptorSchema && descriptor.schema !== summary.closureDescriptorSchema) {
+    blockers.push('eshkol-descriptor-schema-summary-mismatch');
+  }
+  if (descriptor.scientificValidation !== false) {
+    blockers.push('eshkol-descriptor-scientific-validation-overstated');
+  }
+  if (!tensorContractMatches) {
+    blockers.push('eshkol-descriptor-tensor-contract-mismatch');
+  }
+  if (binding) {
+    if (handoffEnvelope?.schema !== 'peercompute.ulg.handoff-service-envelope.v0') {
+      blockers.push('eshkol-descriptor-handoff-envelope-schema-mismatch');
+    }
+    if (handoffEnvelope?.artifactKind !== 'closure' || handoffEnvelope?.sourceService !== 'eshkol') {
+      blockers.push('eshkol-descriptor-handoff-artifact-binding-mismatch');
+    }
+    if (handoffEnvelope?.contentAddressing !== 'required') {
+      blockers.push('eshkol-descriptor-content-addressing-not-required');
+    }
+    if (handoffEnvelope?.relaySafeTransfer !== 'required') {
+      blockers.push('eshkol-descriptor-relay-safe-transfer-not-required');
+    }
+    if (!interpolationTableMatches) {
+      blockers.push('eshkol-descriptor-interpolation-table-mismatch');
+    }
+    if (interpolationTable?.status && interpolationTable.status !== 'declared-not-computed') {
+      blockers.push('eshkol-descriptor-interpolation-table-overstates-computation');
+    }
+    if (moonlabSuite?.ready !== true) {
+      blockers.push('eshkol-descriptor-moonlab-suite-not-ready');
+    }
+    if (moonlabSuite?.contentHash && !String(moonlabSuite.contentHash).startsWith('sha256:')) {
+      blockers.push('eshkol-descriptor-moonlab-suite-hash-invalid');
+    }
+    if (!productTopologyMatches) {
+      blockers.push('eshkol-descriptor-product-topology-mismatch');
+    }
+    if (productTopologyBinding?.status && productTopologyBinding.status !== 'descriptor-bound-not-executed') {
+      blockers.push('eshkol-descriptor-product-topology-overstates-execution');
+    }
+    if (productTopologyBinding?.scientificValidation !== false) {
+      blockers.push('eshkol-descriptor-product-topology-scientific-validation-overstated');
+    }
+    if (runtimeBinding?.runtimeStatus && runtimeBinding.runtimeStatus !== 'declared-not-executed') {
+      blockers.push('eshkol-descriptor-runtime-overstates-execution');
+    }
+    if (runtimeBinding?.derivativeStatus && runtimeBinding.derivativeStatus !== 'declared-not-computed') {
+      blockers.push('eshkol-descriptor-runtime-overstates-derivative-computation');
+    }
+    if (runtimeBinding?.scientificValidation !== false) {
+      blockers.push('eshkol-descriptor-runtime-scientific-validation-overstated');
+    }
+  }
+  if (!entryExportMatches) {
+    blockers.push('eshkol-descriptor-entry-export-mismatch');
+  }
+  if (moduleEntryExportAvailable === false) {
+    blockers.push('eshkol-descriptor-entry-export-missing');
+  }
+
+  return {
+    schema: 'peercompute.ulg.eshkol-descriptor-contract-probe.v0',
+    status: blockers.length === 0 ? 'descriptor-contract-ready' : 'descriptor-contract-blocked',
+    ready: blockers.length === 0,
+    blockers: uniqueStrings(blockers),
+    descriptorPresent: true,
+    closureDescriptorReady: summaryReady,
+    closureDescriptorSchema: descriptor.schema || null,
+    descriptorRole: descriptor.descriptorRole || null,
+    descriptorEntryExport,
+    moduleEntryExport,
+    entryExportMatches,
+    moduleEntryExportAvailable,
+    scientificExecution: false,
+    scientificValidation: descriptor.scientificValidation === true,
+    tensorContract: {
+      inputIds: tensorInputIds,
+      outputIds: tensorOutputIds,
+      coordinateSystem: tensorContract?.coordinateSystem || null,
+      interpolation: tensorContract?.interpolation || null,
+      artifactInputIds,
+      artifactOutputIds,
+      matchesArtifactDescriptors: tensorContractMatches
+    },
+    descriptorBinding: binding ? {
+      schema: binding.schema || null,
+      bindingId: binding.bindingId || null,
+      handoffEnvelopeSchema: handoffEnvelope?.schema || null,
+      handoffArtifactKind: handoffEnvelope?.artifactKind || null,
+      handoffSourceService: handoffEnvelope?.sourceService || null,
+      contentAddressing: handoffEnvelope?.contentAddressing || null,
+      relaySafeTransfer: handoffEnvelope?.relaySafeTransfer || null
+    } : null,
+    interpolationTable: interpolationTable ? {
+      id: interpolationTable.id || null,
+      status: interpolationTable.status || null,
+      coordinateSystem: interpolationTable.coordinateSystem || null,
+      inputTensorIds: tableInputIds,
+      outputTensorIds: tableOutputIds,
+      matchesTensorContract: interpolationTableMatches
+    } : null,
+    moonlabNormalizedReferenceSuite: moonlabSuite ? {
+      schema: moonlabSuite.schema || null,
+      assetId: moonlabSuite.assetId || null,
+      contentHash: moonlabSuite.contentHash || null,
+      status: moonlabSuite.status || null,
+      ready: moonlabSuite.ready === true,
+      referenceCount: referenceIds.length,
+      referenceFamilyCount: Array.isArray(moonlabSuite.referenceFamilies)
+        ? moonlabSuite.referenceFamilies.length
+        : 0,
+      closureSurfaceSampleCount: sampleIds.length
+    } : null,
+    productTopologyBinding: productTopologyBinding ? {
+      schema: productTopologyBinding.schema || null,
+      bindingId: productTopologyBinding.bindingId || null,
+      topologyId: productTopologyBinding.topologyId || null,
+      status: productTopologyBinding.status || null,
+      scientificValidation: productTopologyBinding.scientificValidation === true,
+      inputTensorIds: productInputIds,
+      outputTensorIds: productOutputIds,
+      matchesTensorContract: productTopologyMatches
+    } : null,
+    runtimeBinding: runtimeBinding ? {
+      schema: runtimeBinding.schema || null,
+      runtimeStatus: runtimeBinding.runtimeStatus || null,
+      derivativeStatus: runtimeBinding.derivativeStatus || null,
+      scientificValidation: runtimeBinding.scientificValidation === true
+    } : null
+  };
+}
+
+async function createEshkolDispatchProbe(payload = {}, task = {}) {
   const bytes = normalizeWasmBytes(payload.wasmBytes);
   const declaredLength = finiteNumberOrNull(payload.wasmByteLength);
   const summary = payload.artifactSummary || {};
   const artifact = payload.artifact || {};
   const declaredImports = Array.isArray(artifact.execution?.imports) ? artifact.execution.imports : [];
   const declaredExports = Array.isArray(artifact.execution?.exports) ? artifact.execution.exports : [];
+  const declaredEntryExport = summary.closureEntryExport || artifact.execution?.entryExport || null;
+  const descriptorProbeBase = {
+    entryExport: declaredEntryExport,
+    hasEntryExport: null
+  };
+  const descriptorProbe = createEshkolDescriptorContractProbe(payload, descriptorProbeBase);
   const blockers = [];
+  blockers.push(...(descriptorProbe.blockers || []));
+  const descriptorOnlyTask = task.taskKind === 'eshkol.ulg.closure.descriptor-bind'
+    || (summary.closureDescriptorReady === true && payload.hasTransferredWasmBytes !== true);
   if (!bytes || bytes.byteLength === 0) {
+    if (descriptorOnlyTask) {
+      const descriptorBlockers = uniqueStrings(descriptorProbe.blockers || []);
+      return {
+        schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
+        status: descriptorBlockers.length === 0 ? 'descriptor-contract-ready' : 'blocked',
+        ready: descriptorBlockers.length === 0,
+        blockers: descriptorBlockers,
+        wasmByteLength: declaredLength,
+        moduleCompiled: false,
+        probeMode: 'descriptor-contract-metadata-only',
+        descriptorProbe
+      };
+    }
     blockers.push('eshkol-wasm-bytes-missing');
     return {
       schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
       status: 'blocked',
       ready: false,
-      blockers,
+      blockers: uniqueStrings(blockers),
       wasmByteLength: declaredLength,
       moduleCompiled: false,
-      probeMode: 'wasm-module-compile'
+      probeMode: 'wasm-module-compile',
+      descriptorProbe
     };
   }
   if (declaredLength != null && declaredLength !== bytes.byteLength) {
@@ -305,11 +552,12 @@ async function createEshkolDispatchProbe(payload = {}) {
       schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
       status: blockers.length === 0 ? 'skipped-short-wasm-header' : 'blocked',
       ready: blockers.length === 0,
-      blockers,
+      blockers: uniqueStrings(blockers),
       wasmByteLength: bytes.byteLength,
       declaredWasmByteLength: declaredLength,
       moduleCompiled: false,
       probeMode: 'wasm-module-compile',
+      descriptorProbe,
       notes: ['WASM bytes contain a magic-header fixture but not a complete module.']
     };
   }
@@ -326,20 +574,49 @@ async function createEshkolDispatchProbe(payload = {}) {
       schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
       status: 'blocked',
       ready: false,
-      blockers,
+      blockers: uniqueStrings(blockers),
       error: error?.message || String(error),
       wasmByteLength: bytes.byteLength,
       declaredWasmByteLength: declaredLength,
       moduleCompiled: false,
-      probeMode: 'wasm-module-compile'
+      probeMode: 'wasm-module-compile',
+      descriptorProbe
     };
   }
 
+  const entryExport = declaredEntryExport || 'main';
+  const hasEntryExport = exports.some((entry) => entry.name === entryExport);
+  const importMetadataMatches = wasmMetadataMatches(imports, declaredImports, wasmImportKey);
+  const exportMetadataMatches = wasmMetadataMatches(exports, declaredExports, wasmExportKey);
+  const expectedImportCount = declaredCount(summary.closureImportCount, declaredImports);
+  const expectedExportCount = declaredCount(summary.closureExportCount, declaredExports);
+  if (expectedImportCount != null && expectedImportCount !== imports.length) {
+    blockers.push('eshkol-wasm-import-count-mismatch');
+  }
+  if (expectedExportCount != null && expectedExportCount !== exports.length) {
+    blockers.push('eshkol-wasm-export-count-mismatch');
+  }
+  if (importMetadataMatches === false) {
+    blockers.push('eshkol-wasm-import-metadata-mismatch');
+  }
+  if (exportMetadataMatches === false) {
+    blockers.push('eshkol-wasm-export-metadata-mismatch');
+  }
+  if (!hasEntryExport) {
+    blockers.push('eshkol-wasm-entry-export-missing');
+  }
+  const compiledDescriptorProbe = createEshkolDescriptorContractProbe(payload, {
+    entryExport,
+    hasEntryExport
+  });
+  blockers.push(...(compiledDescriptorProbe.blockers || []));
+  const uniqueBlockers = uniqueStrings(blockers);
+
   return {
     schema: 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0',
-    status: blockers.length === 0 ? 'pass' : 'blocked',
-    ready: blockers.length === 0,
-    blockers,
+    status: uniqueBlockers.length === 0 ? 'pass' : 'blocked',
+    ready: uniqueBlockers.length === 0,
+    blockers: uniqueBlockers,
     wasmByteLength: bytes.byteLength,
     declaredWasmByteLength: declaredLength,
     wasmSha256: payload.wasmSha256 || null,
@@ -349,20 +626,21 @@ async function createEshkolDispatchProbe(payload = {}) {
     exportCount: exports.length,
     importKinds: wasmEntriesByKind(imports),
     exportKinds: wasmEntriesByKind(exports),
-    declaredImportCount: summary.closureImportCount ?? declaredImports.length,
-    declaredExportCount: summary.closureExportCount ?? declaredExports.length,
-    entryExport: summary.closureEntryExport || artifact.execution?.entryExport || null,
-    hasEntryExport: imports.length >= 0 && exports.some((entry) => (
-      entry.name === (summary.closureEntryExport || artifact.execution?.entryExport || 'main')
-    )),
+    declaredImportCount: expectedImportCount,
+    declaredExportCount: expectedExportCount,
+    importMetadataMatches,
+    exportMetadataMatches,
+    entryExport,
+    hasEntryExport,
     serviceWorkerSafe: summary.closureServiceWorkerSafe === true || artifact.execution?.serviceWorkerSafe === true,
-    requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null
+    requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null,
+    descriptorProbe: compiledDescriptorProbe
   };
 }
 
-async function createDispatchAdapterProbe(payload = {}) {
+async function createDispatchAdapterProbe(payload = {}, task = {}) {
   if (payload.sourceService === 'moonlab') return createMoonLabDispatchProbe(payload);
-  if (payload.sourceService === 'eshkol') return createEshkolDispatchProbe(payload);
+  if (payload.sourceService === 'eshkol') return createEshkolDispatchProbe(payload, task);
   return {
     schema: 'peercompute.ulg.dispatch-payload-probe.v0',
     status: 'pass',
@@ -406,6 +684,11 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     moduleCompiled: probe?.moduleCompiled === true,
     moduleImportCount: probe?.importCount ?? null,
     moduleExportCount: probe?.exportCount ?? null,
+    moduleImportMetadataMatches: probe?.importMetadataMatches ?? null,
+    moduleExportMetadataMatches: probe?.exportMetadataMatches ?? null,
+    descriptorContractReady: probe?.descriptorProbe?.ready === true,
+    descriptorContractSchema: probe?.descriptorProbe?.schema || null,
+    descriptorContractStatus: probe?.descriptorProbe?.status || null,
     adapterProbe: clonePlain(probe)
   };
 }
