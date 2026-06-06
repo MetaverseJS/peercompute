@@ -50303,3 +50303,36 @@ timeout 8s env \
   Eshkol-side descriptor binding metadata that names this envelope schema while
   keeping `scientificValidation: false`.
 - No push was attempted.
+
+## 2026-06-06 06:52:00 AKDT - Envelope-backed ULG handoff service host
+
+### Actions
+- Added `UlgHandoffServiceHost` as a headless WorkerSupervisor-compatible host
+  for durable ULG handoff envelope tasks.
+- Added `createUlgHandoffServiceManifest()` plus
+  `peercompute.ulg.handoff-service-adapter.v0`,
+  `peercompute.ulg.handoff-service-task.v0`, and
+  `peercompute.ulg.handoff-service-result.v0` exports.
+- The host accepts a raw `peercompute.ulg.demo-handoff.v0` packet or a prebuilt
+  envelope, normalizes it to `peercompute.ulg.handoff-service-envelope.v0`,
+  emits a service result, and returns an artifact payload that
+  `WorkerSupervisor` stores through its artifact cache.
+- Added focused service-orchestration coverage for raw handoff submission,
+  durable envelope result shape, service contract telemetry, and artifact-cache
+  storage.
+
+### Validation
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/index.js`.
+- PASS: `node --check peercompute/src/peercompute/index.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host|ULG handoff service envelope|ULG demo handoff adapter'` passed `14/14`.
+- PASS: `npm --prefix demos/multiscale run build`; Vite emitted only the
+  existing large-chunk warning.
+- PASS: `git diff --check`.
+
+### Open
+- This host normalizes and stores durable handoff envelopes. It does not yet run
+  real Eshkol or MoonLab workers from those envelopes; that remains the next
+  service-hosting step.
+- No push was attempted.

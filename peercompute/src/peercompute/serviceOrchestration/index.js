@@ -18,6 +18,13 @@ export {
   createComputeManagerServiceFactory
 } from './ComputeManagerServiceAdapter.js';
 export {
+  ULG_HANDOFF_SERVICE_ADAPTER_SCHEMA,
+  ULG_HANDOFF_SERVICE_RESULT_SCHEMA,
+  ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+  UlgHandoffServiceHost,
+  createUlgHandoffServiceManifest
+} from './UlgHandoffServiceHost.js';
+export {
   ULG_ARTIFACT_RESULT_SCHEMA,
   ULG_ARTIFACT_SUMMARY_SCHEMA,
   ULG_DEMO_HANDOFF_ADAPTER_SCHEMA,
