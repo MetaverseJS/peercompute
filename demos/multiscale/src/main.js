@@ -1506,6 +1506,23 @@ function prepareUlgClosureArtifactForScenario(artifact = {}, options = {}) {
   return prepared;
 }
 
+function createClosureDescriptorReportFromArtifact(artifact = {}, summary = {}) {
+  const descriptor = artifact.validation?.closureDescriptor && typeof artifact.validation.closureDescriptor === 'object'
+    ? artifact.validation.closureDescriptor
+    : null;
+  if (!descriptor && !summary?.closureDescriptorSchema) return null;
+  return {
+    schema: summary.closureDescriptorSchema || descriptor?.schema || null,
+    status: summary.closureDescriptorStatus || descriptor?.status || (summary.closureDescriptorReady === true ? 'closure-descriptor-ready' : null),
+    scope: summary.closureDescriptorScope || descriptor?.scope || descriptor?.semanticScope || null,
+    ready: summary.closureDescriptorReady === true,
+    scientificValidation: typeof summary.closureDescriptorScientificValidation === 'boolean'
+      ? summary.closureDescriptorScientificValidation
+      : (typeof descriptor?.scientificValidation === 'boolean' ? descriptor.scientificValidation : null),
+    probeMode: 'descriptor-only-closure-v0'
+  };
+}
+
 async function executeUlgClosureArtifactForScenario(artifact = {}, options = {}) {
   const artifactKind = options.artifactKind || 'closure';
   const preparedArtifact = prepareUlgClosureArtifactForScenario(artifact, options);
@@ -1529,7 +1546,8 @@ async function executeUlgClosureArtifactForScenario(artifact = {}, options = {})
     executeHostRuntime: options.executeHostRuntime !== false,
     entryExport: options.entryExport || artifactSummary.closureEntryExport || preparedArtifact.execution?.entryExport || 'main',
     entrySignature: options.entrySignature || artifactSummary.closureEntrySignature || preparedArtifact.execution?.entrySignature || null,
-    outputSemantics
+    outputSemantics,
+    closureDescriptor: options.closureDescriptor || createClosureDescriptorReportFromArtifact(preparedArtifact, artifactSummary)
   });
   return cloneJson({
     ...probe,
@@ -1597,7 +1615,12 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     provider: options.closureProvider || closureArtifact.sourceService || 'eshkol'
   } : null;
   const descriptorClosureReady = closureArtifact?.artifactSummary?.closureDescriptorReady === true;
-  const closure = closureArtifact?.hasTransferredWasmBytes && descriptorClosureReady !== true && options.executeClosure !== false
+  const descriptorClosureSmokeReady = descriptorClosureReady === true
+    && closureArtifact?.artifactSummary?.closureOutputSemanticsReady === true;
+  const shouldExecuteClosure = closureArtifact?.hasTransferredWasmBytes
+    && options.executeClosure !== false
+    && (descriptorClosureReady !== true || descriptorClosureSmokeReady || options.executeDescriptorClosure === true);
+  const closure = shouldExecuteClosure
     ? await executeUlgClosureArtifactForScenario(closureArtifact.artifact, closureOptions)
     : (closureArtifact
       ? ingestUlgArtifactForScenario(closureArtifact.artifact, closureOptions)
@@ -2313,6 +2336,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       serviceWorkerSafe: execution.serviceWorkerSafe === true,
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || observedImports.length > 0,
+      closureDescriptor: cloneJson(options.closureDescriptor || null),
       hostRuntimeProbe,
       hostRuntimeExecution,
       probeMode: 'browser-webassembly-module-abi-v0',
@@ -2351,6 +2375,7 @@ async function probeScenarioClosureModule(artifact = {}, options = {}) {
       serviceWorkerSafe: execution.serviceWorkerSafe === true,
       requiresHostImports: artifact.validity?.requiresHostImports ?? importEntries.some((entry) => entry.kind === 'function'),
       hostRuntimeRequired: artifact.validity?.requiresHostImports === true || expectedImports.length > 0,
+      closureDescriptor: cloneJson(options.closureDescriptor || null),
       hostRuntimeProbe: null,
       hostRuntimeExecution: null,
       probeMode: 'browser-webassembly-module-abi-v0',

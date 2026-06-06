@@ -72,6 +72,10 @@ Updated: 2026-06-06 18:35:00 AKDT
   stdout hash
   `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
   no output-semantics blockers, and `scientificExecution = false`.
+- Multiscale scenario ingestion now executes descriptor closures as smoke when
+  the handoff includes transferred WASM bytes plus explicit output semantics,
+  while preserving descriptor readiness and keeping the scientific runtime gate
+  blocked on validated solver evidence.
 - `git diff --check` passed.
 
 ## Next

@@ -718,6 +718,16 @@
   `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
   stdout byte length `23`, no output-semantics blockers, and
   `scientificExecution = false`.
+- Live ULG magnetar scenario-ingestion smoke gate: use the same ULG handoff and
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`; expected result is
+  `serviceEnvelope.ready = true`, `serviceDispatchPlan.status = "dispatch-ready"`,
+  scenario closure descriptor ready with schema
+  `eshkol.ulg.magnetar-closure-descriptor.v0`, closure module probe ready,
+  host-runtime execution ready, `entryResult = 0`, stdout hash
+  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
+  output semantics `output-semantics-validated`, no output-semantics blockers,
+  `scientificExecution = false`, and readiness blockers containing only
+  `proxy-runtime-not-scientific` once MoonLab tolerance references are complete.
 - Scientific runtime gate Node gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'scientific runtime gate|magnetar scenario'`.
 : expected result is a full pass proving incomplete live-like handoffs report `scientific-runtime-pending`, complete proxy fixtures report `scientific-runtime-blocked`, `proxy-runtime-not-scientific` remains the only blocker once transfer/reference/closure prerequisites are all present, and packet boundary conditions expose runtime gate readiness/status/prerequisite/runtime-evidence fields.
 - Runtime evidence manifest hardening gate: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'bounded proxy runtime evidence|runtime evidence manifest|scientific runtime gate|magnetar scenario records proxy runtime evidence'`.

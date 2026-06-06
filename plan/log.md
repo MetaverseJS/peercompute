@@ -50922,3 +50922,44 @@ timeout 8s env \
 - This is still runtime-smoke evidence only. Full magnetar readiness requires
   validated MHD/PIC/radiation/relativity runtime solver evidence.
 - No push was attempted.
+
+## 2026-06-06 18:55:00 AKDT - Scenario ingestion executes descriptor smoke
+
+### Prompt
+- Continue wiring the magnetar runtime-smoke evidence through the overall
+  Multiscale scenario path, not just the dispatch-adapter probe.
+
+### Actions
+- Changed `applyUlgDemoHandoffForScenario()` so descriptor closures still stay
+  metadata-only unless they have transferred WASM bytes and explicit output
+  semantics.
+- Passed closure descriptor metadata into `probeScenarioClosureModule()` so the
+  executed scenario result preserves descriptor readiness alongside host-runtime
+  smoke execution.
+- Rebuilt the Multiscale docs bundle.
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'magnetar scenario accepts descriptor-only Eshkol closure without output semantics|magnetar scientific runtime gate accepts explicit validated runtime evidence|magnetar scenario records Eshkol closure module ABI probe without promoting scientific readiness'`
+- `npm --prefix demos/multiscale run build`
+- Live Playwright/System Chrome probe against `http://127.0.0.1:5173/` and
+  `https://127.0.0.1:5185/?scenario=magnetar`.
+
+### Results
+- PASS: changed JavaScript passed syntax check.
+- PASS: Multiscale model test command passed `195/195`.
+- PASS: Multiscale production build completed; Vite emitted only the existing
+  large-chunk warning.
+- PASS: live `applyUlgDemoHandoffForScenario()` returned ready service envelope,
+  dispatch-ready plan, scenario handoff-ready, descriptor schema
+  `eshkol.ulg.magnetar-closure-descriptor.v0`, closure module probe ready,
+  host runtime execution ready, `entryResult = 0`, output semantics status
+  `output-semantics-validated`, stdout SHA-256
+  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
+  no output-semantics blockers, `scientificExecution = false`, and readiness
+  blockers `proxy-runtime-not-scientific`.
+
+### Open
+- This is still smoke/runtime plumbing. Scientific readiness remains blocked
+  until validated solver runtime evidence is attached.
+- No push was attempted.
