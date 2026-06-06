@@ -395,6 +395,9 @@ async function collectRemoteRuntimeDiagnostics(requester, responder, replica = n
 }
 
 async function runRuntimeRemotePolicyStep(requester, responder, remotePeerId, replica = null, replicaPeerId = null) {
+  await requester.waitForFunction(() => (
+    window.__multiscaleDemo.getState()?.solverRuntime?.cosmologyExpansion?.pending !== true
+  ), null, { timeout: remoteComputeTimeoutMs });
   const before = await requester.evaluate(() => {
     const state = window.__multiscaleDemo.getState();
     const taskPlacement = state.taskPlacement || {};
@@ -483,6 +486,22 @@ async function runRuntimeRemotePolicyStep(requester, responder, remotePeerId, re
   await waitForResponderTasks(responder, responderBefore);
   if (replica) {
     await waitForResponderTasks(replica, replicaBefore);
+  }
+  try {
+    await requester.waitForFunction(() => {
+      window.__multiscaleDemo.refreshReadout?.({ forceRuntimeDebug: true });
+      const readout = document.querySelector('#layer-readout')?.textContent || '';
+      return readout.includes('remote decisions')
+        && readout.includes('remote peer')
+        && readout.includes('remote reliability');
+    }, null, { timeout: 5000 });
+  } catch (error) {
+    const readoutSnapshot = await requester.evaluate(() => ({
+      api: window.__multiscaleDemo.refreshReadout?.({ forceRuntimeDebug: true }) || null,
+      domText: document.querySelector('#layer-readout')?.textContent || '',
+      runtimeDebugText: document.querySelector('#runtime-debug-readout')?.textContent || ''
+    }));
+    throw new Error(`Remote readout rows did not render: ${error.message}\n${JSON.stringify(readoutSnapshot)}`);
   }
   const after = await requester.evaluate(() => {
     const state = window.__multiscaleDemo.getState();
@@ -629,6 +648,41 @@ function assertRuntimeRemotePolicyStep(summary) {
   const selectedReliability = summary?.after?.remotePeerSelection?.candidates?.find?.(
     (candidate) => candidate.peerId === lastRemote?.peerId
   )?.capacity?.reliability;
+  const checkHints = {
+    policyActive: summary?.policy?.policy?.active === true,
+    dispatchReady: summary?.after?.remotePlacementReadiness?.dispatchReady === true,
+    cosmologyPromoted: summary?.after?.remoteSolverPlacementDecisions?.entries?.cosmologyExpansion?.promoted === true,
+    remoteCompletedAdvanced: remoteCompleted > (summary?.before?.remotePeerCompleted || 0),
+    cosmologyCompletedAdvanced: (summary?.after?.solverRuntime?.cosmologyExpansion?.completedTasks || 0) > (summary?.before?.cosmologyCompleted || 0),
+    responderCompletedAdvanced: (summary?.responderAfter?.computeStats?.totalTasksCompleted || 0) > (summary?.responderBefore || 0),
+    responderWorkerReady: (summary?.responderAfter?.computeStats?.workerCount || 0) > 0
+      && (summary?.responderAfter?.computeStats?.workerTasksCompleted || 0) > 0,
+    lastRemotePeer: lastRemote?.actualPlacement === 'remote-peer',
+    lastRemoteCosmology: lastRemote?.taskFamily === 'cosmology-expansion',
+    remoteCapacity: (lastRemote?.admission?.remoteWorkerCapacity || 0) > 0,
+    provenanceVerified: lastRemote?.provenance?.verified === true,
+    provenanceValid: lastRemote?.provenance?.validation?.valid === true,
+    provenanceWorker: String(lastRemote?.provenance?.workerId || '').startsWith('worker-')
+      && lastRemote?.provenance?.remoteExecution?.executionMode === 'worker',
+    durationBounded: (lastRemote?.provenance?.durationMs || 0) >= 0
+      && (lastRemote?.provenance?.durationMs || 0) < remoteComputeTimeoutMs,
+    selectedPeerMatches: summary?.after?.remotePeerSelection?.selectedPeerId === lastRemote?.peerId,
+    peerCandidates: (summary?.after?.remotePeerSelection?.candidateCount || 0) >= 1,
+    reliabilitySchema: summary?.after?.remotePeerReliability?.schema === 'peercompute.multiscale.remote-peer-reliability.v0',
+    reliabilityPersisted: reliabilityPersistence?.schema === 'peercompute.multiscale.remote-peer-reliability-store.v0'
+      && reliabilityPersistence?.status === 'saved',
+    reliabilityScoped: String(summary?.after?.remotePeerReliability?.scopeId || '').includes('room:multiscale-live-remote-')
+      && String(summary?.after?.remotePeerReliability?.storageKey || '').includes('peercompute.multiscale.remotePeerReliability'),
+    reliabilityScored: (reliabilityEntry?.successes || 0) >= 1
+      && (reliabilityEntry?.reliabilityScore || 0) > 0
+      && (selectedReliability || 0) > 0,
+    readoutRemote: summary?.after?.readoutText?.includes('remote decisions')
+      && summary?.after?.readoutText?.includes('remote peer')
+      && summary?.after?.readoutText?.includes('remote reliability'),
+    runtimeDebugRemote: summary?.after?.runtimeDebugText?.includes('remote decisions')
+      && summary?.after?.runtimeDebugText?.includes('remote peer')
+      && summary?.after?.runtimeDebugText?.includes('remote reliability')
+  };
   if (summary?.policy?.policy?.active !== true
     || summary?.after?.remotePlacementReadiness?.dispatchReady !== true
     || summary?.after?.remoteSolverPlacementDecisions?.entries?.cosmologyExpansion?.promoted !== true
@@ -662,7 +716,7 @@ function assertRuntimeRemotePolicyStep(summary) {
     || !summary?.after?.runtimeDebugText?.includes('remote decisions')
     || !summary?.after?.runtimeDebugText?.includes('remote peer')
     || !summary?.after?.runtimeDebugText?.includes('remote reliability')) {
-    throw new Error(`Runtime remote solver policy did not drive normal solver cadence remotely: ${JSON.stringify(summary)}`);
+    throw new Error(`Runtime remote solver policy did not drive normal solver cadence remotely: ${JSON.stringify({ checkHints, summary })}`);
   }
   if (summary?.replicaPeerId) {
     assertRedundantPlacementProvenance(lastRemote?.provenance, {

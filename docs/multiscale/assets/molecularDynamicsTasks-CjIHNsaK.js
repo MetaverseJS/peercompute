@@ -16,6 +16,8 @@ export const MOLECULAR_QMAT_PRODUCT_CONSERVATION_AUDIT_SCHEMA =
   'peercompute.multiscale.molecular-qmat-product-conservation-audit.v0';
 export const MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA =
   'peercompute.multiscale.molecular-qmat-product-topology-mutation.v0';
+export const MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA =
+  'peercompute.multiscale.molecular-qmat-product-topology-gpu-writeback.v0';
 export const MOLECULAR_ULG_STATE_SOURCE_SCHEMA = 'peercompute.multiscale.molecular-ulg-state-source.v0';
 export const MOLECULAR_DYNAMICS_WEBGPU_MAX_ATOMS = 4096;
 export const MOLECULAR_DYNAMICS_MAX_BONDS = 1024;
@@ -47,6 +49,8 @@ const ATOM_TOPOLOGY_GROUP_ID_OFFSET = 10;
 const ATOM_TOPOLOGY_GROUP_TYPE_OFFSET = 11;
 const ATOM_TOPOLOGY_LOCAL_INDEX_OFFSET = 12;
 const ATOM_TOPOLOGY_METADATA_FLOATS = 3;
+const PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS = 4;
+const PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS = 4;
 const PARAM_FLOATS = 64;
 const PARAM_BYTES = PARAM_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 const MOLECULAR_DYNAMICS_CELL_SIZE = 0.42;
@@ -129,6 +133,30 @@ export const SUPPORTED_MOLECULAR_ELEMENTS = Object.freeze(
 
 const SYMBOL_BY_Z = new Map(Object.entries(ELEMENT_DATA).map(([z, data]) => [Number(z), data.symbol]));
 const Z_BY_SYMBOL = new Map(Object.entries(ELEMENT).map(([symbol, z]) => [symbol.toLowerCase(), z]));
+
+const PRODUCT_TOPOLOGY_WRITEBACK_SHADER = `
+@group(0) @binding(0) var<storage, read_write> atoms: array<f32>;
+@group(0) @binding(1) var<storage, read> commands: array<f32>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let commandCount = u32(max(commands[0], 0.0));
+  let atomCount = u32(max(commands[1], 0.0));
+  if (id.x >= commandCount) {
+    return;
+  }
+  let commandBase = ${PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS}u
+    + id.x * ${PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS}u;
+  let atomIndex = u32(max(commands[commandBase], 0.0));
+  if (atomIndex >= atomCount) {
+    return;
+  }
+  let atomBase = atomIndex * ${ATOM_FLOATS}u;
+  atoms[atomBase + ${ATOM_TOPOLOGY_GROUP_ID_OFFSET}u] = commands[commandBase + 1u];
+  atoms[atomBase + ${ATOM_TOPOLOGY_GROUP_TYPE_OFFSET}u] = commands[commandBase + 2u];
+  atoms[atomBase + ${ATOM_TOPOLOGY_LOCAL_INDEX_OFFSET}u] = commands[commandBase + 3u];
+}
+`;
 
 const MOLECULAR_SHADER = `
 struct Params {
@@ -3648,6 +3676,166 @@ function clearAtomMoleculeGroup(state, atom) {
   state.moleculeLocalIndex[atom] = 0;
 }
 
+function createTopologyWritebackCommandData({ atomCount = 0, commands = [] } = {}) {
+  const safeAtomCount = normalizeInteger(atomCount, 0, 0, 32768);
+  const safeCommands = Array.isArray(commands) ? commands.slice(0, safeAtomCount) : [];
+  const data = new Float32Array(
+    PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS
+      + safeCommands.length * PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS
+  );
+  data[0] = safeCommands.length;
+  data[1] = safeAtomCount;
+  data[2] = 1;
+  data[3] = 0;
+  for (let i = 0; i < safeCommands.length; i += 1) {
+    const command = safeCommands[i];
+    const base = PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS
+      + i * PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS;
+    data[base] = normalizeInteger(command.atom, 0, 0, Math.max(0, safeAtomCount - 1));
+    data[base + 1] = normalizeInteger(command.groupId, -1, -1, 32768);
+    data[base + 2] = normalizeInteger(command.groupType, MOLECULE_GROUP_TYPE.atom, 0, 32);
+    data[base + 3] = normalizeInteger(command.localIndex, 0, 0, 128);
+  }
+  return data;
+}
+
+function publicProductTopologyGpuWritebackReport(report = null) {
+  if (!report || report.schema !== MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA) return null;
+  const { commandData, commands, ...publicReport } = report;
+  return {
+    ...publicReport,
+    commandsPreview: Array.isArray(commands) ? commands.slice(0, 16).map((command) => ({ ...command })) : []
+  };
+}
+
+function createQuantumMaterialProductTopologyGpuWritebackPlan(state, quantumMaterialSource = null, {
+  mode = 'webgpu-product-topology-writeback-plan'
+} = {}) {
+  const overlay = createQuantumMaterialProductTopologyOverlay(state, quantumMaterialSource);
+  const newProductSites = Array.isArray(overlay.productSites) ? overlay.productSites : [];
+  const newH2Sites = Array.isArray(overlay.h2Sites) ? overlay.h2Sites : [];
+  const commands = [];
+  const mutatedAtoms = new Set();
+  const retiredWaterGroups = new Set();
+  let groupId = nextMoleculeGroupId(state);
+  for (const site of newProductSites) {
+    const atoms = [site.sodium, site.oxygen, site.retainedHydrogen, site.releasedHydrogen];
+    if (atoms.some((atom) => !Number.isInteger(atom) || atom < 0 || atom >= state.atomCount)) continue;
+    commands.push(
+      {
+        atom: site.sodium,
+        groupId,
+        groupType: MOLECULE_GROUP_TYPE.sodiumHydroxide,
+        localIndex: 0,
+        role: 'NaOH:Na'
+      },
+      {
+        atom: site.oxygen,
+        groupId,
+        groupType: MOLECULE_GROUP_TYPE.sodiumHydroxide,
+        localIndex: 1,
+        role: 'NaOH:O'
+      },
+      {
+        atom: site.retainedHydrogen,
+        groupId,
+        groupType: MOLECULE_GROUP_TYPE.sodiumHydroxide,
+        localIndex: 2,
+        role: 'NaOH:H'
+      },
+      {
+        atom: site.releasedHydrogen,
+        groupId: -1,
+        groupType: MOLECULE_GROUP_TYPE.atom,
+        localIndex: 0,
+        role: 'released:H'
+      }
+    );
+    for (const atom of atoms) mutatedAtoms.add(atom);
+    retiredWaterGroups.add(normalizeInteger(site.sourceWaterGroupId, -1, -1, 32768));
+    groupId += 1;
+  }
+  for (const site of newH2Sites) {
+    if (
+      !Number.isInteger(site.a)
+      || !Number.isInteger(site.b)
+      || site.a < 0
+      || site.b < 0
+      || site.a >= state.atomCount
+      || site.b >= state.atomCount
+    ) {
+      continue;
+    }
+    commands.push(
+      {
+        atom: site.a,
+        groupId,
+        groupType: MOLECULE_GROUP_TYPE.hydrogen,
+        localIndex: 0,
+        role: 'H2:H0'
+      },
+      {
+        atom: site.b,
+        groupId,
+        groupType: MOLECULE_GROUP_TYPE.hydrogen,
+        localIndex: 1,
+        role: 'H2:H1'
+      }
+    );
+    mutatedAtoms.add(site.a);
+    mutatedAtoms.add(site.b);
+    groupId += 1;
+  }
+  const commandData = createTopologyWritebackCommandData({ atomCount: state.atomCount, commands });
+  const commandCount = commands.length;
+  const applied = commandCount > 0;
+  return {
+    schema: MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA,
+    modelId: 'qmat-na-water-webgpu-product-topology-writeback-v0',
+    mode,
+    status: !overlay.applied
+      ? (overlay.reason || 'product-topology-overlay-unavailable')
+      : (applied ? 'webgpu-command-buffer-ready' : 'no-new-product-topology-commands'),
+    applied,
+    webgpuCommandBufferReady: applied,
+    webgpuKernelApplied: false,
+    commandCount,
+    commandFloatStride: PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS,
+    commandHeaderFloatCount: PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS,
+    commandBufferFloatCount: commandData.length,
+    targetAtomCount: normalizeInteger(state.atomCount, 0, 0, 32768),
+    topologyMetadataFloatOffset: ATOM_TOPOLOGY_GROUP_ID_OFFSET,
+    topologyMetadataFloatCount: ATOM_TOPOLOGY_METADATA_FLOATS,
+    topologyMetadataFields: ['moleculeGroupId', 'moleculeGroupType', 'moleculeLocalIndex'],
+    productTopologySchema: overlay.topology?.schema || null,
+    productTopologyModelId: overlay.topology?.modelId || null,
+    productTopologyMode: overlay.topology?.topologyMode || null,
+    overlaySchema: overlay.schema,
+    overlayApplied: overlay.applied === true,
+    requestedReactionSiteCount: overlay.requestedReactionSiteCount || 0,
+    productSiteCount: newProductSites.length,
+    h2SiteCount: newH2Sites.length,
+    plannedNaohMoleculeCount: (overlay.existingNaohMoleculeCount || 0) + newProductSites.length,
+    plannedH2MoleculeCount: (overlay.existingH2MoleculeCount || 0) + newH2Sites.length,
+    mutatedAtomCount: mutatedAtoms.size,
+    retiredWaterGroupCount: [...retiredWaterGroups].filter((value) => value >= 0).length,
+    reducedAtomInventoryConserved: true,
+    authoritativeAtomMutationReady: false,
+    scientificMutation: false,
+    commands,
+    commandData,
+    validity: {
+      status: applied ? 'interactive-webgpu-product-topology-writeback' : 'unavailable',
+      warnings: applied
+        ? [
+          'Reduced qmat product topology writeback rewrites molecule group metadata in the WebGPU atom buffer.',
+          'The reaction site plan is still reduced and CPU-selected; scientific mode still needs calibrated kinetics and conservative product integration.'
+        ]
+        : []
+    }
+  };
+}
+
 function nudgePairToDistance(state, a, b, targetDistance, strength = 0.35) {
   if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a >= state.atomCount || b >= state.atomCount) {
     return;
@@ -3676,7 +3864,8 @@ function nudgePairToDistance(state, a, b, targetDistance, strength = 0.35) {
 }
 
 function applyQuantumMaterialProductTopologyMutation(state, quantumMaterialSource = null, {
-  sourceMode = 'post-md-topology-commit'
+  sourceMode = 'post-md-topology-commit',
+  gpuWriteback = null
 } = {}) {
   if (!Array.isArray(state.moleculeGroupId) || state.moleculeGroupId.length < state.atomCount) {
     state.moleculeGroupId = Array.from({ length: state.atomCount }, (_, index) => normalizeInteger(state.moleculeGroupId?.[index], -1, -1, 32768));
@@ -3694,6 +3883,65 @@ function applyQuantumMaterialProductTopologyMutation(state, quantumMaterialSourc
   const naORule = productBondRuleForPair(topology, ELEMENT.Na, ELEMENT.O, 'NaOH');
   const ohRule = productBondRuleForPair(topology, ELEMENT.O, ELEMENT.H, 'NaOH');
   const h2Rule = productBondRuleForPair(topology, ELEMENT.H, ELEMENT.H, 'H2');
+  if (gpuWriteback?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA
+    && gpuWriteback.webgpuKernelApplied === true) {
+    const postOverlay = createQuantumMaterialProductTopologyOverlay(state, quantumMaterialSource);
+    const applied = postOverlay.applied === true;
+    const productAtomCount = (postOverlay.naohMoleculeCount || 0) * 3 + (postOverlay.h2MoleculeCount || 0) * 2;
+    const publicWriteback = publicProductTopologyGpuWritebackReport(gpuWriteback);
+    const report = {
+      schema: MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA,
+      modelId: 'qmat-na-water-reduced-product-topology-state-mutation-v0',
+      mode: sourceMode,
+      applied,
+      newMutationApplied: gpuWriteback.applied === true && gpuWriteback.commandCount > 0,
+      status: !applied
+        ? 'unavailable'
+        : (gpuWriteback.applied === true
+          ? 'webgpu-product-topology-state-mutated'
+          : 'webgpu-product-topology-state-current'),
+      targetReactionId: postOverlay.productSource?.targetReactionId || null,
+      productTopologySchema: postOverlay.topology?.schema || null,
+      productTopologyModelId: postOverlay.topology?.modelId || null,
+      productTopologyMode: postOverlay.topology?.topologyMode || null,
+      overlaySchema: postOverlay.schema,
+      overlayBondCount: postOverlay.bonds.length,
+      naohMoleculeCount: postOverlay.naohMoleculeCount || 0,
+      h2MoleculeCount: postOverlay.h2MoleculeCount || 0,
+      newNaohMoleculeCount: gpuWriteback.productSiteCount || 0,
+      newH2MoleculeCount: gpuWriteback.h2SiteCount || 0,
+      existingNaohMoleculeCount: postOverlay.existingNaohMoleculeCount || 0,
+      existingH2MoleculeCount: postOverlay.existingH2MoleculeCount || 0,
+      mutatedAtomCount: Math.max(gpuWriteback.mutatedAtomCount || 0, productAtomCount),
+      retiredWaterGroupCount: Math.max(gpuWriteback.retiredWaterGroupCount || 0, postOverlay.naohMoleculeCount || 0),
+      reducedAtomInventoryConserved: true,
+      authoritativeAtomMutationReady: false,
+      scientificMutation: false,
+      webgpuWritebackApplied: gpuWriteback.applied === true,
+      webgpuWritebackKernelApplied: true,
+      gpuWritebackSchema: gpuWriteback.schema,
+      gpuWritebackStatus: gpuWriteback.status,
+      gpuWritebackCommandCount: gpuWriteback.commandCount || 0,
+      gpuWritebackCommandFloatStride: gpuWriteback.commandFloatStride || 0,
+      gpuWritebackCommandHeaderFloatCount: gpuWriteback.commandHeaderFloatCount || 0,
+      gpuWritebackTargetAtomCount: gpuWriteback.targetAtomCount || 0,
+      gpuWritebackTopologyMetadataFloatOffset: gpuWriteback.topologyMetadataFloatOffset || 0,
+      gpuWritebackTopologyMetadataFloatCount: gpuWriteback.topologyMetadataFloatCount || 0,
+      gpuWriteback: publicWriteback,
+      validity: {
+        status: applied ? 'interactive-webgpu-topology-mutation' : 'unavailable',
+        warnings: applied
+          ? [
+            'Reduced qmat topology mutation was applied through a WebGPU atom-buffer writeback pass.',
+            'This is still not calibrated kinetics, ReaxFF/QEq chemistry, or a conservative scientific product integration.'
+          ]
+          : []
+      }
+    };
+    state.quantumMaterialProductTopologyGpuWriteback = publicWriteback;
+    state.quantumMaterialProductTopologyMutation = report;
+    return report;
+  }
   let groupId = nextMoleculeGroupId(state);
   let mutatedAtomCount = 0;
   let retiredWaterGroupCount = 0;
@@ -4781,11 +5029,27 @@ function cloneState(state) {
           : []
       }
       : null,
-    chargeEquilibration: state.chargeEquilibration?.schema === MOLECULAR_CHARGE_EQUILIBRATION_SCHEMA
-      ? { ...state.chargeEquilibration }
-      : null,
-    quantumMaterialProductTopologyMutation: state.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
+	    chargeEquilibration: state.chargeEquilibration?.schema === MOLECULAR_CHARGE_EQUILIBRATION_SCHEMA
+	      ? { ...state.chargeEquilibration }
+	      : null,
+    quantumMaterialProductTopologyGpuWriteback: state.quantumMaterialProductTopologyGpuWriteback?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA
       ? {
+        ...state.quantumMaterialProductTopologyGpuWriteback,
+        commandsPreview: Array.isArray(state.quantumMaterialProductTopologyGpuWriteback.commandsPreview)
+          ? state.quantumMaterialProductTopologyGpuWriteback.commandsPreview.map((command) => ({ ...command }))
+          : [],
+        validity: state.quantumMaterialProductTopologyGpuWriteback.validity
+          ? {
+            ...state.quantumMaterialProductTopologyGpuWriteback.validity,
+            warnings: Array.isArray(state.quantumMaterialProductTopologyGpuWriteback.validity.warnings)
+              ? [...state.quantumMaterialProductTopologyGpuWriteback.validity.warnings]
+              : []
+          }
+          : undefined
+      }
+      : null,
+	    quantumMaterialProductTopologyMutation: state.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
+	      ? {
         ...state.quantumMaterialProductTopologyMutation,
         validity: state.quantumMaterialProductTopologyMutation.validity
           ? {
@@ -5121,11 +5385,19 @@ function normalizeState(input = {}) {
           : []
       }
       : null,
-    chargeEquilibration: source.chargeEquilibration?.schema === MOLECULAR_CHARGE_EQUILIBRATION_SCHEMA
-      ? { ...source.chargeEquilibration }
+	    chargeEquilibration: source.chargeEquilibration?.schema === MOLECULAR_CHARGE_EQUILIBRATION_SCHEMA
+	      ? { ...source.chargeEquilibration }
+	      : null,
+    quantumMaterialProductTopologyGpuWriteback: source.quantumMaterialProductTopologyGpuWriteback?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA
+      ? {
+        ...source.quantumMaterialProductTopologyGpuWriteback,
+        commandsPreview: Array.isArray(source.quantumMaterialProductTopologyGpuWriteback.commandsPreview)
+          ? source.quantumMaterialProductTopologyGpuWriteback.commandsPreview.map((command) => ({ ...command }))
+          : []
+      }
       : null,
-    quantumMaterialProductTopologyMutation: source.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
-      ? { ...source.quantumMaterialProductTopologyMutation }
+	    quantumMaterialProductTopologyMutation: source.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
+	      ? { ...source.quantumMaterialProductTopologyMutation }
       : null,
     positionsX: new Array(count),
     positionsY: new Array(count),
@@ -6657,10 +6929,10 @@ export function computeMolecularDynamicsDiagnostics(stateInput = {}) {
   const bondSelection = inferBondSelection(state);
   const bonds = bondSelection.bonds;
   const productTopologyOverlay = bondSelection.productTopologyOverlay || createQuantumMaterialProductTopologyOverlay(state, quantumMaterialSource);
-  const quantumMaterialReactionProductTopologyMutation =
-    state.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
-      ? state.quantumMaterialProductTopologyMutation
-      : {
+	  const quantumMaterialReactionProductTopologyMutation =
+	    state.quantumMaterialProductTopologyMutation?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA
+	      ? state.quantumMaterialProductTopologyMutation
+	      : {
         schema: MOLECULAR_QMAT_PRODUCT_TOPOLOGY_MUTATION_SCHEMA,
         modelId: 'qmat-na-water-reduced-product-topology-state-mutation-v0',
         mode: 'diagnostic-current-state',
@@ -6674,9 +6946,45 @@ export function computeMolecularDynamicsDiagnostics(stateInput = {}) {
         mutatedAtomCount: 0,
         retiredWaterGroupCount: 0,
         reducedAtomInventoryConserved: true,
-        authoritativeAtomMutationReady: false,
-        scientificMutation: false
-      };
+	        authoritativeAtomMutationReady: false,
+	        scientificMutation: false
+	      };
+  const quantumMaterialReactionProductTopologyGpuWriteback =
+    state.quantumMaterialProductTopologyGpuWriteback?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA
+      ? state.quantumMaterialProductTopologyGpuWriteback
+      : (quantumMaterialReactionProductTopologyMutation.gpuWriteback?.schema === MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA
+        ? quantumMaterialReactionProductTopologyMutation.gpuWriteback
+        : {
+          schema: MOLECULAR_QMAT_PRODUCT_TOPOLOGY_GPU_WRITEBACK_SCHEMA,
+          modelId: 'qmat-na-water-webgpu-product-topology-writeback-v0',
+          mode: 'diagnostic-current-state',
+          status: 'unavailable',
+          applied: false,
+          webgpuCommandBufferReady: false,
+          webgpuKernelApplied: false,
+          commandCount: 0,
+          commandFloatStride: PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS,
+          commandHeaderFloatCount: PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS,
+          commandBufferFloatCount: 0,
+          targetAtomCount: state.atomCount,
+          topologyMetadataFloatOffset: ATOM_TOPOLOGY_GROUP_ID_OFFSET,
+          topologyMetadataFloatCount: ATOM_TOPOLOGY_METADATA_FLOATS,
+          topologyMetadataFields: ['moleculeGroupId', 'moleculeGroupType', 'moleculeLocalIndex'],
+          productTopologySchema: quantumMaterialReactionProductSource.productTopologySchema || null,
+          productTopologyModelId: quantumMaterialReactionProductSource.productTopologyModelId || null,
+          productTopologyMode: quantumMaterialReactionProductSource.productTopologyMode || null,
+          overlayApplied: productTopologyOverlay.applied === true,
+          productSiteCount: 0,
+          h2SiteCount: 0,
+          plannedNaohMoleculeCount: productTopologyOverlay.naohMoleculeCount || 0,
+          plannedH2MoleculeCount: productTopologyOverlay.h2MoleculeCount || 0,
+          mutatedAtomCount: 0,
+          retiredWaterGroupCount: 0,
+          reducedAtomInventoryConserved: true,
+          authoritativeAtomMutationReady: false,
+          scientificMutation: false,
+          commandsPreview: []
+        });
   const bondClasses = summarizeBondClasses(state, bonds);
   const reactionLedger = createMolecularReactionLedger(state, bonds);
   const quantumMaterialReactionProductConservationAudit = createQuantumMaterialReactionProductConservationAudit({
@@ -7221,13 +7529,23 @@ export function computeMolecularDynamicsDiagnostics(stateInput = {}) {
     quantumMaterialReactionProductTopologyMutation: quantumMaterialReactionProductTopologyMutation,
     quantumMaterialReactionProductTopologyMutationSchema: quantumMaterialReactionProductTopologyMutation.schema,
     quantumMaterialReactionProductTopologyMutationStatus: quantumMaterialReactionProductTopologyMutation.status,
-    quantumMaterialReactionProductTopologyMutationApplied: quantumMaterialReactionProductTopologyMutation.applied === true,
-    quantumMaterialReactionProductTopologyNewMutationApplied: quantumMaterialReactionProductTopologyMutation.newMutationApplied === true,
-    quantumMaterialReactionProductTopologyMutatedAtomCount: quantumMaterialReactionProductTopologyMutation.mutatedAtomCount || 0,
-    quantumMaterialReactionProductTopologyRetiredWaterGroupCount: quantumMaterialReactionProductTopologyMutation.retiredWaterGroupCount || 0,
-    quantumMaterialReactionProductTopologyMutationAtomInventoryConserved: quantumMaterialReactionProductTopologyMutation.reducedAtomInventoryConserved === true,
-    quantumMaterialReactionProductTopologyScientificMutation: quantumMaterialReactionProductTopologyMutation.scientificMutation === true,
-    quantumMaterialReactionProductConservationAudit,
+	    quantumMaterialReactionProductTopologyMutationApplied: quantumMaterialReactionProductTopologyMutation.applied === true,
+	    quantumMaterialReactionProductTopologyNewMutationApplied: quantumMaterialReactionProductTopologyMutation.newMutationApplied === true,
+	    quantumMaterialReactionProductTopologyMutatedAtomCount: quantumMaterialReactionProductTopologyMutation.mutatedAtomCount || 0,
+	    quantumMaterialReactionProductTopologyRetiredWaterGroupCount: quantumMaterialReactionProductTopologyMutation.retiredWaterGroupCount || 0,
+	    quantumMaterialReactionProductTopologyMutationAtomInventoryConserved: quantumMaterialReactionProductTopologyMutation.reducedAtomInventoryConserved === true,
+	    quantumMaterialReactionProductTopologyScientificMutation: quantumMaterialReactionProductTopologyMutation.scientificMutation === true,
+    quantumMaterialReactionProductTopologyGpuWriteback: quantumMaterialReactionProductTopologyGpuWriteback,
+    quantumMaterialReactionProductTopologyGpuWritebackSchema: quantumMaterialReactionProductTopologyGpuWriteback.schema,
+    quantumMaterialReactionProductTopologyGpuWritebackStatus: quantumMaterialReactionProductTopologyGpuWriteback.status,
+    quantumMaterialReactionProductTopologyGpuWritebackApplied: quantumMaterialReactionProductTopologyGpuWriteback.applied === true,
+    quantumMaterialReactionProductTopologyGpuWritebackKernelApplied: quantumMaterialReactionProductTopologyGpuWriteback.webgpuKernelApplied === true,
+    quantumMaterialReactionProductTopologyGpuWritebackCommandCount: quantumMaterialReactionProductTopologyGpuWriteback.commandCount || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackCommandFloatStride: quantumMaterialReactionProductTopologyGpuWriteback.commandFloatStride || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackCommandHeaderFloatCount: quantumMaterialReactionProductTopologyGpuWriteback.commandHeaderFloatCount || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackTargetAtomCount: quantumMaterialReactionProductTopologyGpuWriteback.targetAtomCount || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackMutationReady: quantumMaterialReactionProductTopologyGpuWriteback.webgpuCommandBufferReady === true,
+	    quantumMaterialReactionProductConservationAudit,
     quantumMaterialReactionProductConservationAuditSchema: quantumMaterialReactionProductConservationAudit.schema,
     quantumMaterialReactionProductConservationAuditStatus: quantumMaterialReactionProductConservationAudit.status,
     quantumMaterialReactionProductConservationClosed: quantumMaterialReactionProductConservationAudit.reducedAtomConservationClosed === true,
@@ -7964,9 +8282,11 @@ class MolecularDynamicsWebGpuRuntime {
     this.buildGridPipeline = null;
     this.neighborListPipeline = null;
     this.integratePipeline = null;
+    this.productTopologyWritebackPipeline = null;
     this.currentBuffer = null;
     this.nextBuffer = null;
     this.readBuffer = null;
+    this.productTopologyCommandBuffer = null;
     this.paramBuffer = null;
     this.gridCountBuffer = null;
     this.gridAtomBuffer = null;
@@ -7979,6 +8299,8 @@ class MolecularDynamicsWebGpuRuntime {
     this.lastError = null;
     this.neighborListAvailable = false;
     this.neighborValidationError = null;
+    this.productTopologyWritebackAvailable = false;
+    this.productTopologyWritebackValidationError = null;
   }
 
   async initialize(atomCount) {
@@ -7992,6 +8314,10 @@ class MolecularDynamicsWebGpuRuntime {
     this.device = await adapter.requestDevice();
     this.atomCount = atomCount;
     const atomBytes = atomCount * ATOM_FLOATS * Float32Array.BYTES_PER_ELEMENT;
+    const productTopologyCommandBytes = (
+      PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS
+        + atomCount * PRODUCT_TOPOLOGY_WRITEBACK_COMMAND_FLOATS
+    ) * Float32Array.BYTES_PER_ELEMENT;
     const uintBytes = Uint32Array.BYTES_PER_ELEMENT;
     const gridCountBytes = MOLECULAR_NEIGHBOR_CELL_COUNT * uintBytes;
     const gridAtomBytes = MOLECULAR_NEIGHBOR_CELL_COUNT * MOLECULAR_NEIGHBOR_MAX_CELL_OCCUPANCY * uintBytes;
@@ -8001,6 +8327,10 @@ class MolecularDynamicsWebGpuRuntime {
     this.currentBuffer = this.device.createBuffer({ size: atomBytes, usage: usage.STORAGE | usage.COPY_DST });
     this.nextBuffer = this.device.createBuffer({ size: atomBytes, usage: usage.STORAGE | usage.COPY_SRC | usage.COPY_DST });
     this.readBuffer = this.device.createBuffer({ size: atomBytes, usage: usage.COPY_DST | usage.MAP_READ });
+    this.productTopologyCommandBuffer = this.device.createBuffer({
+      size: Math.max(Float32Array.BYTES_PER_ELEMENT * PRODUCT_TOPOLOGY_WRITEBACK_HEADER_FLOATS, productTopologyCommandBytes),
+      usage: usage.STORAGE | usage.COPY_DST
+    });
     this.paramBuffer = this.device.createBuffer({ size: PARAM_BYTES, usage: usage.UNIFORM | usage.COPY_DST });
     this.gridCountBuffer = this.device.createBuffer({ size: gridCountBytes, usage: usage.STORAGE | usage.COPY_DST });
     this.gridAtomBuffer = this.device.createBuffer({ size: gridAtomBytes, usage: usage.STORAGE | usage.COPY_DST });
@@ -8064,6 +8394,27 @@ class MolecularDynamicsWebGpuRuntime {
       this.integratePipeline = null;
       this.neighborListAvailable = false;
       this.neighborValidationError = error instanceof Error ? error.message : String(error);
+    }
+    this.productTopologyWritebackAvailable = false;
+    this.productTopologyWritebackValidationError = null;
+    try {
+      this.device.pushErrorScope?.('validation');
+      this.productTopologyWritebackPipeline = this.device.createComputePipeline({
+        layout: 'auto',
+        compute: {
+          module: this.device.createShaderModule({ code: PRODUCT_TOPOLOGY_WRITEBACK_SHADER }),
+          entryPoint: 'main'
+        }
+      });
+      const writebackValidationError = await this.device.popErrorScope?.();
+      if (writebackValidationError) {
+        throw new Error(writebackValidationError.message || writebackValidationError);
+      }
+      this.productTopologyWritebackAvailable = true;
+    } catch (error) {
+      this.productTopologyWritebackPipeline = null;
+      this.productTopologyWritebackAvailable = false;
+      this.productTopologyWritebackValidationError = error instanceof Error ? error.message : String(error);
     }
     this.device.lost?.then((info) => {
       this.lastError = info?.message || info?.reason || 'Molecular dynamics WebGPU device lost';
@@ -8200,6 +8551,48 @@ class MolecularDynamicsWebGpuRuntime {
     };
   }
 
+  dispatchProductTopologyWriteback(encoder, state, quantumMaterialSource = null, {
+    mode = 'webgpu-product-topology-writeback'
+  } = {}) {
+    const plan = createQuantumMaterialProductTopologyGpuWritebackPlan(state, quantumMaterialSource, { mode });
+    if (!plan.applied) {
+      state.quantumMaterialProductTopologyGpuWriteback = publicProductTopologyGpuWritebackReport(plan);
+      return state.quantumMaterialProductTopologyGpuWriteback;
+    }
+    if (!this.productTopologyWritebackAvailable || !this.productTopologyWritebackPipeline) {
+      const unavailable = {
+        ...plan,
+        status: 'webgpu-writeback-pipeline-unavailable',
+        webgpuCommandBufferReady: true,
+        webgpuKernelApplied: false,
+        validationError: this.productTopologyWritebackValidationError || 'product topology writeback pipeline unavailable'
+      };
+      state.quantumMaterialProductTopologyGpuWriteback = publicProductTopologyGpuWritebackReport(unavailable);
+      return state.quantumMaterialProductTopologyGpuWriteback;
+    }
+    this.device.queue.writeBuffer(this.productTopologyCommandBuffer, 0, plan.commandData);
+    const bindGroup = this.device.createBindGroup({
+      layout: this.productTopologyWritebackPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.nextBuffer } },
+        { binding: 1, resource: { buffer: this.productTopologyCommandBuffer } }
+      ]
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.productTopologyWritebackPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.max(1, Math.ceil(plan.commandCount / WORKGROUP_SIZE)));
+    pass.end();
+    const dispatched = {
+      ...plan,
+      status: 'webgpu-command-buffer-dispatched',
+      webgpuCommandBufferReady: true,
+      webgpuKernelApplied: true
+    };
+    state.quantumMaterialProductTopologyGpuWriteback = publicProductTopologyGpuWritebackReport(dispatched);
+    return state.quantumMaterialProductTopologyGpuWriteback;
+  }
+
   async stepNeighborList(state, options) {
     const atomData = atomDataFromState(state);
     const layout = getMolecularNeighborGridLayout({ atomCount: state.atomCount, state });
@@ -8272,6 +8665,18 @@ class MolecularDynamicsWebGpuRuntime {
     pass.setBindGroup(0, integrateBindGroup);
     pass.dispatchWorkgroups(workgroups);
     pass.end();
+    const plannedQuantumMaterialSource = options.quantumMaterialSource?.schema === MOLECULAR_QUANTUM_MATERIAL_SOURCE_SCHEMA
+      ? options.quantumMaterialSource
+      : createQuantumMaterialSourceApplicationReport(state, options.quantumMaterialSource, {
+        applicationMode: 'webgpu-neighbor-product-topology-writeback-plan',
+        webgpuKernelApplied: false
+      });
+    const productTopologyGpuWriteback = this.dispatchProductTopologyWriteback(
+      encoder,
+      state,
+      plannedQuantumMaterialSource,
+      { mode: 'webgpu-neighbor-product-topology-command-buffer' }
+    );
     encoder.copyBufferToBuffer(this.nextBuffer, 0, this.readBuffer, 0, atomData.byteLength);
     encoder.copyBufferToBuffer(this.neighborStatsBuffer, 0, this.neighborStatsReadBuffer, 0, MOLECULAR_NEIGHBOR_STATS_UINTS * Uint32Array.BYTES_PER_ELEMENT);
     this.device.queue.submit([encoder.finish()]);
@@ -8318,7 +8723,10 @@ class MolecularDynamicsWebGpuRuntime {
       strength: quantumMaterialSource.applied ? 0.74 : 0.58
     });
     const productTopologyMutation = applyQuantumMaterialProductTopologyMutation(state, quantumMaterialSource, {
-      sourceMode: 'webgpu-neighbor-post-integrate-topology-commit'
+      sourceMode: productTopologyGpuWriteback?.webgpuKernelApplied
+        ? 'webgpu-neighbor-atom-buffer-topology-writeback'
+        : 'webgpu-neighbor-post-integrate-topology-commit',
+      gpuWriteback: productTopologyGpuWriteback
     });
     state.reactionProgress = clamp(state.reactionProgress * 0.98 + options.reactionProgress * 0.01 + options.fireIntensity * options.oxygenFraction * 0.01, 0, 1);
     state.elapsedTime += options.dt;
@@ -8431,6 +8839,11 @@ class MolecularDynamicsWebGpuRuntime {
         quantumMaterialReactionProductTopologyMutationStatus: productTopologyMutation.status,
         quantumMaterialReactionProductTopologyMutatedAtomCount: productTopologyMutation.mutatedAtomCount || 0,
         quantumMaterialReactionProductTopologyRetiredWaterGroupCount: productTopologyMutation.retiredWaterGroupCount || 0,
+        quantumMaterialReactionProductTopologyGpuWritebackApplied: productTopologyGpuWriteback?.applied === true,
+        quantumMaterialReactionProductTopologyGpuWritebackKernelApplied: productTopologyGpuWriteback?.webgpuKernelApplied === true,
+        quantumMaterialReactionProductTopologyGpuWritebackStatus: productTopologyGpuWriteback?.status || null,
+        quantumMaterialReactionProductTopologyGpuWritebackCommandCount: productTopologyGpuWriteback?.commandCount || 0,
+        quantumMaterialReactionProductTopologyGpuWritebackCommandFloatStride: productTopologyGpuWriteback?.commandFloatStride || 0,
         quantumMaterialReactionProductConservationAuditSchema: productConservationAudit.schema,
         quantumMaterialReactionProductConservationClosed: productConservationAudit.reducedAtomConservationClosed === true,
         quantumMaterialReactionProductGraphComplete: productConservationAudit.reducedProductGraphComplete === true,
@@ -8472,6 +8885,24 @@ class MolecularDynamicsWebGpuRuntime {
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(workgroups);
     pass.end();
+    const plannedQuantumMaterialSource = options.quantumMaterialSource?.schema === MOLECULAR_QUANTUM_MATERIAL_SOURCE_SCHEMA
+      ? options.quantumMaterialSource
+      : createQuantumMaterialSourceApplicationReport(state, options.quantumMaterialSource, {
+        applicationMode: fallback
+          ? 'webgpu-reference-overflow-product-topology-writeback-plan'
+          : 'webgpu-reference-product-topology-writeback-plan',
+        webgpuKernelApplied: false
+      });
+    const productTopologyGpuWriteback = this.dispatchProductTopologyWriteback(
+      encoder,
+      state,
+      plannedQuantumMaterialSource,
+      {
+        mode: fallback
+          ? 'webgpu-reference-overflow-product-topology-command-buffer'
+          : 'webgpu-reference-product-topology-command-buffer'
+      }
+    );
     encoder.copyBufferToBuffer(this.nextBuffer, 0, this.readBuffer, 0, atomData.byteLength);
     this.device.queue.submit([encoder.finish()]);
     await this.device.queue.onSubmittedWorkDone?.();
@@ -8495,7 +8926,10 @@ class MolecularDynamicsWebGpuRuntime {
       strength: quantumMaterialSource.applied ? 0.74 : 0.58
     });
     const productTopologyMutation = applyQuantumMaterialProductTopologyMutation(state, quantumMaterialSource, {
-      sourceMode: fallback ? 'webgpu-reference-overflow-post-integrate-topology-commit' : 'webgpu-reference-post-integrate-topology-commit'
+      sourceMode: productTopologyGpuWriteback?.webgpuKernelApplied
+        ? (fallback ? 'webgpu-reference-overflow-atom-buffer-topology-writeback' : 'webgpu-reference-atom-buffer-topology-writeback')
+        : (fallback ? 'webgpu-reference-overflow-post-integrate-topology-commit' : 'webgpu-reference-post-integrate-topology-commit'),
+      gpuWriteback: productTopologyGpuWriteback
     });
     state.reactionProgress = clamp(state.reactionProgress * 0.98 + options.reactionProgress * 0.01 + options.fireIntensity * options.oxygenFraction * 0.01, 0, 1);
     state.elapsedTime += options.dt;
@@ -8608,6 +9042,11 @@ class MolecularDynamicsWebGpuRuntime {
         quantumMaterialReactionProductTopologyMutationStatus: productTopologyMutation.status,
         quantumMaterialReactionProductTopologyMutatedAtomCount: productTopologyMutation.mutatedAtomCount || 0,
         quantumMaterialReactionProductTopologyRetiredWaterGroupCount: productTopologyMutation.retiredWaterGroupCount || 0,
+        quantumMaterialReactionProductTopologyGpuWritebackApplied: productTopologyGpuWriteback?.applied === true,
+        quantumMaterialReactionProductTopologyGpuWritebackKernelApplied: productTopologyGpuWriteback?.webgpuKernelApplied === true,
+        quantumMaterialReactionProductTopologyGpuWritebackStatus: productTopologyGpuWriteback?.status || null,
+        quantumMaterialReactionProductTopologyGpuWritebackCommandCount: productTopologyGpuWriteback?.commandCount || 0,
+        quantumMaterialReactionProductTopologyGpuWritebackCommandFloatStride: productTopologyGpuWriteback?.commandFloatStride || 0,
         quantumMaterialReactionProductConservationAuditSchema: productConservationAudit.schema,
         quantumMaterialReactionProductConservationClosed: productConservationAudit.reducedAtomConservationClosed === true,
         quantumMaterialReactionProductGraphComplete: productConservationAudit.reducedProductGraphComplete === true,
@@ -8973,6 +9412,10 @@ export async function stepMolecularDynamics(payload = {}) {
     quantumMaterialReactionProductTopologyNewMutationApplied: diagnostics.quantumMaterialReactionProductTopologyNewMutationApplied === true,
     quantumMaterialReactionProductTopologyMutatedAtomCount: diagnostics.quantumMaterialReactionProductTopologyMutatedAtomCount || 0,
     quantumMaterialReactionProductTopologyRetiredWaterGroupCount: diagnostics.quantumMaterialReactionProductTopologyRetiredWaterGroupCount || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackApplied: diagnostics.quantumMaterialReactionProductTopologyGpuWritebackApplied === true,
+    quantumMaterialReactionProductTopologyGpuWritebackKernelApplied: diagnostics.quantumMaterialReactionProductTopologyGpuWritebackKernelApplied === true,
+    quantumMaterialReactionProductTopologyGpuWritebackCommandCount: diagnostics.quantumMaterialReactionProductTopologyGpuWritebackCommandCount || 0,
+    quantumMaterialReactionProductTopologyGpuWritebackCommandFloatStride: diagnostics.quantumMaterialReactionProductTopologyGpuWritebackCommandFloatStride || 0,
     molecularTopologyBufferAtomFloatStride: diagnostics.molecularTopologyBufferAtomFloatStride,
     molecularTopologyBufferMetadataFloatOffset: diagnostics.molecularTopologyBufferMetadataFloatOffset,
     molecularTopologyBufferMetadataFloatCount: diagnostics.molecularTopologyBufferMetadataFloatCount,

@@ -2,6 +2,55 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-05 17:29:25 AKDT - Remote solver cadence promotion handoff
+
+### Prompt
+- User asked to keep going on the ULG implementation plan, keep commits local only, keep the Vite demo available from the VPN on `0.0.0.0`, and continue coordinating the related PeerCompute/MoonLab/Eshkol/ULG work.
+- Prompt time/date recorded from the local machine: `2026-06-05 17:29:25 AKDT`.
+
+### Actions
+- Fixed the Multiscale live NodeKernel smoke path so remote-solver policy promotion queues a fresh promoted solver refresh for `cosmologyExpansion`.
+- Extended solver-submission budgeting with `remoteSolverPlacementRun` / `remoteSolverPlacementDecision` telemetry so promoted coarse remote solver work is admitted under backlog.
+- Made remote-solver policy configuration reuse an already dispatch-ready NodeKernel placement executor instead of re-attaching and disturbing balanced peer rotation.
+- Added focused HUD coverage for `remote peer plan` and a `refreshReadout()` API for smoke diagnostics.
+- Rebuilt `docs/multiscale` because the remote-placement smoke serves the static docs bundle.
+- Restored `docs/multiscale/relay-config.json` to the VPN WSS/TURN config after the local smoke wrote an ephemeral relay entry.
+- Confirmed the ULG Vite server on port `5173` still returns HTTP `200`.
+
+### Files Touched
+- `demos/multiscale/src/compute/solverSubmissionBudget.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/liveRemotePlacementSmoke.mjs`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/src/compute/solverSubmissionBudget.js`
+- `node --test --test-name-pattern "solver submission budget" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `MULTISCALE_REMOTE_COMPUTE_TIMEOUT_MS=90000 MULTISCALE_REMOTE_SMOKE_TIMEOUT_MS=150000 npm --prefix demos/multiscale run test:remote-placement`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `curl -fsSI http://127.0.0.1:5173/`
+
+### Test Results
+- PASS: syntax checks completed for `main.js` and `solverSubmissionBudget.js`.
+- PASS: focused solver-submission budget tests passed with `6/6`.
+- PASS: Multiscale Vite build completed; existing large-chunk warnings remain non-fatal.
+- PASS: live remote-placement smoke passed, proving ordinary runtime `cosmologyExpansion` cadence can execute as redundant `remote-peer` work after remote-solver policy promotion, with balanced placement, failover promotion, peer reliability, worker provenance, and remote HUD/debug rows.
+- PASS: full Multiscale model suite passed with `171/171`.
+- PASS: ULG Vite server responded HTTP `200` on port `5173`.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- This is an integration/runtime handoff gate for remote coarse solver work; it is not a scientific validation gate for magnetar simulation fidelity.
+
 ## 2026-06-05 07:32:02 AKDT - Live demo URL refresh
 
 ### Prompt

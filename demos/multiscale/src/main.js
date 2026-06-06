@@ -769,6 +769,7 @@ let solverSubmissionBudgetReport = createSolverSubmissionBudget({
 });
 let activeLayerRefreshLayerId = null;
 const activeLayerRefreshSolverKeys = new Set();
+const remoteSolverPlacementRefreshSolverKeys = new Set();
 let hudMode = 'focus';
 let renderBudgetReport = scene.getRenderBudgetStatus();
 let readbackBudgetReport = createMultiscaleReadbackBudget({
@@ -2387,6 +2388,7 @@ function resetSolverRuntimeFromBudget({ reason = 'solver-workload-resize' } = {}
   lastSolverRemapReport = createSolverRemapReport(previousStates, reason);
   solverFrame = 0;
   renderFrame = 0;
+  remoteSolverPlacementRefreshSolverKeys.clear();
   updateSolverRuntimeStatus();
 }
 
@@ -2687,6 +2689,11 @@ const FOCUS_LAYER_READOUT_ROWS = new Set([
   'ulg runtime',
   'particle budget',
   'memory pressure',
+  'remote peer',
+  'remote peer plan',
+  'remote reliability',
+  'remote solver',
+  'remote decisions',
   'solver load',
   'solver focus',
   'refinement schedule',
@@ -4130,14 +4137,31 @@ function refreshRemoteSolverPlacementDecisions({
   return remoteSolverPlacementDecisionReport;
 }
 
+function queueRemoteSolverPlacementRefreshes(decisionReport = remoteSolverPlacementDecisionReport) {
+  const promotedKeys = Array.isArray(decisionReport?.promotedKeys)
+    ? decisionReport.promotedKeys
+    : [];
+  for (const key of promotedKeys) {
+    if (getSolverStepEntries().some((entry) => entry.key === key)) {
+      remoteSolverPlacementRefreshSolverKeys.add(key);
+    }
+  }
+  return promotedKeys;
+}
+
 function configureRemoteSolverPlacementRuntime(config = {}) {
   applyRemoteSolverPlacementOverrideConfig(config);
+  const activeReadiness = refreshRemotePlacementReadiness();
+  const nodeKernelAttach = activeReadiness.dispatchReady === true
+    ? { attached: false, reason: 'remote-placement-already-ready' }
+    : maybeAttachNodeKernelPlacementExecutor();
   const placementPlan = placementPlanReport || refreshPlacementPlan();
-  const readiness = remotePlacementReadinessReport || refreshRemotePlacementReadiness({ placementPlan });
+  const readiness = refreshRemotePlacementReadiness({ placementPlan });
   const policy = refreshRemoteSolverPlacementPolicy({
     readiness,
     placementPlan
   });
+  const remoteSolverPlacementRefreshKeys = queueRemoteSolverPlacementRefreshes(remoteSolverPlacementDecisionReport);
   refreshComputeStatus();
   renderReadout();
   return {
@@ -4145,7 +4169,9 @@ function configureRemoteSolverPlacementRuntime(config = {}) {
     policy: cloneJson(policy),
     decisions: cloneJson(remoteSolverPlacementDecisionReport),
     remotePlacementReadiness: cloneJson(readiness),
-    placementPlan: cloneJson(placementPlan)
+    placementPlan: cloneJson(placementPlan),
+    nodeKernelAttach: cloneJson(nodeKernelAttach),
+    remoteSolverPlacementRefreshKeys
   };
 }
 
@@ -6905,14 +6931,24 @@ function createSolverSubmissionCandidates(frame, cadenceContext, refinementRepor
       const warmupRun = shouldRunActiveLayerWarmupSolver(key, cadenceContext.activeLayerId);
       const dependencyDecision = getMolecularLowerLawDependencyDecision(key, cadenceContext.activeLayerId);
       const dependencyRun = dependencyDecision?.shouldRun === true;
-      if (!cadenceRun && !refinementRun && !warmupRun && !dependencyRun) return null;
+      const remoteSolverPlacementRun = remoteSolverPlacementRefreshSolverKeys.has(key);
+      if (!cadenceRun && !refinementRun && !warmupRun && !dependencyRun && !remoteSolverPlacementRun) return null;
       return {
         key,
         cadenceRun,
         warmupRun,
         refinementRun,
         dependencyRun,
+        remoteSolverPlacementRun,
         dependencyDecision,
+        remoteSolverPlacementDecision: remoteSolverPlacementRun
+          ? {
+            triggerType: 'remote-solver-placement',
+            reason: 'promoted-remote-solver-refresh',
+            priority: 96,
+            decision: remoteSolverPlacementDecisionReport?.entries?.[key] || null
+          }
+          : null,
         refinementDecision: refinementReport?.solverDecisions?.[key] || null,
         pending: solverRuntimeStatus?.[key]?.pending === true
       };
@@ -6956,6 +6992,7 @@ function stepSolverWorkers() {
       step();
       if (stateManager.isInitialized) {
         activeLayerRefreshSolverKeys.delete(key);
+        remoteSolverPlacementRefreshSolverKeys.delete(key);
       }
     }
   }
@@ -10176,6 +10213,17 @@ window.__multiscaleDemo = {
       force: options?.force !== false,
       reason: options?.reason || 'api'
     }));
+  },
+  refreshReadout(options = {}) {
+    renderReadout(getClockMs(), {
+      forceRuntimeDebug: options?.forceRuntimeDebug !== false
+    });
+    return {
+      readoutText: layerReadout?.textContent || '',
+      runtimeDebugText: runtimeDebugReadout?.textContent || '',
+      rowCount: lastLayerReadoutRowCount,
+      totalRowCount: lastLayerReadoutTotalRowCount
+    };
   },
   getRenderBudget() {
     return cloneJson(renderBudgetReport || refreshRenderBudget({ reason: 'api' }));

@@ -5743,6 +5743,47 @@ test('solver submission budget prioritizes active-layer warmup over repeated cad
   assert.equal(shouldSubmitSolver(budget, 'nbody'), false);
 });
 
+test('solver submission budget admits promoted remote solver refreshes under backlog', () => {
+  const budget = createSolverSubmissionBudget({
+    frame: 32,
+    activeLayerId: 'molecular',
+    runtimeScaler: { pressure: 4.2, frameMsAvg: 96 },
+    managerStats: {
+      targetWorkers: 4,
+      activeTaskCount: 4,
+      queuedTaskCount: 6,
+      currentLoad: 2
+    },
+    candidates: [
+      { key: 'molecularDynamics', cadenceRun: true },
+      {
+        key: 'cosmologyExpansion',
+        remoteSolverPlacementRun: true,
+        remoteSolverPlacementDecision: {
+          triggerType: 'remote-solver-placement',
+          reason: 'promoted-remote-solver-refresh',
+          priority: 96
+        }
+      },
+      { key: 'hydroAtmosphere', cadenceRun: true }
+    ]
+  });
+
+  assert.equal(budget.schema, MULTISCALE_SOLVER_SUBMISSION_BUDGET_SCHEMA);
+  assert.equal(budget.maxSubmissions, 1);
+  assert.equal(budget.urgentCandidateCount, 2);
+  assert.deepEqual(budget.admittedSolvers, ['cosmologyExpansion']);
+  assert.equal(budget.decisions.cosmologyExpansion.source, 'remote-solver-placement');
+  assert.equal(budget.decisions.cosmologyExpansion.remoteSolverPlacementRun, true);
+  assert.equal(budget.decisions.cosmologyExpansion.triggerType, 'remote-solver-placement');
+  assert.equal(
+    budget.decisions.cosmologyExpansion.remoteSolverPlacementDecision.reason,
+    'promoted-remote-solver-refresh'
+  );
+  assert.equal(shouldSubmitSolver(budget, 'cosmologyExpansion'), true);
+  assert.equal(shouldSubmitSolver(budget, 'molecularDynamics'), false);
+});
+
 test('solver submission budget holds distant background work during manager backlog', () => {
   const budget = createSolverSubmissionBudget({
     frame: 26,

@@ -79,10 +79,26 @@ function candidatePriority(candidate, activeLayerId) {
   const sampleBoost = triggerType === 'sample' ? 40 : 0;
   const dependencyBoost = candidate.dependencyRun ? 34 : 0;
   const warmupBoost = candidate.warmupRun ? 36 : 0;
+  const remoteSolverPlacementBoost = candidate.remoteSolverPlacementRun ? 96 : 0;
   const activeBoost = distance === 0 ? 80 : Math.max(0, 28 - distance * 8);
   const cadenceBoost = candidate.cadenceRun ? 12 : 0;
-  const explicitPriority = finiteNumber(candidate.refinementDecision?.priority ?? candidate.dependencyDecision?.priority, 0);
-  return Number((eventBoost + sampleBoost + dependencyBoost + warmupBoost + activeBoost + cadenceBoost + explicitPriority - distance).toFixed(3));
+  const explicitPriority = finiteNumber(
+    candidate.refinementDecision?.priority
+      ?? candidate.dependencyDecision?.priority
+      ?? candidate.remoteSolverPlacementDecision?.priority,
+    0
+  );
+  return Number((
+    eventBoost
+    + sampleBoost
+    + dependencyBoost
+    + warmupBoost
+    + remoteSolverPlacementBoost
+    + activeBoost
+    + cadenceBoost
+    + explicitPriority
+    - distance
+  ).toFixed(3));
 }
 
 export function createSolverSubmissionBudget({
@@ -112,12 +128,16 @@ export function createSolverSubmissionBudget({
   const normalizedCandidates = candidates.map((candidate, index) => {
     const key = String(candidate.key || '').trim();
     const distance = layerDistance(key, normalizedLayer);
-    const triggerType = candidate.refinementDecision?.triggerType || candidate.dependencyDecision?.triggerType || null;
+    const triggerType = candidate.refinementDecision?.triggerType
+      || candidate.dependencyDecision?.triggerType
+      || candidate.remoteSolverPlacementDecision?.triggerType
+      || null;
     const cadenceSource = candidate.warmupRun ? 'warmup' : 'cadence';
     const sourceParts = [];
     if (candidate.cadenceRun || candidate.warmupRun) sourceParts.push(cadenceSource);
     if (candidate.refinementRun) sourceParts.push('refinement');
     if (candidate.dependencyRun) sourceParts.push('dependency');
+    if (candidate.remoteSolverPlacementRun) sourceParts.push('remote-solver-placement');
     const source = sourceParts.length ? sourceParts.join('+') : cadenceSource;
     return {
       key,
@@ -127,9 +147,11 @@ export function createSolverSubmissionBudget({
       warmupRun: candidate.warmupRun === true,
       refinementRun: candidate.refinementRun === true,
       dependencyRun: candidate.dependencyRun === true,
+      remoteSolverPlacementRun: candidate.remoteSolverPlacementRun === true,
       source,
       triggerType,
       dependencyDecision: candidate.dependencyDecision || null,
+      remoteSolverPlacementDecision: candidate.remoteSolverPlacementDecision || null,
       solverLayerId: SOLVER_LAYER_AFFINITY[key] || null,
       activeLayerId: normalizedLayer,
       layerDistance: distance,
@@ -138,7 +160,10 @@ export function createSolverSubmissionBudget({
   }).filter((candidate) => candidate.key);
   const runnableCandidates = normalizedCandidates.filter((candidate) => !candidate.pending);
   const urgentCandidateCount = runnableCandidates.filter((candidate) => {
-    return candidate.triggerType === 'event' || candidate.dependencyRun || candidate.layerDistance === 0;
+    return candidate.triggerType === 'event'
+      || candidate.dependencyRun
+      || candidate.remoteSolverPlacementRun
+      || candidate.layerDistance === 0;
   }).length;
   const hardLimit = maxSubmissions == null
     ? runnableCandidates.length
@@ -173,7 +198,9 @@ export function createSolverSubmissionBudget({
       warmupRun: candidate.warmupRun,
       refinementRun: candidate.refinementRun,
       dependencyRun: candidate.dependencyRun,
+      remoteSolverPlacementRun: candidate.remoteSolverPlacementRun,
       dependencyDecision: candidate.dependencyDecision,
+      remoteSolverPlacementDecision: candidate.remoteSolverPlacementDecision,
       solverLayerId: candidate.solverLayerId,
       activeLayerId: candidate.activeLayerId,
       layerDistance: candidate.layerDistance,

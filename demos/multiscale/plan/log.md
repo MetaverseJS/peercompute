@@ -1,5 +1,52 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-05 17:29:25 AKDT - Remote solver cadence promotion handoff
+
+### Prompt
+User asked to keep following the ULG implementation plan, keep commits local only, keep the ULG Vite server available on `0.0.0.0`, and continue improving the PeerCompute/MoonLab/Eshkol/ULG integration path.
+
+### Actions Attempted
+- Fixed the live NodeKernel remote-placement smoke path so a remote-solver policy promotion schedules a fresh `cosmologyExpansion` solver step instead of waiting for ordinary cadence/backlog to eventually run it.
+- Added promoted remote solver refresh candidates to the solver submission budget with urgent priority and source telemetry.
+- Preserved active balanced NodeKernel placement executors when configuring remote-solver policy, so balanced primary rotation is not overwritten by a later solver-policy attach.
+- Added focused readout coverage for `remote peer plan` plus a `refreshReadout()` demo API used by the smoke diagnostics.
+- Rebuilt the checked-in `docs/multiscale` bundle and restored the VPN relay config after the local smoke rewrote it.
+
+### Files Touched
+- `demos/multiscale/src/compute/solverSubmissionBudget.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/liveRemotePlacementSmoke.mjs`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/src/compute/solverSubmissionBudget.js`
+- `node --test --test-name-pattern "solver submission budget" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `MULTISCALE_REMOTE_COMPUTE_TIMEOUT_MS=90000 MULTISCALE_REMOTE_SMOKE_TIMEOUT_MS=150000 npm --prefix demos/multiscale run test:remote-placement`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `curl -fsSI http://127.0.0.1:5173/`
+
+### Results
+- PASS: syntax checks passed for `main.js` and `solverSubmissionBudget.js`.
+- PASS: focused solver-submission budget tests passed with `6/6`.
+- PASS: Vite production build completed; existing large-chunk warnings remain non-fatal.
+- PASS: live remote-placement smoke passed, including runtime remote solver cadence, balanced redundant placement, failover promotion, remote worker provenance, scoped peer reliability, and `remote peer` / `remote peer plan` / `remote reliability` / `remote decisions` HUD/debug evidence.
+- PASS: full Multiscale model suite passed with `171/171`.
+- PASS: ULG Vite server returned HTTP `200` on `http://127.0.0.1:5173/`.
+
+### Failures / Open Questions
+- No failures in this checkpoint.
+- The checked-in docs bundle changed hashed assets because the live smoke serves `docs/multiscale`, not the source tree.
+- This checkpoint proves remote compute handoff for the coarse cosmology solver, not a complete magnetar scientific model.
+
 ## 2026-06-05 07:32:02 AKDT - Live demo URL refresh
 
 ### Prompt
