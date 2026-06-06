@@ -65,6 +65,13 @@ import {
 const MOONLAB_REFERENCE_CONTRACT_HASH = 'sha256:fixture-moonlab-reference-001';
 const ESHKOL_DESCRIPTOR_INPUT_IDS = ['magnetar-state-vector', 'closure-control-vector'];
 const ESHKOL_DESCRIPTOR_OUTPUT_IDS = ['magnetar-closure-update', 'closure-residual'];
+const MINIMAL_WASM_MAIN_EXPORT_BYTES = [
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+  0x03, 0x02, 0x01, 0x00,
+  0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00,
+  0x0a, 0x04, 0x01, 0x02, 0x00, 0x0b
+];
 
 function createEshkolMagnetarDescriptorArtifact() {
   return {
@@ -1986,6 +1993,90 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
 
   const cached = await artifactCache.get(result.artifactRef);
   assert.equal(cached.dispatchResult.results[1].output.serviceResult.probe.probeMode, 'descriptor-contract-metadata-only');
+});
+
+test('ULG Eshkol dispatch adapter dry-instantiates complete WASM without invoking main', async () => {
+  const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
+  const eshkolManifest = createUlgDispatchServiceManifests({ serviceIds })
+    .find((entry) => entry.serviceId === 'eshkol-ulg-fixture');
+  const registry = new ComputeServiceRegistry([eshkolManifest]);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    workerFactory: (serviceManifest) => new UlgDispatchServiceHost(serviceManifest, {
+      requestChildLease: false
+    })
+  });
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'eshkol-ulg-fixture',
+    taskKind: 'eshkol.ulg.closure-artifact.ingest',
+    taskId: 'task:eshkol-dry-runtime-probe',
+    rootTaskId: 'root:eshkol-dry-runtime-probe',
+    artifactPayload: {
+      schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+      handoffId: 'handoff:eshkol-dry-runtime-probe',
+      dispatchId: 'handoff:eshkol-dry-runtime-probe:dispatch:0',
+      sourceService: 'eshkol',
+      artifactKind: 'closure',
+      artifactRefUri: 'artifact://eshkol-minimal-wasm',
+      artifactContentHash: 'sha256:eshkol-minimal-wasm',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'pass',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureImportCount: 0,
+        closureExportCount: 1,
+        closureEntryExport: 'main',
+        closureServiceWorkerSafe: true,
+        closureRequiresDynamicCode: false
+      },
+      artifact: {
+        closureId: 'eshkol:minimal-wasm',
+        sourceService: 'eshkol',
+        closureKind: 'minimal-wasm-main-export',
+        execution: {
+          serviceWorkerSafe: true,
+          entryExport: 'main',
+          imports: [],
+          exports: [{ name: 'main', kind: 'function' }]
+        },
+        validity: {
+          requiresDynamicCode: false
+        },
+        validation: {
+          status: 'pass'
+        }
+      },
+      wasmBytes: MINIMAL_WASM_MAIN_EXPORT_BYTES,
+      wasmByteLength: MINIMAL_WASM_MAIN_EXPORT_BYTES.length,
+      wasmSha256: 'sha256:eshkol-minimal-wasm',
+      hasTransferredWasmBytes: true
+    }
+  });
+
+  assert.equal(result.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.serviceStatus, 'accepted');
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.probe.schema, 'peercompute.ulg.eshkol-dispatch-wasm-probe.v0');
+  assert.equal(result.probe.status, 'pass');
+  assert.equal(result.probe.moduleCompiled, true);
+  assert.equal(result.probe.importCount, 0);
+  assert.equal(result.probe.exportCount, 1);
+  assert.equal(result.probe.hasEntryExport, true);
+  assert.equal(result.probe.hostRuntimeProbe.schema, 'peercompute.ulg.eshkol-host-runtime-dry-probe.v0');
+  assert.equal(result.probe.hostRuntimeProbe.status, 'host-runtime-dry-probe-ready');
+  assert.equal(result.probe.hostRuntimeProbe.ready, true);
+  assert.equal(result.probe.hostRuntimeProbe.instantiated, true);
+  assert.equal(result.probe.hostRuntimeProbe.entryExportAvailable, true);
+  assert.equal(result.probe.hostRuntimeProbe.mainInvoked, false);
+  assert.equal(result.probe.hostRuntimeProbe.scientificExecution, false);
+  assert.equal(result.ingest.hostRuntimeProbeReady, true);
+  assert.equal(result.ingest.hostRuntimeInstantiated, true);
+  assert.equal(result.ingest.hostRuntimeStubCallCount, 0);
 });
 
 test('ULG Eshkol and MoonLab fixtures run through registry, supervisor, leases, and telemetry', async () => {

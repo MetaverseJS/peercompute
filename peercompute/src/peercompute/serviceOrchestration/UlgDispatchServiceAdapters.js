@@ -119,6 +119,185 @@ function declaredCount(summaryValue, declaredEntries = []) {
   return Array.isArray(declaredEntries) && declaredEntries.length > 0 ? declaredEntries.length : null;
 }
 
+function readUnsignedLeb128(bytes, offset = 0) {
+  let result = 0;
+  let shift = 0;
+  let nextOffset = offset;
+  while (nextOffset < bytes.length) {
+    const byte = bytes[nextOffset];
+    nextOffset += 1;
+    result |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) {
+      return { value: result >>> 0, offset: nextOffset };
+    }
+    shift += 7;
+  }
+  throw new Error('Malformed WASM varuint');
+}
+
+function getWasmStartFunctionIndex(wasmBytes) {
+  const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
+  if (bytes.length < 8) return null;
+  const magicOk = bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+  if (!magicOk) return null;
+  let offset = 8;
+  while (offset < bytes.length) {
+    const sectionId = bytes[offset];
+    offset += 1;
+    const sectionSize = readUnsignedLeb128(bytes, offset);
+    offset = sectionSize.offset;
+    const sectionEnd = offset + sectionSize.value;
+    if (sectionEnd > bytes.length) return null;
+    if (sectionId === 8) {
+      return readUnsignedLeb128(bytes, offset).value;
+    }
+    offset = sectionEnd;
+  }
+  return null;
+}
+
+function createClosureHostRuntimeTable(initial = 64) {
+  try {
+    return new WebAssembly.Table({ initial, element: 'anyfunc' });
+  } catch {
+    return new WebAssembly.Table({ initial, element: 'funcref' });
+  }
+}
+
+function findDeclaredImportEntry(observed = {}, declaredImports = []) {
+  return declaredImports.find((entry) => (
+    entry?.module === observed.module
+    && entry?.name === observed.name
+    && entry?.kind === observed.kind
+  )) || null;
+}
+
+function createEshkolHostRuntimeStubImports(observedImports = [], declaredImports = [], options = {}) {
+  const importObject = {};
+  const calls = [];
+  let functionStubCount = 0;
+  let memoryStubCount = 0;
+  let globalStubCount = 0;
+  let tableStubCount = 0;
+
+  const ensureModule = (moduleName = 'env') => {
+    if (!importObject[moduleName]) importObject[moduleName] = {};
+    return importObject[moduleName];
+  };
+
+  for (const entry of observedImports) {
+    const moduleName = entry.module || 'env';
+    const name = entry.name || '';
+    const moduleImports = ensureModule(moduleName);
+    if (!name || moduleImports[name]) continue;
+    const declared = findDeclaredImportEntry(entry, declaredImports);
+    if (entry.kind === 'function') {
+      functionStubCount += 1;
+      moduleImports[name] = (...args) => {
+        calls.push({ module: moduleName, name, argCount: args.length });
+        return 0;
+      };
+    } else if (entry.kind === 'memory') {
+      memoryStubCount += 1;
+      const limits = objectOrNull(declared?.limits);
+      const fallbackInitial = Math.max(1, Math.floor(Number(options.memoryInitialPages || 256)));
+      const initial = Number.isFinite(Number(limits?.minimum))
+        ? Math.max(fallbackInitial, Math.floor(Number(limits.minimum)))
+        : fallbackInitial;
+      const descriptor = { initial };
+      if (limits?.hasMaximum === true && Number.isFinite(Number(limits.maximum))) {
+        descriptor.maximum = Math.max(initial, Math.floor(Number(limits.maximum)));
+      }
+      moduleImports[name] = new WebAssembly.Memory(descriptor);
+    } else if (entry.kind === 'global') {
+      globalStubCount += 1;
+      const valueType = declared?.valueType === 'i64' ? 'i64' : 'i32';
+      const mutable = typeof declared?.mutable === 'boolean' ? declared.mutable : true;
+      const initialValue = valueType === 'i64'
+        ? 0n
+        : (name === '__stack_pointer' ? (options.stackPointerValue || 1048576) : 0);
+      moduleImports[name] = new WebAssembly.Global({ value: valueType, mutable }, initialValue);
+    } else if (entry.kind === 'table') {
+      tableStubCount += 1;
+      const limits = objectOrNull(declared?.limits);
+      const fallbackInitial = Math.max(0, Math.floor(Number(options.tableInitial || 256)));
+      const initial = Number.isFinite(Number(limits?.minimum))
+        ? Math.max(fallbackInitial, Math.floor(Number(limits.minimum)))
+        : fallbackInitial;
+      moduleImports[name] = createClosureHostRuntimeTable(initial);
+    }
+  }
+
+  return {
+    importObject,
+    calls,
+    functionStubCount,
+    memoryStubCount,
+    globalStubCount,
+    tableStubCount
+  };
+}
+
+async function dryProbeEshkolHostRuntime({ module, wasmBytes, observedImports = [], declaredImports = [], entryExport = 'main' }) {
+  const startFunctionIndex = getWasmStartFunctionIndex(wasmBytes);
+  if (startFunctionIndex !== null) {
+    return {
+      schema: 'peercompute.ulg.eshkol-host-runtime-dry-probe.v0',
+      status: 'blocked-start-section',
+      ready: false,
+      mode: 'stub-import-dry-instantiate-v0',
+      stubbed: false,
+      importObjectCreated: false,
+      instantiated: false,
+      importCount: observedImports.length,
+      functionStubCount: 0,
+      memoryStubCount: 0,
+      globalStubCount: 0,
+      tableStubCount: 0,
+      stubCallCount: 0,
+      startFunctionIndex,
+      entryExport,
+      entryExportAvailable: false,
+      mainInvoked: false,
+      scientificExecution: false,
+      error: 'WASM start section present; dry instantiate with inert host imports is blocked.'
+    };
+  }
+
+  const stub = createEshkolHostRuntimeStubImports(observedImports, declaredImports);
+  let instance = null;
+  let error = null;
+  try {
+    instance = await WebAssembly.instantiate(module, stub.importObject);
+  } catch (err) {
+    error = err?.message || String(err);
+  }
+  const exports = instance?.exports || {};
+  const entryExportAvailable = typeof exports[entryExport] === 'function';
+  const ready = Boolean(instance && entryExportAvailable);
+  return {
+    schema: 'peercompute.ulg.eshkol-host-runtime-dry-probe.v0',
+    status: ready ? 'host-runtime-dry-probe-ready' : 'host-runtime-dry-probe-pending',
+    ready,
+    mode: 'stub-import-dry-instantiate-v0',
+    stubbed: true,
+    importObjectCreated: true,
+    instantiated: Boolean(instance),
+    importCount: observedImports.length,
+    functionStubCount: stub.functionStubCount,
+    memoryStubCount: stub.memoryStubCount,
+    globalStubCount: stub.globalStubCount,
+    tableStubCount: stub.tableStubCount,
+    stubCallCount: stub.calls.length,
+    startFunctionIndex,
+    entryExport,
+    entryExportAvailable,
+    mainInvoked: false,
+    scientificExecution: false,
+    error
+  };
+}
+
 function adapterConfig(sourceService, options = {}) {
   const key = String(sourceService || '').trim().toLowerCase();
   const defaults = DEFAULT_ADAPTERS[key];
@@ -564,8 +743,9 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
 
   let imports = [];
   let exports = [];
+  let module = null;
   try {
-    const module = await WebAssembly.compile(bytes);
+    module = await WebAssembly.compile(bytes);
     imports = WebAssembly.Module.imports(module);
     exports = WebAssembly.Module.exports(module);
   } catch (error) {
@@ -610,6 +790,16 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
     hasEntryExport
   });
   blockers.push(...(compiledDescriptorProbe.blockers || []));
+  const hostRuntimeProbe = await dryProbeEshkolHostRuntime({
+    module,
+    wasmBytes: bytes,
+    observedImports: imports,
+    declaredImports,
+    entryExport
+  });
+  if (hostRuntimeProbe.ready !== true) {
+    blockers.push('eshkol-host-runtime-dry-probe-not-ready');
+  }
   const uniqueBlockers = uniqueStrings(blockers);
 
   return {
@@ -634,7 +824,8 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
     hasEntryExport,
     serviceWorkerSafe: summary.closureServiceWorkerSafe === true || artifact.execution?.serviceWorkerSafe === true,
     requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null,
-    descriptorProbe: compiledDescriptorProbe
+    descriptorProbe: compiledDescriptorProbe,
+    hostRuntimeProbe
   };
 }
 
@@ -689,6 +880,11 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     descriptorContractReady: probe?.descriptorProbe?.ready === true,
     descriptorContractSchema: probe?.descriptorProbe?.schema || null,
     descriptorContractStatus: probe?.descriptorProbe?.status || null,
+    hostRuntimeProbeReady: probe?.hostRuntimeProbe?.ready === true,
+    hostRuntimeProbeSchema: probe?.hostRuntimeProbe?.schema || null,
+    hostRuntimeProbeStatus: probe?.hostRuntimeProbe?.status || null,
+    hostRuntimeInstantiated: probe?.hostRuntimeProbe?.instantiated === true,
+    hostRuntimeStubCallCount: probe?.hostRuntimeProbe?.stubCallCount ?? null,
     adapterProbe: clonePlain(probe)
   };
 }
