@@ -52712,3 +52712,130 @@ Open:
   Production magnetar handler implementation, production runtime execution, and
   full-physics validation remain intentionally blocked.
 - No push was attempted.
+
+## 2026-06-06 23:53:08 AKDT - Eshkol production handler runtime-smoke propagation
+
+### Prompt
+- User asked: "can you see the agents.md fike correctly now?"
+- Standing instruction from the same work session: keep working autonomously on
+  the ULG/MoonLab/PeerCompute/Eshkol integration, keep commits local only, do
+  not push, keep live Vite demos accessible on the VPN, and keep plan/log/test
+  files updated.
+
+### Actions
+- Re-read `/home/cos/projects/AGENTS.md`,
+  `/home/cos/projects/ulg/AGENTS.md`, and
+  `/home/cos/projects/peercompute/AGENTS.md`; confirmed the shared instruction
+  set is visible, including plan/log/test updates, vanilla JS/Vite, no `open`
+  command, Node 24, local tests, and calling the user big dog.
+- Continued PeerCompute after ULG and Eshkol local commits had staged the new
+  handler runtime-smoke evidence.
+- Updated PeerCompute artifact-summary and dispatch-ingest normalization to
+  accept `eshkol.ulg.production-handler-implementation.v0` and
+  `eshkol.ulg.production-handler-runtime-execution.v0` as bounded runtime-smoke
+  evidence.
+- Tightened Eshkol production handler boundary validation so handler readiness
+  and runtime execution are only accepted when implementation/runtime schemas,
+  statuses, execution claim, entry args/result, declared tensor-range changes,
+  and `full-physics-validation-not-run` blocker are present.
+- Preserved implementation/runtime fields through
+  `UlgDispatchServiceAdapters`, `UlgHandoffServiceHost`, Multiscale closure
+  ingest, handoff readiness, module-probe summaries, packet boundary
+  conditions, browser handoff smoke, relay handoff smoke, and
+  relay-served `docs/multiscale`.
+- Updated service orchestration, Multiscale model, browser handoff, and relay
+  handoff assertions for boundary status
+  `production-handler-runtime-smoke-executed`, `handlerReady = true`,
+  `runtimeExecution = true`, implementation evidence count `5`, runtime entry
+  args, changed bytes in the declared tensor range, host import call counts,
+  production preflight counts `10/9/1`, and false science/full-physics/full-
+  fidelity flags.
+- Rebuilt `docs/multiscale`; the generated docs bundle rotated main,
+  dispatch-adapter, and WebGPU worker asset hashes.
+- Updated `plan/plan.md`, `plan/tests.md`, `plan/implementation-status.md`,
+  `demos/multiscale/plan/plan.md`, and this log to record the new status.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `pwd`
+- `ls -l /home/cos/projects/AGENTS.md /home/cos/projects/ulg/AGENTS.md /home/cos/projects/peercompute/AGENTS.md`
+- `sed -n '1,220p' /home/cos/projects/AGENTS.md`
+- `sed -n '1,220p' /home/cos/projects/ulg/AGENTS.md`
+- `sed -n '1,220p' /home/cos/projects/peercompute/AGENTS.md`
+- `git status --short --branch`
+- `sed -n '1,240p' plan/plan.md`
+- `sed -n '1,260p' plan/log.md`
+- `sed -n '1,220p' plan/tests.md`
+- `sed -n '1,220p' plan/implementation-status.md`
+- `rg --files demos/multiscale/plan plan | sort`
+- `tail -n 160 plan/plan.md`
+- `tail -n 180 plan/log.md`
+- `tail -n 160 plan/tests.md`
+- `tail -n 180 plan/implementation-status.md`
+- `sed -n '1,240p' demos/multiscale/plan/plan.md`
+- `tail -n 180 demos/multiscale/plan/log.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `rg -n "production handler|10/7/3|10/9/1|Next|Updated|production-handler-runtime" plan/implementation-status.md plan/tests.md demos/multiscale/plan/plan.md plan/plan.md`
+- `git diff --stat`
+- `git diff -- docs/multiscale/relay-config.json docs/multiscale/.relay-config.json docs/multiscale/relay-config-source.json docs/multiscale/.relay-config-source.json`
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js && node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js demos/multiscale/tests/multiscaleModel.test.mjs demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run build`
+- `ULG_HANDOFF_URL=http://127.0.0.1:5173/ ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+
+### Results
+- PASS: AGENTS files are visible at the expected parent, ULG, and PeerCompute
+  paths.
+- PASS: syntax checks completed for all changed PeerCompute service
+  orchestration files, Multiscale source files, and smoke scripts.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `198/198`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale
+  run test:ulg-handoff` passed, confirmed magnetar visibility, `handoff-ready`,
+  implementation evidence count `5`, handler/runtime readiness true, preflight
+  counts `10/9/1`, and preserved false full-physics scope flags.
+- FAIL then fixed: adapter-enabled relay smoke initially saw stale
+  `declared-not-implemented` / runtime-overclaim behavior from the old
+  relay-served `docs/multiscale` bundle. Rebuilding `docs/multiscale` refreshed
+  the served assets.
+- PASS: `npm --prefix demos/multiscale run build` completed with only the
+  existing Vite large-chunk warning.
+- PASS: final adapter-enabled relay smoke passed with dynamic Go relay,
+  STUN/TURN relay config, two connected Multiscale browser peers, two accepted
+  dispatches, two released resource leases, zero active leases, handler/runtime
+  implementation summaries, and all scientific scope flags false.
+- PASS: relay-config diff for generated Multiscale relay config files was
+  empty.
+
+### Failures / Open Questions
+- Full magnetar physics validation has not been run. The sole production
+  preflight blocker is now `full-physics-validation-not-run`; this checkpoint
+  proves production handler implementation/runtime smoke propagation, not
+  calibrated GRMHD/PIC/radiation/full-fidelity magnetar simulation.
+- No push was attempted.

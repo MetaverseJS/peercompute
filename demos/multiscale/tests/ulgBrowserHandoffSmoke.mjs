@@ -11,13 +11,13 @@ const EXPECTED_ESHKOL_WASM_HASH = 'sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a
 const EXPECTED_ESHKOL_WASM_BYTE_LENGTH = 169528;
 const EXPECTED_ESHKOL_TENSOR_CONTRACT_HASH = 'sha256:7bc3955f9514d894def892e547d26288b305aceb0ae48fb732e2268b0d305985';
 const EXPECTED_ESHKOL_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
+const EXPECTED_ESHKOL_PRODUCTION_RUNTIME_CLAIM = 'production-candidate-host-import-runtime-smoke-only';
 const EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS = 'entry-export-runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER = 'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
 const EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL =
   new URL('/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js', ULG_URL).href;
 const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
-  'production-magnetar-handler-not-implemented',
   'full-physics-validation-not-run'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE = [
@@ -49,11 +49,11 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'production-candidate-runtime-probe-passed',
-  'runtime-smoke-stubs-rejected-for-production'
+  'runtime-smoke-stubs-rejected-for-production',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
-  'handler-ready-flag-true',
-  'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
 ];
 
@@ -89,16 +89,20 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.offsetProbeEntryExportConsumesOffsets, true);
   assert.equal(handoffProbe.offsetProbeOutputTensorsProducedByEntryExport, true);
   assert.equal(handoffProbe.offsetProbeObservedStdoutInvariantAcrossArgs, false);
-  assert.equal(handoffProbe.productionHandlerBoundaryStatus, 'declared-not-executed');
+  assert.equal(handoffProbe.productionHandlerBoundaryStatus, 'production-handler-runtime-smoke-executed');
   assert.deepEqual(handoffProbe.productionHandlerBoundaryBlockers, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
-  assert.deepEqual(handoffProbe.productionHandlerBoundaryAllowedExecutionClaims, [EXPECTED_ESHKOL_RUNTIME_CLAIM]);
+  assert.deepEqual(handoffProbe.productionHandlerBoundaryAllowedExecutionClaims, [
+    EXPECTED_ESHKOL_RUNTIME_CLAIM,
+    EXPECTED_ESHKOL_PRODUCTION_RUNTIME_CLAIM
+  ]);
   assert.equal(handoffProbe.productionHandlerBoundaryTensorMemoryStatus, EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS);
   assert.equal(handoffProbe.productionHandlerBoundaryTensorMemoryEntryExportConsumesOffsets, true);
-  assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(handoffProbe.productionHandlerBoundaryHandlerReady, true);
+  assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, true);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(handoffProbe.productionHandlerContractSchema, 'eshkol.ulg.production-handler-contract.v0');
-  assert.equal(handoffProbe.productionHandlerContractStatus, 'declared-not-implemented');
+  assert.equal(handoffProbe.productionHandlerContractStatus, 'implemented-runtime-smoke-pending-full-physics');
   assert.equal(handoffProbe.productionHandlerContractDeclared, true);
   assert.equal(handoffProbe.productionHandlerContractInvocationArgumentMode, 'linear-memory-offsets');
   assert.deepEqual(handoffProbe.productionHandlerContractInvocationParameterTypes, ['i32', 'i32']);
@@ -108,6 +112,21 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     EXPECTED_ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE.length
   );
   assert.deepEqual(handoffProbe.productionHandlerContractBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
+  assert.equal(handoffProbe.productionHandlerImplementationSchema, 'eshkol.ulg.production-handler-implementation.v0');
+  assert.equal(handoffProbe.productionHandlerImplementationStatus, 'implemented-production-candidate-runtime-smoke');
+  assert.equal(handoffProbe.productionHandlerImplementationReady, true);
+  assert.equal(handoffProbe.productionHandlerImplementationEvidenceCount, 5);
+  assert.deepEqual(handoffProbe.productionHandlerImplementationBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionSchema, 'eshkol.ulg.production-handler-runtime-execution.v0');
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionStatus, 'production-handler-runtime-smoke-executed');
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionReady, true);
+  assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionEntryArgs, [131072, 131136]);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange, 64);
+  assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionHostImportCallCounts, {
+    ulg_read_f64: 12,
+    ulg_write_f64: 9
+  });
+  assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
   assert.equal(handoffProbe.hostImportsModule, EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL);
   assert.equal(handoffProbe.hostImportsAssetStatus, 'ready');
   assert.equal(handoffProbe.hostImportsFactoryStatus, 'ready');
@@ -135,8 +154,14 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
   assert.equal(handoffProbe.productionDispatchPreflightTotalRequiredCheckCount, 10);
-  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 7);
-  assert.equal(handoffProbe.productionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    handoffProbe.productionDispatchPreflightPassedCheckCount,
+    EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
+  assert.equal(
+    handoffProbe.productionDispatchPreflightBlockedCheckCount,
+    EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assert.deepEqual(handoffProbe.productionDispatchPreflightPassedChecks, [
     ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
   ]);
@@ -151,8 +176,14 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
   assert.equal(handoffProbe.summaryProductionDispatchPreflightTotalRequiredCheckCount, 10);
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 7);
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    handoffProbe.summaryProductionDispatchPreflightPassedCheckCount,
+    EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
+  assert.equal(
+    handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount,
+    EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
 }
 
 function assertMoonLabWebGpuProbe(handoffProbe) {
@@ -209,6 +240,8 @@ async function main() {
       const offsetProbe = linearMemoryBinding?.entryExportOffsetProbe || null;
       const productionHandlerBoundary = descriptorBinding?.productionHandlerBoundary || null;
       const productionHandlerContract = productionHandlerBoundary?.productionHandlerContract || null;
+      const productionHandlerImplementation = productionHandlerBoundary?.productionHandlerImplementation || null;
+      const productionHandlerRuntimeExecution = productionHandlerBoundary?.productionHandlerRuntimeExecution || null;
       const productionCandidateRuntimeProbe = productionHandlerBoundary?.productionCandidateRuntimeProbe || null;
       const productionDispatchPreflight = productionHandlerBoundary?.dispatchPreflight || null;
       const productionDispatchCheckSummary = productionDispatchPreflight?.checkSummary || null;
@@ -252,6 +285,7 @@ async function main() {
         productionHandlerBoundaryTensorMemoryStatus: productionHandlerBoundary?.tensorMemoryBinding?.status || null,
         productionHandlerBoundaryTensorMemoryEntryExportConsumesOffsets:
           productionHandlerBoundary?.tensorMemoryBinding?.entryExportConsumesOffsets ?? null,
+        productionHandlerBoundaryHandlerReady: productionHandlerBoundary?.handlerReady ?? null,
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
@@ -267,7 +301,7 @@ async function main() {
           eshkolSummary.closureProductionHandlerContractDeclared
           ?? (
             productionHandlerContract?.schema === 'eshkol.ulg.production-handler-contract.v0'
-            && productionHandlerContract?.status === 'declared-not-implemented'
+            && productionHandlerContract?.status === 'implemented-runtime-smoke-pending-full-physics'
           ),
         productionHandlerContractInvocationArgumentMode:
           productionHandlerContract?.invocation?.argumentMode
@@ -299,6 +333,70 @@ async function main() {
             : (
                 Array.isArray(eshkolSummary.closureProductionHandlerContractBlockedBy)
                   ? [...eshkolSummary.closureProductionHandlerContractBlockedBy]
+                  : []
+              ),
+        productionHandlerImplementationSchema:
+          productionHandlerImplementation?.schema
+          || eshkolSummary.closureProductionHandlerImplementationSchema
+          || null,
+        productionHandlerImplementationStatus:
+          productionHandlerImplementation?.status
+          || eshkolSummary.closureProductionHandlerImplementationStatus
+          || null,
+        productionHandlerImplementationReady:
+          eshkolSummary.closureProductionHandlerImplementationReady
+          ?? (
+            productionHandlerImplementation?.schema === 'eshkol.ulg.production-handler-implementation.v0'
+            && productionHandlerImplementation?.status === 'implemented-production-candidate-runtime-smoke'
+          ),
+        productionHandlerImplementationEvidenceCount:
+          Array.isArray(productionHandlerImplementation?.evidence)
+            ? productionHandlerImplementation.evidence.length
+            : eshkolSummary.closureProductionHandlerImplementationEvidenceCount ?? null,
+        productionHandlerImplementationBlockedBy:
+          Array.isArray(productionHandlerImplementation?.blockedBy)
+            ? [...productionHandlerImplementation.blockedBy]
+            : (
+                Array.isArray(eshkolSummary.closureProductionHandlerImplementationBlockedBy)
+                  ? [...eshkolSummary.closureProductionHandlerImplementationBlockedBy]
+                  : []
+              ),
+        productionHandlerRuntimeExecutionSchema:
+          productionHandlerRuntimeExecution?.schema
+          || eshkolSummary.closureProductionHandlerRuntimeExecutionSchema
+          || null,
+        productionHandlerRuntimeExecutionStatus:
+          productionHandlerRuntimeExecution?.status
+          || eshkolSummary.closureProductionHandlerRuntimeExecutionStatus
+          || null,
+        productionHandlerRuntimeExecutionReady:
+          eshkolSummary.closureProductionHandlerRuntimeExecutionReady
+          ?? (
+            productionHandlerRuntimeExecution?.schema === 'eshkol.ulg.production-handler-runtime-execution.v0'
+            && productionHandlerRuntimeExecution?.status === 'production-handler-runtime-smoke-executed'
+          ),
+        productionHandlerRuntimeExecutionEntryArgs:
+          Array.isArray(productionHandlerRuntimeExecution?.entryArgs)
+            ? [...productionHandlerRuntimeExecution.entryArgs]
+            : (
+                Array.isArray(eshkolSummary.closureProductionHandlerRuntimeExecutionEntryArgs)
+                  ? [...eshkolSummary.closureProductionHandlerRuntimeExecutionEntryArgs]
+                  : []
+              ),
+        productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+          productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
+          ?? eshkolSummary.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+          ?? null,
+        productionHandlerRuntimeExecutionHostImportCallCounts:
+          productionHandlerRuntimeExecution?.hostImportCallCounts
+          || eshkolSummary.closureProductionHandlerRuntimeExecutionHostImportCallCounts
+          || null,
+        productionHandlerRuntimeExecutionBlockedBy:
+          Array.isArray(productionHandlerRuntimeExecution?.blockedBy)
+            ? [...productionHandlerRuntimeExecution.blockedBy]
+            : (
+                Array.isArray(eshkolSummary.closureProductionHandlerRuntimeExecutionBlockedBy)
+                  ? [...eshkolSummary.closureProductionHandlerRuntimeExecutionBlockedBy]
                   : []
               ),
         hostImportsModule: eshkolSummary.closureHostImportsModule || null,

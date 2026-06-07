@@ -962,7 +962,10 @@
   `deterministic-tensor-runtime-smoke-only`, linear-memory status
   `entry-export-runtime-smoke-passed`, offset-probe status
   `runtime-smoke-passed`, `entryExportConsumesOffsets = true`, changed bytes
-  `64`, and production handler boundary status `declared-not-executed`.
+  `64`, production handler boundary status
+  `production-handler-runtime-smoke-executed`, handler/runtime readiness true,
+  implementation/runtime execution schemas, and production preflight counts
+  `10/9/1`.
   It also asserts Eshkol production-candidate runtime-probe and computed
   production-dispatch preflight evidence:
   `eshkol.ulg.production-candidate-runtime-probe.v0`,
@@ -989,8 +992,9 @@
 - Eshkol computed dispatch-preflight evidence gate:
   focused service orchestration, Multiscale model, browser ULG handoff, and
   relay handoff smokes now preserve the computed preflight `checkResults`,
-  check-summary schema, 9 total checks, 6 passed checks, and 3 blocked checks.
-  These checks do not promote production handler/runtime/full-physics readiness.
+  check-summary schema, 10 total checks, 9 passed checks, and 1 blocked check.
+  These checks promote handler implementation/runtime smoke readiness only; they
+  do not promote full-physics readiness.
 - Eshkol imported host-import module/factory gate:
   focused service orchestration and Multiscale model tests now preserve
   `closureHostImportsModule`, asset status `ready`, factory status `ready`,
@@ -1008,21 +1012,20 @@
   `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes|deterministic tensor runtime candidate'`.
 : current result on 2026-06-06 was `28/28` passing. The run proved
   `eshkol.ulg.production-handler-boundary.v0` is surfaced from Eshkol closure
-  metadata with `handlerReady = false`, `runtimeExecution = false`,
+  metadata with `handlerReady = true`, `runtimeExecution = true`,
   `scientificValidation = false`, `fullPhysicsValidation = false`, and
-  `fullFidelityMagnetarSimulation = false`; overclaimed runtime execution
-  blocks the Eshkol dispatch adapter, the live deterministic tensor-offset
-  candidate can execute as runtime-smoke evidence only, and already-normalized
-  production-host/preflight boundary summaries can be summarized again without
-  dropping production candidate or dispatch preflight fields.
+  `fullFidelityMagnetarSimulation = false`; implementation/runtime-smoke
+  evidence must carry `eshkol.ulg.production-handler-implementation.v0` and
+  `eshkol.ulg.production-handler-runtime-execution.v0`, while full-physics
+  validation remains blocked as `full-physics-validation-not-run`.
 - Focused Multiscale gate:
   `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production preflight counts|production handler boundary|descriptor-only Eshkol'`.
 : current result on 2026-06-06 was `198/198` passing. The run proved
   Multiscale closure ingest, handoff readiness, and packet boundary conditions
-  preserve the same false boundary flags, keep overclaimed handler readiness
-  bounded without clearing scientific readiness, and preserve compact service
-  summary counts for required production non-stub imports and dispatch preflight
-  checks when full arrays are omitted.
+  preserve handler/runtime smoke readiness, implementation/runtime execution
+  schemas, compact service summary counts for required production non-stub
+  imports and dispatch preflight checks, and false science/full-physics/full-
+  fidelity flags when full arrays are omitted.
 - Build gate:
   `npm --prefix demos/multiscale run build`.
 : current result on 2026-06-06 passed with only the existing large-chunk
@@ -1040,5 +1043,7 @@
   `entry-export-runtime-smoke-passed`, offset-probe status
   `runtime-smoke-passed`, changed bytes `64`, adapter candidate status
   `deterministic-runtime-smoke-candidate-passed`, declared output tensors
-  produced by the entry export, and production handler boundary status
-  `declared-not-executed`.
+  produced by the entry export, production handler boundary status
+  `production-handler-runtime-smoke-executed`, handler/runtime readiness true,
+  production implementation/runtime execution schemas, and production preflight
+  counts `10/9/1`.

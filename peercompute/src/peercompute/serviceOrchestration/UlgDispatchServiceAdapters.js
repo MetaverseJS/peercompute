@@ -17,6 +17,10 @@ const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
 const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
 const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
+const ESHKOL_PRODUCTION_HANDLER_IMPLEMENTATION_SCHEMA =
+  'eshkol.ulg.production-handler-implementation.v0';
+const ESHKOL_PRODUCTION_HANDLER_RUNTIME_EXECUTION_SCHEMA =
+  'eshkol.ulg.production-handler-runtime-execution.v0';
 const ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA = 'eshkol.ulg.production-handler-dispatch-preflight.v0';
 const ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_SCHEMA = 'eshkol.ulg.production-candidate-runtime-probe.v0';
 const ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_STATUS = 'production-candidate-runtime-smoke-passed';
@@ -278,12 +282,12 @@ function normalizeEshkolProductionCandidateRuntimeProbe(probe = null) {
     candidate.outputTensorsProducedByEntryExport === true
       ? null
       : 'eshkol-production-candidate-runtime-probe-output-tensors-missing',
-    candidate.productionHandlerReady === false
+    candidate.productionHandlerReady === true
       ? null
-      : 'eshkol-production-candidate-runtime-probe-handler-ready-overstated',
-    candidate.productionHandlerRuntimeExecution === false
+      : 'eshkol-production-candidate-runtime-probe-handler-ready-missing',
+    candidate.productionHandlerRuntimeExecution === true
       ? null
-      : 'eshkol-production-candidate-runtime-probe-runtime-execution-overstated',
+      : 'eshkol-production-candidate-runtime-probe-runtime-execution-missing',
     candidate.scientificValidation === false
       ? null
       : 'eshkol-production-candidate-runtime-probe-scientific-validation-overstated',
@@ -311,9 +315,9 @@ function normalizeEshkolProductionCandidateRuntimeProbe(probe = null) {
     finiteNumberOrNull(hostImportCallCounts?.ulg_write_f64) === 9
       ? null
       : 'eshkol-production-candidate-runtime-probe-write-count-mismatch',
-    stringOrNull(candidate.blocker)
+    candidate.blocker === 'full-physics-validation-not-run'
       ? null
-      : 'eshkol-production-candidate-runtime-probe-blocker-missing'
+      : 'eshkol-production-candidate-runtime-probe-full-physics-blocker-missing'
   ]);
   return {
     schema: stringOrNull(candidate.schema),
@@ -452,6 +456,74 @@ function createBoundaryFromSummaryFields(summary = {}) {
       summary.eshkolProductionHandlerContractBlockedBy
       || summary.closureProductionHandlerContractBlockedBy
       || [],
+    productionHandlerImplementationSchema:
+      summary.eshkolProductionHandlerImplementationSchema
+      || summary.closureProductionHandlerImplementationSchema
+      || null,
+    productionHandlerImplementationStatus:
+      summary.eshkolProductionHandlerImplementationStatus
+      || summary.closureProductionHandlerImplementationStatus
+      || null,
+    productionHandlerImplementationReady:
+      summary.eshkolProductionHandlerImplementationReady
+      ?? summary.closureProductionHandlerImplementationReady
+      ?? null,
+    productionHandlerImplementationScope:
+      summary.eshkolProductionHandlerImplementationScope
+      || summary.closureProductionHandlerImplementationScope
+      || null,
+    productionHandlerImplementationExecutionClaim:
+      summary.eshkolProductionHandlerImplementationExecutionClaim
+      || summary.closureProductionHandlerImplementationExecutionClaim
+      || null,
+    productionHandlerImplementationEvidence:
+      summary.eshkolProductionHandlerImplementationEvidence
+      || summary.closureProductionHandlerImplementationEvidence
+      || [],
+    productionHandlerImplementationEvidenceCount:
+      summary.eshkolProductionHandlerImplementationEvidenceCount
+      ?? summary.closureProductionHandlerImplementationEvidenceCount
+      ?? null,
+    productionHandlerImplementationBlockedBy:
+      summary.eshkolProductionHandlerImplementationBlockedBy
+      || summary.closureProductionHandlerImplementationBlockedBy
+      || [],
+    productionHandlerRuntimeExecutionSchema:
+      summary.eshkolProductionHandlerRuntimeExecutionSchema
+      || summary.closureProductionHandlerRuntimeExecutionSchema
+      || null,
+    productionHandlerRuntimeExecutionStatus:
+      summary.eshkolProductionHandlerRuntimeExecutionStatus
+      || summary.closureProductionHandlerRuntimeExecutionStatus
+      || null,
+    productionHandlerRuntimeExecutionReady:
+      summary.eshkolProductionHandlerRuntimeExecutionReady
+      ?? summary.closureProductionHandlerRuntimeExecutionReady
+      ?? null,
+    productionHandlerRuntimeExecutionEntryArgs:
+      summary.eshkolProductionHandlerRuntimeExecutionEntryArgs
+      || summary.closureProductionHandlerRuntimeExecutionEntryArgs
+      || [],
+    productionHandlerRuntimeExecutionEntryResult:
+      summary.eshkolProductionHandlerRuntimeExecutionEntryResult
+      ?? summary.closureProductionHandlerRuntimeExecutionEntryResult
+      ?? null,
+    productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+      summary.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? summary.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? null,
+    productionHandlerRuntimeExecutionOutputTensorsProduced:
+      summary.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? summary.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? null,
+    productionHandlerRuntimeExecutionHostImportCallCounts:
+      summary.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts
+      || summary.closureProductionHandlerRuntimeExecutionHostImportCallCounts
+      || null,
+    productionHandlerRuntimeExecutionBlockedBy:
+      summary.eshkolProductionHandlerRuntimeExecutionBlockedBy
+      || summary.closureProductionHandlerRuntimeExecutionBlockedBy
+      || [],
     dispatchPreflightSchema:
       summary.eshkolProductionDispatchPreflightSchema || summary.closureProductionDispatchPreflightSchema || null,
     dispatchPreflightStatus:
@@ -550,6 +622,44 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
   const productionCandidate = objectOrNull(hostImports.productionCandidate) || {};
   const productionHandlerContract = objectOrNull(boundary.productionHandlerContract) || {};
   const productionHandlerContractInvocation = objectOrNull(productionHandlerContract.invocation) || {};
+  const productionHandlerImplementation = objectOrNull(boundary.productionHandlerImplementation) || {
+    schema: boundary.productionHandlerImplementationSchema,
+    status: boundary.productionHandlerImplementationStatus,
+    implementationScope: boundary.productionHandlerImplementationScope,
+    executionClaim: boundary.productionHandlerImplementationExecutionClaim,
+    evidence: boundary.productionHandlerImplementationEvidence,
+    blockedBy: boundary.productionHandlerImplementationBlockedBy
+  };
+  const productionHandlerImplementationEvidence = Array.isArray(productionHandlerImplementation.evidence)
+    ? productionHandlerImplementation.evidence
+    : boundary.productionHandlerImplementationEvidence;
+  const productionHandlerImplementationBlockedBy = Array.isArray(productionHandlerImplementation.blockedBy)
+    ? productionHandlerImplementation.blockedBy
+    : boundary.productionHandlerImplementationBlockedBy;
+  const productionHandlerRuntimeExecution = objectOrNull(boundary.productionHandlerRuntimeExecution) || {
+    schema: boundary.productionHandlerRuntimeExecutionSchema,
+    status: boundary.productionHandlerRuntimeExecutionStatus,
+    executionClaim: boundary.productionHandlerRuntimeExecutionExecutionClaim
+      || ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_EXECUTION_CLAIM,
+    entryArgs: boundary.productionHandlerRuntimeExecutionEntryArgs,
+    entryResult: boundary.productionHandlerRuntimeExecutionEntryResult,
+    changedBytesInDeclaredTensorRange:
+      boundary.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange,
+    outputTensorsProducedByEntryExport:
+      boundary.productionHandlerRuntimeExecutionOutputTensorsProduced,
+    hostImportCallCounts: boundary.productionHandlerRuntimeExecutionHostImportCallCounts,
+    blockedBy: boundary.productionHandlerRuntimeExecutionBlockedBy
+  };
+  const productionHandlerRuntimeExecutionEntryArgs = Array.isArray(productionHandlerRuntimeExecution.entryArgs)
+    ? productionHandlerRuntimeExecution.entryArgs
+    : boundary.productionHandlerRuntimeExecutionEntryArgs;
+  const productionHandlerRuntimeExecutionHostImportCallCounts =
+    objectOrNull(productionHandlerRuntimeExecution.hostImportCallCounts)
+    || objectOrNull(boundary.productionHandlerRuntimeExecutionHostImportCallCounts)
+    || null;
+  const productionHandlerRuntimeExecutionBlockedBy = Array.isArray(productionHandlerRuntimeExecution.blockedBy)
+    ? productionHandlerRuntimeExecution.blockedBy
+    : boundary.productionHandlerRuntimeExecutionBlockedBy;
   const dispatchPreflight = objectOrNull(boundary.dispatchPreflight) || {};
   const productionCandidateRuntimeProbe = normalizeEshkolProductionCandidateRuntimeProbe(
     createEshkolProductionCandidateRuntimeProbeFromFields(boundary)
@@ -616,12 +726,30 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
     boundary.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
       ? null
       : 'eshkol-production-handler-boundary-schema-mismatch',
-    boundary.handlerReady === false
+    boundary.handlerReady === true
       ? null
-      : 'eshkol-production-handler-boundary-handler-readiness-overstated',
-    runtimeExecution === false
+      : 'eshkol-production-handler-boundary-handler-readiness-missing',
+    runtimeExecution === true
       ? null
-      : 'eshkol-production-handler-boundary-runtime-execution-overstated',
+      : 'eshkol-production-handler-boundary-runtime-execution-missing',
+    productionHandlerImplementation.schema === ESHKOL_PRODUCTION_HANDLER_IMPLEMENTATION_SCHEMA
+      ? null
+      : 'eshkol-production-handler-implementation-schema-mismatch',
+    productionHandlerImplementation.status === 'implemented-production-candidate-runtime-smoke'
+      ? null
+      : 'eshkol-production-handler-implementation-status-mismatch',
+    productionHandlerImplementation.executionClaim === ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_EXECUTION_CLAIM
+      ? null
+      : 'eshkol-production-handler-implementation-execution-claim-mismatch',
+    productionHandlerRuntimeExecution.schema === ESHKOL_PRODUCTION_HANDLER_RUNTIME_EXECUTION_SCHEMA
+      ? null
+      : 'eshkol-production-handler-runtime-execution-schema-mismatch',
+    productionHandlerRuntimeExecution.status === 'production-handler-runtime-smoke-executed'
+      ? null
+      : 'eshkol-production-handler-runtime-execution-status-mismatch',
+    productionHandlerRuntimeExecution.executionClaim === ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_EXECUTION_CLAIM
+      ? null
+      : 'eshkol-production-handler-runtime-execution-claim-mismatch',
     boundary.scientificValidation === false
       ? null
       : 'eshkol-production-handler-boundary-scientific-validation-overstated',
@@ -635,7 +763,7 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
   const ready = validationBlockers.length === 0;
   return {
     schema: boundary.schema || null,
-    status: boundary.status || (ready ? 'production-handler-boundary-declared-not-executed' : 'production-handler-boundary-blocked'),
+    status: boundary.status || (ready ? 'production-handler-runtime-smoke-executed' : 'production-handler-boundary-blocked'),
     ready,
     handlerReady: typeof boundary.handlerReady === 'boolean' ? boundary.handlerReady : null,
     runtimeExecution,
@@ -729,7 +857,7 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
         ? boundary.productionHandlerContractDeclared
         : (
             productionHandlerContract.schema === 'eshkol.ulg.production-handler-contract.v0'
-            && productionHandlerContract.status === 'declared-not-implemented'
+            && productionHandlerContract.status === 'implemented-runtime-smoke-pending-full-physics'
           ),
     productionHandlerContractHandlerId:
       stringOrNull(productionHandlerContract.handlerId || boundary.productionHandlerContractHandlerId),
@@ -788,6 +916,60 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
       ),
     productionHandlerContractBlockedBy:
       uniqueStrings(productionHandlerContractBlockedBy || []),
+    productionHandlerImplementation: clonePlain(
+      productionHandlerImplementation.schema ? productionHandlerImplementation : null
+    ),
+    productionHandlerImplementationSchema:
+      stringOrNull(productionHandlerImplementation.schema || boundary.productionHandlerImplementationSchema),
+    productionHandlerImplementationStatus:
+      stringOrNull(productionHandlerImplementation.status || boundary.productionHandlerImplementationStatus),
+    productionHandlerImplementationReady:
+      productionHandlerImplementation.schema === ESHKOL_PRODUCTION_HANDLER_IMPLEMENTATION_SCHEMA
+      && productionHandlerImplementation.status === 'implemented-production-candidate-runtime-smoke',
+    productionHandlerImplementationScope:
+      stringOrNull(productionHandlerImplementation.implementationScope || boundary.productionHandlerImplementationScope),
+    productionHandlerImplementationExecutionClaim:
+      stringOrNull(productionHandlerImplementation.executionClaim || boundary.productionHandlerImplementationExecutionClaim),
+    productionHandlerImplementationEvidence:
+      uniqueStrings(productionHandlerImplementationEvidence || []),
+    productionHandlerImplementationEvidenceCount:
+      finiteNumberOrNull(
+        boundary.productionHandlerImplementationEvidenceCount
+        ?? uniqueStrings(productionHandlerImplementationEvidence || []).length
+      ),
+    productionHandlerImplementationBlockedBy:
+      uniqueStrings(productionHandlerImplementationBlockedBy || []),
+    productionHandlerRuntimeExecution: clonePlain(
+      productionHandlerRuntimeExecution.schema ? productionHandlerRuntimeExecution : null
+    ),
+    productionHandlerRuntimeExecutionSchema:
+      stringOrNull(productionHandlerRuntimeExecution.schema || boundary.productionHandlerRuntimeExecutionSchema),
+    productionHandlerRuntimeExecutionStatus:
+      stringOrNull(productionHandlerRuntimeExecution.status || boundary.productionHandlerRuntimeExecutionStatus),
+    productionHandlerRuntimeExecutionReady:
+      productionHandlerRuntimeExecution.schema === ESHKOL_PRODUCTION_HANDLER_RUNTIME_EXECUTION_SCHEMA
+      && productionHandlerRuntimeExecution.status === 'production-handler-runtime-smoke-executed',
+    productionHandlerRuntimeExecutionEntryArgs:
+      clonePlain(productionHandlerRuntimeExecutionEntryArgs || []),
+    productionHandlerRuntimeExecutionEntryResult:
+      finiteNumberOrNull(productionHandlerRuntimeExecution.entryResult ?? boundary.productionHandlerRuntimeExecutionEntryResult),
+    productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+      finiteNumberOrNull(
+        productionHandlerRuntimeExecution.changedBytesInDeclaredTensorRange
+        ?? boundary.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ),
+    productionHandlerRuntimeExecutionOutputTensorsProduced:
+      typeof productionHandlerRuntimeExecution.outputTensorsProducedByEntryExport === 'boolean'
+        ? productionHandlerRuntimeExecution.outputTensorsProducedByEntryExport
+        : (
+            typeof boundary.productionHandlerRuntimeExecutionOutputTensorsProduced === 'boolean'
+              ? boundary.productionHandlerRuntimeExecutionOutputTensorsProduced
+              : null
+          ),
+    productionHandlerRuntimeExecutionHostImportCallCounts:
+      clonePlain(productionHandlerRuntimeExecutionHostImportCallCounts),
+    productionHandlerRuntimeExecutionBlockedBy:
+      uniqueStrings(productionHandlerRuntimeExecutionBlockedBy || []),
     dispatchPreflightSchema: stringOrNull(dispatchPreflight.schema || boundary.dispatchPreflightSchema),
     dispatchPreflightStatus: stringOrNull(dispatchPreflight.status || boundary.dispatchPreflightStatus),
     dispatchPreflightReady:
@@ -2947,6 +3129,66 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
       clonePlain(summary.eshkolProductionHandlerContractBlockedBy
         || summary.closureProductionHandlerContractBlockedBy
         || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerContractBlockedBy
+        || []),
+    eshkolProductionHandlerImplementationSchema:
+      summary.eshkolProductionHandlerImplementationSchema
+      || summary.closureProductionHandlerImplementationSchema
+      || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationSchema
+      || null,
+    eshkolProductionHandlerImplementationStatus:
+      summary.eshkolProductionHandlerImplementationStatus
+      || summary.closureProductionHandlerImplementationStatus
+      || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationStatus
+      || null,
+    eshkolProductionHandlerImplementationReady:
+      summary.eshkolProductionHandlerImplementationReady
+      ?? summary.closureProductionHandlerImplementationReady
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationReady
+      ?? null,
+    eshkolProductionHandlerImplementationEvidenceCount:
+      summary.eshkolProductionHandlerImplementationEvidenceCount
+      ?? summary.closureProductionHandlerImplementationEvidenceCount
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationEvidenceCount
+      ?? null,
+    eshkolProductionHandlerImplementationBlockedBy:
+      clonePlain(summary.eshkolProductionHandlerImplementationBlockedBy
+        || summary.closureProductionHandlerImplementationBlockedBy
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationBlockedBy
+        || []),
+    eshkolProductionHandlerRuntimeExecutionSchema:
+      summary.eshkolProductionHandlerRuntimeExecutionSchema
+      || summary.closureProductionHandlerRuntimeExecutionSchema
+      || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionSchema
+      || null,
+    eshkolProductionHandlerRuntimeExecutionStatus:
+      summary.eshkolProductionHandlerRuntimeExecutionStatus
+      || summary.closureProductionHandlerRuntimeExecutionStatus
+      || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionStatus
+      || null,
+    eshkolProductionHandlerRuntimeExecutionReady:
+      summary.eshkolProductionHandlerRuntimeExecutionReady
+      ?? summary.closureProductionHandlerRuntimeExecutionReady
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionReady
+      ?? null,
+    eshkolProductionHandlerRuntimeExecutionEntryArgs:
+      clonePlain(summary.eshkolProductionHandlerRuntimeExecutionEntryArgs
+        || summary.closureProductionHandlerRuntimeExecutionEntryArgs
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs
+        || []),
+    eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+      summary.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? summary.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? null,
+    eshkolProductionHandlerRuntimeExecutionHostImportCallCounts:
+      clonePlain(summary.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts
+        || summary.closureProductionHandlerRuntimeExecutionHostImportCallCounts
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts
+        || null),
+    eshkolProductionHandlerRuntimeExecutionBlockedBy:
+      clonePlain(summary.eshkolProductionHandlerRuntimeExecutionBlockedBy
+        || summary.closureProductionHandlerRuntimeExecutionBlockedBy
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionBlockedBy
         || []),
     eshkolProductionHostImportsRuntimeScope:
       summary.eshkolProductionHostImportsRuntimeScope

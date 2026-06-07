@@ -23530,3 +23530,57 @@ User asked whether Infinite Context Coder is being used.
   Production magnetar handler implementation, production runtime execution, and
   full-physics validation remain intentionally blocked.
 - No push was attempted.
+
+## 2026-06-06 23:53:08 AKDT - Production handler runtime-smoke reaches Multiscale
+
+### Prompt
+- User asked: "can you see the agents.md fike correctly now?"
+- Standing instruction remains to keep the live ULG and Multiscale demos
+  running, commit locally only, and keep the plan/log/test trail current.
+
+### Actions
+- Confirmed the parent/ULG/PeerCompute AGENTS files are visible and re-read the
+  relevant instructions.
+- Preserved Eshkol production handler implementation/runtime-smoke evidence
+  through Multiscale closure ingest, handoff readiness, module-probe summaries,
+  packet boundary conditions, browser handoff smoke, relay handoff smoke, and
+  the built `docs/multiscale` bundle.
+- Added Multiscale packet/service-summary fields for
+  `eshkol.ulg.production-handler-implementation.v0` and
+  `eshkol.ulg.production-handler-runtime-execution.v0`, including handler
+  readiness, runtime execution, implementation evidence count, entry args,
+  changed bytes inside the declared tensor range, host import call counts, and
+  the remaining full-physics blocker.
+- Updated Multiscale unit/browser/relay assertions for
+  `production-handler-runtime-smoke-executed`, production preflight counts
+  `10/9/1`, and false science/full-physics/full-fidelity scope flags.
+- Rebuilt the relay-served docs bundle after source changes.
+
+### Validation
+- PASS: syntax checks for changed PeerCompute service-orchestration files,
+  Multiscale model/source files, and Multiscale smoke scripts.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `198/198`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with magnetar visible,
+  `handoff-ready`, handler/runtime readiness true, implementation evidence
+  count `5`, and preflight counts `10/9/1`.
+- FAIL then fixed: adapter-enabled relay smoke initially observed stale
+  relay-served bundle behavior from `docs/multiscale`; rebuilding the docs
+  bundle fixed the stale `declared-not-implemented` / runtime-overclaim path.
+- PASS: `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed with dynamic Go
+  relay, STUN/TURN config, two connected browser peers, two accepted dispatches,
+  two released resource leases, zero active leases, production handler/runtime
+  summaries, and all scientific scope flags false.
+
+### Open
+- This is production handler implementation/runtime smoke evidence, not
+  full-physics magnetar validation. `full-physics-validation-not-run` remains
+  the active production blocker.
+- No push was attempted.

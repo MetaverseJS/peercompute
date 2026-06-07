@@ -96,13 +96,11 @@ const ESHKOL_PRODUCTION_REQUIRED_NON_STUB_IMPORTS = Object.freeze([
   'eshkol_lambda_registry_add'
 ]);
 const ESHKOL_PRODUCTION_READINESS_REQUIREMENTS = Object.freeze([
-  'production-magnetar-handler-implementation',
   'non-stub-host-runtime-imports',
   'validated-f64-tensor-memory-imports',
   'full-physics-validation-pass'
 ]);
 const ESHKOL_PRODUCTION_BLOCKERS = Object.freeze([
-  'production-magnetar-handler-not-implemented',
   'full-physics-validation-not-run'
 ]);
 const ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE = Object.freeze([
@@ -134,11 +132,11 @@ const ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = Object.freeze([
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'production-candidate-runtime-probe-passed',
-  'runtime-smoke-stubs-rejected-for-production'
+  'runtime-smoke-stubs-rejected-for-production',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true'
 ]);
 const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
-  'handler-ready-flag-true',
-  'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
 ]);
 const ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY = Object.freeze({
@@ -288,7 +286,7 @@ function createMoonLabBrowserWebGpuComplex64ParityScope(overrides = {}) {
 function createEshkolProductionHandlerBoundary(overrides = {}) {
   return {
     schema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
-    status: 'production-handler-boundary-declared-not-executed',
+    status: 'production-handler-runtime-smoke-executed',
     boundaryId: 'eshkol:magnetar-production-handler-boundary:v0',
     handlerId: 'eshkol:magnetar-closure:main:v0',
     handlerKind: 'wasm-export-tensor-closure',
@@ -296,11 +294,11 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
     handlerProtocol: 'peercompute.ulg.dispatch-service-handler-context.v0',
     runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
     tensorMemoryModel: 'host-managed-linear-f64',
-    handlerReady: false,
-    runtimeExecution: false,
+    handlerReady: true,
+    runtimeExecution: true,
     productionHandlerContract: {
       schema: 'eshkol.ulg.production-handler-contract.v0',
-      status: 'declared-not-implemented',
+      status: 'implemented-runtime-smoke-pending-full-physics',
       handlerId: 'eshkol:magnetar-closure:main:v0',
       dispatchSchema: 'peercompute.ulg.dispatch-service-handler-context.v0',
       entryExport: 'main',
@@ -319,6 +317,35 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
         expectedReturn: 0
       },
       requiredEvidence: [...ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE],
+      blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
+    },
+    productionHandlerImplementation: {
+      schema: 'eshkol.ulg.production-handler-implementation.v0',
+      status: 'implemented-production-candidate-runtime-smoke',
+      implementationScope: 'production-candidate-host-import-runtime-smoke',
+      executionClaim: 'production-candidate-host-import-runtime-smoke-only',
+      evidence: [
+        'site/static/eshkol-host-imports.js',
+        'tests/toolchain/eshkol_host_imports_smoke_test.js',
+        'ctest:eshkol_host_imports_smoke_test',
+        'tests/toolchain/ulg_magnetar_closure_fixture_test.py',
+        'ctest:ulg_magnetar_closure_fixture_test'
+      ],
+      blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
+    },
+    productionHandlerRuntimeExecution: {
+      schema: 'eshkol.ulg.production-handler-runtime-execution.v0',
+      status: 'production-handler-runtime-smoke-executed',
+      executionClaim: 'production-candidate-host-import-runtime-smoke-only',
+      entryExport: 'main',
+      entryArgs: [131072, 131136],
+      entryResult: 0,
+      changedBytesInDeclaredTensorRange: 64,
+      outputTensorsProducedByEntryExport: true,
+      hostImportCallCounts: {
+        ulg_read_f64: 12,
+        ulg_write_f64: 9
+      },
       blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
     },
     hostImports: {
@@ -353,8 +380,8 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
       expectedEntryResult: 0,
       changedBytesInDeclaredTensorRange: 64,
       outputTensorsProducedByEntryExport: true,
-      productionHandlerReady: false,
-      productionHandlerRuntimeExecution: false,
+      productionHandlerReady: true,
+      productionHandlerRuntimeExecution: true,
       scientificValidation: false,
       fullPhysicsValidation: false,
       fullFidelityMagnetarSimulation: false,
@@ -368,7 +395,7 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
         ulg_read_f64: 12,
         ulg_write_f64: 9
       },
-      blocker: 'production-candidate-runtime-smoke-only-production-handler-not-ready'
+      blocker: 'full-physics-validation-not-run'
     },
     dispatchPreflight: {
       schema: 'eshkol.ulg.production-handler-dispatch-preflight.v0',
@@ -441,17 +468,15 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
         },
         {
           check: 'handler-ready-flag-true',
-          status: 'blocked',
-          ready: false,
-          evidenceSource: 'productionHandlerBoundary.handlerReady',
-          blocker: 'production-magnetar-handler-not-implemented'
+          status: 'pass',
+          ready: true,
+          evidenceSource: 'productionHandlerBoundary.productionHandlerImplementation'
         },
         {
           check: 'runtime-execution-flag-true',
-          status: 'blocked',
-          ready: false,
-          evidenceSource: 'productionHandlerBoundary.runtimeExecution',
-          blocker: 'production-handler-runtime-execution-not-ready'
+          status: 'pass',
+          ready: true,
+          evidenceSource: 'productionHandlerBoundary.productionHandlerRuntimeExecution'
         },
         {
           check: 'full-physics-validation-evidence-present',
@@ -691,8 +716,8 @@ function assertEshkolProductionCandidateRuntimeProbeFields(source, prefix = 'esh
   assert.equal(source[`${prefix}ExpectedEntryResult`], 0);
   assert.equal(source[`${prefix}ChangedBytesInDeclaredTensorRange`], 64);
   assert.equal(source[`${prefix}OutputTensorsProduced`], true);
-  assert.equal(source[`${prefix}ProductionHandlerReady`], false);
-  assert.equal(source[`${prefix}ProductionHandlerRuntimeExecution`], false);
+  assert.equal(source[`${prefix}ProductionHandlerReady`], true);
+  assert.equal(source[`${prefix}ProductionHandlerRuntimeExecution`], true);
   assert.equal(source[`${prefix}ScientificValidation`], false);
   assert.equal(source[`${prefix}FullPhysicsValidation`], false);
   assert.equal(source[`${prefix}FullFidelityMagnetarSimulation`], false);
@@ -704,13 +729,13 @@ function assertEshkolProductionCandidateRuntimeProbeFields(source, prefix = 'esh
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.equal(
     source[`${prefix}Blocker`],
-    'production-candidate-runtime-smoke-only-production-handler-not-ready'
+    'full-physics-validation-not-run'
   );
 }
 
 function assertEshkolProductionHandlerContractFields(source, prefix = 'eshkolProductionHandlerContract') {
   assert.equal(source[`${prefix}Schema`], 'eshkol.ulg.production-handler-contract.v0');
-  assert.equal(source[`${prefix}Status`], 'declared-not-implemented');
+  assert.equal(source[`${prefix}Status`], 'implemented-runtime-smoke-pending-full-physics');
   assert.equal(source[`${prefix}Declared`], true);
   assert.equal(source[`${prefix}HandlerId`], 'eshkol:magnetar-closure:main:v0');
   assert.equal(source[`${prefix}DispatchSchema`], 'peercompute.ulg.dispatch-service-handler-context.v0');
@@ -729,6 +754,31 @@ function assertEshkolProductionHandlerContractFields(source, prefix = 'eshkolPro
   assert.equal(source[`${prefix}InvocationExpectedReturn`], 0);
   assert.deepEqual(source[`${prefix}RequiredEvidence`], [...ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE]);
   assert.equal(source[`${prefix}RequiredEvidenceCount`], ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE.length);
+  assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
+}
+
+function assertEshkolProductionHandlerImplementationFields(
+  source,
+  prefix = 'eshkolProductionHandlerImplementation'
+) {
+  assert.equal(source[`${prefix}Schema`], 'eshkol.ulg.production-handler-implementation.v0');
+  assert.equal(source[`${prefix}Status`], 'implemented-production-candidate-runtime-smoke');
+  assert.equal(source[`${prefix}Ready`], true);
+  assert.equal(source[`${prefix}EvidenceCount`], 5);
+  assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
+}
+
+function assertEshkolProductionHandlerRuntimeExecutionFields(
+  source,
+  prefix = 'eshkolProductionHandlerRuntimeExecution'
+) {
+  assert.equal(source[`${prefix}Schema`], 'eshkol.ulg.production-handler-runtime-execution.v0');
+  assert.equal(source[`${prefix}Status`], 'production-handler-runtime-smoke-executed');
+  assert.equal(source[`${prefix}Ready`], true);
+  assert.deepEqual(source[`${prefix}EntryArgs`], [131072, 131136]);
+  assert.equal(source[`${prefix}ChangedBytesInDeclaredTensorRange`], 64);
+  assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
+  assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
 }
 
@@ -1612,18 +1662,20 @@ test('ULG artifact summary accepts MoonLab reduced browser WebGPU parity evidenc
   ));
 });
 
-test('ULG artifact summary exposes Eshkol production handler boundary without readiness claims', () => {
+test('ULG artifact summary exposes Eshkol production handler runtime-smoke evidence', () => {
   const summary = summarizeUlgArtifact('closure', createEshkolMagnetarDescriptorArtifact());
 
   assert.equal(summary.eshkolProductionHandlerBoundaryReady, true);
   assert.equal(summary.eshkolProductionHandlerBoundarySchema, ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA);
-  assert.equal(summary.eshkolProductionHandlerBoundaryStatus, 'production-handler-boundary-declared-not-executed');
-  assert.equal(summary.eshkolProductionHandlerBoundaryHandlerReady, false);
-  assert.equal(summary.eshkolProductionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryStatus, 'production-handler-runtime-smoke-executed');
+  assert.equal(summary.eshkolProductionHandlerBoundaryHandlerReady, true);
+  assert.equal(summary.eshkolProductionHandlerBoundaryRuntimeExecution, true);
   assert.equal(summary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(summary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
   assertEshkolProductionHandlerContractFields(summary);
+  assertEshkolProductionHandlerImplementationFields(summary);
+  assertEshkolProductionHandlerRuntimeExecutionFields(summary);
   assert.equal(
     summary.eshkolProductionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
@@ -1664,7 +1716,10 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
     summary.eshkolProductionDispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(summary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    summary.eshkolProductionDispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assert.deepEqual(summary.eshkolProductionDispatchPreflightPassedChecks, [
     ...ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
   ]);
@@ -1681,19 +1736,30 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   assert.deepEqual(summary.eshkolProductionDispatchPreflightBlockedBy, [...ESHKOL_PRODUCTION_BLOCKERS]);
   assert.equal(summary.eshkolProductionHandlerBoundaryValidationBlockerCount, 0);
   assert.equal(summary.eshkolProductionHandlerBoundary.ready, true);
-  assert.equal(summary.eshkolProductionHandlerBoundary.handlerReady, false);
-  assert.equal(summary.eshkolProductionHandlerBoundary.runtimeExecution, false);
+  assert.equal(summary.eshkolProductionHandlerBoundary.handlerReady, true);
+  assert.equal(summary.eshkolProductionHandlerBoundary.runtimeExecution, true);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightReady, false);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightDeclared, true);
   assertEshkolProductionHandlerContractFields(
     summary.eshkolProductionHandlerBoundary,
     'productionHandlerContract'
   );
+  assertEshkolProductionHandlerImplementationFields(
+    summary.eshkolProductionHandlerBoundary,
+    'productionHandlerImplementation'
+  );
+  assertEshkolProductionHandlerRuntimeExecutionFields(
+    summary.eshkolProductionHandlerBoundary,
+    'productionHandlerRuntimeExecution'
+  );
   assert.equal(
     summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    summary.eshkolProductionHandlerBoundary.dispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assertEshkolProductionCandidateRuntimeProbeFields(
     summary.eshkolProductionHandlerBoundary,
     'productionCandidateRuntimeProbe'
@@ -1709,6 +1775,8 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   );
   assert.equal(normalizedBoundarySummary.eshkolProductionHostImportCandidateRequiredNonStubImports.length, 23);
   assertEshkolProductionHandlerContractFields(normalizedBoundarySummary);
+  assertEshkolProductionHandlerImplementationFields(normalizedBoundarySummary);
+  assertEshkolProductionHandlerRuntimeExecutionFields(normalizedBoundarySummary);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightStatus, 'blocked');
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightReady, false);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightDeclared, true);
@@ -1720,21 +1788,24 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
     normalizedBoundarySummary.eshkolProductionDispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assertEshkolProductionCandidateRuntimeProbeFields(normalizedBoundarySummary);
   assert.deepEqual(
     normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
   );
 
-  const overclaimArtifact = createEshkolMagnetarDescriptorArtifact();
-  overclaimArtifact.validation.closureDescriptor.descriptorBinding.productionHandlerBoundary =
-    createEshkolProductionHandlerBoundary({ handlerReady: true });
-  const overclaim = summarizeUlgArtifact('closure', overclaimArtifact);
-  assert.equal(overclaim.eshkolProductionHandlerBoundaryReady, false);
-  assert.equal(overclaim.eshkolProductionHandlerBoundaryHandlerReady, true);
-  assert.ok(overclaim.eshkolProductionHandlerBoundaryValidationBlockers.includes(
-    'eshkol-production-handler-boundary-handler-readiness-overstated'
+  const incompleteArtifact = createEshkolMagnetarDescriptorArtifact();
+  incompleteArtifact.validation.closureDescriptor.descriptorBinding.productionHandlerBoundary =
+    createEshkolProductionHandlerBoundary({ handlerReady: false });
+  const incomplete = summarizeUlgArtifact('closure', incompleteArtifact);
+  assert.equal(incomplete.eshkolProductionHandlerBoundaryReady, false);
+  assert.equal(incomplete.eshkolProductionHandlerBoundaryHandlerReady, false);
+  assert.ok(incomplete.eshkolProductionHandlerBoundaryValidationBlockers.includes(
+    'eshkol-production-handler-boundary-handler-readiness-missing'
   ));
 });
 
@@ -2007,10 +2078,10 @@ test('Eshkol descriptor-only closure summary is accepted without output semantic
   assert.equal(metadataOnlyHandoff.blockers.includes('eshkol-closure-wasm-sha256-missing'), false);
 });
 
-test('Eshkol dispatch adapter blocks production handler boundary overclaims', async () => {
+test('Eshkol dispatch adapter blocks incomplete production handler boundary evidence', async () => {
   const artifact = createEshkolMagnetarDescriptorArtifact();
   artifact.validation.closureDescriptor.descriptorBinding.productionHandlerBoundary =
-    createEshkolProductionHandlerBoundary({ runtimeExecution: true });
+    createEshkolProductionHandlerBoundary({ runtimeExecution: false });
   const artifactSummary = summarizeUlgArtifact('closure', artifact);
   const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
   const manifest = normalizeComputeServiceManifest(
@@ -2047,10 +2118,10 @@ test('Eshkol dispatch adapter blocks production handler boundary overclaims', as
 
   assert.equal(result.ready, false);
   assert.equal(result.serviceStatus, 'blocked');
-  assert.ok(result.blockers.includes('eshkol-production-handler-boundary-runtime-execution-overstated'));
+  assert.ok(result.blockers.includes('eshkol-production-handler-boundary-runtime-execution-missing'));
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.ready, false);
-  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, true);
-  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.handlerReady, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.handlerReady, true);
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.scientificValidation, false);
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.fullPhysicsValidation, false);
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
@@ -3019,16 +3090,24 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.fullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'declared-not-executed');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.schema, ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA);
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.status, 'production-handler-boundary-declared-not-executed');
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.status, 'production-handler-runtime-smoke-executed');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.ready, true);
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.handlerReady, false);
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.handlerReady, true);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, true);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.scientificValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.fullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
   assertEshkolProductionHandlerContractFields(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
     'productionHandlerContract'
+  );
+  assertEshkolProductionHandlerImplementationFields(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
+    'productionHandlerImplementation'
+  );
+  assertEshkolProductionHandlerRuntimeExecutionFields(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
+    'productionHandlerRuntimeExecution'
   );
   assert.equal(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.productionHostImportCandidateStatus,
@@ -3052,7 +3131,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assert.deepEqual(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
@@ -3060,13 +3142,15 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.deepEqual(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.validationBlockers, []);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryReady, true);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundarySchema, ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryStatus, 'production-handler-boundary-declared-not-executed');
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryHandlerReady, false);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryStatus, 'production-handler-runtime-smoke-executed');
+  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryHandlerReady, true);
+  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryRuntimeExecution, true);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
   assertEshkolProductionHandlerContractFields(eshkol.serviceResult.ingest);
+  assertEshkolProductionHandlerImplementationFields(eshkol.serviceResult.ingest);
+  assertEshkolProductionHandlerRuntimeExecutionFields(eshkol.serviceResult.ingest);
   assert.equal(
     eshkol.serviceResult.ingest.closureHostImportsModule,
     ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
@@ -3102,7 +3186,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assert.deepEqual(
     eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedChecks,
     [...ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS]
@@ -3170,13 +3257,15 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.descriptorRuntimeDeclaredNotExecuted, true);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryReady, true);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundarySchema, ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA);
-  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryStatus, 'production-handler-boundary-declared-not-executed');
-  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryHandlerReady, false);
-  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryStatus, 'production-handler-runtime-smoke-executed');
+  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryHandlerReady, true);
+  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryRuntimeExecution, true);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
   assertEshkolProductionHandlerContractFields(eshkol.serviceSummary);
+  assertEshkolProductionHandlerImplementationFields(eshkol.serviceSummary);
+  assertEshkolProductionHandlerRuntimeExecutionFields(eshkol.serviceSummary);
   assert.equal(
     eshkol.serviceSummary.closureHostImportsModule,
     ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
@@ -3218,7 +3307,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceSummary.eshkolProductionDispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
   );
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
+  assert.equal(
+    eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS.length
+  );
   assert.deepEqual(
     eshkol.serviceSummary.eshkolProductionDispatchPreflightRejectedRuntimeScopes,
     ['deterministic-runtime-smoke-stubs']
@@ -3227,7 +3319,7 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
   );
-  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundary.handlerReady, false);
+  assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundary.handlerReady, true);
   assert.equal(eshkol.serviceSummary.hostRuntimeExecutionReady, false);
   assert.equal(eshkol.serviceSummary.hostRuntimeExecutionScientificExecution, false);
 
@@ -3660,8 +3752,8 @@ test('ULG Eshkol dispatch adapter executes deterministic tensor runtime candidat
   );
   assert.equal(result.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'deterministic-runtime-smoke-executed');
   assert.equal(result.probe.descriptorProbe.runtimeBinding.scientificValidation, false);
-  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.handlerReady, false);
-  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.handlerReady, true);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, true);
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.scientificValidation, false);
   assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.fullPhysicsValidation, false);
 
@@ -3715,8 +3807,8 @@ test('ULG Eshkol dispatch adapter executes deterministic tensor runtime candidat
   assert.equal(summary.tensorRuntimeCandidateProductionRuntimeExecution, false);
   assert.equal(summary.tensorRuntimeCandidateScientificValidation, false);
   assert.equal(summary.tensorRuntimeCandidateFullPhysicsValidation, false);
-  assert.equal(summary.eshkolProductionHandlerBoundaryHandlerReady, false);
-  assert.equal(summary.eshkolProductionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryHandlerReady, true);
+  assert.equal(summary.eshkolProductionHandlerBoundaryRuntimeExecution, true);
   assert.equal(summary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(summary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
 });

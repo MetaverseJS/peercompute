@@ -497,6 +497,80 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       || productionHandlerBoundary?.productionHandlerContractBlockedBy
       || []
     ),
+    eshkolProductionHandlerImplementationSchema:
+      ingest.eshkolProductionHandlerImplementationSchema
+      || productionHandlerBoundary?.productionHandlerImplementationSchema
+      || productionHandlerBoundary?.productionHandlerImplementation?.schema
+      || null,
+    eshkolProductionHandlerImplementationStatus:
+      ingest.eshkolProductionHandlerImplementationStatus
+      || productionHandlerBoundary?.productionHandlerImplementationStatus
+      || productionHandlerBoundary?.productionHandlerImplementation?.status
+      || null,
+    eshkolProductionHandlerImplementationReady: booleanOrNull(
+      ingest.eshkolProductionHandlerImplementationReady
+        ?? productionHandlerBoundary?.productionHandlerImplementationReady
+    ),
+    eshkolProductionHandlerImplementationEvidenceCount: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerImplementationEvidenceCount
+      ?? productionHandlerBoundary?.productionHandlerImplementationEvidenceCount
+      ?? (
+        Array.isArray(productionHandlerBoundary?.productionHandlerImplementation?.evidence)
+          ? productionHandlerBoundary.productionHandlerImplementation.evidence.length
+          : null
+      )
+    ),
+    eshkolProductionHandlerImplementationBlockedBy: uniqueStrings(
+      ingest.eshkolProductionHandlerImplementationBlockedBy
+      || productionHandlerBoundary?.productionHandlerImplementationBlockedBy
+      || productionHandlerBoundary?.productionHandlerImplementation?.blockedBy
+      || []
+    ),
+    eshkolProductionHandlerRuntimeExecutionSchema:
+      ingest.eshkolProductionHandlerRuntimeExecutionSchema
+      || productionHandlerBoundary?.productionHandlerRuntimeExecutionSchema
+      || productionHandlerBoundary?.productionHandlerRuntimeExecution?.schema
+      || null,
+    eshkolProductionHandlerRuntimeExecutionStatus:
+      ingest.eshkolProductionHandlerRuntimeExecutionStatus
+      || productionHandlerBoundary?.productionHandlerRuntimeExecutionStatus
+      || productionHandlerBoundary?.productionHandlerRuntimeExecution?.status
+      || null,
+    eshkolProductionHandlerRuntimeExecutionReady: booleanOrNull(
+      ingest.eshkolProductionHandlerRuntimeExecutionReady
+        ?? productionHandlerBoundary?.productionHandlerRuntimeExecutionReady
+    ),
+    eshkolProductionHandlerRuntimeExecutionEntryArgs: clonePlain(
+      Array.isArray(ingest.eshkolProductionHandlerRuntimeExecutionEntryArgs)
+        ? ingest.eshkolProductionHandlerRuntimeExecutionEntryArgs
+        : (
+            Array.isArray(productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs)
+              ? productionHandlerBoundary.productionHandlerRuntimeExecutionEntryArgs
+              : (
+                  Array.isArray(productionHandlerBoundary?.productionHandlerRuntimeExecution?.entryArgs)
+                    ? productionHandlerBoundary.productionHandlerRuntimeExecution.entryArgs
+                    : []
+                )
+          )
+    ),
+    eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+      finiteNumberOrNull(
+        ingest.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? productionHandlerBoundary?.productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
+      ),
+    eshkolProductionHandlerRuntimeExecutionHostImportCallCounts: clonePlain(
+      objectOrNull(ingest.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts)
+      || objectOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts)
+      || objectOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecution?.hostImportCallCounts)
+      || null
+    ),
+    eshkolProductionHandlerRuntimeExecutionBlockedBy: uniqueStrings(
+      ingest.eshkolProductionHandlerRuntimeExecutionBlockedBy
+      || productionHandlerBoundary?.productionHandlerRuntimeExecutionBlockedBy
+      || productionHandlerBoundary?.productionHandlerRuntimeExecution?.blockedBy
+      || []
+    ),
     eshkolProductionHostImportsRuntimeScope:
       ingest.eshkolProductionHostImportsRuntimeScope
       || productionHandlerBoundary?.hostImportsRuntimeScope

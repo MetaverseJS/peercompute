@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 21:49:12 AKDT
+Updated: 2026-06-06 23:53:08 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -81,6 +81,18 @@ Updated: 2026-06-06 21:49:12 AKDT
   `serviceHandlerReady`, handler blockers, handler output schema/status/ready,
   and Multiscale per-dispatch summaries include the full handler
   `serviceOutput` for browser inspection.
+- PeerCompute now ingests Eshkol's production handler implementation/runtime
+  smoke evidence from the staged ULG handoff. Artifact summaries, dispatch
+  adapter ingest, handoff supervisor summaries, Multiscale closure ingest,
+  scenario readiness, packet boundary conditions, browser handoff smoke, and
+  relay dispatch smoke preserve `eshkol.ulg.production-handler-implementation.v0`
+  and `eshkol.ulg.production-handler-runtime-execution.v0`.
+- The production handler boundary now reports
+  `production-handler-runtime-smoke-executed`, `handlerReady = true`,
+  `runtimeExecution = true`, implementation evidence count `5`, deterministic
+  entry args, changed bytes inside the declared tensor range, tensor outputs,
+  and host import call counts while keeping scientific validation, full physics
+  validation, and full-fidelity magnetar simulation false.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -150,7 +162,7 @@ Updated: 2026-06-06 21:49:12 AKDT
   `deterministic-tensor-runtime-smoke-only`, linear memory status
   `entry-export-runtime-smoke-passed`, offset probe `runtime-smoke-passed`,
   changed bytes `64`, and production handler boundary
-  `declared-not-executed`.
+  `production-handler-runtime-smoke-executed`.
 - PeerCompute descriptor regression now blocks tensor-runtime/table binding
   drift even when the interpolation table itself still reports
   `computed-fixture`: mismatched runtime table hashes and mismatched
@@ -163,12 +175,13 @@ Updated: 2026-06-06 21:49:12 AKDT
   readiness and output schema/status/ready for both MoonLab and Eshkol dispatch
   results without copying raw artifact payloads.
 - Eshkol production handler boundary ingestion now consumes
-  `eshkol.ulg.production-handler-boundary.v0` as optional declared-not-executed
-  evidence. Artifact, dispatch, supervisor, browser adapter, and Multiscale
-  summaries preserve `handlerReady = false`, `runtimeExecution = false`,
+  `eshkol.ulg.production-handler-boundary.v0` as bounded runtime-smoke evidence.
+  Artifact, dispatch, supervisor, browser adapter, and Multiscale summaries
+  preserve `handlerReady = true`, `runtimeExecution = true`,
   `scientificValidation = false`, `fullPhysicsValidation = false`, and
-  `fullFidelityMagnetarSimulation = false`; overclaims are surfaced as boundary
-  blockers and do not relax runtime or scientific gates.
+  `fullFidelityMagnetarSimulation = false`; full-physics validation remains
+  blocked as `full-physics-validation-not-run` and runtime smoke does not relax
+  scientific gates.
 - Eshkol production dispatch preflight ingestion now preserves
   `eshkol.ulg.production-handler-dispatch-preflight.v0` and production-host
   candidate metadata through artifact summaries, dispatch adapter probes,
@@ -183,9 +196,9 @@ Updated: 2026-06-06 21:49:12 AKDT
   blocked check count, and passed/blocked check lists through artifact
   summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale
   scenario readiness, browser handoff smokes, and packet boundary conditions.
-  Current evidence is 10 total checks, 7 passed, and 3 blocked after Eshkol's
-  production handler contract and production-candidate runtime-probe smoke
-  evidence landed.
+  Current evidence is 10 total checks, 9 passed, and 1 blocked after Eshkol's
+  production handler implementation and runtime-execution smoke evidence
+  landed.
 - Eshkol production-candidate runtime probe evidence now preserves
   `eshkol.ulg.production-candidate-runtime-probe.v0` through artifact summaries,
   dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario
@@ -271,12 +284,22 @@ Updated: 2026-06-06 21:49:12 AKDT
   `100.86.83.35:3478`; `npm run backend:dry-run` reported relay plus coturn
   launch commands without starting services.
 - `git diff --check` passed.
+- Current production handler runtime-smoke propagation validation passed on
+  2026-06-06: syntax checks for changed PeerCompute service-orchestration
+  files, Multiscale source files, and smoke scripts passed; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `198/198`;
+  `npm --prefix demos/multiscale run build` passed with the existing large-
+  chunk warning; `npm --prefix demos/multiscale run test:ulg-handoff` passed;
+  and `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed with two
+  accepted dispatches, two released resource leases, production handler/runtime
+  smoke summaries, and all science/full-physics scope flags false.
 
 ## Next
-- Wire concrete MoonLab/Eshkol production handlers into the handler-backed
-  dispatch host once those services expose their runtime entry points.
-- Promote the Eshkol deterministic tensor-runtime candidate into a production
-  handler only after real host imports, calibrated physics outputs, and explicit
-  scientific validation evidence exist.
+- Promote the production handler runtime smoke into validated production
+  physics only after full-physics validation artifacts, calibrated magnetar
+  outputs, and named tolerance evidence exist.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.

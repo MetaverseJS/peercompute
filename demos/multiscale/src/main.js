@@ -2277,6 +2277,95 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractBlockedBy
         || []
       ),
+      eshkolProductionHandlerImplementationSchema:
+        serviceSummary?.eshkolProductionHandlerImplementationSchema
+        || serviceSummary?.closureProductionHandlerImplementationSchema
+        || serviceResult.ingest?.eshkolProductionHandlerImplementationSchema
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationSchema
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementation?.schema
+        || null,
+      eshkolProductionHandlerImplementationStatus:
+        serviceSummary?.eshkolProductionHandlerImplementationStatus
+        || serviceSummary?.closureProductionHandlerImplementationStatus
+        || serviceResult.ingest?.eshkolProductionHandlerImplementationStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementation?.status
+        || null,
+      eshkolProductionHandlerImplementationReady:
+        serviceSummary?.eshkolProductionHandlerImplementationReady
+        ?? serviceSummary?.closureProductionHandlerImplementationReady
+        ?? serviceResult.ingest?.eshkolProductionHandlerImplementationReady
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationReady
+        ?? null,
+      eshkolProductionHandlerImplementationEvidenceCount:
+        serviceSummary?.eshkolProductionHandlerImplementationEvidenceCount
+        ?? serviceSummary?.closureProductionHandlerImplementationEvidenceCount
+        ?? serviceResult.ingest?.eshkolProductionHandlerImplementationEvidenceCount
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationEvidenceCount
+        ?? (
+          Array.isArray(descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementation?.evidence)
+            ? descriptorProbe.productionHandlerBoundary.productionHandlerImplementation.evidence.length
+            : null
+        ),
+      eshkolProductionHandlerImplementationBlockedBy: cloneJson(
+        serviceSummary?.eshkolProductionHandlerImplementationBlockedBy
+        || serviceSummary?.closureProductionHandlerImplementationBlockedBy
+        || serviceResult.ingest?.eshkolProductionHandlerImplementationBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementationBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerImplementation?.blockedBy
+        || []
+      ),
+      eshkolProductionHandlerRuntimeExecutionSchema:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionSchema
+        || serviceSummary?.closureProductionHandlerRuntimeExecutionSchema
+        || serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionSchema
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionSchema
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.schema
+        || null,
+      eshkolProductionHandlerRuntimeExecutionStatus:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionStatus
+        || serviceSummary?.closureProductionHandlerRuntimeExecutionStatus
+        || serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.status
+        || null,
+      eshkolProductionHandlerRuntimeExecutionReady:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionReady
+        ?? serviceSummary?.closureProductionHandlerRuntimeExecutionReady
+        ?? serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionReady
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionReady
+        ?? null,
+      eshkolProductionHandlerRuntimeExecutionEntryArgs: cloneJson(
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionEntryArgs
+        || serviceSummary?.closureProductionHandlerRuntimeExecutionEntryArgs
+        || serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionEntryArgs
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.entryArgs
+        || []
+      ),
+      eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? serviceSummary?.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
+        ?? null,
+      eshkolProductionHandlerRuntimeExecutionHostImportCallCounts: cloneJson(
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts
+        || serviceSummary?.closureProductionHandlerRuntimeExecutionHostImportCallCounts
+        || serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.hostImportCallCounts
+        || null
+      ),
+      eshkolProductionHandlerRuntimeExecutionBlockedBy: cloneJson(
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionBlockedBy
+        || serviceSummary?.closureProductionHandlerRuntimeExecutionBlockedBy
+        || serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.blockedBy
+        || []
+      ),
       eshkolProductionHandlerBoundary: cloneJson(
         serviceSummary?.eshkolProductionHandlerBoundary
         || serviceResult.ingest?.eshkolProductionHandlerBoundary
