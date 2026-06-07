@@ -58,6 +58,69 @@ const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
   'full-physics-validation-not-run'
 ];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
+  'artifact-module-sha256-matches-module-ref',
+  'entry-export-main-signature-i32-i32-to-i32',
+  'non-stub-host-imports-present',
+  'f64-tensor-memory-binding-validated',
+  'runtime-smoke-stubs-rejected-for-production',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true',
+  'full-physics-validation-evidence-present'
+];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
+  'artifact-module-sha256-matches-module-ref',
+  'entry-export-main-signature-i32-i32-to-i32',
+  'f64-tensor-memory-binding-validated',
+  'runtime-smoke-stubs-rejected-for-production'
+];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
+  'non-stub-host-imports-present',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true',
+  'full-physics-validation-evidence-present'
+];
+
+function firstPresent(source, keys) {
+  for (const key of keys) {
+    if (source?.[key] != null) return source[key];
+  }
+  return null;
+}
+
+function assertEshkolDispatchPreflightEvidence(summary = {}) {
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightCheckSummarySchema',
+    'closureProductionDispatchPreflightCheckSummarySchema'
+  ]), 'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0');
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightTotalRequiredCheckCount',
+    'closureProductionDispatchPreflightTotalRequiredCheckCount'
+  ]), 8);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightPassedCheckCount',
+    'closureProductionDispatchPreflightPassedCheckCount'
+  ]), 4);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightBlockedCheckCount',
+    'closureProductionDispatchPreflightBlockedCheckCount'
+  ]), 4);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightPassedChecks',
+    'closureProductionDispatchPreflightPassedChecks'
+  ]), EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolProductionDispatchPreflightBlockedChecks',
+    'closureProductionDispatchPreflightBlockedChecks'
+  ]), EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS);
+  const checkResults = firstPresent(summary, [
+    'eshkolProductionDispatchPreflightCheckResults',
+    'closureProductionDispatchPreflightCheckResults'
+  ]);
+  if (Array.isArray(checkResults)) {
+    assert.deepEqual(checkResults.map((entry) => entry.check), EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS);
+  }
+}
 
 const mime = {
   '.html': 'text/html',
@@ -809,6 +872,10 @@ async function main() {
     assert.equal(servicePlanProbe.dispatchPlan.schema, 'peercompute.ulg.handoff-service-dispatch-plan.v0');
     assert.equal(servicePlanProbe.dispatchPlan.status, 'dispatch-ready');
     assert.equal(servicePlanProbe.dispatchPlan.readyDispatchCount, 2);
+    const eshkolEnvelopeArtifact = servicePlanProbe.envelope.handoff.artifacts.find((artifact) => (
+      artifact.sourceService === 'eshkol' || artifact.artifactKind === 'closure'
+    ));
+    assertEshkolDispatchPreflightEvidence(eshkolEnvelopeArtifact.artifactSummary);
     if (dispatchProbe) {
       assert.equal(dispatchProbe.status, 'dispatch-adapters-ready');
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
@@ -830,6 +897,7 @@ async function main() {
       assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateProductionRuntimeExecution, false);
       assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateScientificValidation, false);
       assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateFullPhysicsValidation, false);
+      assertEshkolDispatchPreflightEvidence(eshkolDispatchSummary);
     } else if (runDispatchAdapters) {
       assert.ok([
         'dispatch-adapter-popup-context-reset',

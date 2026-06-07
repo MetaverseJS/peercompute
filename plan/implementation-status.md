@@ -170,6 +170,13 @@ Updated: 2026-06-06 17:54:48 AKDT
   and packet boundary conditions. Compact service-summary count fields now
   survive Multiscale normalization even when full import/check arrays are not
   present.
+- Eshkol computed production dispatch preflight evidence now preserves
+  `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`,
+  ordered `checkResults`, total required check count, passed check count,
+  blocked check count, and passed/blocked check lists through artifact
+  summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale
+  scenario readiness, browser handoff smokes, and packet boundary conditions.
+  Current evidence remains 8 total checks, 4 passed, and 4 blocked.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay

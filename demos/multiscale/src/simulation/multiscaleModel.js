@@ -588,6 +588,32 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
   const dispatchPreflightRequiredChecks = Array.isArray(source.eshkolProductionDispatchPreflightRequiredChecks)
     ? source.eshkolProductionDispatchPreflightRequiredChecks
     : stringArray(dispatchPreflight.requiredChecks);
+  const dispatchPreflightCheckResults = Array.isArray(source.eshkolProductionDispatchPreflightCheckResults)
+    ? source.eshkolProductionDispatchPreflightCheckResults
+    : (
+        Array.isArray(source.closureProductionDispatchPreflightCheckResults)
+          ? source.closureProductionDispatchPreflightCheckResults
+          : (
+              Array.isArray(dispatchPreflight.checkResults)
+                ? dispatchPreflight.checkResults
+                : []
+            )
+      );
+  const dispatchPreflightCheckSummary = plainObjectOrNull(dispatchPreflight.checkSummary) || {};
+  const dispatchPreflightPassedChecks = Array.isArray(source.eshkolProductionDispatchPreflightPassedChecks)
+    ? source.eshkolProductionDispatchPreflightPassedChecks
+    : (
+        Array.isArray(source.closureProductionDispatchPreflightPassedChecks)
+          ? source.closureProductionDispatchPreflightPassedChecks
+          : stringArray(dispatchPreflightCheckSummary.passedChecks)
+      );
+  const dispatchPreflightBlockedChecks = Array.isArray(source.eshkolProductionDispatchPreflightBlockedChecks)
+    ? source.eshkolProductionDispatchPreflightBlockedChecks
+    : (
+        Array.isArray(source.closureProductionDispatchPreflightBlockedChecks)
+          ? source.closureProductionDispatchPreflightBlockedChecks
+          : stringArray(dispatchPreflightCheckSummary.blockedChecks)
+      );
   const dispatchPreflightRequiredCheckCount =
     dispatchPreflightRequiredChecks.length > 0
       ? dispatchPreflightRequiredChecks.length
@@ -596,6 +622,21 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
           ?? boundary?.dispatchPreflightRequiredCheckCount
           ?? dispatchPreflight.requiredCheckCount
         );
+  const dispatchPreflightTotalRequiredCheckCount = finiteOrNull(
+    source.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+    ?? source.closureProductionDispatchPreflightTotalRequiredCheckCount
+    ?? dispatchPreflightCheckSummary.totalRequiredCheckCount
+  );
+  const dispatchPreflightPassedCheckCount = finiteOrNull(
+    source.eshkolProductionDispatchPreflightPassedCheckCount
+    ?? source.closureProductionDispatchPreflightPassedCheckCount
+    ?? dispatchPreflightCheckSummary.passedCount
+  );
+  const dispatchPreflightBlockedCheckCount = finiteOrNull(
+    source.eshkolProductionDispatchPreflightBlockedCheckCount
+    ?? source.closureProductionDispatchPreflightBlockedCheckCount
+    ?? dispatchPreflightCheckSummary.blockedCount
+  );
   const validationBlockers = uniqueStrings([
     ...(Array.isArray(boundary?.validationBlockers) ? boundary.validationBlockers : []),
     ...(Array.isArray(source.eshkolProductionHandlerBoundaryValidationBlockers)
@@ -701,6 +742,37 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
     ),
     dispatchPreflightRequiredCheckCount:
       dispatchPreflightRequiredCheckCount == null ? null : dispatchPreflightRequiredCheckCount,
+    dispatchPreflightCheckSummarySchema: stringOrNull(
+      source.eshkolProductionDispatchPreflightCheckSummarySchema
+      || source.closureProductionDispatchPreflightCheckSummarySchema
+      || dispatchPreflightCheckSummary.schema
+    ),
+    dispatchPreflightCheckSummaryStatus: stringOrNull(
+      source.eshkolProductionDispatchPreflightCheckSummaryStatus
+      || source.closureProductionDispatchPreflightCheckSummaryStatus
+      || dispatchPreflightCheckSummary.status
+    ),
+    dispatchPreflightCheckSummaryReady:
+      typeof source.eshkolProductionDispatchPreflightCheckSummaryReady === 'boolean'
+        ? source.eshkolProductionDispatchPreflightCheckSummaryReady
+        : (
+            typeof source.closureProductionDispatchPreflightCheckSummaryReady === 'boolean'
+              ? source.closureProductionDispatchPreflightCheckSummaryReady
+              : (
+                  typeof dispatchPreflightCheckSummary.ready === 'boolean'
+                    ? dispatchPreflightCheckSummary.ready
+                    : null
+                )
+          ),
+    dispatchPreflightTotalRequiredCheckCount:
+      dispatchPreflightTotalRequiredCheckCount == null ? null : dispatchPreflightTotalRequiredCheckCount,
+    dispatchPreflightPassedCheckCount:
+      dispatchPreflightPassedCheckCount == null ? null : dispatchPreflightPassedCheckCount,
+    dispatchPreflightBlockedCheckCount:
+      dispatchPreflightBlockedCheckCount == null ? null : dispatchPreflightBlockedCheckCount,
+    dispatchPreflightPassedChecks: clonePlain(stringArray(dispatchPreflightPassedChecks)),
+    dispatchPreflightBlockedChecks: clonePlain(stringArray(dispatchPreflightBlockedChecks)),
+    dispatchPreflightCheckResults: clonePlain(dispatchPreflightCheckResults),
     dispatchPreflightRejectedRuntimeScopes: clonePlain(
       Array.isArray(source.eshkolProductionDispatchPreflightRejectedRuntimeScopes)
         ? source.eshkolProductionDispatchPreflightRejectedRuntimeScopes
@@ -2945,6 +3017,24 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
             ? productionHandlerBoundary.dispatchPreflightRequiredChecks.length
             : null
         ),
+      productionDispatchPreflightCheckSummarySchema:
+        productionHandlerBoundary?.dispatchPreflightCheckSummarySchema || null,
+      productionDispatchPreflightCheckSummaryStatus:
+        productionHandlerBoundary?.dispatchPreflightCheckSummaryStatus || null,
+      productionDispatchPreflightCheckSummaryReady:
+        productionHandlerBoundary?.dispatchPreflightCheckSummaryReady ?? null,
+      productionDispatchPreflightTotalRequiredCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightTotalRequiredCheckCount),
+      productionDispatchPreflightPassedCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightPassedCheckCount),
+      productionDispatchPreflightBlockedCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightBlockedCheckCount),
+      productionDispatchPreflightPassedChecks:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightPassedChecks || []),
+      productionDispatchPreflightBlockedChecks:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightBlockedChecks || []),
+      productionDispatchPreflightCheckResults:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightCheckResults || []),
       productionDispatchPreflightRejectedRuntimeScopes:
         clonePlain(productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes || []),
       productionDispatchPreflightBlockedBy:
@@ -2974,6 +3064,16 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
       productionDispatchPreflightRequiredRuntimeAbi:
         productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi || null,
+      productionDispatchPreflightTotalRequiredCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightTotalRequiredCheckCount),
+      productionDispatchPreflightPassedCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightPassedCheckCount),
+      productionDispatchPreflightBlockedCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightBlockedCheckCount),
+      productionDispatchPreflightPassedChecks:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightPassedChecks || []),
+      productionDispatchPreflightBlockedChecks:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightBlockedChecks || []),
       productionDispatchPreflightBlockedBy:
         clonePlain(productionHandlerBoundary?.dispatchPreflightBlockedBy || []),
       entryExport: closureModuleProbe?.entryExport || null,
@@ -9233,6 +9333,26 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightRequiredRuntimeAbi
             || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightRequiredRuntimeAbi
             || null,
+          scenarioEshkolProductionDispatchPreflightTotalRequiredCheckCount:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightTotalRequiredCheckCount
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightTotalRequiredCheckCount
+            ?? null,
+          scenarioEshkolProductionDispatchPreflightPassedCheckCount:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightPassedCheckCount
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightPassedCheckCount
+            ?? null,
+          scenarioEshkolProductionDispatchPreflightBlockedCheckCount:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightBlockedCheckCount
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightBlockedCheckCount
+            ?? null,
+          scenarioEshkolProductionDispatchPreflightPassedChecks:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightPassedChecks
+            || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightPassedChecks
+            || [],
+          scenarioEshkolProductionDispatchPreflightBlockedChecks:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightBlockedChecks
+            || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightBlockedChecks
+            || [],
           scenarioEshkolProductionDispatchPreflightBlockedBy:
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightBlockedBy
             || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightBlockedBy

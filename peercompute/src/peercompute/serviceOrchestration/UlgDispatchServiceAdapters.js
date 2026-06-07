@@ -113,15 +113,96 @@ function objectOrNull(value) {
 }
 
 function createBoundaryFromSummaryFields(summary = {}) {
-  if (summary.eshkolProductionHandlerBoundarySchema !== ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA) return null;
+  const boundarySchema =
+    summary.eshkolProductionHandlerBoundarySchema || summary.closureProductionHandlerBoundarySchema;
+  if (boundarySchema !== ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA) return null;
   return {
-    schema: summary.eshkolProductionHandlerBoundarySchema,
-    status: summary.eshkolProductionHandlerBoundaryStatus || null,
-    handlerReady: summary.eshkolProductionHandlerBoundaryHandlerReady,
-    runtimeExecution: summary.eshkolProductionHandlerBoundaryRuntimeExecution,
-    scientificValidation: summary.eshkolProductionHandlerBoundaryScientificValidation,
-    fullPhysicsValidation: summary.eshkolProductionHandlerBoundaryFullPhysicsValidation,
-    fullFidelityMagnetarSimulation: summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+    schema: boundarySchema,
+    status: summary.eshkolProductionHandlerBoundaryStatus || summary.closureProductionHandlerBoundaryStatus || null,
+    handlerReady:
+      summary.eshkolProductionHandlerBoundaryHandlerReady ?? summary.closureProductionHandlerReady ?? null,
+    runtimeExecution:
+      summary.eshkolProductionHandlerBoundaryRuntimeExecution
+      ?? summary.closureProductionHandlerRuntimeExecution
+      ?? null,
+    scientificValidation:
+      summary.eshkolProductionHandlerBoundaryScientificValidation
+      ?? summary.closureProductionHandlerScientificValidation
+      ?? null,
+    fullPhysicsValidation:
+      summary.eshkolProductionHandlerBoundaryFullPhysicsValidation
+      ?? summary.closureProductionHandlerFullPhysicsValidation
+      ?? null,
+    fullFidelityMagnetarSimulation:
+      summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
+      ?? summary.closureProductionHandlerFullFidelityMagnetarSimulation
+      ?? null,
+    dispatchPreflightSchema:
+      summary.eshkolProductionDispatchPreflightSchema || summary.closureProductionDispatchPreflightSchema || null,
+    dispatchPreflightStatus:
+      summary.eshkolProductionDispatchPreflightStatus || summary.closureProductionDispatchPreflightStatus || null,
+    dispatchPreflightReady:
+      summary.eshkolProductionDispatchPreflightReady ?? summary.closureProductionDispatchPreflightReady ?? null,
+    dispatchPreflightRuntimeSmokeStubsAllowed:
+      summary.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed
+      ?? summary.closureProductionDispatchPreflightRuntimeSmokeStubsAllowed
+      ?? null,
+    dispatchPreflightCurrentRuntimeAbi:
+      summary.eshkolProductionDispatchPreflightCurrentRuntimeAbi
+      || summary.closureProductionDispatchPreflightCurrentRuntimeAbi
+      || null,
+    dispatchPreflightRequiredRuntimeAbi:
+      summary.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || summary.closureProductionDispatchPreflightRequiredRuntimeAbi
+      || null,
+    dispatchPreflightRequiredChecks:
+      summary.eshkolProductionDispatchPreflightRequiredChecks
+      || summary.closureProductionDispatchPreflightRequiredChecks
+      || [],
+    dispatchPreflightCheckSummarySchema:
+      summary.eshkolProductionDispatchPreflightCheckSummarySchema
+      || summary.closureProductionDispatchPreflightCheckSummarySchema
+      || null,
+    dispatchPreflightCheckSummaryStatus:
+      summary.eshkolProductionDispatchPreflightCheckSummaryStatus
+      || summary.closureProductionDispatchPreflightCheckSummaryStatus
+      || null,
+    dispatchPreflightCheckSummaryReady:
+      summary.eshkolProductionDispatchPreflightCheckSummaryReady
+      ?? summary.closureProductionDispatchPreflightCheckSummaryReady
+      ?? null,
+    dispatchPreflightTotalRequiredCheckCount:
+      summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+      ?? summary.closureProductionDispatchPreflightTotalRequiredCheckCount
+      ?? null,
+    dispatchPreflightPassedCheckCount:
+      summary.eshkolProductionDispatchPreflightPassedCheckCount
+      ?? summary.closureProductionDispatchPreflightPassedCheckCount
+      ?? null,
+    dispatchPreflightBlockedCheckCount:
+      summary.eshkolProductionDispatchPreflightBlockedCheckCount
+      ?? summary.closureProductionDispatchPreflightBlockedCheckCount
+      ?? null,
+    dispatchPreflightPassedChecks:
+      summary.eshkolProductionDispatchPreflightPassedChecks
+      || summary.closureProductionDispatchPreflightPassedChecks
+      || [],
+    dispatchPreflightBlockedChecks:
+      summary.eshkolProductionDispatchPreflightBlockedChecks
+      || summary.closureProductionDispatchPreflightBlockedChecks
+      || [],
+    dispatchPreflightCheckResults:
+      summary.eshkolProductionDispatchPreflightCheckResults
+      || summary.closureProductionDispatchPreflightCheckResults
+      || [],
+    dispatchPreflightRejectedRuntimeScopes:
+      summary.eshkolProductionDispatchPreflightRejectedRuntimeScopes
+      || summary.closureProductionDispatchPreflightRejectedRuntimeScopes
+      || [],
+    dispatchPreflightBlockedBy:
+      summary.eshkolProductionDispatchPreflightBlockedBy
+      || summary.closureProductionDispatchPreflightBlockedBy
+      || []
   };
 }
 
@@ -167,6 +248,18 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
   const dispatchPreflightRequiredChecks = Array.isArray(dispatchPreflight.requiredChecks)
     ? dispatchPreflight.requiredChecks
     : boundary.dispatchPreflightRequiredChecks;
+  const dispatchPreflightCheckResults = Array.isArray(dispatchPreflight.checkResults)
+    ? dispatchPreflight.checkResults
+    : boundary.dispatchPreflightCheckResults;
+  const dispatchPreflightCheckSummary = objectOrNull(dispatchPreflight.checkSummary)
+    || objectOrNull(boundary.dispatchPreflightCheckSummary)
+    || {};
+  const dispatchPreflightPassedChecks = Array.isArray(dispatchPreflightCheckSummary.passedChecks)
+    ? dispatchPreflightCheckSummary.passedChecks
+    : boundary.dispatchPreflightPassedChecks;
+  const dispatchPreflightBlockedChecks = Array.isArray(dispatchPreflightCheckSummary.blockedChecks)
+    ? dispatchPreflightCheckSummary.blockedChecks
+    : boundary.dispatchPreflightBlockedChecks;
   const dispatchPreflightRejectedRuntimeScopes = Array.isArray(dispatchPreflight.rejectedRuntimeScopes)
     ? dispatchPreflight.rejectedRuntimeScopes
     : boundary.dispatchPreflightRejectedRuntimeScopes;
@@ -280,6 +373,31 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
               : null
           ),
     dispatchPreflightRequiredChecks: uniqueStrings(dispatchPreflightRequiredChecks || []),
+    dispatchPreflightCheckSummarySchema:
+      stringOrNull(dispatchPreflightCheckSummary.schema || boundary.dispatchPreflightCheckSummarySchema),
+    dispatchPreflightCheckSummaryStatus:
+      stringOrNull(dispatchPreflightCheckSummary.status || boundary.dispatchPreflightCheckSummaryStatus),
+    dispatchPreflightCheckSummaryReady:
+      typeof dispatchPreflightCheckSummary.ready === 'boolean'
+        ? dispatchPreflightCheckSummary.ready
+        : (
+            typeof boundary.dispatchPreflightCheckSummaryReady === 'boolean'
+              ? boundary.dispatchPreflightCheckSummaryReady
+              : null
+          ),
+    dispatchPreflightTotalRequiredCheckCount:
+      finiteNumberOrNull(
+        dispatchPreflightCheckSummary.totalRequiredCheckCount
+        ?? boundary.dispatchPreflightTotalRequiredCheckCount
+      ),
+    dispatchPreflightPassedCheckCount:
+      finiteNumberOrNull(dispatchPreflightCheckSummary.passedCount ?? boundary.dispatchPreflightPassedCheckCount),
+    dispatchPreflightBlockedCheckCount:
+      finiteNumberOrNull(dispatchPreflightCheckSummary.blockedCount ?? boundary.dispatchPreflightBlockedCheckCount),
+    dispatchPreflightPassedChecks: uniqueStrings(dispatchPreflightPassedChecks || []),
+    dispatchPreflightBlockedChecks: uniqueStrings(dispatchPreflightBlockedChecks || []),
+    dispatchPreflightCheckResults:
+      clonePlain(Array.isArray(dispatchPreflightCheckResults) ? dispatchPreflightCheckResults : []),
     dispatchPreflightRejectedRuntimeScopes: uniqueStrings(dispatchPreflightRejectedRuntimeScopes || []),
     dispatchPreflightBlockedBy: uniqueStrings(dispatchPreflightBlockedBy || []),
     blockers: uniqueStrings(boundary.blockers || []),
@@ -2304,38 +2422,101 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
         || []),
     eshkolProductionDispatchPreflightSchema:
       summary.eshkolProductionDispatchPreflightSchema
+      || summary.closureProductionDispatchPreflightSchema
       || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightSchema
       || null,
     eshkolProductionDispatchPreflightStatus:
       summary.eshkolProductionDispatchPreflightStatus
+      || summary.closureProductionDispatchPreflightStatus
       || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightStatus
       || null,
     eshkolProductionDispatchPreflightReady:
       summary.eshkolProductionDispatchPreflightReady
+      ?? summary.closureProductionDispatchPreflightReady
       ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightReady
       ?? null,
     eshkolProductionDispatchPreflightDeclared:
       summary.eshkolProductionDispatchPreflightDeclared
+      ?? (
+        summary.closureProductionDispatchPreflightSchema == null
+          ? undefined
+          : (
+              summary.closureProductionDispatchPreflightSchema === ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA
+              && summary.closureProductionDispatchPreflightStatus === 'blocked'
+              && summary.closureProductionDispatchPreflightReady === false
+              && summary.closureProductionDispatchPreflightRuntimeSmokeStubsAllowed === false
+            )
+      )
       ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightDeclared
       ?? null,
     eshkolProductionDispatchPreflightCurrentRuntimeAbi:
       summary.eshkolProductionDispatchPreflightCurrentRuntimeAbi
+      || summary.closureProductionDispatchPreflightCurrentRuntimeAbi
       || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCurrentRuntimeAbi
       || null,
     eshkolProductionDispatchPreflightRequiredRuntimeAbi:
       summary.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || summary.closureProductionDispatchPreflightRequiredRuntimeAbi
       || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi
       || null,
     eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed:
       summary.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed
+      ?? summary.closureProductionDispatchPreflightRuntimeSmokeStubsAllowed
       ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRuntimeSmokeStubsAllowed
       ?? null,
     eshkolProductionDispatchPreflightRequiredChecks:
       clonePlain(summary.eshkolProductionDispatchPreflightRequiredChecks
+        || summary.closureProductionDispatchPreflightRequiredChecks
         || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRequiredChecks
+        || []),
+    eshkolProductionDispatchPreflightCheckSummarySchema:
+      summary.eshkolProductionDispatchPreflightCheckSummarySchema
+      || summary.closureProductionDispatchPreflightCheckSummarySchema
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckSummarySchema
+      || null,
+    eshkolProductionDispatchPreflightCheckSummaryStatus:
+      summary.eshkolProductionDispatchPreflightCheckSummaryStatus
+      || summary.closureProductionDispatchPreflightCheckSummaryStatus
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckSummaryStatus
+      || null,
+    eshkolProductionDispatchPreflightCheckSummaryReady:
+      summary.eshkolProductionDispatchPreflightCheckSummaryReady
+      ?? summary.closureProductionDispatchPreflightCheckSummaryReady
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckSummaryReady
+      ?? null,
+    eshkolProductionDispatchPreflightTotalRequiredCheckCount:
+      summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+      ?? summary.closureProductionDispatchPreflightTotalRequiredCheckCount
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightTotalRequiredCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightPassedCheckCount:
+      summary.eshkolProductionDispatchPreflightPassedCheckCount
+      ?? summary.closureProductionDispatchPreflightPassedCheckCount
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightPassedCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightBlockedCheckCount:
+      summary.eshkolProductionDispatchPreflightBlockedCheckCount
+      ?? summary.closureProductionDispatchPreflightBlockedCheckCount
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightBlockedCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightPassedChecks:
+      clonePlain(summary.eshkolProductionDispatchPreflightPassedChecks
+        || summary.closureProductionDispatchPreflightPassedChecks
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightPassedChecks
+        || []),
+    eshkolProductionDispatchPreflightBlockedChecks:
+      clonePlain(summary.eshkolProductionDispatchPreflightBlockedChecks
+        || summary.closureProductionDispatchPreflightBlockedChecks
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightBlockedChecks
+        || []),
+    eshkolProductionDispatchPreflightCheckResults:
+      clonePlain(summary.eshkolProductionDispatchPreflightCheckResults
+        || summary.closureProductionDispatchPreflightCheckResults
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckResults
         || []),
     eshkolProductionDispatchPreflightRejectedRuntimeScopes:
       clonePlain(summary.eshkolProductionDispatchPreflightRejectedRuntimeScopes
+        || summary.closureProductionDispatchPreflightRejectedRuntimeScopes
         || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes
         || []),
     eshkolProductionDispatchPreflightBlockedBy:

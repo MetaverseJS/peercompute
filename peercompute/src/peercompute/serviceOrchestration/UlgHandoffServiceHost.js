@@ -472,6 +472,52 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
               ? productionHandlerBoundary.dispatchPreflightRequiredChecks.length
               : null
           ),
+    eshkolProductionDispatchPreflightCheckSummarySchema:
+      ingest.eshkolProductionDispatchPreflightCheckSummarySchema
+      || productionHandlerBoundary?.dispatchPreflightCheckSummarySchema
+      || null,
+    eshkolProductionDispatchPreflightCheckSummaryStatus:
+      ingest.eshkolProductionDispatchPreflightCheckSummaryStatus
+      || productionHandlerBoundary?.dispatchPreflightCheckSummaryStatus
+      || null,
+    eshkolProductionDispatchPreflightCheckSummaryReady: booleanOrNull(
+      ingest.eshkolProductionDispatchPreflightCheckSummaryReady
+      ?? productionHandlerBoundary?.dispatchPreflightCheckSummaryReady
+    ),
+    eshkolProductionDispatchPreflightTotalRequiredCheckCount:
+      finiteNumberOrNull(
+        ingest.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+        ?? productionHandlerBoundary?.dispatchPreflightTotalRequiredCheckCount
+      ),
+    eshkolProductionDispatchPreflightPassedCheckCount:
+      finiteNumberOrNull(
+        ingest.eshkolProductionDispatchPreflightPassedCheckCount
+        ?? productionHandlerBoundary?.dispatchPreflightPassedCheckCount
+      ),
+    eshkolProductionDispatchPreflightBlockedCheckCount:
+      finiteNumberOrNull(
+        ingest.eshkolProductionDispatchPreflightBlockedCheckCount
+        ?? productionHandlerBoundary?.dispatchPreflightBlockedCheckCount
+      ),
+    eshkolProductionDispatchPreflightPassedChecks: uniqueStrings(
+      ingest.eshkolProductionDispatchPreflightPassedChecks
+      || productionHandlerBoundary?.dispatchPreflightPassedChecks
+      || []
+    ),
+    eshkolProductionDispatchPreflightBlockedChecks: uniqueStrings(
+      ingest.eshkolProductionDispatchPreflightBlockedChecks
+      || productionHandlerBoundary?.dispatchPreflightBlockedChecks
+      || []
+    ),
+    eshkolProductionDispatchPreflightCheckResults: clonePlain(
+      Array.isArray(ingest.eshkolProductionDispatchPreflightCheckResults)
+        ? ingest.eshkolProductionDispatchPreflightCheckResults
+        : (
+            Array.isArray(productionHandlerBoundary?.dispatchPreflightCheckResults)
+              ? productionHandlerBoundary.dispatchPreflightCheckResults
+              : []
+          )
+    ),
     eshkolProductionDispatchPreflightRejectedRuntimeScopes: uniqueStrings(
       ingest.eshkolProductionDispatchPreflightRejectedRuntimeScopes
       || productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes

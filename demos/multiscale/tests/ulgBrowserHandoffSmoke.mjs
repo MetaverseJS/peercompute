@@ -19,6 +19,28 @@ const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
   'full-physics-validation-not-run'
 ];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
+  'artifact-module-sha256-matches-module-ref',
+  'entry-export-main-signature-i32-i32-to-i32',
+  'non-stub-host-imports-present',
+  'f64-tensor-memory-binding-validated',
+  'runtime-smoke-stubs-rejected-for-production',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true',
+  'full-physics-validation-evidence-present'
+];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
+  'artifact-module-sha256-matches-module-ref',
+  'entry-export-main-signature-i32-i32-to-i32',
+  'f64-tensor-memory-binding-validated',
+  'runtime-smoke-stubs-rejected-for-production'
+];
+const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
+  'non-stub-host-imports-present',
+  'handler-ready-flag-true',
+  'runtime-execution-flag-true',
+  'full-physics-validation-evidence-present'
+];
 
 function getUlgOrigin() {
   return new URL(ULG_URL).origin;
@@ -60,6 +82,29 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+  assert.equal(
+    handoffProbe.productionDispatchPreflightCheckSummarySchema,
+    'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
+  );
+  assert.equal(handoffProbe.productionDispatchPreflightTotalRequiredCheckCount, 8);
+  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 4);
+  assert.equal(handoffProbe.productionDispatchPreflightBlockedCheckCount, 4);
+  assert.deepEqual(handoffProbe.productionDispatchPreflightPassedChecks, [
+    ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
+  ]);
+  assert.deepEqual(handoffProbe.productionDispatchPreflightBlockedChecks, [
+    ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS
+  ]);
+  assert.deepEqual(handoffProbe.productionDispatchPreflightCheckResultChecks, [
+    ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS
+  ]);
+  assert.equal(
+    handoffProbe.summaryProductionDispatchPreflightCheckSummarySchema,
+    'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
+  );
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightTotalRequiredCheckCount, 8);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 4);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount, 4);
 }
 
 function assertMoonLabWebGpuProbe(handoffProbe) {
@@ -107,6 +152,7 @@ async function main() {
       const handoff = await window.__ulgDemo.createPeerComputeHandoff();
       const eshkol = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'eshkol');
       const moonlab = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'moonlab');
+      const eshkolSummary = eshkol?.artifactSummary || {};
       const moonlabSummary = moonlab?.artifactSummary || {};
       const descriptorBinding = eshkol?.artifact?.validation?.closureDescriptor?.descriptorBinding || null;
       const tensorRuntimeContract = descriptorBinding?.closureTensorRuntimeContract || null;
@@ -114,6 +160,8 @@ async function main() {
       const smokeBinding = linearMemoryBinding?.smokeBinding || null;
       const offsetProbe = linearMemoryBinding?.entryExportOffsetProbe || null;
       const productionHandlerBoundary = descriptorBinding?.productionHandlerBoundary || null;
+      const productionDispatchPreflight = productionHandlerBoundary?.dispatchPreflight || null;
+      const productionDispatchCheckSummary = productionDispatchPreflight?.checkSummary || null;
       return {
         artifactCount: handoff.artifactCount,
         canonicalSuiteHash: eshkol?.artifact?.validation?.closureDescriptor?.descriptorBinding?.moonlabNormalizedReferenceSuite?.contentHash || null,
@@ -157,6 +205,28 @@ async function main() {
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        productionDispatchPreflightCheckSummarySchema: productionDispatchCheckSummary?.schema || null,
+        productionDispatchPreflightTotalRequiredCheckCount:
+          productionDispatchCheckSummary?.totalRequiredCheckCount ?? null,
+        productionDispatchPreflightPassedCheckCount: productionDispatchCheckSummary?.passedCount ?? null,
+        productionDispatchPreflightBlockedCheckCount: productionDispatchCheckSummary?.blockedCount ?? null,
+        productionDispatchPreflightPassedChecks: Array.isArray(productionDispatchCheckSummary?.passedChecks)
+          ? [...productionDispatchCheckSummary.passedChecks]
+          : [],
+        productionDispatchPreflightBlockedChecks: Array.isArray(productionDispatchCheckSummary?.blockedChecks)
+          ? [...productionDispatchCheckSummary.blockedChecks]
+          : [],
+        productionDispatchPreflightCheckResultChecks: Array.isArray(productionDispatchPreflight?.checkResults)
+          ? productionDispatchPreflight.checkResults.map((entry) => entry.check)
+          : [],
+        summaryProductionDispatchPreflightCheckSummarySchema:
+          eshkolSummary.closureProductionDispatchPreflightCheckSummarySchema || null,
+        summaryProductionDispatchPreflightTotalRequiredCheckCount:
+          eshkolSummary.closureProductionDispatchPreflightTotalRequiredCheckCount ?? null,
+        summaryProductionDispatchPreflightPassedCheckCount:
+          eshkolSummary.closureProductionDispatchPreflightPassedCheckCount ?? null,
+        summaryProductionDispatchPreflightBlockedCheckCount:
+          eshkolSummary.closureProductionDispatchPreflightBlockedCheckCount ?? null,
         moonlabWebGpuParityScopeReady: moonlabSummary.moonlabWebGpuParityScopeReady ?? null,
         moonlabWebGpuParityScopeStatus: moonlabSummary.moonlabWebGpuParityScopeStatus || null,
         moonlabWebGpuParityScopeBackendAvailable:

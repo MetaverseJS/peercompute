@@ -1862,6 +1862,62 @@ function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options =
       typeof summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation === 'boolean'
         ? summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         : null,
+    eshkolProductionDispatchPreflightSchema:
+      summary.eshkolProductionDispatchPreflightSchema
+      || summary.closureProductionDispatchPreflightSchema
+      || null,
+    eshkolProductionDispatchPreflightStatus:
+      summary.eshkolProductionDispatchPreflightStatus
+      || summary.closureProductionDispatchPreflightStatus
+      || null,
+    eshkolProductionDispatchPreflightReady:
+      typeof summary.eshkolProductionDispatchPreflightReady === 'boolean'
+        ? summary.eshkolProductionDispatchPreflightReady
+        : (
+            typeof summary.closureProductionDispatchPreflightReady === 'boolean'
+              ? summary.closureProductionDispatchPreflightReady
+              : null
+          ),
+    eshkolProductionDispatchPreflightRequiredRuntimeAbi:
+      summary.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || summary.closureProductionDispatchPreflightRequiredRuntimeAbi
+      || null,
+    eshkolProductionDispatchPreflightCheckSummarySchema:
+      summary.eshkolProductionDispatchPreflightCheckSummarySchema
+      || summary.closureProductionDispatchPreflightCheckSummarySchema
+      || null,
+    eshkolProductionDispatchPreflightTotalRequiredCheckCount:
+      summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+      ?? summary.closureProductionDispatchPreflightTotalRequiredCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightPassedCheckCount:
+      summary.eshkolProductionDispatchPreflightPassedCheckCount
+      ?? summary.closureProductionDispatchPreflightPassedCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightBlockedCheckCount:
+      summary.eshkolProductionDispatchPreflightBlockedCheckCount
+      ?? summary.closureProductionDispatchPreflightBlockedCheckCount
+      ?? null,
+    eshkolProductionDispatchPreflightPassedChecks: cloneJson(
+      summary.eshkolProductionDispatchPreflightPassedChecks
+      || summary.closureProductionDispatchPreflightPassedChecks
+      || []
+    ),
+    eshkolProductionDispatchPreflightBlockedChecks: cloneJson(
+      summary.eshkolProductionDispatchPreflightBlockedChecks
+      || summary.closureProductionDispatchPreflightBlockedChecks
+      || []
+    ),
+    eshkolProductionDispatchPreflightCheckResults: cloneJson(
+      summary.eshkolProductionDispatchPreflightCheckResults
+      || summary.closureProductionDispatchPreflightCheckResults
+      || []
+    ),
+    eshkolProductionDispatchPreflightBlockedBy: cloneJson(
+      summary.eshkolProductionDispatchPreflightBlockedBy
+      || summary.closureProductionDispatchPreflightBlockedBy
+      || []
+    ),
     probeMode: 'descriptor-only-closure-v0'
   }, {
     ...options,
@@ -2096,6 +2152,44 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || serviceResult.ingest?.eshkolProductionHandlerBoundary
         || descriptorProbe?.productionHandlerBoundary
         || null
+      ),
+      eshkolProductionDispatchPreflightCheckSummarySchema:
+        serviceSummary?.eshkolProductionDispatchPreflightCheckSummarySchema
+        || serviceResult.ingest?.eshkolProductionDispatchPreflightCheckSummarySchema
+        || descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckSummarySchema
+        || null,
+      eshkolProductionDispatchPreflightTotalRequiredCheckCount:
+        serviceSummary?.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+        ?? serviceResult.ingest?.eshkolProductionDispatchPreflightTotalRequiredCheckCount
+        ?? descriptorProbe?.productionHandlerBoundary?.dispatchPreflightTotalRequiredCheckCount
+        ?? null,
+      eshkolProductionDispatchPreflightPassedCheckCount:
+        serviceSummary?.eshkolProductionDispatchPreflightPassedCheckCount
+        ?? serviceResult.ingest?.eshkolProductionDispatchPreflightPassedCheckCount
+        ?? descriptorProbe?.productionHandlerBoundary?.dispatchPreflightPassedCheckCount
+        ?? null,
+      eshkolProductionDispatchPreflightBlockedCheckCount:
+        serviceSummary?.eshkolProductionDispatchPreflightBlockedCheckCount
+        ?? serviceResult.ingest?.eshkolProductionDispatchPreflightBlockedCheckCount
+        ?? descriptorProbe?.productionHandlerBoundary?.dispatchPreflightBlockedCheckCount
+        ?? null,
+      eshkolProductionDispatchPreflightPassedChecks: cloneJson(
+        serviceSummary?.eshkolProductionDispatchPreflightPassedChecks
+        || serviceResult.ingest?.eshkolProductionDispatchPreflightPassedChecks
+        || descriptorProbe?.productionHandlerBoundary?.dispatchPreflightPassedChecks
+        || []
+      ),
+      eshkolProductionDispatchPreflightBlockedChecks: cloneJson(
+        serviceSummary?.eshkolProductionDispatchPreflightBlockedChecks
+        || serviceResult.ingest?.eshkolProductionDispatchPreflightBlockedChecks
+        || descriptorProbe?.productionHandlerBoundary?.dispatchPreflightBlockedChecks
+        || []
+      ),
+      eshkolProductionDispatchPreflightCheckResults: cloneJson(
+        serviceSummary?.eshkolProductionDispatchPreflightCheckResults
+        || serviceResult.ingest?.eshkolProductionDispatchPreflightCheckResults
+        || descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCheckResults
+        || []
       ),
       hostRuntimeProbe: cloneJson(probe.hostRuntimeProbe || null),
       hostRuntimeExecution: cloneJson(hostRuntimeExecution),

@@ -52222,3 +52222,39 @@ keep commits local only, and preserve live Vite servers on `0.0.0.0`.
   production Eshkol host imports, and does not claim full-fidelity magnetar
   physics or full physics validation.
 - No push was attempted.
+
+## 2026-06-06 18:31:51 AKDT - Eshkol computed production dispatch preflight evidence
+
+Prompt: keep working, but do not pivot from the core technology to support an
+SPH demo.
+
+Actions:
+- Propagated Eshkol's computed production dispatch preflight evidence through
+  PeerCompute service orchestration and Multiscale instead of adding
+  SPH-specific behavior.
+- Added support for the ULG `closureProductionDispatchPreflight*` prefix and
+  the PeerCompute `eshkolProductionDispatchPreflight*` prefix so compact
+  handoff summaries and full artifact bodies both preserve the evidence.
+- Preserved `checkResults`, check-summary schema/status/readiness, total
+  required count, passed count, blocked count, passed check list, and blocked
+  check list through dispatch adapters, handoff service summaries, Multiscale
+  closure ingest, readiness summaries, browser dispatch summaries, and packet
+  boundary conditions.
+- Added focused service, Multiscale model, browser handoff, and relay handoff
+  assertions for the 8/4/4 evidence split.
+
+Validation:
+- `node --check` over touched service-orchestration, Multiscale, and smoke-test
+  files: passed.
+- `git diff --check`: passed.
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "production handler boundary|descriptor-only Eshkol|production dispatch preflight"`:
+  passed, 28/28 tests.
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`:
+  passed, 198/198 tests.
+- `npm --prefix demos/multiscale run test:ulg-handoff`: passed; live handoff
+  reported raw and compact Eshkol dispatch-preflight evidence counts `8/4/4`.
+
+Open:
+- Production dispatch remains blocked on production handler implementation,
+  non-stub host imports, runtime execution, and full-physics validation.
+- No push was attempted.

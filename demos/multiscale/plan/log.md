@@ -23287,3 +23287,32 @@ User asked whether Infinite Context Coder is being used.
   real Eshkol production handlers, non-stub host imports, and full physics
   validation.
 - No push was attempted.
+
+## 2026-06-06 18:31:51 AKDT - Eshkol computed production preflight evidence ingest
+
+### Actions
+- Continued the core ULG/Eshkol/PeerCompute dispatch-boundary path and kept
+  SPH/phase-change demos as downstream evidence only.
+- Propagated Eshkol computed production-dispatch preflight evidence through
+  PeerCompute ULG artifact normalization, dispatch adapter ingest, handoff
+  supervisor summaries, Multiscale closure ingest, handoff readiness, module
+  probe summaries, browser dispatch summaries, and packet boundary conditions.
+- Preserved both full ordered `checkResults` rows and compact counts/lists:
+  8 total required checks, 4 passed checks, and 4 blocked checks.
+- Added browser and relay smoke assertions for the raw ULG handoff summary and
+  normalized PeerCompute/Multiscale dispatch summaries.
+
+### Validation
+- PASS: syntax checks passed for touched service-orchestration, Multiscale, and
+  ULG handoff smoke files.
+- PASS: `git diff --check` passed.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "production handler boundary|descriptor-only Eshkol|production dispatch preflight"` passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"` passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and printed
+  raw and compact Eshkol dispatch-preflight evidence counts `8/4/4`.
+
+### Open
+- This is computed evidence propagation only. Production handler
+  implementation, non-stub host imports, runtime execution, and full-physics
+  validation remain intentionally blocked.
+- No push was attempted.
