@@ -977,19 +977,23 @@
 ### Eshkol production handler boundary gate
 - Focused service orchestration gate:
   `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes|deterministic tensor runtime candidate'`.
-: current result on 2026-06-06 was passing. The run proved
+: current result on 2026-06-06 was `28/28` passing. The run proved
   `eshkol.ulg.production-handler-boundary.v0` is surfaced from Eshkol closure
   metadata with `handlerReady = false`, `runtimeExecution = false`,
   `scientificValidation = false`, `fullPhysicsValidation = false`, and
   `fullFidelityMagnetarSimulation = false`; overclaimed runtime execution
-  blocks the Eshkol dispatch adapter, while the live deterministic tensor-offset
-  candidate can execute as runtime-smoke evidence only.
+  blocks the Eshkol dispatch adapter, the live deterministic tensor-offset
+  candidate can execute as runtime-smoke evidence only, and already-normalized
+  production-host/preflight boundary summaries can be summarized again without
+  dropping production candidate or dispatch preflight fields.
 - Focused Multiscale gate:
-  `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production handler boundary|descriptor-only Eshkol closure'`.
-: current result on 2026-06-06 was `197/197` passing. The run proved
+  `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production preflight counts|production handler boundary|descriptor-only Eshkol'`.
+: current result on 2026-06-06 was `198/198` passing. The run proved
   Multiscale closure ingest, handoff readiness, and packet boundary conditions
-  preserve the same false boundary flags and keep overclaimed handler readiness
-  bounded without clearing scientific readiness.
+  preserve the same false boundary flags, keep overclaimed handler readiness
+  bounded without clearing scientific readiness, and preserve compact service
+  summary counts for required production non-stub imports and dispatch preflight
+  checks when full arrays are omitted.
 - Build gate:
   `npm --prefix demos/multiscale run build`.
 : current result on 2026-06-06 passed with only the existing large-chunk

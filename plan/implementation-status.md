@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 17:20:53 AKDT
+Updated: 2026-06-06 17:54:48 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -163,6 +163,13 @@ Updated: 2026-06-06 17:20:53 AKDT
   `scientificValidation = false`, `fullPhysicsValidation = false`, and
   `fullFidelityMagnetarSimulation = false`; overclaims are surfaced as boundary
   blockers and do not relax runtime or scientific gates.
+- Eshkol production dispatch preflight ingestion now preserves
+  `eshkol.ulg.production-handler-dispatch-preflight.v0` and production-host
+  candidate metadata through artifact summaries, dispatch adapter probes,
+  handoff supervisor summaries, Multiscale handoff readiness, module probes,
+  and packet boundary conditions. Compact service-summary count fields now
+  survive Multiscale normalization even when full import/check arrays are not
+  present.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay

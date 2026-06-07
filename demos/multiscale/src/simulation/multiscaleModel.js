@@ -203,6 +203,7 @@ const MOONLAB_WEBGPU_REQUIRED_COVERAGE = Object.freeze([
 ]);
 export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
 export const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
+export const ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA = 'eshkol.ulg.production-handler-dispatch-preflight.v0';
 
 const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
   {
@@ -555,6 +556,46 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
   const fullFidelityMagnetarSimulation = typeof boundary?.fullFidelityMagnetarSimulation === 'boolean'
     ? boundary.fullFidelityMagnetarSimulation
     : source.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation;
+  const hostImports = plainObjectOrNull(boundary?.hostImports) || {};
+  const productionCandidate = plainObjectOrNull(hostImports.productionCandidate) || {};
+  const dispatchPreflight = plainObjectOrNull(boundary?.dispatchPreflight) || {};
+  const dispatchPreflightReady =
+    typeof dispatchPreflight.ready === 'boolean'
+      ? dispatchPreflight.ready
+      : source.eshkolProductionDispatchPreflightReady;
+  const dispatchPreflightDeclared = (
+    source.eshkolProductionDispatchPreflightDeclared
+    ?? (
+      dispatchPreflight.schema === ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA
+      && dispatchPreflight.status === 'blocked'
+      && dispatchPreflight.ready === false
+      && dispatchPreflight.runtimeSmokeStubsAllowed === false
+    )
+  );
+  const productionHostImportCandidateRequiredNonStubImports = Array.isArray(
+    source.eshkolProductionHostImportCandidateRequiredNonStubImports
+  )
+    ? source.eshkolProductionHostImportCandidateRequiredNonStubImports
+    : stringArray(productionCandidate.requiredNonStubImports);
+  const productionHostImportCandidateRequiredNonStubImportCount =
+    productionHostImportCandidateRequiredNonStubImports.length > 0
+      ? productionHostImportCandidateRequiredNonStubImports.length
+      : finiteOrNull(
+          source.eshkolProductionHostImportCandidateRequiredNonStubImportCount
+          ?? boundary?.productionHostImportCandidateRequiredNonStubImportCount
+          ?? productionCandidate.requiredNonStubImportCount
+        );
+  const dispatchPreflightRequiredChecks = Array.isArray(source.eshkolProductionDispatchPreflightRequiredChecks)
+    ? source.eshkolProductionDispatchPreflightRequiredChecks
+    : stringArray(dispatchPreflight.requiredChecks);
+  const dispatchPreflightRequiredCheckCount =
+    dispatchPreflightRequiredChecks.length > 0
+      ? dispatchPreflightRequiredChecks.length
+      : finiteOrNull(
+          source.eshkolProductionDispatchPreflightRequiredCheckCount
+          ?? boundary?.dispatchPreflightRequiredCheckCount
+          ?? dispatchPreflight.requiredCheckCount
+        );
   const validationBlockers = uniqueStrings([
     ...(Array.isArray(boundary?.validationBlockers) ? boundary.validationBlockers : []),
     ...(Array.isArray(source.eshkolProductionHandlerBoundaryValidationBlockers)
@@ -591,6 +632,85 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
     fullPhysicsValidation: fullPhysicsValidation == null ? null : fullPhysicsValidation === true,
     fullFidelityMagnetarSimulation:
       fullFidelityMagnetarSimulation == null ? null : fullFidelityMagnetarSimulation === true,
+    hostImportsRuntimeScope: stringOrNull(
+      source.eshkolProductionHostImportsRuntimeScope || hostImports.runtimeScope
+    ),
+    hostImportsImplementationStatus: stringOrNull(
+      source.eshkolProductionHostImportsImplementationStatus || hostImports.implementationStatus
+    ),
+    productionHostImportCandidateStatus: stringOrNull(
+      source.eshkolProductionHostImportCandidateStatus || productionCandidate.status
+    ),
+    productionHostImportCandidateProductionRuntimeAbi: stringOrNull(
+      source.eshkolProductionHostImportCandidateProductionRuntimeAbi
+      || productionCandidate.productionRuntimeAbi
+    ),
+    productionHostImportCandidateRuntimeSmokeStubsAllowed:
+      typeof productionCandidate.runtimeSmokeStubsAllowed === 'boolean'
+        ? productionCandidate.runtimeSmokeStubsAllowed
+        : (
+            typeof source.eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed === 'boolean'
+              ? source.eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed
+              : null
+          ),
+    productionHostImportCandidateRequiredNonStubImports: clonePlain(
+      productionHostImportCandidateRequiredNonStubImports
+    ),
+    productionHostImportCandidateRequiredNonStubImportCount:
+      productionHostImportCandidateRequiredNonStubImportCount == null
+        ? null
+        : productionHostImportCandidateRequiredNonStubImportCount,
+    productionHostImportCandidateReadinessRequires: clonePlain(
+      Array.isArray(source.eshkolProductionHostImportCandidateReadinessRequires)
+        ? source.eshkolProductionHostImportCandidateReadinessRequires
+        : stringArray(productionCandidate.readinessRequires)
+    ),
+    productionHostImportCandidateBlockedBy: clonePlain(
+      Array.isArray(source.eshkolProductionHostImportCandidateBlockedBy)
+        ? source.eshkolProductionHostImportCandidateBlockedBy
+        : stringArray(productionCandidate.blockedBy)
+    ),
+    dispatchPreflightSchema: stringOrNull(
+      source.eshkolProductionDispatchPreflightSchema || dispatchPreflight.schema
+    ),
+    dispatchPreflightStatus: stringOrNull(
+      source.eshkolProductionDispatchPreflightStatus || dispatchPreflight.status
+    ),
+    dispatchPreflightReady:
+      dispatchPreflightReady == null ? null : dispatchPreflightReady === true,
+    dispatchPreflightDeclared:
+      dispatchPreflightDeclared == null ? null : dispatchPreflightDeclared === true,
+    dispatchPreflightCurrentRuntimeAbi: stringOrNull(
+      source.eshkolProductionDispatchPreflightCurrentRuntimeAbi
+      || dispatchPreflight.currentRuntimeAbi
+    ),
+    dispatchPreflightRequiredRuntimeAbi: stringOrNull(
+      source.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || dispatchPreflight.requiredRuntimeAbi
+    ),
+    dispatchPreflightRuntimeSmokeStubsAllowed:
+      typeof dispatchPreflight.runtimeSmokeStubsAllowed === 'boolean'
+        ? dispatchPreflight.runtimeSmokeStubsAllowed
+        : (
+            typeof source.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed === 'boolean'
+              ? source.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed
+              : null
+          ),
+    dispatchPreflightRequiredChecks: clonePlain(
+      dispatchPreflightRequiredChecks
+    ),
+    dispatchPreflightRequiredCheckCount:
+      dispatchPreflightRequiredCheckCount == null ? null : dispatchPreflightRequiredCheckCount,
+    dispatchPreflightRejectedRuntimeScopes: clonePlain(
+      Array.isArray(source.eshkolProductionDispatchPreflightRejectedRuntimeScopes)
+        ? source.eshkolProductionDispatchPreflightRejectedRuntimeScopes
+        : stringArray(dispatchPreflight.rejectedRuntimeScopes)
+    ),
+    dispatchPreflightBlockedBy: clonePlain(
+      Array.isArray(source.eshkolProductionDispatchPreflightBlockedBy)
+        ? source.eshkolProductionDispatchPreflightBlockedBy
+        : stringArray(dispatchPreflight.blockedBy)
+    ),
     validationBlockerCount: validationBlockers.length,
     validationBlockers
   };
@@ -2793,7 +2913,42 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
       productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
       productionHandlerBoundaryFullFidelityMagnetarSimulation:
-        productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null
+        productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
+      productionHostImportCandidateStatus: productionHandlerBoundary?.productionHostImportCandidateStatus ?? null,
+      productionHostImportCandidateProductionRuntimeAbi:
+        productionHandlerBoundary?.productionHostImportCandidateProductionRuntimeAbi ?? null,
+      productionHostImportCandidateRuntimeSmokeStubsAllowed:
+        productionHandlerBoundary?.productionHostImportCandidateRuntimeSmokeStubsAllowed ?? null,
+      productionHostImportCandidateRequiredNonStubImportCount:
+        finiteOrNull(productionHandlerBoundary?.productionHostImportCandidateRequiredNonStubImportCount)
+        ?? (
+          Array.isArray(productionHandlerBoundary?.productionHostImportCandidateRequiredNonStubImports)
+            ? productionHandlerBoundary.productionHostImportCandidateRequiredNonStubImports.length
+            : null
+        ),
+      productionHostImportCandidateBlockedBy:
+        clonePlain(productionHandlerBoundary?.productionHostImportCandidateBlockedBy || []),
+      productionDispatchPreflightSchema: productionHandlerBoundary?.dispatchPreflightSchema || null,
+      productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
+      productionDispatchPreflightReady: productionHandlerBoundary?.dispatchPreflightReady ?? null,
+      productionDispatchPreflightDeclared: productionHandlerBoundary?.dispatchPreflightDeclared ?? null,
+      productionDispatchPreflightCurrentRuntimeAbi:
+        productionHandlerBoundary?.dispatchPreflightCurrentRuntimeAbi || null,
+      productionDispatchPreflightRequiredRuntimeAbi:
+        productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi || null,
+      productionDispatchPreflightRuntimeSmokeStubsAllowed:
+        productionHandlerBoundary?.dispatchPreflightRuntimeSmokeStubsAllowed ?? null,
+      productionDispatchPreflightRequiredCheckCount:
+        finiteOrNull(productionHandlerBoundary?.dispatchPreflightRequiredCheckCount)
+        ?? (
+          Array.isArray(productionHandlerBoundary?.dispatchPreflightRequiredChecks)
+            ? productionHandlerBoundary.dispatchPreflightRequiredChecks.length
+            : null
+        ),
+      productionDispatchPreflightRejectedRuntimeScopes:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes || []),
+      productionDispatchPreflightBlockedBy:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightBlockedBy || [])
     },
     closureModuleProbe: {
       provider: closureModuleProbe?.provider || 'eshkol',
@@ -2814,6 +2969,13 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
       productionHandlerBoundaryFullFidelityMagnetarSimulation:
         productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
+      productionDispatchPreflightReady: productionHandlerBoundary?.dispatchPreflightReady ?? null,
+      productionDispatchPreflightDeclared: productionHandlerBoundary?.dispatchPreflightDeclared ?? null,
+      productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
+      productionDispatchPreflightRequiredRuntimeAbi:
+        productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi || null,
+      productionDispatchPreflightBlockedBy:
+        clonePlain(productionHandlerBoundary?.dispatchPreflightBlockedBy || []),
       entryExport: closureModuleProbe?.entryExport || null,
       moduleCompiled: closureModuleProbe?.moduleCompiled === true,
       importMetadataMatches: closureModuleProbe?.importMetadataMatches === true,
@@ -9055,6 +9217,26 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryFullFidelityMagnetarSimulation
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryFullFidelityMagnetarSimulation
             ?? null,
+          scenarioEshkolProductionDispatchPreflightReady:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightReady
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightReady
+            ?? null,
+          scenarioEshkolProductionDispatchPreflightDeclared:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightDeclared
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightDeclared
+            ?? null,
+          scenarioEshkolProductionDispatchPreflightStatus:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightStatus
+            || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightStatus
+            || null,
+          scenarioEshkolProductionDispatchPreflightRequiredRuntimeAbi:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightRequiredRuntimeAbi
+            || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightRequiredRuntimeAbi
+            || null,
+          scenarioEshkolProductionDispatchPreflightBlockedBy:
+            scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightBlockedBy
+            || scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightBlockedBy
+            || [],
           scenarioClosureOutputSemanticsReady: scenario.closureIngest?.closure?.outputSemantics?.ready === true,
           scenarioClosureOutputSemanticScope: scenario.closureIngest?.closure?.outputSemantics?.semanticScope || null,
           scenarioClosureOutputScientificValidation: scenario.closureIngest?.closure?.outputSemantics?.scientificValidation === true,

@@ -23252,3 +23252,38 @@ User asked whether Infinite Context Coder is being used.
   not promote Multiscale scientific readiness, full MoonLab runtime readiness,
   or full magnetar physics validation.
 - No push was attempted.
+
+## 2026-06-06 17:54:48 AKDT - Eshkol production dispatch preflight handoff ingest
+
+### Actions
+- Extended Multiscale Eshkol closure ingest and handoff readiness to preserve
+  production-host candidate fields and
+  `eshkol.ulg.production-handler-dispatch-preflight.v0` from PeerCompute ULG
+  summaries.
+- Added packet boundary-condition fields for production dispatch preflight
+  ready/declared/status/required-runtime-ABI/blockers.
+- Preserved compact service-summary counts for required non-stub imports and
+  dispatch preflight checks when full arrays are omitted by supervisor
+  summaries.
+- Added focused model regression coverage for compact preflight counts.
+- Rebuilt `docs/multiscale` after the receiver/source changes.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+  passed.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs` passed.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"` passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed with
+  Multiscale `handoff-ready`, `simulationStatus = scientific-ready`, visible
+  magnetar proxy visual, MoonLab reduced browser WebGPU evidence ready, and
+  Eshkol production boundary still blocked for production execution.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: `git diff --check` passed.
+
+### Open
+- This is production dispatch boundary propagation only. Deterministic runtime
+  smoke remains non-production, and full-fidelity magnetar physics still needs
+  real Eshkol production handlers, non-stub host imports, and full physics
+  validation.
+- No push was attempted.

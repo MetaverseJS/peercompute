@@ -661,6 +661,51 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
   eshkolProductionHandlerBoundaryScientificValidation: false,
   eshkolProductionHandlerBoundaryFullPhysicsValidation: false,
   eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation: false,
+  eshkolProductionHostImportCandidateStatus: 'requirements-declared-not-implemented',
+  eshkolProductionHostImportCandidateProductionRuntimeAbi:
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
+  eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed: false,
+  eshkolProductionHostImportCandidateRequiredNonStubImports: Array.from({ length: 23 }, (_, index) => (
+    `required-non-stub-import-${index + 1}`
+  )),
+  eshkolProductionHostImportCandidateReadinessRequires: [
+    'production-magnetar-handler-implementation',
+    'non-stub-host-runtime-imports',
+    'validated-f64-tensor-memory-imports',
+    'full-physics-validation-pass'
+  ],
+  eshkolProductionHostImportCandidateBlockedBy: [
+    'production-magnetar-handler-not-implemented',
+    'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
+    'full-physics-validation-not-run'
+  ],
+  eshkolProductionDispatchPreflightSchema: 'eshkol.ulg.production-handler-dispatch-preflight.v0',
+  eshkolProductionDispatchPreflightStatus: 'blocked',
+  eshkolProductionDispatchPreflightReady: false,
+  eshkolProductionDispatchPreflightDeclared: true,
+  eshkolProductionDispatchPreflightCurrentRuntimeAbi:
+    'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
+  eshkolProductionDispatchPreflightRequiredRuntimeAbi:
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
+  eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed: false,
+  eshkolProductionDispatchPreflightRequiredChecks: [
+    'artifact-module-sha256-matches-module-ref',
+    'entry-export-main-signature-i32-i32-to-i32',
+    'non-stub-host-imports-present',
+    'f64-tensor-memory-binding-validated',
+    'runtime-smoke-stubs-rejected-for-production',
+    'handler-ready-flag-true',
+    'runtime-execution-flag-true',
+    'full-physics-validation-evidence-present'
+  ],
+  eshkolProductionDispatchPreflightRejectedRuntimeScopes: [
+    'deterministic-runtime-smoke-stubs'
+  ],
+  eshkolProductionDispatchPreflightBlockedBy: [
+    'production-magnetar-handler-not-implemented',
+    'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
+    'full-physics-validation-not-run'
+  ],
   eshkolProductionHandlerBoundary: {
     schema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
     status: 'production-handler-boundary-declared-not-executed',
@@ -670,6 +715,17 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
     scientificValidation: false,
     fullPhysicsValidation: false,
     fullFidelityMagnetarSimulation: false,
+    productionHostImportCandidateStatus: 'requirements-declared-not-implemented',
+    dispatchPreflightStatus: 'blocked',
+    dispatchPreflightReady: false,
+    dispatchPreflightDeclared: true,
+    dispatchPreflightRequiredRuntimeAbi:
+      'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
+    dispatchPreflightBlockedBy: [
+      'production-magnetar-handler-not-implemented',
+      'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
+      'full-physics-validation-not-run'
+    ],
     validationBlockers: []
   }
 });
@@ -2264,6 +2320,22 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.scientificValidation, false);
   assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullPhysicsValidation, false);
   assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
+  assert.equal(
+    scenario.closureIngest.closure.productionHandlerBoundary.productionHostImportCandidateStatus,
+    'requirements-declared-not-implemented'
+  );
+  assert.equal(
+    scenario.closureIngest.closure.productionHandlerBoundary.productionHostImportCandidateRequiredNonStubImportCount,
+    23
+  );
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightStatus, 'blocked');
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightReady, false);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightDeclared, true);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightRequiredCheckCount, 8);
+  assert.equal(
+    scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightRequiredRuntimeAbi,
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
+  );
   assert.equal(scenario.handoffReadiness.status, 'handoff-ready');
   assert.equal(scenario.handoffReadiness.closureHandoff.descriptorReady, true);
   assert.equal(scenario.handoffReadiness.closureHandoff.descriptorSchema, 'eshkol.ulg.magnetar-closure-descriptor.v0');
@@ -2277,9 +2349,19 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
     scenario.handoffReadiness.closureHandoff.productionHandlerBoundaryFullFidelityMagnetarSimulation,
     false
   );
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightStatus, 'blocked');
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightReady, false);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightDeclared, true);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightRequiredCheckCount, 8);
+  assert.deepEqual(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightBlockedBy, [
+    'production-magnetar-handler-not-implemented',
+    'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
+    'full-physics-validation-not-run'
+  ]);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.descriptorProbeReady, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.productionHandlerBoundaryReady, true);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.productionHandlerBoundaryHandlerReady, false);
+  assert.equal(scenario.handoffReadiness.closureModuleProbe.productionDispatchPreflightReady, false);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, false);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closureDescriptorReady, true);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closurePrerequisiteReady, true);
@@ -2308,10 +2390,59 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionScientificValidation, false);
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullPhysicsValidation, false);
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionFullFidelityMagnetarSimulation, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightDeclared, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightStatus, 'blocked');
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightRequiredRuntimeAbi,
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
+  );
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostRuntimeExecutionReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioHandoffReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioScientificReady, false);
+});
+
+test('magnetar scenario preserves compact Eshkol production preflight counts from service summaries', () => {
+  const model = new MultiscaleModel({ seed: 520 });
+  const scenario = model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    validationStatus: 'descriptor-only',
+    closureKind: 'magnetar-closure-descriptor',
+    closureReady: true,
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: false,
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY,
+    ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY,
+    eshkolProductionHostImportCandidateRequiredNonStubImports: undefined,
+    eshkolProductionHostImportCandidateRequiredNonStubImportCount: 23,
+    eshkolProductionDispatchPreflightRequiredChecks: undefined,
+    eshkolProductionDispatchPreflightRequiredCheckCount: 8,
+    eshkolProductionHandlerBoundary: {
+      ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY.eshkolProductionHandlerBoundary,
+      productionHostImportCandidateRequiredNonStubImports: undefined,
+      productionHostImportCandidateRequiredNonStubImportCount: 23,
+      dispatchPreflightRequiredChecks: undefined,
+      dispatchPreflightRequiredCheckCount: 8
+    }
+  });
+
+  assert.deepEqual(
+    scenario.closureIngest.closure.productionHandlerBoundary.productionHostImportCandidateRequiredNonStubImports,
+    []
+  );
+  assert.equal(
+    scenario.closureIngest.closure.productionHandlerBoundary.productionHostImportCandidateRequiredNonStubImportCount,
+    23
+  );
+  assert.deepEqual(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightRequiredChecks, []);
+  assert.equal(scenario.closureIngest.closure.productionHandlerBoundary.dispatchPreflightRequiredCheckCount, 8);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionHostImportCandidateRequiredNonStubImportCount, 23);
+  assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightRequiredCheckCount, 8);
 });
 
 test('magnetar scenario keeps Eshkol production handler boundary overclaims bounded', () => {

@@ -400,6 +400,88 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         ?? productionHandlerBoundary?.fullFidelityMagnetarSimulation
     ),
+    eshkolProductionHostImportsRuntimeScope:
+      ingest.eshkolProductionHostImportsRuntimeScope
+      || productionHandlerBoundary?.hostImportsRuntimeScope
+      || null,
+    eshkolProductionHostImportsImplementationStatus:
+      ingest.eshkolProductionHostImportsImplementationStatus
+      || productionHandlerBoundary?.hostImportsImplementationStatus
+      || null,
+    eshkolProductionHostImportCandidateStatus:
+      ingest.eshkolProductionHostImportCandidateStatus
+      || productionHandlerBoundary?.productionHostImportCandidateStatus
+      || null,
+    eshkolProductionHostImportCandidateProductionRuntimeAbi:
+      ingest.eshkolProductionHostImportCandidateProductionRuntimeAbi
+      || productionHandlerBoundary?.productionHostImportCandidateProductionRuntimeAbi
+      || null,
+    eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed: booleanOrNull(
+      ingest.eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed
+        ?? productionHandlerBoundary?.productionHostImportCandidateRuntimeSmokeStubsAllowed
+    ),
+    eshkolProductionHostImportCandidateRequiredNonStubImportCount:
+      Array.isArray(ingest.eshkolProductionHostImportCandidateRequiredNonStubImports)
+        ? ingest.eshkolProductionHostImportCandidateRequiredNonStubImports.length
+        : (
+            Array.isArray(productionHandlerBoundary?.productionHostImportCandidateRequiredNonStubImports)
+              ? productionHandlerBoundary.productionHostImportCandidateRequiredNonStubImports.length
+              : null
+          ),
+    eshkolProductionHostImportCandidateReadinessRequires: uniqueStrings(
+      ingest.eshkolProductionHostImportCandidateReadinessRequires
+      || productionHandlerBoundary?.productionHostImportCandidateReadinessRequires
+      || []
+    ),
+    eshkolProductionHostImportCandidateBlockedBy: uniqueStrings(
+      ingest.eshkolProductionHostImportCandidateBlockedBy
+      || productionHandlerBoundary?.productionHostImportCandidateBlockedBy
+      || []
+    ),
+    eshkolProductionDispatchPreflightSchema:
+      ingest.eshkolProductionDispatchPreflightSchema
+      || productionHandlerBoundary?.dispatchPreflightSchema
+      || null,
+    eshkolProductionDispatchPreflightStatus:
+      ingest.eshkolProductionDispatchPreflightStatus
+      || productionHandlerBoundary?.dispatchPreflightStatus
+      || null,
+    eshkolProductionDispatchPreflightReady: booleanOrNull(
+      ingest.eshkolProductionDispatchPreflightReady ?? productionHandlerBoundary?.dispatchPreflightReady
+    ),
+    eshkolProductionDispatchPreflightDeclared: booleanOrNull(
+      ingest.eshkolProductionDispatchPreflightDeclared ?? productionHandlerBoundary?.dispatchPreflightDeclared
+    ),
+    eshkolProductionDispatchPreflightCurrentRuntimeAbi:
+      ingest.eshkolProductionDispatchPreflightCurrentRuntimeAbi
+      || productionHandlerBoundary?.dispatchPreflightCurrentRuntimeAbi
+      || null,
+    eshkolProductionDispatchPreflightRequiredRuntimeAbi:
+      ingest.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi
+      || null,
+    eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed: booleanOrNull(
+      ingest.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed
+        ?? productionHandlerBoundary?.dispatchPreflightRuntimeSmokeStubsAllowed
+    ),
+    eshkolProductionDispatchPreflightRequiredCheckCount:
+      Array.isArray(ingest.eshkolProductionDispatchPreflightRequiredChecks)
+        ? ingest.eshkolProductionDispatchPreflightRequiredChecks.length
+        : (
+            Array.isArray(productionHandlerBoundary?.dispatchPreflightRequiredChecks)
+              ? productionHandlerBoundary.dispatchPreflightRequiredChecks.length
+              : null
+          ),
+    eshkolProductionDispatchPreflightRejectedRuntimeScopes: uniqueStrings(
+      ingest.eshkolProductionDispatchPreflightRejectedRuntimeScopes
+      || productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes
+      || []
+    ),
+    eshkolProductionDispatchPreflightBlockedBy: uniqueStrings(
+      ingest.eshkolProductionDispatchPreflightBlockedBy
+      || productionHandlerBoundary?.dispatchPreflightBlockedBy
+      || []
+    ),
     eshkolProductionHandlerBoundary: clonePlain(
       objectOrNull(ingest.eshkolProductionHandlerBoundary) || objectOrNull(productionHandlerBoundary)
     ),

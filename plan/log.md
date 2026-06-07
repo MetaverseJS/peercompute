@@ -52138,3 +52138,87 @@ timeout 8s env \
   MoonLab runtime, not scientific magnetar validation, and not full physics
   validation.
 - No push was attempted.
+
+## 2026-06-06 17:54:48 AKDT - Eshkol production dispatch preflight receiver
+
+Prompt: User said not to pivot from the core technology just to support an SPH
+demo. Continue the core ULG implementation plan, keep SPH as an evidence slice,
+keep commits local only, and preserve live Vite servers on `0.0.0.0`.
+
+### Actions
+- Extended PeerCompute ULG artifact summaries to preserve Eshkol
+  `eshkol.ulg.production-handler-dispatch-preflight.v0` and
+  `eshkol.ulg.production-host-import-candidate.v0` metadata from the production
+  handler boundary.
+- Extended Eshkol dispatch adapter ingest and `UlgHandoffServiceHost` compact
+  supervisor summaries with production-host candidate and dispatch-preflight
+  status, runtime ABI, required counts, rejected runtime scopes, and blocker
+  fields.
+- Extended Multiscale closure ingest, handoff readiness, closure module probes,
+  and packet boundary conditions to preserve the same preflight metadata while
+  keeping production handler/runtime/full-physics readiness false.
+- Spawned Hume as a read-only sidecar for focused PeerCompute review. Hume found
+  two real gaps: `ulgManifestAdapter` dropped already-normalized flat
+  production boundary fields, and Multiscale dropped compact service-summary
+  count fields when full arrays were omitted.
+- Fixed both sidecar findings: `ulgManifestAdapter` is now idempotent for flat
+  normalized production-host/preflight fields, and Multiscale now preserves
+  compact non-stub-import and dispatch-check counts without requiring arrays.
+- Updated root and Multiscale plan/test/status docs and rebuilt the
+  `docs/multiscale` bundle.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "production handler boundary|descriptor-only Eshkol"`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks passed for touched runtime/test files.
+- PASS: service orchestration tests passed `28/28`, including normalized
+  production boundary re-summary, descriptor-only Eshkol dispatch, and
+  production preflight field preservation.
+- PASS: Multiscale model tests passed `198/198`, including compact
+  service-summary counts for required production non-stub imports and dispatch
+  preflight checks.
+- PASS: live ULG-to-Multiscale browser handoff smoke passed with ULG handoff
+  status `handoff ready / blockers 0`, Multiscale `handoff-ready`,
+  `simulationStatus = scientific-ready`, visible magnetar proxy visual, MoonLab
+  reduced browser WebGPU evidence ready, and Eshkol production boundary still
+  blocked by the intended production-handler/non-stub-import/full-physics
+  blockers.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warnings.
+- PASS: `git diff --check` passed.
+
+### Failures / Open
+- Hume's read-only sidecar initially found two propagation gaps; both are fixed
+  and covered by focused regressions.
+- This remains core production-dispatch boundary plumbing. It does not add an
+  SPH-specific shortcut, does not promote deterministic smoke stubs to
+  production Eshkol host imports, and does not claim full-fidelity magnetar
+  physics or full physics validation.
+- No push was attempted.

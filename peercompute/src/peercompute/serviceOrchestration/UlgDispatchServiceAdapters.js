@@ -17,6 +17,7 @@ const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
 const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
 const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
+const ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA = 'eshkol.ulg.production-handler-dispatch-preflight.v0';
 const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
 const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS = 'deterministic-runtime-smoke-executed';
 const ESHKOL_DETERMINISTIC_HOST_RUNTIME_STATUS = 'deterministic-host-runtime-smoke-executed';
@@ -148,6 +149,35 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
   const runtimeExecution = typeof boundary.runtimeExecution === 'boolean'
     ? boundary.runtimeExecution
     : (typeof boundary.runtimeExecuted === 'boolean' ? boundary.runtimeExecuted : null);
+  const hostImports = objectOrNull(boundary.hostImports) || {};
+  const productionCandidate = objectOrNull(hostImports.productionCandidate) || {};
+  const dispatchPreflight = objectOrNull(boundary.dispatchPreflight) || {};
+  const productionCandidateRequiredNonStubImports = Array.isArray(productionCandidate.requiredNonStubImports)
+    ? productionCandidate.requiredNonStubImports
+    : boundary.productionHostImportCandidateRequiredNonStubImports;
+  const productionCandidateTensorMemoryImports = Array.isArray(productionCandidate.tensorMemoryImports)
+    ? productionCandidate.tensorMemoryImports
+    : boundary.productionHostImportCandidateTensorMemoryImports;
+  const productionCandidateReadinessRequires = Array.isArray(productionCandidate.readinessRequires)
+    ? productionCandidate.readinessRequires
+    : boundary.productionHostImportCandidateReadinessRequires;
+  const productionCandidateBlockedBy = Array.isArray(productionCandidate.blockedBy)
+    ? productionCandidate.blockedBy
+    : boundary.productionHostImportCandidateBlockedBy;
+  const dispatchPreflightRequiredChecks = Array.isArray(dispatchPreflight.requiredChecks)
+    ? dispatchPreflight.requiredChecks
+    : boundary.dispatchPreflightRequiredChecks;
+  const dispatchPreflightRejectedRuntimeScopes = Array.isArray(dispatchPreflight.rejectedRuntimeScopes)
+    ? dispatchPreflight.rejectedRuntimeScopes
+    : boundary.dispatchPreflightRejectedRuntimeScopes;
+  const dispatchPreflightBlockedBy = Array.isArray(dispatchPreflight.blockedBy)
+    ? dispatchPreflight.blockedBy
+    : boundary.dispatchPreflightBlockedBy;
+  const dispatchPreflightDeclared = boundary.dispatchPreflightDeclared === true
+    || (dispatchPreflight.schema === ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA
+    && dispatchPreflight.status === 'blocked'
+    && dispatchPreflight.ready === false
+    && dispatchPreflight.runtimeSmokeStubsAllowed === false);
   const validationBlockers = uniqueStrings([
     boundary.schema === ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA
       ? null
@@ -189,10 +219,69 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
     handlerId: stringOrNull(boundary.handlerId),
     handlerKind: stringOrNull(boundary.handlerKind),
     handlerProtocol: stringOrNull(boundary.handlerProtocol || boundary.protocol),
+    dispatchSchema: stringOrNull(boundary.dispatchSchema),
+    runtimeAbi: stringOrNull(boundary.runtimeAbi),
+    tensorMemoryModel: stringOrNull(boundary.tensorMemoryModel),
     allowedExecutionClaims: Array.isArray(boundary.allowedExecutionClaims)
       ? uniqueStrings(boundary.allowedExecutionClaims)
       : [],
     tensorMemoryBinding: clonePlain(objectOrNull(boundary.tensorMemoryBinding)),
+    hostImportsRuntimeScope: stringOrNull(hostImports.runtimeScope || boundary.hostImportsRuntimeScope),
+    hostImportsImplementationStatus:
+      stringOrNull(hostImports.implementationStatus || boundary.hostImportsImplementationStatus),
+    productionHostImportCandidateSchema:
+      stringOrNull(productionCandidate.schema || boundary.productionHostImportCandidateSchema),
+    productionHostImportCandidateStatus:
+      stringOrNull(productionCandidate.status || boundary.productionHostImportCandidateStatus),
+    productionHostImportCandidateProductionRuntimeAbi:
+      stringOrNull(
+        productionCandidate.productionRuntimeAbi
+        || boundary.productionHostImportCandidateProductionRuntimeAbi
+      ),
+    productionHostImportCandidateRuntimeSmokeStubsAllowed:
+      typeof productionCandidate.runtimeSmokeStubsAllowed === 'boolean'
+        ? productionCandidate.runtimeSmokeStubsAllowed
+        : (
+            typeof boundary.productionHostImportCandidateRuntimeSmokeStubsAllowed === 'boolean'
+              ? boundary.productionHostImportCandidateRuntimeSmokeStubsAllowed
+              : null
+          ),
+    productionHostImportCandidateRequiredNonStubImports:
+      uniqueStrings(productionCandidateRequiredNonStubImports || []),
+    productionHostImportCandidateTensorMemoryImports:
+      uniqueStrings(productionCandidateTensorMemoryImports || []),
+    productionHostImportCandidateReadinessRequires:
+      uniqueStrings(productionCandidateReadinessRequires || []),
+    productionHostImportCandidateBlockedBy:
+      uniqueStrings(productionCandidateBlockedBy || []),
+    dispatchPreflightSchema: stringOrNull(dispatchPreflight.schema || boundary.dispatchPreflightSchema),
+    dispatchPreflightStatus: stringOrNull(dispatchPreflight.status || boundary.dispatchPreflightStatus),
+    dispatchPreflightReady:
+      typeof dispatchPreflight.ready === 'boolean'
+        ? dispatchPreflight.ready
+        : (
+            typeof boundary.dispatchPreflightReady === 'boolean'
+              ? boundary.dispatchPreflightReady
+              : null
+          ),
+    dispatchPreflightDeclared,
+    dispatchPreflightDispatchSchema:
+      stringOrNull(dispatchPreflight.dispatchSchema || boundary.dispatchPreflightDispatchSchema),
+    dispatchPreflightCurrentRuntimeAbi:
+      stringOrNull(dispatchPreflight.currentRuntimeAbi || boundary.dispatchPreflightCurrentRuntimeAbi),
+    dispatchPreflightRequiredRuntimeAbi:
+      stringOrNull(dispatchPreflight.requiredRuntimeAbi || boundary.dispatchPreflightRequiredRuntimeAbi),
+    dispatchPreflightRuntimeSmokeStubsAllowed:
+      typeof dispatchPreflight.runtimeSmokeStubsAllowed === 'boolean'
+        ? dispatchPreflight.runtimeSmokeStubsAllowed
+        : (
+            typeof boundary.dispatchPreflightRuntimeSmokeStubsAllowed === 'boolean'
+              ? boundary.dispatchPreflightRuntimeSmokeStubsAllowed
+              : null
+          ),
+    dispatchPreflightRequiredChecks: uniqueStrings(dispatchPreflightRequiredChecks || []),
+    dispatchPreflightRejectedRuntimeScopes: uniqueStrings(dispatchPreflightRejectedRuntimeScopes || []),
+    dispatchPreflightBlockedBy: uniqueStrings(dispatchPreflightBlockedBy || []),
     blockers: uniqueStrings(boundary.blockers || []),
     validationBlockerCount: validationBlockers.length,
     validationBlockers
@@ -2181,6 +2270,78 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
       summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
       ?? probe?.descriptorProbe?.productionHandlerBoundary?.fullFidelityMagnetarSimulation
       ?? null,
+    eshkolProductionHostImportsRuntimeScope:
+      summary.eshkolProductionHostImportsRuntimeScope
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.hostImportsRuntimeScope
+      ?? null,
+    eshkolProductionHostImportsImplementationStatus:
+      summary.eshkolProductionHostImportsImplementationStatus
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.hostImportsImplementationStatus
+      ?? null,
+    eshkolProductionHostImportCandidateStatus:
+      summary.eshkolProductionHostImportCandidateStatus
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateStatus
+      ?? null,
+    eshkolProductionHostImportCandidateProductionRuntimeAbi:
+      summary.eshkolProductionHostImportCandidateProductionRuntimeAbi
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateProductionRuntimeAbi
+      ?? null,
+    eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed:
+      summary.eshkolProductionHostImportCandidateRuntimeSmokeStubsAllowed
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateRuntimeSmokeStubsAllowed
+      ?? null,
+    eshkolProductionHostImportCandidateRequiredNonStubImports:
+      clonePlain(summary.eshkolProductionHostImportCandidateRequiredNonStubImports
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateRequiredNonStubImports
+        || []),
+    eshkolProductionHostImportCandidateReadinessRequires:
+      clonePlain(summary.eshkolProductionHostImportCandidateReadinessRequires
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateReadinessRequires
+        || []),
+    eshkolProductionHostImportCandidateBlockedBy:
+      clonePlain(summary.eshkolProductionHostImportCandidateBlockedBy
+        || probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateBlockedBy
+        || []),
+    eshkolProductionDispatchPreflightSchema:
+      summary.eshkolProductionDispatchPreflightSchema
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightSchema
+      || null,
+    eshkolProductionDispatchPreflightStatus:
+      summary.eshkolProductionDispatchPreflightStatus
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightStatus
+      || null,
+    eshkolProductionDispatchPreflightReady:
+      summary.eshkolProductionDispatchPreflightReady
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightReady
+      ?? null,
+    eshkolProductionDispatchPreflightDeclared:
+      summary.eshkolProductionDispatchPreflightDeclared
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightDeclared
+      ?? null,
+    eshkolProductionDispatchPreflightCurrentRuntimeAbi:
+      summary.eshkolProductionDispatchPreflightCurrentRuntimeAbi
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightCurrentRuntimeAbi
+      || null,
+    eshkolProductionDispatchPreflightRequiredRuntimeAbi:
+      summary.eshkolProductionDispatchPreflightRequiredRuntimeAbi
+      || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRequiredRuntimeAbi
+      || null,
+    eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed:
+      summary.eshkolProductionDispatchPreflightRuntimeSmokeStubsAllowed
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRuntimeSmokeStubsAllowed
+      ?? null,
+    eshkolProductionDispatchPreflightRequiredChecks:
+      clonePlain(summary.eshkolProductionDispatchPreflightRequiredChecks
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRequiredChecks
+        || []),
+    eshkolProductionDispatchPreflightRejectedRuntimeScopes:
+      clonePlain(summary.eshkolProductionDispatchPreflightRejectedRuntimeScopes
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightRejectedRuntimeScopes
+        || []),
+    eshkolProductionDispatchPreflightBlockedBy:
+      clonePlain(summary.eshkolProductionDispatchPreflightBlockedBy
+        || probe?.descriptorProbe?.productionHandlerBoundary?.dispatchPreflightBlockedBy
+        || []),
     eshkolProductionHandlerBoundary:
       clonePlain(summary.eshkolProductionHandlerBoundary || probe?.descriptorProbe?.productionHandlerBoundary || null),
     hostRuntimeProbeReady: probe?.hostRuntimeProbe?.ready === true,
