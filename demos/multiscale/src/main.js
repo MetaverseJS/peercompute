@@ -1864,6 +1864,45 @@ function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options =
       typeof summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation === 'boolean'
         ? summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         : null,
+    eshkolProductionHandlerContractSchema:
+      summary.eshkolProductionHandlerContractSchema
+      || summary.closureProductionHandlerContractSchema
+      || null,
+    eshkolProductionHandlerContractStatus:
+      summary.eshkolProductionHandlerContractStatus
+      || summary.closureProductionHandlerContractStatus
+      || null,
+    eshkolProductionHandlerContractDeclared:
+      typeof summary.eshkolProductionHandlerContractDeclared === 'boolean'
+        ? summary.eshkolProductionHandlerContractDeclared
+        : (
+            typeof summary.closureProductionHandlerContractDeclared === 'boolean'
+              ? summary.closureProductionHandlerContractDeclared
+              : null
+          ),
+    eshkolProductionHandlerContractInvocationArgumentMode:
+      summary.eshkolProductionHandlerContractInvocationArgumentMode
+      || summary.closureProductionHandlerContractInvocationArgumentMode
+      || null,
+    eshkolProductionHandlerContractInvocationParameterTypes: cloneJson(
+      summary.eshkolProductionHandlerContractInvocationParameterTypes
+      || summary.closureProductionHandlerContractInvocationParameterTypes
+      || []
+    ),
+    eshkolProductionHandlerContractInvocationResultTypes: cloneJson(
+      summary.eshkolProductionHandlerContractInvocationResultTypes
+      || summary.closureProductionHandlerContractInvocationResultTypes
+      || []
+    ),
+    eshkolProductionHandlerContractRequiredEvidenceCount:
+      summary.eshkolProductionHandlerContractRequiredEvidenceCount
+      ?? summary.closureProductionHandlerContractRequiredEvidenceCount
+      ?? null,
+    eshkolProductionHandlerContractBlockedBy: cloneJson(
+      summary.eshkolProductionHandlerContractBlockedBy
+      || summary.closureProductionHandlerContractBlockedBy
+      || []
+    ),
     eshkolProductionCandidateRuntimeProbeStatus:
       summary.eshkolProductionCandidateRuntimeProbeStatus
       || summary.closureProductionCandidateRuntimeProbeStatus
@@ -2195,6 +2234,49 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         ?? serviceResult.ingest?.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         ?? descriptorProbe?.productionHandlerBoundary?.fullFidelityMagnetarSimulation
         ?? null,
+      eshkolProductionHandlerContractSchema:
+        serviceSummary?.eshkolProductionHandlerContractSchema
+        || serviceResult.ingest?.eshkolProductionHandlerContractSchema
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractSchema
+        || null,
+      eshkolProductionHandlerContractStatus:
+        serviceSummary?.eshkolProductionHandlerContractStatus
+        || serviceResult.ingest?.eshkolProductionHandlerContractStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractStatus
+        || null,
+      eshkolProductionHandlerContractDeclared:
+        serviceSummary?.eshkolProductionHandlerContractDeclared
+        ?? serviceResult.ingest?.eshkolProductionHandlerContractDeclared
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerContractDeclared
+        ?? null,
+      eshkolProductionHandlerContractInvocationArgumentMode:
+        serviceSummary?.eshkolProductionHandlerContractInvocationArgumentMode
+        || serviceResult.ingest?.eshkolProductionHandlerContractInvocationArgumentMode
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractInvocationArgumentMode
+        || null,
+      eshkolProductionHandlerContractInvocationParameterTypes: cloneJson(
+        serviceSummary?.eshkolProductionHandlerContractInvocationParameterTypes
+        || serviceResult.ingest?.eshkolProductionHandlerContractInvocationParameterTypes
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractInvocationParameterTypes
+        || []
+      ),
+      eshkolProductionHandlerContractInvocationResultTypes: cloneJson(
+        serviceSummary?.eshkolProductionHandlerContractInvocationResultTypes
+        || serviceResult.ingest?.eshkolProductionHandlerContractInvocationResultTypes
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractInvocationResultTypes
+        || []
+      ),
+      eshkolProductionHandlerContractRequiredEvidenceCount:
+        serviceSummary?.eshkolProductionHandlerContractRequiredEvidenceCount
+        ?? serviceResult.ingest?.eshkolProductionHandlerContractRequiredEvidenceCount
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerContractRequiredEvidenceCount
+        ?? null,
+      eshkolProductionHandlerContractBlockedBy: cloneJson(
+        serviceSummary?.eshkolProductionHandlerContractBlockedBy
+        || serviceResult.ingest?.eshkolProductionHandlerContractBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.productionHandlerContractBlockedBy
+        || []
+      ),
       eshkolProductionHandlerBoundary: cloneJson(
         serviceSummary?.eshkolProductionHandlerBoundary
         || serviceResult.ingest?.eshkolProductionHandlerBoundary

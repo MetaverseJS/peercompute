@@ -23489,3 +23489,44 @@ User asked whether Infinite Context Coder is being used.
   implement the production magnetar handler, prove production runtime
   execution, or validate full physics.
 - No push was attempted.
+
+## 2026-06-06 22:45:27 AKDT - Eshkol production handler contract propagation
+
+### Actions
+- Preserved ULG's declared `eshkol.ulg.production-handler-contract.v0` through
+  PeerCompute artifact summaries, dispatch adapter ingest, handoff supervisor
+  summaries, Multiscale closure ingest, handoff readiness, module-probe
+  summaries, packet boundary conditions, live browser handoff smoke, and
+  relay dispatch smoke.
+- Added contract fields for handler id, dispatch schema, entry export, runtime
+  ABI, tensor memory model, tensor ids, ordered invocation ABI parameter/result
+  types, offset parameter indexes, required evidence, and blockers.
+- Updated production dispatch preflight expectations from `9/6/3` to `10/7/3`
+  by adding `production-handler-contract-declared` as a passed preflight check.
+- Fixed PeerCompute ABI type-list normalization so repeated ordered WASM
+  signature types such as `['i32', 'i32']` are preserved instead of deduped.
+- Rebuilt the relay-served `docs/multiscale` bundle.
+
+### Validation
+- PASS: syntax checks for changed PeerCompute service-orchestration files,
+  Multiscale model/source files, and touched tests.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`
+  passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and
+  observed the declared production handler contract, two `i32` offset
+  parameters, required evidence count `8`, and production dispatch preflight
+  counts `10/7/3`.
+- PASS: `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with browser postMessage handoff, two relay-connected browser peers,
+  `handoff-ready`, dispatch adapters ready, accepted dispatch count `2`, and
+  all scientific scope flags false.
+
+### Open
+- This declares and verifies the production handler contract boundary only.
+  Production magnetar handler implementation, production runtime execution, and
+  full-physics validation remain intentionally blocked.
+- No push was attempted.

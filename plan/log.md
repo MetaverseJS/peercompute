@@ -52643,3 +52643,72 @@ Open:
   deterministic smoke evidence only. Production magnetar handler implementation,
   production runtime execution, and full-physics validation remain blocked.
 - No push was attempted.
+
+## 2026-06-06 22:45:27 AKDT - Eshkol production handler contract propagation
+
+Actions:
+- Continued with local commits only and no push.
+- Propagated ULG's declared `eshkol.ulg.production-handler-contract.v0` through
+  PeerCompute artifact summaries, Eshkol dispatch adapter ingest, supervisor
+  service summaries, Multiscale closure ingest, handoff readiness,
+  module-probe summaries, packet boundary conditions, browser handoff smoke,
+  and relay dispatch smoke.
+- Added contract telemetry for handler id, dispatch schema, entry export,
+  runtime ABI, tensor memory model, input/output tensor ids, ordered invocation
+  parameter/result types, offset parameter mapping, expected return, required
+  evidence, and blockers.
+- Raised production dispatch preflight evidence to `10/7/3` by preserving
+  `production-handler-contract-declared` as a passed check.
+- Fixed ABI signature normalization in the dispatch and handoff summaries so
+  repeated ordered type lists such as `['i32', 'i32']` are not deduped.
+- Rebuilt `docs/multiscale`, rotating the generated main/dispatch/WebGPU
+  bundles.
+- Updated `plan/tests.md`, `plan/implementation-status.md`, and
+  `demos/multiscale/plan/plan.md` with the declared contract and `10/7/3`
+  evidence.
+
+Files touched:
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/*`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `demos/multiscale/plan/plan.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+Commands run:
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js demos/multiscale/src/simulation/multiscaleModel.js demos/multiscale/src/main.js peercompute/tests/unit/serviceOrchestration.test.js demos/multiscale/tests/multiscaleModel.test.mjs demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`
+- `npm --prefix demos/multiscale run build`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+
+Validation:
+- PASS: syntax checks completed for all changed source/test modules.
+- PASS: service orchestration tests passed `28/28`.
+- PASS: focused Multiscale model tests passed `198/198`.
+- PASS: Multiscale build completed with the existing Vite large-chunk warning.
+- PASS: live browser handoff smoke observed production handler contract
+  declaration, invocation mode `linear-memory-offsets`, ordered parameter types
+  `['i32', 'i32']`, result type `['i32']`, required evidence count `8`, and
+  production dispatch preflight counts `10/7/3`.
+- PASS: relay handoff smoke observed browser postMessage handoff, two
+  relay-connected browser peers, `handoff-ready`, service envelope ready,
+  dispatch adapters ready, accepted dispatch count `2`, two released resource
+  leases, zero active leases, zero preemptions, and all scientific scope flags
+  false.
+
+Open:
+- This is a contract declaration and preflight-evidence propagation slice.
+  Production magnetar handler implementation, production runtime execution, and
+  full-physics validation remain intentionally blocked.
+- No push was attempted.

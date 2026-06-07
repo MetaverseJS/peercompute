@@ -559,6 +559,54 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
   const hostImports = plainObjectOrNull(boundary?.hostImports) || {};
   const productionCandidate = plainObjectOrNull(hostImports.productionCandidate) || {};
   const productionCandidateRuntimeProbe = plainObjectOrNull(boundary?.productionCandidateRuntimeProbe) || {};
+  const productionHandlerContract = plainObjectOrNull(boundary?.productionHandlerContract) || {};
+  const productionHandlerContractInvocation = plainObjectOrNull(productionHandlerContract.invocation) || {};
+  const productionHandlerContractInputTensorIds = Array.isArray(source.eshkolProductionHandlerContractInputTensorIds)
+    ? source.eshkolProductionHandlerContractInputTensorIds
+    : (
+        Array.isArray(source.closureProductionHandlerContractInputTensorIds)
+          ? source.closureProductionHandlerContractInputTensorIds
+          : stringArray(productionHandlerContract.inputTensorIds)
+      );
+  const productionHandlerContractOutputTensorIds = Array.isArray(source.eshkolProductionHandlerContractOutputTensorIds)
+    ? source.eshkolProductionHandlerContractOutputTensorIds
+    : (
+        Array.isArray(source.closureProductionHandlerContractOutputTensorIds)
+          ? source.closureProductionHandlerContractOutputTensorIds
+          : stringArray(productionHandlerContract.outputTensorIds)
+      );
+  const productionHandlerContractInvocationParameterTypes =
+    Array.isArray(source.eshkolProductionHandlerContractInvocationParameterTypes)
+      ? source.eshkolProductionHandlerContractInvocationParameterTypes
+      : (
+          Array.isArray(source.closureProductionHandlerContractInvocationParameterTypes)
+            ? source.closureProductionHandlerContractInvocationParameterTypes
+            : stringArray(productionHandlerContractInvocation.parameterTypes)
+        );
+  const productionHandlerContractInvocationResultTypes =
+    Array.isArray(source.eshkolProductionHandlerContractInvocationResultTypes)
+      ? source.eshkolProductionHandlerContractInvocationResultTypes
+      : (
+          Array.isArray(source.closureProductionHandlerContractInvocationResultTypes)
+            ? source.closureProductionHandlerContractInvocationResultTypes
+            : stringArray(productionHandlerContractInvocation.resultTypes)
+        );
+  const productionHandlerContractRequiredEvidence =
+    Array.isArray(source.eshkolProductionHandlerContractRequiredEvidence)
+      ? source.eshkolProductionHandlerContractRequiredEvidence
+      : (
+          Array.isArray(source.closureProductionHandlerContractRequiredEvidence)
+            ? source.closureProductionHandlerContractRequiredEvidence
+            : stringArray(productionHandlerContract.requiredEvidence)
+        );
+  const productionHandlerContractBlockedBy =
+    Array.isArray(source.eshkolProductionHandlerContractBlockedBy)
+      ? source.eshkolProductionHandlerContractBlockedBy
+      : (
+          Array.isArray(source.closureProductionHandlerContractBlockedBy)
+            ? source.closureProductionHandlerContractBlockedBy
+            : stringArray(productionHandlerContract.blockedBy)
+        );
   const productionCandidateRuntimeProbeEntryArgs = Array.isArray(source.eshkolProductionCandidateRuntimeProbeEntryArgs)
     ? source.eshkolProductionCandidateRuntimeProbeEntryArgs
     : (
@@ -690,6 +738,95 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
     fullPhysicsValidation: fullPhysicsValidation == null ? null : fullPhysicsValidation === true,
     fullFidelityMagnetarSimulation:
       fullFidelityMagnetarSimulation == null ? null : fullFidelityMagnetarSimulation === true,
+    productionHandlerContractSchema: stringOrNull(
+      source.eshkolProductionHandlerContractSchema
+      || source.closureProductionHandlerContractSchema
+      || productionHandlerContract.schema
+    ),
+    productionHandlerContractStatus: stringOrNull(
+      source.eshkolProductionHandlerContractStatus
+      || source.closureProductionHandlerContractStatus
+      || productionHandlerContract.status
+    ),
+    productionHandlerContractDeclared:
+      typeof source.eshkolProductionHandlerContractDeclared === 'boolean'
+        ? source.eshkolProductionHandlerContractDeclared
+        : (
+            typeof source.closureProductionHandlerContractDeclared === 'boolean'
+              ? source.closureProductionHandlerContractDeclared
+              : (
+                  productionHandlerContract.schema === 'eshkol.ulg.production-handler-contract.v0'
+                  && productionHandlerContract.status === 'declared-not-implemented'
+                )
+          ),
+    productionHandlerContractHandlerId: stringOrNull(
+      source.eshkolProductionHandlerContractHandlerId
+      || source.closureProductionHandlerContractHandlerId
+      || productionHandlerContract.handlerId
+    ),
+    productionHandlerContractDispatchSchema: stringOrNull(
+      source.eshkolProductionHandlerContractDispatchSchema
+      || source.closureProductionHandlerContractDispatchSchema
+      || productionHandlerContract.dispatchSchema
+    ),
+    productionHandlerContractEntryExport: stringOrNull(
+      source.eshkolProductionHandlerContractEntryExport
+      || source.closureProductionHandlerContractEntryExport
+      || productionHandlerContract.entryExport
+    ),
+    productionHandlerContractRuntimeAbi: stringOrNull(
+      source.eshkolProductionHandlerContractRuntimeAbi
+      || source.closureProductionHandlerContractRuntimeAbi
+      || productionHandlerContract.runtimeAbi
+    ),
+    productionHandlerContractTensorMemoryModel: stringOrNull(
+      source.eshkolProductionHandlerContractTensorMemoryModel
+      || source.closureProductionHandlerContractTensorMemoryModel
+      || productionHandlerContract.tensorMemoryModel
+    ),
+    productionHandlerContractInputTensorIds: clonePlain(productionHandlerContractInputTensorIds),
+    productionHandlerContractOutputTensorIds: clonePlain(productionHandlerContractOutputTensorIds),
+    productionHandlerContractInvocationModuleSource: stringOrNull(
+      source.eshkolProductionHandlerContractInvocationModuleSource
+      || source.closureProductionHandlerContractInvocationModuleSource
+      || productionHandlerContractInvocation.moduleSource
+    ),
+    productionHandlerContractInvocationEntryExport: stringOrNull(
+      source.eshkolProductionHandlerContractInvocationEntryExport
+      || source.closureProductionHandlerContractInvocationEntryExport
+      || productionHandlerContractInvocation.entryExport
+    ),
+    productionHandlerContractInvocationArgumentMode: stringOrNull(
+      source.eshkolProductionHandlerContractInvocationArgumentMode
+      || source.closureProductionHandlerContractInvocationArgumentMode
+      || productionHandlerContractInvocation.argumentMode
+    ),
+    productionHandlerContractInvocationParameterTypes:
+      clonePlain(productionHandlerContractInvocationParameterTypes),
+    productionHandlerContractInvocationResultTypes:
+      clonePlain(productionHandlerContractInvocationResultTypes),
+    productionHandlerContractInvocationInputOffsetParam: finiteOrNull(
+      source.eshkolProductionHandlerContractInvocationInputOffsetParam
+      ?? source.closureProductionHandlerContractInvocationInputOffsetParam
+      ?? productionHandlerContractInvocation.inputOffsetParam
+    ),
+    productionHandlerContractInvocationOutputOffsetParam: finiteOrNull(
+      source.eshkolProductionHandlerContractInvocationOutputOffsetParam
+      ?? source.closureProductionHandlerContractInvocationOutputOffsetParam
+      ?? productionHandlerContractInvocation.outputOffsetParam
+    ),
+    productionHandlerContractInvocationExpectedReturn: finiteOrNull(
+      source.eshkolProductionHandlerContractInvocationExpectedReturn
+      ?? source.closureProductionHandlerContractInvocationExpectedReturn
+      ?? productionHandlerContractInvocation.expectedReturn
+    ),
+    productionHandlerContractRequiredEvidence: clonePlain(productionHandlerContractRequiredEvidence),
+    productionHandlerContractRequiredEvidenceCount: finiteOrNull(
+      source.eshkolProductionHandlerContractRequiredEvidenceCount
+      ?? source.closureProductionHandlerContractRequiredEvidenceCount
+      ?? productionHandlerContractRequiredEvidence.length
+    ),
+    productionHandlerContractBlockedBy: clonePlain(productionHandlerContractBlockedBy),
     hostImportsRuntimeScope: stringOrNull(
       source.eshkolProductionHostImportsRuntimeScope || hostImports.runtimeScope
     ),
@@ -3084,6 +3221,48 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
       productionHandlerBoundaryFullFidelityMagnetarSimulation:
         productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
+      productionHandlerContractSchema:
+        productionHandlerBoundary?.productionHandlerContractSchema || null,
+      productionHandlerContractStatus:
+        productionHandlerBoundary?.productionHandlerContractStatus || null,
+      productionHandlerContractDeclared:
+        productionHandlerBoundary?.productionHandlerContractDeclared ?? null,
+      productionHandlerContractHandlerId:
+        productionHandlerBoundary?.productionHandlerContractHandlerId || null,
+      productionHandlerContractDispatchSchema:
+        productionHandlerBoundary?.productionHandlerContractDispatchSchema || null,
+      productionHandlerContractEntryExport:
+        productionHandlerBoundary?.productionHandlerContractEntryExport || null,
+      productionHandlerContractRuntimeAbi:
+        productionHandlerBoundary?.productionHandlerContractRuntimeAbi || null,
+      productionHandlerContractTensorMemoryModel:
+        productionHandlerBoundary?.productionHandlerContractTensorMemoryModel || null,
+      productionHandlerContractInputTensorIds:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractInputTensorIds || []),
+      productionHandlerContractOutputTensorIds:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractOutputTensorIds || []),
+      productionHandlerContractInvocationModuleSource:
+        productionHandlerBoundary?.productionHandlerContractInvocationModuleSource || null,
+      productionHandlerContractInvocationEntryExport:
+        productionHandlerBoundary?.productionHandlerContractInvocationEntryExport || null,
+      productionHandlerContractInvocationArgumentMode:
+        productionHandlerBoundary?.productionHandlerContractInvocationArgumentMode || null,
+      productionHandlerContractInvocationParameterTypes:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractInvocationParameterTypes || []),
+      productionHandlerContractInvocationResultTypes:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractInvocationResultTypes || []),
+      productionHandlerContractInvocationInputOffsetParam:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerContractInvocationInputOffsetParam),
+      productionHandlerContractInvocationOutputOffsetParam:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerContractInvocationOutputOffsetParam),
+      productionHandlerContractInvocationExpectedReturn:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerContractInvocationExpectedReturn),
+      productionHandlerContractRequiredEvidence:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractRequiredEvidence || []),
+      productionHandlerContractRequiredEvidenceCount:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerContractRequiredEvidenceCount),
+      productionHandlerContractBlockedBy:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractBlockedBy || []),
       productionHostImportCandidateStatus: productionHandlerBoundary?.productionHostImportCandidateStatus ?? null,
       productionHostImportCandidateProductionRuntimeAbi:
         productionHandlerBoundary?.productionHostImportCandidateProductionRuntimeAbi ?? null,
@@ -3177,6 +3356,22 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
       productionHandlerBoundaryFullFidelityMagnetarSimulation:
         productionHandlerBoundary?.fullFidelityMagnetarSimulation ?? null,
+      productionHandlerContractSchema:
+        productionHandlerBoundary?.productionHandlerContractSchema || null,
+      productionHandlerContractStatus:
+        productionHandlerBoundary?.productionHandlerContractStatus || null,
+      productionHandlerContractDeclared:
+        productionHandlerBoundary?.productionHandlerContractDeclared ?? null,
+      productionHandlerContractInvocationArgumentMode:
+        productionHandlerBoundary?.productionHandlerContractInvocationArgumentMode || null,
+      productionHandlerContractInvocationParameterTypes:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractInvocationParameterTypes || []),
+      productionHandlerContractInvocationResultTypes:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractInvocationResultTypes || []),
+      productionHandlerContractRequiredEvidenceCount:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerContractRequiredEvidenceCount),
+      productionHandlerContractBlockedBy:
+        clonePlain(productionHandlerBoundary?.productionHandlerContractBlockedBy || []),
       productionDispatchPreflightReady: productionHandlerBoundary?.dispatchPreflightReady ?? null,
       productionDispatchPreflightDeclared: productionHandlerBoundary?.dispatchPreflightDeclared ?? null,
       productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
@@ -9453,6 +9648,26 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.productionHandlerBoundaryFullFidelityMagnetarSimulation
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerBoundaryFullFidelityMagnetarSimulation
             ?? null,
+          scenarioEshkolProductionHandlerContractDeclared:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerContractDeclared
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerContractDeclared
+            ?? null,
+          scenarioEshkolProductionHandlerContractStatus:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerContractStatus
+            || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerContractStatus
+            || null,
+          scenarioEshkolProductionHandlerContractInvocationArgumentMode:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerContractInvocationArgumentMode
+            || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerContractInvocationArgumentMode
+            || null,
+          scenarioEshkolProductionHandlerContractRequiredEvidenceCount:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerContractRequiredEvidenceCount
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerContractRequiredEvidenceCount
+            ?? null,
+          scenarioEshkolProductionHandlerContractBlockedBy:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerContractBlockedBy
+            || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerContractBlockedBy
+            || [],
           scenarioEshkolProductionDispatchPreflightReady:
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightReady
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightReady

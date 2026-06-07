@@ -59,9 +59,20 @@ const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'production-magnetar-handler-not-implemented',
   'full-physics-validation-not-run'
 ];
+const EXPECTED_ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE = [
+  'content-addressed-wasm-module',
+  'entry-export-main-signature-i32-i32-to-i32',
+  'production-candidate-host-imports',
+  'validated-f64-tensor-memory-binding',
+  'production-candidate-runtime-probe',
+  'production-magnetar-handler-implementation',
+  'production-handler-runtime-execution',
+  'full-physics-validation-pass'
+];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
   'artifact-module-sha256-matches-module-ref',
   'entry-export-main-signature-i32-i32-to-i32',
+  'production-handler-contract-declared',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'production-candidate-runtime-probe-passed',
@@ -73,6 +84,7 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
   'artifact-module-sha256-matches-module-ref',
   'entry-export-main-signature-i32-i32-to-i32',
+  'production-handler-contract-declared',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'production-candidate-runtime-probe-passed',
@@ -92,6 +104,46 @@ function firstPresent(source, keys) {
 }
 
 function assertEshkolDispatchPreflightEvidence(summary = {}) {
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerContractSchema',
+    'productionHandlerContractSchema',
+    'closureProductionHandlerContractSchema'
+  ]), 'eshkol.ulg.production-handler-contract.v0');
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerContractStatus',
+    'productionHandlerContractStatus',
+    'closureProductionHandlerContractStatus'
+  ]), 'declared-not-implemented');
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerContractDeclared',
+    'productionHandlerContractDeclared',
+    'closureProductionHandlerContractDeclared'
+  ]), true);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerContractInvocationArgumentMode',
+    'productionHandlerContractInvocationArgumentMode',
+    'closureProductionHandlerContractInvocationArgumentMode'
+  ]), 'linear-memory-offsets');
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolProductionHandlerContractInvocationParameterTypes',
+    'productionHandlerContractInvocationParameterTypes',
+    'closureProductionHandlerContractInvocationParameterTypes'
+  ]), ['i32', 'i32']);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolProductionHandlerContractInvocationResultTypes',
+    'productionHandlerContractInvocationResultTypes',
+    'closureProductionHandlerContractInvocationResultTypes'
+  ]), ['i32']);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerContractRequiredEvidenceCount',
+    'productionHandlerContractRequiredEvidenceCount',
+    'closureProductionHandlerContractRequiredEvidenceCount'
+  ]), EXPECTED_ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE.length);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolProductionHandlerContractBlockedBy',
+    'productionHandlerContractBlockedBy',
+    'closureProductionHandlerContractBlockedBy'
+  ]), EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
   assert.equal(firstPresent(summary, [
     'eshkolProductionCandidateRuntimeProbeStatus',
     'productionCandidateRuntimeProbeStatus',
@@ -119,11 +171,11 @@ function assertEshkolDispatchPreflightEvidence(summary = {}) {
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightTotalRequiredCheckCount',
     'closureProductionDispatchPreflightTotalRequiredCheckCount'
-  ]), 9);
+  ]), 10);
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightPassedCheckCount',
     'closureProductionDispatchPreflightPassedCheckCount'
-  ]), 6);
+  ]), 7);
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightBlockedCheckCount',
     'closureProductionDispatchPreflightBlockedCheckCount'
@@ -416,6 +468,17 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+  assert.equal(handoffProbe.productionHandlerContractSchema, 'eshkol.ulg.production-handler-contract.v0');
+  assert.equal(handoffProbe.productionHandlerContractStatus, 'declared-not-implemented');
+  assert.equal(handoffProbe.productionHandlerContractDeclared, true);
+  assert.equal(handoffProbe.productionHandlerContractInvocationArgumentMode, 'linear-memory-offsets');
+  assert.deepEqual(handoffProbe.productionHandlerContractInvocationParameterTypes, ['i32', 'i32']);
+  assert.deepEqual(handoffProbe.productionHandlerContractInvocationResultTypes, ['i32']);
+  assert.equal(
+    handoffProbe.productionHandlerContractRequiredEvidenceCount,
+    EXPECTED_ESHKOL_PRODUCTION_HANDLER_CONTRACT_REQUIRED_EVIDENCE.length
+  );
+  assert.deepEqual(handoffProbe.productionHandlerContractBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
   assertEshkolHostImportsEvidence(handoffProbe);
 }
 
@@ -499,6 +562,7 @@ async function readUlgHandoff(ulgPage) {
     const smokeBinding = linearMemoryBinding?.smokeBinding || null;
     const offsetProbe = linearMemoryBinding?.entryExportOffsetProbe || null;
     const productionHandlerBoundary = descriptorBinding?.productionHandlerBoundary || null;
+    const productionHandlerContract = productionHandlerBoundary?.productionHandlerContract || null;
     return {
       handoff,
       probe: {
@@ -543,6 +607,52 @@ async function readUlgHandoff(ulgPage) {
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        productionHandlerContractSchema:
+          productionHandlerContract?.schema
+          || eshkol?.artifactSummary?.closureProductionHandlerContractSchema
+          || null,
+        productionHandlerContractStatus:
+          productionHandlerContract?.status
+          || eshkol?.artifactSummary?.closureProductionHandlerContractStatus
+          || null,
+        productionHandlerContractDeclared:
+          eshkol?.artifactSummary?.closureProductionHandlerContractDeclared
+          ?? (
+            productionHandlerContract?.schema === 'eshkol.ulg.production-handler-contract.v0'
+            && productionHandlerContract?.status === 'declared-not-implemented'
+          ),
+        productionHandlerContractInvocationArgumentMode:
+          productionHandlerContract?.invocation?.argumentMode
+          || eshkol?.artifactSummary?.closureProductionHandlerContractInvocationArgumentMode
+          || null,
+        productionHandlerContractInvocationParameterTypes:
+          Array.isArray(productionHandlerContract?.invocation?.parameterTypes)
+            ? [...productionHandlerContract.invocation.parameterTypes]
+            : (
+                Array.isArray(eshkol?.artifactSummary?.closureProductionHandlerContractInvocationParameterTypes)
+                  ? [...eshkol.artifactSummary.closureProductionHandlerContractInvocationParameterTypes]
+                  : []
+              ),
+        productionHandlerContractInvocationResultTypes:
+          Array.isArray(productionHandlerContract?.invocation?.resultTypes)
+            ? [...productionHandlerContract.invocation.resultTypes]
+            : (
+                Array.isArray(eshkol?.artifactSummary?.closureProductionHandlerContractInvocationResultTypes)
+                  ? [...eshkol.artifactSummary.closureProductionHandlerContractInvocationResultTypes]
+                  : []
+              ),
+        productionHandlerContractRequiredEvidenceCount:
+          Array.isArray(productionHandlerContract?.requiredEvidence)
+            ? productionHandlerContract.requiredEvidence.length
+            : eshkol?.artifactSummary?.closureProductionHandlerContractRequiredEvidenceCount ?? null,
+        productionHandlerContractBlockedBy:
+          Array.isArray(productionHandlerContract?.blockedBy)
+            ? [...productionHandlerContract.blockedBy]
+            : (
+                Array.isArray(eshkol?.artifactSummary?.closureProductionHandlerContractBlockedBy)
+                  ? [...eshkol.artifactSummary.closureProductionHandlerContractBlockedBy]
+                  : []
+              ),
         hostImportsModule: eshkol?.artifactSummary?.closureHostImportsModule || null,
         hostImportsAssetStatus: eshkol?.artifactSummary?.closureHostImportsAssetStatus || null,
         hostImportsFactoryStatus: eshkol?.artifactSummary?.closureHostImportsFactoryStatus || null,

@@ -177,13 +177,15 @@ Updated: 2026-06-06 21:49:12 AKDT
   survive Multiscale normalization even when full import/check arrays are not
   present.
 - Eshkol computed production dispatch preflight evidence now preserves
+  `eshkol.ulg.production-handler-contract.v0` declaration fields plus
   `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`,
   ordered `checkResults`, total required check count, passed check count,
   blocked check count, and passed/blocked check lists through artifact
   summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale
   scenario readiness, browser handoff smokes, and packet boundary conditions.
-  Current evidence is 9 total checks, 6 passed, and 3 blocked after Eshkol's
-  production-candidate runtime-probe smoke evidence landed.
+  Current evidence is 10 total checks, 7 passed, and 3 blocked after Eshkol's
+  production handler contract and production-candidate runtime-probe smoke
+  evidence landed.
 - Eshkol production-candidate runtime probe evidence now preserves
   `eshkol.ulg.production-candidate-runtime-probe.v0` through artifact summaries,
   dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario

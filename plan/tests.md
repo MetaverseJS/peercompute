@@ -968,9 +968,12 @@
   `eshkol.ulg.production-candidate-runtime-probe.v0`,
   `production-candidate-runtime-smoke-passed`, changed bytes `64`, host import
   calls `ulg_read_f64 = 12` / `ulg_write_f64 = 9`,
-  `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`, nine
-  total checks, six passed checks, three blocked checks, and ordered
-  `checkResults`.
+	  `eshkol.ulg.production-handler-contract.v0` declared with
+	  `linear-memory-offsets` invocation, two `i32` offset parameters, eight
+	  required evidence entries, and
+	  `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0` with ten
+	  total checks, seven passed checks, three blocked checks, and ordered
+	  `checkResults`.
 : `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` opts into the browser dispatch-adapter
   probe with compact raw-result omission, a browser-owned async run record, and
   stage/supervisor diagnostics. Current result on 2026-06-06 passes with

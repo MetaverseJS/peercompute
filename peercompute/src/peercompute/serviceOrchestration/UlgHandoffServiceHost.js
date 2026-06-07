@@ -43,6 +43,10 @@ function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => stringOrNull(value)).filter(Boolean))];
 }
 
+function orderedStrings(values = []) {
+  return Array.isArray(values) ? values.map((value) => stringOrNull(value)).filter(Boolean) : [];
+}
+
 function objectOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
@@ -402,6 +406,96 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation: booleanOrNull(
       ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         ?? productionHandlerBoundary?.fullFidelityMagnetarSimulation
+    ),
+    eshkolProductionHandlerContractSchema:
+      ingest.eshkolProductionHandlerContractSchema
+      || productionHandlerBoundary?.productionHandlerContractSchema
+      || null,
+    eshkolProductionHandlerContractStatus:
+      ingest.eshkolProductionHandlerContractStatus
+      || productionHandlerBoundary?.productionHandlerContractStatus
+      || null,
+    eshkolProductionHandlerContractDeclared: booleanOrNull(
+      ingest.eshkolProductionHandlerContractDeclared
+        ?? productionHandlerBoundary?.productionHandlerContractDeclared
+    ),
+    eshkolProductionHandlerContractHandlerId:
+      ingest.eshkolProductionHandlerContractHandlerId
+      || productionHandlerBoundary?.productionHandlerContractHandlerId
+      || null,
+    eshkolProductionHandlerContractDispatchSchema:
+      ingest.eshkolProductionHandlerContractDispatchSchema
+      || productionHandlerBoundary?.productionHandlerContractDispatchSchema
+      || null,
+    eshkolProductionHandlerContractEntryExport:
+      ingest.eshkolProductionHandlerContractEntryExport
+      || productionHandlerBoundary?.productionHandlerContractEntryExport
+      || null,
+    eshkolProductionHandlerContractRuntimeAbi:
+      ingest.eshkolProductionHandlerContractRuntimeAbi
+      || productionHandlerBoundary?.productionHandlerContractRuntimeAbi
+      || null,
+    eshkolProductionHandlerContractTensorMemoryModel:
+      ingest.eshkolProductionHandlerContractTensorMemoryModel
+      || productionHandlerBoundary?.productionHandlerContractTensorMemoryModel
+      || null,
+    eshkolProductionHandlerContractInputTensorIds: uniqueStrings(
+      ingest.eshkolProductionHandlerContractInputTensorIds
+      || productionHandlerBoundary?.productionHandlerContractInputTensorIds
+      || []
+    ),
+    eshkolProductionHandlerContractOutputTensorIds: uniqueStrings(
+      ingest.eshkolProductionHandlerContractOutputTensorIds
+      || productionHandlerBoundary?.productionHandlerContractOutputTensorIds
+      || []
+    ),
+    eshkolProductionHandlerContractInvocationModuleSource:
+      ingest.eshkolProductionHandlerContractInvocationModuleSource
+      || productionHandlerBoundary?.productionHandlerContractInvocationModuleSource
+      || null,
+    eshkolProductionHandlerContractInvocationEntryExport:
+      ingest.eshkolProductionHandlerContractInvocationEntryExport
+      || productionHandlerBoundary?.productionHandlerContractInvocationEntryExport
+      || null,
+    eshkolProductionHandlerContractInvocationArgumentMode:
+      ingest.eshkolProductionHandlerContractInvocationArgumentMode
+      || productionHandlerBoundary?.productionHandlerContractInvocationArgumentMode
+      || null,
+    eshkolProductionHandlerContractInvocationParameterTypes: orderedStrings(
+      ingest.eshkolProductionHandlerContractInvocationParameterTypes
+      || productionHandlerBoundary?.productionHandlerContractInvocationParameterTypes
+      || []
+    ),
+    eshkolProductionHandlerContractInvocationResultTypes: orderedStrings(
+      ingest.eshkolProductionHandlerContractInvocationResultTypes
+      || productionHandlerBoundary?.productionHandlerContractInvocationResultTypes
+      || []
+    ),
+    eshkolProductionHandlerContractInvocationInputOffsetParam: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerContractInvocationInputOffsetParam
+      ?? productionHandlerBoundary?.productionHandlerContractInvocationInputOffsetParam
+    ),
+    eshkolProductionHandlerContractInvocationOutputOffsetParam: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerContractInvocationOutputOffsetParam
+      ?? productionHandlerBoundary?.productionHandlerContractInvocationOutputOffsetParam
+    ),
+    eshkolProductionHandlerContractInvocationExpectedReturn: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerContractInvocationExpectedReturn
+      ?? productionHandlerBoundary?.productionHandlerContractInvocationExpectedReturn
+    ),
+    eshkolProductionHandlerContractRequiredEvidence: uniqueStrings(
+      ingest.eshkolProductionHandlerContractRequiredEvidence
+      || productionHandlerBoundary?.productionHandlerContractRequiredEvidence
+      || []
+    ),
+    eshkolProductionHandlerContractRequiredEvidenceCount: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerContractRequiredEvidenceCount
+      ?? productionHandlerBoundary?.productionHandlerContractRequiredEvidenceCount
+    ),
+    eshkolProductionHandlerContractBlockedBy: uniqueStrings(
+      ingest.eshkolProductionHandlerContractBlockedBy
+      || productionHandlerBoundary?.productionHandlerContractBlockedBy
+      || []
     ),
     eshkolProductionHostImportsRuntimeScope:
       ingest.eshkolProductionHostImportsRuntimeScope
