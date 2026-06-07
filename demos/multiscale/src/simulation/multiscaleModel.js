@@ -191,6 +191,16 @@ export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.mag
 export const MOONLAB_MAGNETAR_DIPOLE_ISING_REFERENCE_SCHEMA = 'moonlab.magnetar-dipole-ising-reference.v0';
 export const MOONLAB_MAGNETAR_REFERENCE_ROLE = 'peercompute-reference-tolerance-input';
 export const MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA = 'moonlab.webgpu.complex64-parity-scope.v0';
+const MOONLAB_WEBGPU_REQUIRED_NATIVE_OPERATIONS = Object.freeze([
+  'hadamard',
+  'pauli_x',
+  'pauli_z',
+  'cnot'
+]);
+const MOONLAB_WEBGPU_REQUIRED_COVERAGE = Object.freeze([
+  ...MOONLAB_WEBGPU_REQUIRED_NATIVE_OPERATIONS,
+  'compute_probabilities'
+]);
 export const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA = 'eshkol.ulg.magnetar-closure-descriptor.v0';
 export const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
 
@@ -404,6 +414,12 @@ function finiteOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function finiteWithinTolerance(value, tolerance) {
+  const number = finiteOrNull(value);
+  const limit = finiteOrNull(tolerance);
+  return number != null && limit != null && number <= limit;
+}
+
 function stringOrNull(value) {
   if (value == null) return null;
   const text = String(value).trim();
@@ -416,6 +432,14 @@ function uniqueStrings(values = []) {
 
 function plainObjectOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function stringArray(value) {
+  return Array.isArray(value) ? value.map((entry) => stringOrNull(entry)).filter(Boolean) : [];
+}
+
+function includesAll(values = [], required = []) {
+  return required.every((entry) => values.includes(entry));
 }
 
 function hasSha256Digest(value) {
@@ -687,6 +711,32 @@ function normalizeMoonLabWebGpuParityScopeEvidence(source = {}) {
   const contractValidation = plainObjectOrNull(scope?.contractValidation) || {};
   const webgpuParity = plainObjectOrNull(scope?.webgpuParity) || {};
   const complex64Preflight = plainObjectOrNull(scope?.complex64Preflight) || {};
+  const browserBackendPreflight = plainObjectOrNull(scope?.browserBackendPreflight) || {};
+  const browserKernelProbe = plainObjectOrNull(scope?.browserKernelProbe) || {};
+  const browserNativeOperationProbe = plainObjectOrNull(scope?.browserNativeOperationProbe) || {};
+  const browserKernelCoverage = stringArray(browserKernelProbe.coveredNativeOperations);
+  const nativeOperationCoverage = stringArray(browserNativeOperationProbe.coveredNativeOperations);
+  const nativeCoverageEntries = Array.isArray(scope?.coverage?.nativeWebGpu)
+    ? scope.coverage.nativeWebGpu.map((entry) => plainObjectOrNull(entry)).filter(Boolean)
+    : [];
+  const nativeCoverageReady = MOONLAB_WEBGPU_REQUIRED_COVERAGE.every((operation) => {
+    const entry = nativeCoverageEntries.find((coverageEntry) => coverageEntry.operation === operation);
+    return entry?.covered === true
+      && entry.required === true
+      && entry.fallbackAllowed === false
+      && entry.status === 'covered-by-browser-webgpu';
+  });
+  const nativeOperationResults = Array.isArray(browserNativeOperationProbe.operationResults)
+    ? browserNativeOperationProbe.operationResults.map((entry) => plainObjectOrNull(entry)).filter(Boolean)
+    : [];
+  const nativeOperationResultsReady = MOONLAB_WEBGPU_REQUIRED_NATIVE_OPERATIONS.every((operation) => {
+    const result = nativeOperationResults.find((entry) => entry.operation === operation);
+    return result?.executed === true
+      && result.passed === true
+      && result.covered === true
+      && stringOrNull(result.blocker) == null
+      && finiteWithinTolerance(result.maxAmplitudeAbsDiff, result.tolerance);
+  });
   const contractReady = (scope?.contractReady ?? source.moonlabWebGpuParityScopeContractReady) === true;
   const contractValidationValid = (
     scope?.contractValidationValid
@@ -726,6 +776,36 @@ function normalizeMoonLabWebGpuParityScopeEvidence(source = {}) {
     ...(Array.isArray(source.moonlabWebGpuParityScopeBlockers) ? source.moonlabWebGpuParityScopeBlockers : []),
     ...(Array.isArray(contractValidation.blockers) ? contractValidation.blockers : [])
   ]);
+  const noBackendEvidenceReady = backendAvailableSource === false
+    && webgpuParityExecutedSource === false
+    && webgpuParityPassedSource === false;
+  const browserWebGpuEvidenceReady = stringOrNull(scope?.status || source.moonlabWebGpuParityScopeStatus) === 'scope-ready-backend-detected'
+    && backendAvailableSource === true
+    && (scope?.requireBackend ?? source.moonlabWebGpuParityScopeRequireBackend) === true
+    && webgpuParityExecutedSource === true
+    && webgpuParityPassedSource === true
+    && finiteWithinTolerance(webgpuParity.maxProbabilityAbsDiff, webgpuParity.tolerance)
+    && browserBackendPreflight.stage === 'device-acquired'
+    && browserBackendPreflight.navigatorGpuAvailable === true
+    && browserBackendPreflight.adapterAvailable === true
+    && browserBackendPreflight.deviceAcquired === true
+    && browserKernelProbe.executed === true
+    && browserKernelProbe.passed === true
+    && browserKernelCoverage.includes('compute_probabilities')
+    && finiteWithinTolerance(browserKernelProbe.maxProbabilityAbsDiff, browserKernelProbe.tolerance)
+    && browserNativeOperationProbe.executed === true
+    && browserNativeOperationProbe.passed === true
+    && includesAll(nativeOperationCoverage, MOONLAB_WEBGPU_REQUIRED_NATIVE_OPERATIONS)
+    && nativeOperationResultsReady
+    && nativeCoverageReady
+    && evidenceBlockers.length === 0;
+  const preNormalizedEvidenceReady = scope?.ready === true
+    && Number(scope.validationBlockerCount || 0) === 0
+    && fullFidelityMagnetarSimulation === false
+    && fullPhysicsValidation === false
+    && (noBackendEvidenceReady || (backendAvailableSource === true
+      && webgpuParityExecutedSource === true
+      && webgpuParityPassedSource === true));
   const validationBlockers = uniqueStrings([
     ...(Array.isArray(scope?.validationBlockers) ? scope.validationBlockers : []),
     ...(Array.isArray(source.moonlabWebGpuParityScopeValidationBlockers)
@@ -737,15 +817,9 @@ function normalizeMoonLabWebGpuParityScopeEvidence(source = {}) {
     contractReady ? null : 'moonlab-webgpu-complex64-contract-not-ready',
     contractValidationValid ? null : 'moonlab-webgpu-complex64-contract-validation-not-ready',
     reducedFixtureOnly ? null : 'moonlab-webgpu-complex64-reduced-fixture-flag-missing',
-    backendAvailableSource === false
+    noBackendEvidenceReady || browserWebGpuEvidenceReady || preNormalizedEvidenceReady
       ? null
-      : 'moonlab-webgpu-complex64-backend-availability-overstated',
-    webgpuParityExecutedSource === false
-      ? null
-      : 'moonlab-webgpu-complex64-parity-execution-overstated',
-    webgpuParityPassedSource === false
-      ? null
-      : 'moonlab-webgpu-complex64-parity-pass-overstated',
+      : 'moonlab-webgpu-complex64-reduced-browser-evidence-not-ready',
     fullFidelityMagnetarSimulation === false
       ? null
       : 'moonlab-webgpu-complex64-full-fidelity-overstated',
@@ -758,7 +832,7 @@ function normalizeMoonLabWebGpuParityScopeEvidence(source = {}) {
   return {
     schema,
     status: stringOrNull(scope?.status || source.moonlabWebGpuParityScopeStatus)
-      || (ready ? 'scope-ready-backend-unavailable' : 'scope-blocked'),
+      || (ready ? (browserWebGpuEvidenceReady ? 'scope-ready-backend-detected' : 'scope-ready-backend-unavailable') : 'scope-blocked'),
     ready,
     contractReady,
     contractValidationValid,
@@ -773,7 +847,22 @@ function normalizeMoonLabWebGpuParityScopeEvidence(source = {}) {
     blockerCount: evidenceBlockers.length,
     blockers: evidenceBlockers,
     validationBlockerCount: validationBlockers.length,
-    validationBlockers
+    validationBlockers,
+    browserBackendPreflightStage: stringOrNull(browserBackendPreflight.stage),
+    browserBackendPreflightDeviceAcquired:
+      typeof browserBackendPreflight.deviceAcquired === 'boolean'
+        ? browserBackendPreflight.deviceAcquired
+        : null,
+    probabilityKernelExecuted:
+      typeof browserKernelProbe.executed === 'boolean' ? browserKernelProbe.executed : null,
+    probabilityKernelPassed:
+      typeof browserKernelProbe.passed === 'boolean' ? browserKernelProbe.passed : null,
+    probabilityKernelCoveredOperations: clonePlain(browserKernelCoverage),
+    nativeOperationProbeExecuted:
+      typeof browserNativeOperationProbe.executed === 'boolean' ? browserNativeOperationProbe.executed : null,
+    nativeOperationProbePassed:
+      typeof browserNativeOperationProbe.passed === 'boolean' ? browserNativeOperationProbe.passed : null,
+    nativeOperationCoveredOperations: clonePlain(nativeOperationCoverage)
   };
 }
 

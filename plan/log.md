@@ -52067,3 +52067,74 @@ timeout 8s env \
   tensor contract only. It is not a production Eshkol handler, not calibrated
   magnetar physics, and not full physics validation.
 - No push was attempted.
+
+## 2026-06-06 17:16:21 AKDT - MoonLab browser WebGPU parity-scope receiver
+
+### Actions
+- Updated PeerCompute's ULG artifact-summary normalizer to accept MoonLab's
+  current `scope-ready-backend-detected` reduced browser WebGPU evidence.
+- Kept legacy no-backend evidence valid, but replaced the old
+  `backendAvailable = true` overclaim assumption with a reduced-evidence gate
+  that requires device-acquired preflight, executed/passing
+  `compute_probabilities`, `hadamard`, `pauli_x`, `pauli_z`, and `cnot`
+  coverage, zero blockers, and false full-fidelity/full-physics flags.
+- Updated Multiscale scenario calibration ingest with the same bounded evidence
+  rule and made normalization idempotent for already-normalized MoonLab evidence
+  objects inside handoff readiness.
+- Added service-orchestration and Multiscale fixtures for the successful reduced
+  browser WebGPU artifact.
+- Extended the live ULG browser handoff smoke to assert MoonLab WebGPU fields on
+  the ULG handoff and Multiscale receiver sides.
+- Updated plan/test/status docs.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/plan/plan.md`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "WebGPU complex64"`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "WebGPU complex64"`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run build`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks passed for touched runtime/test files.
+- PASS: service-orchestration unit tests passed `28/28`, including the new
+  reduced browser WebGPU fixture and full-physics overclaim blocker.
+- PASS: Multiscale model tests passed `197/197`, including legacy no-backend
+  and new backend-detected reduced WebGPU evidence cases.
+- PASS: live ULG-to-Multiscale browser handoff smoke passed and now prints
+  MoonLab `scope-ready-backend-detected`, `backendAvailable = true`,
+  `webgpuParityExecuted = true`, zero blockers, `device-acquired`,
+  `compute_probabilities`, native coverage for `hadamard`, `pauli_x`,
+  `pauli_z`, and `cnot`, with full-fidelity/full-physics flags false on both
+  ULG and Multiscale sides.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle with
+  only the existing large-chunk warning.
+- PASS: `git diff --check` passed.
+
+### Failures / Open
+- First focused Multiscale run failed because handoff readiness normalized an
+  already-normalized MoonLab WebGPU scope and dropped readiness. The normalizer
+  is now idempotent for ready, blocker-free reduced evidence objects.
+- This remains reduced browser WebGPU parity evidence only. It is not a full
+  MoonLab runtime, not scientific magnetar validation, and not full physics
+  validation.
+- No push was attempted.

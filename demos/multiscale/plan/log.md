@@ -23220,3 +23220,35 @@ User asked whether Infinite Context Coder is being used.
   Eshkol host imports, calibrated output physics, full physics validation, and
   full-fidelity magnetar simulation remain future gates.
 - No push was attempted.
+
+## 2026-06-06 17:16:21 AKDT - MoonLab reduced browser WebGPU handoff ingest
+
+### Actions
+- Updated Multiscale MoonLab WebGPU parity-scope normalization to accept both
+  legacy no-backend evidence and the current ULG `scope-ready-backend-detected`
+  reduced browser WebGPU artifact.
+- Required the successful browser evidence path to keep
+  `fullFidelityMagnetarSimulation = false` and `fullPhysicsValidation = false`
+  while accepting device-acquired preflight, executed `compute_probabilities`,
+  native `hadamard`, `pauli_x`, `pauli_z`, and `cnot` coverage, and zero
+  blockers.
+- Added an idempotent path for already-normalized MoonLab WebGPU evidence so
+  scenario handoff readiness preserves accepted reduced evidence.
+- Extended `tests/ulgBrowserHandoffSmoke.mjs` to assert MoonLab WebGPU fields
+  on the ULG handoff and Multiscale receiver sides.
+
+### Validation
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "WebGPU complex64"` passed `197/197`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and printed
+  `scope-ready-backend-detected`, `backendAvailable = true`,
+  `webgpuParityExecuted = true`, zero blockers, `device-acquired`, and false
+  full-fidelity/full-physics flags for the MoonLab handoff.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle with
+  only the existing large-chunk warning.
+- PASS: `git diff --check` passed.
+
+### Open
+- This is receiver compatibility for reduced browser WebGPU evidence. It does
+  not promote Multiscale scientific readiness, full MoonLab runtime readiness,
+  or full magnetar physics validation.
+- No push was attempted.

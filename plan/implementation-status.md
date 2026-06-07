@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 15:58:00 AKDT
+Updated: 2026-06-06 17:20:53 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -200,6 +200,14 @@ Updated: 2026-06-06 15:58:00 AKDT
   evidence under `peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0`, and
   still leaves production handler/runtime execution, scientific validation,
   full physics validation, and full-fidelity magnetar simulation flags false.
+- MoonLab browser WebGPU parity-scope ingestion now accepts the current ULG
+  `scope-ready-backend-detected` reduced artifact with `device-acquired`,
+  executed `compute_probabilities`, `hadamard`, `pauli_x`, `pauli_z`, and
+  `cnot` coverage, while still accepting legacy no-backend evidence and still
+  preserving false full-fidelity/full-physics flags. Live ULG-to-Multiscale
+  browser smoke asserts the fields on both sides of the handoff.
+- Multiscale docs bundle was rebuilt after the receiver update, refreshing the
+  hashed `docs/multiscale` assets for the current source.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host

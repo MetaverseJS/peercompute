@@ -125,6 +125,84 @@ function createMoonLabWebGpuComplex64ParityScope(overrides = {}) {
   };
 }
 
+function createMoonLabBrowserWebGpuComplex64ParityScope(overrides = {}) {
+  return {
+    schema: MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+    status: 'scope-ready-backend-detected',
+    contractReady: true,
+    contractValidation: {
+      valid: true
+    },
+    reducedFixtureOnly: true,
+    backendAvailable: true,
+    requireBackend: true,
+    browserBackendPreflight: {
+      schema: 'moonlab.webgpu.complex64-browser-backend-preflight.v0',
+      probeKind: 'browser-webgpu-adapter-device-preflight',
+      runtime: 'browser-harness',
+      stage: 'device-acquired',
+      navigatorGpuAvailable: true,
+      adapterAvailable: true,
+      deviceAcquired: true
+    },
+    webgpuParity: {
+      executed: true,
+      passed: true,
+      maxProbabilityAbsDiff: 0,
+      tolerance: 0.00001
+    },
+    browserKernelProbe: {
+      schema: 'moonlab.webgpu.complex64-probability-kernel-probe.v0',
+      probeKind: 'browser-webgpu-complex64-probability-kernel',
+      kernel: 'compute_probabilities',
+      executed: true,
+      passed: true,
+      coveredNativeOperations: ['compute_probabilities'],
+      maxProbabilityAbsDiff: 0,
+      tolerance: 0.00001
+    },
+    browserNativeOperationProbe: {
+      schema: 'moonlab.webgpu.complex64-native-operation-probe.v0',
+      probeKind: 'browser-webgpu-complex64-native-operation-probe',
+      executed: true,
+      passed: true,
+      coveredNativeOperations: ['hadamard', 'pauli_x', 'pauli_z', 'cnot'],
+      maxAmplitudeAbsDiff: 2.9802322387695312e-8,
+      tolerance: 0.00001,
+      operationResults: [
+        { operation: 'hadamard', executed: true, passed: true, covered: true, maxAmplitudeAbsDiff: 2.9802322387695312e-8, tolerance: 0.00001 },
+        { operation: 'pauli_x', executed: true, passed: true, covered: true, maxAmplitudeAbsDiff: 0, tolerance: 0.00001 },
+        { operation: 'pauli_z', executed: true, passed: true, covered: true, maxAmplitudeAbsDiff: 0, tolerance: 0.00001 },
+        { operation: 'cnot', executed: true, passed: true, covered: true, maxAmplitudeAbsDiff: 0, tolerance: 0.00001 }
+      ]
+    },
+    coverage: {
+      nativeWebGpu: [
+        { operation: 'hadamard', covered: true, required: true, fallbackAllowed: false, status: 'covered-by-browser-webgpu' },
+        { operation: 'pauli_x', covered: true, required: true, fallbackAllowed: false, status: 'covered-by-browser-webgpu' },
+        { operation: 'pauli_z', covered: true, required: true, fallbackAllowed: false, status: 'covered-by-browser-webgpu' },
+        { operation: 'cnot', covered: true, required: true, fallbackAllowed: false, status: 'covered-by-browser-webgpu' },
+        { operation: 'compute_probabilities', covered: true, required: true, fallbackAllowed: false, status: 'covered-by-browser-webgpu' }
+      ]
+    },
+    complex64Preflight: {
+      passed: true
+    },
+    fidelityRuntimeScope: {
+      schema: 'ulg.magnetar.fidelity-runtime-scope.v0',
+      fidelityTier: 'reduced-calibrated-runtime-fixture',
+      runtimeScope: 'browser-webgpu-complex64-reduced-fixture-parity',
+      readinessClaim: 'integration-tolerance-gate-only',
+      fullFidelityMagnetarSimulation: false,
+      fullPhysicsValidation: false
+    },
+    fullFidelityMagnetarSimulation: false,
+    fullPhysicsValidation: false,
+    blockers: [],
+    ...overrides
+  };
+}
+
 function createEshkolProductionHandlerBoundary(overrides = {}) {
   return {
     schema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
@@ -1175,7 +1253,49 @@ test('ULG artifact summary exposes MoonLab WebGPU complex64 no-backend parity sc
   });
   assert.equal(backendOverclaim.moonlabWebGpuParityScopeReady, false);
   assert.ok(backendOverclaim.moonlabWebGpuParityScopeValidationBlockers.includes(
-    'moonlab-webgpu-complex64-backend-availability-overstated'
+    'moonlab-webgpu-complex64-reduced-browser-evidence-not-ready'
+  ));
+});
+
+test('ULG artifact summary accepts MoonLab reduced browser WebGPU parity evidence without physics overclaims', () => {
+  const summary = summarizeUlgArtifact('quantum-response', {
+    sourceService: 'moonlab',
+    outputs: {
+      webGpuParityScope: createMoonLabBrowserWebGpuComplex64ParityScope()
+    }
+  });
+
+  assert.equal(summary.moonlabWebGpuParityScopeReady, true);
+  assert.equal(summary.moonlabWebGpuParityScopeSchema, MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA);
+  assert.equal(summary.moonlabWebGpuParityScopeStatus, 'scope-ready-backend-detected');
+  assert.equal(summary.moonlabWebGpuParityScopeBackendAvailable, true);
+  assert.equal(summary.moonlabWebGpuParityScopeWebgpuParityExecuted, true);
+  assert.equal(summary.moonlabWebGpuParityScopeWebgpuParityPassed, true);
+  assert.equal(summary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(summary.moonlabWebGpuParityScopeFullPhysicsValidation, false);
+  assert.equal(summary.moonlabWebGpuParityScopeBlockerCount, 0);
+  assert.equal(summary.moonlabWebGpuParityScopeValidationBlockerCount, 0);
+  assert.equal(summary.moonlabWebGpuParityScope.browserBackendPreflightStage, 'device-acquired');
+  assert.equal(summary.moonlabWebGpuParityScope.browserBackendPreflightDeviceAcquired, true);
+  assert.deepEqual(summary.moonlabWebGpuParityScope.probabilityKernelCoveredOperations, ['compute_probabilities']);
+  assert.deepEqual(summary.moonlabWebGpuParityScope.nativeOperationCoveredOperations, [
+    'hadamard',
+    'pauli_x',
+    'pauli_z',
+    'cnot'
+  ]);
+
+  const fullPhysicsOverclaim = summarizeUlgArtifact('quantum-response', {
+    sourceService: 'moonlab',
+    outputs: {
+      webGpuParityScope: createMoonLabBrowserWebGpuComplex64ParityScope({
+        fullPhysicsValidation: true
+      })
+    }
+  });
+  assert.equal(fullPhysicsOverclaim.moonlabWebGpuParityScopeReady, false);
+  assert.ok(fullPhysicsOverclaim.moonlabWebGpuParityScopeValidationBlockers.includes(
+    'moonlab-webgpu-complex64-full-physics-validation-overstated'
   ));
 });
 

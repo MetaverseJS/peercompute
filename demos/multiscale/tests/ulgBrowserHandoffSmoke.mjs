@@ -62,6 +62,25 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
 }
 
+function assertMoonLabWebGpuProbe(handoffProbe) {
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeReady, true);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeStatus, 'scope-ready-backend-detected');
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeBackendAvailable, true);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeWebgpuParityExecuted, true);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeWebgpuParityPassed, true);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeFullPhysicsValidation, false);
+  assert.equal(handoffProbe.moonlabWebGpuParityScopeBlockerCount, 0);
+  assert.equal(handoffProbe.moonlabWebGpuBrowserBackendPreflightStage, 'device-acquired');
+  assert.deepEqual(handoffProbe.moonlabWebGpuProbabilityKernelCoveredOperations, ['compute_probabilities']);
+  assert.deepEqual(handoffProbe.moonlabWebGpuNativeOperationCoveredOperations, [
+    'hadamard',
+    'pauli_x',
+    'pauli_z',
+    'cnot'
+  ]);
+}
+
 async function main() {
   const browser = await chromium.launch({
     executablePath: CHROME_BIN,
@@ -87,6 +106,8 @@ async function main() {
     const handoffProbe = await page.evaluate(async () => {
       const handoff = await window.__ulgDemo.createPeerComputeHandoff();
       const eshkol = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'eshkol');
+      const moonlab = handoff.artifacts.find((artifact) => artifact.ref.sourceService === 'moonlab');
+      const moonlabSummary = moonlab?.artifactSummary || {};
       const descriptorBinding = eshkol?.artifact?.validation?.closureDescriptor?.descriptorBinding || null;
       const tensorRuntimeContract = descriptorBinding?.closureTensorRuntimeContract || null;
       const linearMemoryBinding = tensorRuntimeContract?.linearMemoryBinding || null;
@@ -135,10 +156,37 @@ async function main() {
           productionHandlerBoundary?.tensorMemoryBinding?.entryExportConsumesOffsets ?? null,
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
-        productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null
+        productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        moonlabWebGpuParityScopeReady: moonlabSummary.moonlabWebGpuParityScopeReady ?? null,
+        moonlabWebGpuParityScopeStatus: moonlabSummary.moonlabWebGpuParityScopeStatus || null,
+        moonlabWebGpuParityScopeBackendAvailable:
+          moonlabSummary.moonlabWebGpuParityScopeBackendAvailable ?? null,
+        moonlabWebGpuParityScopeWebgpuParityExecuted:
+          moonlabSummary.moonlabWebGpuParityExecuted ?? null,
+        moonlabWebGpuParityScopeWebgpuParityPassed:
+          moonlabSummary.moonlabWebGpuParityPassed ?? null,
+        moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+          moonlabSummary.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation ?? null,
+        moonlabWebGpuParityScopeFullPhysicsValidation:
+          moonlabSummary.moonlabWebGpuParityScopeFullPhysicsValidation ?? null,
+        moonlabWebGpuParityScopeBlockerCount:
+          Array.isArray(moonlabSummary.moonlabWebGpuParityScopeBlockers)
+            ? moonlabSummary.moonlabWebGpuParityScopeBlockers.length
+            : null,
+        moonlabWebGpuBrowserBackendPreflightStage:
+          moonlabSummary.moonlabWebGpuBrowserBackendPreflightStage || null,
+        moonlabWebGpuProbabilityKernelCoveredOperations:
+          Array.isArray(moonlabSummary.moonlabWebGpuProbabilityKernelCoveredNativeOperations)
+            ? [...moonlabSummary.moonlabWebGpuProbabilityKernelCoveredNativeOperations]
+            : [],
+        moonlabWebGpuNativeOperationCoveredOperations:
+          Array.isArray(moonlabSummary.moonlabWebGpuNativeOperationCoveredOperations)
+            ? [...moonlabSummary.moonlabWebGpuNativeOperationCoveredOperations]
+            : []
       };
     });
     assertEshkolRuntimeSmokeProbe(handoffProbe);
+    assertMoonLabWebGpuProbe(handoffProbe);
 
     const [popup] = await Promise.all([
       context.waitForEvent('page', { timeout: 10000 }),
@@ -166,6 +214,16 @@ async function main() {
         simulationStatus: readiness.simulationStatus,
         bridgeAckStatus: bridge.ack?.status || null,
         bridgeAckBlockers: bridge.ack?.blockerCount ?? null,
+        moonlabWebGpuParityScopeReady: readiness.moonlabWebGpuParityScope?.ready ?? null,
+        moonlabWebGpuParityScopeStatus: readiness.moonlabWebGpuParityScope?.status || null,
+        moonlabWebGpuParityScopeBackendAvailable:
+          readiness.moonlabWebGpuParityScope?.backendAvailable ?? null,
+        moonlabWebGpuParityScopeWebgpuParityExecuted:
+          readiness.moonlabWebGpuParityScope?.webgpuParityExecuted ?? null,
+        moonlabWebGpuParityScopeFullFidelityMagnetarSimulation:
+          readiness.moonlabWebGpuParityScope?.fullFidelityMagnetarSimulation ?? null,
+        moonlabWebGpuParityScopeFullPhysicsValidation:
+          readiness.moonlabWebGpuParityScope?.fullPhysicsValidation ?? null,
         magnetarVisible: state.magnetarProxyVisual.visible,
         magnetarLayer: state.magnetarProxyVisual.activeLayerId,
         hudStatus: document.querySelector('#scenario-handoff-status')?.textContent || null
@@ -179,6 +237,12 @@ async function main() {
     assert.equal(multiscaleProbe.simulationStatus, 'scientific-ready');
     assert.equal(multiscaleProbe.bridgeAckStatus, 'handoff-ready');
     assert.equal(multiscaleProbe.bridgeAckBlockers, 0);
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeReady, true);
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeStatus, 'scope-ready-backend-detected');
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeBackendAvailable, true);
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeWebgpuParityExecuted, true);
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
+    assert.equal(multiscaleProbe.moonlabWebGpuParityScopeFullPhysicsValidation, false);
     assert.equal(multiscaleProbe.magnetarVisible, true);
     assert.equal(multiscaleProbe.magnetarLayer, 'solar');
     assert.match(multiscaleProbe.hudStatus, /status handoff ready \/ blockers 0/i);
