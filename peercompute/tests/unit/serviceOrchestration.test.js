@@ -103,7 +103,6 @@ const ESHKOL_PRODUCTION_READINESS_REQUIREMENTS = Object.freeze([
 ]);
 const ESHKOL_PRODUCTION_BLOCKERS = Object.freeze([
   'production-magnetar-handler-not-implemented',
-  'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
   'full-physics-validation-not-run'
 ]);
 const ESHKOL_PRODUCTION_DISPATCH_CHECKS = Object.freeze([
@@ -119,11 +118,11 @@ const ESHKOL_PRODUCTION_DISPATCH_CHECKS = Object.freeze([
 const ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = Object.freeze([
   'artifact-module-sha256-matches-module-ref',
   'entry-export-main-signature-i32-i32-to-i32',
+  'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'runtime-smoke-stubs-rejected-for-production'
 ]);
 const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
-  'non-stub-host-imports-present',
   'handler-ready-flag-true',
   'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
@@ -270,7 +269,7 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
     handlerKind: 'wasm-export-tensor-closure',
     dispatchSchema: 'peercompute.ulg.dispatch-service-handler-context.v0',
     handlerProtocol: 'peercompute.ulg.dispatch-service-handler-context.v0',
-    runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
+    runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
     tensorMemoryModel: 'host-managed-linear-f64',
     handlerReady: false,
     runtimeExecution: false,
@@ -278,14 +277,16 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
       source: 'bundle.hostImports',
       required: true,
       factory: 'createEshkolHostImportObject',
-      runtimeScope: 'deterministic-runtime-smoke-stubs',
-      implementationStatus: 'smoke-stubs-not-production',
+      runtimeScope: 'production-candidate-host-imports',
+      implementationStatus: 'production-candidate-runtime-imports-present',
       productionCandidate: {
         schema: 'eshkol.ulg.production-host-import-candidate.v0',
-        status: 'requirements-declared-not-implemented',
+        status: 'production-candidate-runtime-imports-implemented',
         factory: 'createEshkolHostImportObject',
         smokeRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
         productionRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
+        runtimeScope: 'production-candidate-host-imports',
+        implementationStatus: 'production-candidate-runtime-imports-present',
         runtimeSmokeStubsAllowed: false,
         tensorMemoryImports: ['ulg_read_f64', 'ulg_write_f64'],
         requiredNonStubImports: [...ESHKOL_PRODUCTION_REQUIRED_NON_STUB_IMPORTS],
@@ -299,7 +300,7 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
       ready: false,
       dispatchSchema: 'peercompute.ulg.dispatch-service-handler-context.v0',
       entryExport: 'main',
-      currentRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
+      currentRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
       requiredRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
       moduleContentAddressing: 'required',
       moduleSha256Field: 'artifact.execution.module.sha256',
@@ -328,10 +329,15 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
         },
         {
           check: 'non-stub-host-imports-present',
-          status: 'blocked',
-          ready: false,
+          status: 'pass',
+          ready: true,
           evidenceSource: 'productionHandlerBoundary.hostImports',
-          blocker: 'host-imports-are-deterministic-runtime-smoke-stubs-not-production'
+          observed: {
+            runtimeScope: 'production-candidate-host-imports',
+            implementationStatus: 'production-candidate-runtime-imports-present',
+            runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
+            productionRuntimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
+          }
         },
         {
           check: 'f64-tensor-memory-binding-validated',
@@ -508,7 +514,7 @@ function createEshkolMagnetarDescriptorArtifact() {
             schema: 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0',
             contractId: 'eshkol:magnetar-closure-tensor-runtime-contract:v0',
             status: 'declared-fixture-contract',
-            runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0',
+            runtimeAbi: 'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
             executionClaim: 'metadata-and-smoke-output-only',
             entryExport: 'main',
             tensorMemoryModel: 'host-managed-linear-f64',
@@ -1478,7 +1484,10 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   assert.equal(summary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(summary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
-  assert.equal(summary.eshkolProductionHostImportCandidateStatus, 'requirements-declared-not-implemented');
+  assert.equal(
+    summary.eshkolProductionHostImportCandidateStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
   assert.equal(
     summary.eshkolProductionHostImportCandidateProductionRuntimeAbi,
     'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
@@ -1507,8 +1516,8 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
   assert.equal(summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(summary.eshkolProductionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(summary.eshkolProductionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(summary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(summary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(summary.eshkolProductionDispatchPreflightPassedChecks, [
     ...ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
   ]);
@@ -1529,8 +1538,8 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   assert.equal(summary.eshkolProductionHandlerBoundary.runtimeExecution, false);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightReady, false);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightDeclared, true);
-  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount, 4);
-  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightBlockedCheckCount, 4);
+  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount, 5);
+  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
 
   const normalizedBoundaryArtifact = createEshkolMagnetarDescriptorArtifact();
   normalizedBoundaryArtifact.validation.closureDescriptor.descriptorBinding.productionHandlerBoundary =
@@ -1538,15 +1547,15 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   const normalizedBoundarySummary = summarizeUlgArtifact('closure', normalizedBoundaryArtifact);
   assert.equal(
     normalizedBoundarySummary.eshkolProductionHostImportCandidateStatus,
-    'requirements-declared-not-implemented'
+    'production-candidate-runtime-imports-implemented'
   );
   assert.equal(normalizedBoundarySummary.eshkolProductionHostImportCandidateRequiredNonStubImports.length, 23);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightStatus, 'blocked');
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightReady, false);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightDeclared, true);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightRequiredChecks.length, 8);
-  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
@@ -2772,7 +2781,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.status, 'declared-fixture-contract');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.ready, true);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.contractHash, 'sha256:4b0d9c61ae83f1695978fd2f6b918bdbcab1ccca550b520c0467e7159c805d28');
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.runtimeAbi, 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0');
+  assert.equal(
+    eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.runtimeAbi,
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
+  );
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.executionClaim, 'metadata-and-smoke-output-only');
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.descriptorsReady, true);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.tensorRuntimeContract.matchesTensorContract, true);
@@ -2796,7 +2808,7 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.fullFidelityMagnetarSimulation, false);
   assert.equal(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.productionHostImportCandidateStatus,
-    'requirements-declared-not-implemented'
+    'production-candidate-runtime-imports-implemented'
   );
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightReady, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightDeclared, true);
@@ -2808,8 +2820,8 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightCheckSummarySchema,
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightPassedCheckCount, 4);
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedCheckCount, 4);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightPassedCheckCount, 5);
+  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
@@ -2823,7 +2835,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionHostImportCandidateStatus, 'requirements-declared-not-implemented');
+  assert.equal(
+    eshkol.serviceResult.ingest.eshkolProductionHostImportCandidateStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightReady, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightDeclared, true);
   assert.equal(
@@ -2831,8 +2846,8 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
   );
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedChecks,
     [...ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS]
@@ -2878,7 +2893,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractReady, true);
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractStatus, 'declared-fixture-contract');
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeContractHash, 'sha256:4b0d9c61ae83f1695978fd2f6b918bdbcab1ccca550b520c0467e7159c805d28');
-  assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeRuntimeAbi, 'wasm32-unknown-unknown:eshkol-host-imports-smoke-v0');
+  assert.equal(
+    eshkol.serviceSummary.descriptorTensorRuntimeRuntimeAbi,
+    'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
+  );
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeExecutionClaim, 'metadata-and-smoke-output-only');
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeMatchesTensorContract, true);
   assert.equal(eshkol.serviceSummary.descriptorTensorRuntimeMatchesInterpolationTable, true);
@@ -2903,7 +2921,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
-  assert.equal(eshkol.serviceSummary.eshkolProductionHostImportCandidateStatus, 'requirements-declared-not-implemented');
+  assert.equal(
+    eshkol.serviceSummary.eshkolProductionHostImportCandidateStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
   assert.equal(eshkol.serviceSummary.eshkolProductionHostImportCandidateRequiredNonStubImportCount, 23);
   assert.deepEqual(
     eshkol.serviceSummary.eshkolProductionHostImportCandidateBlockedBy,
@@ -2914,8 +2935,8 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightDeclared, true);
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightRequiredCheckCount, 8);
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceSummary.eshkolProductionDispatchPreflightRejectedRuntimeScopes,
     ['deterministic-runtime-smoke-stubs']

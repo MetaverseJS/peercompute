@@ -23316,3 +23316,29 @@ User asked whether Infinite Context Coder is being used.
   implementation, non-stub host imports, runtime execution, and full-physics
   validation remain intentionally blocked.
 - No push was attempted.
+
+## 2026-06-06 19:06:30 AKDT - Eshkol production-candidate preflight sync
+
+### Actions
+- Continued the core ULG/Eshkol/PeerCompute production-dispatch evidence path
+  and left SPH/phase-change demos as downstream evidence only.
+- Updated Multiscale model, browser handoff smoke, and relay handoff smoke
+  expectations for Eshkol's refreshed production-candidate host-import artifact.
+- Advanced expected computed Eshkol preflight evidence from `8/4/4` to `8/5/3`:
+  non-stub host imports now pass; handler readiness, runtime execution, and
+  full-physics validation remain blocked.
+- Rebuilt the Multiscale docs bundle; no tracked generated docs assets changed.
+
+### Validation
+- PASS: syntax checks passed for touched Multiscale smoke/model files.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"` passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and printed
+  raw and compact Eshkol dispatch-preflight evidence counts `8/5/3`.
+- PASS: `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning.
+- PASS: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff` passed with dispatch adapters ready and Multiscale `handoff-ready`.
+
+### Open
+- Production handler implementation, runtime execution, and full-physics
+  validation remain intentionally blocked.
+- No push was attempted.

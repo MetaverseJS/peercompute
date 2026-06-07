@@ -176,7 +176,8 @@ Updated: 2026-06-06 17:54:48 AKDT
   blocked check count, and passed/blocked check lists through artifact
   summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale
   scenario readiness, browser handoff smokes, and packet boundary conditions.
-  Current evidence remains 8 total checks, 4 passed, and 4 blocked.
+  Current evidence is 8 total checks, 5 passed, and 3 blocked after Eshkol's
+  production-candidate host-import mode landed.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay

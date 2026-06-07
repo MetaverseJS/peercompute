@@ -52258,3 +52258,40 @@ Open:
 - Production dispatch remains blocked on production handler implementation,
   non-stub host imports, runtime execution, and full-physics validation.
 - No push was attempted.
+
+## 2026-06-06 19:06:30 AKDT - Eshkol production-candidate preflight sync
+
+Prompt: don't pivot from the core technology to support an SPH demo.
+
+Actions:
+- Kept this as a core ULG/Eshkol/PeerCompute dispatch-boundary sync and did not
+  add SPH-specific behavior.
+- Updated PeerCompute service orchestration, Multiscale model, browser handoff,
+  and relay handoff test fixtures for ULG/Eshkol's refreshed
+  production-candidate host-import artifact.
+- Refreshed expectations for tensor contract hash
+  `sha256:7bc3955f9514d894def892e547d26288b305aceb0ae48fb732e2268b0d305985`,
+  production candidate status
+  `production-candidate-runtime-imports-implemented`, two remaining production
+  boundary blockers, and computed preflight counts `8/5/3`.
+- Rebuilt the Multiscale docs bundle; no tracked generated docs assets changed.
+
+Validation:
+- `node --check` over touched service and Multiscale test files: passed.
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "production handler boundary|descriptor-only Eshkol|production dispatch preflight"`:
+  passed, 28/28 tests.
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`:
+  passed, 198/198 tests.
+- `npm --prefix demos/multiscale run test:ulg-handoff`: passed; live handoff
+  reported raw and compact Eshkol dispatch-preflight evidence counts `8/5/3`,
+  visible magnetar proxy visual, and Multiscale `handoff-ready`.
+- `npm --prefix demos/multiscale run build`: passed with the existing
+  large-chunk warning.
+- `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`:
+  passed with service envelope ready, dispatch adapters ready, accepted
+  dispatch count 2, and Multiscale `handoff-ready`.
+
+Open:
+- Production dispatch remains blocked on production handler implementation,
+  runtime execution, and full-physics validation.
+- No push was attempted.

@@ -964,7 +964,7 @@
   `64`, and production handler boundary status `declared-not-executed`.
   It also asserts Eshkol computed production-dispatch preflight evidence:
   `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`, eight
-  total checks, four passed checks, four blocked checks, and ordered
+  total checks, five passed checks, three blocked checks, and ordered
   `checkResults`.
 : `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` opts into the browser dispatch-adapter
   probe with compact raw-result omission, a browser-owned async run record, and
@@ -981,7 +981,7 @@
 - Eshkol computed dispatch-preflight evidence gate:
   focused service orchestration, Multiscale model, browser ULG handoff, and
   relay handoff smokes now preserve the computed preflight `checkResults`,
-  check-summary schema, 8 total checks, 4 passed checks, and 4 blocked checks.
+  check-summary schema, 8 total checks, 5 passed checks, and 3 blocked checks.
   These checks do not promote production handler/runtime/full-physics readiness.
 
 ### Eshkol production handler boundary gate

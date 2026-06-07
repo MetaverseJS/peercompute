@@ -9,14 +9,13 @@ const EXPECTED_CANONICAL_SUITE_HASH = 'sha256:7d4e6372e49689d2202914e210af84d19d
 const EXPECTED_ESHKOL_SOURCE_HASH = 'sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69';
 const EXPECTED_ESHKOL_WASM_HASH = 'sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa';
 const EXPECTED_ESHKOL_WASM_BYTE_LENGTH = 169528;
-const EXPECTED_ESHKOL_TENSOR_CONTRACT_HASH = 'sha256:2289b8c8068f1a033cda20f09f30a33f2e41588b8ee2ccd1143100f2fe87dd64';
+const EXPECTED_ESHKOL_TENSOR_CONTRACT_HASH = 'sha256:7bc3955f9514d894def892e547d26288b305aceb0ae48fb732e2268b0d305985';
 const EXPECTED_ESHKOL_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
 const EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS = 'entry-export-runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER = 'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
 const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'production-magnetar-handler-not-implemented',
-  'host-imports-are-deterministic-runtime-smoke-stubs-not-production',
   'full-physics-validation-not-run'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
@@ -32,11 +31,11 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
   'artifact-module-sha256-matches-module-ref',
   'entry-export-main-signature-i32-i32-to-i32',
+  'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'runtime-smoke-stubs-rejected-for-production'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
-  'non-stub-host-imports-present',
   'handler-ready-flag-true',
   'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
@@ -87,8 +86,8 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
   assert.equal(handoffProbe.productionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(handoffProbe.productionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(handoffProbe.productionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(handoffProbe.productionDispatchPreflightPassedChecks, [
     ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
   ]);
@@ -103,8 +102,8 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
   assert.equal(handoffProbe.summaryProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 4);
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount, 4);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount, 3);
 }
 
 function assertMoonLabWebGpuProbe(handoffProbe) {
