@@ -52369,3 +52369,84 @@ Open:
 - Production dispatch remains blocked on production handler implementation,
   runtime execution, and full-physics validation.
 - No push was attempted.
+
+## 2026-06-06 20:17:24 AKDT - ULG dispatch adapter resource lease integration
+
+Prompt: User said "great job keep going" and requested continued progress on
+the core ULG implementation plan with local commits only and no push.
+
+Actions:
+- Continued the PeerCompute service-orchestration path rather than pivoting to
+  an SPH-only demo slice.
+- Wired Multiscale's live `runUlgDispatchServiceAdapterProbe()` through
+  `ResourceLeaseBroker`, assigning each MoonLab/Eshkol handoff dispatch a typed
+  `peercompute.multiscale.ulg-dispatch-resource-request.v0` GPU-style lease.
+- Added resource-pressure summaries to dispatch probe diagnostics and returned
+  top-level `resourcePressure`, lease counts, active lease count, and preemption
+  count from the live browser probe.
+- Added explicit `taskOverrides` support to
+  `createUlgHandoffSupervisorServiceExecutor()` so browser dispatch probes can
+  add child task resource metadata without inheriting the parent handoff task
+  root id.
+- Updated `WorkerSupervisor` so completed and failed task telemetry records the
+  broker's released lease status instead of retaining the original active lease
+  snapshot.
+- Extended the relay-backed ULG handoff smoke to assert two released resource
+  leases, zero active leases, zero preemptions, and typed resource-request
+  metadata on every dispatch task.
+- Rebuilt the Multiscale docs bundle for the relay-served smoke path.
+- Spawned a MoonLab sidecar to inspect the next disjoint MoonLab integration
+  slice; no MoonLab result has been integrated yet in this checkpoint.
+
+Files touched:
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `peercompute/tests/unit/resourceLeaseBroker.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+Validation:
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`.
+- PASS: `node --check demos/multiscale/src/main.js`.
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `node --check peercompute/tests/unit/resourceLeaseBroker.test.js`.
+- PASS: `node --test peercompute/tests/unit/resourceLeaseBroker.test.js`
+  passed `5/5`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "ChildWorkerLeaseManager|cancelTree|ULG Eshkol and MoonLab fixtures|handoff service envelope|MoonLab WebGPU|ULG handoff service host"`
+  passed `28/28`.
+- PASS: root import check for `ResourceLeaseBroker` and
+  `createUlgHandoffSupervisorServiceExecutor` returned `function function`.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed with
+  visible magnetar proxy visual, Multiscale `handoff-ready`, MoonLab reduced
+  browser WebGPU evidence ready, and full-fidelity/full-physics flags false.
+- FAIL then fixed: first
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  failed because the relay smoke serves `docs/multiscale`, and the source edit
+  had not yet been rebuilt into the docs bundle. The stale bundle returned no
+  `resourcePressure`, causing `Cannot read properties of undefined (reading 'schema')`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: final
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with service envelope ready, dispatch adapters ready,
+  `acceptedDispatchCount = 2`,
+  `dispatchResourcePressureSchema = peercompute.service.resource-pressure.v0`,
+  `dispatchResourceLeaseCount = 2`, `dispatchResourceActiveLeaseCount = 0`,
+  and `dispatchResourcePreemptionCount = 0`.
+- PASS: `ss -ltnp 'sport = :4196' || true` showed no listener after relay
+  smoke teardown.
+
+Open:
+- This is resource scheduling/telemetry for the live ULG dispatch adapter path.
+  It does not implement production Eshkol magnetar handlers, runtime execution,
+  scientific magnetar validation, or full-physics validation.
+- No push was attempted.

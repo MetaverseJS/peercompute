@@ -631,6 +631,7 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
     }
     const dispatch = context.dispatch || {};
     const envelope = context.envelope || {};
+    const taskOverrides = clonePlain(context.taskOverrides || context.serviceTaskOverrides || {});
     const artifactPayload = options.includeArtifactPayload === false
       ? null
       : createDispatchArtifactPayload(envelope, dispatch);
@@ -639,10 +640,11 @@ export function createUlgHandoffSupervisorServiceExecutor(options = {}) {
       : {
         ...taskDefaults,
         ...(clonePlain(dispatch.task || {})),
-        serviceId: dispatch.serviceId,
-        taskKind: dispatch.taskKind,
-        taskId: dispatch.dispatchId,
-        rootTaskId: dispatch.dispatchId,
+        ...taskOverrides,
+        serviceId: taskOverrides.serviceId || dispatch.serviceId,
+        taskKind: taskOverrides.taskKind || dispatch.taskKind,
+        taskId: taskOverrides.taskId || dispatch.dispatchId,
+        rootTaskId: taskOverrides.rootTaskId || dispatch.dispatchId,
         handoffId: envelope.handoffId || dispatch.handoffId || null,
         handoffEnvelope: {
           schema: envelope.schema || null,

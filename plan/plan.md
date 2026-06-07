@@ -61,7 +61,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
   preemptable work, TTL expiry, release/revocation by root task, device-lost
   quarantine, retryable quarantine metadata, and pressure counters. `WorkerSupervisor`
   now revokes resource leases during `cancelTree()` so root-task cancellation
-  cleans up GPU/resource claims immediately.
+  cleans up GPU/resource claims immediately and updates completed/error task
+  telemetry with the broker's released lease status.
+- PeerCompute ULG dispatch resource-leasing path: Multiscale's live
+  `runUlgDispatchServiceAdapterProbe()` now creates a `ResourceLeaseBroker`,
+  submits each MoonLab/Eshkol dispatch with a typed
+  `peercompute.multiscale.ulg-dispatch-resource-request.v0` GPU lease, and
+  returns `peercompute.service.resource-pressure.v0` telemetry to relay smokes.
+  The adapter-enabled relay smoke now proves two accepted dispatches leave two
+  released leases, zero active leases, zero preemptions, and unchanged false
+  full-fidelity/full-physics flags.
 - PeerCompute ULG service fixture bridge first pass: `peercompute/tests/fixtures/ulgServiceFixtures.js` now carries local fixture-style Eshkol and MoonLab service manifests plus representative ULG law/quantum task capsules, with no runtime dependency on `/home/cos/projects/ulg`. `ComputeServiceRegistry` preserves manifest contract metadata, `WorkerSupervisor` telemetry now includes registry/service contract summaries, and the headless service-orchestration unit test registers both fixtures, submits representative tasks through stub hosts, exercises child-worker grant/release/revoke flow, and verifies ULG contract telemetry.
 - PeerCompute child-worker lease type preservation: `ChildWorkerLeaseManager` now records `workerType` as either `module` or `classic`, defaults omitted leases to module workers, rejects unsupported worker kinds, and `WorkerSupervisor` forwards service lease requests without dropping the type. This keeps ordinary PeerCompute child workers module-first while allowing ULG/MoonLab Emscripten-style classic worker probes to request the browser semantics they need.
 - PeerCompute ULG v0.5 adapter bridge first pass: `ulgManifestAdapter.js` exports `adaptUlgV05ComputeServiceManifest()`, `adaptUlgV05TaskCapsule()`, and `createUlgV05ArtifactResult()` so copied ULG `compute_service_manifest` and task capsule fixtures can register with `ComputeServiceRegistry`, submit through `WorkerSupervisor`, preserve `entry.serviceAssets`, normalize output artifact plans, and hand real artifact bodies to the supervisor `artifactCache` for `artifact://...` refs without importing `/home/cos/projects/ulg` at runtime.

@@ -23342,3 +23342,44 @@ User asked whether Infinite Context Coder is being used.
 - Production handler implementation, runtime execution, and full-physics
   validation remain intentionally blocked.
 - No push was attempted.
+
+## 2026-06-06 20:17:24 AKDT - Dispatch adapter resource lease telemetry
+
+### Actions
+- Kept this as a Multiscale/PeerCompute service-orchestration step, not an
+  SPH-specific detour.
+- Added a `ResourceLeaseBroker` to the browser
+  `runUlgDispatchServiceAdapterProbe()` path.
+- Submitted each MoonLab/Eshkol dispatch with
+  `peercompute.multiscale.ulg-dispatch-resource-request.v0` metadata and
+  returned `peercompute.service.resource-pressure.v0` telemetry from the probe.
+- Extended dispatch diagnostics with compact lease counts, active lease count,
+  preemption count, and GPU pressure.
+- Updated the relay-backed handoff smoke to assert resource-pressure schema,
+  two released leases, zero active leases, zero preemptions, and typed resource
+  request metadata on dispatch task telemetry.
+- Rebuilt `docs/multiscale` so the relay-served smoke used the new browser
+  probe bundle.
+
+### Validation
+- PASS: syntax checks passed for touched Multiscale source and relay smoke
+  files.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed with
+  visible magnetar proxy visual and no full-physics overclaims.
+- FAIL then fixed: first adapter-enabled relay smoke failed because the
+  relay-served docs bundle was stale and lacked the new `resourcePressure`
+  fields.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: final
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with `dispatch-adapters-ready`, two accepted dispatches,
+  `peercompute.service.resource-pressure.v0`, two released leases, zero active
+  leases, zero preemptions, and all scientific scope flags false.
+
+### Open
+- The dispatch broker proves local resource-claim accounting for the ULG
+  service-adapter path. Production magnetar execution and scientific
+  full-physics validation remain blocked by the existing Eshkol/MoonLab
+  readiness gates.
+- No push was attempted.

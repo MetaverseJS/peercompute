@@ -167,3 +167,45 @@ test('WorkerSupervisor cancels root-task resource leases through ResourceLeaseBr
     ['root-cancel']
   );
 });
+
+test('WorkerSupervisor releases completed task resource leases in telemetry', async () => {
+  const host = new CapturingHost();
+  const broker = new ResourceLeaseBroker({ capacities: { gpu: { units: 1 } } });
+  const supervisor = new WorkerSupervisor({
+    registry: createRegistry(),
+    resourceBroker: broker,
+    serviceFactory: () => host
+  });
+
+  const taskPromise = supervisor.submitTask({
+    taskKind: 'gpu-task',
+    rootTaskId: 'root-complete',
+    resources: {
+      resourceKind: 'gpu',
+      priorityClass: 'compute',
+      metadata: {
+        schema: 'peercompute.test.resource-request.v0'
+      }
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const active = broker.list({ status: 'active', rootTaskId: 'root-complete' });
+  assert.equal(active.length, 1);
+
+  host.emit('message', {
+    type: 'task-result',
+    rootTaskId: 'root-complete',
+    result: {
+      status: 'accepted',
+      ready: true
+    }
+  });
+  await taskPromise;
+
+  const telemetry = supervisor.getTreeTelemetry();
+  assert.equal(broker.get(active[0].leaseId).status, 'released');
+  assert.equal(telemetry.resources.leaseCounts.released, 1);
+  assert.equal(telemetry.resources.activeLeaseCount, 0);
+  assert.equal(telemetry.tasks[0].resourceLease.status, 'released');
+  assert.equal(telemetry.tasks[0].resourceLease.metadata.schema, 'peercompute.test.resource-request.v0');
+});

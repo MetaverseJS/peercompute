@@ -4,6 +4,7 @@ import {
   ComputeServiceRegistry,
   NODE_KERNEL_REDUNDANT_PLACEMENT_SCHEMA,
   NodeKernel,
+  ResourceLeaseBroker,
   StateManager,
   WorkerSupervisor,
   createPlacementAdmissionPolicy,
@@ -24,6 +25,7 @@ import { MultiscaleScene } from './visualization/multiscaleScene.js';
 import { MULTISCALE_RENDER_BUDGET_SCHEMA } from './visualization/renderBudget.js';
 
 const ULG_DISPATCH_SERVICE_ADAPTER_PROBE_SCHEMA = 'peercompute.multiscale.ulg-dispatch-service-adapter-probe.v0';
+const ULG_DISPATCH_RESOURCE_REQUEST_SCHEMA = 'peercompute.multiscale.ulg-dispatch-resource-request.v0';
 const ULG_BROWSER_HANDOFF_POST_SCHEMA = 'ulg.peercompute.browser-handoff-post.v0';
 const ULG_BROWSER_HANDOFF_ACK_SCHEMA = 'peercompute.multiscale.browser-handoff-ack.v0';
 const ULG_DISPATCH_SERVICE_IDS = Object.freeze({
@@ -2241,6 +2243,15 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
 
 function summarizeUlgDispatchSupervisorDiagnostic(event = {}, telemetry = {}) {
   const message = event.message && typeof event.message === 'object' ? event.message : {};
+  const resources = telemetry.resources && typeof telemetry.resources === 'object'
+    ? {
+      schema: telemetry.resources.schema || null,
+      activeLeaseCount: telemetry.resources.activeLeaseCount ?? null,
+      leaseCounts: cloneJson(telemetry.resources.leaseCounts || {}),
+      preemptionCount: telemetry.resources.preemptionCount ?? null,
+      gpuPressure: telemetry.resources.pools?.gpu?.pressure ?? null
+    }
+    : null;
   const services = Array.isArray(telemetry.services)
     ? telemetry.services.map((service = {}) => ({
       serviceId: service.serviceId || null,
@@ -2282,10 +2293,38 @@ function summarizeUlgDispatchSupervisorDiagnostic(event = {}, telemetry = {}) {
     messageProbeReady: message.telemetry?.probeReady ?? null,
     messageError: message.error || null,
     error: event.error || null,
+    resourceActiveLeaseCount: resources?.activeLeaseCount ?? null,
+    resourceLeaseCounts: resources?.leaseCounts || null,
+    resourcePreemptionCount: resources?.preemptionCount ?? null,
+    resourceGpuPressure: resources?.gpuPressure ?? null,
     serviceCount: services.length,
     taskCount: tasks.length,
+    resources,
     services,
     tasks
+  };
+}
+
+function createUlgDispatchResourceRequest(dispatch = {}, envelope = {}) {
+  const sourceService = String(dispatch.sourceService || dispatch.sourceKey || '').trim().toLowerCase();
+  const priorityClass = sourceService.includes('moonlab') ? 'compute' : 'background';
+  return {
+    schema: ULG_DISPATCH_RESOURCE_REQUEST_SCHEMA,
+    resourceKind: 'gpu',
+    priorityClass,
+    units: 1,
+    preemptable: true,
+    metadata: {
+      schema: ULG_DISPATCH_RESOURCE_REQUEST_SCHEMA,
+      handoffId: envelope.handoffId || dispatch.handoffId || null,
+      dispatchId: dispatch.dispatchId || null,
+      serviceId: dispatch.serviceId || null,
+      sourceService: dispatch.sourceService || dispatch.sourceKey || null,
+      artifactKind: dispatch.artifactKind || null,
+      taskKind: dispatch.taskKind || null,
+      relaySafe: dispatch.relaySafe === true,
+      contentAddressed: dispatch.contentAddressed === true
+    }
   };
 }
 
@@ -2361,12 +2400,22 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
     status: serviceDispatchPlan.status || null
   });
   const artifactCache = createUlgDispatchArtifactCache();
+  const resourceBroker = options.resourceBroker || new ResourceLeaseBroker({
+    capacities: options.resourceCapacities || {
+      gpu: {
+        units: 1,
+        metadata: {
+          role: 'multiscale-ulg-dispatch-adapter-probe'
+        }
+      }
+    }
+  });
   const registry = new ComputeServiceRegistry(createUlgDispatchServiceManifests({
     serviceIds,
     workerModules,
     childWorkerModules
   }));
-  const supervisor = new WorkerSupervisor({ registry, artifactCache });
+  const supervisor = new WorkerSupervisor({ registry, artifactCache, resourceBroker });
   const unsubscribeSupervisor = supervisor.subscribe((event, telemetry) => {
     emitDiagnostic(summarizeUlgDispatchSupervisorDiagnostic(event, telemetry));
   });
@@ -2385,9 +2434,10 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
         dispatch,
         dispatchPlan: serviceDispatchPlan,
         envelope: serviceEnvelope,
-        task: {
-          taskId: `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`,
-          rootTaskId: `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`
+        taskOverrides: {
+          taskId: dispatch.dispatchId || `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`,
+          rootTaskId: dispatch.dispatchId || `${serviceEnvelope.handoffId || 'ulg-handoff'}:adapter-probe`,
+          resources: createUlgDispatchResourceRequest(dispatch, serviceEnvelope)
         }
       }));
       const lastResult = results[results.length - 1] || {};
@@ -2407,6 +2457,7 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       ...results.flatMap((entry) => entry.blockers || [])
     ]);
     const telemetry = supervisor.getTreeTelemetry();
+    const resourcePressure = telemetry.resources || null;
     const serviceResultSummaries = summarizeUlgDispatchServiceAdapterResults(results);
     emitDiagnostic({
       stage: 'returning',
@@ -2436,6 +2487,11 @@ async function runUlgDispatchServiceAdapterProbe(handoff = {}, options = {}) {
       workerModules: cloneJson(workerModules),
       results: includeResults ? results : [],
       serviceResultSummaries,
+      resourcePressure,
+      resourceLeaseCounts: cloneJson(resourcePressure?.leaseCounts || {}),
+      resourceLeaseCount: Array.isArray(resourcePressure?.leases) ? resourcePressure.leases.length : 0,
+      resourceActiveLeaseCount: resourcePressure?.activeLeaseCount ?? null,
+      resourcePreemptionCount: resourcePressure?.preemptionCount ?? null,
       telemetry,
       artifacts: artifactCache.list(),
       blockers

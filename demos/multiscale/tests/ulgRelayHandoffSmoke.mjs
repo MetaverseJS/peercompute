@@ -879,6 +879,20 @@ async function main() {
       assert.equal(dispatchProbe.status, 'dispatch-adapters-ready');
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
       assert.equal(dispatchProbe.rawResultsOmitted, true);
+      assert.equal(dispatchProbe.resourcePressure.schema, 'peercompute.service.resource-pressure.v0');
+      assert.equal(dispatchProbe.resourceLeaseCount, 2);
+      assert.equal(dispatchProbe.resourceActiveLeaseCount, 0);
+      assert.equal(dispatchProbe.resourcePreemptionCount, 0);
+      assert.equal(dispatchProbe.resourceLeaseCounts.released, 2);
+      assert.equal(dispatchProbe.resourcePressure.pools.gpu.units >= 1, true);
+      assert.equal(
+        dispatchProbe.telemetry.tasks.every((entry) => (
+          entry.resourceLease?.schema === 'peercompute.service.resource-lease.v0'
+          && entry.resourceLease.status === 'released'
+          && entry.resourceLease.metadata?.schema === 'peercompute.multiscale.ulg-dispatch-resource-request.v0'
+        )),
+        true
+      );
       const eshkolDispatchSummary = dispatchProbe.serviceResultSummaries.find((summary) => (
         summary.sourceService === 'eshkol'
       ));
@@ -945,6 +959,10 @@ async function main() {
         dispatchPlanStatus: servicePlanProbe.dispatchPlan.status,
         dispatchAdapterStatus: dispatchProbe?.status || dispatchDiagnostic?.status || 'skipped',
         acceptedDispatchCount: dispatchProbe?.acceptedDispatchCount ?? null,
+        dispatchResourcePressureSchema: dispatchProbe?.resourcePressure?.schema || null,
+        dispatchResourceLeaseCount: dispatchProbe?.resourceLeaseCount ?? null,
+        dispatchResourceActiveLeaseCount: dispatchProbe?.resourceActiveLeaseCount ?? null,
+        dispatchResourcePreemptionCount: dispatchProbe?.resourcePreemptionCount ?? null,
         dispatchAdapterProbeEnabled: runDispatchAdapters,
         dispatchAdapterDiagnostic: dispatchDiagnostic,
         scientificScopeFlags

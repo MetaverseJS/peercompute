@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 17:54:48 AKDT
+Updated: 2026-06-06 20:17:24 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -39,6 +39,12 @@ Updated: 2026-06-06 17:54:48 AKDT
 - Multiscale `runUlgDispatchServiceAdapterProbe()` now supports compact
   `includeResults: false` raw-result omission and emits optional stage
   diagnostics for browser relay harnesses.
+- Multiscale `runUlgDispatchServiceAdapterProbe()` now owns a
+  `ResourceLeaseBroker` for the live service-adapter path. Each MoonLab/Eshkol
+  dispatch submits a typed `peercompute.multiscale.ulg-dispatch-resource-request.v0`
+  GPU-style lease through `WorkerSupervisor`, and the returned probe exposes
+  `peercompute.service.resource-pressure.v0` telemetry, released lease counts,
+  active lease count, and preemption count.
 - The Multiscale live browser API now returns `serviceDispatchPlan` from
   `applyUlgDemoHandoffForScenario()` and exposes
   `createUlgHandoffServiceDispatchPlan()` directly for VPN inspection.
@@ -201,10 +207,14 @@ Updated: 2026-06-06 17:54:48 AKDT
   test:ulg-relay-handoff` now records
   `dispatchAdapterStatus = dispatch-adapters-ready` and
   `acceptedDispatchCount = 2` with scientific scope flags remaining false. The
-  blocker was the relay-served docs page resolving dispatch workers to raw
-  hashed source assets with bare `@peercompute` imports; Multiscale now points
-  the docs runtime at the stable bundled `assets/ulgMoonLabDispatchServiceHost.js`
-  and `assets/ulgEshkolDispatchServiceHost.js` worker entries.
+  resource-backed path now also reports
+  `dispatchResourcePressureSchema = peercompute.service.resource-pressure.v0`,
+  `dispatchResourceLeaseCount = 2`, `dispatchResourceActiveLeaseCount = 0`, and
+  `dispatchResourcePreemptionCount = 0`. The previous blocker was the
+  relay-served docs page resolving dispatch workers to raw hashed source assets
+  with bare `@peercompute` imports; Multiscale now points the docs runtime at
+  the stable bundled `assets/ulgMoonLabDispatchServiceHost.js` and
+  `assets/ulgEshkolDispatchServiceHost.js` worker entries.
 - Eshkol deterministic tensor-runtime candidate probing now executes inside the
   PeerCompute dispatch adapter. The adapter consumes the live ULG handoff
   artifact and transferred WASM bytes, instantiates them with deterministic

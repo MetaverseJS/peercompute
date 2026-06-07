@@ -329,7 +329,10 @@ export class WorkerSupervisor {
       task.artifactRef = await this.artifactCache.put(result.artifact);
     }
     if (task.resourceLease && this.resourceBroker?.releaseLease) {
-      await this.resourceBroker.releaseLease(task.resourceLease.leaseId);
+      const releasedLease = await this.resourceBroker.releaseLease(task.resourceLease.leaseId);
+      if (releasedLease) {
+        task.resourceLease = releasedLease;
+      }
     }
     const pending = this.pending.get(rootTaskId);
     pending?.resolve({
@@ -348,7 +351,10 @@ export class WorkerSupervisor {
     task.error = error?.message || String(error);
     task.finishedAt = this.now();
     if (task.resourceLease && this.resourceBroker?.releaseLease) {
-      await this.resourceBroker.releaseLease(task.resourceLease.leaseId);
+      const releasedLease = await this.resourceBroker.releaseLease(task.resourceLease.leaseId);
+      if (releasedLease) {
+        task.resourceLease = releasedLease;
+      }
     }
     const pending = this.pending.get(rootTaskId);
     pending?.reject(error instanceof Error ? error : new Error(task.error));
