@@ -14,6 +14,7 @@ import {
 export const SPH_MATERIAL_STATE_SCHEMA = 'peercompute.multiscale.sph-material.state.v0';
 export const SPH_MATERIAL_RESULT_SCHEMA = 'peercompute.multiscale.sph-material.result.v0';
 export const SPH_MATERIAL_DELTA_SCHEMA = 'peercompute.multiscale.sph-material.delta.v0';
+export const SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA = 'peercompute.multiscale.sph-material.phase-change-evidence.v0';
 export const SPH_MATERIAL_WEBGPU_MAX_PARTICLES = 1024;
 
 const DEFAULT_STATE_KEY = 'multiscale:sph-material:default';
@@ -1396,6 +1397,54 @@ function classifyWaterPhaseRegime(phaseMix) {
   return 'liquid';
 }
 
+function createH2oPhaseChangeEvidence(diagnostics) {
+  const phaseMix = diagnostics.phaseMix || {};
+  const solid = clamp(Number(phaseMix.solid ?? diagnostics.iceFraction ?? 0), 0, 1);
+  const liquid = clamp(Number(phaseMix.liquid ?? diagnostics.liquidFraction ?? 0), 0, 1);
+  const vapor = clamp(Number(phaseMix.vapor ?? diagnostics.vaporFraction ?? 0), 0, 1);
+  const phaseChangeRateProxy = Math.max(0, Number(diagnostics.phaseChangeRateProxy || 0));
+  const activePhaseCount = [solid, liquid, vapor].filter((value) => value > 0.04).length;
+  const hasTransitionEvidence = phaseChangeRateProxy > 0
+    || Number(diagnostics.boilingFraction || 0) > 0
+    || Number(diagnostics.freezingFraction || 0) > 0
+    || activePhaseCount > 1;
+  return {
+    schema: SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA,
+    materialId: 'h2o',
+    materialName: 'water',
+    status: hasTransitionEvidence ? 'reduced-sph-phase-change-ready' : 'reduced-sph-phase-change-warming',
+    modelScope: 'reduced-sph-thermal-phase-proxy',
+    validationStatus: 'demo-proxy-not-eos-validated',
+    scientificallyValidated: false,
+    eosTableValidated: false,
+    fullMaterialPhaseValidation: false,
+    phaseModel: {
+      freezeK: WATER_FREEZE_K,
+      boilK: WATER_BOIL_K,
+      heatCapacityProxyKjKgK: WATER_HEAT_CAPACITY_PROXY_KJ_KG_K,
+      latentFusionProxyKjKg: WATER_LATENT_FUSION_PROXY_KJ_KG,
+      latentVaporizationProxyKjKg: WATER_LATENT_VAPORIZATION_PROXY_KJ_KG
+    },
+    phaseFractions: { solid, liquid, vapor },
+    dominantRegime: diagnostics.phaseRegime || classifyWaterPhaseRegime({ solid, liquid, vapor }),
+    phaseChangeActive: hasTransitionEvidence,
+    transitionMetrics: {
+      boilingFraction: clamp(Number(diagnostics.boilingFraction || 0), 0, 1),
+      freezingFraction: clamp(Number(diagnostics.freezingFraction || 0), 0, 1),
+      phaseChangeRateProxy,
+      latentHeatSinkProxy: Math.max(0, Number(diagnostics.latentHeatSinkProxy || 0)),
+      latentHeatReleaseProxy: Math.max(0, Number(diagnostics.latentHeatReleaseProxy || 0)),
+      meanSpecificEnthalpyProxy: Number(diagnostics.meanSpecificEnthalpyProxy || 0),
+      averageTemperatureK: Number(diagnostics.averageTemperatureK || 294)
+    },
+    blockers: [
+      'tabulated-h2o-eos-not-loaded',
+      'surface-tension-calibration-not-validated',
+      'phase-boundary-benchmark-suite-not-run'
+    ]
+  };
+}
+
 function paramsToArray(params) {
   return new Float32Array([
     0,
@@ -1868,7 +1917,7 @@ export function computeSphMaterialDiagnostics(input = {}) {
     centerOfMass[2] - (fireCenter[2] || 0)
   );
 
-  return {
+  const baseDiagnostics = {
     schema: 'peercompute.multiscale.sph-material.diagnostics.v0',
     count,
     totalMass,
@@ -1895,6 +1944,10 @@ export function computeSphMaterialDiagnostics(input = {}) {
     densityMean,
     maxSpeed,
     phaseMix
+  };
+  return {
+    ...baseDiagnostics,
+    phaseChangeEvidence: createH2oPhaseChangeEvidence(baseDiagnostics)
   };
 }
 

@@ -4419,8 +4419,8 @@ const FOCUS_LAYER_READOUT_ROWS_BY_LAYER = {
     'ulg spec', 'root contracts', 'ulg runtime'
   ],
   orbital: [
-    'quantum basis', 'quantum shell', 'quantum EM', 'quantum grid',
-    'quantum residual', 'quantum worker', 'quantum evolve', 'quantum qgrid stat', 'quantum radial', 'quantum closure', 'quantum material', 'quantum ensemble',
+    'quantum basis', 'quantum grid', 'quantum worker', 'quantum shell',
+    'quantum EM', 'quantum residual', 'quantum evolve', 'quantum qgrid stat', 'quantum radial', 'quantum closure', 'quantum material', 'quantum ensemble',
     'molecular force', 'molecular geometry', 'molecular energy', 'molecular phase', 'molecular eos', 'molecular ledger',
     'molecular balance', 'molecular equation', 'molecular transfer', 'molecular apply',
     'molecular txn', 'molecular preview', 'molecular mutators', 'molecular preflight',
@@ -4560,7 +4560,14 @@ function formatPacketPreview(packet = {}) {
       molecularBonds: finiteNumber(closures.molecularBondCount, aggregate.molecularDynamics?.bondCount ?? 0),
       fireIntensity: finiteNumber(aggregate.fireIntensity, model.state.surface.fireIntensity),
       waterContact: finiteNumber(aggregate.waterContact, model.state.surface.waterContact),
-      sphFireContact: finiteNumber(aggregate.sphMaterial?.fireContactFraction, model.state.mpm.sphMaterial.fireContactFraction)
+      sphFireContact: finiteNumber(aggregate.sphMaterial?.fireContactFraction, model.state.mpm.sphMaterial.fireContactFraction),
+      sphPhaseRegime: aggregate.sphMaterial?.phaseRegime || model.state.mpm.sphMaterial.phaseRegime,
+      h2oPhaseChangeStatus:
+        aggregate.sphMaterial?.h2oPhaseChangeEvidenceStatus
+        || model.state.mpm.sphMaterial.h2oPhaseChangeEvidenceStatus,
+      h2oPhaseChangeValidation:
+        aggregate.sphMaterial?.h2oPhaseChangeValidationStatus
+        || model.state.mpm.sphMaterial.h2oPhaseChangeValidationStatus
     },
     compute: {
       backend: compute.backend || computeStatus.backend || null,
@@ -7384,7 +7391,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
       ? `${solverRuntimeStatus.reactiveThermal.lastResult.backend} / ${solverRuntimeStatus.reactiveThermal.lastResult.temperatureK.toFixed(0)}K / heat ${solverRuntimeStatus.reactiveThermal.lastResult.heatReleaseNorm.toFixed(2)}`
       : solverRuntimeStatus.reactiveThermal?.pending ? 'pending' : 'warming'],
     ['sph material', solverRuntimeStatus.sphMaterial?.lastResult
-      ? `${solverRuntimeStatus.sphMaterial.lastResult.backend} / ${solverRuntimeStatus.sphMaterial.lastResult.particleCount} particles / contact ${solverRuntimeStatus.sphMaterial.lastResult.fireContactFraction.toFixed(2)}`
+      ? `${solverRuntimeStatus.sphMaterial.lastResult.backend} / ${solverRuntimeStatus.sphMaterial.lastResult.particleCount} particles / ${solverRuntimeStatus.sphMaterial.lastResult.phaseRegime || 'phase'} / h2o ${solverRuntimeStatus.sphMaterial.lastResult.h2oPhaseChangeEvidenceStatus || 'warming'} / ${solverRuntimeStatus.sphMaterial.lastResult.h2oPhaseChangeValidationStatus || 'unvalidated'} / contact ${solverRuntimeStatus.sphMaterial.lastResult.fireContactFraction.toFixed(2)}`
       : solverRuntimeStatus.sphMaterial?.pending ? 'pending' : 'warming'],
     ['sph overlay', scene.getSphMaterialOverlayStatus().accepted
       ? `${scene.getSphMaterialOverlayStatus().visible ? 'visible' : 'hidden'} / ${scene.getSphMaterialOverlayStatus().particleCount} particles`
@@ -10136,6 +10143,16 @@ function stepSphMaterialWorker() {
           particleCount: result.diagnostics?.count ?? result.state?.masses?.length ?? 0,
           averageTemperatureK: result.diagnostics?.averageTemperatureK ?? 0,
           vaporFraction: result.diagnostics?.vaporFraction ?? 0,
+          phaseRegime: result.diagnostics?.phaseRegime || null,
+          phaseChangeEvidence: result.diagnostics?.phaseChangeEvidence || null,
+          h2oPhaseChangeEvidenceStatus: result.diagnostics?.phaseChangeEvidence?.status || null,
+          h2oPhaseChangeValidationStatus: result.diagnostics?.phaseChangeEvidence?.validationStatus || null,
+          h2oPhaseChangeModelScope: result.diagnostics?.phaseChangeEvidence?.modelScope || null,
+          h2oPhaseChangeScientificallyValidated: result.diagnostics?.phaseChangeEvidence?.scientificallyValidated === true,
+          h2oPhaseChangeEosTableValidated: result.diagnostics?.phaseChangeEvidence?.eosTableValidated === true,
+          h2oPhaseChangeBlockerCount: Array.isArray(result.diagnostics?.phaseChangeEvidence?.blockers)
+            ? result.diagnostics.phaseChangeEvidence.blockers.length
+            : 0,
           fireContactFraction: result.diagnostics?.fireContactFraction ?? 0,
           coolingPotential: result.diagnostics?.coolingPotential ?? 0,
           groundContactFraction: result.diagnostics?.groundContactFraction ?? 0,

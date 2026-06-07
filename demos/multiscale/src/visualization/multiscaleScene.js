@@ -3178,15 +3178,18 @@ export class MultiscaleScene {
       const z = Number(state.positions[src + 2]);
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
       const temperature = Number(state.temperatures?.[i] ?? 294);
-      const phase = Math.max(0, Math.min(1, Number(state.phases?.[i] ?? 0)));
+      const vapor = Math.max(0, Math.min(1, Number(state.phases?.[i] ?? 0)));
+      const freezeWeight = Math.max(0, Math.min(1, (273.15 - temperature) / 42));
+      const solid = Math.max(0, Math.min(1, (1 - vapor) * freezeWeight));
+      const liquid = Math.max(0, Math.min(1, 1 - vapor - solid));
       const heat = Math.max(0, Math.min(1, (temperature - 294) / 520));
       const dst = accepted * 3;
       pos[dst] = x * layerScale;
       pos[dst + 1] = y * layerScale;
       pos[dst + 2] = z * layerScale;
-      col[dst] = 0.15 + heat * 0.9 + phase * 0.35;
-      col[dst + 1] = 0.72 + phase * 0.2;
-      col[dst + 2] = 1 - heat * 0.45 + phase * 0.2;
+      col[dst] = solid * 0.74 + liquid * (0.12 + heat * 0.28) + vapor * (0.9 + heat * 0.1);
+      col[dst + 1] = solid * 0.94 + liquid * (0.58 + heat * 0.2) + vapor * (0.78 + heat * 0.15);
+      col[dst + 2] = solid * 1 + liquid * (1 - heat * 0.26) + vapor * (0.58 - heat * 0.08);
       accepted += 1;
     }
 
@@ -3207,15 +3210,28 @@ export class MultiscaleScene {
       reason: accepted > 0 ? 'ok' : 'empty material state',
       backend: result?.backend || 'unknown',
       particleCount: accepted,
-      visible: this.updateSphMaterialOverlayVisibility(),
+      visible: false,
       layerId: activeLayer.id,
       sequence,
       averageTemperatureK: result?.diagnostics?.averageTemperatureK ?? result?.averageTemperatureK ?? null,
       vaporFraction: result?.diagnostics?.vaporFraction ?? result?.vaporFraction ?? null,
+      phaseRegime: result?.diagnostics?.phaseRegime ?? result?.phaseRegime ?? null,
+      h2oPhaseChangeEvidenceStatus:
+        result?.diagnostics?.phaseChangeEvidence?.status
+        ?? result?.phaseChangeEvidence?.status
+        ?? null,
+      h2oPhaseChangeValidationStatus:
+        result?.diagnostics?.phaseChangeEvidence?.validationStatus
+        ?? result?.phaseChangeEvidence?.validationStatus
+        ?? null,
+      h2oPhaseChangeBlockerCount: Array.isArray(result?.diagnostics?.phaseChangeEvidence?.blockers)
+        ? result.diagnostics.phaseChangeEvidence.blockers.length
+        : (Array.isArray(result?.phaseChangeEvidence?.blockers) ? result.phaseChangeEvidence.blockers.length : 0),
       renderBudget: this.commitOverlayBudgetApplication('sphMaterial', budget, accepted, {
         sequence
       })
     };
+    this.sphMaterialOverlayStatus.visible = this.updateSphMaterialOverlayVisibility();
     return accepted > 0;
   }
 

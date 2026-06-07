@@ -373,6 +373,7 @@ import {
 } from '../src/simulation/ulgSpecContracts.js';
 import {
   SPH_MATERIAL_DELTA_SCHEMA,
+  SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA,
   SPH_MATERIAL_RESULT_SCHEMA,
   computeSphMaterialDiagnostics,
   makeSphMaterialInitialState,
@@ -15500,6 +15501,12 @@ test('SPH material task advances water particles and updates model packet state'
   assert.equal(sph.backend, 'cpu-sph-material');
   assert.equal(packet.upward.aggregateState.sphMaterial.backend, 'cpu-sph-material');
   assert.equal(packet.upward.aggregateState.sphMaterial.particleCount, 24);
+  assert.equal(packet.upward.aggregateState.sphMaterial.phaseChangeEvidence.schema, SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA);
+  assert.equal(packet.upward.aggregateState.sphMaterial.h2oPhaseChangeEvidenceStatus, 'reduced-sph-phase-change-warming');
+  assert.equal(packet.upward.aggregateState.sphMaterial.h2oPhaseChangeValidationStatus, 'demo-proxy-not-eos-validated');
+  assert.equal(packet.upward.aggregateState.sphMaterial.h2oPhaseChangeScientificallyValidated, false);
+  assert.equal(packet.upward.aggregateState.sphMaterial.h2oPhaseChangeEosTableValidated, false);
+  assert.equal(packet.upward.aggregateState.sphMaterial.h2oPhaseChangeBlockerCount, 3);
   assert.equal(typeof packet.upward.closures.sphVaporFraction, 'number');
   assert.equal(typeof packet.upward.closures.sphIceFraction, 'number');
   assert.equal(typeof packet.upward.closures.sphLatentHeatSinkProxy, 'number');
@@ -15527,6 +15534,21 @@ test('SPH material diagnostics classify water phase-change envelope', () => {
 
   const diagnostics = computeSphMaterialDiagnostics({ state });
   const phaseTotal = diagnostics.phaseMix.solid + diagnostics.phaseMix.liquid + diagnostics.phaseMix.vapor;
+  assert.equal(diagnostics.phaseChangeEvidence.schema, SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA);
+  assert.equal(diagnostics.phaseChangeEvidence.materialId, 'h2o');
+  assert.equal(diagnostics.phaseChangeEvidence.status, 'reduced-sph-phase-change-ready');
+  assert.equal(diagnostics.phaseChangeEvidence.validationStatus, 'demo-proxy-not-eos-validated');
+  assert.equal(diagnostics.phaseChangeEvidence.scientificallyValidated, false);
+  assert.equal(diagnostics.phaseChangeEvidence.eosTableValidated, false);
+  assert.equal(diagnostics.phaseChangeEvidence.fullMaterialPhaseValidation, false);
+  assert.equal(diagnostics.phaseChangeEvidence.phaseModel.freezeK, 273.15);
+  assert.equal(diagnostics.phaseChangeEvidence.phaseModel.boilK, 373.15);
+  assert.equal(diagnostics.phaseChangeEvidence.phaseFractions.vapor, diagnostics.phaseMix.vapor);
+  assert.deepEqual(diagnostics.phaseChangeEvidence.blockers, [
+    'tabulated-h2o-eos-not-loaded',
+    'surface-tension-calibration-not-validated',
+    'phase-boundary-benchmark-suite-not-run'
+  ]);
   assert.ok(diagnostics.iceFraction > 0);
   assert.ok(diagnostics.liquidFraction > 0);
   assert.ok(diagnostics.vaporFraction > 0);

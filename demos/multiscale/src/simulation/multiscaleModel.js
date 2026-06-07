@@ -3156,6 +3156,14 @@ export class MultiscaleModel {
           latentHeatReleaseProxy: 0,
           meanSpecificEnthalpyProxy: 0,
           phaseRegime: 'liquid',
+          phaseChangeEvidence: null,
+          h2oPhaseChangeEvidence: null,
+          h2oPhaseChangeEvidenceStatus: 'unavailable',
+          h2oPhaseChangeValidationStatus: 'unavailable',
+          h2oPhaseChangeModelScope: 'unavailable',
+          h2oPhaseChangeScientificallyValidated: false,
+          h2oPhaseChangeEosTableValidated: false,
+          h2oPhaseChangeBlockerCount: 0,
           fireContactFraction: 0,
           coolingPotential: 0,
           groundContactFraction: 0,
@@ -4839,6 +4847,7 @@ export class MultiscaleModel {
   applySphMaterialResult(result = {}) {
     if (!result?.diagnostics) return this.state.mpm.sphMaterial;
     const diagnostics = result.diagnostics;
+    const phaseChangeEvidence = diagnostics.phaseChangeEvidence || null;
     const sourceBufferApplicationReport = diagnostics.molecularSourceBufferApplication || null;
     const sourceBufferApplication = summarizeMolecularSourceBufferApplicationReport(sourceBufferApplicationReport);
     const quantumMaterialPropertySource = diagnostics.molecularQuantumMaterialPropertySource
@@ -4870,6 +4879,14 @@ export class MultiscaleModel {
       latentHeatReleaseProxy: Number(diagnostics.latentHeatReleaseProxy || 0),
       meanSpecificEnthalpyProxy: Number(diagnostics.meanSpecificEnthalpyProxy || 0),
       phaseRegime: diagnostics.phaseRegime || 'liquid',
+      phaseChangeEvidence,
+      h2oPhaseChangeEvidence: phaseChangeEvidence,
+      h2oPhaseChangeEvidenceStatus: phaseChangeEvidence?.status || 'unavailable',
+      h2oPhaseChangeValidationStatus: phaseChangeEvidence?.validationStatus || 'unavailable',
+      h2oPhaseChangeModelScope: phaseChangeEvidence?.modelScope || 'unavailable',
+      h2oPhaseChangeScientificallyValidated: phaseChangeEvidence?.scientificallyValidated === true,
+      h2oPhaseChangeEosTableValidated: phaseChangeEvidence?.eosTableValidated === true,
+      h2oPhaseChangeBlockerCount: Array.isArray(phaseChangeEvidence?.blockers) ? phaseChangeEvidence.blockers.length : 0,
       fireContactFraction: Number(diagnostics.fireContactFraction || 0),
       coolingPotential: Number(diagnostics.coolingPotential || 0),
       groundContactFraction: Number(diagnostics.groundContactFraction || 0),
@@ -8762,6 +8779,13 @@ export class MultiscaleModel {
             latentHeatReleaseProxy: Number(this.state.mpm.sphMaterial.latentHeatReleaseProxy.toExponential(4)),
             meanSpecificEnthalpyProxy: Number(this.state.mpm.sphMaterial.meanSpecificEnthalpyProxy.toExponential(4)),
             phaseRegime: this.state.mpm.sphMaterial.phaseRegime,
+            phaseChangeEvidence: this.state.mpm.sphMaterial.phaseChangeEvidence,
+            h2oPhaseChangeEvidenceStatus: this.state.mpm.sphMaterial.h2oPhaseChangeEvidenceStatus,
+            h2oPhaseChangeValidationStatus: this.state.mpm.sphMaterial.h2oPhaseChangeValidationStatus,
+            h2oPhaseChangeModelScope: this.state.mpm.sphMaterial.h2oPhaseChangeModelScope,
+            h2oPhaseChangeScientificallyValidated: this.state.mpm.sphMaterial.h2oPhaseChangeScientificallyValidated === true,
+            h2oPhaseChangeEosTableValidated: this.state.mpm.sphMaterial.h2oPhaseChangeEosTableValidated === true,
+            h2oPhaseChangeBlockerCount: Number(this.state.mpm.sphMaterial.h2oPhaseChangeBlockerCount || 0),
             fireContactFraction: Number(this.state.mpm.sphMaterial.fireContactFraction.toFixed(4)),
             coolingPotential: Number(this.state.mpm.sphMaterial.coolingPotential.toFixed(4)),
             groundContactFraction: Number(this.state.mpm.sphMaterial.groundContactFraction.toFixed(4)),

@@ -32,6 +32,7 @@ const QUANTUM_MATERIAL_MOLECULAR_GEOMETRY_SOURCE_SCHEMA = 'peercompute.multiscal
 const QUANTUM_MATERIAL_ELECTRONIC_CHARGE_SOURCE_SCHEMA = 'peercompute.multiscale.quantum-material-electronic-charge-source.v0';
 const QUANTUM_MATERIAL_REACTION_BARRIER_SURFACE_SCHEMA = 'peercompute.multiscale.quantum-material-reaction-barrier-surface.v0';
 const QUANTUM_MATERIAL_PRODUCT_TOPOLOGY_SCHEMA = 'peercompute.multiscale.quantum-material-product-topology.v0';
+const SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA = 'peercompute.multiscale.sph-material.phase-change-evidence.v0';
 const QUANTUM_FIELD_PROBE = Object.freeze({
   electricFieldVm: 250000000,
   magneticFieldT: 5
@@ -1478,14 +1479,26 @@ async function main() {
     && summary.molecularDynamics.packet?.quantumMaterialReactionProductTopologyNaohMoleculeCount >= 1
     && (summary.molecularDynamics.packet?.quantumMaterialReactionProductTopologyH2MoleculeCount >= 1
       || summary.molecularDynamics.packet?.quantumMaterialReactionProductTopologyPartialHydrogenSiteCount >= 1);
-  const minimumWaterTriplets = productTopologyOverlayApplied ? 4 : 5;
-  if (summary.molecularDynamics.packet?.molecularGeometryForceLawSchema !== MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA
-    || summary.molecularDynamics.packet?.molecularGeometryForceLaw?.schema !== MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA
-    || summary.molecularDynamics.packet?.forceEnergyLedger?.geometryForceLaw?.schema !== MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA
-    || summary.molecularDynamics.packet?.waterGeometryTripletCount < minimumWaterTriplets
-    || summary.molecularDynamics.packet?.waterGeometryClosureFraction < 0.8
-    || Math.abs((summary.molecularDynamics.packet?.waterGeometryMeanAngleDeg ?? 0) - 104.52) > 16) {
+  const qmatWaterGeometryGuardApplied = summary.molecularDynamics.packet?.quantumMaterialReactionBarrierSurfaceApplied === true
+    || summary.molecularDynamics.packet?.quantumMaterialReactionProductSourceApplied === true
+    || summary.molecularDynamics.packet?.quantumMaterialReactionProductTopologyRequired === true
+    || (summary.molecularDynamics.packet?.waterGeometrySourceApplied === true
+      && summary.molecularDynamics.packet?.waterGeometrySourceSchema === QUANTUM_MATERIAL_MOLECULAR_GEOMETRY_SOURCE_SCHEMA);
+  const minimumWaterTriplets = productTopologyOverlayApplied || qmatWaterGeometryGuardApplied ? 4 : 5;
+  const waterGeometryLawAttached = summary.molecularDynamics.packet?.molecularGeometryForceLawSchema === MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA
+    && summary.molecularDynamics.packet?.molecularGeometryForceLaw?.schema === MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA
+    && summary.molecularDynamics.packet?.forceEnergyLedger?.geometryForceLaw?.schema === MOLECULAR_GEOMETRY_FORCE_LAW_SCHEMA;
+  if (!waterGeometryLawAttached) {
     throw new Error(`Molecular dynamics packet missing water geometry law: ${JSON.stringify(summary.molecularDynamics.packet)}`);
+  }
+  const waterGeometryIntact = summary.molecularDynamics.packet?.waterGeometryTripletCount >= minimumWaterTriplets
+    && summary.molecularDynamics.packet?.waterGeometryClosureFraction >= 0.8
+    && Math.abs((summary.molecularDynamics.packet?.waterGeometryMeanAngleDeg ?? 0) - 104.52) <= 16;
+  const phaseDisruptedWaterGeometry = summary.molecularDynamics.packet?.phaseRegime === 'plasma'
+    || Number(summary.molecularDynamics.packet?.plasmaFraction || 0) > 0.25
+    || Number(summary.molecularDynamics.packet?.waterMoleculeFraction ?? 1) < 0.5;
+  if (!waterGeometryIntact && !phaseDisruptedWaterGeometry) {
+    throw new Error(`Molecular dynamics packet missing stable water geometry law: ${JSON.stringify(summary.molecularDynamics.packet)}`);
   }
   if (summary.molecularDynamics.packet?.quantumMaterialSourceApplied === true
     && (summary.molecularDynamics.packet?.waterGeometrySourceApplied !== true
@@ -1988,6 +2001,21 @@ async function main() {
   }
   if (summary.sphMaterial.backend !== 'webgpu-sph-material') {
     throw new Error(`SPH material visual smoke expected WebGPU backend, saw ${summary.sphMaterial.backend}`);
+  }
+  if (summary.sphMaterial.overlay?.h2oPhaseChangeEvidenceStatus !== 'reduced-sph-phase-change-ready') {
+    throw new Error(`SPH material overlay missing H2O phase-change evidence: ${JSON.stringify(summary.sphMaterial.overlay)}`);
+  }
+  if (summary.sphMaterial.packet?.phaseChangeEvidence?.schema !== SPH_MATERIAL_PHASE_CHANGE_EVIDENCE_SCHEMA) {
+    throw new Error(`SPH material packet missing phase-change evidence: ${JSON.stringify(summary.sphMaterial.packet?.phaseChangeEvidence)}`);
+  }
+  if (summary.sphMaterial.packet?.h2oPhaseChangeValidationStatus !== 'demo-proxy-not-eos-validated') {
+    throw new Error(`SPH material packet overstated H2O validation: ${JSON.stringify(summary.sphMaterial.packet)}`);
+  }
+  if (summary.sphMaterial.packet?.h2oPhaseChangeScientificallyValidated !== false) {
+    throw new Error(`SPH material packet should not claim scientific phase validation: ${JSON.stringify(summary.sphMaterial.packet)}`);
+  }
+  if (summary.sphMaterial.packet?.h2oPhaseChangeBlockerCount !== 3) {
+    throw new Error(`SPH material packet should preserve three H2O validation blockers: ${JSON.stringify(summary.sphMaterial.packet)}`);
   }
   for (const key of [
     'iceFraction',

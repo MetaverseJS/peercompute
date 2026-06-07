@@ -2,6 +2,78 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 16:46:02 AKDT - H2O SPH phase-change evidence and magnetar visual smoke
+
+### Prompt
+- User asked whether reasonably realistic H2O and other material phase changes
+  could be demonstrated soon in an SPH sim using the ULG, then instructed to
+  keep making progress. Standing instruction remains local commits only and no
+  push.
+
+### Actions
+- Added H2O-specific reduced SPH phase-change evidence under
+  `peercompute.multiscale.sph-material.phase-change-evidence.v0`.
+- Threaded evidence status, validation status, model scope, scientific/EOS
+  validation flags, and blocker count from SPH diagnostics into model aggregate
+  state, packets, packet preview, HUD readouts, and visual smoke.
+- Colored SPH material particles by inferred solid/liquid/vapor state and fixed
+  SPH overlay status visibility so the live surface layer exposes the evidence
+  while the overlay is visible.
+- Updated molecular visual smoke so the water geometry law schema remains
+  mandatory while intact H2O triplets are not required after magnetar/qmat
+  plasma conditions disrupt water geometry.
+- Reordered orbital focus HUD rows so `quantum grid` and `quantum worker`
+  telemetry remain early in focus mode.
+- Rebuilt `docs/multiscale`.
+
+### Files Touched
+- `demos/multiscale/src/compute/sphMaterialTasks.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/visualization/multiscaleScene.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/tests/visualSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check demos/multiscale/src/compute/sphMaterialTasks.js`
+- `node --check demos/multiscale/src/simulation/multiscaleModel.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check demos/multiscale/src/visualization/multiscaleScene.js`
+- `node --check demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --check demos/multiscale/tests/visualSmoke.mjs`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "SPH material"`
+- Live Playwright probe against `https://100.86.83.35:5185/?scenario=magnetar`
+- `npm --prefix demos/multiscale run build`
+- `MULTISCALE_SMOKE_URL='https://100.86.83.35:5185/?scenario=magnetar' npm --prefix demos/multiscale run test:visual`
+- `git diff --check`
+
+### Results
+- PASS: syntax checks completed for SPH diagnostics, model aggregation,
+  Multiscale main runtime, visualization, and changed tests.
+- PASS: focused SPH material model test command passed all 197 tests in the
+  file, including the new H2O evidence schema/validation/blocker assertions.
+- PASS: live browser probe showed surface SPH overlay visible with H2O evidence
+  status `reduced-sph-phase-change-ready`, validation status
+  `demo-proxy-not-eos-validated`, and three preserved blockers.
+- PASS: Vite build completed with only the existing large-chunk warning and
+  refreshed `docs/multiscale`.
+- PASS: magnetar visual smoke passed against the live VPN URL on port `5185`.
+- PASS: `git diff --check` completed.
+
+### Failures / Open Questions
+- This checkpoint is a credible reduced SPH phase-change demo surface, not a
+  scientifically validated H2O material model. It still needs tabulated H2O
+  EOS, calibrated surface tension, latent-heat conservation validation, and
+  phase-boundary benchmark coverage before scientific claims.
+- No push was attempted.
+
 ## 2026-06-06 15:10:38 AKDT - Relay dispatch adapter worker asset fix
 
 ### Prompt
