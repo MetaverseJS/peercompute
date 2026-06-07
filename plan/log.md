@@ -2,6 +2,80 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-06 20:04:13 AKDT - Resource lease broker first pass
+
+### Prompt
+- User instructed to keep working on the core ULG triad plan, avoid pivoting to
+  SPH demo support, keep commits local only, and continue using side agents
+  where useful. PeerCompute sidecar audit identified the missing formal
+  GPU/resource lease broker as the highest-leverage Milestone 0.8 core-tech
+  slice.
+
+### Actions
+- Confirmed `/home/cos/projects/peercompute` was on branch
+  `multi-scale-physics-sim`, clean, and ahead of origin locally.
+- Read `AGENTS.md`, `plan/plan.md`, `plan/tests.md`, `plan/log.md`, and the
+  existing service orchestration code before editing.
+- Added `ResourceLeaseBroker` under service orchestration with
+  `peercompute.service.resource-lease.v0` leases and
+  `peercompute.service.resource-pressure.v0` telemetry.
+- Implemented GPU-first resource capacity accounting, priority classes,
+  render-priority preemption of lower-priority preemptable work, protection for
+  non-preemptable active leases, release, root-task revocation, TTL expiry,
+  device-lost quarantine, retryable quarantine metadata, and pressure counters.
+- Exported the broker through `peercompute/src/peercompute/serviceOrchestration/index.js`
+  and the root `peercompute/src/peercompute/index.js`.
+- Extended `WorkerSupervisor.cancelTree()` to call
+  `resourceBroker.revokeByRootTask()` so cancellation cleans up resource leases
+  immediately instead of waiting for the service host to emit a result.
+- Added `resourceLeaseBroker.test.js` covering direct broker behavior and
+  `WorkerSupervisor` cancellation integration.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ResourceLeaseBroker.js`
+- `peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `peercompute/src/peercompute/serviceOrchestration/index.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/resourceLeaseBroker.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/ResourceLeaseBroker.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/WorkerSupervisor.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/index.js && node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/resourceLeaseBroker.test.js`
+- `node --test peercompute/tests/unit/resourceLeaseBroker.test.js`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern "ChildWorkerLeaseManager|cancelTree|ULG Eshkol and MoonLab fixtures|handoff service envelope|MoonLab WebGPU"`
+- `node --test peercompute/tests/unit/gpuhubmanager.test.js`
+- `node --test peercompute/tests/unit/resourceLeaseBroker.test.js peercompute/tests/unit/serviceOrchestration.test.js peercompute/tests/unit/gpuhubmanager.test.js`
+- `node --input-type=module -e "import { ResourceLeaseBroker, RESOURCE_LEASE_SCHEMA, RESOURCE_PRESSURE_SCHEMA } from './peercompute/src/peercompute/index.js'; const broker = new ResourceLeaseBroker(); console.log(RESOURCE_LEASE_SCHEMA, RESOURCE_PRESSURE_SCHEMA, typeof broker.reportPressure);"`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `ss -ltnp 'sport = :4196' || true`
+
+### Results
+- PASS: changed JS files passed syntax checks.
+- PASS: `resourceLeaseBroker.test.js` passed 4/4 tests.
+- PASS: focused existing service orchestration run passed 28/28 tests.
+- PASS: `gpuhubmanager.test.js` passed 2/2 tests.
+- PASS: combined broker/service orchestration/GPU hub run passed 34/34 tests.
+- PASS: root package import exposed `ResourceLeaseBroker`,
+  `RESOURCE_LEASE_SCHEMA`, and `RESOURCE_PRESSURE_SCHEMA`.
+- PASS: Multiscale ULG browser handoff smoke reported `handoff-ready`,
+  blocker count `0`, visible magnetar proxy, MoonLab reduced browser WebGPU
+  parity ready, and preserved false full-fidelity/full-physics flags.
+- PASS: adapter-enabled relay handoff smoke reported `dispatch-adapters-ready`,
+  `acceptedDispatchCount = 2`, and all scientific scope flags false.
+- PASS: no leftover listener remained on relay-smoke port `4196`.
+
+### Failures / Open Questions
+- This is a headless broker and supervisor integration slice. It does not yet
+  wire live Multiscale solver tasks to broker requests, durable IndexedDB
+  closure-cache indexes, or real browser WebGPU device-loss callbacks.
+- No push was attempted.
+
 ## 2026-06-06 16:46:02 AKDT - H2O SPH phase-change evidence and magnetar visual smoke
 
 ### Prompt

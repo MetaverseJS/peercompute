@@ -211,6 +211,10 @@ export class WorkerSupervisor {
     task.status = 'cancelling';
     task.cancelRequestedAt = this.now();
     await this.leaseManager.revokeByRootTask(rootTaskId);
+    const revokedResources = await this.resourceBroker?.revokeByRootTask?.(rootTaskId);
+    if (Array.isArray(revokedResources) && revokedResources.length > 0) {
+      task.resourceLease = revokedResources[0];
+    }
     const handle = this.handles.get(task.serviceId);
     if (handle) {
       postHostMessage(handle.host, { type: 'cancel-task', rootTaskId });

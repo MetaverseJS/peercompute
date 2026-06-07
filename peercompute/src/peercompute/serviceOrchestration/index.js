@@ -9,6 +9,11 @@ export {
   ChildWorkerLeaseManager
 } from './ChildWorkerLeaseManager.js';
 export {
+  RESOURCE_LEASE_SCHEMA,
+  RESOURCE_PRESSURE_SCHEMA,
+  ResourceLeaseBroker
+} from './ResourceLeaseBroker.js';
+export {
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor
 } from './WorkerSupervisor.js';
