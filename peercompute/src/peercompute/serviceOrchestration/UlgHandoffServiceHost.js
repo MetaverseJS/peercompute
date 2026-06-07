@@ -553,12 +553,22 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
                 )
           )
     ),
+    eshkolProductionHandlerRuntimeExecutionEntryResult: finiteNumberOrNull(
+      ingest.eshkolProductionHandlerRuntimeExecutionEntryResult
+      ?? productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult
+      ?? productionHandlerBoundary?.productionHandlerRuntimeExecution?.entryResult
+    ),
     eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
       finiteNumberOrNull(
         ingest.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? productionHandlerBoundary?.productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
       ),
+    eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced: booleanOrNull(
+      ingest.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? productionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? productionHandlerBoundary?.productionHandlerRuntimeExecution?.outputTensorsProducedByEntryExport
+    ),
     eshkolProductionHandlerRuntimeExecutionHostImportCallCounts: clonePlain(
       objectOrNull(ingest.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts)
       || objectOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts)

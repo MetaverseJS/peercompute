@@ -52839,3 +52839,67 @@ Open:
   proves production handler implementation/runtime smoke propagation, not
   calibrated GRMHD/PIC/radiation/full-fidelity magnetar simulation.
 - No push was attempted.
+
+## 2026-06-07 00:26:05 AKDT - Production runtime result fields reach Multiscale packets
+
+### Prompt
+- Continued from the standing implementation-plan work after confirming the
+  AGENTS files were visible; local commits only, no push.
+
+### Actions
+- Propagated Eshkol production handler runtime execution `entryResult = 0` and
+  `outputTensorsProducedByEntryExport = true` from normalized ULG artifacts into
+  PeerCompute compact summaries, dispatch ingest, handoff supervisor summaries,
+  Multiscale browser dispatch summaries, scenario closure ingest/readiness,
+  module-probe summaries, packet boundary conditions, browser handoff smoke, and
+  relay handoff smoke.
+- Rebuilt `docs/multiscale` so the relay-served bundle carries the updated
+  dispatch adapter and Multiscale receiver code.
+- Kept `fullPhysicsValidation = false`, full-fidelity magnetar simulation false,
+  and `full-physics-validation-not-run` as the production blocker.
+
+### Files
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Validation
+- PASS: syntax checks for changed PeerCompute service-orchestration files,
+  Multiscale source files, Multiscale tests, and smoke scripts.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `198/198`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed and reported
+  `productionHandlerRuntimeExecutionEntryResult = 0` plus
+  `productionHandlerRuntimeExecutionOutputTensorsProduced = true`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing Vite large-chunk warning.
+- FAIL then pass: the first adapter-enabled relay smoke with
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000` timed out at peer visibility before
+  handoff dispatch. Rerun with `ULG_RELAY_HANDOFF_TIMEOUT_MS=300000` passed with
+  two connected browser peers, browser `postMessage` handoff,
+  `handoff-ready`, dispatch adapters ready, accepted dispatch count `2`, two
+  released resource leases, `entryResult = 0`, output tensors produced, and all
+  scientific scope flags false.
+
+### Open
+- This is propagation of runtime-smoke evidence. It does not satisfy Eshkol's
+  full-physics validation requirements or promote full-fidelity magnetar
+  simulation.
+- No push was attempted.

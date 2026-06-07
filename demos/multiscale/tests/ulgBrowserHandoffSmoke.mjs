@@ -121,7 +121,9 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionStatus, 'production-handler-runtime-smoke-executed');
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionReady, true);
   assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionEntryArgs, [131072, 131136]);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionEntryResult, 0);
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionOutputTensorsProduced, true);
   assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionHostImportCallCounts, {
     ulg_read_f64: 12,
     ulg_write_f64: 9
@@ -383,9 +385,17 @@ async function main() {
                   ? [...eshkolSummary.closureProductionHandlerRuntimeExecutionEntryArgs]
                   : []
               ),
+        productionHandlerRuntimeExecutionEntryResult:
+          productionHandlerRuntimeExecution?.entryResult
+          ?? eshkolSummary.closureProductionHandlerRuntimeExecutionEntryResult
+          ?? null,
         productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
           productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
           ?? eshkolSummary.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+          ?? null,
+        productionHandlerRuntimeExecutionOutputTensorsProduced:
+          productionHandlerRuntimeExecution?.outputTensorsProducedByEntryExport
+          ?? eshkolSummary.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
           ?? null,
         productionHandlerRuntimeExecutionHostImportCallCounts:
           productionHandlerRuntimeExecution?.hostImportCallCounts

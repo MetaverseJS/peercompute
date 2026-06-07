@@ -2343,12 +2343,26 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.entryArgs
         || []
       ),
+      eshkolProductionHandlerRuntimeExecutionEntryResult:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionEntryResult
+        ?? serviceSummary?.closureProductionHandlerRuntimeExecutionEntryResult
+        ?? serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionEntryResult
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.entryResult
+        ?? null,
       eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
         serviceSummary?.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? serviceSummary?.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
         ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
+        ?? null,
+      eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced:
+        serviceSummary?.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+        ?? serviceSummary?.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
+        ?? serviceResult.ingest?.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced
+        ?? descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.outputTensorsProducedByEntryExport
         ?? null,
       eshkolProductionHandlerRuntimeExecutionHostImportCallCounts: cloneJson(
         serviceSummary?.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts

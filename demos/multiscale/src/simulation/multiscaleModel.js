@@ -928,11 +928,24 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
         ? productionHandlerRuntimeExecution.entryArgs
         : [])
     ),
+    productionHandlerRuntimeExecutionEntryResult: finiteOrNull(
+      source.eshkolProductionHandlerRuntimeExecutionEntryResult
+      ?? source.closureProductionHandlerRuntimeExecutionEntryResult
+      ?? productionHandlerRuntimeExecution.entryResult
+    ),
     productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange: finiteOrNull(
       source.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
       ?? source.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
       ?? productionHandlerRuntimeExecution.changedBytesInDeclaredTensorRange
     ),
+    productionHandlerRuntimeExecutionOutputTensorsProduced:
+      source.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? source.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? (
+        typeof productionHandlerRuntimeExecution.outputTensorsProducedByEntryExport === 'boolean'
+          ? productionHandlerRuntimeExecution.outputTensorsProducedByEntryExport
+          : null
+      ),
     productionHandlerRuntimeExecutionHostImportCallCounts: clonePlain(
       source.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts
       || source.closureProductionHandlerRuntimeExecutionHostImportCallCounts
@@ -3397,8 +3410,12 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         productionHandlerBoundary?.productionHandlerRuntimeExecutionReady ?? null,
       productionHandlerRuntimeExecutionEntryArgs:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs || []),
+      productionHandlerRuntimeExecutionEntryResult:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult),
       productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
         finiteOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange),
+      productionHandlerRuntimeExecutionOutputTensorsProduced:
+        productionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced ?? null,
       productionHandlerRuntimeExecutionHostImportCallCounts:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts || null),
       productionHandlerRuntimeExecutionBlockedBy:
@@ -3530,8 +3547,12 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         productionHandlerBoundary?.productionHandlerRuntimeExecutionReady ?? null,
       productionHandlerRuntimeExecutionEntryArgs:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs || []),
+      productionHandlerRuntimeExecutionEntryResult:
+        finiteOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult),
       productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
         finiteOrNull(productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange),
+      productionHandlerRuntimeExecutionOutputTensorsProduced:
+        productionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced ?? null,
       productionHandlerRuntimeExecutionHostImportCallCounts:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts || null),
       productionHandlerRuntimeExecutionBlockedBy:
@@ -9856,9 +9877,17 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.productionHandlerRuntimeExecutionEntryArgs
             || scenario.handoffReadiness?.closureModuleProbe?.productionHandlerRuntimeExecutionEntryArgs
             || [],
+          scenarioEshkolProductionHandlerRuntimeExecutionEntryResult:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerRuntimeExecutionEntryResult
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerRuntimeExecutionEntryResult
+            ?? null,
           scenarioEshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
             scenario.handoffReadiness?.closureHandoff?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+            ?? null,
+          scenarioEshkolProductionHandlerRuntimeExecutionOutputTensorsProduced:
+            scenario.handoffReadiness?.closureHandoff?.productionHandlerRuntimeExecutionOutputTensorsProduced
+            ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerRuntimeExecutionOutputTensorsProduced
             ?? null,
           scenarioEshkolProductionDispatchPreflightReady:
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightReady

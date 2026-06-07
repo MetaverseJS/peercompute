@@ -776,7 +776,9 @@ function assertEshkolProductionHandlerRuntimeExecutionFields(
   assert.equal(source[`${prefix}Status`], 'production-handler-runtime-smoke-executed');
   assert.equal(source[`${prefix}Ready`], true);
   assert.deepEqual(source[`${prefix}EntryArgs`], [131072, 131136]);
+  assert.equal(source[`${prefix}EntryResult`], 0);
   assert.equal(source[`${prefix}ChangedBytesInDeclaredTensorRange`], 64);
+  assert.equal(source[`${prefix}OutputTensorsProduced`], true);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);

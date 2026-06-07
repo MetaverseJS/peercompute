@@ -3175,10 +3175,20 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
         || summary.closureProductionHandlerRuntimeExecutionEntryArgs
         || probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs
         || []),
+    eshkolProductionHandlerRuntimeExecutionEntryResult:
+      summary.eshkolProductionHandlerRuntimeExecutionEntryResult
+      ?? summary.closureProductionHandlerRuntimeExecutionEntryResult
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult
+      ?? null,
     eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
       summary.eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
       ?? summary.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
       ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+      ?? null,
+    eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced:
+      summary.eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? summary.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
+      ?? probe?.descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced
       ?? null,
     eshkolProductionHandlerRuntimeExecutionHostImportCallCounts:
       clonePlain(summary.eshkolProductionHandlerRuntimeExecutionHostImportCallCounts

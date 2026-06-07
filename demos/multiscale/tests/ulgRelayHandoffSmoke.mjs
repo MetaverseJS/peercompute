@@ -175,6 +175,16 @@ function assertEshkolDispatchPreflightEvidence(summary = {}) {
     'closureProductionHandlerRuntimeExecutionReady'
   ]), true);
   assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerRuntimeExecutionEntryResult',
+    'productionHandlerRuntimeExecutionEntryResult',
+    'closureProductionHandlerRuntimeExecutionEntryResult'
+  ]), 0);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced',
+    'productionHandlerRuntimeExecutionOutputTensorsProduced',
+    'closureProductionHandlerRuntimeExecutionOutputTensorsProduced'
+  ]), true);
+  assert.equal(firstPresent(summary, [
     'eshkolProductionCandidateRuntimeProbeStatus',
     'productionCandidateRuntimeProbeStatus',
     'closureProductionCandidateRuntimeProbeStatus'
@@ -520,7 +530,9 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionStatus, 'production-handler-runtime-smoke-executed');
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionReady, true);
   assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionEntryArgs, [131072, 131136]);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionEntryResult, 0);
   assert.equal(handoffProbe.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(handoffProbe.productionHandlerRuntimeExecutionOutputTensorsProduced, true);
   assertEshkolHostImportsEvidence(handoffProbe);
 }
 
@@ -734,9 +746,17 @@ async function readUlgHandoff(ulgPage) {
                   ? [...eshkol.artifactSummary.closureProductionHandlerRuntimeExecutionEntryArgs]
                   : []
               ),
+        productionHandlerRuntimeExecutionEntryResult:
+          productionHandlerRuntimeExecution?.entryResult
+          ?? eshkol?.artifactSummary?.closureProductionHandlerRuntimeExecutionEntryResult
+          ?? null,
         productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
           productionHandlerRuntimeExecution?.changedBytesInDeclaredTensorRange
           ?? eshkol?.artifactSummary?.closureProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange
+          ?? null,
+        productionHandlerRuntimeExecutionOutputTensorsProduced:
+          productionHandlerRuntimeExecution?.outputTensorsProducedByEntryExport
+          ?? eshkol?.artifactSummary?.closureProductionHandlerRuntimeExecutionOutputTensorsProduced
           ?? null,
         hostImportsModule: eshkol?.artifactSummary?.closureHostImportsModule || null,
         hostImportsAssetStatus: eshkol?.artifactSummary?.closureHostImportsAssetStatus || null,

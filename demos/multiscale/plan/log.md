@@ -23584,3 +23584,29 @@ User asked whether Infinite Context Coder is being used.
   full-physics magnetar validation. `full-physics-validation-not-run` remains
   the active production blocker.
 - No push was attempted.
+
+## 2026-06-07 00:26:05 AKDT - Runtime-smoke scalar result propagation
+
+### Actions
+- Carried production handler runtime execution `entryResult = 0` and
+  output-tensor production through Multiscale ULG dispatch summaries, closure
+  ingest, handoff readiness, module probes, packet boundary conditions, browser
+  handoff smoke, relay handoff smoke, and the rebuilt docs bundle.
+- Preserved the existing production/runtime smoke scope: no full-physics or
+  full-fidelity magnetar claim was added.
+
+### Validation
+- PASS: syntax checks for changed Multiscale and PeerCompute orchestration files.
+- PASS: service orchestration suite `28/28`.
+- PASS: Multiscale model suite `198/198`.
+- PASS: live ULG handoff smoke against `http://127.0.0.1:5173/`.
+- PASS: Multiscale build refreshed `docs/multiscale` with the existing large
+  chunk warning.
+- FAIL then pass: first relay handoff run timed out at peer visibility before
+  dispatch; rerun with a 300s timeout passed with two connected browser peers,
+  two accepted dispatches, two released resource leases, `entryResult = 0`,
+  output tensors produced, and all science/full-physics flags false.
+
+### Open
+- The production blocker remains `full-physics-validation-not-run`.
+- No push was attempted.

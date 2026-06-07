@@ -1454,8 +1454,12 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
       eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionReady ?? null,
     eshkolProductionHandlerRuntimeExecutionEntryArgs:
       clonePlain(eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionEntryArgs || []),
+    eshkolProductionHandlerRuntimeExecutionEntryResult:
+      eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionEntryResult ?? null,
     eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange:
       eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange ?? null,
+    eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced:
+      eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionOutputTensorsProduced ?? null,
     eshkolProductionHandlerRuntimeExecutionHostImportCallCounts:
       clonePlain(eshkolProductionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts || null),
     eshkolProductionHandlerRuntimeExecutionBlockedBy:

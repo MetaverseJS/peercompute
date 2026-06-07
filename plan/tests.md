@@ -1047,3 +1047,17 @@
   `production-handler-runtime-smoke-executed`, handler/runtime readiness true,
   production implementation/runtime execution schemas, and production preflight
   counts `10/9/1`.
+- Production handler runtime execution scalar propagation gate:
+  syntax checks for changed PeerCompute service-orchestration files, Multiscale
+  source files, and smoke scripts.
+: current result on 2026-06-07 passed. `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`, `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `198/198`,
+  `npm --prefix demos/multiscale run build` passed with the existing large
+  chunk warning, and `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed. The relay smoke first timed
+  out at peer visibility with `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000`; rerun with
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1`
+  passed with two connected browser peers, two accepted dispatches,
+  `entryResult = 0`, output tensors produced, and false
+  science/full-physics/full-fidelity scope flags.

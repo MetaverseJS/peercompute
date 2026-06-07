@@ -764,7 +764,9 @@ function assertEshkolProductionHandlerRuntimeExecutionTelemetry(
   assert.equal(source[`${prefix}Status`], 'production-handler-runtime-smoke-executed');
   assert.equal(source[`${prefix}Ready`], true);
   assert.deepEqual(source[`${prefix}EntryArgs`], [131072, 131136]);
+  assert.equal(source[`${prefix}EntryResult`], 0);
   assert.equal(source[`${prefix}ChangedBytesInDeclaredTensorRange`], 64);
+  assert.equal(source[`${prefix}OutputTensorsProduced`], true);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
@@ -809,7 +811,9 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
   eshkolProductionHandlerRuntimeExecutionStatus: 'production-handler-runtime-smoke-executed',
   eshkolProductionHandlerRuntimeExecutionReady: true,
   eshkolProductionHandlerRuntimeExecutionEntryArgs: [131072, 131136],
+  eshkolProductionHandlerRuntimeExecutionEntryResult: 0,
   eshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange: 64,
+  eshkolProductionHandlerRuntimeExecutionOutputTensorsProduced: true,
   eshkolProductionHandlerRuntimeExecutionHostImportCallCounts: {
     ulg_read_f64: 12,
     ulg_write_f64: 9
@@ -888,7 +892,9 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
     productionHandlerRuntimeExecutionStatus: 'production-handler-runtime-smoke-executed',
     productionHandlerRuntimeExecutionReady: true,
     productionHandlerRuntimeExecutionEntryArgs: [131072, 131136],
+    productionHandlerRuntimeExecutionEntryResult: 0,
     productionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange: 64,
+    productionHandlerRuntimeExecutionOutputTensorsProduced: true,
     productionHandlerRuntimeExecutionHostImportCallCounts: {
       ulg_read_f64: 12,
       ulg_write_f64: 9
@@ -2692,9 +2698,14 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
     packet.downward.boundaryConditions.scenarioEshkolProductionHandlerRuntimeExecutionEntryArgs,
     [131072, 131136]
   );
+  assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionHandlerRuntimeExecutionEntryResult, 0);
   assert.equal(
     packet.downward.boundaryConditions.scenarioEshkolProductionHandlerRuntimeExecutionChangedBytesInDeclaredTensorRange,
     64
+  );
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolProductionHandlerRuntimeExecutionOutputTensorsProduced,
+    true
   );
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightDeclared, true);

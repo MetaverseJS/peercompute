@@ -285,17 +285,18 @@ Updated: 2026-06-06 23:53:08 AKDT
   launch commands without starting services.
 - `git diff --check` passed.
 - Current production handler runtime-smoke propagation validation passed on
-  2026-06-06: syntax checks for changed PeerCompute service-orchestration
+  2026-06-07: syntax checks for changed PeerCompute service-orchestration
   files, Multiscale source files, and smoke scripts passed; `node --test
   peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`; `node
   --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `198/198`;
   `npm --prefix demos/multiscale run build` passed with the existing large-
   chunk warning; `npm --prefix demos/multiscale run test:ulg-handoff` passed;
-  and `ULG_HANDOFF_URL=http://127.0.0.1:5173/
-  ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
-  --prefix demos/multiscale run test:ulg-relay-handoff` passed with two
-  accepted dispatches, two released resource leases, production handler/runtime
-  smoke summaries, and all science/full-physics scope flags false.
+  an initial `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000` relay run timed out before
+  handoff dispatch while waiting for peer visibility; the rerun with
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=300000` passed with two accepted dispatches,
+  two released resource leases, production handler/runtime smoke summaries,
+  `entryResult = 0`, output tensors produced, and all science/full-physics
+  scope flags false.
 
 ## Next
 - Promote the production handler runtime smoke into validated production
