@@ -411,6 +411,16 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       ingest.eshkolProductionHostImportsImplementationStatus
       || productionHandlerBoundary?.hostImportsImplementationStatus
       || null,
+    closureHostImportsModule: ingest.closureHostImportsModule || null,
+    closureHostImportsAssetStatus: ingest.closureHostImportsAssetStatus || null,
+    closureHostImportsFactoryStatus: ingest.closureHostImportsFactoryStatus || null,
+    closureHostImportsFactoryReady: booleanOrNull(ingest.closureHostImportsFactoryReady),
+    closureHostImportsRequirementsSchema: ingest.closureHostImportsRequirementsSchema || null,
+    closureHostImportsRequirementsStatus: ingest.closureHostImportsRequirementsStatus || null,
+    closureHostImportsRuntimeScope: ingest.closureHostImportsRuntimeScope || null,
+    closureHostImportsImplementationStatus: ingest.closureHostImportsImplementationStatus || null,
+    closureHostImportsRequiredNonStubImportCount:
+      finiteNumberOrNull(ingest.closureHostImportsRequiredNonStubImportCount),
     eshkolProductionHostImportCandidateStatus:
       ingest.eshkolProductionHostImportCandidateStatus
       || productionHandlerBoundary?.productionHostImportCandidateStatus

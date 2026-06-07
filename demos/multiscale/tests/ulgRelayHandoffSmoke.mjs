@@ -53,6 +53,8 @@ const EXPECTED_ESHKOL_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
 const EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS = 'entry-export-runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER = 'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
+const EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL =
+  new URL('/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js', ulgUrl).href;
 const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'production-magnetar-handler-not-implemented',
   'full-physics-validation-not-run'
@@ -141,6 +143,45 @@ function assertEshkolDispatchPreflightEvidence(summary = {}) {
   if (Array.isArray(checkResults)) {
     assert.deepEqual(checkResults.map((entry) => entry.check), EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS);
   }
+}
+
+function assertEshkolHostImportsEvidence(summary = {}) {
+  assert.equal(firstPresent(summary, [
+    'hostImportsModule',
+    'closureHostImportsModule'
+  ]), EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL);
+  assert.equal(firstPresent(summary, [
+    'hostImportsAssetStatus',
+    'closureHostImportsAssetStatus'
+  ]), 'ready');
+  assert.equal(firstPresent(summary, [
+    'hostImportsFactoryStatus',
+    'closureHostImportsFactoryStatus'
+  ]), 'ready');
+  assert.equal(firstPresent(summary, [
+    'hostImportsFactoryReady',
+    'closureHostImportsFactoryReady'
+  ]), true);
+  assert.equal(firstPresent(summary, [
+    'hostImportsRequirementsSchema',
+    'closureHostImportsRequirementsSchema'
+  ]), 'eshkol.ulg.production-host-import-candidate.v0');
+  assert.equal(firstPresent(summary, [
+    'hostImportsRequirementsStatus',
+    'closureHostImportsRequirementsStatus'
+  ]), 'production-candidate-runtime-imports-implemented');
+  assert.equal(firstPresent(summary, [
+    'hostImportsRuntimeScope',
+    'closureHostImportsRuntimeScope'
+  ]), 'production-candidate-host-imports');
+  assert.equal(firstPresent(summary, [
+    'hostImportsImplementationStatus',
+    'closureHostImportsImplementationStatus'
+  ]), 'production-candidate-runtime-imports-present');
+  assert.equal(firstPresent(summary, [
+    'hostImportsRequiredNonStubImportCount',
+    'closureHostImportsRequiredNonStubImportCount'
+  ]), 23);
 }
 
 const mime = {
@@ -375,6 +416,7 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+  assertEshkolHostImportsEvidence(handoffProbe);
 }
 
 function buildMultiscaleUrl(roomId) {
@@ -501,6 +543,16 @@ async function readUlgHandoff(ulgPage) {
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        hostImportsModule: eshkol?.artifactSummary?.closureHostImportsModule || null,
+        hostImportsAssetStatus: eshkol?.artifactSummary?.closureHostImportsAssetStatus || null,
+        hostImportsFactoryStatus: eshkol?.artifactSummary?.closureHostImportsFactoryStatus || null,
+        hostImportsFactoryReady: eshkol?.artifactSummary?.closureHostImportsFactoryReady ?? null,
+        hostImportsRequirementsSchema: eshkol?.artifactSummary?.closureHostImportsRequirementsSchema || null,
+        hostImportsRequirementsStatus: eshkol?.artifactSummary?.closureHostImportsRequirementsStatus || null,
+        hostImportsRuntimeScope: eshkol?.artifactSummary?.closureHostImportsRuntimeScope || null,
+        hostImportsImplementationStatus: eshkol?.artifactSummary?.closureHostImportsImplementationStatus || null,
+        hostImportsRequiredNonStubImportCount:
+          eshkol?.artifactSummary?.closureHostImportsRequiredNonStubImportCount ?? null,
         moonlabSourceService: moonlab?.ref?.sourceService || null,
         eshkolSourceService: eshkol?.ref?.sourceService || null
       }
@@ -897,6 +949,7 @@ async function main() {
       artifact.sourceService === 'eshkol' || artifact.artifactKind === 'closure'
     ));
     assertEshkolDispatchPreflightEvidence(eshkolEnvelopeArtifact.artifactSummary);
+    assertEshkolHostImportsEvidence(eshkolEnvelopeArtifact.artifactSummary);
     if (dispatchProbe) {
       assert.equal(dispatchProbe.status, 'dispatch-adapters-ready');
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
@@ -933,6 +986,7 @@ async function main() {
       assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateScientificValidation, false);
       assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateFullPhysicsValidation, false);
       assertEshkolDispatchPreflightEvidence(eshkolDispatchSummary);
+      assertEshkolHostImportsEvidence(eshkolDispatchSummary);
     } else if (runDispatchAdapters) {
       assert.ok([
         'dispatch-adapter-popup-context-reset',

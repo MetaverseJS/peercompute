@@ -52528,3 +52528,118 @@ Open:
   only. It does not implement the production magnetar handler, does not prove
   production runtime execution, and does not validate full magnetar physics.
 - No push was attempted.
+
+## 2026-06-06 21:49:12 AKDT - Eshkol host-import module/factory readiness bridge
+
+Actions:
+- Continued the core ULG/Eshkol/PeerCompute handoff path with local commits
+  only and no push.
+- Mirrored ULG's service-worker host-import import summary in PeerCompute
+  `peercompute.ulg.artifact-summary.v0`, including `closureHostImportsModule`,
+  asset status, factory status/readiness, requirements schema/status, runtime
+  scope, implementation status, and required non-stub import count.
+- Propagated those fields through Eshkol dispatch ingest,
+  `peercompute.ulg.handoff-supervisor-service-summary.v0`, Multiscale closure
+  ingest, scenario handoff readiness, and packet boundary conditions.
+- Updated service-orchestration and Multiscale fixtures/assertions so the
+  imported JS module/factory proof is tested beside the older
+  `path/factory/domFree` bundle metadata.
+- Rebuilt `docs/multiscale` for the relay-served browser bundle.
+
+Validation:
+- PASS: syntax checks for the changed PeerCompute service-orchestration files,
+  Multiscale model, and touched tests.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "Eshkol closure bundle|descriptor-only Eshkol|production preflight counts|production handler boundary"`
+  passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing Vite large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed.
+- FAIL then reran with longer peer-visibility timeout: initial
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  timed out after 90 seconds waiting for peer visibility before the handoff
+  payload path.
+- PASS: `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with browser postMessage handoff, service envelope ready, dispatch
+  adapters ready, accepted dispatch count `2`, two released resource leases,
+  zero active leases, and all scientific scope flags false.
+
+Open:
+- The new fields prove service-worker import/factory availability for the
+  Eshkol host-import module. They do not implement the production magnetar
+  handler, do not prove production runtime execution, and do not validate full
+  magnetar physics.
+- No push was attempted.
+
+## 2026-06-06 22:01:25 AKDT - Relay dispatch host-import summary assertion fix
+
+Actions:
+- Continued from the host-import readiness bridge with local commits only and
+  no push.
+- Tightened `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs` so the live
+  browser handoff asserts the imported Eshkol host-import module URL, asset
+  readiness, factory readiness, requirements schema/status, runtime scope,
+  implementation status, and required non-stub import count.
+- Tightened `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs` so the relay
+  handoff asserts the same fields in the browser handoff probe, service
+  envelope artifact summary, and dispatch-adapter service result summary.
+- Found that the relay-served dispatch summary was still dropping
+  `closureHostImports*` at the top level even though nested `ingest` and
+  `serviceSummary` retained it.
+- Fixed `demos/multiscale/src/main.js` by carrying `closureHostImports*`
+  through `summarizeUlgDispatchServiceAdapterResults()`.
+- Rebuilt `docs/multiscale`, rotating the generated main bundle from
+  `assets/index-DohJdrMJ.js` to `assets/index-C1rFRhg3.js`.
+- Updated `plan/tests.md`, `plan/implementation-status.md`, and
+  `demos/multiscale/plan/plan.md` to document the browser, relay-envelope, and
+  relay-dispatch summary host-import checks.
+
+Files touched:
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/index-C1rFRhg3.js`
+- `docs/multiscale/assets/index-DohJdrMJ.js`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `demos/multiscale/plan/plan.md`
+- `plan/log.md`
+- `demos/multiscale/plan/log.md`
+
+Commands run:
+- `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `node --check demos/multiscale/src/main.js`
+- `npm --prefix /home/cos/projects/peercompute/demos/multiscale run test:ulg-handoff`
+- `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix /home/cos/projects/peercompute/demos/multiscale run test:ulg-relay-handoff`
+- `npm --prefix /home/cos/projects/peercompute/demos/multiscale run build`
+
+Validation:
+- PASS: syntax checks for the changed Multiscale source and smoke scripts.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and
+  reported the expected imported host-import module URL,
+  `hostImportsAssetStatus = "ready"`, `hostImportsFactoryReady = true`, and
+  `hostImportsRequiredNonStubImportCount = 23`.
+- FAIL: first strict relay rerun after adding the dispatch summary assertion
+  failed because the relay-served bundle still returned `null` for the top-level
+  host-import module field in `serviceResultSummaries`.
+- PASS: debug rerun showed the host-import fields present under nested
+  `ingest` and `serviceSummary`, proving the dispatch payload retained the
+  evidence and only the public Multiscale summary was stale/dropping it.
+- PASS: `npm --prefix demos/multiscale run build` refreshed `docs/multiscale`
+  with the existing Vite large-chunk warning.
+- PASS: final
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with browser postMessage handoff, two relay-connected browser peers,
+  service envelope ready, dispatch adapters ready, accepted dispatch count `2`,
+  two released resource leases, zero active leases, zero preemptions, and all
+  scientific scope flags false.
+
+Open:
+- The host-import path is now proven through browser handoff, relay envelope,
+  and relay dispatch summaries, but it remains import/factory availability and
+  deterministic smoke evidence only. Production magnetar handler implementation,
+  production runtime execution, and full-physics validation remain blocked.
+- No push was attempted.

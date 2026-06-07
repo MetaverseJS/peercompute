@@ -23416,3 +23416,76 @@ User asked whether Infinite Context Coder is being used.
   handler implementation, production runtime execution, and full-physics
   validation remain intentionally blocked.
 - No push was attempted.
+
+## 2026-06-06 21:49:12 AKDT - Eshkol host-import module/factory readiness bridge
+
+### Actions
+- Preserved ULG's service-worker imported host-import module/factory readiness
+  through the Multiscale closure ingest, handoff readiness report, and packet
+  boundary conditions.
+- Added Multiscale assertions for `closureHostImportsModule`, asset/factory
+  status, factory readiness, requirements schema/status, runtime scope,
+  implementation status, and required non-stub import count.
+- Rebuilt the relay-served `docs/multiscale` bundle after source changes.
+
+### Validation
+- PASS: syntax checks for changed PeerCompute service-orchestration files,
+  Multiscale model, and touched tests.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "Eshkol closure bundle|descriptor-only Eshkol|production preflight counts|production handler boundary"`
+  passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed.
+- FAIL then reran with longer peer-visibility timeout: initial
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  timed out after 90 seconds waiting for peer visibility.
+- PASS: `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with browser postMessage handoff, dispatch adapters ready, accepted
+  dispatch count `2`, two released resource leases, zero active leases, and all
+  scientific scope flags false.
+
+### Open
+- The new fields prove host-import JS module/factory availability only.
+  Production magnetar handler implementation, production runtime execution, and
+  full-physics validation remain intentionally blocked.
+- No push was attempted.
+
+## 2026-06-06 22:01:25 AKDT - Relay dispatch host-import summary assertion fix
+
+### Actions
+- Added live browser handoff smoke assertions for the imported Eshkol
+  host-import module URL, asset/factory readiness, requirements schema/status,
+  runtime scope, implementation status, and required non-stub import count.
+- Added relay handoff smoke assertions for the same fields at the browser
+  handoff probe, service envelope artifact summary, and dispatch-adapter result
+  summary layers.
+- Found the dispatch result summary exposed the fields only under nested
+  `ingest` and `serviceSummary`, then fixed `summarizeUlgDispatchServiceAdapterResults()`
+  in `demos/multiscale/src/main.js` to surface the compact
+  `closureHostImports*` fields at top level.
+- Rebuilt the relay-served `docs/multiscale` bundle, rotating the generated
+  main asset to `assets/index-C1rFRhg3.js`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/main.js`
+- PASS: `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff`
+- FAIL then fixed: strict relay smoke initially failed on a `null`
+  dispatch-summary host-import module after the source change because the
+  relay-served `docs/multiscale` bundle had not been rebuilt.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: final
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with `dispatch-adapters-ready`, accepted dispatch count `2`, two
+  released leases, zero active leases, and all scientific scope flags false.
+
+### Open
+- This proves the host-import module/factory evidence survives the live browser
+  handoff, relay envelope, and relay dispatch summary. It still does not
+  implement the production magnetar handler, prove production runtime
+  execution, or validate full physics.
+- No push was attempted.

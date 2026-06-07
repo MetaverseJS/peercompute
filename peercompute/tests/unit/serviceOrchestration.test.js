@@ -129,6 +129,17 @@ const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
   'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
 ]);
+const ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY = Object.freeze({
+  closureHostImportsModule: '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js',
+  closureHostImportsAssetStatus: 'ready',
+  closureHostImportsFactoryStatus: 'ready',
+  closureHostImportsFactoryReady: true,
+  closureHostImportsRequirementsSchema: 'eshkol.ulg.production-host-import-candidate.v0',
+  closureHostImportsRequirementsStatus: 'production-candidate-runtime-imports-implemented',
+  closureHostImportsRuntimeScope: 'production-candidate-host-imports',
+  closureHostImportsImplementationStatus: 'production-candidate-runtime-imports-present',
+  closureHostImportsRequiredNonStubImportCount: 23
+});
 const MINIMAL_WASM_MAIN_EXPORT_BYTES = [
   0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
   0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
@@ -1728,6 +1739,29 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
           domFree: true
         },
         preserveRelativeUrls: true
+      },
+      assetProbe: {
+        assets: [{
+          kind: 'hostImportsModule',
+          status: 'ready',
+          url: '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js'
+        }]
+      },
+      hostImportsFactory: {
+        status: 'ready',
+        module: '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js',
+        global: 'EshkolHostImports',
+        factory: 'createEshkolHostImportObject',
+        factoryReady: true,
+        tensorBindingReady: true,
+        requirementsSchema: 'eshkol.ulg.production-host-import-candidate.v0',
+        requirementsStatus: 'production-candidate-runtime-imports-implemented',
+        runtimeScope: 'production-candidate-host-imports',
+        implementationStatus: 'production-candidate-runtime-imports-present',
+        runtimeSmokeStubsAllowed: false,
+        requiredNonStubImportCount: 23,
+        readinessRequirementCount: 4,
+        blockerCount: 2
       }
     },
     validation: {
@@ -1785,6 +1819,27 @@ test('ULG v0.5 artifact summary exposes Eshkol closure bundle readiness', () => 
   assert.equal(result.artifactSummary.closureHostImportsFactory, 'createEshkolHostImportObject');
   assert.equal(result.artifactSummary.closureHostImportsGlobal, 'EshkolHostImports');
   assert.equal(result.artifactSummary.closureHostImportsDomFree, true);
+  assert.equal(
+    result.artifactSummary.closureHostImportsModule,
+    '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js'
+  );
+  assert.equal(result.artifactSummary.closureHostImportsAssetStatus, 'ready');
+  assert.equal(result.artifactSummary.closureHostImportsFactoryStatus, 'ready');
+  assert.equal(result.artifactSummary.closureHostImportsFactoryReady, true);
+  assert.equal(
+    result.artifactSummary.closureHostImportsRequirementsSchema,
+    'eshkol.ulg.production-host-import-candidate.v0'
+  );
+  assert.equal(
+    result.artifactSummary.closureHostImportsRequirementsStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
+  assert.equal(result.artifactSummary.closureHostImportsRuntimeScope, 'production-candidate-host-imports');
+  assert.equal(
+    result.artifactSummary.closureHostImportsImplementationStatus,
+    'production-candidate-runtime-imports-present'
+  );
+  assert.equal(result.artifactSummary.closureHostImportsRequiredNonStubImportCount, 23);
   assert.equal(result.artifactSummary.closureOutputSemanticsSchema, ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA);
   assert.equal(result.artifactSummary.closureOutputSemanticsReady, true);
   assert.equal(result.artifactSummary.closureOutputSemanticScope, 'smoke-fixture');
@@ -2763,6 +2818,16 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
         sourceService: 'eshkol'
       },
       artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        validationStatus: 'descriptor-only',
+        closureReady: true,
+        closureDescriptorReady: true,
+        closureDescriptorSchema: ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SCHEMA,
+        ...ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY
+      },
       artifact: descriptorArtifact
     }]
   };
@@ -2927,6 +2992,22 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
   assert.equal(
+    eshkol.serviceResult.ingest.closureHostImportsModule,
+    ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
+  );
+  assert.equal(eshkol.serviceResult.ingest.closureHostImportsAssetStatus, 'ready');
+  assert.equal(eshkol.serviceResult.ingest.closureHostImportsFactoryStatus, 'ready');
+  assert.equal(eshkol.serviceResult.ingest.closureHostImportsFactoryReady, true);
+  assert.equal(
+    eshkol.serviceResult.ingest.closureHostImportsRequirementsStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
+  assert.equal(
+    eshkol.serviceResult.ingest.closureHostImportsImplementationStatus,
+    'production-candidate-runtime-imports-present'
+  );
+  assert.equal(eshkol.serviceResult.ingest.closureHostImportsRequiredNonStubImportCount, 23);
+  assert.equal(
     eshkol.serviceResult.ingest.eshkolProductionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
   );
@@ -3019,6 +3100,22 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryScientificValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation, false);
+  assert.equal(
+    eshkol.serviceSummary.closureHostImportsModule,
+    ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
+  );
+  assert.equal(eshkol.serviceSummary.closureHostImportsAssetStatus, 'ready');
+  assert.equal(eshkol.serviceSummary.closureHostImportsFactoryStatus, 'ready');
+  assert.equal(eshkol.serviceSummary.closureHostImportsFactoryReady, true);
+  assert.equal(
+    eshkol.serviceSummary.closureHostImportsRequirementsSchema,
+    'eshkol.ulg.production-host-import-candidate.v0'
+  );
+  assert.equal(
+    eshkol.serviceSummary.closureHostImportsRuntimeScope,
+    'production-candidate-host-imports'
+  );
+  assert.equal(eshkol.serviceSummary.closureHostImportsRequiredNonStubImportCount, 23);
   assert.equal(
     eshkol.serviceSummary.eshkolProductionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'

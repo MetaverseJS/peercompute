@@ -2201,6 +2201,42 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || descriptorProbe?.productionHandlerBoundary
         || null
       ),
+      closureHostImportsModule:
+        serviceSummary?.closureHostImportsModule
+        || serviceResult.ingest?.closureHostImportsModule
+        || null,
+      closureHostImportsAssetStatus:
+        serviceSummary?.closureHostImportsAssetStatus
+        || serviceResult.ingest?.closureHostImportsAssetStatus
+        || null,
+      closureHostImportsFactoryStatus:
+        serviceSummary?.closureHostImportsFactoryStatus
+        || serviceResult.ingest?.closureHostImportsFactoryStatus
+        || null,
+      closureHostImportsFactoryReady:
+        serviceSummary?.closureHostImportsFactoryReady
+        ?? serviceResult.ingest?.closureHostImportsFactoryReady
+        ?? null,
+      closureHostImportsRequirementsSchema:
+        serviceSummary?.closureHostImportsRequirementsSchema
+        || serviceResult.ingest?.closureHostImportsRequirementsSchema
+        || null,
+      closureHostImportsRequirementsStatus:
+        serviceSummary?.closureHostImportsRequirementsStatus
+        || serviceResult.ingest?.closureHostImportsRequirementsStatus
+        || null,
+      closureHostImportsRuntimeScope:
+        serviceSummary?.closureHostImportsRuntimeScope
+        || serviceResult.ingest?.closureHostImportsRuntimeScope
+        || null,
+      closureHostImportsImplementationStatus:
+        serviceSummary?.closureHostImportsImplementationStatus
+        || serviceResult.ingest?.closureHostImportsImplementationStatus
+        || null,
+      closureHostImportsRequiredNonStubImportCount:
+        serviceSummary?.closureHostImportsRequiredNonStubImportCount
+        ?? serviceResult.ingest?.closureHostImportsRequiredNonStubImportCount
+        ?? null,
       eshkolProductionCandidateRuntimeProbeStatus:
         serviceSummary?.eshkolProductionCandidateRuntimeProbeStatus
         || serviceSummary?.closureProductionCandidateRuntimeProbeStatus

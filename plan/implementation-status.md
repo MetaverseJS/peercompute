@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 20:17:24 AKDT
+Updated: 2026-06-06 21:49:12 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -192,6 +192,17 @@ Updated: 2026-06-06 20:17:24 AKDT
   outputs produced, host import calls `ulg_read_f64 = 12` /
   `ulg_write_f64 = 9`, and keeps production/science/full-physics readiness
   false.
+- ULG service-worker imported Eshkol host-import module/factory evidence now
+  preserves `closureHostImportsModule`, asset status `ready`, factory status
+  `ready`, factory readiness, requirements schema/status, runtime scope
+  `production-candidate-host-imports`, implementation status
+  `production-candidate-runtime-imports-present`, and required non-stub import
+  count `23` through PeerCompute artifact summaries, dispatch ingest, handoff
+  supervisor summaries, Multiscale scenario readiness, packet boundary
+  conditions, browser handoff smoke, the relay service envelope, and the relay
+  dispatch-adapter service result summary. This confirms runtime import
+  availability only; production handler/runtime/full-physics readiness remains
+  false.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay
@@ -241,6 +252,17 @@ Updated: 2026-06-06 20:17:24 AKDT
   browser smoke asserts the fields on both sides of the handoff.
 - Multiscale docs bundle was rebuilt after the receiver update, refreshing the
   hashed `docs/multiscale` assets for the current source.
+- Current host-import bridge validation passed on 2026-06-06: syntax checks for
+  the changed PeerCompute/Multiscale files passed; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern
+  "Eshkol closure bundle|descriptor-only Eshkol|production preflight
+  counts|production handler boundary"` passed `198/198`; `npm --prefix
+  demos/multiscale run build` passed with the existing large-chunk warning;
+  `npm --prefix demos/multiscale run test:ulg-handoff` passed; and
+  `ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed after an initial
+  90-second peer-visibility timeout.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host

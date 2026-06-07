@@ -14,6 +14,8 @@ const EXPECTED_ESHKOL_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
 const EXPECTED_ESHKOL_LINEAR_MEMORY_STATUS = 'entry-export-runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
 const EXPECTED_ESHKOL_OFFSET_PROBE_BLOCKER = 'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
+const EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL =
+  new URL('/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js', ULG_URL).href;
 const EXPECTED_ESHKOL_PRODUCTION_BLOCKERS = [
   'production-magnetar-handler-not-implemented',
   'full-physics-validation-not-run'
@@ -83,6 +85,15 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+  assert.equal(handoffProbe.hostImportsModule, EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL);
+  assert.equal(handoffProbe.hostImportsAssetStatus, 'ready');
+  assert.equal(handoffProbe.hostImportsFactoryStatus, 'ready');
+  assert.equal(handoffProbe.hostImportsFactoryReady, true);
+  assert.equal(handoffProbe.hostImportsRequirementsSchema, 'eshkol.ulg.production-host-import-candidate.v0');
+  assert.equal(handoffProbe.hostImportsRequirementsStatus, 'production-candidate-runtime-imports-implemented');
+  assert.equal(handoffProbe.hostImportsRuntimeScope, 'production-candidate-host-imports');
+  assert.equal(handoffProbe.hostImportsImplementationStatus, 'production-candidate-runtime-imports-present');
+  assert.equal(handoffProbe.hostImportsRequiredNonStubImportCount, 23);
   assert.equal(handoffProbe.productionCandidateRuntimeProbeStatus, 'production-candidate-runtime-smoke-passed');
   assert.equal(handoffProbe.productionCandidateRuntimeProbeReady, true);
   assert.equal(handoffProbe.productionCandidateRuntimeProbeRuntimeScope, 'production-candidate-host-imports');
@@ -220,6 +231,15 @@ async function main() {
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        hostImportsModule: eshkolSummary.closureHostImportsModule || null,
+        hostImportsAssetStatus: eshkolSummary.closureHostImportsAssetStatus || null,
+        hostImportsFactoryStatus: eshkolSummary.closureHostImportsFactoryStatus || null,
+        hostImportsFactoryReady: eshkolSummary.closureHostImportsFactoryReady ?? null,
+        hostImportsRequirementsSchema: eshkolSummary.closureHostImportsRequirementsSchema || null,
+        hostImportsRequirementsStatus: eshkolSummary.closureHostImportsRequirementsStatus || null,
+        hostImportsRuntimeScope: eshkolSummary.closureHostImportsRuntimeScope || null,
+        hostImportsImplementationStatus: eshkolSummary.closureHostImportsImplementationStatus || null,
+        hostImportsRequiredNonStubImportCount: eshkolSummary.closureHostImportsRequiredNonStubImportCount ?? null,
         productionCandidateRuntimeProbeStatus: productionCandidateRuntimeProbe?.status || null,
         productionCandidateRuntimeProbeReady:
           eshkolSummary.closureProductionCandidateRuntimeProbeReady ?? null,

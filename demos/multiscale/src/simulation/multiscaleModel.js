@@ -1462,7 +1462,18 @@ export function createScenarioClosureIngestReport(input = {}, options = {}) {
         sha256: source.closureHostImportsSha256 || null,
         factory: source.closureHostImportsFactory || null,
         global: source.closureHostImportsGlobal || null,
-        domFree: source.closureHostImportsDomFree === true
+        domFree: source.closureHostImportsDomFree === true,
+        module: source.closureHostImportsModule || null,
+        assetStatus: source.closureHostImportsAssetStatus || null,
+        factoryStatus: source.closureHostImportsFactoryStatus || null,
+        factoryReady: typeof source.closureHostImportsFactoryReady === 'boolean'
+          ? source.closureHostImportsFactoryReady
+          : null,
+        requirementsSchema: source.closureHostImportsRequirementsSchema || null,
+        requirementsStatus: source.closureHostImportsRequirementsStatus || null,
+        runtimeScope: source.closureHostImportsRuntimeScope || null,
+        implementationStatus: source.closureHostImportsImplementationStatus || null,
+        requiredNonStubImportCount: finiteOrNull(source.closureHostImportsRequiredNonStubImportCount)
       },
       outputSemantics: normalizeScenarioClosureOutputSemanticsSummary(source),
       productionHandlerBoundary,
@@ -3037,6 +3048,16 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       hostImportsPath: closureIngest?.closure?.hostImports?.path || null,
       hostImportsFactory: closureIngest?.closure?.hostImports?.factory || null,
       hostImportsDomFree: closureIngest?.closure?.hostImports?.domFree === true,
+      hostImportsModule: closureIngest?.closure?.hostImports?.module || null,
+      hostImportsAssetStatus: closureIngest?.closure?.hostImports?.assetStatus || null,
+      hostImportsFactoryStatus: closureIngest?.closure?.hostImports?.factoryStatus || null,
+      hostImportsFactoryReady: closureIngest?.closure?.hostImports?.factoryReady ?? null,
+      hostImportsRequirementsSchema: closureIngest?.closure?.hostImports?.requirementsSchema || null,
+      hostImportsRequirementsStatus: closureIngest?.closure?.hostImports?.requirementsStatus || null,
+      hostImportsRuntimeScope: closureIngest?.closure?.hostImports?.runtimeScope || null,
+      hostImportsImplementationStatus: closureIngest?.closure?.hostImports?.implementationStatus || null,
+      hostImportsRequiredNonStubImportCount:
+        finiteOrNull(closureIngest?.closure?.hostImports?.requiredNonStubImportCount),
       bundlePreserveRelativeUrls: closureIngest?.closure?.bundlePreserveRelativeUrls === true,
       descriptorReady: closureDescriptorReady,
       descriptorSchema: closureDescriptor?.schema || null,
@@ -9377,6 +9398,24 @@ export class MultiscaleModel {
           scenarioClosureImportCount: scenario.closureIngest?.closure?.importCount ?? null,
           scenarioClosureExportCount: scenario.closureIngest?.closure?.exportCount ?? null,
           scenarioClosureHostImportsDomFree: scenario.closureIngest?.closure?.hostImports?.domFree === true,
+          scenarioClosureHostImportsModule:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsModule || null,
+          scenarioClosureHostImportsAssetStatus:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsAssetStatus || null,
+          scenarioClosureHostImportsFactoryStatus:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsFactoryStatus || null,
+          scenarioClosureHostImportsFactoryReady:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsFactoryReady ?? null,
+          scenarioClosureHostImportsRequirementsSchema:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsRequirementsSchema || null,
+          scenarioClosureHostImportsRequirementsStatus:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsRequirementsStatus || null,
+          scenarioClosureHostImportsRuntimeScope:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsRuntimeScope || null,
+          scenarioClosureHostImportsImplementationStatus:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsImplementationStatus || null,
+          scenarioClosureHostImportsRequiredNonStubImportCount:
+            scenario.handoffReadiness?.closureHandoff?.hostImportsRequiredNonStubImportCount ?? null,
           scenarioClosureDescriptorReady: scenario.closureIngest?.closure?.descriptor?.ready === true
             || scenario.closureModuleProbe?.closureDescriptor?.ready === true,
           scenarioClosureDescriptorSchema: scenario.closureIngest?.closure?.descriptor?.schema

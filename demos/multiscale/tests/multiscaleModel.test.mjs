@@ -645,6 +645,18 @@ const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY = Object.freeze({
   closureOutputExpectedStdoutByteLength: 16
 });
 
+const ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY = Object.freeze({
+  closureHostImportsModule: '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js',
+  closureHostImportsAssetStatus: 'ready',
+  closureHostImportsFactoryStatus: 'ready',
+  closureHostImportsFactoryReady: true,
+  closureHostImportsRequirementsSchema: 'eshkol.ulg.production-host-import-candidate.v0',
+  closureHostImportsRequirementsStatus: 'production-candidate-runtime-imports-implemented',
+  closureHostImportsRuntimeScope: 'production-candidate-host-imports',
+  closureHostImportsImplementationStatus: 'production-candidate-runtime-imports-present',
+  closureHostImportsRequiredNonStubImportCount: 23
+});
+
 const ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY = Object.freeze({
   closureDescriptorSchema: 'eshkol.ulg.magnetar-closure-descriptor.v0',
   closureDescriptorReady: true,
@@ -2364,6 +2376,7 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
     closureHostImportsPath: 'eshkol-host-imports.js',
     closureHostImportsFactory: 'createEshkolHostImportObject',
     closureHostImportsDomFree: true,
+    ...ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY,
     ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
     closureReady: true
   });
@@ -2392,6 +2405,22 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(scenario.closureIngest.closure.hostImports.path, 'eshkol-host-imports.js');
   assert.equal(scenario.closureIngest.closure.hostImports.factory, 'createEshkolHostImportObject');
   assert.equal(scenario.closureIngest.closure.hostImports.domFree, true);
+  assert.equal(
+    scenario.closureIngest.closure.hostImports.module,
+    ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
+  );
+  assert.equal(scenario.closureIngest.closure.hostImports.assetStatus, 'ready');
+  assert.equal(scenario.closureIngest.closure.hostImports.factoryStatus, 'ready');
+  assert.equal(scenario.closureIngest.closure.hostImports.factoryReady, true);
+  assert.equal(
+    scenario.closureIngest.closure.hostImports.requirementsSchema,
+    'eshkol.ulg.production-host-import-candidate.v0'
+  );
+  assert.equal(
+    scenario.closureIngest.closure.hostImports.implementationStatus,
+    'production-candidate-runtime-imports-present'
+  );
+  assert.equal(scenario.closureIngest.closure.hostImports.requiredNonStubImportCount, 23);
   assert.equal(scenario.closureIngest.closure.bundlePreserveRelativeUrls, true);
   assert.equal(scenario.closureIngest.closure.outputSemantics.schema, 'eshkol.ulg.closure-output-semantics.v0');
   assert.equal(scenario.closureIngest.closure.outputSemantics.ready, true);
@@ -2414,6 +2443,17 @@ test('magnetar scenario ingests Eshkol closure bundle summary without promoting 
   assert.equal(packet.downward.boundaryConditions.scenarioClosureImportCount, 12);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureExportCount, 1);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsDomFree, true);
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioClosureHostImportsModule,
+    ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
+  );
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsFactoryStatus, 'ready');
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsFactoryReady, true);
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioClosureHostImportsRuntimeScope,
+    'production-candidate-host-imports'
+  );
+  assert.equal(packet.downward.boundaryConditions.scenarioClosureHostImportsRequiredNonStubImportCount, 23);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticsReady, true);
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputSemanticScope, 'smoke-fixture');
   assert.equal(packet.downward.boundaryConditions.scenarioClosureOutputScientificValidation, false);
@@ -2738,6 +2778,7 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
     closureHostImportsPath: 'eshkol-host-imports.js',
     closureHostImportsFactory: 'createEshkolHostImportObject',
     closureHostImportsDomFree: true,
+    ...ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY,
     ...ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY,
     closureReady: true
   });
@@ -2797,6 +2838,17 @@ test('magnetar scenario combines ULG calibration and Eshkol closure handoffs int
   assert.equal(scenario.handoffReadiness.closureHandoff.importCount, 12);
   assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsFactory, 'createEshkolHostImportObject');
   assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsDomFree, true);
+  assert.equal(
+    scenario.handoffReadiness.closureHandoff.hostImportsModule,
+    ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
+  );
+  assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsFactoryStatus, 'ready');
+  assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsFactoryReady, true);
+  assert.equal(
+    scenario.handoffReadiness.closureHandoff.hostImportsRequirementsStatus,
+    'production-candidate-runtime-imports-implemented'
+  );
+  assert.equal(scenario.handoffReadiness.closureHandoff.hostImportsRequiredNonStubImportCount, 23);
   assert.equal(scenario.handoffReadiness.closureHandoff.outputSemanticsReady, true);
   assert.equal(scenario.handoffReadiness.closureHandoff.outputSemanticScope, 'smoke-fixture');
   assert.equal(scenario.handoffReadiness.closureHandoff.outputScientificScope, 'none');
