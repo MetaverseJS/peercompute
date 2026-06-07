@@ -139,6 +139,26 @@ const ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = Object.freeze([
 const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
   'full-physics-validation-evidence-present'
 ]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES = Object.freeze([
+  'magnetosphere-mhd',
+  'pic-kinetic-plasma',
+  'radiation-transport',
+  'relativistic-correction',
+  'cross-family-conservation-coupling'
+]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS = Object.freeze([
+  'peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0',
+  'peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0',
+  'peercompute.multiscale.radiation-transport.runtime-validation.v0',
+  'peercompute.multiscale.relativistic-correction.runtime-validation.v0',
+  'peercompute.multiscale.cross-family-conservation-coupling.runtime-validation.v0'
+]);
+const ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = Object.freeze([
+  'referenceHash',
+  'toleranceHash',
+  'runtimeOutputHash',
+  'evidenceHash'
+]);
 const ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY = Object.freeze({
   closureHostImportsModule: '/service-assets/eshkol/closures/magnetar-closure/eshkol-host-imports.js',
   closureHostImportsAssetStatus: 'ready',
@@ -283,6 +303,27 @@ function createMoonLabBrowserWebGpuComplex64ParityScope(overrides = {}) {
   };
 }
 
+function createEshkolFullPhysicsValidationRequirements() {
+  return {
+    schema: 'eshkol.ulg.full-physics-validation-requirements.v0',
+    status: 'declared-not-run',
+    ready: false,
+    validationScope: 'magnetar-production-handler-full-physics',
+    producerSchema: 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0',
+    requiredValidationSchema: 'peercompute.multiscale.scenario-scientific-runtime-validation.v0',
+    requiredValidationScope: 'magnetar-scientific-runtime-reference-validation',
+    requiredRuntimeEvidenceFamilies: [...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES],
+    requiredHashFields: [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS],
+    requiredRuntimeEvidence: ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.map((family, index) => ({
+      family,
+      schema: ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS[index],
+      status: 'required-not-provided',
+      required: true
+    })),
+    blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
+  };
+}
+
 function createEshkolProductionHandlerBoundary(overrides = {}) {
   return {
     schema: ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA,
@@ -348,6 +389,7 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
       },
       blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
     },
+    fullPhysicsValidationRequirements: createEshkolFullPhysicsValidationRequirements(),
     hostImports: {
       source: 'bundle.hostImports',
       required: true,
@@ -782,6 +824,25 @@ function assertEshkolProductionHandlerRuntimeExecutionFields(
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
+}
+
+function assertEshkolFullPhysicsValidationRequirementsFields(
+  source,
+  prefix = 'eshkolFullPhysicsValidation'
+) {
+  assert.equal(source[`${prefix}RequirementsSchema`], 'eshkol.ulg.full-physics-validation-requirements.v0');
+  assert.equal(source[`${prefix}RequirementsStatus`], 'declared-not-run');
+  assert.equal(source[`${prefix}RequirementsDeclared`], true);
+  assert.equal(source[`${prefix}RequirementsReady`], false);
+  assert.deepEqual(source[`${prefix}RequiredRuntimeEvidenceFamilies`], [
+    ...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES
+  ]);
+  assert.equal(
+    source[`${prefix}RequiredRuntimeEvidenceCount`],
+    ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+  );
+  assert.deepEqual(source[`${prefix}RequiredHashFields`], [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS]);
+  assert.deepEqual(source[`${prefix}RequirementsBlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
 }
 
 function serviceManifest(overrides = {}) {
@@ -1678,6 +1739,7 @@ test('ULG artifact summary exposes Eshkol production handler runtime-smoke evide
   assertEshkolProductionHandlerContractFields(summary);
   assertEshkolProductionHandlerImplementationFields(summary);
   assertEshkolProductionHandlerRuntimeExecutionFields(summary);
+  assertEshkolFullPhysicsValidationRequirementsFields(summary);
   assert.equal(
     summary.eshkolProductionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
@@ -1754,6 +1816,10 @@ test('ULG artifact summary exposes Eshkol production handler runtime-smoke evide
     summary.eshkolProductionHandlerBoundary,
     'productionHandlerRuntimeExecution'
   );
+  assertEshkolFullPhysicsValidationRequirementsFields(
+    summary.eshkolProductionHandlerBoundary,
+    'fullPhysicsValidation'
+  );
   assert.equal(
     summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount,
     ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
@@ -1779,6 +1845,7 @@ test('ULG artifact summary exposes Eshkol production handler runtime-smoke evide
   assertEshkolProductionHandlerContractFields(normalizedBoundarySummary);
   assertEshkolProductionHandlerImplementationFields(normalizedBoundarySummary);
   assertEshkolProductionHandlerRuntimeExecutionFields(normalizedBoundarySummary);
+  assertEshkolFullPhysicsValidationRequirementsFields(normalizedBoundarySummary);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightStatus, 'blocked');
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightReady, false);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightDeclared, true);
@@ -3111,6 +3178,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
     'productionHandlerRuntimeExecution'
   );
+  assertEshkolFullPhysicsValidationRequirementsFields(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
+    'fullPhysicsValidation'
+  );
   assert.equal(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.productionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
@@ -3153,6 +3224,7 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assertEshkolProductionHandlerContractFields(eshkol.serviceResult.ingest);
   assertEshkolProductionHandlerImplementationFields(eshkol.serviceResult.ingest);
   assertEshkolProductionHandlerRuntimeExecutionFields(eshkol.serviceResult.ingest);
+  assertEshkolFullPhysicsValidationRequirementsFields(eshkol.serviceResult.ingest);
   assert.equal(
     eshkol.serviceResult.ingest.closureHostImportsModule,
     ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule
@@ -3268,6 +3340,7 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
   assertEshkolProductionHandlerContractFields(eshkol.serviceSummary);
   assertEshkolProductionHandlerImplementationFields(eshkol.serviceSummary);
   assertEshkolProductionHandlerRuntimeExecutionFields(eshkol.serviceSummary);
+  assertEshkolFullPhysicsValidationRequirementsFields(eshkol.serviceSummary);
   assert.equal(
     eshkol.serviceSummary.closureHostImportsModule,
     ESHKOL_IMPORTED_HOST_IMPORTS_SUMMARY.closureHostImportsModule

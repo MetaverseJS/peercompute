@@ -56,6 +56,19 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
   'full-physics-validation-evidence-present'
 ];
+const EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES = [
+  'magnetosphere-mhd',
+  'pic-kinetic-plasma',
+  'radiation-transport',
+  'relativistic-correction',
+  'cross-family-conservation-coupling'
+];
+const EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = [
+  'referenceHash',
+  'toleranceHash',
+  'runtimeOutputHash',
+  'evidenceHash'
+];
 
 function getUlgOrigin() {
   return new URL(ULG_URL).origin;
@@ -129,6 +142,23 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     ulg_write_f64: 9
   });
   assert.deepEqual(handoffProbe.productionHandlerRuntimeExecutionBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
+  assert.equal(handoffProbe.fullPhysicsValidationRequirementsSchema, 'eshkol.ulg.full-physics-validation-requirements.v0');
+  assert.equal(handoffProbe.fullPhysicsValidationRequirementsStatus, 'declared-not-run');
+  assert.equal(handoffProbe.fullPhysicsValidationRequirementsDeclared, true);
+  assert.equal(handoffProbe.fullPhysicsValidationRequirementsReady, false);
+  assert.deepEqual(
+    handoffProbe.fullPhysicsValidationRequiredRuntimeEvidenceFamilies,
+    EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES
+  );
+  assert.equal(
+    handoffProbe.fullPhysicsValidationRequiredRuntimeEvidenceCount,
+    EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+  );
+  assert.deepEqual(
+    handoffProbe.fullPhysicsValidationRequiredHashFields,
+    EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS
+  );
+  assert.deepEqual(handoffProbe.fullPhysicsValidationRequirementsBlockedBy, EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
   assert.equal(handoffProbe.hostImportsModule, EXPECTED_ESHKOL_HOST_IMPORTS_MODULE_URL);
   assert.equal(handoffProbe.hostImportsAssetStatus, 'ready');
   assert.equal(handoffProbe.hostImportsFactoryStatus, 'ready');
@@ -244,6 +274,8 @@ async function main() {
       const productionHandlerContract = productionHandlerBoundary?.productionHandlerContract || null;
       const productionHandlerImplementation = productionHandlerBoundary?.productionHandlerImplementation || null;
       const productionHandlerRuntimeExecution = productionHandlerBoundary?.productionHandlerRuntimeExecution || null;
+      const fullPhysicsValidationRequirements =
+        productionHandlerBoundary?.fullPhysicsValidationRequirements || null;
       const productionCandidateRuntimeProbe = productionHandlerBoundary?.productionCandidateRuntimeProbe || null;
       const productionDispatchPreflight = productionHandlerBoundary?.dispatchPreflight || null;
       const productionDispatchCheckSummary = productionDispatchPreflight?.checkSummary || null;
@@ -409,6 +441,52 @@ async function main() {
                   ? [...eshkolSummary.closureProductionHandlerRuntimeExecutionBlockedBy]
                   : []
               ),
+        fullPhysicsValidationRequirementsSchema:
+          fullPhysicsValidationRequirements?.schema
+          || eshkolSummary.closureFullPhysicsValidationRequirementsSchema
+          || null,
+        fullPhysicsValidationRequirementsStatus:
+          fullPhysicsValidationRequirements?.status
+          || eshkolSummary.closureFullPhysicsValidationRequirementsStatus
+          || null,
+        fullPhysicsValidationRequirementsDeclared:
+          eshkolSummary.closureFullPhysicsValidationRequirementsDeclared
+          ?? (
+            fullPhysicsValidationRequirements?.schema === 'eshkol.ulg.full-physics-validation-requirements.v0'
+            && fullPhysicsValidationRequirements?.status === 'declared-not-run'
+          ),
+        fullPhysicsValidationRequirementsReady:
+          fullPhysicsValidationRequirements?.ready
+          ?? eshkolSummary.closureFullPhysicsValidationRequirementsReady
+          ?? null,
+        fullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+          Array.isArray(fullPhysicsValidationRequirements?.requiredRuntimeEvidenceFamilies)
+            ? [...fullPhysicsValidationRequirements.requiredRuntimeEvidenceFamilies]
+            : (
+                Array.isArray(eshkolSummary.closureFullPhysicsValidationRequiredRuntimeEvidenceFamilies)
+                  ? [...eshkolSummary.closureFullPhysicsValidationRequiredRuntimeEvidenceFamilies]
+                  : []
+              ),
+        fullPhysicsValidationRequiredRuntimeEvidenceCount:
+          Array.isArray(fullPhysicsValidationRequirements?.requiredRuntimeEvidence)
+            ? fullPhysicsValidationRequirements.requiredRuntimeEvidence.length
+            : eshkolSummary.closureFullPhysicsValidationRequiredRuntimeEvidenceCount ?? null,
+        fullPhysicsValidationRequiredHashFields:
+          Array.isArray(fullPhysicsValidationRequirements?.requiredHashFields)
+            ? [...fullPhysicsValidationRequirements.requiredHashFields]
+            : (
+                Array.isArray(eshkolSummary.closureFullPhysicsValidationRequiredHashFields)
+                  ? [...eshkolSummary.closureFullPhysicsValidationRequiredHashFields]
+                  : []
+              ),
+        fullPhysicsValidationRequirementsBlockedBy:
+          Array.isArray(fullPhysicsValidationRequirements?.blockedBy)
+            ? [...fullPhysicsValidationRequirements.blockedBy]
+            : (
+                Array.isArray(eshkolSummary.closureFullPhysicsValidationRequirementsBlockedBy)
+                  ? [...eshkolSummary.closureFullPhysicsValidationRequirementsBlockedBy]
+                  : []
+              ),
         hostImportsModule: eshkolSummary.closureHostImportsModule || null,
         hostImportsAssetStatus: eshkolSummary.closureHostImportsAssetStatus || null,
         hostImportsFactoryStatus: eshkolSummary.closureHostImportsFactoryStatus || null,
@@ -530,6 +608,12 @@ async function main() {
           readiness.moonlabWebGpuParityScope?.fullFidelityMagnetarSimulation ?? null,
         moonlabWebGpuParityScopeFullPhysicsValidation:
           readiness.moonlabWebGpuParityScope?.fullPhysicsValidation ?? null,
+        fullPhysicsValidationRequirementsDeclared:
+          readiness.closureHandoff?.fullPhysicsValidationRequirementsDeclared ?? null,
+        fullPhysicsValidationRequiredRuntimeEvidenceCount:
+          readiness.closureHandoff?.fullPhysicsValidationRequiredRuntimeEvidenceCount ?? null,
+        fullPhysicsValidationRequiredHashFields:
+          readiness.closureHandoff?.fullPhysicsValidationRequiredHashFields ?? [],
         magnetarVisible: state.magnetarProxyVisual.visible,
         magnetarLayer: state.magnetarProxyVisual.activeLayerId,
         hudStatus: document.querySelector('#scenario-handoff-status')?.textContent || null
@@ -549,6 +633,15 @@ async function main() {
     assert.equal(multiscaleProbe.moonlabWebGpuParityScopeWebgpuParityExecuted, true);
     assert.equal(multiscaleProbe.moonlabWebGpuParityScopeFullFidelityMagnetarSimulation, false);
     assert.equal(multiscaleProbe.moonlabWebGpuParityScopeFullPhysicsValidation, false);
+    assert.equal(multiscaleProbe.fullPhysicsValidationRequirementsDeclared, true);
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationRequiredRuntimeEvidenceCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.deepEqual(
+      multiscaleProbe.fullPhysicsValidationRequiredHashFields,
+      EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS
+    );
     assert.equal(multiscaleProbe.magnetarVisible, true);
     assert.equal(multiscaleProbe.magnetarLayer, 'solar');
     assert.match(multiscaleProbe.hudStatus, /status handoff ready \/ blockers 0/i);

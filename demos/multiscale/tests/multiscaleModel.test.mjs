@@ -704,6 +704,26 @@ const ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = Object.freeze([
 const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
   'full-physics-validation-evidence-present'
 ]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES = Object.freeze([
+  'magnetosphere-mhd',
+  'pic-kinetic-plasma',
+  'radiation-transport',
+  'relativistic-correction',
+  'cross-family-conservation-coupling'
+]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS = Object.freeze([
+  'peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0',
+  'peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0',
+  'peercompute.multiscale.radiation-transport.runtime-validation.v0',
+  'peercompute.multiscale.relativistic-correction.runtime-validation.v0',
+  'peercompute.multiscale.cross-family-conservation-coupling.runtime-validation.v0'
+]);
+const ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = Object.freeze([
+  'referenceHash',
+  'toleranceHash',
+  'runtimeOutputHash',
+  'evidenceHash'
+]);
 
 function createEshkolProductionDispatchCheckResults() {
   return ESHKOL_PRODUCTION_DISPATCH_CHECKS.map((check) => ({
@@ -729,6 +749,46 @@ function createEshkolProductionDispatchCheckResults() {
         )
       : null
   }));
+}
+
+function createEshkolFullPhysicsValidationRequirementsSummary(prefix = 'eshkolFullPhysicsValidation') {
+  return {
+    [`${prefix}RequirementsSchema`]: 'eshkol.ulg.full-physics-validation-requirements.v0',
+    [`${prefix}RequirementsStatus`]: 'declared-not-run',
+    [`${prefix}RequirementsDeclared`]: true,
+    [`${prefix}RequirementsReady`]: false,
+    [`${prefix}RequirementsValidationScope`]: 'magnetar-production-handler-full-physics',
+    [`${prefix}RequirementsProducerSchema`]: 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0',
+    [`${prefix}RequirementsRequiredValidationSchema`]:
+      'peercompute.multiscale.scenario-scientific-runtime-validation.v0',
+    [`${prefix}RequirementsRequiredValidationScope`]:
+      'magnetar-scientific-runtime-reference-validation',
+    [`${prefix}RequiredRuntimeEvidenceFamilies`]: [...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES],
+    [`${prefix}RequiredRuntimeEvidenceCount`]: ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length,
+    [`${prefix}RequiredHashFields`]: [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS],
+    [`${prefix}RequirementsBlockedBy`]: [...ESHKOL_PRODUCTION_BLOCKERS]
+  };
+}
+
+function createEshkolFullPhysicsValidationRequirements() {
+  return {
+    schema: 'eshkol.ulg.full-physics-validation-requirements.v0',
+    status: 'declared-not-run',
+    ready: false,
+    validationScope: 'magnetar-production-handler-full-physics',
+    producerSchema: 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0',
+    requiredValidationSchema: 'peercompute.multiscale.scenario-scientific-runtime-validation.v0',
+    requiredValidationScope: 'magnetar-scientific-runtime-reference-validation',
+    requiredRuntimeEvidenceFamilies: [...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES],
+    requiredHashFields: [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS],
+    requiredRuntimeEvidence: ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.map((family, index) => ({
+      family,
+      schema: ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS[index],
+      status: 'required-not-provided',
+      required: true
+    })),
+    blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
+  };
 }
 
 function assertEshkolProductionHandlerContractTelemetry(source = {}, prefix = 'productionHandlerContract') {
@@ -770,6 +830,25 @@ function assertEshkolProductionHandlerRuntimeExecutionTelemetry(
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
   assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
   assert.deepEqual(source[`${prefix}BlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
+}
+
+function assertEshkolFullPhysicsValidationRequirementsTelemetry(
+  source = {},
+  prefix = 'eshkolFullPhysicsValidation'
+) {
+  assert.equal(source[`${prefix}RequirementsSchema`], 'eshkol.ulg.full-physics-validation-requirements.v0');
+  assert.equal(source[`${prefix}RequirementsStatus`], 'declared-not-run');
+  assert.equal(source[`${prefix}RequirementsDeclared`], true);
+  assert.equal(source[`${prefix}RequirementsReady`], false);
+  assert.deepEqual(source[`${prefix}RequiredRuntimeEvidenceFamilies`], [
+    ...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES
+  ]);
+  assert.equal(
+    source[`${prefix}RequiredRuntimeEvidenceCount`],
+    ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+  );
+  assert.deepEqual(source[`${prefix}RequiredHashFields`], [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS]);
+  assert.deepEqual(source[`${prefix}RequirementsBlockedBy`], [...ESHKOL_PRODUCTION_BLOCKERS]);
 }
 
 const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
@@ -819,6 +898,7 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
     ulg_write_f64: 9
   },
   eshkolProductionHandlerRuntimeExecutionBlockedBy: [...ESHKOL_PRODUCTION_BLOCKERS],
+  ...createEshkolFullPhysicsValidationRequirementsSummary(),
   eshkolProductionHostImportCandidateStatus: 'production-candidate-runtime-imports-implemented',
   eshkolProductionHostImportCandidateProductionRuntimeAbi:
     'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0',
@@ -900,6 +980,8 @@ const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY = Object.freeze({
       ulg_write_f64: 9
     },
     productionHandlerRuntimeExecutionBlockedBy: [...ESHKOL_PRODUCTION_BLOCKERS],
+    ...createEshkolFullPhysicsValidationRequirementsSummary('fullPhysicsValidation'),
+    fullPhysicsValidationRequirements: createEshkolFullPhysicsValidationRequirements(),
     productionHostImportCandidateStatus: 'production-candidate-runtime-imports-implemented',
     dispatchPreflightStatus: 'blocked',
     dispatchPreflightReady: false,
@@ -2552,6 +2634,10 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assertEshkolProductionHandlerRuntimeExecutionTelemetry(
     scenario.closureIngest.closure.productionHandlerBoundary
   );
+  assertEshkolFullPhysicsValidationRequirementsTelemetry(
+    scenario.closureIngest.closure.productionHandlerBoundary,
+    'fullPhysicsValidation'
+  );
   assert.equal(
     scenario.closureIngest.closure.productionHandlerBoundary.productionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
@@ -2606,6 +2692,10 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assertEshkolProductionHandlerContractTelemetry(scenario.handoffReadiness.closureHandoff);
   assertEshkolProductionHandlerImplementationTelemetry(scenario.handoffReadiness.closureHandoff);
   assertEshkolProductionHandlerRuntimeExecutionTelemetry(scenario.handoffReadiness.closureHandoff);
+  assertEshkolFullPhysicsValidationRequirementsTelemetry(
+    scenario.handoffReadiness.closureHandoff,
+    'fullPhysicsValidation'
+  );
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightStatus, 'blocked');
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightReady, false);
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightDeclared, true);
@@ -2637,6 +2727,10 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assertEshkolProductionHandlerContractTelemetry(scenario.handoffReadiness.closureModuleProbe);
   assertEshkolProductionHandlerImplementationTelemetry(scenario.handoffReadiness.closureModuleProbe);
   assertEshkolProductionHandlerRuntimeExecutionTelemetry(scenario.handoffReadiness.closureModuleProbe);
+  assertEshkolFullPhysicsValidationRequirementsTelemetry(
+    scenario.handoffReadiness.closureModuleProbe,
+    'fullPhysicsValidation'
+  );
   assert.equal(scenario.handoffReadiness.closureModuleProbe.productionDispatchPreflightReady, false);
   assert.equal(scenario.handoffReadiness.closureModuleProbe.hostRuntimeExecutionReady, false);
   assert.equal(scenario.handoffReadiness.scientificRuntimeGate.closureDescriptorReady, true);
@@ -2706,6 +2800,30 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.equal(
     packet.downward.boundaryConditions.scenarioEshkolProductionHandlerRuntimeExecutionOutputTensorsProduced,
     true
+  );
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequirementsDeclared,
+    true
+  );
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequirementsStatus,
+    'declared-not-run'
+  );
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequiredRuntimeEvidenceCount,
+    ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+  );
+  assert.deepEqual(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies,
+    [...ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES]
+  );
+  assert.deepEqual(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequiredHashFields,
+    [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS]
+  );
+  assert.deepEqual(
+    packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequirementsBlockedBy,
+    [...ESHKOL_PRODUCTION_BLOCKERS]
   );
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightDeclared, true);

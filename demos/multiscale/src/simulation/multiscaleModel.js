@@ -207,7 +207,33 @@ export const ESHKOL_PRODUCTION_HANDLER_IMPLEMENTATION_SCHEMA =
   'eshkol.ulg.production-handler-implementation.v0';
 export const ESHKOL_PRODUCTION_HANDLER_RUNTIME_EXECUTION_SCHEMA =
   'eshkol.ulg.production-handler-runtime-execution.v0';
+export const ESHKOL_FULL_PHYSICS_VALIDATION_REQUIREMENTS_SCHEMA =
+  'eshkol.ulg.full-physics-validation-requirements.v0';
 export const ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA = 'eshkol.ulg.production-handler-dispatch-preflight.v0';
+
+const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_REQUIRED_BLOCKERS = Object.freeze([
+  'full-physics-validation-not-run'
+]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES = Object.freeze([
+  'magnetosphere-mhd',
+  'pic-kinetic-plasma',
+  'radiation-transport',
+  'relativistic-correction',
+  'cross-family-conservation-coupling'
+]);
+const ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS = Object.freeze([
+  'peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0',
+  'peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0',
+  'peercompute.multiscale.radiation-transport.runtime-validation.v0',
+  'peercompute.multiscale.relativistic-correction.runtime-validation.v0',
+  'peercompute.multiscale.cross-family-conservation-coupling.runtime-validation.v0'
+]);
+const ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = Object.freeze([
+  'referenceHash',
+  'toleranceHash',
+  'runtimeOutputHash',
+  'evidenceHash'
+]);
 
 const MAGNETAR_CALIBRATED_REFERENCE_REQUIREMENTS = Object.freeze([
   {
@@ -447,6 +473,13 @@ function includesAll(values = [], required = []) {
   return required.every((entry) => values.includes(entry));
 }
 
+function arraysEqual(left = [], right = []) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
 function hasSha256Digest(value) {
   return typeof value === 'string' && value.startsWith('sha256:');
 }
@@ -461,6 +494,116 @@ function rounded(value, digits = 4) {
 
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeEshkolFullPhysicsValidationRequirements(requirements = null) {
+  const source = plainObjectOrNull(requirements);
+  if (!source) return null;
+  if (source.schema == null
+    && source.status == null
+    && !Array.isArray(source.requiredRuntimeEvidenceFamilies)
+    && !Array.isArray(source.requiredHashFields)
+    && !Array.isArray(source.requiredRuntimeEvidence)) {
+    return null;
+  }
+  const requiredRuntimeEvidence = Array.isArray(source.requiredRuntimeEvidence)
+    ? source.requiredRuntimeEvidence
+      .map((entry) => plainObjectOrNull(entry))
+      .filter(Boolean)
+      .map((entry) => ({
+        family: stringOrNull(entry.family),
+        schema: stringOrNull(entry.schema),
+        status: stringOrNull(entry.status),
+        required: typeof entry.required === 'boolean' ? entry.required : null
+      }))
+    : [];
+  const requiredRuntimeEvidenceFamilies = uniqueStrings(source.requiredRuntimeEvidenceFamilies || []);
+  const requiredHashFields = uniqueStrings(source.requiredHashFields || []);
+  const blockedBy = uniqueStrings(source.blockedBy || []);
+  const declared = source.schema === ESHKOL_FULL_PHYSICS_VALIDATION_REQUIREMENTS_SCHEMA
+    && source.status === 'declared-not-run'
+    && source.ready === false
+    && source.validationScope === 'magnetar-production-handler-full-physics'
+    && source.producerSchema === MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA
+    && source.requiredValidationSchema === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA
+    && source.requiredValidationScope === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE
+    && arraysEqual(requiredRuntimeEvidenceFamilies, ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES)
+    && arraysEqual(requiredHashFields, ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS)
+    && requiredRuntimeEvidence.length === ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    && requiredRuntimeEvidence.every((entry, index) => (
+      entry.family === ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES[index]
+      && entry.schema === ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_SCHEMAS[index]
+      && entry.status === 'required-not-provided'
+      && entry.required === true
+    ))
+    && arraysEqual(blockedBy, ESHKOL_PRODUCTION_HANDLER_BOUNDARY_REQUIRED_BLOCKERS);
+  return {
+    schema: stringOrNull(source.schema),
+    status: stringOrNull(source.status),
+    declared,
+    ready: typeof source.ready === 'boolean' ? source.ready : null,
+    validationScope: stringOrNull(source.validationScope),
+    producerSchema: stringOrNull(source.producerSchema),
+    requiredValidationSchema: stringOrNull(source.requiredValidationSchema),
+    requiredValidationScope: stringOrNull(source.requiredValidationScope),
+    requiredRuntimeEvidenceFamilies: clonePlain(requiredRuntimeEvidenceFamilies),
+    requiredRuntimeEvidenceSchemas: clonePlain(requiredRuntimeEvidence.map((entry) => entry.schema).filter(Boolean)),
+    requiredRuntimeEvidenceCount: requiredRuntimeEvidence.length,
+    requiredHashFields: clonePlain(requiredHashFields),
+    requiredRuntimeEvidence: clonePlain(requiredRuntimeEvidence),
+    blockedBy: clonePlain(blockedBy)
+  };
+}
+
+function createFullPhysicsValidationRequirementsFromSummaryFields(source = {}) {
+  const schema = source.eshkolFullPhysicsValidationRequirementsSchema
+    || source.closureFullPhysicsValidationRequirementsSchema
+    || source.fullPhysicsValidationRequirementsSchema
+    || null;
+  const status = source.eshkolFullPhysicsValidationRequirementsStatus
+    || source.closureFullPhysicsValidationRequirementsStatus
+    || source.fullPhysicsValidationRequirementsStatus
+    || null;
+  const requiredRuntimeEvidenceFamilies =
+    source.eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies
+    || source.closureFullPhysicsValidationRequiredRuntimeEvidenceFamilies
+    || source.fullPhysicsValidationRequiredRuntimeEvidenceFamilies
+    || null;
+  const requiredHashFields =
+    source.eshkolFullPhysicsValidationRequiredHashFields
+    || source.closureFullPhysicsValidationRequiredHashFields
+    || source.fullPhysicsValidationRequiredHashFields
+    || null;
+  if (schema == null && status == null && requiredRuntimeEvidenceFamilies == null && requiredHashFields == null) {
+    return null;
+  }
+  return {
+    schema,
+    status,
+    ready: source.eshkolFullPhysicsValidationRequirementsReady
+      ?? source.closureFullPhysicsValidationRequirementsReady
+      ?? source.fullPhysicsValidationRequirementsReady,
+    validationScope: source.eshkolFullPhysicsValidationRequirementsValidationScope
+      || source.closureFullPhysicsValidationRequirementsValidationScope
+      || source.fullPhysicsValidationRequirementsValidationScope,
+    producerSchema: source.eshkolFullPhysicsValidationRequirementsProducerSchema
+      || source.closureFullPhysicsValidationRequirementsProducerSchema
+      || source.fullPhysicsValidationRequirementsProducerSchema,
+    requiredValidationSchema: source.eshkolFullPhysicsValidationRequirementsRequiredValidationSchema
+      || source.closureFullPhysicsValidationRequirementsRequiredValidationSchema
+      || source.fullPhysicsValidationRequirementsRequiredValidationSchema,
+    requiredValidationScope: source.eshkolFullPhysicsValidationRequirementsRequiredValidationScope
+      || source.closureFullPhysicsValidationRequirementsRequiredValidationScope
+      || source.fullPhysicsValidationRequirementsRequiredValidationScope,
+    requiredRuntimeEvidenceFamilies,
+    requiredHashFields,
+    requiredRuntimeEvidence: source.eshkolFullPhysicsValidationRequiredRuntimeEvidence
+      || source.closureFullPhysicsValidationRequiredRuntimeEvidence
+      || source.fullPhysicsValidationRequiredRuntimeEvidence,
+    blockedBy: source.eshkolFullPhysicsValidationRequirementsBlockedBy
+      || source.closureFullPhysicsValidationRequirementsBlockedBy
+      || source.fullPhysicsValidationRequirementsBlockedBy
+  };
 }
 
 function normalizeScenarioClosureOutputSemanticsSummary(source = {}) {
@@ -740,6 +883,23 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
     ?? source.closureProductionDispatchPreflightBlockedCheckCount
     ?? dispatchPreflightCheckSummary.blockedCount
   );
+  const fullPhysicsValidationRequirements = normalizeEshkolFullPhysicsValidationRequirements(
+    plainObjectOrNull(boundary?.fullPhysicsValidationRequirements)
+    || createFullPhysicsValidationRequirementsFromSummaryFields(source)
+    || {
+      schema: boundary?.fullPhysicsValidationRequirementsSchema,
+      status: boundary?.fullPhysicsValidationRequirementsStatus,
+      ready: boundary?.fullPhysicsValidationRequirementsReady,
+      validationScope: boundary?.fullPhysicsValidationRequirementsValidationScope,
+      producerSchema: boundary?.fullPhysicsValidationRequirementsProducerSchema,
+      requiredValidationSchema: boundary?.fullPhysicsValidationRequirementsRequiredValidationSchema,
+      requiredValidationScope: boundary?.fullPhysicsValidationRequirementsRequiredValidationScope,
+      requiredRuntimeEvidenceFamilies: boundary?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies,
+      requiredHashFields: boundary?.fullPhysicsValidationRequiredHashFields,
+      requiredRuntimeEvidence: boundary?.fullPhysicsValidationRequiredRuntimeEvidence,
+      blockedBy: boundary?.fullPhysicsValidationRequirementsBlockedBy
+    }
+  );
   const validationBlockers = uniqueStrings([
     ...(Array.isArray(boundary?.validationBlockers) ? boundary.validationBlockers : []),
     ...(Array.isArray(source.eshkolProductionHandlerBoundaryValidationBlockers)
@@ -956,6 +1116,35 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
       || source.closureProductionHandlerRuntimeExecutionBlockedBy
       || stringArray(productionHandlerRuntimeExecution.blockedBy)
     ),
+    fullPhysicsValidationRequirements: clonePlain(fullPhysicsValidationRequirements),
+    fullPhysicsValidationRequirementsSchema:
+      fullPhysicsValidationRequirements?.schema || null,
+    fullPhysicsValidationRequirementsStatus:
+      fullPhysicsValidationRequirements?.status || null,
+    fullPhysicsValidationRequirementsDeclared:
+      fullPhysicsValidationRequirements?.declared ?? null,
+    fullPhysicsValidationRequirementsReady:
+      fullPhysicsValidationRequirements?.ready ?? null,
+    fullPhysicsValidationRequirementsValidationScope:
+      fullPhysicsValidationRequirements?.validationScope || null,
+    fullPhysicsValidationRequirementsProducerSchema:
+      fullPhysicsValidationRequirements?.producerSchema || null,
+    fullPhysicsValidationRequirementsRequiredValidationSchema:
+      fullPhysicsValidationRequirements?.requiredValidationSchema || null,
+    fullPhysicsValidationRequirementsRequiredValidationScope:
+      fullPhysicsValidationRequirements?.requiredValidationScope || null,
+    fullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+      clonePlain(fullPhysicsValidationRequirements?.requiredRuntimeEvidenceFamilies || []),
+    fullPhysicsValidationRequiredRuntimeEvidenceSchemas:
+      clonePlain(fullPhysicsValidationRequirements?.requiredRuntimeEvidenceSchemas || []),
+    fullPhysicsValidationRequiredRuntimeEvidenceCount:
+      fullPhysicsValidationRequirements?.requiredRuntimeEvidenceCount ?? null,
+    fullPhysicsValidationRequiredHashFields:
+      clonePlain(fullPhysicsValidationRequirements?.requiredHashFields || []),
+    fullPhysicsValidationRequiredRuntimeEvidence:
+      clonePlain(fullPhysicsValidationRequirements?.requiredRuntimeEvidence || []),
+    fullPhysicsValidationRequirementsBlockedBy:
+      clonePlain(fullPhysicsValidationRequirements?.blockedBy || []),
     hostImportsRuntimeScope: stringOrNull(
       source.eshkolProductionHostImportsRuntimeScope || hostImports.runtimeScope
     ),
@@ -3420,6 +3609,30 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts || null),
       productionHandlerRuntimeExecutionBlockedBy:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionBlockedBy || []),
+      fullPhysicsValidationRequirementsSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsSchema || null,
+      fullPhysicsValidationRequirementsStatus:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsStatus || null,
+      fullPhysicsValidationRequirementsDeclared:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsDeclared ?? null,
+      fullPhysicsValidationRequirementsReady:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsReady ?? null,
+      fullPhysicsValidationRequirementsValidationScope:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsValidationScope || null,
+      fullPhysicsValidationRequirementsProducerSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsProducerSchema || null,
+      fullPhysicsValidationRequirementsRequiredValidationSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationSchema || null,
+      fullPhysicsValidationRequirementsRequiredValidationScope:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationScope || null,
+      fullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies || []),
+      fullPhysicsValidationRequiredRuntimeEvidenceCount:
+        finiteOrNull(productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceCount),
+      fullPhysicsValidationRequiredHashFields:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequiredHashFields || []),
+      fullPhysicsValidationRequirementsBlockedBy:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequirementsBlockedBy || []),
       productionHostImportCandidateStatus: productionHandlerBoundary?.productionHostImportCandidateStatus ?? null,
       productionHostImportCandidateProductionRuntimeAbi:
         productionHandlerBoundary?.productionHostImportCandidateProductionRuntimeAbi ?? null,
@@ -3557,6 +3770,30 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionHostImportCallCounts || null),
       productionHandlerRuntimeExecutionBlockedBy:
         clonePlain(productionHandlerBoundary?.productionHandlerRuntimeExecutionBlockedBy || []),
+      fullPhysicsValidationRequirementsSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsSchema || null,
+      fullPhysicsValidationRequirementsStatus:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsStatus || null,
+      fullPhysicsValidationRequirementsDeclared:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsDeclared ?? null,
+      fullPhysicsValidationRequirementsReady:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsReady ?? null,
+      fullPhysicsValidationRequirementsValidationScope:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsValidationScope || null,
+      fullPhysicsValidationRequirementsProducerSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsProducerSchema || null,
+      fullPhysicsValidationRequirementsRequiredValidationSchema:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationSchema || null,
+      fullPhysicsValidationRequirementsRequiredValidationScope:
+        productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationScope || null,
+      fullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies || []),
+      fullPhysicsValidationRequiredRuntimeEvidenceCount:
+        finiteOrNull(productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceCount),
+      fullPhysicsValidationRequiredHashFields:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequiredHashFields || []),
+      fullPhysicsValidationRequirementsBlockedBy:
+        clonePlain(productionHandlerBoundary?.fullPhysicsValidationRequirementsBlockedBy || []),
       productionDispatchPreflightReady: productionHandlerBoundary?.dispatchPreflightReady ?? null,
       productionDispatchPreflightDeclared: productionHandlerBoundary?.dispatchPreflightDeclared ?? null,
       productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
@@ -9889,6 +10126,34 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.productionHandlerRuntimeExecutionOutputTensorsProduced
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionHandlerRuntimeExecutionOutputTensorsProduced
             ?? null,
+          scenarioEshkolFullPhysicsValidationRequirementsDeclared:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequirementsDeclared
+            ?? scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequirementsDeclared
+            ?? null,
+          scenarioEshkolFullPhysicsValidationRequirementsStatus:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequirementsStatus
+            || scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequirementsStatus
+            || null,
+          scenarioEshkolFullPhysicsValidationRequirementsReady:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequirementsReady
+            ?? scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequirementsReady
+            ?? null,
+          scenarioEshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies
+            || scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies
+            || [],
+          scenarioEshkolFullPhysicsValidationRequiredRuntimeEvidenceCount:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequiredRuntimeEvidenceCount
+            ?? scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequiredRuntimeEvidenceCount
+            ?? null,
+          scenarioEshkolFullPhysicsValidationRequiredHashFields:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequiredHashFields
+            || scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequiredHashFields
+            || [],
+          scenarioEshkolFullPhysicsValidationRequirementsBlockedBy:
+            scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequirementsBlockedBy
+            || scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequirementsBlockedBy
+            || [],
           scenarioEshkolProductionDispatchPreflightReady:
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightReady
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightReady

@@ -52903,3 +52903,45 @@ Open:
   full-physics validation requirements or promote full-fidelity magnetar
   simulation.
 - No push was attempted.
+
+## 2026-06-07 00:54:31 AKDT - Full-physics requirements propagation
+
+### Actions
+- Preserved Eshkol's `eshkol.ulg.full-physics-validation-requirements.v0`
+  through PeerCompute artifact summaries, dispatch adapter ingest, handoff
+  supervisor summaries, Multiscale closure ingest, handoff readiness,
+  module-probe summaries, packet boundary conditions, browser handoff smoke,
+  relay handoff smoke, and the rebuilt `docs/multiscale` bundle.
+- Added compact fields for declared/status/ready, required runtime evidence
+  families, required hash fields, required evidence count, and
+  `full-physics-validation-not-run` blockers without promoting runtime smoke or
+  reduced calibrated evidence into full-fidelity magnetar validation.
+- Updated PeerCompute service-orchestration tests, Multiscale model tests, ULG
+  browser handoff smoke, and ULG relay handoff smoke to require the same
+  requirements contract.
+
+### Validation
+- PASS: syntax checks for changed PeerCompute service-orchestration files,
+  Multiscale source files, Multiscale tests, and smoke scripts.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `198/198`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with magnetar visible and
+  full-physics requirements fields present in the handoff/readiness output.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed with two
+  connected browser peers, two accepted dispatches, two released resource
+  leases, requirements propagation, and all science/full-physics flags false.
+
+### Open
+- Full-physics validation is still not run. The required evidence families are
+  `magnetosphere-mhd`, `pic-kinetic-plasma`, `radiation-transport`,
+  `relativistic-correction`, and `cross-family-conservation-coupling`, and
+  each still needs validated reference/tolerance/runtime-output/evidence
+  hashes before the blocker can clear.
+- No push was attempted.

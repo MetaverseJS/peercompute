@@ -23610,3 +23610,36 @@ User asked whether Infinite Context Coder is being used.
 ### Open
 - The production blocker remains `full-physics-validation-not-run`.
 - No push was attempted.
+
+## 2026-06-07 00:54:31 AKDT - Full-physics requirements propagation
+
+### Actions
+- Carried Eshkol `eshkol.ulg.full-physics-validation-requirements.v0` from the
+  ULG production handler boundary into Multiscale browser handoff summaries,
+  PeerCompute dispatch service summaries, closure ingest, handoff readiness,
+  module-probe summaries, packet boundary conditions, browser handoff smoke,
+  relay handoff smoke, and the rebuilt docs bundle.
+- Preserved the exact requirements surface: `declared-not-run`, readiness false,
+  five required runtime evidence families, four required hash fields, and
+  blocker `full-physics-validation-not-run`.
+- Kept the current runtime evidence scoped as deterministic smoke/reduced
+  calibrated readiness only. This does not claim full-fidelity GRMHD/PIC/
+  radiation magnetar validation.
+
+### Validation
+- PASS: syntax checks for changed Multiscale and PeerCompute orchestration
+  files plus smoke scripts.
+- PASS: service orchestration suite `28/28`.
+- PASS: Multiscale model suite `198/198`.
+- PASS: live ULG handoff smoke against `http://127.0.0.1:5173/` with magnetar
+  visible and full-physics requirements in the readiness summary.
+- PASS: Multiscale build refreshed `docs/multiscale` with the existing large
+  chunk warning.
+- PASS: 300s relay dispatch smoke passed with two connected browser peers, two
+  accepted dispatches, two released resource leases, requirements propagation,
+  and all science/full-physics flags false.
+
+### Open
+- The production blocker remains `full-physics-validation-not-run` until the
+  five required runtime evidence families have validated hash-backed artifacts.
+- No push was attempted.

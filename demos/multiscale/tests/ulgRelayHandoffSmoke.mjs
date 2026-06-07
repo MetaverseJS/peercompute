@@ -95,6 +95,19 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
   'full-physics-validation-evidence-present'
 ];
+const EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES = [
+  'magnetosphere-mhd',
+  'pic-kinetic-plasma',
+  'radiation-transport',
+  'relativistic-correction',
+  'cross-family-conservation-coupling'
+];
+const EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = [
+  'referenceHash',
+  'toleranceHash',
+  'runtimeOutputHash',
+  'evidenceHash'
+];
 
 function firstPresent(source, keys) {
   for (const key of keys) {
@@ -184,6 +197,36 @@ function assertEshkolDispatchPreflightEvidence(summary = {}) {
     'productionHandlerRuntimeExecutionOutputTensorsProduced',
     'closureProductionHandlerRuntimeExecutionOutputTensorsProduced'
   ]), true);
+  assert.equal(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequirementsSchema',
+    'fullPhysicsValidationRequirementsSchema',
+    'closureFullPhysicsValidationRequirementsSchema'
+  ]), 'eshkol.ulg.full-physics-validation-requirements.v0');
+  assert.equal(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequirementsDeclared',
+    'fullPhysicsValidationRequirementsDeclared',
+    'closureFullPhysicsValidationRequirementsDeclared'
+  ]), true);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies',
+    'fullPhysicsValidationRequiredRuntimeEvidenceFamilies',
+    'closureFullPhysicsValidationRequiredRuntimeEvidenceFamilies'
+  ]), EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES);
+  assert.equal(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount',
+    'fullPhysicsValidationRequiredRuntimeEvidenceCount',
+    'closureFullPhysicsValidationRequiredRuntimeEvidenceCount'
+  ]), EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequiredHashFields',
+    'fullPhysicsValidationRequiredHashFields',
+    'closureFullPhysicsValidationRequiredHashFields'
+  ]), EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS);
+  assert.deepEqual(firstPresent(summary, [
+    'eshkolFullPhysicsValidationRequirementsBlockedBy',
+    'fullPhysicsValidationRequirementsBlockedBy',
+    'closureFullPhysicsValidationRequirementsBlockedBy'
+  ]), EXPECTED_ESHKOL_PRODUCTION_BLOCKERS);
   assert.equal(firstPresent(summary, [
     'eshkolProductionCandidateRuntimeProbeStatus',
     'productionCandidateRuntimeProbeStatus',

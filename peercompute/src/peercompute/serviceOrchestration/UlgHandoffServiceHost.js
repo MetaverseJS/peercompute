@@ -288,6 +288,8 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
   const productionHandlerBoundary = objectOrNull(descriptorProbe.productionHandlerBoundary)
     || objectOrNull(ingest.eshkolProductionHandlerBoundary)
     || null;
+  const fullPhysicsValidationRequirements =
+    objectOrNull(productionHandlerBoundary?.fullPhysicsValidationRequirements) || {};
   const productionCandidateRuntimeProbe = objectOrNull(productionHandlerBoundary?.productionCandidateRuntimeProbe)
     || objectOrNull(ingest.eshkolProductionCandidateRuntimeProbe)
     || {};
@@ -581,6 +583,88 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       || productionHandlerBoundary?.productionHandlerRuntimeExecution?.blockedBy
       || []
     ),
+    eshkolFullPhysicsValidationRequirementsSchema:
+      ingest.eshkolFullPhysicsValidationRequirementsSchema
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsSchema
+      || fullPhysicsValidationRequirements.schema
+      || null,
+    eshkolFullPhysicsValidationRequirementsStatus:
+      ingest.eshkolFullPhysicsValidationRequirementsStatus
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsStatus
+      || fullPhysicsValidationRequirements.status
+      || null,
+    eshkolFullPhysicsValidationRequirementsDeclared: booleanOrNull(
+      ingest.eshkolFullPhysicsValidationRequirementsDeclared
+      ?? productionHandlerBoundary?.fullPhysicsValidationRequirementsDeclared
+      ?? fullPhysicsValidationRequirements.declared
+    ),
+    eshkolFullPhysicsValidationRequirementsReady: booleanOrNull(
+      ingest.eshkolFullPhysicsValidationRequirementsReady
+      ?? productionHandlerBoundary?.fullPhysicsValidationRequirementsReady
+      ?? fullPhysicsValidationRequirements.ready
+    ),
+    eshkolFullPhysicsValidationRequirementsValidationScope:
+      ingest.eshkolFullPhysicsValidationRequirementsValidationScope
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsValidationScope
+      || fullPhysicsValidationRequirements.validationScope
+      || null,
+    eshkolFullPhysicsValidationRequirementsProducerSchema:
+      ingest.eshkolFullPhysicsValidationRequirementsProducerSchema
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsProducerSchema
+      || fullPhysicsValidationRequirements.producerSchema
+      || null,
+    eshkolFullPhysicsValidationRequirementsRequiredValidationSchema:
+      ingest.eshkolFullPhysicsValidationRequirementsRequiredValidationSchema
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationSchema
+      || fullPhysicsValidationRequirements.requiredValidationSchema
+      || null,
+    eshkolFullPhysicsValidationRequirementsRequiredValidationScope:
+      ingest.eshkolFullPhysicsValidationRequirementsRequiredValidationScope
+      || productionHandlerBoundary?.fullPhysicsValidationRequirementsRequiredValidationScope
+      || fullPhysicsValidationRequirements.requiredValidationScope
+      || null,
+    eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies:
+      uniqueStrings(
+        ingest.eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies
+        || productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies
+        || fullPhysicsValidationRequirements.requiredRuntimeEvidenceFamilies
+        || []
+      ),
+    eshkolFullPhysicsValidationRequiredRuntimeEvidenceSchemas:
+      uniqueStrings(
+        ingest.eshkolFullPhysicsValidationRequiredRuntimeEvidenceSchemas
+        || productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceSchemas
+        || []
+      ),
+    eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount:
+      finiteNumberOrNull(
+        ingest.eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount
+        ?? productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceCount
+        ?? fullPhysicsValidationRequirements.requiredRuntimeEvidenceCount
+        ?? (Array.isArray(fullPhysicsValidationRequirements.requiredRuntimeEvidence)
+          ? fullPhysicsValidationRequirements.requiredRuntimeEvidence.length
+          : null)
+      ),
+    eshkolFullPhysicsValidationRequiredHashFields:
+      uniqueStrings(
+        ingest.eshkolFullPhysicsValidationRequiredHashFields
+        || productionHandlerBoundary?.fullPhysicsValidationRequiredHashFields
+        || fullPhysicsValidationRequirements.requiredHashFields
+        || []
+      ),
+    eshkolFullPhysicsValidationRequiredRuntimeEvidence: clonePlain(
+      ingest.eshkolFullPhysicsValidationRequiredRuntimeEvidence
+      || productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidence
+      || fullPhysicsValidationRequirements.requiredRuntimeEvidence
+      || []
+    ),
+    eshkolFullPhysicsValidationRequirementsBlockedBy:
+      uniqueStrings(
+        ingest.eshkolFullPhysicsValidationRequirementsBlockedBy
+        || productionHandlerBoundary?.fullPhysicsValidationRequirementsBlockedBy
+        || fullPhysicsValidationRequirements.blockedBy
+        || []
+      ),
     eshkolProductionHostImportsRuntimeScope:
       ingest.eshkolProductionHostImportsRuntimeScope
       || productionHandlerBoundary?.hostImportsRuntimeScope

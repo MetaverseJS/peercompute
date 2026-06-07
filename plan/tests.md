@@ -1061,3 +1061,22 @@
   passed with two connected browser peers, two accepted dispatches,
   `entryResult = 0`, output tensors produced, and false
   science/full-physics/full-fidelity scope flags.
+- Production full-physics validation requirements propagation gate:
+  syntax checks for changed PeerCompute service-orchestration files, Multiscale
+  source files, and smoke scripts.
+: current result on 2026-06-07 passed. `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`, `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `198/198`,
+  `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run
+  test:ulg-handoff` passed, `npm --prefix demos/multiscale run build` passed
+  with the existing large-chunk warning, and `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed. The checks
+  assert `eshkol.ulg.full-physics-validation-requirements.v0`,
+  `declared-not-run`, readiness false, required runtime-evidence families
+  `magnetosphere-mhd`, `pic-kinetic-plasma`, `radiation-transport`,
+  `relativistic-correction`, and `cross-family-conservation-coupling`,
+  required hash fields `referenceHash`, `toleranceHash`, `runtimeOutputHash`,
+  and `evidenceHash`, and blocker `full-physics-validation-not-run` through
+  artifact, dispatch, supervisor, Multiscale readiness, packet, browser, and
+  relay surfaces.

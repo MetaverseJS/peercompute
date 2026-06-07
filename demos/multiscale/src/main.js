@@ -2380,6 +2380,57 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || descriptorProbe?.productionHandlerBoundary?.productionHandlerRuntimeExecution?.blockedBy
         || []
       ),
+      eshkolFullPhysicsValidationRequirementsSchema:
+        serviceSummary?.eshkolFullPhysicsValidationRequirementsSchema
+        || serviceResult.ingest?.eshkolFullPhysicsValidationRequirementsSchema
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirementsSchema
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.schema
+        || null,
+      eshkolFullPhysicsValidationRequirementsStatus:
+        serviceSummary?.eshkolFullPhysicsValidationRequirementsStatus
+        || serviceResult.ingest?.eshkolFullPhysicsValidationRequirementsStatus
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirementsStatus
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.status
+        || null,
+      eshkolFullPhysicsValidationRequirementsDeclared:
+        serviceSummary?.eshkolFullPhysicsValidationRequirementsDeclared
+        ?? serviceResult.ingest?.eshkolFullPhysicsValidationRequirementsDeclared
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirementsDeclared
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.declared
+        ?? null,
+      eshkolFullPhysicsValidationRequirementsReady:
+        serviceSummary?.eshkolFullPhysicsValidationRequirementsReady
+        ?? serviceResult.ingest?.eshkolFullPhysicsValidationRequirementsReady
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirementsReady
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.ready
+        ?? null,
+      eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies: cloneJson(
+        serviceSummary?.eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies
+        || serviceResult.ingest?.eshkolFullPhysicsValidationRequiredRuntimeEvidenceFamilies
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceFamilies
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.requiredRuntimeEvidenceFamilies
+        || []
+      ),
+      eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount:
+        serviceSummary?.eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount
+        ?? serviceResult.ingest?.eshkolFullPhysicsValidationRequiredRuntimeEvidenceCount
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequiredRuntimeEvidenceCount
+        ?? descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.requiredRuntimeEvidenceCount
+        ?? null,
+      eshkolFullPhysicsValidationRequiredHashFields: cloneJson(
+        serviceSummary?.eshkolFullPhysicsValidationRequiredHashFields
+        || serviceResult.ingest?.eshkolFullPhysicsValidationRequiredHashFields
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequiredHashFields
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.requiredHashFields
+        || []
+      ),
+      eshkolFullPhysicsValidationRequirementsBlockedBy: cloneJson(
+        serviceSummary?.eshkolFullPhysicsValidationRequirementsBlockedBy
+        || serviceResult.ingest?.eshkolFullPhysicsValidationRequirementsBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirementsBlockedBy
+        || descriptorProbe?.productionHandlerBoundary?.fullPhysicsValidationRequirements?.blockedBy
+        || []
+      ),
       eshkolProductionHandlerBoundary: cloneJson(
         serviceSummary?.eshkolProductionHandlerBoundary
         || serviceResult.ingest?.eshkolProductionHandlerBoundary

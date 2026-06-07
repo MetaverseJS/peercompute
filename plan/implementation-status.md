@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 23:53:08 AKDT
+Updated: 2026-06-07 00:54:31 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -93,6 +93,14 @@ Updated: 2026-06-06 23:53:08 AKDT
   entry args, changed bytes inside the declared tensor range, tensor outputs,
   and host import call counts while keeping scientific validation, full physics
   validation, and full-fidelity magnetar simulation false.
+- PeerCompute now preserves Eshkol's full-physics validation requirements from
+  the production handler boundary. Artifact summaries, dispatch ingest, handoff
+  supervisor summaries, Multiscale closure ingest/readiness/module probes,
+  packet boundary conditions, browser handoff smoke, relay dispatch smoke, and
+  the rebuilt docs bundle carry
+  `eshkol.ulg.full-physics-validation-requirements.v0`,
+  `declared-not-run`, readiness false, five required runtime-evidence families,
+  four required hash fields, and the `full-physics-validation-not-run` blocker.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -297,6 +305,18 @@ Updated: 2026-06-06 23:53:08 AKDT
   two released resource leases, production handler/runtime smoke summaries,
   `entryResult = 0`, output tensors produced, and all science/full-physics
   scope flags false.
+- Current full-physics requirements propagation validation passed on
+  2026-06-07: syntax checks for the changed PeerCompute/Multiscale source and
+  smoke files passed; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `28/28`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `198/198`;
+  `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run
+  test:ulg-handoff` passed with magnetar visible and the requirements fields
+  in the handoff/readiness summary; `npm --prefix demos/multiscale run build`
+  passed with the existing large-chunk warning; and the 300s relay dispatch
+  smoke passed with two connected browser peers, two accepted dispatches,
+  requirements schema/status/family/hash/blocker propagation, and all
+  science/full-physics scope flags false.
 
 ## Next
 - Promote the production handler runtime smoke into validated production
