@@ -182,8 +182,16 @@ Updated: 2026-06-06 20:17:24 AKDT
   blocked check count, and passed/blocked check lists through artifact
   summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale
   scenario readiness, browser handoff smokes, and packet boundary conditions.
-  Current evidence is 8 total checks, 5 passed, and 3 blocked after Eshkol's
-  production-candidate host-import mode landed.
+  Current evidence is 9 total checks, 6 passed, and 3 blocked after Eshkol's
+  production-candidate runtime-probe smoke evidence landed.
+- Eshkol production-candidate runtime probe evidence now preserves
+  `eshkol.ulg.production-candidate-runtime-probe.v0` through artifact summaries,
+  dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario
+  readiness, browser/relay handoff smokes, and packet boundary conditions.
+  The current probe is explicitly smoke-only, reports changed bytes `64`, tensor
+  outputs produced, host import calls `ulg_read_f64 = 12` /
+  `ulg_write_f64 = 9`, and keeps production/science/full-physics readiness
+  false.
 - Relay-backed focused runtime P2P smoke passed on 2026-06-06:
   `RUNTIME_P2P_DEMOS=hyperborea DEMO_PORT=4191 RELAY_CONFIG_TIMEOUT_MS=15000
   DEMO_TIMEOUT_MS=45000 node demos/tests/runtime-p2p.mjs` started the Go relay

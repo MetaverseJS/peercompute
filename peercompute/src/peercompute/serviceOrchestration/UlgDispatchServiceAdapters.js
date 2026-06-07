@@ -18,6 +18,10 @@ const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture
 const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
 const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
 const ESHKOL_PRODUCTION_HANDLER_DISPATCH_PREFLIGHT_SCHEMA = 'eshkol.ulg.production-handler-dispatch-preflight.v0';
+const ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_SCHEMA = 'eshkol.ulg.production-candidate-runtime-probe.v0';
+const ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_STATUS = 'production-candidate-runtime-smoke-passed';
+const ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_EXECUTION_CLAIM =
+  'production-candidate-host-import-runtime-smoke-only';
 const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
 const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS = 'deterministic-runtime-smoke-executed';
 const ESHKOL_DETERMINISTIC_HOST_RUNTIME_STATUS = 'deterministic-host-runtime-smoke-executed';
@@ -83,6 +87,10 @@ function finiteNumberOrNull(value) {
   return Number.isFinite(Number(value)) ? Number(value) : null;
 }
 
+function booleanOrNull(value) {
+  return typeof value === 'boolean' ? value : null;
+}
+
 function normalizeWasmBytes(value) {
   if (!value) return null;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -112,10 +120,229 @@ function objectOrNull(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null) ?? null;
+}
+
+function arrayValuesEqual(left = [], right = []) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function createEshkolProductionCandidateRuntimeProbeFromFields(source = {}) {
+  const nested = objectOrNull(source.productionCandidateRuntimeProbe);
+  if (nested) return nested;
+  const schema = firstPresent(
+    source.eshkolProductionCandidateRuntimeProbeSchema,
+    source.closureProductionCandidateRuntimeProbeSchema,
+    source.productionCandidateRuntimeProbeSchema
+  );
+  const status = firstPresent(
+    source.eshkolProductionCandidateRuntimeProbeStatus,
+    source.closureProductionCandidateRuntimeProbeStatus,
+    source.productionCandidateRuntimeProbeStatus
+  );
+  const ready = firstPresent(
+    source.eshkolProductionCandidateRuntimeProbeReady,
+    source.closureProductionCandidateRuntimeProbeReady,
+    source.productionCandidateRuntimeProbeReady
+  );
+  if (schema == null && status == null && ready == null) return null;
+  return {
+    schema,
+    status,
+    ready,
+    executionClaim: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeExecutionClaim,
+      source.closureProductionCandidateRuntimeProbeExecutionClaim,
+      source.productionCandidateRuntimeProbeExecutionClaim
+    ),
+    runtimeScope: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeRuntimeScope,
+      source.closureProductionCandidateRuntimeProbeRuntimeScope,
+      source.productionCandidateRuntimeProbeRuntimeScope
+    ),
+    implementationStatus: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeImplementationStatus,
+      source.closureProductionCandidateRuntimeProbeImplementationStatus,
+      source.productionCandidateRuntimeProbeImplementationStatus
+    ),
+    entryExport: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeEntryExport,
+      source.closureProductionCandidateRuntimeProbeEntryExport,
+      source.productionCandidateRuntimeProbeEntryExport
+    ),
+    entryArgs: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeEntryArgs,
+      source.closureProductionCandidateRuntimeProbeEntryArgs,
+      source.productionCandidateRuntimeProbeEntryArgs
+    ),
+    expectedEntryResult: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeExpectedEntryResult,
+      source.closureProductionCandidateRuntimeProbeExpectedEntryResult,
+      source.productionCandidateRuntimeProbeExpectedEntryResult
+    ),
+    changedBytesInDeclaredTensorRange: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange,
+      source.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange,
+      source.productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+    ),
+    outputTensorsProducedByEntryExport: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced,
+      source.closureProductionCandidateRuntimeProbeOutputTensorsProduced,
+      source.productionCandidateRuntimeProbeOutputTensorsProduced,
+      source.eshkolProductionCandidateRuntimeProbeOutputTensorsProducedByEntryExport,
+      source.closureProductionCandidateRuntimeProbeOutputTensorsProducedByEntryExport,
+      source.productionCandidateRuntimeProbeOutputTensorsProducedByEntryExport
+    ),
+    productionHandlerReady: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeProductionHandlerReady,
+      source.closureProductionCandidateRuntimeProbeProductionHandlerReady,
+      source.productionCandidateRuntimeProbeProductionHandlerReady
+    ),
+    productionHandlerRuntimeExecution: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution,
+      source.closureProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution,
+      source.productionCandidateRuntimeProbeProductionHandlerRuntimeExecution
+    ),
+    scientificValidation: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeScientificValidation,
+      source.closureProductionCandidateRuntimeProbeScientificValidation,
+      source.productionCandidateRuntimeProbeScientificValidation
+    ),
+    fullPhysicsValidation: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation,
+      source.closureProductionCandidateRuntimeProbeFullPhysicsValidation,
+      source.productionCandidateRuntimeProbeFullPhysicsValidation
+    ),
+    fullFidelityMagnetarSimulation: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation,
+      source.closureProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation,
+      source.productionCandidateRuntimeProbeFullFidelityMagnetarSimulation
+    ),
+    hostImportOptions: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeHostImportOptions,
+      source.closureProductionCandidateRuntimeProbeHostImportOptions,
+      source.productionCandidateRuntimeProbeHostImportOptions
+    ),
+    hostImportCallCounts: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeHostImportCallCounts,
+      source.closureProductionCandidateRuntimeProbeHostImportCallCounts,
+      source.productionCandidateRuntimeProbeHostImportCallCounts
+    ),
+    blocker: firstPresent(
+      source.eshkolProductionCandidateRuntimeProbeBlocker,
+      source.closureProductionCandidateRuntimeProbeBlocker,
+      source.productionCandidateRuntimeProbeBlocker
+    )
+  };
+}
+
+function normalizeEshkolProductionCandidateRuntimeProbe(probe = null) {
+  const candidate = objectOrNull(probe);
+  if (!candidate) return null;
+  const entryArgs = Array.isArray(candidate.entryArgs) ? candidate.entryArgs : [];
+  const hostImportOptions = objectOrNull(candidate.hostImportOptions);
+  const hostImportCallCounts = objectOrNull(candidate.hostImportCallCounts);
+  const validationBlockers = uniqueStrings([
+    candidate.schema === ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_SCHEMA
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-schema-mismatch',
+    candidate.status === ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_STATUS
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-status-mismatch',
+    candidate.executionClaim === ESHKOL_PRODUCTION_CANDIDATE_RUNTIME_PROBE_EXECUTION_CLAIM
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-execution-claim-mismatch',
+    candidate.runtimeScope === 'production-candidate-host-imports'
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-runtime-scope-mismatch',
+    candidate.implementationStatus === 'production-candidate-runtime-imports-present'
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-implementation-status-mismatch',
+    arrayValuesEqual(entryArgs, [131072, 131136])
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-entry-args-mismatch',
+    finiteNumberOrNull(candidate.expectedEntryResult) === 0
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-entry-result-mismatch',
+    finiteNumberOrNull(candidate.changedBytesInDeclaredTensorRange) === 64
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-changed-byte-count-mismatch',
+    candidate.outputTensorsProducedByEntryExport === true
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-output-tensors-missing',
+    candidate.productionHandlerReady === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-handler-ready-overstated',
+    candidate.productionHandlerRuntimeExecution === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-runtime-execution-overstated',
+    candidate.scientificValidation === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-scientific-validation-overstated',
+    candidate.fullPhysicsValidation === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-full-physics-overstated',
+    candidate.fullFidelityMagnetarSimulation === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-full-fidelity-overstated',
+    hostImportOptions?.factory === 'createEshkolHostImportObject'
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-host-import-factory-mismatch',
+    hostImportOptions?.productionCandidateRuntimeImports === true
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-host-import-mode-mismatch',
+    hostImportOptions?.runtimeSmokeStubs === false
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-smoke-stubs-overstated',
+    hostImportOptions?.f64TensorMemoryImports === true
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-f64-imports-mismatch',
+    finiteNumberOrNull(hostImportCallCounts?.ulg_read_f64) === 12
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-read-count-mismatch',
+    finiteNumberOrNull(hostImportCallCounts?.ulg_write_f64) === 9
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-write-count-mismatch',
+    stringOrNull(candidate.blocker)
+      ? null
+      : 'eshkol-production-candidate-runtime-probe-blocker-missing'
+  ]);
+  return {
+    schema: stringOrNull(candidate.schema),
+    status: stringOrNull(candidate.status),
+    ready: typeof candidate.ready === 'boolean' ? candidate.ready : validationBlockers.length === 0,
+    executionClaim: stringOrNull(candidate.executionClaim),
+    runtimeScope: stringOrNull(candidate.runtimeScope),
+    implementationStatus: stringOrNull(candidate.implementationStatus),
+    entryExport: stringOrNull(candidate.entryExport),
+    entryArgs: clonePlain(entryArgs),
+    expectedEntryResult: finiteNumberOrNull(candidate.expectedEntryResult),
+    changedBytesInDeclaredTensorRange: finiteNumberOrNull(candidate.changedBytesInDeclaredTensorRange),
+    outputTensorsProducedByEntryExport: booleanOrNull(candidate.outputTensorsProducedByEntryExport),
+    productionHandlerReady: booleanOrNull(candidate.productionHandlerReady),
+    productionHandlerRuntimeExecution: booleanOrNull(candidate.productionHandlerRuntimeExecution),
+    scientificValidation: booleanOrNull(candidate.scientificValidation),
+    fullPhysicsValidation: booleanOrNull(candidate.fullPhysicsValidation),
+    fullFidelityMagnetarSimulation: booleanOrNull(candidate.fullFidelityMagnetarSimulation),
+    hostImportOptions: clonePlain(hostImportOptions),
+    hostImportCallCounts: clonePlain(hostImportCallCounts),
+    blocker: stringOrNull(candidate.blocker),
+    validationBlockerCount: validationBlockers.length,
+    validationBlockers
+  };
+}
+
 function createBoundaryFromSummaryFields(summary = {}) {
   const boundarySchema =
     summary.eshkolProductionHandlerBoundarySchema || summary.closureProductionHandlerBoundarySchema;
   if (boundarySchema !== ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA) return null;
+  const productionCandidateRuntimeProbe = normalizeEshkolProductionCandidateRuntimeProbe(
+    createEshkolProductionCandidateRuntimeProbeFromFields(summary)
+  );
   return {
     schema: boundarySchema,
     status: summary.eshkolProductionHandlerBoundaryStatus || summary.closureProductionHandlerBoundaryStatus || null,
@@ -202,7 +429,8 @@ function createBoundaryFromSummaryFields(summary = {}) {
     dispatchPreflightBlockedBy:
       summary.eshkolProductionDispatchPreflightBlockedBy
       || summary.closureProductionDispatchPreflightBlockedBy
-      || []
+      || [],
+    productionCandidateRuntimeProbe
   };
 }
 
@@ -233,6 +461,9 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
   const hostImports = objectOrNull(boundary.hostImports) || {};
   const productionCandidate = objectOrNull(hostImports.productionCandidate) || {};
   const dispatchPreflight = objectOrNull(boundary.dispatchPreflight) || {};
+  const productionCandidateRuntimeProbe = normalizeEshkolProductionCandidateRuntimeProbe(
+    createEshkolProductionCandidateRuntimeProbeFromFields(boundary)
+  );
   const productionCandidateRequiredNonStubImports = Array.isArray(productionCandidate.requiredNonStubImports)
     ? productionCandidate.requiredNonStubImports
     : boundary.productionHostImportCandidateRequiredNonStubImports;
@@ -347,6 +578,37 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
       uniqueStrings(productionCandidateReadinessRequires || []),
     productionHostImportCandidateBlockedBy:
       uniqueStrings(productionCandidateBlockedBy || []),
+    productionCandidateRuntimeProbe,
+    productionCandidateRuntimeProbeSchema: productionCandidateRuntimeProbe?.schema || null,
+    productionCandidateRuntimeProbeStatus: productionCandidateRuntimeProbe?.status || null,
+    productionCandidateRuntimeProbeReady: productionCandidateRuntimeProbe?.ready ?? null,
+    productionCandidateRuntimeProbeExecutionClaim: productionCandidateRuntimeProbe?.executionClaim || null,
+    productionCandidateRuntimeProbeRuntimeScope: productionCandidateRuntimeProbe?.runtimeScope || null,
+    productionCandidateRuntimeProbeImplementationStatus:
+      productionCandidateRuntimeProbe?.implementationStatus || null,
+    productionCandidateRuntimeProbeEntryExport: productionCandidateRuntimeProbe?.entryExport || null,
+    productionCandidateRuntimeProbeEntryArgs: clonePlain(productionCandidateRuntimeProbe?.entryArgs || []),
+    productionCandidateRuntimeProbeExpectedEntryResult:
+      productionCandidateRuntimeProbe?.expectedEntryResult ?? null,
+    productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+      productionCandidateRuntimeProbe?.changedBytesInDeclaredTensorRange ?? null,
+    productionCandidateRuntimeProbeOutputTensorsProduced:
+      productionCandidateRuntimeProbe?.outputTensorsProducedByEntryExport ?? null,
+    productionCandidateRuntimeProbeProductionHandlerReady:
+      productionCandidateRuntimeProbe?.productionHandlerReady ?? null,
+    productionCandidateRuntimeProbeProductionHandlerRuntimeExecution:
+      productionCandidateRuntimeProbe?.productionHandlerRuntimeExecution ?? null,
+    productionCandidateRuntimeProbeScientificValidation:
+      productionCandidateRuntimeProbe?.scientificValidation ?? null,
+    productionCandidateRuntimeProbeFullPhysicsValidation:
+      productionCandidateRuntimeProbe?.fullPhysicsValidation ?? null,
+    productionCandidateRuntimeProbeFullFidelityMagnetarSimulation:
+      productionCandidateRuntimeProbe?.fullFidelityMagnetarSimulation ?? null,
+    productionCandidateRuntimeProbeHostImportOptions:
+      clonePlain(productionCandidateRuntimeProbe?.hostImportOptions || null),
+    productionCandidateRuntimeProbeHostImportCallCounts:
+      clonePlain(productionCandidateRuntimeProbe?.hostImportCallCounts || null),
+    productionCandidateRuntimeProbeBlocker: productionCandidateRuntimeProbe?.blocker || null,
     dispatchPreflightSchema: stringOrNull(dispatchPreflight.schema || boundary.dispatchPreflightSchema),
     dispatchPreflightStatus: stringOrNull(dispatchPreflight.status || boundary.dispatchPreflightStatus),
     dispatchPreflightReady:
@@ -2339,6 +2601,10 @@ function createMoonLabIngestSummary(payload = {}, probe = null) {
 
 function createEshkolIngestSummary(payload = {}, probe = null) {
   const summary = payload.artifactSummary || {};
+  const productionCandidateRuntimeProbe = normalizeEshkolProductionCandidateRuntimeProbe(
+    createEshkolProductionCandidateRuntimeProbeFromFields(summary)
+    || probe?.descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbe
+  );
   return {
     schema: 'peercompute.ulg.eshkol-dispatch-ingest.v0',
     closureReady: summary.closureReady === true,
@@ -2420,6 +2686,106 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
       clonePlain(summary.eshkolProductionHostImportCandidateBlockedBy
         || probe?.descriptorProbe?.productionHandlerBoundary?.productionHostImportCandidateBlockedBy
         || []),
+    eshkolProductionCandidateRuntimeProbeSchema:
+      summary.eshkolProductionCandidateRuntimeProbeSchema
+      || summary.closureProductionCandidateRuntimeProbeSchema
+      || productionCandidateRuntimeProbe?.schema
+      || null,
+    eshkolProductionCandidateRuntimeProbeStatus:
+      summary.eshkolProductionCandidateRuntimeProbeStatus
+      || summary.closureProductionCandidateRuntimeProbeStatus
+      || productionCandidateRuntimeProbe?.status
+      || null,
+    eshkolProductionCandidateRuntimeProbeReady:
+      summary.eshkolProductionCandidateRuntimeProbeReady
+      ?? summary.closureProductionCandidateRuntimeProbeReady
+      ?? productionCandidateRuntimeProbe?.ready
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeExecutionClaim:
+      summary.eshkolProductionCandidateRuntimeProbeExecutionClaim
+      || summary.closureProductionCandidateRuntimeProbeExecutionClaim
+      || productionCandidateRuntimeProbe?.executionClaim
+      || null,
+    eshkolProductionCandidateRuntimeProbeRuntimeScope:
+      summary.eshkolProductionCandidateRuntimeProbeRuntimeScope
+      || summary.closureProductionCandidateRuntimeProbeRuntimeScope
+      || productionCandidateRuntimeProbe?.runtimeScope
+      || null,
+    eshkolProductionCandidateRuntimeProbeImplementationStatus:
+      summary.eshkolProductionCandidateRuntimeProbeImplementationStatus
+      || summary.closureProductionCandidateRuntimeProbeImplementationStatus
+      || productionCandidateRuntimeProbe?.implementationStatus
+      || null,
+    eshkolProductionCandidateRuntimeProbeEntryExport:
+      summary.eshkolProductionCandidateRuntimeProbeEntryExport
+      || summary.closureProductionCandidateRuntimeProbeEntryExport
+      || productionCandidateRuntimeProbe?.entryExport
+      || null,
+    eshkolProductionCandidateRuntimeProbeEntryArgs:
+      clonePlain(summary.eshkolProductionCandidateRuntimeProbeEntryArgs
+        || summary.closureProductionCandidateRuntimeProbeEntryArgs
+        || productionCandidateRuntimeProbe?.entryArgs
+        || []),
+    eshkolProductionCandidateRuntimeProbeExpectedEntryResult:
+      summary.eshkolProductionCandidateRuntimeProbeExpectedEntryResult
+      ?? summary.closureProductionCandidateRuntimeProbeExpectedEntryResult
+      ?? productionCandidateRuntimeProbe?.expectedEntryResult
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+      summary.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? summary.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? productionCandidateRuntimeProbe?.changedBytesInDeclaredTensorRange
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeOutputTensorsProduced:
+      summary.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+      ?? summary.closureProductionCandidateRuntimeProbeOutputTensorsProduced
+      ?? productionCandidateRuntimeProbe?.outputTensorsProducedByEntryExport
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeProductionHandlerReady:
+      summary.eshkolProductionCandidateRuntimeProbeProductionHandlerReady
+      ?? summary.closureProductionCandidateRuntimeProbeProductionHandlerReady
+      ?? productionCandidateRuntimeProbe?.productionHandlerReady
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution:
+      summary.eshkolProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution
+      ?? summary.closureProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution
+      ?? productionCandidateRuntimeProbe?.productionHandlerRuntimeExecution
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeScientificValidation:
+      summary.eshkolProductionCandidateRuntimeProbeScientificValidation
+      ?? summary.closureProductionCandidateRuntimeProbeScientificValidation
+      ?? productionCandidateRuntimeProbe?.scientificValidation
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeFullPhysicsValidation:
+      summary.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+      ?? summary.closureProductionCandidateRuntimeProbeFullPhysicsValidation
+      ?? productionCandidateRuntimeProbe?.fullPhysicsValidation
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation:
+      summary.eshkolProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation
+      ?? summary.closureProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation
+      ?? productionCandidateRuntimeProbe?.fullFidelityMagnetarSimulation
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeHostImportOptions:
+      clonePlain(summary.eshkolProductionCandidateRuntimeProbeHostImportOptions
+        || summary.closureProductionCandidateRuntimeProbeHostImportOptions
+        || productionCandidateRuntimeProbe?.hostImportOptions
+        || null),
+    eshkolProductionCandidateRuntimeProbeHostImportCallCounts:
+      clonePlain(summary.eshkolProductionCandidateRuntimeProbeHostImportCallCounts
+        || summary.closureProductionCandidateRuntimeProbeHostImportCallCounts
+        || productionCandidateRuntimeProbe?.hostImportCallCounts
+        || null),
+    eshkolProductionCandidateRuntimeProbeBlocker:
+      summary.eshkolProductionCandidateRuntimeProbeBlocker
+      || summary.closureProductionCandidateRuntimeProbeBlocker
+      || productionCandidateRuntimeProbe?.blocker
+      || null,
+    eshkolProductionCandidateRuntimeProbe:
+      clonePlain(summary.eshkolProductionCandidateRuntimeProbe
+        || summary.closureProductionCandidateRuntimeProbe
+        || productionCandidateRuntimeProbe
+        || null),
     eshkolProductionDispatchPreflightSchema:
       summary.eshkolProductionDispatchPreflightSchema
       || summary.closureProductionDispatchPreflightSchema

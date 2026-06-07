@@ -1864,6 +1864,52 @@ function createClosureDescriptorProbeFromArtifactSummary(summary = {}, options =
       typeof summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation === 'boolean'
         ? summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation
         : null,
+    eshkolProductionCandidateRuntimeProbeStatus:
+      summary.eshkolProductionCandidateRuntimeProbeStatus
+      || summary.closureProductionCandidateRuntimeProbeStatus
+      || null,
+    eshkolProductionCandidateRuntimeProbeReady:
+      typeof summary.eshkolProductionCandidateRuntimeProbeReady === 'boolean'
+        ? summary.eshkolProductionCandidateRuntimeProbeReady
+        : (
+            typeof summary.closureProductionCandidateRuntimeProbeReady === 'boolean'
+              ? summary.closureProductionCandidateRuntimeProbeReady
+              : null
+          ),
+    eshkolProductionCandidateRuntimeProbeRuntimeScope:
+      summary.eshkolProductionCandidateRuntimeProbeRuntimeScope
+      || summary.closureProductionCandidateRuntimeProbeRuntimeScope
+      || null,
+    eshkolProductionCandidateRuntimeProbeExecutionClaim:
+      summary.eshkolProductionCandidateRuntimeProbeExecutionClaim
+      || summary.closureProductionCandidateRuntimeProbeExecutionClaim
+      || null,
+    eshkolProductionCandidateRuntimeProbeEntryArgs: cloneJson(
+      summary.eshkolProductionCandidateRuntimeProbeEntryArgs
+      || summary.closureProductionCandidateRuntimeProbeEntryArgs
+      || []
+    ),
+    eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+      summary.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? summary.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeOutputTensorsProduced:
+      summary.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+      ?? summary.closureProductionCandidateRuntimeProbeOutputTensorsProduced
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeHostImportCallCounts: cloneJson(
+      summary.eshkolProductionCandidateRuntimeProbeHostImportCallCounts
+      || summary.closureProductionCandidateRuntimeProbeHostImportCallCounts
+      || null
+    ),
+    eshkolProductionCandidateRuntimeProbeFullPhysicsValidation:
+      summary.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+      ?? summary.closureProductionCandidateRuntimeProbeFullPhysicsValidation
+      ?? null,
+    eshkolProductionCandidateRuntimeProbeBlocker:
+      summary.eshkolProductionCandidateRuntimeProbeBlocker
+      || summary.closureProductionCandidateRuntimeProbeBlocker
+      || null,
     eshkolProductionDispatchPreflightSchema:
       summary.eshkolProductionDispatchPreflightSchema
       || summary.closureProductionDispatchPreflightSchema
@@ -2155,6 +2201,68 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
         || descriptorProbe?.productionHandlerBoundary
         || null
       ),
+      eshkolProductionCandidateRuntimeProbeStatus:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeStatus
+        || serviceSummary?.closureProductionCandidateRuntimeProbeStatus
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeStatus
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeStatus
+        || null,
+      eshkolProductionCandidateRuntimeProbeReady:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeReady
+        ?? serviceSummary?.closureProductionCandidateRuntimeProbeReady
+        ?? serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeReady
+        ?? descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeReady
+        ?? null,
+      eshkolProductionCandidateRuntimeProbeRuntimeScope:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeRuntimeScope
+        || serviceSummary?.closureProductionCandidateRuntimeProbeRuntimeScope
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeRuntimeScope
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeRuntimeScope
+        || null,
+      eshkolProductionCandidateRuntimeProbeExecutionClaim:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeExecutionClaim
+        || serviceSummary?.closureProductionCandidateRuntimeProbeExecutionClaim
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeExecutionClaim
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeExecutionClaim
+        || null,
+      eshkolProductionCandidateRuntimeProbeEntryArgs: cloneJson(
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeEntryArgs
+        || serviceSummary?.closureProductionCandidateRuntimeProbeEntryArgs
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeEntryArgs
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeEntryArgs
+        || []
+      ),
+      eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+        ?? serviceSummary?.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+        ?? serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+        ?? descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+        ?? null,
+      eshkolProductionCandidateRuntimeProbeOutputTensorsProduced:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+        ?? serviceSummary?.closureProductionCandidateRuntimeProbeOutputTensorsProduced
+        ?? serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+        ?? descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeOutputTensorsProduced
+        ?? null,
+      eshkolProductionCandidateRuntimeProbeHostImportCallCounts: cloneJson(
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeHostImportCallCounts
+        || serviceSummary?.closureProductionCandidateRuntimeProbeHostImportCallCounts
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeHostImportCallCounts
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeHostImportCallCounts
+        || null
+      ),
+      eshkolProductionCandidateRuntimeProbeFullPhysicsValidation:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+        ?? serviceSummary?.closureProductionCandidateRuntimeProbeFullPhysicsValidation
+        ?? serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+        ?? descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeFullPhysicsValidation
+        ?? null,
+      eshkolProductionCandidateRuntimeProbeBlocker:
+        serviceSummary?.eshkolProductionCandidateRuntimeProbeBlocker
+        || serviceSummary?.closureProductionCandidateRuntimeProbeBlocker
+        || serviceResult.ingest?.eshkolProductionCandidateRuntimeProbeBlocker
+        || descriptorProbe?.productionHandlerBoundary?.productionCandidateRuntimeProbeBlocker
+        || null,
       eshkolProductionDispatchPreflightCheckSummarySchema:
         serviceSummary?.eshkolProductionDispatchPreflightCheckSummarySchema
         || serviceResult.ingest?.eshkolProductionDispatchPreflightCheckSummarySchema

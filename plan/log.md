@@ -52450,3 +52450,81 @@ Open:
   It does not implement production Eshkol magnetar handlers, runtime execution,
   scientific magnetar validation, or full-physics validation.
 - No push was attempted.
+
+## 2026-06-06 21:06:18 AKDT - Eshkol production-candidate runtime probe relay sync
+
+Prompt: User said "great job keep going" after the ULG MoonLab/Eshkol handoff
+work and reiterated local-only progress.
+
+Actions:
+- Continued the core ULG/Eshkol/PeerCompute dispatch-boundary path and kept
+  all commits local with no push.
+- Reused the McClintock sidecar for ULG docs-only updates because the fresh
+  subagent limit was full.
+- Patched PeerCompute artifact summaries, dispatch adapter ingest, and handoff
+  supervisor summaries so `eshkol.ulg.production-candidate-runtime-probe.v0`
+  survives both ULG `closureProductionCandidateRuntimeProbe*` fields and
+  PeerCompute `eshkolProductionCandidateRuntimeProbe*` fields.
+- Normalized the nested
+  `productionHandlerBoundary.productionCandidateRuntimeProbe` object into
+  compact summary fields for browser handoff, relay dispatch, module-probe, and
+  packet consumers.
+- Updated Eshkol production-dispatch preflight expectations from `8/5/3` to
+  `9/6/3`, adding `production-candidate-runtime-probe-passed` as a passed
+  preflight check while preserving handler-ready/runtime-execution/full-physics
+  blockers.
+- Updated service orchestration unit fixtures/assertions, Multiscale browser
+  handoff smoke assertions, relay handoff smoke assertions, and rebuilt
+  `docs/multiscale`.
+
+Files touched:
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/implementation-status.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+Validation:
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`.
+- PASS: `node --check peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`.
+- PASS: `node --check peercompute/tests/unit/serviceOrchestration.test.js`.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`
+  passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing Vite large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed and
+  reported `production-candidate-runtime-smoke-passed`, changed bytes `64`,
+  host import calls `ulg_read_f64 = 12` / `ulg_write_f64 = 9`, and preflight
+  counts `9/6/3`.
+- PASS: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with service envelope ready, dispatch adapters ready,
+  `acceptedDispatchCount = 2`, two released resource leases, zero active
+  leases, zero preemptions, and all scientific scope flags false.
+
+Failures / fixes:
+- Fresh subagent spawn failed because the agent thread limit was already full;
+  fixed by reusing the existing McClintock worker for ULG docs-only updates.
+- An earlier relay smoke from the previous checkpoint dropped
+  `productionCandidateRuntimeProbeStatus` from the dispatch-adapter summary.
+  Fixed by carrying the runtime-probe fields through the PeerCompute dispatch
+  adapter and supervisor summary layers before rebuilding `docs/multiscale`.
+
+Open:
+- The Eshkol runtime probe is production-candidate host-import smoke evidence
+  only. It does not implement the production magnetar handler, does not prove
+  production runtime execution, and does not validate full magnetar physics.
+- No push was attempted.

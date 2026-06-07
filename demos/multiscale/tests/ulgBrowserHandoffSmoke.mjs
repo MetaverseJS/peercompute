@@ -23,6 +23,7 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
   'entry-export-main-signature-i32-i32-to-i32',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
+  'production-candidate-runtime-probe-passed',
   'runtime-smoke-stubs-rejected-for-production',
   'handler-ready-flag-true',
   'runtime-execution-flag-true',
@@ -33,6 +34,7 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
   'entry-export-main-signature-i32-i32-to-i32',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
+  'production-candidate-runtime-probe-passed',
   'runtime-smoke-stubs-rejected-for-production'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
@@ -81,12 +83,25 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
   assert.equal(handoffProbe.productionHandlerBoundaryRuntimeExecution, false);
   assert.equal(handoffProbe.productionHandlerBoundaryScientificValidation, false);
   assert.equal(handoffProbe.productionHandlerBoundaryFullPhysicsValidation, false);
+  assert.equal(handoffProbe.productionCandidateRuntimeProbeStatus, 'production-candidate-runtime-smoke-passed');
+  assert.equal(handoffProbe.productionCandidateRuntimeProbeReady, true);
+  assert.equal(handoffProbe.productionCandidateRuntimeProbeRuntimeScope, 'production-candidate-host-imports');
+  assert.equal(
+    handoffProbe.productionCandidateRuntimeProbeExecutionClaim,
+    'production-candidate-host-import-runtime-smoke-only'
+  );
+  assert.equal(handoffProbe.productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange, 64);
+  assert.deepEqual(handoffProbe.productionCandidateRuntimeProbeHostImportCallCounts, {
+    ulg_read_f64: 12,
+    ulg_write_f64: 9
+  });
+  assert.equal(handoffProbe.productionCandidateRuntimeProbeFullPhysicsValidation, false);
   assert.equal(
     handoffProbe.productionDispatchPreflightCheckSummarySchema,
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
-  assert.equal(handoffProbe.productionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(handoffProbe.productionDispatchPreflightTotalRequiredCheckCount, 9);
+  assert.equal(handoffProbe.productionDispatchPreflightPassedCheckCount, 6);
   assert.equal(handoffProbe.productionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(handoffProbe.productionDispatchPreflightPassedChecks, [
     ...EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
@@ -101,8 +116,8 @@ function assertEshkolRuntimeSmokeProbe(handoffProbe) {
     handoffProbe.summaryProductionDispatchPreflightCheckSummarySchema,
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightTotalRequiredCheckCount, 9);
+  assert.equal(handoffProbe.summaryProductionDispatchPreflightPassedCheckCount, 6);
   assert.equal(handoffProbe.summaryProductionDispatchPreflightBlockedCheckCount, 3);
 }
 
@@ -159,6 +174,7 @@ async function main() {
       const smokeBinding = linearMemoryBinding?.smokeBinding || null;
       const offsetProbe = linearMemoryBinding?.entryExportOffsetProbe || null;
       const productionHandlerBoundary = descriptorBinding?.productionHandlerBoundary || null;
+      const productionCandidateRuntimeProbe = productionHandlerBoundary?.productionCandidateRuntimeProbe || null;
       const productionDispatchPreflight = productionHandlerBoundary?.dispatchPreflight || null;
       const productionDispatchCheckSummary = productionDispatchPreflight?.checkSummary || null;
       return {
@@ -204,6 +220,29 @@ async function main() {
         productionHandlerBoundaryRuntimeExecution: productionHandlerBoundary?.runtimeExecution ?? null,
         productionHandlerBoundaryScientificValidation: productionHandlerBoundary?.scientificValidation ?? null,
         productionHandlerBoundaryFullPhysicsValidation: productionHandlerBoundary?.fullPhysicsValidation ?? null,
+        productionCandidateRuntimeProbeStatus: productionCandidateRuntimeProbe?.status || null,
+        productionCandidateRuntimeProbeReady:
+          eshkolSummary.closureProductionCandidateRuntimeProbeReady ?? null,
+        productionCandidateRuntimeProbeRuntimeScope:
+          productionCandidateRuntimeProbe?.runtimeScope
+          || eshkolSummary.closureProductionCandidateRuntimeProbeRuntimeScope
+          || null,
+        productionCandidateRuntimeProbeExecutionClaim:
+          productionCandidateRuntimeProbe?.executionClaim
+          || eshkolSummary.closureProductionCandidateRuntimeProbeExecutionClaim
+          || null,
+        productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+          productionCandidateRuntimeProbe?.changedBytesInDeclaredTensorRange
+          ?? eshkolSummary.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+          ?? null,
+        productionCandidateRuntimeProbeHostImportCallCounts:
+          productionCandidateRuntimeProbe?.hostImportCallCounts
+          || eshkolSummary.closureProductionCandidateRuntimeProbeHostImportCallCounts
+          || null,
+        productionCandidateRuntimeProbeFullPhysicsValidation:
+          productionCandidateRuntimeProbe?.fullPhysicsValidation
+          ?? eshkolSummary.closureProductionCandidateRuntimeProbeFullPhysicsValidation
+          ?? null,
         productionDispatchPreflightCheckSummarySchema: productionDispatchCheckSummary?.schema || null,
         productionDispatchPreflightTotalRequiredCheckCount:
           productionDispatchCheckSummary?.totalRequiredCheckCount ?? null,

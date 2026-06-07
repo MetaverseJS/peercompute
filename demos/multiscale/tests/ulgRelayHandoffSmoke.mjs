@@ -62,6 +62,7 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_CHECKS = [
   'entry-export-main-signature-i32-i32-to-i32',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
+  'production-candidate-runtime-probe-passed',
   'runtime-smoke-stubs-rejected-for-production',
   'handler-ready-flag-true',
   'runtime-execution-flag-true',
@@ -72,6 +73,7 @@ const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = [
   'entry-export-main-signature-i32-i32-to-i32',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
+  'production-candidate-runtime-probe-passed',
   'runtime-smoke-stubs-rejected-for-production'
 ];
 const EXPECTED_ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = [
@@ -89,17 +91,37 @@ function firstPresent(source, keys) {
 
 function assertEshkolDispatchPreflightEvidence(summary = {}) {
   assert.equal(firstPresent(summary, [
+    'eshkolProductionCandidateRuntimeProbeStatus',
+    'productionCandidateRuntimeProbeStatus',
+    'closureProductionCandidateRuntimeProbeStatus'
+  ]), 'production-candidate-runtime-smoke-passed');
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionCandidateRuntimeProbeReady',
+    'productionCandidateRuntimeProbeReady',
+    'closureProductionCandidateRuntimeProbeReady'
+  ]), true);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange',
+    'productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange',
+    'closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange'
+  ]), 64);
+  assert.equal(firstPresent(summary, [
+    'eshkolProductionCandidateRuntimeProbeFullPhysicsValidation',
+    'productionCandidateRuntimeProbeFullPhysicsValidation',
+    'closureProductionCandidateRuntimeProbeFullPhysicsValidation'
+  ]), false);
+  assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightCheckSummarySchema',
     'closureProductionDispatchPreflightCheckSummarySchema'
   ]), 'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0');
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightTotalRequiredCheckCount',
     'closureProductionDispatchPreflightTotalRequiredCheckCount'
-  ]), 8);
+  ]), 9);
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightPassedCheckCount',
     'closureProductionDispatchPreflightPassedCheckCount'
-  ]), 5);
+  ]), 6);
   assert.equal(firstPresent(summary, [
     'eshkolProductionDispatchPreflightBlockedCheckCount',
     'closureProductionDispatchPreflightBlockedCheckCount'

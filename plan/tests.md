@@ -963,9 +963,13 @@
   `entry-export-runtime-smoke-passed`, offset-probe status
   `runtime-smoke-passed`, `entryExportConsumesOffsets = true`, changed bytes
   `64`, and production handler boundary status `declared-not-executed`.
-  It also asserts Eshkol computed production-dispatch preflight evidence:
-  `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`, eight
-  total checks, five passed checks, three blocked checks, and ordered
+  It also asserts Eshkol production-candidate runtime-probe and computed
+  production-dispatch preflight evidence:
+  `eshkol.ulg.production-candidate-runtime-probe.v0`,
+  `production-candidate-runtime-smoke-passed`, changed bytes `64`, host import
+  calls `ulg_read_f64 = 12` / `ulg_write_f64 = 9`,
+  `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0`, nine
+  total checks, six passed checks, three blocked checks, and ordered
   `checkResults`.
 : `ULG_RELAY_HANDOFF_RUN_DISPATCH=1` opts into the browser dispatch-adapter
   probe with compact raw-result omission, a browser-owned async run record, and
@@ -982,7 +986,7 @@
 - Eshkol computed dispatch-preflight evidence gate:
   focused service orchestration, Multiscale model, browser ULG handoff, and
   relay handoff smokes now preserve the computed preflight `checkResults`,
-  check-summary schema, 8 total checks, 5 passed checks, and 3 blocked checks.
+  check-summary schema, 9 total checks, 6 passed checks, and 3 blocked checks.
   These checks do not promote production handler/runtime/full-physics readiness.
 
 ### Eshkol production handler boundary gate

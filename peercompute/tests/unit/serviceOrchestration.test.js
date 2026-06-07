@@ -111,6 +111,7 @@ const ESHKOL_PRODUCTION_DISPATCH_CHECKS = Object.freeze([
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
   'runtime-smoke-stubs-rejected-for-production',
+  'production-candidate-runtime-probe-passed',
   'handler-ready-flag-true',
   'runtime-execution-flag-true',
   'full-physics-validation-evidence-present'
@@ -120,7 +121,8 @@ const ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS = Object.freeze([
   'entry-export-main-signature-i32-i32-to-i32',
   'non-stub-host-imports-present',
   'f64-tensor-memory-binding-validated',
-  'runtime-smoke-stubs-rejected-for-production'
+  'runtime-smoke-stubs-rejected-for-production',
+  'production-candidate-runtime-probe-passed'
 ]);
 const ESHKOL_PRODUCTION_DISPATCH_BLOCKED_CHECKS = Object.freeze([
   'handler-ready-flag-true',
@@ -294,6 +296,34 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
         blockedBy: [...ESHKOL_PRODUCTION_BLOCKERS]
       }
     },
+    productionCandidateRuntimeProbe: {
+      schema: 'eshkol.ulg.production-candidate-runtime-probe.v0',
+      status: 'production-candidate-runtime-smoke-passed',
+      runtimeScope: 'production-candidate-host-imports',
+      implementationStatus: 'production-candidate-runtime-imports-present',
+      executionClaim: 'production-candidate-host-import-runtime-smoke-only',
+      entryExport: 'main',
+      entryArgs: [131072, 131136],
+      expectedEntryResult: 0,
+      changedBytesInDeclaredTensorRange: 64,
+      outputTensorsProducedByEntryExport: true,
+      productionHandlerReady: false,
+      productionHandlerRuntimeExecution: false,
+      scientificValidation: false,
+      fullPhysicsValidation: false,
+      fullFidelityMagnetarSimulation: false,
+      hostImportOptions: {
+        factory: 'createEshkolHostImportObject',
+        productionCandidateRuntimeImports: true,
+        runtimeSmokeStubs: false,
+        f64TensorMemoryImports: true
+      },
+      hostImportCallCounts: {
+        ulg_read_f64: 12,
+        ulg_write_f64: 9
+      },
+      blocker: 'production-candidate-runtime-smoke-only-production-handler-not-ready'
+    },
     dispatchPreflight: {
       schema: 'eshkol.ulg.production-handler-dispatch-preflight.v0',
       status: 'blocked',
@@ -350,6 +380,12 @@ function createEshkolProductionHandlerBoundary(overrides = {}) {
           status: 'pass',
           ready: true,
           evidenceSource: 'productionHandlerBoundary.dispatchPreflight'
+        },
+        {
+          check: 'production-candidate-runtime-probe-passed',
+          status: 'pass',
+          ready: true,
+          evidenceSource: 'productionHandlerBoundary.productionCandidateRuntimeProbe'
         },
         {
           check: 'handler-ready-flag-true',
@@ -591,6 +627,33 @@ function createEshkolMagnetarDescriptorArtifact() {
     },
     contentHash: 'ulg:fixture-magnetar-descriptor-001'
   };
+}
+
+function assertEshkolProductionCandidateRuntimeProbeFields(source, prefix = 'eshkolProductionCandidateRuntimeProbe') {
+  assert.equal(source[`${prefix}Schema`], 'eshkol.ulg.production-candidate-runtime-probe.v0');
+  assert.equal(source[`${prefix}Status`], 'production-candidate-runtime-smoke-passed');
+  assert.equal(source[`${prefix}Ready`], true);
+  assert.equal(source[`${prefix}RuntimeScope`], 'production-candidate-host-imports');
+  assert.equal(source[`${prefix}ExecutionClaim`], 'production-candidate-host-import-runtime-smoke-only');
+  assert.deepEqual(source[`${prefix}EntryArgs`], [131072, 131136]);
+  assert.equal(source[`${prefix}ExpectedEntryResult`], 0);
+  assert.equal(source[`${prefix}ChangedBytesInDeclaredTensorRange`], 64);
+  assert.equal(source[`${prefix}OutputTensorsProduced`], true);
+  assert.equal(source[`${prefix}ProductionHandlerReady`], false);
+  assert.equal(source[`${prefix}ProductionHandlerRuntimeExecution`], false);
+  assert.equal(source[`${prefix}ScientificValidation`], false);
+  assert.equal(source[`${prefix}FullPhysicsValidation`], false);
+  assert.equal(source[`${prefix}FullFidelityMagnetarSimulation`], false);
+  assert.equal(source[`${prefix}HostImportOptions`]?.factory, 'createEshkolHostImportObject');
+  assert.equal(source[`${prefix}HostImportOptions`]?.productionCandidateRuntimeImports, true);
+  assert.equal(source[`${prefix}HostImportOptions`]?.runtimeSmokeStubs, false);
+  assert.equal(source[`${prefix}HostImportOptions`]?.f64TensorMemoryImports, true);
+  assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_read_f64, 12);
+  assert.equal(source[`${prefix}HostImportCallCounts`]?.ulg_write_f64, 9);
+  assert.equal(
+    source[`${prefix}Blocker`],
+    'production-candidate-runtime-smoke-only-production-handler-not-ready'
+  );
 }
 
 function serviceManifest(overrides = {}) {
@@ -1498,6 +1561,7 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
     ...ESHKOL_PRODUCTION_READINESS_REQUIREMENTS
   ]);
   assert.deepEqual(summary.eshkolProductionHostImportCandidateBlockedBy, [...ESHKOL_PRODUCTION_BLOCKERS]);
+  assertEshkolProductionCandidateRuntimeProbeFields(summary);
   assert.equal(
     summary.eshkolProductionDispatchPreflightSchema,
     'eshkol.ulg.production-handler-dispatch-preflight.v0'
@@ -1515,8 +1579,14 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
     summary.eshkolProductionDispatchPreflightCheckSummarySchema,
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
-  assert.equal(summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(summary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    summary.eshkolProductionDispatchPreflightTotalRequiredCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_CHECKS.length
+  );
+  assert.equal(
+    summary.eshkolProductionDispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(summary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(summary.eshkolProductionDispatchPreflightPassedChecks, [
     ...ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS
@@ -1538,8 +1608,15 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   assert.equal(summary.eshkolProductionHandlerBoundary.runtimeExecution, false);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightReady, false);
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightDeclared, true);
-  assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    summary.eshkolProductionHandlerBoundary.dispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(summary.eshkolProductionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
+  assertEshkolProductionCandidateRuntimeProbeFields(
+    summary.eshkolProductionHandlerBoundary,
+    'productionCandidateRuntimeProbe'
+  );
 
   const normalizedBoundaryArtifact = createEshkolMagnetarDescriptorArtifact();
   normalizedBoundaryArtifact.validation.closureDescriptor.descriptorBinding.productionHandlerBoundary =
@@ -1553,9 +1630,16 @@ test('ULG artifact summary exposes Eshkol production handler boundary without re
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightStatus, 'blocked');
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightReady, false);
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightDeclared, true);
-  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightRequiredChecks.length, 8);
-  assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    normalizedBoundarySummary.eshkolProductionDispatchPreflightRequiredChecks.length,
+    ESHKOL_PRODUCTION_DISPATCH_CHECKS.length
+  );
+  assert.equal(
+    normalizedBoundarySummary.eshkolProductionDispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
+  assertEshkolProductionCandidateRuntimeProbeFields(normalizedBoundarySummary);
   assert.deepEqual(
     normalizedBoundarySummary.eshkolProductionDispatchPreflightBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
@@ -2810,6 +2894,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.productionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
   );
+  assertEshkolProductionCandidateRuntimeProbeFields(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary,
+    'productionCandidateRuntimeProbe'
+  );
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightReady, false);
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightDeclared, true);
   assert.deepEqual(
@@ -2820,7 +2908,10 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightCheckSummarySchema,
     'eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0'
   );
-  assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceResult.probe.descriptorProbe.productionHandlerBoundary.dispatchPreflightBlockedBy,
@@ -2839,14 +2930,21 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceResult.ingest.eshkolProductionHostImportCandidateStatus,
     'production-candidate-runtime-imports-implemented'
   );
+  assertEshkolProductionCandidateRuntimeProbeFields(eshkol.serviceResult.ingest);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightReady, false);
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightDeclared, true);
   assert.equal(
     eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightRequiredRuntimeAbi,
     'wasm32-unknown-unknown:eshkol-host-imports-production-candidate-v0'
   );
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightTotalRequiredCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_CHECKS.length
+  );
+  assert.equal(
+    eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceResult.ingest.eshkolProductionDispatchPreflightPassedChecks,
@@ -2930,12 +3028,22 @@ test('ULG handoff service host dispatches descriptor-only Eshkol closures withou
     eshkol.serviceSummary.eshkolProductionHostImportCandidateBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
   );
+  assertEshkolProductionCandidateRuntimeProbeFields(eshkol.serviceSummary);
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightStatus, 'blocked');
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightReady, false);
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightDeclared, true);
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightRequiredCheckCount, 8);
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightTotalRequiredCheckCount, 8);
-  assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightPassedCheckCount, 5);
+  assert.equal(
+    eshkol.serviceSummary.eshkolProductionDispatchPreflightRequiredCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_CHECKS.length
+  );
+  assert.equal(
+    eshkol.serviceSummary.eshkolProductionDispatchPreflightTotalRequiredCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_CHECKS.length
+  );
+  assert.equal(
+    eshkol.serviceSummary.eshkolProductionDispatchPreflightPassedCheckCount,
+    ESHKOL_PRODUCTION_DISPATCH_PASSED_CHECKS.length
+  );
   assert.equal(eshkol.serviceSummary.eshkolProductionDispatchPreflightBlockedCheckCount, 3);
   assert.deepEqual(
     eshkol.serviceSummary.eshkolProductionDispatchPreflightRejectedRuntimeScopes,

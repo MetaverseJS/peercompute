@@ -558,6 +558,23 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
     : source.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation;
   const hostImports = plainObjectOrNull(boundary?.hostImports) || {};
   const productionCandidate = plainObjectOrNull(hostImports.productionCandidate) || {};
+  const productionCandidateRuntimeProbe = plainObjectOrNull(boundary?.productionCandidateRuntimeProbe) || {};
+  const productionCandidateRuntimeProbeEntryArgs = Array.isArray(source.eshkolProductionCandidateRuntimeProbeEntryArgs)
+    ? source.eshkolProductionCandidateRuntimeProbeEntryArgs
+    : (
+        Array.isArray(source.closureProductionCandidateRuntimeProbeEntryArgs)
+          ? source.closureProductionCandidateRuntimeProbeEntryArgs
+          : (
+              Array.isArray(productionCandidateRuntimeProbe.entryArgs)
+                ? productionCandidateRuntimeProbe.entryArgs
+                : []
+            )
+      );
+  const productionCandidateRuntimeProbeHostImportCallCounts =
+    plainObjectOrNull(source.eshkolProductionCandidateRuntimeProbeHostImportCallCounts)
+    || plainObjectOrNull(source.closureProductionCandidateRuntimeProbeHostImportCallCounts)
+    || plainObjectOrNull(productionCandidateRuntimeProbe.hostImportCallCounts)
+    || null;
   const dispatchPreflight = plainObjectOrNull(boundary?.dispatchPreflight) || {};
   const dispatchPreflightReady =
     typeof dispatchPreflight.ready === 'boolean'
@@ -710,6 +727,66 @@ function normalizeScenarioEshkolProductionHandlerBoundary(source = {}) {
       Array.isArray(source.eshkolProductionHostImportCandidateBlockedBy)
         ? source.eshkolProductionHostImportCandidateBlockedBy
         : stringArray(productionCandidate.blockedBy)
+    ),
+    productionCandidateRuntimeProbeStatus: stringOrNull(
+      source.eshkolProductionCandidateRuntimeProbeStatus
+      || source.closureProductionCandidateRuntimeProbeStatus
+      || productionCandidateRuntimeProbe.status
+    ),
+    productionCandidateRuntimeProbeReady:
+      typeof source.eshkolProductionCandidateRuntimeProbeReady === 'boolean'
+        ? source.eshkolProductionCandidateRuntimeProbeReady
+        : (
+            typeof source.closureProductionCandidateRuntimeProbeReady === 'boolean'
+              ? source.closureProductionCandidateRuntimeProbeReady
+              : null
+          ),
+    productionCandidateRuntimeProbeRuntimeScope: stringOrNull(
+      source.eshkolProductionCandidateRuntimeProbeRuntimeScope
+      || source.closureProductionCandidateRuntimeProbeRuntimeScope
+      || productionCandidateRuntimeProbe.runtimeScope
+    ),
+    productionCandidateRuntimeProbeExecutionClaim: stringOrNull(
+      source.eshkolProductionCandidateRuntimeProbeExecutionClaim
+      || source.closureProductionCandidateRuntimeProbeExecutionClaim
+      || productionCandidateRuntimeProbe.executionClaim
+    ),
+    productionCandidateRuntimeProbeEntryArgs: clonePlain(productionCandidateRuntimeProbeEntryArgs),
+    productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange: finiteOrNull(
+      source.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? source.closureProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? productionCandidateRuntimeProbe.changedBytesInDeclaredTensorRange
+    ),
+    productionCandidateRuntimeProbeOutputTensorsProduced:
+      typeof source.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced === 'boolean'
+        ? source.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+        : (
+            typeof source.closureProductionCandidateRuntimeProbeOutputTensorsProduced === 'boolean'
+              ? source.closureProductionCandidateRuntimeProbeOutputTensorsProduced
+              : (
+                  typeof productionCandidateRuntimeProbe.outputTensorsProducedByEntryExport === 'boolean'
+                    ? productionCandidateRuntimeProbe.outputTensorsProducedByEntryExport
+                    : null
+                )
+          ),
+    productionCandidateRuntimeProbeHostImportCallCounts:
+      clonePlain(productionCandidateRuntimeProbeHostImportCallCounts),
+    productionCandidateRuntimeProbeFullPhysicsValidation:
+      typeof source.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation === 'boolean'
+        ? source.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+        : (
+            typeof source.closureProductionCandidateRuntimeProbeFullPhysicsValidation === 'boolean'
+              ? source.closureProductionCandidateRuntimeProbeFullPhysicsValidation
+              : (
+                  typeof productionCandidateRuntimeProbe.fullPhysicsValidation === 'boolean'
+                    ? productionCandidateRuntimeProbe.fullPhysicsValidation
+                    : null
+                )
+          ),
+    productionCandidateRuntimeProbeBlocker: stringOrNull(
+      source.eshkolProductionCandidateRuntimeProbeBlocker
+      || source.closureProductionCandidateRuntimeProbeBlocker
+      || productionCandidateRuntimeProbe.blocker
     ),
     dispatchPreflightSchema: stringOrNull(
       source.eshkolProductionDispatchPreflightSchema || dispatchPreflight.schema
@@ -3000,6 +3077,26 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
         ),
       productionHostImportCandidateBlockedBy:
         clonePlain(productionHandlerBoundary?.productionHostImportCandidateBlockedBy || []),
+      productionCandidateRuntimeProbeStatus:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeStatus || null,
+      productionCandidateRuntimeProbeReady:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeReady ?? null,
+      productionCandidateRuntimeProbeRuntimeScope:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeRuntimeScope || null,
+      productionCandidateRuntimeProbeExecutionClaim:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeExecutionClaim || null,
+      productionCandidateRuntimeProbeEntryArgs:
+        clonePlain(productionHandlerBoundary?.productionCandidateRuntimeProbeEntryArgs || []),
+      productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange:
+        finiteOrNull(productionHandlerBoundary?.productionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange),
+      productionCandidateRuntimeProbeOutputTensorsProduced:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeOutputTensorsProduced ?? null,
+      productionCandidateRuntimeProbeHostImportCallCounts:
+        clonePlain(productionHandlerBoundary?.productionCandidateRuntimeProbeHostImportCallCounts || null),
+      productionCandidateRuntimeProbeFullPhysicsValidation:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeFullPhysicsValidation ?? null,
+      productionCandidateRuntimeProbeBlocker:
+        productionHandlerBoundary?.productionCandidateRuntimeProbeBlocker || null,
       productionDispatchPreflightSchema: productionHandlerBoundary?.dispatchPreflightSchema || null,
       productionDispatchPreflightStatus: productionHandlerBoundary?.dispatchPreflightStatus || null,
       productionDispatchPreflightReady: productionHandlerBoundary?.dispatchPreflightReady ?? null,

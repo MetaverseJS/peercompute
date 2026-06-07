@@ -284,6 +284,9 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
   const productionHandlerBoundary = objectOrNull(descriptorProbe.productionHandlerBoundary)
     || objectOrNull(ingest.eshkolProductionHandlerBoundary)
     || null;
+  const productionCandidateRuntimeProbe = objectOrNull(productionHandlerBoundary?.productionCandidateRuntimeProbe)
+    || objectOrNull(ingest.eshkolProductionCandidateRuntimeProbe)
+    || {};
   const hostRuntimeProbe = objectOrNull(probe.hostRuntimeProbe) || {};
   const hostRuntimeExecution = objectOrNull(probe.hostRuntimeExecution) || {};
   const tensorRuntimeCandidate = objectOrNull(probe.tensorRuntimeCandidate) || {};
@@ -437,6 +440,93 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       ingest.eshkolProductionHostImportCandidateBlockedBy
       || productionHandlerBoundary?.productionHostImportCandidateBlockedBy
       || []
+    ),
+    eshkolProductionCandidateRuntimeProbeSchema:
+      ingest.eshkolProductionCandidateRuntimeProbeSchema
+      || productionCandidateRuntimeProbe.schema
+      || null,
+    eshkolProductionCandidateRuntimeProbeStatus:
+      ingest.eshkolProductionCandidateRuntimeProbeStatus
+      || productionCandidateRuntimeProbe.status
+      || null,
+    eshkolProductionCandidateRuntimeProbeReady: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeReady ?? productionCandidateRuntimeProbe.ready
+    ),
+    eshkolProductionCandidateRuntimeProbeExecutionClaim:
+      ingest.eshkolProductionCandidateRuntimeProbeExecutionClaim
+      || productionCandidateRuntimeProbe.executionClaim
+      || null,
+    eshkolProductionCandidateRuntimeProbeRuntimeScope:
+      ingest.eshkolProductionCandidateRuntimeProbeRuntimeScope
+      || productionCandidateRuntimeProbe.runtimeScope
+      || null,
+    eshkolProductionCandidateRuntimeProbeImplementationStatus:
+      ingest.eshkolProductionCandidateRuntimeProbeImplementationStatus
+      || productionCandidateRuntimeProbe.implementationStatus
+      || null,
+    eshkolProductionCandidateRuntimeProbeEntryExport:
+      ingest.eshkolProductionCandidateRuntimeProbeEntryExport
+      || productionCandidateRuntimeProbe.entryExport
+      || null,
+    eshkolProductionCandidateRuntimeProbeEntryArgs: clonePlain(
+      Array.isArray(ingest.eshkolProductionCandidateRuntimeProbeEntryArgs)
+        ? ingest.eshkolProductionCandidateRuntimeProbeEntryArgs
+        : (
+            Array.isArray(productionCandidateRuntimeProbe.entryArgs)
+              ? productionCandidateRuntimeProbe.entryArgs
+              : []
+          )
+    ),
+    eshkolProductionCandidateRuntimeProbeExpectedEntryResult: finiteNumberOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeExpectedEntryResult
+      ?? productionCandidateRuntimeProbe.expectedEntryResult
+    ),
+    eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange: finiteNumberOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeChangedBytesInDeclaredTensorRange
+      ?? productionCandidateRuntimeProbe.changedBytesInDeclaredTensorRange
+    ),
+    eshkolProductionCandidateRuntimeProbeOutputTensorsProduced: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeOutputTensorsProduced
+      ?? productionCandidateRuntimeProbe.outputTensorsProducedByEntryExport
+    ),
+    eshkolProductionCandidateRuntimeProbeProductionHandlerReady: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeProductionHandlerReady
+      ?? productionCandidateRuntimeProbe.productionHandlerReady
+    ),
+    eshkolProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeProductionHandlerRuntimeExecution
+      ?? productionCandidateRuntimeProbe.productionHandlerRuntimeExecution
+    ),
+    eshkolProductionCandidateRuntimeProbeScientificValidation: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeScientificValidation
+      ?? productionCandidateRuntimeProbe.scientificValidation
+    ),
+    eshkolProductionCandidateRuntimeProbeFullPhysicsValidation: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeFullPhysicsValidation
+      ?? productionCandidateRuntimeProbe.fullPhysicsValidation
+    ),
+    eshkolProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation: booleanOrNull(
+      ingest.eshkolProductionCandidateRuntimeProbeFullFidelityMagnetarSimulation
+      ?? productionCandidateRuntimeProbe.fullFidelityMagnetarSimulation
+    ),
+    eshkolProductionCandidateRuntimeProbeHostImportOptions: clonePlain(
+      objectOrNull(ingest.eshkolProductionCandidateRuntimeProbeHostImportOptions)
+      || objectOrNull(productionCandidateRuntimeProbe.hostImportOptions)
+      || null
+    ),
+    eshkolProductionCandidateRuntimeProbeHostImportCallCounts: clonePlain(
+      objectOrNull(ingest.eshkolProductionCandidateRuntimeProbeHostImportCallCounts)
+      || objectOrNull(productionCandidateRuntimeProbe.hostImportCallCounts)
+      || null
+    ),
+    eshkolProductionCandidateRuntimeProbeBlocker:
+      ingest.eshkolProductionCandidateRuntimeProbeBlocker
+      || productionCandidateRuntimeProbe.blocker
+      || null,
+    eshkolProductionCandidateRuntimeProbe: clonePlain(
+      objectOrNull(ingest.eshkolProductionCandidateRuntimeProbe)
+      || objectOrNull(productionCandidateRuntimeProbe)
+      || null
     ),
     eshkolProductionDispatchPreflightSchema:
       ingest.eshkolProductionDispatchPreflightSchema

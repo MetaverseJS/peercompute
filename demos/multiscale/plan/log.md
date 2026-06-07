@@ -23383,3 +23383,36 @@ User asked whether Infinite Context Coder is being used.
   full-physics validation remain blocked by the existing Eshkol/MoonLab
   readiness gates.
 - No push was attempted.
+
+## 2026-06-06 21:06:18 AKDT - Eshkol runtime-probe dispatch summary sync
+
+### Actions
+- Continued the Multiscale side of the core ULG/Eshkol dispatch-boundary path.
+- Preserved ULG `closureProductionCandidateRuntimeProbe*` and PeerCompute
+  `eshkolProductionCandidateRuntimeProbe*` fields through browser handoff
+  summaries, dispatch-adapter summaries, closure ingest, handoff readiness,
+  module-probe summaries, and packet boundary conditions.
+- Updated browser and relay smoke expectations for
+  `production-candidate-runtime-smoke-passed`, changed bytes `64`, host import
+  calls `ulg_read_f64 = 12` / `ulg_write_f64 = 9`, false full-physics flags,
+  and production dispatch preflight counts `9/6/3`.
+- Rebuilt the relay-served `docs/multiscale` bundle after source changes.
+
+### Validation
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `28/28`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "production preflight counts|production handler boundary|descriptor-only Eshkol"`
+  passed `198/198`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle
+  with the existing large-chunk warning.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` passed with the
+  Eshkol runtime-probe and preflight counts `9/6/3`.
+- PASS: `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  passed with `dispatch-adapters-ready`, accepted dispatch count `2`, two
+  released resource leases, zero active leases, and zero preemptions.
+
+### Open
+- This is runtime-probe propagation and dispatch evidence only. Production
+  handler implementation, production runtime execution, and full-physics
+  validation remain intentionally blocked.
+- No push was attempted.
