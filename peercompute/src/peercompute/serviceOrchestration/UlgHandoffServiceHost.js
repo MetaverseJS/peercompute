@@ -286,6 +286,7 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     || null;
   const hostRuntimeProbe = objectOrNull(probe.hostRuntimeProbe) || {};
   const hostRuntimeExecution = objectOrNull(probe.hostRuntimeExecution) || {};
+  const tensorRuntimeCandidate = objectOrNull(probe.tensorRuntimeCandidate) || {};
   const outputSemanticsValidation = objectOrNull(hostRuntimeExecution.outputSemanticsValidation) || {};
   const observedOutput = objectOrNull(outputSemanticsValidation.observed) || {};
   const tensorInputIds = Array.isArray(tensorContract.inputIds) ? tensorContract.inputIds : [];
@@ -345,6 +346,7 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       ingest.descriptorTensorRuntimeContractStatus || tensorRuntimeContract.status || null,
     descriptorTensorRuntimeContractHash:
       ingest.descriptorTensorRuntimeContractHash || tensorRuntimeContract.contractHash || null,
+    descriptorTensorRuntimeRuntimeStatus: tensorRuntimeContract.runtimeStatus || null,
     descriptorTensorRuntimeRuntimeAbi: tensorRuntimeContract.runtimeAbi || null,
     descriptorTensorRuntimeExecutionClaim: tensorRuntimeContract.executionClaim || null,
     descriptorTensorRuntimeMatchesTensorContract: booleanOrNull(tensorRuntimeContract.matchesTensorContract),
@@ -362,12 +364,19 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
       booleanOrNull(tensorRuntimeContract.sampleShapeValidationMatchesTensorContract),
     descriptorTensorRuntimeSampleShapeValidationReady:
       booleanOrNull(tensorRuntimeContract.sampleShapeValidationReady),
+    descriptorTensorRuntimeDeterministicRuntimeSmokeReady:
+      booleanOrNull(tensorRuntimeContract.deterministicRuntimeSmokeReady),
+    descriptorTensorRuntimeLinearMemoryBinding: clonePlain(
+      objectOrNull(tensorRuntimeContract.linearMemoryBinding)
+    ),
     descriptorTensorRuntimeScientificValidation: booleanOrNull(tensorRuntimeContract.scientificValidation),
     descriptorTensorRuntimeFullPhysicsValidation: booleanOrNull(tensorRuntimeContract.fullPhysicsValidation),
     descriptorRuntimeStatus: runtimeBinding.runtimeStatus || null,
     descriptorDerivativeStatus: runtimeBinding.derivativeStatus || null,
     descriptorRuntimeScientificValidation: booleanOrNull(runtimeBinding.scientificValidation),
     descriptorRuntimeDeclaredNotExecuted: runtimeBinding.runtimeStatus === 'declared-not-executed',
+    descriptorRuntimeDeterministicSmokeExecuted:
+      runtimeBinding.runtimeStatus === 'deterministic-runtime-smoke-executed',
     eshkolProductionHandlerBoundaryReady: booleanOrNull(
       ingest.eshkolProductionHandlerBoundaryReady ?? productionHandlerBoundary?.ready
     ),
@@ -411,6 +420,50 @@ export function summarizeUlgHandoffSupervisorServiceResult(serviceResult = {}) {
     outputSemanticsValidationBlockers: uniqueStrings(outputSemanticsValidation.blockers || []),
     outputSemanticsObservedStdoutSha256: observedOutput.stdoutSha256 || null,
     outputSemanticsObservedStdoutByteLength: finiteNumberOrNull(observedOutput.stdoutByteLength),
+    tensorRuntimeCandidateReady: booleanOrNull(
+      ingest.tensorRuntimeCandidateReady ?? tensorRuntimeCandidate.ready
+    ),
+    tensorRuntimeCandidateStatus:
+      ingest.tensorRuntimeCandidateStatus || tensorRuntimeCandidate.status || null,
+    tensorRuntimeCandidateExecutionClaim:
+      ingest.tensorRuntimeCandidateExecutionClaim || tensorRuntimeCandidate.executionClaim || null,
+    tensorRuntimeCandidateEntryInvoked: booleanOrNull(
+      ingest.tensorRuntimeCandidateEntryInvoked ?? tensorRuntimeCandidate.entryInvoked
+    ),
+    tensorRuntimeCandidateChangedBytesInDeclaredTensorRange: finiteNumberOrNull(
+      ingest.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange
+        ?? tensorRuntimeCandidate.changedBytesInDeclaredTensorRange
+    ),
+    tensorRuntimeCandidateExpectedChangedBytesInDeclaredTensorRange: finiteNumberOrNull(
+      ingest.tensorRuntimeCandidateExpectedChangedBytesInDeclaredTensorRange
+        ?? tensorRuntimeCandidate.expectedChangedBytesInDeclaredTensorRange
+    ),
+    tensorRuntimeCandidateOutputTensorsProducedByEntryExport: booleanOrNull(
+      ingest.tensorRuntimeCandidateOutputTensorsProducedByEntryExport
+        ?? tensorRuntimeCandidate.outputTensorsProducedByEntryExport
+    ),
+    tensorRuntimeCandidateOutputTensorsMatchExpected: booleanOrNull(
+      ingest.tensorRuntimeCandidateOutputTensorsMatchExpected
+        ?? tensorRuntimeCandidate.outputTensorsMatchExpected
+    ),
+    tensorRuntimeCandidateReadCallCount: finiteNumberOrNull(
+      ingest.tensorRuntimeCandidateReadCallCount ?? tensorRuntimeCandidate.readCallCount
+    ),
+    tensorRuntimeCandidateWriteCallCount: finiteNumberOrNull(
+      ingest.tensorRuntimeCandidateWriteCallCount ?? tensorRuntimeCandidate.writeCallCount
+    ),
+    tensorRuntimeCandidateEvidenceHash:
+      ingest.tensorRuntimeCandidateEvidenceHash || tensorRuntimeCandidate.candidateEvidenceHash || null,
+    tensorRuntimeCandidateScientificValidation: booleanOrNull(
+      ingest.tensorRuntimeCandidateScientificValidation ?? tensorRuntimeCandidate.scientificValidation
+    ),
+    tensorRuntimeCandidateFullPhysicsValidation: booleanOrNull(
+      ingest.tensorRuntimeCandidateFullPhysicsValidation ?? tensorRuntimeCandidate.fullPhysicsValidation
+    ),
+    tensorRuntimeCandidateProductionRuntimeExecution: booleanOrNull(
+      ingest.tensorRuntimeCandidateProductionRuntimeExecution
+        ?? tensorRuntimeCandidate.productionRuntimeExecution
+    ),
     ingestSchema: ingest.schema || null,
     closureReady: booleanOrNull(ingest.closureReady),
     closureDescriptorReady: booleanOrNull(ingest.closureDescriptorReady),

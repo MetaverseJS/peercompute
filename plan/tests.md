@@ -714,21 +714,21 @@
   and `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe()` on
   `https://100.86.83.35:5185/?scenario=magnetar`; expected result is
   `dispatch-adapters-ready`, `acceptedDispatchCount = 2`, Eshkol probe
-  `host-runtime-output-semantics-validated`, `entryInvoked = true`,
-  `mainInvoked = true`, `entryResult = 0`, stdout hash
-  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
-  stdout byte length `23`, no output-semantics blockers, and
-  `scientificExecution = false`.
+  `deterministic-runtime-smoke-executed`, candidate status
+  `deterministic-runtime-smoke-candidate-passed`, entry export `main` invoked
+  with offsets `[131072, 131136]`, `entryResult = 0`, declared output tensors
+  produced, `changedBytesInDeclaredTensorRange = 64`,
+  `deterministic-tensor-runtime-smoke-only`, no candidate blockers, and
+  production/runtime/scientific/full-physics flags false.
 - Live ULG magnetar scenario-ingestion smoke gate: use the same ULG handoff and
   `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()`; expected result is
   `serviceEnvelope.ready = true`, `serviceDispatchPlan.status = "dispatch-ready"`,
   scenario closure descriptor ready with schema
   `eshkol.ulg.magnetar-closure-descriptor.v0`, closure module probe ready,
-  host-runtime execution ready, `entryResult = 0`, stdout hash
-  `sha256:34a23605b7cacbeb83ef3391ae049c0bbcf38651b552eb9630eeca2165ca5768`,
-  output semantics `output-semantics-validated`, no output-semantics blockers,
-  `scientificExecution = false`, and readiness blockers containing only
-  `proxy-runtime-not-scientific` once MoonLab tolerance references are complete.
+  deterministic tensor-offset runtime-smoke metadata ready, transferred WASM
+  bytes preserved, no production handler/runtime execution claim, and readiness
+  blockers containing only `proxy-runtime-not-scientific` once MoonLab tolerance
+  references are complete.
 - Live ULG reduced calibrated magnetar runtime gate: after the scenario-ingestion
   smoke gate, call `window.__multiscaleDemo.refreshScenarioCalibratedRuntimeEvidence()`.
   Expected result is `scientificRuntimeEvidence.status = "runtime-evidence-ready"`,
@@ -844,12 +844,15 @@
 : expected result is a full pass proving descriptor-only Eshkol magnetar closure
   handoffs accept tensor/product-topology/runtime-binding metadata through
   `peercompute.ulg.handoff-supervisor-service-summary.v0`, report descriptor
-  scientific execution and validation as false, keep runtime status
-  `declared-not-executed`, accept explicit `closureTensorRuntimeContract`
+  scientific execution and validation as false, accept runtime status
+  `declared-not-executed` or deterministic smoke-only execution, accept explicit
+  `closureTensorRuntimeContract`
   metadata only when its hash/ABI/tensor descriptor/interpolation/sample-shape
   gates match, block interpolation-table and tensor-runtime scientific
   overclaims, block tensor-runtime/table binding drift, require sample-shape
-  tensor ids to match the descriptor tensor contract, and keep explicit smoke
+  tensor ids to match the descriptor tensor contract, execute the live
+  deterministic tensor-runtime candidate when ULG supplies matching WASM bytes,
+  verify declared offsets/output tensors/changed bytes, and keep explicit smoke
   output semantics gated separately from descriptor metadata.
 - Live browser adapter-summary gate: on
   `https://100.86.83.35:5185/?scenario=magnetar`, call
@@ -860,8 +863,8 @@
   `descriptorTensorContract`, `descriptorProductTopologyBinding`,
   `descriptorTensorRuntimeContract`, and `descriptorRuntimeBinding`,
   `descriptorTensorRuntimeContract.ready = true`,
-  `descriptorRuntimeDeclaredNotExecuted = true`, and no host/scientific
-  execution claim.
+  `descriptorTensorRuntimeDeterministicRuntimeSmokeReady = true` for live
+  tensor-offset handoffs, and no production/scientific execution claim.
 
 - Handler-backed dispatch adapter gate:
   `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'ULG handoff service host submits dispatches to registered Eshkol and MoonLab services'`.
@@ -973,13 +976,14 @@
 
 ### Eshkol production handler boundary gate
 - Focused service orchestration gate:
-  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes'`.
-: current result on 2026-06-06 was `26/26` passing. The run proved
+  `node --test peercompute/tests/unit/serviceOrchestration.test.js --test-name-pattern 'production handler boundary|descriptor-only Eshkol closures without WASM bytes|deterministic tensor runtime candidate'`.
+: current result on 2026-06-06 was passing. The run proved
   `eshkol.ulg.production-handler-boundary.v0` is surfaced from Eshkol closure
   metadata with `handlerReady = false`, `runtimeExecution = false`,
   `scientificValidation = false`, `fullPhysicsValidation = false`, and
   `fullFidelityMagnetarSimulation = false`; overclaimed runtime execution
-  blocks the Eshkol dispatch adapter.
+  blocks the Eshkol dispatch adapter, while the live deterministic tensor-offset
+  candidate can execute as runtime-smoke evidence only.
 - Focused Multiscale gate:
   `node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern 'production handler boundary|descriptor-only Eshkol closure'`.
 : current result on 2026-06-06 was `197/197` passing. The run proved
@@ -1001,5 +1005,7 @@
   byte length `169528`, runtime claim
   `deterministic-tensor-runtime-smoke-only`, linear-memory status
   `entry-export-runtime-smoke-passed`, offset-probe status
-  `runtime-smoke-passed`, changed bytes `64`, and production handler boundary
-  status `declared-not-executed`.
+  `runtime-smoke-passed`, changed bytes `64`, adapter candidate status
+  `deterministic-runtime-smoke-candidate-passed`, declared output tensors
+  produced by the entry export, and production handler boundary status
+  `declared-not-executed`.

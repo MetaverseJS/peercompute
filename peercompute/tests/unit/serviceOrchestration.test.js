@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { ComputeManager } from '../../src/peercompute/computeManager/ComputeManager.js';
 import {
   CHILD_WORKER_LEASE_SCHEMA,
@@ -84,6 +84,10 @@ const MINIMAL_WASM_MAIN_RETURN_ZERO_BYTES = [
   0x07, 0x08, 0x01, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00,
   0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x00, 0x0b
 ];
+const ULG_STAGED_ESHKOL_MAGNETAR_ARTIFACT_PATH =
+  '/home/cos/projects/ulg/public/service-assets/eshkol/closures/magnetar-closure/magnetar-closure.ulg.json';
+const ULG_STAGED_ESHKOL_MAGNETAR_WASM_PATH =
+  '/home/cos/projects/ulg/public/service-assets/eshkol/closures/magnetar-closure/magnetar-closure.wasm';
 
 function createMoonLabWebGpuComplex64ParityScope(overrides = {}) {
   return {
@@ -2874,6 +2878,124 @@ test('ULG Eshkol dispatch adapter executes only explicit smoke output semantics'
   assert.equal(summary.outputSemanticsValidationReady, true);
   assert.equal(summary.outputSemanticsValidationStatus, 'output-semantics-validated');
   assert.deepEqual(summary.outputSemanticsValidationBlockers, []);
+});
+
+test('ULG Eshkol dispatch adapter executes deterministic tensor runtime candidate from staged ULG artifact', {
+  skip: !existsSync(ULG_STAGED_ESHKOL_MAGNETAR_ARTIFACT_PATH)
+    || !existsSync(ULG_STAGED_ESHKOL_MAGNETAR_WASM_PATH)
+}, async () => {
+  const artifact = JSON.parse(readFileSync(ULG_STAGED_ESHKOL_MAGNETAR_ARTIFACT_PATH, 'utf8'));
+  const wasmBytes = Array.from(readFileSync(ULG_STAGED_ESHKOL_MAGNETAR_WASM_PATH));
+  const artifactSummary = summarizeUlgArtifact('closure', artifact);
+  const serviceIds = { eshkol: 'eshkol-ulg-fixture' };
+  const eshkolManifest = createUlgDispatchServiceManifests({ serviceIds })
+    .find((entry) => entry.serviceId === 'eshkol-ulg-fixture');
+  const registry = new ComputeServiceRegistry([eshkolManifest]);
+  const supervisor = new WorkerSupervisor({
+    registry,
+    workerFactory: (serviceManifest) => new UlgDispatchServiceHost(serviceManifest, {
+      requestChildLease: false
+    })
+  });
+
+  const result = await supervisor.submitTask({
+    schema: ULG_HANDOFF_SERVICE_TASK_SCHEMA,
+    serviceId: 'eshkol-ulg-fixture',
+    taskKind: 'eshkol.ulg.closure-artifact.ingest',
+    taskId: 'task:eshkol-tensor-runtime-candidate',
+    rootTaskId: 'root:eshkol-tensor-runtime-candidate',
+    artifactPayload: {
+      schema: ULG_HANDOFF_DISPATCH_ARTIFACT_PAYLOAD_SCHEMA,
+      handoffId: 'handoff:eshkol-tensor-runtime-candidate',
+      dispatchId: 'handoff:eshkol-tensor-runtime-candidate:dispatch:0',
+      sourceService: 'eshkol',
+      artifactKind: 'closure',
+      artifactRefUri: 'artifact://eshkol-staged-magnetar-closure',
+      artifactContentHash: artifact.contentHash || 'sha256:eshkol-staged-magnetar-closure',
+      artifactSummary,
+      artifact,
+      wasmBytes,
+      wasmByteLength: wasmBytes.length,
+      wasmSha256: artifact.execution?.module?.sha256 || artifactSummary.closureModuleSha256,
+      hasTransferredWasmBytes: true
+    }
+  });
+
+  assert.equal(result.schema, ULG_DISPATCH_SERVICE_RESULT_SCHEMA);
+  assert.equal(result.serviceStatus, 'accepted');
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.probe.status, 'pass');
+  assert.equal(result.probe.descriptorProbe.status, 'descriptor-contract-ready');
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.runtimeStatus, 'deterministic-runtime-smoke-executed');
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.executionClaim, 'deterministic-tensor-runtime-smoke-only');
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.deterministicRuntimeSmokeReady, true);
+  assert.equal(result.probe.descriptorProbe.tensorRuntimeContract.linearMemoryBinding.ready, true);
+  assert.equal(
+    result.probe.descriptorProbe.tensorRuntimeContract.linearMemoryBinding.offsetProbeChangedBytesInDeclaredTensorRange,
+    64
+  );
+  assert.equal(result.probe.descriptorProbe.runtimeBinding.runtimeStatus, 'deterministic-runtime-smoke-executed');
+  assert.equal(result.probe.descriptorProbe.runtimeBinding.scientificValidation, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.handlerReady, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.runtimeExecution, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.scientificValidation, false);
+  assert.equal(result.probe.descriptorProbe.productionHandlerBoundary.fullPhysicsValidation, false);
+
+  const candidate = result.probe.tensorRuntimeCandidate;
+  assert.equal(candidate.schema, 'peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0');
+  assert.equal(candidate.status, 'deterministic-runtime-smoke-candidate-passed');
+  assert.equal(candidate.ready, true);
+  assert.equal(candidate.entryInvoked, true);
+  assert.deepEqual(candidate.entryArgs, [131072, 131136]);
+  assert.equal(candidate.entryResult, 0);
+  assert.equal(candidate.changedBytesInDeclaredTensorRange, 64);
+  assert.equal(candidate.expectedChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(candidate.outputTensorsProducedByEntryExport, true);
+  assert.equal(candidate.outputTensorsMatchExpected, true);
+  assert.deepEqual(candidate.outputTensors['magnetar-closure-update'], [
+    0.010900000000000002,
+    -0.0092,
+    0.00062,
+    -0.00046000000000000007,
+    0.0044,
+    -0.00020000000000000017,
+    0.0001,
+    0
+  ]);
+  assert.deepEqual(candidate.outputTensors['closure-residual'], [0.10800000000000001]);
+  assert.equal(candidate.readCallCount, 12);
+  assert.equal(candidate.writeCallCount, 9);
+  assert.match(candidate.candidateEvidenceHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(candidate.productionRuntimeExecution, false);
+  assert.equal(candidate.handlerReady, false);
+  assert.equal(candidate.scientificExecution, false);
+  assert.equal(candidate.scientificValidation, false);
+  assert.equal(candidate.fullPhysicsValidation, false);
+  assert.equal(candidate.fullFidelityMagnetarSimulation, false);
+
+  assert.equal(result.ingest.tensorRuntimeCandidateReady, true);
+  assert.equal(result.ingest.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(result.ingest.tensorRuntimeCandidateOutputTensorsProducedByEntryExport, true);
+  assert.equal(result.ingest.tensorRuntimeCandidateProductionRuntimeExecution, false);
+  assert.equal(result.ingest.tensorRuntimeCandidateScientificValidation, false);
+  assert.equal(result.ingest.tensorRuntimeCandidateFullPhysicsValidation, false);
+
+  const summary = summarizeUlgHandoffSupervisorServiceResult(result);
+  assert.equal(summary.tensorRuntimeCandidateReady, true);
+  assert.equal(summary.tensorRuntimeCandidateStatus, 'deterministic-runtime-smoke-candidate-passed');
+  assert.equal(summary.tensorRuntimeCandidateExecutionClaim, 'deterministic-tensor-runtime-smoke-only');
+  assert.equal(summary.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(summary.tensorRuntimeCandidateExpectedChangedBytesInDeclaredTensorRange, 64);
+  assert.equal(summary.tensorRuntimeCandidateOutputTensorsProducedByEntryExport, true);
+  assert.equal(summary.tensorRuntimeCandidateOutputTensorsMatchExpected, true);
+  assert.equal(summary.tensorRuntimeCandidateProductionRuntimeExecution, false);
+  assert.equal(summary.tensorRuntimeCandidateScientificValidation, false);
+  assert.equal(summary.tensorRuntimeCandidateFullPhysicsValidation, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryHandlerReady, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryRuntimeExecution, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryScientificValidation, false);
+  assert.equal(summary.eshkolProductionHandlerBoundaryFullPhysicsValidation, false);
 });
 
 test('ULG Eshkol dispatch adapter blocks malformed output semantics before invoking main', async () => {

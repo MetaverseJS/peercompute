@@ -794,7 +794,10 @@ async function main() {
           summary.eshkolProductionHandlerBoundaryFullFidelityMagnetarSimulation,
           summary.eshkolProductionHandlerBoundaryFullPhysicsValidation,
           summary.eshkolProductionHandlerBoundaryRuntimeExecution,
-          summary.eshkolProductionHandlerBoundaryScientificValidation
+          summary.eshkolProductionHandlerBoundaryScientificValidation,
+          summary.tensorRuntimeCandidateProductionRuntimeExecution,
+          summary.tensorRuntimeCandidateScientificValidation,
+          summary.tensorRuntimeCandidateFullPhysicsValidation
         ]))
         .filter((value) => value != null)
       : [];
@@ -810,6 +813,23 @@ async function main() {
       assert.equal(dispatchProbe.status, 'dispatch-adapters-ready');
       assert.equal(dispatchProbe.acceptedDispatchCount, 2);
       assert.equal(dispatchProbe.rawResultsOmitted, true);
+      const eshkolDispatchSummary = dispatchProbe.serviceResultSummaries.find((summary) => (
+        summary.sourceService === 'eshkol'
+      ));
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateReady, true);
+      assert.equal(
+        eshkolDispatchSummary.tensorRuntimeCandidateStatus,
+        'deterministic-runtime-smoke-candidate-passed'
+      );
+      assert.equal(
+        eshkolDispatchSummary.tensorRuntimeCandidateExecutionClaim,
+        EXPECTED_ESHKOL_RUNTIME_CLAIM
+      );
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange, 64);
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateOutputTensorsProducedByEntryExport, true);
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateProductionRuntimeExecution, false);
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateScientificValidation, false);
+      assert.equal(eshkolDispatchSummary.tensorRuntimeCandidateFullPhysicsValidation, false);
     } else if (runDispatchAdapters) {
       assert.ok([
         'dispatch-adapter-popup-context-reset',

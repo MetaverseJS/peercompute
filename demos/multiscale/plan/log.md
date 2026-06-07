@@ -23119,3 +23119,32 @@ User asked whether Infinite Context Coder is being used.
   its handoff smokes. This still does not claim full-fidelity magnetar physics,
   production Eshkol host imports, or full physics validation.
 - No push was attempted.
+
+## 2026-06-06 15:58:00 AKDT - Eshkol tensor-runtime candidate dispatch probe
+
+### Actions
+- Added PeerCompute dispatch-adapter support for the live ULG Eshkol
+  deterministic tensor-offset runtime-smoke contract.
+- The Eshkol adapter now instantiates transferred WASM bytes with deterministic
+  `f64` tensor-memory host imports, writes declared input tensors, invokes
+  `main(131072, 131136)`, verifies declared output tensors plus `64` changed
+  bytes in the tensor range, and records candidate evidence without setting
+  production/runtime/scientific/full-physics flags true.
+- Multiscale dispatch summaries and relay smoke assertions now surface the
+  candidate status and false science/production scope flags.
+
+### Validation
+- PASS: PeerCompute service-orchestration unit tests covered the staged ULG
+  artifact and candidate output tensor contract.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` reported live
+  handoff readiness and Eshkol tensor-runtime smoke evidence.
+- PASS: adapter-enabled `npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  reported `dispatch-adapters-ready`, `acceptedDispatchCount = 2`,
+  candidate status `deterministic-runtime-smoke-candidate-passed`, changed bytes
+  `64`, and false production/scientific/full-physics flags.
+
+### Open
+- This is deterministic runtime-smoke candidate evidence only. Production
+  Eshkol host imports, calibrated output physics, full physics validation, and
+  full-fidelity magnetar simulation remain future gates.
+- No push was attempted.

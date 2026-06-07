@@ -51915,3 +51915,83 @@ timeout 8s env \
   deterministic runtime-smoke handoff only; production host imports and full
   physics validation are still not claimed.
 - No push was attempted.
+
+## 2026-06-06 15:58:00 AKDT - Eshkol tensor-runtime candidate dispatch probe
+
+### Actions
+- Continued the PeerCompute-only sidecar task after accepting the deterministic
+  tensor-offset Eshkol runtime-smoke handoff.
+- Inspected the Multiscale ULG dispatch adapter path,
+  `UlgDispatchServiceAdapters.js`, `UlgHandoffServiceHost.js`, and the staged
+  live ULG `magnetar-closure` artifact/WASM shape.
+- Added a bounded Eshkol tensor-runtime candidate probe to the Eshkol dispatch
+  adapter. The probe consumes the materialized ULG artifact plus transferred
+  WASM bytes, creates deterministic `f64` tensor-memory host imports, writes the
+  declared input tensors, calls the declared entry export with byte offsets
+  `131072` and `131136`, verifies the declared output tensors, verifies `64`
+  changed bytes in the declared tensor range, and records
+  `peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0` evidence.
+- Threaded the candidate evidence through Eshkol ingest summaries, handoff
+  supervisor summaries, Multiscale dispatch summaries, and relay smoke checks.
+- Preserved the Eshkol production/science boundary: candidate evidence does not
+  set `productionHandlerBoundary.handlerReady`, `runtimeExecution`,
+  `scientificValidation`, `fullPhysicsValidation`, or
+  `fullFidelityMagnetarSimulation` true.
+- Refreshed the built `docs/multiscale` bundle after changing Multiscale
+  dispatch-summary code.
+- Updated plan/test/status docs with the new bounded runtime-smoke gate.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `docs/multiscale/index.html`
+- `docs/multiscale/assets/*`
+- `plan/plan.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `plan/tests.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgDispatchServiceAdapters.js`
+- `node --check peercompute/src/peercompute/serviceOrchestration/UlgHandoffServiceHost.js`
+- `node --check demos/multiscale/src/main.js`
+- `node --check peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`
+- `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `npm --prefix demos/multiscale run test:ulg-handoff`
+- `npm --prefix demos/multiscale run build`
+- `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 ULG_RELAY_HANDOFF_REQUIRE_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+
+### Results
+- PASS: syntax checks completed for the touched service adapter, handoff host,
+  Multiscale dispatch summary, unit test, and ULG handoff smoke files.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `27/27`, including the staged ULG artifact candidate test.
+- PASS: `npm --prefix demos/multiscale run test:ulg-handoff` reported live ULG
+  handoff readiness, source hash
+  `sha256:630b20dd243be58f8e53631e934d09298696fe7e7ea84b15e7d7b89d18809b69`,
+  WASM hash
+  `sha256:e0a3c7d280678a8c1e40865daeab6601dc8a6a64cfa5b29b7b6bfcaddc86c5aa`,
+  byte length `169528`, runtime claim
+  `deterministic-tensor-runtime-smoke-only`, changed bytes `64`, and visible
+  magnetar proxy visual.
+- PASS: `npm --prefix demos/multiscale run build` refreshed the docs bundle with
+  only the existing large-chunk warning.
+- PASS: adapter-enabled relay smoke reported `dispatch-adapters-ready`,
+  `acceptedDispatchCount = 2`, candidate status
+  `deterministic-runtime-smoke-candidate-passed`, changed bytes `64`, declared
+  output tensors produced by the entry export, and false production/scientific
+  scope flags.
+
+### Failures / Open
+- No implementation blocker for the bounded deterministic candidate probe.
+- The candidate uses deterministic smoke host imports and the declared artifact
+  tensor contract only. It is not a production Eshkol handler, not calibrated
+  magnetar physics, and not full physics validation.
+- No push was attempted.

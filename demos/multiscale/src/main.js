@@ -1978,6 +1978,9 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
     const hostRuntimeExecution = probe.hostRuntimeExecution && typeof probe.hostRuntimeExecution === 'object'
       ? probe.hostRuntimeExecution
       : null;
+    const tensorRuntimeCandidate = probe.tensorRuntimeCandidate && typeof probe.tensorRuntimeCandidate === 'object'
+      ? probe.tensorRuntimeCandidate
+      : null;
     return {
       schema: 'peercompute.multiscale.ulg-dispatch-service-result-summary.v0',
       dispatchId: entry.dispatchId || null,
@@ -2096,6 +2099,47 @@ function summarizeUlgDispatchServiceAdapterResults(results = []) {
       ),
       hostRuntimeProbe: cloneJson(probe.hostRuntimeProbe || null),
       hostRuntimeExecution: cloneJson(hostRuntimeExecution),
+      tensorRuntimeCandidate: cloneJson(tensorRuntimeCandidate),
+      tensorRuntimeCandidateReady:
+        serviceSummary?.tensorRuntimeCandidateReady
+        ?? serviceResult.ingest?.tensorRuntimeCandidateReady
+        ?? tensorRuntimeCandidate?.ready
+        ?? null,
+      tensorRuntimeCandidateStatus:
+        serviceSummary?.tensorRuntimeCandidateStatus
+        || serviceResult.ingest?.tensorRuntimeCandidateStatus
+        || tensorRuntimeCandidate?.status
+        || null,
+      tensorRuntimeCandidateExecutionClaim:
+        serviceSummary?.tensorRuntimeCandidateExecutionClaim
+        || serviceResult.ingest?.tensorRuntimeCandidateExecutionClaim
+        || tensorRuntimeCandidate?.executionClaim
+        || null,
+      tensorRuntimeCandidateChangedBytesInDeclaredTensorRange:
+        serviceSummary?.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange
+        ?? serviceResult.ingest?.tensorRuntimeCandidateChangedBytesInDeclaredTensorRange
+        ?? tensorRuntimeCandidate?.changedBytesInDeclaredTensorRange
+        ?? null,
+      tensorRuntimeCandidateOutputTensorsProducedByEntryExport:
+        serviceSummary?.tensorRuntimeCandidateOutputTensorsProducedByEntryExport
+        ?? serviceResult.ingest?.tensorRuntimeCandidateOutputTensorsProducedByEntryExport
+        ?? tensorRuntimeCandidate?.outputTensorsProducedByEntryExport
+        ?? null,
+      tensorRuntimeCandidateProductionRuntimeExecution:
+        serviceSummary?.tensorRuntimeCandidateProductionRuntimeExecution
+        ?? serviceResult.ingest?.tensorRuntimeCandidateProductionRuntimeExecution
+        ?? tensorRuntimeCandidate?.productionRuntimeExecution
+        ?? null,
+      tensorRuntimeCandidateScientificValidation:
+        serviceSummary?.tensorRuntimeCandidateScientificValidation
+        ?? serviceResult.ingest?.tensorRuntimeCandidateScientificValidation
+        ?? tensorRuntimeCandidate?.scientificValidation
+        ?? null,
+      tensorRuntimeCandidateFullPhysicsValidation:
+        serviceSummary?.tensorRuntimeCandidateFullPhysicsValidation
+        ?? serviceResult.ingest?.tensorRuntimeCandidateFullPhysicsValidation
+        ?? tensorRuntimeCandidate?.fullPhysicsValidation
+        ?? null,
       outputSemanticsValidation: cloneJson(hostRuntimeExecution?.outputSemanticsValidation || null)
     };
   });

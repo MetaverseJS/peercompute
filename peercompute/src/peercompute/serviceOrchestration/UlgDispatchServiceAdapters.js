@@ -11,10 +11,22 @@ export const ULG_DISPATCH_SERVICE_HANDLER_CONTEXT_SCHEMA = 'peercompute.ulg.disp
 const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SCHEMA = 'eshkol.ulg.closure-output-semantics.v0';
 const ESHKOL_HOST_RUNTIME_EXECUTION_SCHEMA = 'peercompute.ulg.eshkol-host-runtime-execution.v0';
 const ESHKOL_OUTPUT_SEMANTICS_VALIDATION_SCHEMA = 'peercompute.ulg.eshkol-output-semantics-validation.v0';
+const ESHKOL_TENSOR_RUNTIME_CANDIDATE_PROBE_SCHEMA =
+  'peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0';
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_SCHEMA = 'eshkol.ulg.magnetar-closure-interpolation-table.v0';
 const ESHKOL_MAGNETAR_INTERPOLATION_TABLE_FIXTURE_SCOPE = 'reduced-smoke-fixture-not-magnetar-physics';
 const ESHKOL_MAGNETAR_TENSOR_RUNTIME_CONTRACT_SCHEMA = 'eshkol.ulg.magnetar-closure-tensor-runtime-contract.v0';
 const ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SCHEMA = 'eshkol.ulg.production-handler-boundary.v0';
+const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM = 'deterministic-tensor-runtime-smoke-only';
+const ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS = 'deterministic-runtime-smoke-executed';
+const ESHKOL_DETERMINISTIC_HOST_RUNTIME_STATUS = 'deterministic-host-runtime-smoke-executed';
+const ESHKOL_TENSOR_LINEAR_MEMORY_BINDING_SCHEMA = 'eshkol.ulg.tensor-linear-memory-binding.v0';
+const ESHKOL_TENSOR_LINEAR_MEMORY_SMOKE_BINDING_SCHEMA = 'eshkol.ulg.tensor-linear-memory-smoke-binding.v0';
+const ESHKOL_TENSOR_ENTRY_EXPORT_OFFSET_PROBE_SCHEMA = 'eshkol.ulg.tensor-entry-export-offset-probe.v0';
+const ESHKOL_TENSOR_ENTRY_EXPORT_RUNTIME_STATUS = 'entry-export-runtime-smoke-passed';
+const ESHKOL_TENSOR_OFFSET_PROBE_STATUS = 'runtime-smoke-passed';
+const ESHKOL_TENSOR_OFFSET_PROBE_BLOCKER =
+  'none-for-deterministic-runtime-smoke-production-physics-unvalidated';
 const ESHKOL_INTERPOLATION_TABLE_STATUSES = new Set(['declared-not-computed', 'computed-fixture']);
 
 const DEFAULT_ADAPTERS = Object.freeze({
@@ -172,8 +184,16 @@ function normalizeEshkolProductionHandlerBoundary(boundary = null) {
     fullFidelityMagnetarSimulation: typeof boundary.fullFidelityMagnetarSimulation === 'boolean'
       ? boundary.fullFidelityMagnetarSimulation
       : null,
+    derivativeStatus: stringOrNull(boundary.derivativeStatus),
     boundaryId: stringOrNull(boundary.boundaryId || boundary.id),
+    handlerId: stringOrNull(boundary.handlerId),
+    handlerKind: stringOrNull(boundary.handlerKind),
     handlerProtocol: stringOrNull(boundary.handlerProtocol || boundary.protocol),
+    allowedExecutionClaims: Array.isArray(boundary.allowedExecutionClaims)
+      ? uniqueStrings(boundary.allowedExecutionClaims)
+      : [],
+    tensorMemoryBinding: clonePlain(objectOrNull(boundary.tensorMemoryBinding)),
+    blockers: uniqueStrings(boundary.blockers || []),
     validationBlockerCount: validationBlockers.length,
     validationBlockers
   };
@@ -204,6 +224,165 @@ function expectedTensorByteLength(descriptor = {}) {
   if (descriptor.dtype === 'f64') return elementCount * 8;
   if (descriptor.dtype === 'f32') return elementCount * 4;
   return null;
+}
+
+function tensorRuntimeDeclaresDeterministicSmoke(tensorRuntimeContract = null) {
+  return tensorRuntimeContract?.runtimeStatus === ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS
+    || tensorRuntimeContract?.executionClaim === ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM
+    || objectOrNull(tensorRuntimeContract?.linearMemoryBinding) != null;
+}
+
+function tensorIdsByDirection(tensors = [], direction = 'input') {
+  return Array.isArray(tensors)
+    ? tensors
+      .filter((entry) => entry?.direction === direction)
+      .map((entry) => stringOrNull(entry.id))
+      .filter(Boolean)
+    : [];
+}
+
+function validateEshkolTensorRuntimeSmokeBinding({
+  tensorRuntimeContract = null,
+  tensorInputIds = [],
+  tensorOutputIds = [],
+  descriptorEntryExport = null
+} = {}) {
+  const linearMemoryBinding = objectOrNull(tensorRuntimeContract?.linearMemoryBinding);
+  const smokeBinding = objectOrNull(linearMemoryBinding?.smokeBinding);
+  const offsetProbe = objectOrNull(linearMemoryBinding?.entryExportOffsetProbe);
+  const tensors = Array.isArray(linearMemoryBinding?.tensors) ? linearMemoryBinding.tensors : [];
+  const memoryImport = objectOrNull(linearMemoryBinding?.memoryImport);
+  const inputTensorIds = tensorIdsByDirection(tensors, 'input');
+  const outputTensorIds = tensorIdsByDirection(tensors, 'output');
+  const tensorByteLengthsReady = tensors.every((tensor) => (
+    tensor?.dtype === 'f64'
+    && tensor?.layout === 'dense-row-major'
+    && Number.isInteger(tensor.byteOffset)
+    && Number.isInteger(tensor.byteLength)
+    && Number.isInteger(tensor.elementCount)
+    && tensor.byteLength === tensor.elementCount * 8
+  ));
+  const blockers = [];
+  if (!linearMemoryBinding) {
+    blockers.push('eshkol-tensor-runtime-linear-memory-binding-missing');
+  } else {
+    if (linearMemoryBinding.schema !== ESHKOL_TENSOR_LINEAR_MEMORY_BINDING_SCHEMA) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-binding-schema-mismatch');
+    }
+    if (linearMemoryBinding.status !== ESHKOL_TENSOR_ENTRY_EXPORT_RUNTIME_STATUS) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-binding-status-mismatch');
+    }
+    if (linearMemoryBinding.runtimeStatus !== ESHKOL_DETERMINISTIC_HOST_RUNTIME_STATUS) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-runtime-status-mismatch');
+    }
+    if (linearMemoryBinding.executionClaim !== ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-execution-claim-mismatch');
+    }
+    if (linearMemoryBinding.entryExportConsumesOffsets !== true) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-offset-consumption-missing');
+    }
+    if (linearMemoryBinding.scientificValidation !== false || linearMemoryBinding.fullPhysicsValidation !== false) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-scientific-validation-overstated');
+    }
+    if (linearMemoryBinding.elementType !== 'f64' || linearMemoryBinding.elementByteLength !== 8) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-element-type-mismatch');
+    }
+    if (linearMemoryBinding.alignmentBytes !== 8) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-alignment-mismatch');
+    }
+    if (memoryImport?.module !== 'env' || memoryImport?.name !== '__linear_memory') {
+      blockers.push('eshkol-tensor-runtime-linear-memory-import-mismatch');
+    }
+    if (!Number.isInteger(memoryImport?.baseOffset) || !Number.isInteger(memoryImport?.totalByteLength)) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-range-invalid');
+    }
+    if (!arraysEqual(inputTensorIds, tensorInputIds) || !arraysEqual(outputTensorIds, tensorOutputIds)) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-tensor-ids-mismatch');
+    }
+    if (!tensorByteLengthsReady) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-tensor-layout-invalid');
+    }
+    if (tensors.some((tensor) => tensor?.consumedByEntryExport !== true)) {
+      blockers.push('eshkol-tensor-runtime-linear-memory-tensor-offset-consumption-missing');
+    }
+  }
+  if (smokeBinding) {
+    if (smokeBinding.schema !== ESHKOL_TENSOR_LINEAR_MEMORY_SMOKE_BINDING_SCHEMA) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-schema-mismatch');
+    }
+    if (smokeBinding.status !== ESHKOL_TENSOR_ENTRY_EXPORT_RUNTIME_STATUS) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-status-mismatch');
+    }
+    if (smokeBinding.entryExportConsumesOffsets !== true) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-offset-consumption-missing');
+    }
+    if (smokeBinding.outputInitialization !== 'entry-export-produced') {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-output-initialization-mismatch');
+    }
+    if (smokeBinding.scientificValidation !== false) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-scientific-validation-overstated');
+    }
+    if (!arraysEqual(smokeBinding.writeTensorIds || [], tensorInputIds)) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-write-ids-mismatch');
+    }
+    if (!arraysEqual(smokeBinding.readbackTensorIds || [], tensorInputIds)) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-readback-ids-mismatch');
+    }
+    if (!arraysEqual(smokeBinding.outputTensorIds || [], tensorOutputIds)) {
+      blockers.push('eshkol-tensor-runtime-smoke-binding-output-ids-mismatch');
+    }
+  } else if (linearMemoryBinding) {
+    blockers.push('eshkol-tensor-runtime-smoke-binding-missing');
+  }
+  if (offsetProbe) {
+    const hostImportOptions = objectOrNull(offsetProbe.hostImportOptions) || {};
+    if (offsetProbe.schema !== ESHKOL_TENSOR_ENTRY_EXPORT_OFFSET_PROBE_SCHEMA) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-schema-mismatch');
+    }
+    if (offsetProbe.status !== ESHKOL_TENSOR_OFFSET_PROBE_STATUS) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-status-mismatch');
+    }
+    if (offsetProbe.entryExport !== descriptorEntryExport) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-entry-export-mismatch');
+    }
+    if (offsetProbe.entryExportConsumesOffsets !== true) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-offset-consumption-missing');
+    }
+    if (offsetProbe.outputTensorsProducedByEntryExport !== true) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-output-production-missing');
+    }
+    if (!Number.isInteger(offsetProbe.changedBytesInDeclaredTensorRange)
+      || offsetProbe.changedBytesInDeclaredTensorRange <= 0) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-changed-bytes-invalid');
+    }
+    if (offsetProbe.observedStdoutInvariantAcrossArgs !== false) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-stdout-invariance-mismatch');
+    }
+    if (offsetProbe.blocker !== ESHKOL_TENSOR_OFFSET_PROBE_BLOCKER) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-blocker-mismatch');
+    }
+    if (offsetProbe.scientificValidation !== false || offsetProbe.fullPhysicsValidation !== false) {
+      blockers.push('eshkol-tensor-runtime-offset-probe-scientific-validation-overstated');
+    }
+    if (hostImportOptions.factory !== 'createEshkolHostImportObject'
+      || hostImportOptions.runtimeSmokeStubs !== true
+      || hostImportOptions.f64TensorMemoryImports !== true
+      || hostImportOptions.stubScope !== 'deterministic-f64-linear-memory-smoke') {
+      blockers.push('eshkol-tensor-runtime-offset-probe-host-import-options-mismatch');
+    }
+  } else if (linearMemoryBinding) {
+    blockers.push('eshkol-tensor-runtime-offset-probe-missing');
+  }
+  return {
+    ready: blockers.length === 0,
+    blockers: uniqueStrings(blockers),
+    linearMemoryBinding,
+    smokeBinding,
+    offsetProbe,
+    inputTensorIds,
+    outputTensorIds,
+    tensorCount: tensors.length
+  };
 }
 
 function wasmImportKey(entry = {}) {
@@ -307,16 +486,20 @@ function createEshkolHostRuntimeStubImports(observedImports = [], declaredImport
       };
     } else if (entry.kind === 'memory') {
       memoryStubCount += 1;
-      const limits = objectOrNull(declared?.limits);
-      const fallbackInitial = Math.max(1, Math.floor(Number(options.memoryInitialPages || 256)));
-      const initial = Number.isFinite(Number(limits?.minimum))
-        ? Math.max(fallbackInitial, Math.floor(Number(limits.minimum)))
-        : fallbackInitial;
-      const descriptor = { initial };
-      if (limits?.hasMaximum === true && Number.isFinite(Number(limits.maximum))) {
-        descriptor.maximum = Math.max(initial, Math.floor(Number(limits.maximum)));
+      if (options.memory instanceof WebAssembly.Memory) {
+        moduleImports[name] = options.memory;
+      } else {
+        const limits = objectOrNull(declared?.limits);
+        const fallbackInitial = Math.max(1, Math.floor(Number(options.memoryInitialPages || 256)));
+        const initial = Number.isFinite(Number(limits?.minimum))
+          ? Math.max(fallbackInitial, Math.floor(Number(limits.minimum)))
+          : fallbackInitial;
+        const descriptor = { initial };
+        if (limits?.hasMaximum === true && Number.isFinite(Number(limits.maximum))) {
+          descriptor.maximum = Math.max(initial, Math.floor(Number(limits.maximum)));
+        }
+        moduleImports[name] = new WebAssembly.Memory(descriptor);
       }
-      moduleImports[name] = new WebAssembly.Memory(descriptor);
     } else if (entry.kind === 'global') {
       globalStubCount += 1;
       const valueType = declared?.valueType === 'i64' ? 'i64' : 'i32';
@@ -483,6 +666,189 @@ function createEshkolHostRuntimeExecutionImports(observedImports = [], declaredI
   };
 
   return { ...stub, output, calls };
+}
+
+function installEshkolDeterministicTensorRuntimeStubs(env = {}, record = () => {}, options = {}) {
+  let nextAllocation = Number.isInteger(options.smokeAllocatorBase)
+    ? options.smokeAllocatorBase
+    : 262144;
+  const allocateBytes = (byteLength) => {
+    const requested = Math.max(Number(byteLength) || 16, 16);
+    const aligned = (nextAllocation + 7) & ~7;
+    nextAllocation = aligned + ((requested + 7) & ~7);
+    return aligned;
+  };
+  const stub = (name, result) => (...args) => {
+    record(name, args);
+    return result;
+  };
+
+  Object.assign(env, {
+    eshkol_is_bignum_tagged: stub('eshkol_is_bignum_tagged', 0),
+    eshkol_rational_to_double: stub('eshkol_rational_to_double', 0),
+    eshkol_bignum_to_double: stub('eshkol_bignum_to_double', 0),
+    eshkol_bignum_binary_tagged: stub('eshkol_bignum_binary_tagged', undefined),
+    eshkol_is_rational_tagged_ptr: stub('eshkol_is_rational_tagged_ptr', 0),
+    eshkol_rational_binary_tagged_ptr: stub('eshkol_rational_binary_tagged_ptr', undefined),
+    eshkol_bignum_from_overflow: stub('eshkol_bignum_from_overflow', 0),
+    arena_allocate: (...args) => {
+      record('arena_allocate', args);
+      return allocateBytes(args[1]);
+    },
+    arena_allocate_vector_with_header: (...args) => {
+      record('arena_allocate_vector_with_header', args);
+      return allocateBytes(args[1]);
+    },
+    eshkol_shapes_equal: stub('eshkol_shapes_equal', 1n),
+    arena_allocate_tensor_with_header: (...args) => {
+      record('arena_allocate_tensor_with_header', args);
+      return allocateBytes(64);
+    },
+    eshkol_broadcast_elementwise_f64: stub('eshkol_broadcast_elementwise_f64', 0n),
+    arena_allocate_ad_node_with_header: (...args) => {
+      record('arena_allocate_ad_node_with_header', args);
+      return allocateBytes(64);
+    },
+    arena_tape_add_node: (...args) => {
+      record('arena_tape_add_node', args);
+      return args[1] || allocateBytes(16);
+    },
+    eshkol_make_exception_with_header: (...args) => {
+      record('eshkol_make_exception_with_header', args);
+      return allocateBytes(32);
+    },
+    eshkol_raise: (...args) => {
+      record('eshkol_raise', args);
+      throw new Error('eshkol_raise called in deterministic tensor runtime smoke stubs');
+    },
+    eshkol_intern_symbol_lookup: stub('eshkol_intern_symbol_lookup', 0),
+    arena_allocate_cons_with_header: (...args) => {
+      record('arena_allocate_cons_with_header', args);
+      return allocateBytes(16);
+    },
+    arena_tagged_cons_set_ptr: stub('arena_tagged_cons_set_ptr', undefined),
+    arena_tagged_cons_set_int64: stub('arena_tagged_cons_set_int64', undefined),
+    arena_tagged_cons_set_double: stub('arena_tagged_cons_set_double', undefined),
+    arena_tagged_cons_set_null: stub('arena_tagged_cons_set_null', undefined),
+    eshkol_lambda_registry_add: stub('eshkol_lambda_registry_add', undefined)
+  });
+}
+
+function createTensorMemoryViews(memory, linearMemoryBinding = {}) {
+  const blockers = [];
+  const views = {};
+  const tensors = Array.isArray(linearMemoryBinding.tensors) ? linearMemoryBinding.tensors : [];
+  const memoryImport = objectOrNull(linearMemoryBinding.memoryImport) || {};
+  const baseOffset = finiteNumberOrNull(memoryImport.baseOffset);
+  const totalByteLength = finiteNumberOrNull(memoryImport.totalByteLength);
+  if (!(memory instanceof WebAssembly.Memory)) {
+    blockers.push('eshkol-tensor-runtime-memory-not-webassembly-memory');
+  }
+  if (!Number.isInteger(baseOffset) || !Number.isInteger(totalByteLength) || totalByteLength <= 0) {
+    blockers.push('eshkol-tensor-runtime-memory-range-invalid');
+  } else if (memory.buffer.byteLength < baseOffset + totalByteLength) {
+    blockers.push('eshkol-tensor-runtime-memory-range-exceeds-buffer');
+  }
+  for (const tensor of tensors) {
+    if (!tensor?.id || tensor.dtype !== 'f64' || !Number.isInteger(tensor.byteOffset)
+      || !Number.isInteger(tensor.elementCount)) {
+      blockers.push('eshkol-tensor-runtime-memory-tensor-view-invalid');
+      continue;
+    }
+    try {
+      views[tensor.id] = new Float64Array(memory.buffer, tensor.byteOffset, tensor.elementCount);
+    } catch {
+      blockers.push('eshkol-tensor-runtime-memory-tensor-view-invalid');
+    }
+  }
+  return {
+    ready: blockers.length === 0,
+    blockers: uniqueStrings(blockers),
+    views,
+    rangeStart: baseOffset,
+    rangeByteLength: totalByteLength,
+    writeTensor(id, values = []) {
+      const view = views[id];
+      if (!view) throw new Error(`unknown tensor id: ${id}`);
+      if (!Array.isArray(values) && !(values instanceof Float64Array)) {
+        throw new Error(`${id} values must be an array`);
+      }
+      if (values.length !== view.length) {
+        throw new Error(`${id} expected ${view.length} values, got ${values.length}`);
+      }
+      view.set(Array.from(values, Number));
+    },
+    readTensor(id) {
+      const view = views[id];
+      if (!view) throw new Error(`unknown tensor id: ${id}`);
+      return Array.from(view);
+    },
+    fillTensor(id, value = 0) {
+      const view = views[id];
+      if (!view) throw new Error(`unknown tensor id: ${id}`);
+      view.fill(Number(value));
+    }
+  };
+}
+
+function countChangedBytes(before, after) {
+  if (!(before instanceof Uint8Array) || !(after instanceof Uint8Array) || before.length !== after.length) return null;
+  let changed = 0;
+  for (let index = 0; index < before.length; index += 1) {
+    if (before[index] !== after[index]) changed += 1;
+  }
+  return changed;
+}
+
+function compareNumericArrays(actual = [], expected = [], tolerance = 1e-12) {
+  return Array.isArray(actual)
+    && Array.isArray(expected)
+    && actual.length === expected.length
+    && actual.every((value, index) => Math.abs(Number(value) - Number(expected[index])) <= tolerance);
+}
+
+function createEshkolTensorRuntimeHostImports(observedImports = [], declaredImports = [], linearMemoryBinding = {}) {
+  const memoryImport = objectOrNull(linearMemoryBinding.memoryImport) || {};
+  const requiredPages = Number.isInteger(memoryImport.baseOffset) && Number.isInteger(memoryImport.totalByteLength)
+    ? Math.ceil((memoryImport.baseOffset + memoryImport.totalByteLength) / (memoryImport.pageSizeBytes || 65536))
+    : 1;
+  const memory = new WebAssembly.Memory({
+    initial: Math.max(256, Number(memoryImport.minimumPages) || 1, requiredPages),
+    maximum: Math.max(1024, Number(memoryImport.minimumPages) || 1, requiredPages)
+  });
+  const host = createEshkolHostRuntimeExecutionImports(observedImports, declaredImports, {
+    memory,
+    memoryInitialPages: Math.max(256, Number(memoryImport.minimumPages) || 1, requiredPages),
+    tableInitial: 256,
+    stackPointerValue: 1048576
+  });
+  const env = host.importObject.env || {};
+  host.importObject.env = env;
+  env.__linear_memory = memory;
+  const record = (name, args) => {
+    host.calls.push({ name, argCount: args.length });
+  };
+  const assertMemoryRange = (offset, byteLength, label) => {
+    const numericOffset = Number(offset);
+    if (!Number.isInteger(numericOffset) || numericOffset < 0) {
+      throw new Error(`${label} offset must be a non-negative integer`);
+    }
+    if (numericOffset + byteLength > memory.buffer.byteLength) {
+      throw new Error(`${label} exceeds linear memory`);
+    }
+    return numericOffset;
+  };
+  installEshkolDeterministicTensorRuntimeStubs(env, record);
+  env.ulg_read_f64 = (offset) => {
+    record('ulg_read_f64', [offset]);
+    return new DataView(memory.buffer).getFloat64(assertMemoryRange(offset, 8, 'ulg_read_f64'), true);
+  };
+  env.ulg_write_f64 = (offset, value) => {
+    record('ulg_write_f64', [offset, value]);
+    new DataView(memory.buffer).setFloat64(assertMemoryRange(offset, 8, 'ulg_write_f64'), Number(value), true);
+    return 0;
+  };
+  return { ...host, memory };
 }
 
 async function validateEshkolOutputSemantics(execution = {}, outputSemantics = null) {
@@ -713,6 +1079,210 @@ async function executeEshkolHostRuntime({ module, observedImports = [], declared
       ...(outputSemanticsValidation.blockers || []),
       execution.ready === true ? null : 'eshkol-host-runtime-execution-not-ready'
     ])
+  };
+}
+
+async function executeEshkolTensorRuntimeCandidate({
+  module,
+  observedImports = [],
+  declaredImports = [],
+  artifact = {},
+  entryExport = 'main',
+  hasEntryExport = false,
+  startFunctionIndex = null
+} = {}) {
+  const descriptor = objectOrNull(artifact.validation?.closureDescriptor);
+  const binding = objectOrNull(descriptor?.descriptorBinding);
+  const tensorRuntimeContract = objectOrNull(binding?.closureTensorRuntimeContract);
+  if (!tensorRuntimeDeclaresDeterministicSmoke(tensorRuntimeContract)) return null;
+
+  const linearMemoryBinding = objectOrNull(tensorRuntimeContract?.linearMemoryBinding);
+  const offsetProbe = objectOrNull(linearMemoryBinding?.entryExportOffsetProbe);
+  const smokeBinding = objectOrNull(linearMemoryBinding?.smokeBinding);
+  const interpolationTable = objectOrNull(binding?.ulgInterpolationTable);
+  const tensorInputIds = Array.isArray(tensorRuntimeContract?.inputTensorIds)
+    ? tensorRuntimeContract.inputTensorIds
+    : [];
+  const tensorOutputIds = Array.isArray(tensorRuntimeContract?.outputTensorIds)
+    ? tensorRuntimeContract.outputTensorIds
+    : [];
+  const smokeValidation = validateEshkolTensorRuntimeSmokeBinding({
+    tensorRuntimeContract,
+    tensorInputIds,
+    tensorOutputIds,
+    descriptorEntryExport: descriptor?.entryExport || entryExport
+  });
+  const blockers = [...(smokeValidation.blockers || [])];
+  const hostImportOptions = objectOrNull(offsetProbe?.hostImportOptions) || {};
+  const sample = Array.isArray(interpolationTable?.samples)
+    ? interpolationTable.samples.find((entry) => objectOrNull(entry))
+    : null;
+  const attempt = Array.isArray(offsetProbe?.attemptedEntryArgs)
+    ? offsetProbe.attemptedEntryArgs.find((entry) => entry?.label === 'declared-input-byte-offsets')
+      || offsetProbe.attemptedEntryArgs[0]
+    : null;
+  const inputTensors = Array.isArray(linearMemoryBinding?.tensors)
+    ? linearMemoryBinding.tensors.filter((tensor) => tensor?.direction === 'input')
+    : [];
+  const outputTensorIds = Array.isArray(smokeBinding?.outputTensorIds) ? smokeBinding.outputTensorIds : tensorOutputIds;
+  const declaredInputOffsets = inputTensors.map((tensor) => tensor.byteOffset);
+  const entryArgs = Array.isArray(attempt?.args) ? attempt.args.map(Number) : declaredInputOffsets;
+
+  if (tensorRuntimeContract.runtimeStatus !== ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS) {
+    blockers.push('eshkol-tensor-runtime-candidate-runtime-status-mismatch');
+  }
+  if (tensorRuntimeContract.executionClaim !== ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM) {
+    blockers.push('eshkol-tensor-runtime-candidate-execution-claim-mismatch');
+  }
+  if (tensorRuntimeContract.scientificValidation !== false || tensorRuntimeContract.fullPhysicsValidation !== false) {
+    blockers.push('eshkol-tensor-runtime-candidate-scientific-validation-overstated');
+  }
+  if (hasEntryExport !== true) {
+    blockers.push('eshkol-tensor-runtime-candidate-entry-export-unavailable');
+  }
+  if (startFunctionIndex !== null) {
+    blockers.push('eshkol-tensor-runtime-candidate-start-section-present');
+  }
+  if (!arraysEqual(entryArgs, declaredInputOffsets)) {
+    blockers.push('eshkol-tensor-runtime-candidate-entry-args-offset-mismatch');
+  }
+  if (!sample?.inputTensors || typeof sample.inputTensors !== 'object') {
+    blockers.push('eshkol-tensor-runtime-candidate-input-sample-missing');
+  }
+  if (hostImportOptions.factory !== 'createEshkolHostImportObject'
+    || hostImportOptions.runtimeSmokeStubs !== true
+    || hostImportOptions.f64TensorMemoryImports !== true) {
+    blockers.push('eshkol-tensor-runtime-candidate-host-import-options-mismatch');
+  }
+
+  let entryInvoked = false;
+  let entryResult = null;
+  let instantiated = false;
+  let outputTensors = {};
+  let changedBytesInDeclaredTensorRange = null;
+  let outputTensorsMatchExpected = false;
+  let outputTensorsProducedByEntryExport = false;
+  let error = null;
+  let host = null;
+  let tensorMemory = null;
+
+  if (blockers.length === 0) {
+    try {
+      host = createEshkolTensorRuntimeHostImports(observedImports, declaredImports, linearMemoryBinding);
+      tensorMemory = createTensorMemoryViews(host.memory, linearMemoryBinding);
+      blockers.push(...(tensorMemory.blockers || []));
+      if (tensorMemory.ready === true) {
+        const writeTensorIds = Array.isArray(smokeBinding?.writeTensorIds) ? smokeBinding.writeTensorIds : tensorInputIds;
+        for (const id of writeTensorIds) {
+          tensorMemory.writeTensor(id, sample.inputTensors[id]);
+        }
+        for (const id of outputTensorIds) {
+          tensorMemory.fillTensor(id, 0);
+        }
+        const before = new Uint8Array(
+          host.memory.buffer.slice(tensorMemory.rangeStart, tensorMemory.rangeStart + tensorMemory.rangeByteLength)
+        );
+        const instance = await WebAssembly.instantiate(module, host.importObject);
+        instantiated = true;
+        const entry = instance.exports?.[offsetProbe?.entryExport || entryExport];
+        if (typeof entry !== 'function') {
+          throw new Error(`Entry export ${offsetProbe?.entryExport || entryExport} is unavailable`);
+        }
+        entryResult = serializeWasmValue(entry(...entryArgs));
+        entryInvoked = true;
+        const after = new Uint8Array(
+          host.memory.buffer.slice(tensorMemory.rangeStart, tensorMemory.rangeStart + tensorMemory.rangeByteLength)
+        );
+        changedBytesInDeclaredTensorRange = countChangedBytes(before, after);
+        outputTensors = Object.fromEntries(outputTensorIds.map((id) => [id, tensorMemory.readTensor(id)]));
+        const expectedOutputTensors = objectOrNull(offsetProbe?.expectedOutputTensors) || {};
+        outputTensorsMatchExpected = outputTensorIds.every((id) => (
+          compareNumericArrays(outputTensors[id], expectedOutputTensors[id])
+        ));
+        outputTensorsProducedByEntryExport = outputTensorsMatchExpected
+          && changedBytesInDeclaredTensorRange === offsetProbe.changedBytesInDeclaredTensorRange;
+      }
+    } catch (err) {
+      error = err?.message || String(err);
+    }
+  }
+
+  if (entryInvoked !== true) blockers.push('eshkol-tensor-runtime-candidate-entry-not-invoked');
+  if (attempt && !compareSerializedScalar(entryResult, attempt.expectedEntryResult)) {
+    blockers.push('eshkol-tensor-runtime-candidate-entry-result-mismatch');
+  }
+  if (changedBytesInDeclaredTensorRange !== offsetProbe?.changedBytesInDeclaredTensorRange) {
+    blockers.push('eshkol-tensor-runtime-candidate-changed-bytes-mismatch');
+  }
+  if (outputTensorsMatchExpected !== true) {
+    blockers.push('eshkol-tensor-runtime-candidate-output-tensors-mismatch');
+  }
+  if (error) {
+    blockers.push('eshkol-tensor-runtime-candidate-execution-error');
+  }
+
+  const uniqueBlockers = uniqueStrings(blockers);
+  const ready = uniqueBlockers.length === 0;
+  const readCallCount = Array.isArray(host?.calls)
+    ? host.calls.filter((entry) => entry.name === 'ulg_read_f64').length
+    : 0;
+  const writeCallCount = Array.isArray(host?.calls)
+    ? host.calls.filter((entry) => entry.name === 'ulg_write_f64').length
+    : 0;
+  const evidenceBasis = ready ? {
+    schema: ESHKOL_TENSOR_RUNTIME_CANDIDATE_PROBE_SCHEMA,
+    executionClaim: ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM,
+    entryExport: offsetProbe?.entryExport || entryExport,
+    entryArgs,
+    entryResult,
+    changedBytesInDeclaredTensorRange,
+    outputTensors,
+    readCallCount,
+    writeCallCount
+  } : null;
+  const candidateEvidenceHash = evidenceBasis
+    ? await sha256Utf8(JSON.stringify(evidenceBasis))
+    : null;
+
+  return {
+    schema: ESHKOL_TENSOR_RUNTIME_CANDIDATE_PROBE_SCHEMA,
+    status: ready ? 'deterministic-runtime-smoke-candidate-passed' : 'deterministic-runtime-smoke-candidate-blocked',
+    ready,
+    candidateReady: ready,
+    executionClaim: ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM,
+    runtimeStatus: tensorRuntimeContract?.runtimeStatus || null,
+    runtimeScope: offsetProbe?.runtimeScope || 'deterministic-host-runtime-smoke-stubs',
+    hostImportFactory: hostImportOptions.factory || null,
+    runtimeSmokeStubs: hostImportOptions.runtimeSmokeStubs === true,
+    f64TensorMemoryImports: hostImportOptions.f64TensorMemoryImports === true,
+    stubScope: hostImportOptions.stubScope || null,
+    instantiated,
+    entryInvoked,
+    entryExport: offsetProbe?.entryExport || entryExport,
+    entryArgs,
+    entryResult,
+    expectedEntryResult: attempt?.expectedEntryResult ?? null,
+    inputTensorIds: [...tensorInputIds],
+    outputTensorIds: [...outputTensorIds],
+    declaredInputOffsets,
+    changedBytesInDeclaredTensorRange,
+    expectedChangedBytesInDeclaredTensorRange: offsetProbe?.changedBytesInDeclaredTensorRange ?? null,
+    outputTensors,
+    expectedOutputTensors: clonePlain(objectOrNull(offsetProbe?.expectedOutputTensors) || {}),
+    outputTensorsMatchExpected,
+    outputTensorsProducedByEntryExport,
+    readCallCount,
+    writeCallCount,
+    runtimeCallCount: Array.isArray(host?.calls) ? host.calls.length : 0,
+    candidateEvidenceHash,
+    productionRuntimeExecution: false,
+    handlerReady: false,
+    scientificExecution: false,
+    scientificValidation: false,
+    fullPhysicsValidation: false,
+    fullFidelityMagnetarSimulation: false,
+    blockers: uniqueBlockers,
+    error
   };
 }
 
@@ -1029,6 +1599,19 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
     && tensorRuntimeMatchesTensorContract
     && tensorRuntimeMatchesInterpolationTable
     && tensorRuntimeSampleShapeValidationReady;
+  const tensorRuntimeSmokeBindingValidation = validateEshkolTensorRuntimeSmokeBinding({
+    tensorRuntimeContract,
+    tensorInputIds,
+    tensorOutputIds,
+    descriptorEntryExport
+  });
+  const tensorRuntimeSmokeDeclared = tensorRuntimeDeclaresDeterministicSmoke(tensorRuntimeContract);
+  const tensorRuntimeStatusReady = tensorRuntimeContract?.runtimeStatus === 'declared-not-executed'
+    || (
+      tensorRuntimeContract?.runtimeStatus === ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS
+      && tensorRuntimeContract?.executionClaim === ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_CLAIM
+      && tensorRuntimeSmokeBindingValidation.ready === true
+    );
 
   if (summary.closureDescriptorSchema && descriptor.schema !== summary.closureDescriptorSchema) {
     blockers.push('eshkol-descriptor-schema-summary-mismatch');
@@ -1132,14 +1715,19 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       if (!tensorRuntimeSampleShapeValidationReady) {
         blockers.push('eshkol-descriptor-tensor-runtime-sample-shape-validation-not-ready');
       }
-      if (tensorRuntimeContract.runtimeStatus !== 'declared-not-executed') {
+      if (!tensorRuntimeStatusReady) {
         blockers.push('eshkol-descriptor-tensor-runtime-overstates-execution');
+      }
+      if (tensorRuntimeSmokeDeclared && tensorRuntimeSmokeBindingValidation.ready !== true) {
+        blockers.push(...tensorRuntimeSmokeBindingValidation.blockers);
       }
       if (tensorRuntimeContract.scientificValidation !== false || tensorRuntimeContract.fullPhysicsValidation !== false) {
         blockers.push('eshkol-descriptor-tensor-runtime-scientific-validation-overstated');
       }
     }
-    if (runtimeBinding?.runtimeStatus && runtimeBinding.runtimeStatus !== 'declared-not-executed') {
+    if (runtimeBinding?.runtimeStatus
+      && runtimeBinding.runtimeStatus !== 'declared-not-executed'
+      && runtimeBinding.runtimeStatus !== ESHKOL_DETERMINISTIC_TENSOR_RUNTIME_STATUS) {
       blockers.push('eshkol-descriptor-runtime-overstates-execution');
     }
     if (runtimeBinding?.derivativeStatus && runtimeBinding.derivativeStatus !== 'declared-not-computed') {
@@ -1246,6 +1834,7 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
         && tensorRuntimeMatchesInterpolationTable
         && tensorRuntimeDescriptorsReady,
       contractHash: tensorRuntimeContract.contractHash || null,
+      runtimeStatus: tensorRuntimeContract.runtimeStatus || null,
       runtimeAbi: tensorRuntimeContract.runtimeAbi || null,
       executionClaim: tensorRuntimeContract.executionClaim || null,
       entryExport: tensorRuntimeContract.entryExport || null,
@@ -1267,6 +1856,37 @@ function createEshkolDescriptorContractProbe(payload = {}, moduleProbe = {}) {
       sampleShapeValidatedOutputTensorIds: tensorRuntimeSampleShapeOutputIds,
       sampleShapeValidationMatchesTensorContract: tensorRuntimeSampleShapeValidationMatchesTensorContract,
       sampleShapeValidationReady: tensorRuntimeSampleShapeValidationReady,
+      deterministicRuntimeSmokeReady: tensorRuntimeSmokeDeclared && tensorRuntimeSmokeBindingValidation.ready === true,
+      linearMemoryBinding: tensorRuntimeSmokeBindingValidation.linearMemoryBinding ? {
+        schema: tensorRuntimeSmokeBindingValidation.linearMemoryBinding.schema || null,
+        bindingId: tensorRuntimeSmokeBindingValidation.linearMemoryBinding.bindingId || null,
+        status: tensorRuntimeSmokeBindingValidation.linearMemoryBinding.status || null,
+        runtimeStatus: tensorRuntimeSmokeBindingValidation.linearMemoryBinding.runtimeStatus || null,
+        executionClaim: tensorRuntimeSmokeBindingValidation.linearMemoryBinding.executionClaim || null,
+        entryExportConsumesOffsets:
+          tensorRuntimeSmokeBindingValidation.linearMemoryBinding.entryExportConsumesOffsets === true,
+        tensorCount: tensorRuntimeSmokeBindingValidation.tensorCount,
+        inputTensorIds: tensorRuntimeSmokeBindingValidation.inputTensorIds,
+        outputTensorIds: tensorRuntimeSmokeBindingValidation.outputTensorIds,
+        tensorsConsumedByEntryExport: Array.isArray(tensorRuntimeSmokeBindingValidation.linearMemoryBinding.tensors)
+          ? tensorRuntimeSmokeBindingValidation.linearMemoryBinding.tensors
+            .map((tensor) => tensor?.consumedByEntryExport === true)
+          : [],
+        memoryImport: clonePlain(objectOrNull(tensorRuntimeSmokeBindingValidation.linearMemoryBinding.memoryImport)),
+        smokeBindingStatus: tensorRuntimeSmokeBindingValidation.smokeBinding?.status || null,
+        smokeBindingOutputInitialization:
+          tensorRuntimeSmokeBindingValidation.smokeBinding?.outputInitialization || null,
+        offsetProbeStatus: tensorRuntimeSmokeBindingValidation.offsetProbe?.status || null,
+        offsetProbeChangedBytesInDeclaredTensorRange:
+          tensorRuntimeSmokeBindingValidation.offsetProbe?.changedBytesInDeclaredTensorRange ?? null,
+        offsetProbeEntryExportConsumesOffsets:
+          tensorRuntimeSmokeBindingValidation.offsetProbe?.entryExportConsumesOffsets ?? null,
+        offsetProbeOutputTensorsProducedByEntryExport:
+          tensorRuntimeSmokeBindingValidation.offsetProbe?.outputTensorsProducedByEntryExport ?? null,
+        offsetProbeBlocker: tensorRuntimeSmokeBindingValidation.offsetProbe?.blocker || null,
+        ready: tensorRuntimeSmokeBindingValidation.ready === true,
+        blockers: clonePlain(tensorRuntimeSmokeBindingValidation.blockers)
+      } : null,
       scientificValidation: tensorRuntimeContract.scientificValidation === true,
       fullPhysicsValidation: tensorRuntimeContract.fullPhysicsValidation === true
     } : null,
@@ -1423,8 +2043,20 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
       preflight: outputSemanticsPreflight
     })
     : null;
+  const tensorRuntimeCandidate = await executeEshkolTensorRuntimeCandidate({
+    module,
+    observedImports: imports,
+    declaredImports,
+    artifact,
+    entryExport,
+    hasEntryExport,
+    startFunctionIndex: hostRuntimeProbe.startFunctionIndex ?? null
+  });
   if (hostRuntimeExecution && hostRuntimeExecution.ready !== true) {
     blockers.push(...(hostRuntimeExecution.blockers || ['eshkol-host-runtime-output-semantics-not-ready']));
+  }
+  if (tensorRuntimeCandidate && tensorRuntimeCandidate.ready !== true) {
+    blockers.push(...(tensorRuntimeCandidate.blockers || ['eshkol-tensor-runtime-candidate-not-ready']));
   }
   const uniqueBlockers = uniqueStrings(blockers);
 
@@ -1452,7 +2084,8 @@ async function createEshkolDispatchProbe(payload = {}, task = {}) {
     requiresDynamicCode: summary.closureRequiresDynamicCode ?? artifact.validity?.requiresDynamicCode ?? null,
     descriptorProbe: compiledDescriptorProbe,
     hostRuntimeProbe,
-    hostRuntimeExecution
+    hostRuntimeExecution,
+    tensorRuntimeCandidate
   };
 }
 
@@ -1562,6 +2195,26 @@ function createEshkolIngestSummary(payload = {}, probe = null) {
     hostRuntimeExecutionScientificExecution: probe?.hostRuntimeExecution?.scientificExecution === true,
     outputSemanticsValidationReady: probe?.hostRuntimeExecution?.outputSemanticsValidation?.ready === true,
     outputSemanticsValidationSchema: probe?.hostRuntimeExecution?.outputSemanticsValidation?.schema || null,
+    tensorRuntimeCandidateReady: probe?.tensorRuntimeCandidate?.ready === true,
+    tensorRuntimeCandidateSchema: probe?.tensorRuntimeCandidate?.schema || null,
+    tensorRuntimeCandidateStatus: probe?.tensorRuntimeCandidate?.status || null,
+    tensorRuntimeCandidateExecutionClaim: probe?.tensorRuntimeCandidate?.executionClaim || null,
+    tensorRuntimeCandidateEntryInvoked: probe?.tensorRuntimeCandidate?.entryInvoked === true,
+    tensorRuntimeCandidateChangedBytesInDeclaredTensorRange:
+      probe?.tensorRuntimeCandidate?.changedBytesInDeclaredTensorRange ?? null,
+    tensorRuntimeCandidateExpectedChangedBytesInDeclaredTensorRange:
+      probe?.tensorRuntimeCandidate?.expectedChangedBytesInDeclaredTensorRange ?? null,
+    tensorRuntimeCandidateOutputTensorsProducedByEntryExport:
+      probe?.tensorRuntimeCandidate?.outputTensorsProducedByEntryExport ?? null,
+    tensorRuntimeCandidateOutputTensorsMatchExpected:
+      probe?.tensorRuntimeCandidate?.outputTensorsMatchExpected ?? null,
+    tensorRuntimeCandidateReadCallCount: probe?.tensorRuntimeCandidate?.readCallCount ?? null,
+    tensorRuntimeCandidateWriteCallCount: probe?.tensorRuntimeCandidate?.writeCallCount ?? null,
+    tensorRuntimeCandidateEvidenceHash: probe?.tensorRuntimeCandidate?.candidateEvidenceHash || null,
+    tensorRuntimeCandidateScientificValidation: probe?.tensorRuntimeCandidate?.scientificValidation ?? null,
+    tensorRuntimeCandidateFullPhysicsValidation: probe?.tensorRuntimeCandidate?.fullPhysicsValidation ?? null,
+    tensorRuntimeCandidateProductionRuntimeExecution:
+      probe?.tensorRuntimeCandidate?.productionRuntimeExecution ?? null,
     adapterProbe: clonePlain(probe)
   };
 }

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-06 14:47:49 AKDT
+Updated: 2026-06-06 15:58:00 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -190,6 +190,16 @@ Updated: 2026-06-06 14:47:49 AKDT
   hashed source assets with bare `@peercompute` imports; Multiscale now points
   the docs runtime at the stable bundled `assets/ulgMoonLabDispatchServiceHost.js`
   and `assets/ulgEshkolDispatchServiceHost.js` worker entries.
+- Eshkol deterministic tensor-runtime candidate probing now executes inside the
+  PeerCompute dispatch adapter. The adapter consumes the live ULG handoff
+  artifact and transferred WASM bytes, instantiates them with deterministic
+  `f64` tensor-memory host imports, writes declared input tensors at byte
+  offsets `131072` and `131136`, invokes `main(131072, 131136)`, verifies the
+  declared `magnetar-closure-update` and `closure-residual` output tensors,
+  verifies `64` changed bytes in the declared tensor range, records candidate
+  evidence under `peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0`, and
+  still leaves production handler/runtime execution, scientific validation,
+  full physics validation, and full-fidelity magnetar simulation flags false.
 - VPN coturn/backend dry-runs passed on 2026-06-06:
   `bash scripts/dev-vpn-coturn.sh --dry-run` selected VPN host
   `100.86.83.35`, `RELAY_LISTEN_HOST=0.0.0.0`, and TURN host
@@ -198,12 +208,10 @@ Updated: 2026-06-06 14:47:49 AKDT
 - `git diff --check` passed.
 
 ## Next
-- Replace descriptor-bound fixture acceptance with execution/table-probe logic
-  once the closure runtime contract can produce non-fixture table evidence.
 - Wire concrete MoonLab/Eshkol production handlers into the handler-backed
   dispatch host once those services expose their runtime entry points.
-- Fix the remaining relay-served popup adapter blocker: the optional dispatch
-  probe resets the popup evaluation context after first MoonLab
-  `dispatch-start` and before `dispatch-complete`.
+- Promote the Eshkol deterministic tensor-runtime candidate into a production
+  handler only after real host imports, calibrated physics outputs, and explicit
+  scientific validation evidence exist.
 - Keep scientific-readiness language scoped to reduced calibrated magnetar runtime, not full GRMHD/PIC/radiation transport.
 - Keep commits local only.
