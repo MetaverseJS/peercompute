@@ -570,6 +570,10 @@ export function createUlgSpecContractReport({
             ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
           simulationArtifactFieldClosureSampleRefreshRegistryAction:
             ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+          simulationArtifactClosureRefreshRequestSource:
+            ulgSimulationArtifactSummary?.closureRefreshRequestSource || null,
+          simulationArtifactClosureDomainExited:
+            ulgSimulationArtifactSummary?.closureDomainExited === true,
           simulationArtifactFieldClosureSampleMinOutOfRangeInput:
             ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
           simulationArtifactFieldClosureSampleMaxOutOfRangeInput:
@@ -728,6 +732,10 @@ export function createUlgSpecContractReport({
         ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
       ulgSimulationArtifactFieldClosureSampleRefreshRegistryAction:
         ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+      ulgSimulationArtifactClosureRefreshRequestSource:
+        ulgSimulationArtifactSummary?.closureRefreshRequestSource || null,
+      ulgSimulationArtifactClosureDomainExited:
+        ulgSimulationArtifactSummary?.closureDomainExited === true,
       ulgSimulationArtifactFieldClosureSampleMinOutOfRangeInput:
         ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
       ulgSimulationArtifactFieldClosureSampleMaxOutOfRangeInput:
@@ -826,6 +834,8 @@ export function createUlgSpecContractReport({
         fieldClosureSampleRefreshReason: ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
         fieldClosureSampleRefreshRegistryAction:
           ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+        closureRefreshRequestSource: ulgSimulationArtifactSummary?.closureRefreshRequestSource || null,
+        closureDomainExited: ulgSimulationArtifactSummary?.closureDomainExited === true,
         fieldClosureSampleMinOutOfRangeInput:
           ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
         fieldClosureSampleMaxOutOfRangeInput:

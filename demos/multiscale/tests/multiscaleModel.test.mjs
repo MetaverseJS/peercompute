@@ -5298,6 +5298,261 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   ));
 });
 
+test('model propagates an out-of-range ULG closure refresh request through every contract layer', () => {
+  const model = new MultiscaleModel({ seed: 11 });
+  model.updateQuantumOrbitalClosure();
+  // A supervised carrier run that left the closure's sampled domain: in-range deltas up to
+  // the exit, then an authoritative artifact-level refresh request (the exit step emits no
+  // delta, so the last delta still reports a not-needed field-closure summary).
+  const domainExitRefreshRequest = {
+    schema: ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+    status: 'refresh-recommended',
+    reason: 'observed-field-outside-closure-domain',
+    detail: 'Closure sample r=1.95 outside table domain [0.9, 1.3]',
+    sourceSchema: ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+    sourceKind: 'carrier-runtime-closure-domain-exit',
+    closureId: 'closure:toy-two-particle-oscillator',
+    closureKind: 'toy-two-particle-oscillator',
+    fieldName: 'closureAxisR',
+    axisName: 'r',
+    outputName: 'potentialEnergy',
+    domainMin: 0.9,
+    domainMax: 1.3,
+    observedSampleCount: 1,
+    inRangeSampleCount: 0,
+    outOfRangeCount: 1,
+    nullFieldCount: 0,
+    minOutOfRangeInput: 1.95,
+    maxOutOfRangeInput: 1.95,
+    registryAction: 'invalidate-and-rerun-closure-derive',
+    invalidationRecommended: true,
+    refreshRecommended: true,
+    scientificValidation: false,
+    fullPhysicsValidation: false,
+    materialValidation: false,
+    eosValidation: false,
+    sphValidation: false,
+    phaseChangeValidation: false
+  };
+  const artifact = {
+    schema: ULG_SIMULATION_ARTIFACT_SCHEMA,
+    artifactId: 'ulg:test-oscillator-domain-exit.simulation',
+    sourceService: 'ulg-runtime',
+    taskKind: 'simulation.step',
+    closureRef: {
+      uri: 'artifact://sha256:testclosure',
+      artifactHash: 'sha256:testclosure',
+      sourceService: 'ulg-runtime-fixture'
+    },
+    representation: 'carrier-toy',
+    outputs: {
+      deltas: Array.from({ length: 8 }, (_, index) => ({
+        schema: 'peercompute.ulg.carrier-delta.v0',
+        step: index + 1,
+        dt: 0.01,
+        edgeMessageSummary: {
+          schema: ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
+          status: 'pass',
+          messageCount: 2,
+          outOfRangeCount: 0,
+          maxNetForceAbs: 0,
+          maxAntisymmetricResidualAbs: 0,
+          scientificValidation: false,
+          fullPhysicsValidation: false
+        },
+        fieldObserverSummary: {
+          schema: ULG_FIELD_OBSERVER_SUMMARY_SCHEMA,
+          status: 'pass',
+          observedFieldNames: ['positionX', 'velocityX', 'mass', 'kineticEnergy'],
+          zeroWeightCount: 0,
+          maxNeighborCount: 1,
+          maxWeightSum: 1,
+          scientificValidation: false,
+          fullPhysicsValidation: false
+        },
+        fieldClosureSampleSummary: {
+          schema: ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA,
+          status: 'pass',
+          validityStatus: 'in-range',
+          sampleKind: 'observed-scalar-field-table-sample-reference',
+          closureId: 'closure:toy-two-particle-oscillator',
+          fieldName: 'closureAxisR',
+          axisName: 'r',
+          outputName: 'potentialEnergy',
+          sampleCount: 2,
+          outOfRangeCount: 0,
+          nullFieldCount: 0,
+          minInput: 1.2,
+          maxInput: 1.2,
+          minSampledValue: 0.02,
+          maxSampledValue: 0.02,
+          maxAbsDerivative: 0.2,
+          // Last in-range delta still reads not-needed; the artifact-level request is authoritative.
+          closureRefreshRequest: {
+            schema: ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+            status: 'not-needed',
+            reason: null,
+            registryAction: 'none',
+            refreshRecommended: false,
+            invalidationRecommended: false,
+            scientificValidation: false,
+            fullPhysicsValidation: false,
+            materialValidation: false,
+            eosValidation: false,
+            sphValidation: false,
+            phaseChangeValidation: false
+          },
+          closureRefreshRecommended: false,
+          closureInvalidationRecommended: false,
+          closureRefreshRegistryAction: 'none',
+          scientificValidation: false,
+          fullPhysicsValidation: false,
+          materialValidation: false,
+          eosValidation: false,
+          sphValidation: false,
+          phaseChangeValidation: false
+        }
+      })),
+      invariants: {
+        schema: 'peercompute.ulg.carrier-invariant-drift.v0',
+        status: 'pass',
+        metrics: { maxEnergyDriftAbs: 1.0e-5, maxMomentumDriftAbs: 0 }
+      },
+      invariantSeries: [{ step: 0 }, { step: 8 }],
+      finalState: { step: 8 },
+      completedSteps: 8,
+      requestedSteps: 64,
+      closureRefreshRequest: domainExitRefreshRequest,
+      domainExit: {
+        closureId: 'closure:toy-two-particle-oscillator',
+        closureKind: 'toy-two-particle-oscillator',
+        outputName: 'potentialEnergy',
+        axisName: 'r',
+        fieldName: 'closureAxisR',
+        inputValue: 1.95,
+        domain: [0.9, 1.3],
+        reason: 'Closure sample r=1.95 outside table domain [0.9, 1.3]',
+        atStep: 8,
+        completedSteps: 8
+      }
+    },
+    execution: {
+      backend: 'cpu-reference',
+      gpuLeaseStatus: null,
+      dt: 0.01,
+      steps: 64,
+      integrator: 'velocity-verlet'
+    },
+    validity: {
+      status: 'closure-domain-exited',
+      closureValidity: 'in-range',
+      closureId: 'closure:toy-two-particle-oscillator',
+      closureKind: 'toy-two-particle-oscillator',
+      closureRefreshRecommended: true,
+      closureRefreshRegistryAction: 'invalidate-and-rerun-closure-derive'
+    },
+    uncertainty: { modelScope: 'toy-two-particle-carrier-reference', calibratedPhysics: false },
+    validation: {
+      status: 'warn',
+      validationMode: 'cpu-reference-invariant-drift',
+      scientificValidation: false,
+      fullPhysics: false,
+      fullPhysicsValidation: false,
+      blockers: [
+        'toy-carrier-reference-not-scientific-physics',
+        'closure-domain-exited-refresh-recommended'
+      ]
+    },
+    provenance: {
+      sourceService: 'ulg-runtime',
+      parents: ['artifact://sha256:testclosure'],
+      notes: ['Carrier left the closure sampled domain; closure refresh recommended.']
+    }
+  };
+
+  const summary = model.applyUlgSimulationArtifact({ artifact });
+  // Summary: the artifact-level domain-exit request wins over the in-range last-delta request.
+  assert.equal(summary.fieldClosureSampleRefreshRequestStatus, 'refresh-recommended');
+  assert.equal(summary.fieldClosureSampleRefreshRecommended, true);
+  assert.equal(summary.fieldClosureSampleInvalidationRecommended, true);
+  assert.equal(summary.fieldClosureSampleRefreshReason, 'observed-field-outside-closure-domain');
+  assert.equal(summary.fieldClosureSampleRefreshRegistryAction, 'invalidate-and-rerun-closure-derive');
+  assert.equal(summary.fieldClosureSampleMinOutOfRangeInput, 1.95);
+  assert.equal(summary.fieldClosureSampleMaxOutOfRangeInput, 1.95);
+  assert.equal(summary.closureRefreshRequestSource, 'artifact');
+  assert.equal(summary.closureDomainExited, true);
+  assert.equal(summary.domainExitAtStep, 8);
+  assert.equal(summary.domainExitInputValue, 1.95);
+  assert.equal(summary.validityStatus, 'closure-domain-exited');
+  // No overclaim despite the recommendation.
+  assert.equal(summary.fieldClosureSampleScientificValidation, false);
+  assert.equal(summary.fieldClosureSampleMaterialValidation, false);
+  assert.equal(summary.fieldClosureSampleEosValidation, false);
+  assert.equal(summary.fieldClosureSampleSphValidation, false);
+  assert.equal(summary.fieldClosureSamplePhaseChangeValidation, false);
+  assert.equal(summary.scientificRuntimeReady, false);
+  assert.ok(summary.blockers.includes('closure-domain-exited-refresh-recommended'));
+
+  // Diagnostics layer.
+  const diagnosticsSummary = model.state.closures.quantumMaterialPotential?.diagnostics?.ulgSimulationArtifactSummary;
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRequestStatus, 'refresh-recommended');
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRecommended, true);
+  assert.equal(diagnosticsSummary.fieldClosureSampleInvalidationRecommended, true);
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRegistryAction, 'invalidate-and-rerun-closure-derive');
+  assert.equal(diagnosticsSummary.closureRefreshRequestSource, 'artifact');
+  assert.equal(diagnosticsSummary.closureDomainExited, true);
+  assert.equal(diagnosticsSummary.domainExitInputValue, 1.95);
+
+  const packet = model.createPacket();
+  // Packet aggregate layer.
+  const aggregate = packet.upward.aggregateState.ulgSimulationArtifactSummary;
+  assert.equal(aggregate.fieldClosureSampleRefreshRequestStatus, 'refresh-recommended');
+  assert.equal(aggregate.fieldClosureSampleRefreshRecommended, true);
+  assert.equal(aggregate.fieldClosureSampleInvalidationRecommended, true);
+  assert.equal(aggregate.fieldClosureSampleRefreshRegistryAction, 'invalidate-and-rerun-closure-derive');
+  assert.equal(aggregate.closureRefreshRequestSource, 'artifact');
+  assert.equal(aggregate.closureDomainExited, true);
+
+  // Handoff contract layer.
+  const handoff = packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact;
+  assert.equal(handoff.fieldClosureSampleRefreshRequestStatus, 'refresh-recommended');
+  assert.equal(handoff.fieldClosureSampleRefreshRecommended, true);
+  assert.equal(handoff.fieldClosureSampleInvalidationRecommended, true);
+  assert.equal(handoff.fieldClosureSampleRefreshRegistryAction, 'invalidate-and-rerun-closure-derive');
+  assert.equal(handoff.closureRefreshRequestSource, 'artifact');
+  assert.equal(handoff.closureDomainExited, true);
+
+  // Bridge contract layer.
+  const bridge = packet.upward.aggregateState.ulgSpecContracts.bridgeContracts;
+  assert.equal(bridge.ulgSimulationArtifactFieldClosureSampleRefreshRequestStatus, 'refresh-recommended');
+  assert.equal(bridge.ulgSimulationArtifactFieldClosureSampleRefreshRecommended, true);
+  assert.equal(bridge.ulgSimulationArtifactFieldClosureSampleInvalidationRecommended, true);
+  assert.equal(bridge.ulgSimulationArtifactFieldClosureSampleRefreshRegistryAction, 'invalidate-and-rerun-closure-derive');
+  assert.equal(bridge.ulgSimulationArtifactClosureRefreshRequestSource, 'artifact');
+  assert.equal(bridge.ulgSimulationArtifactClosureDomainExited, true);
+
+  // Root validation/provenance contract envelope layer.
+  const validationContract = packet.upward.aggregateState.ulgSpecContracts.rootContracts.find(
+    (contract) => contract.id === 'root:validation-provenance'
+  );
+  assert.equal(validationContract.scientificReady, false);
+  assert.equal(
+    validationContract.validity.envelope.simulationArtifactFieldClosureSampleRefreshRequestStatus,
+    'refresh-recommended'
+  );
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleRefreshRecommended, true);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleInvalidationRecommended, true);
+  assert.equal(
+    validationContract.validity.envelope.simulationArtifactFieldClosureSampleRefreshRegistryAction,
+    'invalidate-and-rerun-closure-derive'
+  );
+  assert.equal(validationContract.validity.envelope.simulationArtifactClosureRefreshRequestSource, 'artifact');
+  assert.equal(validationContract.validity.envelope.simulationArtifactClosureDomainExited, true);
+  // Evidence-only: the refresh recommendation never promotes scientific readiness.
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleScientificValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMaterialValidation, false);
+});
+
 test('model can switch quantum orbital element and finite-grid controls', () => {
   const model = new MultiscaleModel();
   const orbital = model.setQuantumOrbital({

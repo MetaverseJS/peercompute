@@ -1160,3 +1160,25 @@
   magnetar affordance `sim closure pass x4`, `scientificRuntimeReady = false`,
   `fullPhysicsReady = false`, and material/EOS/SPH/phase-change validation
   flags all false.
+
+- ULG out-of-range closure refresh propagation gate (recommended-work item 2):
+  feed a ULG simulation artifact whose authoritative artifact-level
+  `closureRefreshRequest` is `refresh-recommended` (carrier domain exit; the
+  in-range last delta still reads `not-needed`) and assert the
+  refresh/invalidation fields plus `closureRefreshRequestSource:'artifact'` and
+  `closureDomainExited:true` propagate through summary, `quantumMaterialPotential`
+  diagnostics, packet upward aggregate, the `ulgRuntimeArtifact` handoff
+  contract, the bridge contracts, and the root validation/provenance envelope —
+  without promoting scientific readiness.
+: current result on 2026-06-08 passed. `node --test
+  demos/multiscale/tests/multiscaleModel.test.mjs` passed `202/202` (+1 new
+  fixture); `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `30/30`; `npm --prefix demos/multiscale run build` passed with the
+  existing large-chunk warning; `git diff --check` clean; and the live
+  two-server handoff smoke `ULG_HANDOFF_URL=http://localhost:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` exited `0` with HUD `status handoff
+  ready / blockers 0` (ULG Vite on `0.0.0.0:5173`, Multiscale dev on localhost
+  `:5185`; the smoke was driven via the `localhost` origin because the sandbox
+  blocked binding `:5185` to `0.0.0.0`). Refresh recommendation remained
+  evidence-only: all scientific/material/EOS/SPH/phase flags false and
+  `scientificRuntimeReady = false`.

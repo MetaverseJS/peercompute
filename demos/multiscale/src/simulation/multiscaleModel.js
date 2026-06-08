@@ -7566,6 +7566,10 @@ export class MultiscaleModel {
         fieldClosureSampleInvalidationRecommended: summary.fieldClosureSampleInvalidationRecommended === true,
         fieldClosureSampleRefreshReason: summary.fieldClosureSampleRefreshReason,
         fieldClosureSampleRefreshRegistryAction: summary.fieldClosureSampleRefreshRegistryAction,
+        closureRefreshRequestSource: summary.closureRefreshRequestSource,
+        closureDomainExited: summary.closureDomainExited === true,
+        domainExitAtStep: summary.domainExitAtStep,
+        domainExitInputValue: summary.domainExitInputValue,
         fieldClosureSampleMinOutOfRangeInput: summary.fieldClosureSampleMinOutOfRangeInput,
         fieldClosureSampleMaxOutOfRangeInput: summary.fieldClosureSampleMaxOutOfRangeInput,
         fieldClosureSampleScientificValidation: summary.fieldClosureSampleScientificValidation === true,
@@ -10037,6 +10041,12 @@ export class MultiscaleModel {
               ulgSimulationArtifactSummary.fieldClosureSampleRefreshReason,
             fieldClosureSampleRefreshRegistryAction:
               ulgSimulationArtifactSummary.fieldClosureSampleRefreshRegistryAction,
+            closureRefreshRequestSource:
+              ulgSimulationArtifactSummary.closureRefreshRequestSource,
+            closureDomainExited:
+              ulgSimulationArtifactSummary.closureDomainExited === true,
+            domainExitAtStep: ulgSimulationArtifactSummary.domainExitAtStep,
+            domainExitInputValue: ulgSimulationArtifactSummary.domainExitInputValue,
             fieldClosureSampleMinOutOfRangeInput:
               ulgSimulationArtifactSummary.fieldClosureSampleMinOutOfRangeInput,
             fieldClosureSampleMaxOutOfRangeInput:

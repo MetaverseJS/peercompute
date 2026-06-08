@@ -789,10 +789,40 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
       : null)
     .filter(Boolean);
   const fieldClosureSampleSummary = fieldClosureSampleSummaries.at(-1) || null;
-  const fieldClosureSampleRefreshRequest =
+  const deltaClosureRefreshRequest =
     fieldClosureSampleSummary?.closureRefreshRequest && typeof fieldClosureSampleSummary.closureRefreshRequest === 'object'
       ? fieldClosureSampleSummary.closureRefreshRequest
       : null;
+  // ULG carrier runs that leave the closure's sampled domain surface an authoritative
+  // artifact-level refresh request: the exit step emits no delta, so the recommendation
+  // never lands in a per-delta field-closure summary. Prefer the artifact-level request,
+  // and fall back to the last delta's request for pre-domain-exit ULG artifacts.
+  const artifactClosureRefreshRequest =
+    outputs.closureRefreshRequest && typeof outputs.closureRefreshRequest === 'object'
+      ? outputs.closureRefreshRequest
+      : null;
+  const fieldClosureSampleRefreshRequest =
+    artifactClosureRefreshRequest || deltaClosureRefreshRequest || null;
+  const closureRefreshRequestSource = artifactClosureRefreshRequest
+    ? 'artifact'
+    : (deltaClosureRefreshRequest ? 'delta' : null);
+  const domainExit = outputs.domainExit && typeof outputs.domainExit === 'object'
+    ? outputs.domainExit
+    : null;
+  const boolOrNull = (value) => (typeof value === 'boolean' ? value : null);
+  const fieldClosureSampleRefreshRecommended =
+    boolOrNull(fieldClosureSampleRefreshRequest?.refreshRecommended)
+    ?? boolOrNull(fieldClosureSampleSummary?.closureRefreshRecommended);
+  const fieldClosureSampleInvalidationRecommended =
+    boolOrNull(fieldClosureSampleRefreshRequest?.invalidationRecommended)
+    ?? boolOrNull(fieldClosureSampleSummary?.closureInvalidationRecommended);
+  const fieldClosureSampleRefreshReason =
+    fieldClosureSampleRefreshRequest?.reason || fieldClosureSampleSummary?.closureRefreshReason || null;
+  const fieldClosureSampleRefreshRegistryAction =
+    fieldClosureSampleRefreshRequest?.registryAction || fieldClosureSampleSummary?.closureRefreshRegistryAction || null;
+  const closureDomainExited = validity.status === 'closure-domain-exited' || domainExit != null;
+  const domainExitAtStep = Number.isFinite(domainExit?.atStep) ? domainExit.atStep : null;
+  const domainExitInputValue = Number.isFinite(domainExit?.inputValue) ? domainExit.inputValue : null;
   const invariantReport = outputs.invariants && typeof outputs.invariants === 'object'
     ? outputs.invariants
     : null;
@@ -875,24 +905,14 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     fieldClosureSampleMaxAbsDerivative: fieldClosureSampleSummary?.maxAbsDerivative ?? null,
     fieldClosureSampleRefreshRequestSchema: fieldClosureSampleRefreshRequest?.schema || null,
     fieldClosureSampleRefreshRequestStatus: fieldClosureSampleRefreshRequest?.status || null,
-    fieldClosureSampleRefreshRecommended: typeof fieldClosureSampleSummary?.closureRefreshRecommended === 'boolean'
-      ? fieldClosureSampleSummary.closureRefreshRecommended
-      : (
-          typeof fieldClosureSampleRefreshRequest?.refreshRecommended === 'boolean'
-            ? fieldClosureSampleRefreshRequest.refreshRecommended
-            : null
-        ),
-    fieldClosureSampleInvalidationRecommended: typeof fieldClosureSampleSummary?.closureInvalidationRecommended === 'boolean'
-      ? fieldClosureSampleSummary.closureInvalidationRecommended
-      : (
-          typeof fieldClosureSampleRefreshRequest?.invalidationRecommended === 'boolean'
-            ? fieldClosureSampleRefreshRequest.invalidationRecommended
-            : null
-        ),
-    fieldClosureSampleRefreshReason:
-      fieldClosureSampleSummary?.closureRefreshReason || fieldClosureSampleRefreshRequest?.reason || null,
-    fieldClosureSampleRefreshRegistryAction:
-      fieldClosureSampleSummary?.closureRefreshRegistryAction || fieldClosureSampleRefreshRequest?.registryAction || null,
+    fieldClosureSampleRefreshRecommended,
+    fieldClosureSampleInvalidationRecommended,
+    fieldClosureSampleRefreshReason,
+    fieldClosureSampleRefreshRegistryAction,
+    closureRefreshRequestSource,
+    closureDomainExited,
+    domainExitAtStep,
+    domainExitInputValue,
     fieldClosureSampleMinOutOfRangeInput: fieldClosureSampleRefreshRequest?.minOutOfRangeInput ?? null,
     fieldClosureSampleMaxOutOfRangeInput: fieldClosureSampleRefreshRequest?.maxOutOfRangeInput ?? null,
     fieldClosureSampleScientificValidation: typeof fieldClosureSampleSummary?.scientificValidation === 'boolean'
@@ -985,24 +1005,14 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     fieldClosureSampleMaxAbsDerivative: fieldClosureSampleSummary?.maxAbsDerivative ?? null,
     fieldClosureSampleRefreshRequestSchema: fieldClosureSampleRefreshRequest?.schema || null,
     fieldClosureSampleRefreshRequestStatus: fieldClosureSampleRefreshRequest?.status || null,
-    fieldClosureSampleRefreshRecommended: typeof fieldClosureSampleSummary?.closureRefreshRecommended === 'boolean'
-      ? fieldClosureSampleSummary.closureRefreshRecommended
-      : (
-          typeof fieldClosureSampleRefreshRequest?.refreshRecommended === 'boolean'
-            ? fieldClosureSampleRefreshRequest.refreshRecommended
-            : null
-        ),
-    fieldClosureSampleInvalidationRecommended: typeof fieldClosureSampleSummary?.closureInvalidationRecommended === 'boolean'
-      ? fieldClosureSampleSummary.closureInvalidationRecommended
-      : (
-          typeof fieldClosureSampleRefreshRequest?.invalidationRecommended === 'boolean'
-            ? fieldClosureSampleRefreshRequest.invalidationRecommended
-            : null
-        ),
-    fieldClosureSampleRefreshReason:
-      fieldClosureSampleSummary?.closureRefreshReason || fieldClosureSampleRefreshRequest?.reason || null,
-    fieldClosureSampleRefreshRegistryAction:
-      fieldClosureSampleSummary?.closureRefreshRegistryAction || fieldClosureSampleRefreshRequest?.registryAction || null,
+    fieldClosureSampleRefreshRecommended,
+    fieldClosureSampleInvalidationRecommended,
+    fieldClosureSampleRefreshReason,
+    fieldClosureSampleRefreshRegistryAction,
+    closureRefreshRequestSource,
+    closureDomainExited,
+    domainExitAtStep,
+    domainExitInputValue,
     fieldClosureSampleMinOutOfRangeInput: fieldClosureSampleRefreshRequest?.minOutOfRangeInput ?? null,
     fieldClosureSampleMaxOutOfRangeInput: fieldClosureSampleRefreshRequest?.maxOutOfRangeInput ?? null,
     fieldClosureSampleScientificValidation: typeof fieldClosureSampleSummary?.scientificValidation === 'boolean'
