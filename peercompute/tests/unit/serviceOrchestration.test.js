@@ -33,6 +33,7 @@ import {
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
   ULG_SERVICE_CONTRACT_ADAPTER_SCHEMA,
+  ULG_SIMULATION_ARTIFACT_SCHEMA,
   ULG_TASK_CAPSULE_ADAPTER_SCHEMA,
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor,
@@ -2369,6 +2370,139 @@ test('ULG demo handoff adapter classifies calibration, closure, and transferred 
   assert.equal(empty.transferManifest.artifactCount, 0);
   assert.ok(empty.transferBlockers.includes('ulg-handoff-artifacts-missing'));
   assert.ok(empty.blockers.includes('ulg-handoff-artifacts-missing'));
+});
+
+test('ULG demo handoff preserves simulation artifacts without promoting calibration or closure readiness', () => {
+  const handoff = normalizeUlgDemoHandoff({
+    schema: ULG_DEMO_HANDOFF_SCHEMA,
+    createdAt: '2026-06-06T00:01:00.000Z',
+    artifactCount: 3,
+    artifacts: [{
+      ref: {
+        uri: 'artifact://moonlab-calibration',
+        artifactHash: 'sha256:moonlab-calibration-artifact',
+        sourceService: 'moonlab'
+      },
+      artifactKind: 'quantum-response',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'quantum-response',
+        sourceService: 'moonlab',
+        magnetarDipoleIsingReady: true
+      },
+      artifact: {
+        artifactId: 'artifact:moonlab-calibration',
+        sourceService: 'moonlab',
+        contentHash: 'sha256:moonlab-calibration-artifact'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://eshkol-closure',
+        artifactHash: 'sha256:eshkol-closure-artifact',
+        sourceService: 'eshkol'
+      },
+      artifactKind: 'closure',
+      artifactSummary: {
+        schema: ULG_ARTIFACT_SUMMARY_SCHEMA,
+        artifactKind: 'closure',
+        sourceService: 'eshkol',
+        closureReady: true,
+        closureDescriptorReady: true
+      },
+      artifact: {
+        closureId: 'eshkol:test-closure',
+        sourceService: 'eshkol',
+        contentHash: 'sha256:eshkol-closure-artifact'
+      }
+    }, {
+      ref: {
+        uri: 'artifact://ulg-runtime-simulation',
+        artifactHash: 'sha256:ulg-runtime-simulation-artifact',
+        sourceService: 'ulg-runtime'
+      },
+      artifact: {
+        schema: ULG_SIMULATION_ARTIFACT_SCHEMA,
+        artifactId: 'ulg:test-oscillator.simulation',
+        sourceService: 'ulg-runtime',
+        taskKind: 'simulation.step',
+        contentHash: 'sha256:ulg-runtime-simulation-artifact',
+        closureRef: {
+          uri: 'artifact://sha256:testclosure',
+          artifactHash: 'sha256:testclosure',
+          sourceService: 'ulg-runtime-fixture'
+        },
+        representation: 'carrier-toy',
+        outputs: {
+          deltas: Array.from({ length: 32 }, (_, index) => ({
+            schema: 'peercompute.ulg.carrier-delta.v0',
+            step: index + 1
+          })),
+          invariants: {
+            schema: 'peercompute.ulg.carrier-invariant-drift.v0',
+            status: 'pass',
+            metrics: {
+              maxEnergyDriftAbs: 1.25e-5,
+              maxMomentumDriftAbs: 0
+            }
+          },
+          invariantSeries: [{ step: 0 }, { step: 32 }],
+          finalState: { step: 32 }
+        },
+        execution: {
+          backend: 'cpu-reference',
+          dt: 0.002,
+          steps: 32,
+          integrator: 'velocity-verlet'
+        },
+        validity: {
+          status: 'toy-reference-valid',
+          closureValidity: 'in-range',
+          closureId: 'closure:toy-two-particle-oscillator',
+          closureKind: 'toy-two-particle-oscillator'
+        },
+        uncertainty: {
+          modelScope: 'toy-two-particle-carrier-reference',
+          calibratedPhysics: false
+        },
+        validation: {
+          status: 'pass',
+          validationMode: 'cpu-reference-invariant-drift',
+          scientificValidation: false,
+          fullPhysics: false,
+          fullPhysicsValidation: false,
+          blockers: ['toy-carrier-reference-not-scientific-physics']
+        }
+      }
+    }]
+  }, { receivedAt: '2026-06-06T00:02:00.000Z' });
+
+  assert.equal(handoff.ready, true);
+  assert.equal(handoff.artifactCount, 3);
+  assert.equal(handoff.transferManifest.artifactCount, 3);
+  assert.equal(handoff.transferManifest.relaySafeArtifactCount, 3);
+  assert.equal(handoff.calibrationArtifacts.length, 1);
+  assert.equal(handoff.closureArtifacts.length, 1);
+  assert.equal(handoff.simulationArtifacts.length, 1);
+  assert.equal(handoff.readyCalibrationArtifact.sourceService, 'moonlab');
+  assert.equal(handoff.readyClosureArtifact.sourceService, 'eshkol');
+  assert.equal(handoff.readySimulationArtifact.sourceService, 'ulg-runtime');
+  assert.equal(handoff.readySimulationArtifact.artifactKind, 'simulation-delta');
+  assert.equal(handoff.readySimulationArtifact.simulationArtifactReady, true);
+  assert.equal(handoff.readySimulationArtifact.simulationScientificRuntimeReady, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationSchema, ULG_SIMULATION_ARTIFACT_SCHEMA);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationRuntimeEvidenceReady, true);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationScientificRuntimeReady, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationRepresentation, 'carrier-toy');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationBackend, 'cpu-reference');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationDeltaCount, 32);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationInvariantStatus, 'pass');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationScientificValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFullPhysicsValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationCalibratedPhysics, false);
+  assert.deepEqual(
+    handoff.readySimulationArtifact.artifactSummary.simulationBlockers,
+    ['toy-carrier-reference-not-scientific-physics']
+  );
 });
 
 test('ULG handoff service envelope preserves relay-safe content-addressed artifact refs', () => {

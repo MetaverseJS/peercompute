@@ -342,6 +342,16 @@ Updated: 2026-06-08 10:23:44 AKDT
   --prefix demos/multiscale run test:ulg-relay-handoff` passed. Direct and
   relay handoffs both report runtime evidence compatible but final readiness
   blocked by `full-physics-validation-not-run`.
+- Current ULG simulation artifact consumption path is implemented but scoped as
+  runtime evidence only. PeerCompute normalizes optional
+  `peercompute.ulg.simulation-artifact.v0` handoff entries as
+  `simulation-delta`, records `peercompute.multiscale.ulg-simulation-artifact-summary.v0`
+  in Multiscale packets/spec contracts, and keeps `scientificRuntimeReady`,
+  `fullPhysicsReady`, SPH/material readiness, and magnetar full-physics
+  readiness false for CPU-reference `carrier-toy` artifacts. Current
+  validation on 2026-06-08 passed syntax checks, service orchestration `29/29`,
+  Multiscale model `201/201`, Multiscale build, live ULG handoff smoke, and a
+  browser-injected three-artifact handoff probe.
 
 ## Next
 - Promote the production handler runtime smoke into validated production

@@ -10,6 +10,8 @@ export const ULG_LAW_TASK_CAPSULE_SCHEMA = 'peercompute.ulg.law-task-capsule.v0'
 export const ULG_QUANTUM_TASK_CAPSULE_SCHEMA = 'peercompute.ulg.quantum-task-capsule.v0';
 export const ULG_INVARIANT_REPORT_SCHEMA = 'peercompute.ulg.invariant-report.v0';
 export const ULG_COMPACT_DELTA_SCHEMA = 'peercompute.ulg.compact-delta.v0';
+export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifact.v0';
+export const ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.multiscale.ulg-simulation-artifact-summary.v0';
 
 export const ULG_LIVE_BACKENDS = ['webgpu'];
 export const ULG_OFFLINE_AUDIT_BACKENDS = ['wasm_audit'];
@@ -740,6 +742,105 @@ export function createCompactDelta({
   return {
     ...delta,
     deltaHash: stableHash(delta)
+  };
+}
+
+export function createUlgSimulationArtifactSummary(artifact = {}) {
+  const sourceSchema = artifact?.schema || null;
+  const compatible = sourceSchema === ULG_SIMULATION_ARTIFACT_SCHEMA;
+  const outputs = compatible && artifact.outputs && typeof artifact.outputs === 'object'
+    ? artifact.outputs
+    : {};
+  const execution = compatible && artifact.execution && typeof artifact.execution === 'object'
+    ? artifact.execution
+    : {};
+  const validity = compatible && artifact.validity && typeof artifact.validity === 'object'
+    ? artifact.validity
+    : {};
+  const uncertainty = compatible && artifact.uncertainty && typeof artifact.uncertainty === 'object'
+    ? artifact.uncertainty
+    : {};
+  const validation = compatible && artifact.validation && typeof artifact.validation === 'object'
+    ? artifact.validation
+    : {};
+  const deltas = asArray(outputs.deltas);
+  const invariantReport = outputs.invariants && typeof outputs.invariants === 'object'
+    ? outputs.invariants
+    : null;
+  const deltaCount = deltas.length;
+  const invariantStatus = invariantReport?.status || null;
+  const runtimeEvidenceReady = compatible && deltaCount > 0 && invariantStatus === 'pass';
+  const scientificValidation = validation.scientificValidation === true;
+  const fullPhysicsValidation = validation.fullPhysicsValidation === true || validation.fullPhysics === true;
+  const calibratedPhysics = uncertainty.calibratedPhysics === true;
+  const representation = compatible ? artifact.representation || null : null;
+  const toyReference = representation === 'carrier-toy' || calibratedPhysics !== true;
+  const blockers = [
+    compatible ? null : 'ulg-simulation-artifact-schema-missing',
+    runtimeEvidenceReady ? null : 'ulg-simulation-runtime-evidence-incomplete',
+    scientificValidation ? null : 'ulg-simulation-artifact-not-scientifically-validated',
+    fullPhysicsValidation ? null : 'ulg-simulation-artifact-not-full-physics-validated',
+    calibratedPhysics ? null : 'ulg-simulation-artifact-uncalibrated',
+    toyReference ? 'ulg-simulation-artifact-toy-reference' : null,
+    ...asArray(validation.blockers)
+  ].filter(Boolean);
+  const scientificRuntimeReady = runtimeEvidenceReady
+    && scientificValidation
+    && fullPhysicsValidation
+    && calibratedPhysics
+    && toyReference === false;
+  const closureRef = artifact?.closureRef || null;
+  const closureRefUri = typeof closureRef === 'string'
+    ? closureRef
+    : closureRef?.uri || closureRef?.hash || null;
+  const summaryHash = stableHash({
+    artifactId: compatible ? artifact.artifactId || null : null,
+    sourceSchema,
+    closureRefUri,
+    representation,
+    backend: execution.backend || null,
+    steps: execution.steps ?? null,
+    deltaCount,
+    invariantStatus,
+    validationStatus: validation.status || null,
+    scientificValidation,
+    fullPhysicsValidation,
+    calibratedPhysics
+  });
+  return {
+    schema: ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA,
+    sourceSchema,
+    status: compatible
+      ? (scientificRuntimeReady ? 'scientific-runtime-artifact-ready' : 'toy-runtime-artifact-consumed-scientific-blocked')
+      : 'unsupported-or-missing-artifact',
+    compatible,
+    runtimeEvidenceReady,
+    scientificRuntimeReady,
+    fullPhysicsReady: scientificRuntimeReady,
+    sourceService: compatible ? artifact.sourceService || null : null,
+    taskKind: compatible ? artifact.taskKind || null : null,
+    artifactId: compatible ? artifact.artifactId || null : null,
+    closureRefUri,
+    representation,
+    backend: execution.backend || null,
+    steps: execution.steps ?? null,
+    integrator: execution.integrator || null,
+    deltaCount,
+    invariantSchema: invariantReport?.schema || null,
+    invariantStatus,
+    maxEnergyDriftAbs: invariantReport?.metrics?.maxEnergyDriftAbs ?? null,
+    maxMomentumDriftAbs: invariantReport?.metrics?.maxMomentumDriftAbs ?? null,
+    validityStatus: validity.status || null,
+    closureValidity: validity.closureValidity || null,
+    validationStatus: validation.status || null,
+    validationMode: validation.validationMode || null,
+    scientificValidation,
+    fullPhysicsValidation,
+    calibratedPhysics,
+    toyReference,
+    blockerCount: blockers.length,
+    blockers,
+    summaryHash
   };
 }
 

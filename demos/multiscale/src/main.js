@@ -2029,6 +2029,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     : null;
   const calibrationArtifact = normalized.readyCalibrationArtifact || normalized.calibrationArtifacts[0] || null;
   const closureArtifact = normalized.readyClosureArtifact || normalized.closureArtifacts[0] || null;
+  const simulationArtifact = normalized.readySimulationArtifact || normalized.simulationArtifacts?.[0] || null;
   const calibration = calibrationArtifact
     ? ingestUlgArtifactForScenario(calibrationArtifact.artifact, {
       ...options,
@@ -2060,6 +2061,9 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
   const closureDescriptorProbe = descriptorClosureReady
     ? createClosureDescriptorProbeFromArtifactSummary(closureArtifact.artifactSummary, closureOptions || {})
     : null;
+  const simulationArtifactSummary = simulationArtifact
+    ? model.applyUlgSimulationArtifact(simulationArtifact.artifact)
+    : null;
   return cloneJson({
     handoff: normalized,
     serviceEnvelope,
@@ -2068,6 +2072,7 @@ async function applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     calibration,
     closure,
     closureDescriptorProbe,
+    simulationArtifactSummary,
     packet: createUiPacket()
   });
 }
@@ -12200,6 +12205,11 @@ window.__multiscaleDemo = {
   },
   executeUlgClosureArtifactForScenarioProbe(artifact = {}, options = {}) {
     return executeUlgClosureArtifactForScenario(artifact, options);
+  },
+  applyUlgSimulationArtifact(artifact = {}) {
+    const summary = model.applyUlgSimulationArtifact(artifact);
+    renderReadout();
+    return cloneJson(summary);
   },
   applyUlgDemoHandoffForScenario(handoff = {}, options = {}) {
     return applyUlgDemoHandoffForScenario(handoff, options);

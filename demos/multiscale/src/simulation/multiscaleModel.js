@@ -14,7 +14,8 @@ import {
   createLawGraphConsistencyReport
 } from './lawGraph.js';
 import {
-  createUlgRuntimeManifest
+  createUlgRuntimeManifest,
+  createUlgSimulationArtifactSummary
 } from './ulgRuntime.js';
 import {
   createUlgSpecContractReport
@@ -5162,7 +5163,9 @@ export class MultiscaleModel {
       lawGraphStateApplicationPreflight: null,
       ulgRuntime: null,
       ulgRuntimeExecution: null,
-      ulgRuntimeStateDelta: null
+      ulgRuntimeStateDelta: null,
+      ulgSimulationArtifact: null,
+      ulgSimulationArtifactSummary: null
     };
   }
 
@@ -7498,6 +7501,42 @@ export class MultiscaleModel {
     return this.state.ulgRuntimeExecution;
   }
 
+  applyUlgSimulationArtifact(result = {}) {
+    const artifact = result?.artifact?.schema === 'peercompute.ulg.simulation-artifact.v0'
+      ? result.artifact
+      : result;
+    const summary = createUlgSimulationArtifactSummary(artifact);
+    if (summary.compatible !== true) {
+      return this.state.ulgSimulationArtifactSummary;
+    }
+    this.state.ulgSimulationArtifact = {
+      schema: artifact.schema,
+      artifactId: artifact.artifactId || null,
+      sourceService: artifact.sourceService || null,
+      taskKind: artifact.taskKind || null,
+      closureRef: artifact.closureRef || null,
+      representation: artifact.representation || null,
+      execution: artifact.execution || null,
+      validity: artifact.validity || null,
+      uncertainty: artifact.uncertainty || null,
+      validation: artifact.validation || null,
+      provenance: artifact.provenance || null
+    };
+    this.state.ulgSimulationArtifactSummary = summary;
+    if (this.state.closures.quantumMaterialPotential?.diagnostics) {
+      this.state.closures.quantumMaterialPotential.diagnostics.ulgSimulationArtifactSummary = {
+        schema: summary.schema,
+        status: summary.status,
+        runtimeEvidenceReady: summary.runtimeEvidenceReady,
+        scientificRuntimeReady: summary.scientificRuntimeReady,
+        backend: summary.backend,
+        deltaCount: summary.deltaCount,
+        summaryHash: summary.summaryHash
+      };
+    }
+    return summary;
+  }
+
   applyQuantumOrbitalGridResult(result = {}) {
     const finiteGrid = result.finiteGrid || result.diagnostics?.finiteGrid || null;
     if (!finiteGrid || finiteGrid.schema !== 'peercompute.multiscale.quantum-orbital-finite-grid.v0') {
@@ -8387,6 +8426,7 @@ export class MultiscaleModel {
     this.state.ulgRuntime = ulgRuntime;
     const ulgRuntimeExecution = this.state.ulgRuntimeExecution || null;
     const ulgRuntimeStateDelta = this.state.ulgRuntimeStateDelta || ulgRuntimeExecution?.stateDelta || null;
+    const ulgSimulationArtifactSummary = this.state.ulgSimulationArtifactSummary || null;
     const ulgSpecContracts = createUlgSpecContractReport({
       state: this.state,
       environment: this.environment,
@@ -8395,7 +8435,8 @@ export class MultiscaleModel {
       lawGraph,
       ulgRuntime,
       ulgRuntimeExecution,
-      ulgRuntimeStateDelta
+      ulgRuntimeStateDelta,
+      ulgSimulationArtifactSummary
     });
     this.state.ulgSpecContracts = ulgSpecContracts;
     const scenario = this.getScenario();
@@ -9888,6 +9929,28 @@ export class MultiscaleModel {
             materialResponse: ulgRuntimeStateDelta.materialResponse || null,
             blocker: ulgRuntimeStateDelta.blocker || null
           } : null,
+          ulgSimulationArtifactSummary: ulgSimulationArtifactSummary ? {
+            schema: ulgSimulationArtifactSummary.schema,
+            sourceSchema: ulgSimulationArtifactSummary.sourceSchema,
+            status: ulgSimulationArtifactSummary.status,
+            compatible: ulgSimulationArtifactSummary.compatible === true,
+            runtimeEvidenceReady: ulgSimulationArtifactSummary.runtimeEvidenceReady === true,
+            scientificRuntimeReady: ulgSimulationArtifactSummary.scientificRuntimeReady === true,
+            fullPhysicsReady: ulgSimulationArtifactSummary.fullPhysicsReady === true,
+            sourceService: ulgSimulationArtifactSummary.sourceService,
+            representation: ulgSimulationArtifactSummary.representation,
+            backend: ulgSimulationArtifactSummary.backend,
+            steps: ulgSimulationArtifactSummary.steps,
+            deltaCount: ulgSimulationArtifactSummary.deltaCount,
+            invariantStatus: ulgSimulationArtifactSummary.invariantStatus,
+            validationMode: ulgSimulationArtifactSummary.validationMode,
+            scientificValidation: ulgSimulationArtifactSummary.scientificValidation === true,
+            fullPhysicsValidation: ulgSimulationArtifactSummary.fullPhysicsValidation === true,
+            calibratedPhysics: ulgSimulationArtifactSummary.calibratedPhysics === true,
+            blockerCount: ulgSimulationArtifactSummary.blockerCount,
+            blockers: ulgSimulationArtifactSummary.blockers,
+            summaryHash: ulgSimulationArtifactSummary.summaryHash
+          } : null,
           cosmologyExpansion: {
             backend: this.state.cosmology.expansion.backend,
             sequence: this.state.cosmology.expansion.sequence,
@@ -10542,6 +10605,7 @@ export class MultiscaleModel {
       ulgRuntime,
       ulgRuntimeExecution,
       ulgRuntimeStateDelta,
+      ulgSimulationArtifactSummary,
       coupling,
       conservation,
       validation: {

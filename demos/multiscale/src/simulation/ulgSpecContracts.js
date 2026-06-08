@@ -331,7 +331,8 @@ export function createUlgSpecContractReport({
   lawGraph = null,
   ulgRuntime = null,
   ulgRuntimeExecution = null,
-  ulgRuntimeStateDelta = null
+  ulgRuntimeStateDelta = null,
+  ulgSimulationArtifactSummary = null
 } = {}) {
   const orbital = state.orbital || {};
   const molecularDynamics = state.molecular?.molecularDynamics || {};
@@ -382,7 +383,17 @@ export function createUlgSpecContractReport({
   );
   const hasCarrierGraph = Boolean(ulgRuntime?.carrierRegistry?.schema);
   const passContractAudit = createPassContractAudit(ulgRuntime);
-  const hasValidation = Boolean(lawGraph?.schema || ulgRuntime?.invariantReport?.schema || ulgRuntime?.schema);
+  const hasSimulationArtifactEvidence = Boolean(
+    ulgSimulationArtifactSummary?.schema
+      && ulgSimulationArtifactSummary.compatible === true
+      && ulgSimulationArtifactSummary.runtimeEvidenceReady === true
+  );
+  const hasValidation = Boolean(
+    lawGraph?.schema
+      || ulgRuntime?.invariantReport?.schema
+      || ulgRuntime?.schema
+      || hasSimulationArtifactEvidence
+  );
 
   const contracts = [
     makeRootContract(ROOT_CONTRACTS[0], {
@@ -443,9 +454,15 @@ export function createUlgSpecContractReport({
       validity: { assumptions: ['local thermal proxy', 'phase-fraction coarse observer', 'interactive open-system source terms'] }
     }),
     makeRootContract(ROOT_CONTRACTS[6], {
-      active: hasCarrierGraph,
+      active: hasCarrierGraph || hasSimulationArtifactEvidence,
       proxy: true,
-      evidence: [ulgRuntime?.carrierRegistry?.schema, `${ulgRuntime?.carrierKindCount || 0} carrier kinds`, `${ulgRuntime?.stateChannelCount || 0} channels`],
+      evidence: [
+        ulgRuntime?.carrierRegistry?.schema,
+        `${ulgRuntime?.carrierKindCount || 0} carrier kinds`,
+        `${ulgRuntime?.stateChannelCount || 0} channels`,
+        ulgSimulationArtifactSummary?.sourceSchema,
+        ulgSimulationArtifactSummary?.summaryHash
+      ].filter(Boolean),
       validity: { assumptions: ['carrier samples are not necessarily literal particles'] }
     }),
     makeRootContract(ROOT_CONTRACTS[7], {
@@ -458,8 +475,22 @@ export function createUlgSpecContractReport({
     makeRootContract(ROOT_CONTRACTS[8], {
       active: hasValidation,
       proxy: true,
-      evidence: [lawGraph?.schema, lawGraph?.resultAdmission?.schema, ulgRuntime?.invariantReport?.schema, ulgDeltaSummary.schema].filter(Boolean),
-      validity: { assumptions: ['residual-based validation', 'explicit provenance and validity status'] }
+      evidence: [
+        lawGraph?.schema,
+        lawGraph?.resultAdmission?.schema,
+        ulgRuntime?.invariantReport?.schema,
+        ulgDeltaSummary.schema,
+        ulgSimulationArtifactSummary?.schema
+      ].filter(Boolean),
+      validity: {
+        assumptions: ['residual-based validation', 'explicit provenance and validity status'],
+        envelope: {
+          simulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true
+        }
+      },
+      blockers: ulgSimulationArtifactSummary?.scientificRuntimeReady === false
+        ? ['ULG simulation artifact is runtime evidence only, not scientific/full-physics authority']
+        : []
     })
   ];
 
@@ -524,7 +555,10 @@ export function createUlgSpecContractReport({
       forceSurfaceSchema: forceSurface?.schema || null,
       lawGraphSchema: lawGraph?.schema || null,
       ulgRuntimeSchema: ulgRuntime?.schema || null,
-      ulgRuntimeStateDeltaSchema: ulgDeltaSummary.schema
+      ulgRuntimeStateDeltaSchema: ulgDeltaSummary.schema,
+      ulgSimulationArtifactSchema: ulgSimulationArtifactSummary?.sourceSchema || null,
+      ulgSimulationArtifactSummarySchema: ulgSimulationArtifactSummary?.schema || null,
+      ulgSimulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true
     },
     handoffs: {
       ulgToMolecularDynamics: {
@@ -542,6 +576,19 @@ export function createUlgSpecContractReport({
         opacityProxy: finiteNumber(statisticalEnsemble?.opacityProxy, 0),
         degeneracyParameter: finiteNumber(statisticalEnsemble?.degeneracyParameter, 0),
         ionizationFraction: finiteNumber(statisticalEnsemble?.ionizationFraction, 0)
+      },
+      ulgRuntimeArtifact: {
+        schema: ulgSimulationArtifactSummary?.sourceSchema || null,
+        summarySchema: ulgSimulationArtifactSummary?.schema || null,
+        status: ulgSimulationArtifactSummary?.status || 'unavailable',
+        runtimeEvidenceReady: ulgSimulationArtifactSummary?.runtimeEvidenceReady === true,
+        scientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true,
+        fullPhysicsReady: ulgSimulationArtifactSummary?.fullPhysicsReady === true,
+        representation: ulgSimulationArtifactSummary?.representation || null,
+        backend: ulgSimulationArtifactSummary?.backend || null,
+        deltaCount: ulgSimulationArtifactSummary?.deltaCount ?? 0,
+        invariantStatus: ulgSimulationArtifactSummary?.invariantStatus || null,
+        blockers: ulgSimulationArtifactSummary?.blockers || []
       }
     },
     validity: {

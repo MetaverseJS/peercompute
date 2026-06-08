@@ -9,6 +9,7 @@ export const ULG_DEMO_HANDOFF_SCHEMA = 'peercompute.ulg.demo-handoff.v0';
 export const ULG_DEMO_HANDOFF_ADAPTER_SCHEMA = 'peercompute.ulg.demo-handoff-adapter.v0';
 export const ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA = 'peercompute.ulg.handoff-transfer-manifest.v0';
 export const ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA = 'peercompute.ulg.handoff-service-envelope.v0';
+export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifact.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -68,7 +69,8 @@ const ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS = Object.freeze([
 ]);
 const TASK_ARTIFACT_KIND = Object.freeze({
   'eshkol.closure.derive': 'closure',
-  'moonlab.quantum.response': 'quantum-response'
+  'moonlab.quantum.response': 'quantum-response',
+  'simulation.step': 'simulation-delta'
 });
 
 function clonePlain(value) {
@@ -1352,6 +1354,29 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const outputSemantics = artifact.validation?.outputSemantics && typeof artifact.validation.outputSemantics === 'object'
     ? artifact.validation.outputSemantics
     : null;
+  const simulationClosureRef = artifact.closureRef && typeof artifact.closureRef === 'object'
+    ? artifact.closureRef
+    : null;
+  const simulationInvariants = plainObjectOrNull(outputs.invariants);
+  const simulationInvariantMetrics = plainObjectOrNull(simulationInvariants?.metrics);
+  const simulationDeltas = Array.isArray(outputs.deltas) ? outputs.deltas : [];
+  const simulationFinalState = plainObjectOrNull(outputs.finalState);
+  const simulationValidation = artifact.validation && typeof artifact.validation === 'object'
+    ? artifact.validation
+    : {};
+  const simulationUncertainty = artifact.uncertainty && typeof artifact.uncertainty === 'object'
+    ? artifact.uncertainty
+    : {};
+  const simulationSchema = artifact.schema === ULG_SIMULATION_ARTIFACT_SCHEMA ? artifact.schema : null;
+  const simulationInvariantStatus = simulationInvariants?.status || null;
+  const simulationRuntimeEvidenceReady = simulationSchema === ULG_SIMULATION_ARTIFACT_SCHEMA
+    && simulationDeltas.length > 0
+    && simulationInvariantStatus === 'pass';
+  const simulationScientificValidation = booleanOrNull(simulationValidation.scientificValidation);
+  const simulationFullPhysicsValidation = booleanOrNull(
+    simulationValidation.fullPhysicsValidation ?? simulationValidation.fullPhysics
+  );
+  const simulationCalibratedPhysics = booleanOrNull(simulationUncertainty.calibratedPhysics);
   const closureDescriptor = artifact.validation?.closureDescriptor && typeof artifact.validation.closureDescriptor === 'object'
     ? artifact.validation.closureDescriptor
     : null;
@@ -1723,6 +1748,41 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     eshkolProductionHandlerBoundaryValidationBlockers:
       eshkolProductionHandlerBoundary?.validationBlockers || [],
     eshkolProductionHandlerBoundary,
+    simulationSchema,
+    simulationRuntimeEvidenceReady,
+    simulationScientificRuntimeReady: simulationRuntimeEvidenceReady
+      && simulationScientificValidation === true
+      && simulationFullPhysicsValidation === true
+      && simulationCalibratedPhysics === true
+      && artifact.representation !== 'carrier-toy',
+    simulationRepresentation: artifact.representation || null,
+    simulationTaskKind: artifact.taskKind || null,
+    simulationClosureRef: simulationClosureRef?.uri || simulationClosureRef?.artifactHash || (
+      typeof artifact.closureRef === 'string' ? artifact.closureRef : null
+    ),
+    simulationClosureRefSourceService: simulationClosureRef?.sourceService || null,
+    simulationBackend: execution.backend || null,
+    simulationGpuLeaseStatus: execution.gpuLeaseStatus ?? null,
+    simulationIntegrator: execution.integrator || null,
+    simulationStepCount: finiteNumberOrNull(execution.steps),
+    simulationDt: finiteNumberOrNull(execution.dt),
+    simulationDeltaCount: simulationDeltas.length,
+    simulationInvariantSeriesCount: Array.isArray(outputs.invariantSeries) ? outputs.invariantSeries.length : 0,
+    simulationFinalStep: finiteNumberOrNull(simulationFinalState?.step),
+    simulationInvariantSchema: simulationInvariants?.schema || null,
+    simulationInvariantStatus,
+    simulationMaxEnergyDriftAbs: finiteNumberOrNull(simulationInvariantMetrics?.maxEnergyDriftAbs),
+    simulationMaxMomentumDriftAbs: finiteNumberOrNull(simulationInvariantMetrics?.maxMomentumDriftAbs),
+    simulationValidityStatus: validity.status || null,
+    simulationClosureValidity: validity.closureValidity || null,
+    simulationClosureId: validity.closureId || null,
+    simulationClosureKind: validity.closureKind || null,
+    simulationValidationMode: simulationValidation.validationMode || null,
+    simulationScientificValidation,
+    simulationFullPhysicsValidation,
+    simulationModelScope: simulationUncertainty.modelScope || null,
+    simulationCalibratedPhysics,
+    simulationBlockers: clonePlain(simulationValidation.blockers || []),
     closureReady: artifactKind === 'closure'
       && closureValidationReady
       && execution.serviceWorkerSafe === true
@@ -1857,6 +1917,7 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
     entry.artifactKind
       || entry.artifactSummary?.artifactKind
       || artifact.artifactKind
+      || (artifact.schema === ULG_SIMULATION_ARTIFACT_SCHEMA ? 'simulation-delta' : null)
       || 'artifact'
   ).trim();
   const computedArtifactSummary = summarizeUlgArtifact(artifactKind, artifact);
@@ -1904,6 +1965,8 @@ export function normalizeUlgDemoHandoffArtifact(entry = {}, index = 0) {
     transfer,
     hasTransferredWasmBytes: artifactKind === 'closure' && Number(wasmByteLength) > 0,
     magnetarCalibrationReady: artifactSummary.magnetarDipoleIsingReady === true,
+    simulationArtifactReady: artifactSummary.simulationRuntimeEvidenceReady === true,
+    simulationScientificRuntimeReady: artifactSummary.simulationScientificRuntimeReady === true,
     closureOutputSemanticsReady: artifactSummary.closureOutputSemanticsReady === true,
     closureDescriptorReady: artifactSummary.closureDescriptorReady === true,
     closureReady: artifactSummary.closureReady === true
@@ -1924,6 +1987,10 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
   const closureArtifacts = artifacts.filter((entry) => (
     entry.artifactKind === 'closure'
     && entry.closureReady
+  ));
+  const simulationArtifacts = artifacts.filter((entry) => (
+    entry.artifactKind === 'simulation-delta'
+      || entry.artifactSummary?.simulationSchema === ULG_SIMULATION_ARTIFACT_SCHEMA
   ));
   const closureArtifactsWithBytes = closureArtifacts.filter((entry) => entry.hasTransferredWasmBytes);
   const artifactTransfers = artifacts.map((entry) => entry.transfer).filter(Boolean);
@@ -1980,9 +2047,12 @@ export function normalizeUlgDemoHandoff(handoff = {}, options = {}) {
     artifacts,
     calibrationArtifacts,
     closureArtifacts,
+    simulationArtifacts,
     closureArtifactsWithBytes,
     readyCalibrationArtifact: calibrationArtifacts[0] || null,
     readyClosureArtifact: closureArtifactsWithBytes[0] || closureArtifacts[0] || null,
+    readySimulationArtifact:
+      simulationArtifacts.find((entry) => entry.simulationArtifactReady === true) || simulationArtifacts[0] || null,
     transferManifest,
     transferReady: transferManifest.ready,
     transferBlockers,

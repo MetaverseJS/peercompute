@@ -23683,3 +23683,46 @@ User asked whether Infinite Context Coder is being used.
   reduced runtime evidence satisfies the declared family/hash compatibility
   contract, not that the magnetar simulation is full-fidelity.
 - No push was attempted.
+
+## 2026-06-08 11:49:12 AKDT - ULG simulation artifact consumption
+
+### Actions
+- Added `peercompute.multiscale.ulg-simulation-artifact-summary.v0` for ULG
+  `peercompute.ulg.simulation-artifact.v0` carrier-runtime artifacts.
+- Added `MultiscaleModel.applyUlgSimulationArtifact()` and packet/spec-contract
+  summaries for artifact backend, step count, delta count, invariant status,
+  validation mode, blockers, and summary hash.
+- Extended the PeerCompute ULG handoff adapter to infer and preserve
+  `simulation-delta` artifacts separately from MoonLab calibration and Eshkol
+  closure readiness.
+- Routed optional simulation artifacts through
+  `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` and exposed a
+  direct browser API `applyUlgSimulationArtifact()`.
+- Preserved the overclaim boundary: CPU-reference `carrier-toy` artifacts can
+  be runtime evidence when invariant drift passes, but keep scientific runtime,
+  SPH/material, and full-physics readiness false.
+
+### Validation
+- PASS: syntax checks for changed Multiscale source, PeerCompute adapter/index,
+  and both test files.
+- PASS: focused simulation-artifact tests for Multiscale and service
+  orchestration.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `29/29`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed; the default ULG magnetar
+  handoff stayed at two MoonLab/Eshkol artifacts.
+- PASS: ad hoc Chrome probe injected a three-artifact handoff and confirmed one
+  `simulation-delta` artifact, `runtimeEvidenceReady = true`,
+  `scientificRuntimeReady = false`, and `fullPhysicsReady = false` in packet
+  and ULG spec-contract handoff summaries.
+
+### Open
+- This path does not make the toy oscillator a calibrated SPH, material, or
+  magnetar solver. Full-physics validation remains blocked by
+  `full-physics-validation-not-run`.
+- No push was attempted.

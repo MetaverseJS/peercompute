@@ -92,6 +92,8 @@ import {
   ULG_KERNEL_PASS_SPEC_SCHEMA,
   ULG_PASS_DAG_SCHEMA,
   ULG_RUNTIME_MANIFEST_SCHEMA,
+  ULG_SIMULATION_ARTIFACT_SCHEMA,
+  ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA,
   createKernelPassSpec
 } from '../src/simulation/ulgRuntime.js';
 import {
@@ -4815,6 +4817,118 @@ test('ULG runtime worker is WebGPU-only and publishes compact execution deltas',
   assert.equal(packetWithExecution.upward.aggregateState.ulgRuntimeExecution.status, result.value.status);
   assert.equal(packetWithExecution.upward.aggregateState.ulgRuntimeStateDelta.schema, ULG_RUNTIME_STATE_DELTA_SCHEMA);
   assert.equal(packetWithExecution.upward.aggregateState.ulgRuntimeStateDelta.status, result.value.stateDelta.status);
+});
+
+test('model consumes ULG simulation artifacts as runtime evidence without promoting scientific readiness', () => {
+  const model = new MultiscaleModel({ seed: 11 });
+  const artifact = {
+    schema: ULG_SIMULATION_ARTIFACT_SCHEMA,
+    artifactId: 'ulg:test-oscillator.simulation',
+    sourceService: 'ulg-runtime',
+    taskKind: 'simulation.step',
+    closureRef: {
+      uri: 'artifact://sha256:testclosure',
+      artifactHash: 'sha256:testclosure',
+      sourceService: 'ulg-runtime-fixture'
+    },
+    representation: 'carrier-toy',
+    outputs: {
+      deltas: Array.from({ length: 32 }, (_, index) => ({
+        schema: 'peercompute.ulg.carrier-delta.v0',
+        step: index + 1,
+        dt: 0.002
+      })),
+      invariants: {
+        schema: 'peercompute.ulg.carrier-invariant-drift.v0',
+        status: 'pass',
+        metrics: {
+          maxEnergyDriftAbs: 1.25e-5,
+          maxMomentumDriftAbs: 0
+        }
+      },
+      invariantSeries: [{ step: 0 }, { step: 32 }],
+      finalState: { step: 32 }
+    },
+    execution: {
+      backend: 'cpu-reference',
+      gpuLeaseStatus: null,
+      dt: 0.002,
+      steps: 32,
+      integrator: 'velocity-verlet'
+    },
+    validity: {
+      status: 'toy-reference-valid',
+      closureValidity: 'in-range',
+      closureId: 'closure:toy-two-particle-oscillator',
+      closureKind: 'toy-two-particle-oscillator'
+    },
+    uncertainty: {
+      modelScope: 'toy-two-particle-carrier-reference',
+      calibratedPhysics: false
+    },
+    validation: {
+      status: 'pass',
+      validationMode: 'cpu-reference-invariant-drift',
+      scientificValidation: false,
+      fullPhysics: false,
+      fullPhysicsValidation: false,
+      blockers: ['toy-carrier-reference-not-scientific-physics']
+    },
+    provenance: {
+      sourceService: 'ulg-runtime',
+      parents: ['artifact://sha256:testclosure'],
+      notes: ['Toy oscillator only; no scientific or full-physics validation claim.']
+    }
+  };
+
+  const summary = model.applyUlgSimulationArtifact({ artifact });
+  assert.equal(summary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(summary.sourceSchema, ULG_SIMULATION_ARTIFACT_SCHEMA);
+  assert.equal(summary.compatible, true);
+  assert.equal(summary.status, 'toy-runtime-artifact-consumed-scientific-blocked');
+  assert.equal(summary.runtimeEvidenceReady, true);
+  assert.equal(summary.scientificRuntimeReady, false);
+  assert.equal(summary.fullPhysicsReady, false);
+  assert.equal(summary.sourceService, 'ulg-runtime');
+  assert.equal(summary.representation, 'carrier-toy');
+  assert.equal(summary.backend, 'cpu-reference');
+  assert.equal(summary.steps, 32);
+  assert.equal(summary.deltaCount, 32);
+  assert.equal(summary.invariantStatus, 'pass');
+  assert.equal(summary.validationMode, 'cpu-reference-invariant-drift');
+  assert.equal(summary.scientificValidation, false);
+  assert.equal(summary.fullPhysicsValidation, false);
+  assert.equal(summary.calibratedPhysics, false);
+  assert.ok(summary.blockers.includes('ulg-simulation-artifact-not-scientifically-validated'));
+  assert.ok(summary.blockers.includes('ulg-simulation-artifact-not-full-physics-validated'));
+  assert.ok(summary.blockers.includes('ulg-simulation-artifact-uncalibrated'));
+  assert.ok(summary.blockers.includes('ulg-simulation-artifact-toy-reference'));
+  assert.ok(summary.summaryHash.startsWith('sha256:'));
+
+  const packet = model.createPacket();
+  assert.equal(packet.ulgSimulationArtifactSummary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(packet.ulgSimulationArtifactSummary.runtimeEvidenceReady, true);
+  assert.equal(packet.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.deltaCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fullPhysicsValidation, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.summarySchema,
+    ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.runtimeEvidenceReady, true);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.scientificRuntimeReady, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fullPhysicsReady, false);
+  const validationContract = packet.upward.aggregateState.ulgSpecContracts.rootContracts.find(
+    (contract) => contract.id === 'root:validation-provenance'
+  );
+  assert.equal(validationContract.active, true);
+  assert.equal(validationContract.scientificReady, false);
+  assert.ok(validationContract.evidence.includes(ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA));
+  assert.ok(validationContract.blockers.includes(
+    'ULG simulation artifact is runtime evidence only, not scientific/full-physics authority'
+  ));
 });
 
 test('model can switch quantum orbital element and finite-grid controls', () => {

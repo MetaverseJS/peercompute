@@ -1095,3 +1095,17 @@
   required/matched/validated/hash-complete counts `5/5/5/5`, no missing runtime
   evidence, `runtimeEvidenceCompatible = true`, `ready = false`, and blocker
   `full-physics-validation-not-run`.
+- ULG simulation artifact consumption gate:
+  syntax checks for changed Multiscale, PeerCompute service-orchestration, and
+  test files; service-orchestration suite; Multiscale model suite; Multiscale
+  build; live ULG handoff smoke; and a browser-injected three-artifact handoff.
+: current result on 2026-06-08 passed. `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `29/29`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `201/201`;
+  `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning; `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed and preserved the default
+  two-artifact MoonLab/Eshkol handoff; and an ad hoc Chrome probe injected a
+  three-artifact handoff with one `simulation-delta` ULG runtime artifact and
+  confirmed `runtimeEvidenceReady = true`, `scientificRuntimeReady = false`,
+  and `fullPhysicsReady = false` in packet/spec-contract summaries.

@@ -52993,3 +52993,40 @@ Open:
   run Eshkol full-physics validation and does not claim full-fidelity GRMHD,
   production PIC, spectral radiation transport, or full magnetar simulation.
 - No push was attempted.
+
+## 2026-06-08 11:49:12 AKDT - ULG carrier simulation artifact ingestion
+
+### Actions
+- Added a compact Multiscale summary for ULG
+  `peercompute.ulg.simulation-artifact.v0` artifacts and stored it in packet
+  aggregate state plus the ULG spec-contract report.
+- Extended PeerCompute ULG handoff normalization to preserve optional
+  `simulation-delta` artifacts and `readySimulationArtifact` separately from
+  MoonLab calibration and Eshkol closure readiness.
+- Wired optional simulation artifact ingestion through the live browser handoff
+  API and exposed `window.__multiscaleDemo.applyUlgSimulationArtifact()`.
+- Kept CPU-reference `carrier-toy` oscillator artifacts scoped as runtime
+  evidence only: invariant-pass deltas can be visible, but scientific runtime,
+  SPH/material, and full-physics readiness remain false.
+
+### Validation
+- PASS: syntax checks for changed Multiscale source, PeerCompute
+  service-orchestration adapter/index, and test files.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `29/29`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed and preserved the default
+  two-artifact MoonLab/Eshkol handoff.
+- PASS: ad hoc Chrome probe against Multiscale `5185` injected a three-artifact
+  handoff and confirmed `simulationArtifactCount = 1`,
+  `runtimeEvidenceReady = true`, `scientificRuntimeReady = false`, and
+  `fullPhysicsReady = false`.
+
+### Open
+- ULG simulation artifact ingestion is not calibrated physics validation. It is
+  a provenance/runtime-evidence bridge for the core carrier path.
+- No push was attempted.
