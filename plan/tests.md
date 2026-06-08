@@ -1125,3 +1125,20 @@
   a browser-injected simulation artifact confirmed edge status `pass`, edge
   count `4`, visible `ulg sim edge`, visible magnetar affordance edge status,
   `scientificRuntimeReady = false`, and `fullPhysicsReady = false`.
+- ULG simulation field-observer propagation gate:
+  syntax checks for changed Multiscale, PeerCompute service-orchestration, and
+  test files; focused service-orchestration and Multiscale model field-observer
+  tests; full service-orchestration and Multiscale model suites; Multiscale
+  build; live ULG handoff smoke; and a browser-injected simulation artifact
+  field-observer probe against the live `5185` page.
+: current result on 2026-06-08 passed. Focused field-observer tests passed for
+  service orchestration and Multiscale; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `29/29`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `201/201`;
+  `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning; `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  handoff; and a browser-injected simulation artifact confirmed field status
+  `pass`, field count `4`, visible `ulg sim field`, visible magnetar
+  affordance field status, `scientificRuntimeReady = false`, and
+  `fullPhysicsReady = false`.

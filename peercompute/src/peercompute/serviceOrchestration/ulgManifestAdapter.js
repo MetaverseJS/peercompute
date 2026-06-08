@@ -1364,6 +1364,14 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     .map((delta) => plainObjectOrNull(delta?.edgeMessageSummary))
     .filter(Boolean);
   const simulationEdgeMessageSummary = simulationEdgeMessageSummaries.at(-1) || null;
+  const simulationFieldObserverSummaries = simulationDeltas
+    .map((delta) => plainObjectOrNull(delta?.fieldObserverSummary))
+    .filter(Boolean);
+  const simulationFieldObserverSummary = simulationFieldObserverSummaries.at(-1) || null;
+  const simulationFieldObserverObservedFieldNames =
+    Array.isArray(simulationFieldObserverSummary?.observedFieldNames)
+      ? simulationFieldObserverSummary.observedFieldNames
+      : [];
   const simulationFinalState = plainObjectOrNull(outputs.finalState);
   const simulationValidation = artifact.validation && typeof artifact.validation === 'object'
     ? artifact.validation
@@ -1786,6 +1794,20 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     simulationEdgeMessageOutOfRangeCount: finiteNumberOrNull(simulationEdgeMessageSummary?.outOfRangeCount),
     simulationEdgeMessageScientificValidation: booleanOrNull(simulationEdgeMessageSummary?.scientificValidation),
     simulationEdgeMessageFullPhysicsValidation: booleanOrNull(simulationEdgeMessageSummary?.fullPhysicsValidation),
+    simulationFieldObserverSummarySchema: simulationFieldObserverSummary?.schema || null,
+    simulationFieldObserverSummaryStatus: simulationFieldObserverSummary?.status || null,
+    simulationFieldObserverSummaryCount: simulationFieldObserverSummaries.length,
+    simulationFieldObserverObservedFieldNames: clonePlain(simulationFieldObserverObservedFieldNames),
+    simulationFieldObserverZeroWeightCount:
+      finiteNumberOrNull(simulationFieldObserverSummary?.zeroWeightCount),
+    simulationFieldObserverMaxNeighborCount:
+      finiteNumberOrNull(simulationFieldObserverSummary?.maxNeighborCount),
+    simulationFieldObserverMaxWeightSum:
+      finiteNumberOrNull(simulationFieldObserverSummary?.maxWeightSum),
+    simulationFieldObserverScientificValidation:
+      booleanOrNull(simulationFieldObserverSummary?.scientificValidation),
+    simulationFieldObserverFullPhysicsValidation:
+      booleanOrNull(simulationFieldObserverSummary?.fullPhysicsValidation),
     simulationValidityStatus: validity.status || null,
     simulationClosureValidity: validity.closureValidity || null,
     simulationClosureId: validity.closureId || null,

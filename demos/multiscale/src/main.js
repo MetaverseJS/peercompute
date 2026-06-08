@@ -1374,6 +1374,8 @@ function renderScenarioAffordance(scenario = model.getScenario()) {
   const blockerCount = scenario.handoffReadiness?.blockerCount ?? '?';
   const simulationEdgeStatus = model.state.ulgSimulationArtifactSummary?.edgeMessageSummaryStatus || null;
   const simulationEdgeCount = model.state.ulgSimulationArtifactSummary?.edgeMessageSummaryCount ?? 0;
+  const simulationFieldStatus = model.state.ulgSimulationArtifactSummary?.fieldObserverSummaryStatus || null;
+  const simulationFieldCount = model.state.ulgSimulationArtifactSummary?.fieldObserverSummaryCount ?? 0;
   if (scenarioAffordanceTitle) {
     scenarioAffordanceTitle.textContent = scenario.label || 'Magnetar proxy';
   }
@@ -1387,7 +1389,10 @@ function renderScenarioAffordance(scenario = model.getScenario()) {
     const edgeText = simulationEdgeStatus
       ? ` / sim edge ${formatScenarioAffordanceValue(simulationEdgeStatus)} x${simulationEdgeCount}`
       : '';
-    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}${edgeText}`;
+    const fieldText = simulationFieldStatus
+      ? ` / sim field ${formatScenarioAffordanceValue(simulationFieldStatus)} x${simulationFieldCount}`
+      : '';
+    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}${edgeText}${fieldText}`;
   }
   if (scenarioHandoffStatus) {
     scenarioHandoffStatus.textContent = `status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
@@ -4912,6 +4917,7 @@ const FOCUS_LAYER_READOUT_ROWS = new Set([
   'root contracts',
   'ulg runtime',
   'ulg sim edge',
+  'ulg sim field',
   'particle budget',
   'memory pressure',
   'remote peer',
@@ -6951,6 +6957,23 @@ function formatUlgSimulationEdgeSummary(summary) {
   return `${edgeStatus} / ${count} deltas / net ${net} / anti ${anti} / oor ${out} / ${science}`;
 }
 
+function formatUlgSimulationFieldObserverSummary(summary) {
+  if (!summary || summary.schema !== 'peercompute.multiscale.ulg-simulation-artifact-summary.v0') {
+    return 'warming';
+  }
+  const fieldStatus = summary.fieldObserverSummaryStatus || 'field n/a';
+  const count = summary.fieldObserverSummaryCount ?? 0;
+  const observedNames = Array.isArray(summary.fieldObserverObservedFieldNames)
+    ? summary.fieldObserverObservedFieldNames
+    : [];
+  const fields = observedNames.length > 0 ? observedNames.join(',') : 'fields n/a';
+  const zero = summary.fieldObserverZeroWeightCount ?? 0;
+  const neighbors = summary.fieldObserverMaxNeighborCount ?? 0;
+  const maxWeight = formatExp(summary.fieldObserverMaxWeightSum ?? 0, 2);
+  const science = summary.fieldObserverScientificValidation ? 'sci' : 'runtime';
+  return `${fieldStatus} / ${count} deltas / ${fields} / zero ${zero} / neigh ${neighbors} / weight ${maxWeight} / ${science}`;
+}
+
 function countPendingSolverFamilies(status = solverRuntimeStatus) {
   return Object.values(status)
     .filter((entry) => entry && typeof entry === 'object' && entry.pending)
@@ -7857,6 +7880,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
       ? `${scenario.id} / ${scenario.modelTier} / ${scenario.normalization?.status || 'untracked'} / cal ${scenario.validation?.calibrationStatus || 'handoff-pending'} / ref ${scenario.handoffReadiness?.referenceInventory?.status || 'reference-pending'} / tol ${scenario.handoffReadiness?.toleranceSuite?.status || 'tolerance-pending'} / closure ${scenario.validation?.closureStatus || 'handoff-pending'} / probe ${scenario.validation?.closureModuleProbeStatus || 'probe-pending'} / host ${scenario.closureModuleProbe?.hostRuntimeProbe?.status || 'host-pending'} / exec ${scenario.closureModuleProbe?.hostRuntimeExecution?.status || 'exec-pending'} / xfer ${scenario.handoffReadiness?.transferManifest?.status || 'transfer-pending'} / runtime ${scenario.handoffReadiness?.scientificRuntimeGate?.status || 'runtime-pending'} / handoff ${scenario.handoffReadiness?.status || 'handoff-pending'} / blockers ${scenario.handoffReadiness?.blockerCount ?? '?'}`
       : 'default'],
     ['ulg sim edge', formatUlgSimulationEdgeSummary(ulgSimulationArtifactSummary)],
+    ['ulg sim field', formatUlgSimulationFieldObserverSummary(ulgSimulationArtifactSummary)],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
       : 'unknown'],

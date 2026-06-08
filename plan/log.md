@@ -53119,3 +53119,48 @@ Open:
   does not make the toy oscillator a calibrated material/SPH solver or clear
   full-physics validation.
 - No push was attempted.
+
+## 2026-06-08 12:20:09 AKDT - ULG simulation field-observer propagation
+
+### Actions
+- Extended the PeerCompute ULG handoff adapter and Multiscale
+  `peercompute.multiscale.ulg-simulation-artifact-summary.v0` path to preserve
+  per-delta `peercompute.ulg.field-observer-summary.v0` fields: status, count,
+  observed field names, zero-weight observer count, max neighbor count, max
+  weight sum, and validation flags.
+- Propagated those fields through quantum-material diagnostics, packet
+  aggregate state, ULG spec-contract root evidence, validation envelope,
+  bridge contracts, handoff contracts, the magnetar scenario affordance, and
+  the new `ulg sim field` readout row.
+- Kept the observer path scoped as runtime/operator evidence: mass-like scalar
+  observer telemetry does not imply density, EOS, SPH/material, phase-change,
+  calibrated material properties, scientific runtime, or full-physics
+  readiness.
+- Updated focused service-orchestration and Multiscale model fixtures to carry
+  both edge-message and field-observer summaries in synthetic ULG deltas.
+
+### Validation
+- PASS: syntax checks for changed service-orchestration, Multiscale source, and
+  test files.
+- PASS: focused service-orchestration simulation artifact test.
+- PASS: focused Multiscale simulation artifact test.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `29/29`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  ULG handoff.
+- PASS: browser-injected field-observer probe against
+  `https://127.0.0.1:5185/?scenario=magnetar` confirmed field status `pass`,
+  field count `4`, packet/spec-contract propagation, visible `ulg sim field`,
+  visible magnetar affordance `sim field pass x4`, and false
+  scientific/full-physics readiness.
+
+### Open
+- This remains runtime/operator topology evidence. It does not validate
+  density, EOS, SPH/material physics, calibrated closures, phase-change
+  behavior, material-property authority, or full magnetar simulation.
+- No push was attempted.

@@ -7534,6 +7534,15 @@ export class MultiscaleModel {
         edgeMessageSummaryStatus: summary.edgeMessageSummaryStatus,
         edgeMessageSummaryCount: summary.edgeMessageSummaryCount,
         edgeMessageMaxAntisymmetricResidualAbs: summary.edgeMessageMaxAntisymmetricResidualAbs,
+        fieldObserverSummarySchema: summary.fieldObserverSummarySchema,
+        fieldObserverSummaryStatus: summary.fieldObserverSummaryStatus,
+        fieldObserverSummaryCount: summary.fieldObserverSummaryCount,
+        fieldObserverObservedFieldNames: summary.fieldObserverObservedFieldNames,
+        fieldObserverZeroWeightCount: summary.fieldObserverZeroWeightCount,
+        fieldObserverMaxNeighborCount: summary.fieldObserverMaxNeighborCount,
+        fieldObserverMaxWeightSum: summary.fieldObserverMaxWeightSum,
+        fieldObserverScientificValidation: summary.fieldObserverScientificValidation === true,
+        fieldObserverFullPhysicsValidation: summary.fieldObserverFullPhysicsValidation === true,
         summaryHash: summary.summaryHash
       };
     }
@@ -9957,6 +9966,17 @@ export class MultiscaleModel {
               ulgSimulationArtifactSummary.edgeMessageScientificValidation === true,
             edgeMessageFullPhysicsValidation:
               ulgSimulationArtifactSummary.edgeMessageFullPhysicsValidation === true,
+            fieldObserverSummarySchema: ulgSimulationArtifactSummary.fieldObserverSummarySchema,
+            fieldObserverSummaryStatus: ulgSimulationArtifactSummary.fieldObserverSummaryStatus,
+            fieldObserverSummaryCount: ulgSimulationArtifactSummary.fieldObserverSummaryCount,
+            fieldObserverObservedFieldNames: ulgSimulationArtifactSummary.fieldObserverObservedFieldNames,
+            fieldObserverZeroWeightCount: ulgSimulationArtifactSummary.fieldObserverZeroWeightCount,
+            fieldObserverMaxNeighborCount: ulgSimulationArtifactSummary.fieldObserverMaxNeighborCount,
+            fieldObserverMaxWeightSum: ulgSimulationArtifactSummary.fieldObserverMaxWeightSum,
+            fieldObserverScientificValidation:
+              ulgSimulationArtifactSummary.fieldObserverScientificValidation === true,
+            fieldObserverFullPhysicsValidation:
+              ulgSimulationArtifactSummary.fieldObserverFullPhysicsValidation === true,
             validationMode: ulgSimulationArtifactSummary.validationMode,
             scientificValidation: ulgSimulationArtifactSummary.scientificValidation === true,
             fullPhysicsValidation: ulgSimulationArtifactSummary.fullPhysicsValidation === true,

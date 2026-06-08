@@ -23765,3 +23765,39 @@ User asked whether Infinite Context Coder is being used.
   validate SPH/material physics, calibrated closures, or full magnetar
   simulation.
 - No push was attempted.
+
+## 2026-06-08 12:20:09 AKDT - ULG simulation field-observer propagation
+
+### Actions
+- Extended Multiscale's ULG simulation artifact summary to preserve per-delta
+  `peercompute.ulg.field-observer-summary.v0` fields beside the existing
+  edge-message summary evidence.
+- Propagated field-observer status/count/observed-field/zero-weight/neighbor
+  and weight telemetry through packet aggregate state, ULG spec-contract
+  bridge/handoff fields, validation envelope, the magnetar scenario affordance,
+  and the new `ulg sim field` readout row.
+- Added focus-HUD allowlist support so the field-observer row appears in the
+  default focused HUD mode.
+- Updated the Multiscale model test fixture/assertions and docs describing the
+  runtime/operator-evidence boundary.
+
+### Validation
+- PASS: syntax checks for changed Multiscale source and test files.
+- PASS: focused Multiscale simulation artifact test.
+- PASS: full `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+  passed `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  ULG handoff.
+- PASS: browser-injected field-observer probe confirmed field status `pass`,
+  field count `4`, packet/spec-contract propagation, visible `ulg sim field`,
+  visible magnetar affordance `sim field pass x4`, and false
+  scientific/full-physics readiness.
+
+### Open
+- Field observers remain topology/operator runtime evidence. They do not
+  validate density, EOS, SPH/material physics, calibrated closures,
+  phase-change behavior, or full magnetar simulation.
+- No push was attempted.

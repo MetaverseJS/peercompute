@@ -92,6 +92,7 @@ import {
   ULG_KERNEL_PASS_SPEC_SCHEMA,
   ULG_PASS_DAG_SCHEMA,
   ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
+  ULG_FIELD_OBSERVER_SUMMARY_SCHEMA,
   ULG_RUNTIME_MANIFEST_SCHEMA,
   ULG_SIMULATION_ARTIFACT_SCHEMA,
   ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA,
@@ -4822,6 +4823,7 @@ test('ULG runtime worker is WebGPU-only and publishes compact execution deltas',
 
 test('model consumes ULG simulation artifacts as runtime evidence without promoting scientific readiness', () => {
   const model = new MultiscaleModel({ seed: 11 });
+  model.updateQuantumOrbitalClosure();
   const artifact = {
     schema: ULG_SIMULATION_ARTIFACT_SCHEMA,
     artifactId: 'ulg:test-oscillator.simulation',
@@ -4845,6 +4847,21 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
           outOfRangeCount: 0,
           maxNetForceAbs: 0,
           maxAntisymmetricResidualAbs: 0,
+          scientificValidation: false,
+          fullPhysicsValidation: false
+        },
+        fieldObserverSummary: {
+          schema: ULG_FIELD_OBSERVER_SUMMARY_SCHEMA,
+          status: 'pass',
+          observedFieldNames: [
+            'positionX',
+            'velocityX',
+            'mass',
+            'kineticEnergy'
+          ],
+          zeroWeightCount: 0,
+          maxNeighborCount: 1,
+          maxWeightSum: 1,
           scientificValidation: false,
           fullPhysicsValidation: false
         }
@@ -4914,6 +4931,36 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(summary.edgeMessageOutOfRangeCount, 0);
   assert.equal(summary.edgeMessageScientificValidation, false);
   assert.equal(summary.edgeMessageFullPhysicsValidation, false);
+  assert.equal(summary.fieldObserverSummarySchema, ULG_FIELD_OBSERVER_SUMMARY_SCHEMA);
+  assert.equal(summary.fieldObserverSummaryStatus, 'pass');
+  assert.equal(summary.fieldObserverSummaryCount, 32);
+  assert.deepEqual(summary.fieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(summary.fieldObserverZeroWeightCount, 0);
+  assert.equal(summary.fieldObserverMaxNeighborCount, 1);
+  assert.equal(summary.fieldObserverMaxWeightSum, 1);
+  assert.equal(summary.fieldObserverScientificValidation, false);
+  assert.equal(summary.fieldObserverFullPhysicsValidation, false);
+  const diagnosticsSummary = model.state.closures.quantumMaterialPotential?.diagnostics?.ulgSimulationArtifactSummary;
+  assert.equal(diagnosticsSummary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(diagnosticsSummary.fieldObserverSummarySchema, ULG_FIELD_OBSERVER_SUMMARY_SCHEMA);
+  assert.equal(diagnosticsSummary.fieldObserverSummaryStatus, 'pass');
+  assert.equal(diagnosticsSummary.fieldObserverSummaryCount, 32);
+  assert.deepEqual(diagnosticsSummary.fieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(diagnosticsSummary.fieldObserverZeroWeightCount, 0);
+  assert.equal(diagnosticsSummary.fieldObserverMaxNeighborCount, 1);
+  assert.equal(diagnosticsSummary.fieldObserverMaxWeightSum, 1);
+  assert.equal(diagnosticsSummary.fieldObserverScientificValidation, false);
+  assert.equal(diagnosticsSummary.fieldObserverFullPhysicsValidation, false);
   assert.equal(summary.validationMode, 'cpu-reference-invariant-drift');
   assert.equal(summary.scientificValidation, false);
   assert.equal(summary.fullPhysicsValidation, false);
@@ -4933,6 +4980,19 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageSummaryStatus, 'pass');
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageSummaryCount, 32);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverSummaryCount, 32);
+  assert.deepEqual(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverZeroWeightCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverMaxNeighborCount, 1);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverMaxWeightSum, 1);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverFullPhysicsValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fullPhysicsValidation, false);
   assert.equal(
@@ -4949,12 +5009,63 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageSummaryStatus, 'pass');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageSummaryCount, 32);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageScientificValidation, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverSummarySchema,
+    ULG_FIELD_OBSERVER_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverSummaryCount, 32);
+  assert.deepEqual(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverZeroWeightCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverMaxNeighborCount, 1);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverMaxWeightSum, 1);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverFullPhysicsValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactEdgeMessageSummaryStatus, 'pass');
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverSummarySchema,
+    ULG_FIELD_OBSERVER_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverSummaryCount, 32);
+  assert.deepEqual(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverZeroWeightCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverMaxNeighborCount, 1);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverMaxWeightSum, 1);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverFullPhysicsValidation, false);
   const validationContract = packet.upward.aggregateState.ulgSpecContracts.rootContracts.find(
     (contract) => contract.id === 'root:validation-provenance'
   );
   assert.equal(validationContract.active, true);
   assert.equal(validationContract.scientificReady, false);
+  assert.equal(
+    validationContract.validity.envelope.simulationArtifactFieldObserverSummarySchema,
+    ULG_FIELD_OBSERVER_SUMMARY_SCHEMA
+  );
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverSummaryStatus, 'pass');
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverSummaryCount, 32);
+  assert.deepEqual(validationContract.validity.envelope.simulationArtifactFieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverZeroWeightCount, 0);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverMaxNeighborCount, 1);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverMaxWeightSum, 1);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverScientificValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverFullPhysicsValidation, false);
   assert.ok(validationContract.evidence.includes(ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA));
   assert.ok(validationContract.blockers.includes(
     'ULG simulation artifact is runtime evidence only, not scientific/full-physics authority'

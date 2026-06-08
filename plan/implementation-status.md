@@ -348,13 +348,17 @@ Updated: 2026-06-08 10:23:44 AKDT
   `simulation-delta`, records `peercompute.multiscale.ulg-simulation-artifact-summary.v0`
   in Multiscale packets/spec contracts, and now preserves ULG
   `peercompute.ulg.edge-message-summary.v0` pass/count/residual/out-of-range
-  fields through the handoff adapter, packet aggregate, spec-contract handoff,
-  magnetar affordance, and `ulg sim edge` readout. It keeps
-  `scientificRuntimeReady`, `fullPhysicsReady`, SPH/material readiness, and
-  magnetar full-physics readiness false for CPU-reference `carrier-toy`
-  artifacts. Current validation on 2026-06-08 passed syntax checks, service
-  orchestration `29/29`, Multiscale model `201/201`, Multiscale build, live ULG
-  handoff smoke, and a browser-injected simulation edge probe.
+  fields plus `peercompute.ulg.field-observer-summary.v0` observed-field,
+  zero-weight, neighbor-count, and weight-sum fields through the handoff
+  adapter, packet aggregate, spec-contract handoff, magnetar affordance, and
+  `ulg sim edge` / `ulg sim field` readouts. It keeps
+  `scientificRuntimeReady`, `fullPhysicsReady`, SPH/material readiness,
+  material-property/phase-change readiness, and magnetar full-physics readiness
+  false for CPU-reference `carrier-toy` artifacts. Current validation on
+  2026-06-08 passed syntax checks, service orchestration `29/29`, Multiscale
+  model `201/201`, Multiscale build with the existing large-chunk warning, live
+  ULG handoff smoke, and a browser-injected field-observer probe that confirmed
+  visible `ulg sim field` and false scientific/full-physics readiness.
 
 ## Next
 - Promote the production handler runtime smoke into validated production

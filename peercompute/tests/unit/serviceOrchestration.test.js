@@ -2445,6 +2445,21 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
               maxAntisymmetricResidualAbs: 0,
               scientificValidation: false,
               fullPhysicsValidation: false
+            },
+            fieldObserverSummary: {
+              schema: 'peercompute.ulg.field-observer-summary.v0',
+              status: 'pass',
+              observedFieldNames: [
+                'positionX',
+                'velocityX',
+                'mass',
+                'kineticEnergy'
+              ],
+              zeroWeightCount: 0,
+              maxNeighborCount: 1,
+              maxWeightSum: 1,
+              scientificValidation: false,
+              fullPhysicsValidation: false
             }
           })),
           invariants: {
@@ -2517,6 +2532,23 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageOutOfRangeCount, 0);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageFullPhysicsValidation, false);
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverSummarySchema,
+    'peercompute.ulg.field-observer-summary.v0'
+  );
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverSummaryStatus, 'pass');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverSummaryCount, 32);
+  assert.deepEqual(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverObservedFieldNames, [
+    'positionX',
+    'velocityX',
+    'mass',
+    'kineticEnergy'
+  ]);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverZeroWeightCount, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverMaxNeighborCount, 1);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverMaxWeightSum, 1);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverScientificValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationCalibratedPhysics, false);

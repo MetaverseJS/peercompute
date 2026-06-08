@@ -13,6 +13,7 @@ export const ULG_COMPACT_DELTA_SCHEMA = 'peercompute.ulg.compact-delta.v0';
 export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifact.v0';
 export const ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.multiscale.ulg-simulation-artifact-summary.v0';
 export const ULG_EDGE_MESSAGE_SUMMARY_SCHEMA = 'peercompute.ulg.edge-message-summary.v0';
+export const ULG_FIELD_OBSERVER_SUMMARY_SCHEMA = 'peercompute.ulg.field-observer-summary.v0';
 
 export const ULG_LIVE_BACKENDS = ['webgpu'];
 export const ULG_OFFLINE_AUDIT_BACKENDS = ['wasm_audit'];
@@ -771,6 +772,15 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
       : null)
     .filter(Boolean);
   const edgeMessageSummary = edgeMessageSummaries.at(-1) || null;
+  const fieldObserverSummaries = deltas
+    .map((delta) => delta?.fieldObserverSummary && typeof delta.fieldObserverSummary === 'object'
+      ? delta.fieldObserverSummary
+      : null)
+    .filter(Boolean);
+  const fieldObserverSummary = fieldObserverSummaries.at(-1) || null;
+  const fieldObserverObservedFieldNames = Array.isArray(fieldObserverSummary?.observedFieldNames)
+    ? fieldObserverSummary.observedFieldNames
+    : [];
   const invariantReport = outputs.invariants && typeof outputs.invariants === 'object'
     ? outputs.invariants
     : null;
@@ -821,6 +831,19 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     edgeMessageFullPhysicsValidation: typeof edgeMessageSummary?.fullPhysicsValidation === 'boolean'
       ? edgeMessageSummary.fullPhysicsValidation
       : null,
+    fieldObserverSummarySchema: fieldObserverSummary?.schema || null,
+    fieldObserverSummaryStatus: fieldObserverSummary?.status || null,
+    fieldObserverSummaryCount: fieldObserverSummaries.length,
+    fieldObserverObservedFieldNames,
+    fieldObserverZeroWeightCount: fieldObserverSummary?.zeroWeightCount ?? null,
+    fieldObserverMaxNeighborCount: fieldObserverSummary?.maxNeighborCount ?? null,
+    fieldObserverMaxWeightSum: fieldObserverSummary?.maxWeightSum ?? null,
+    fieldObserverScientificValidation: typeof fieldObserverSummary?.scientificValidation === 'boolean'
+      ? fieldObserverSummary.scientificValidation
+      : null,
+    fieldObserverFullPhysicsValidation: typeof fieldObserverSummary?.fullPhysicsValidation === 'boolean'
+      ? fieldObserverSummary.fullPhysicsValidation
+      : null,
     validationStatus: validation.status || null,
     scientificValidation,
     fullPhysicsValidation,
@@ -860,6 +883,19 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
       : null,
     edgeMessageFullPhysicsValidation: typeof edgeMessageSummary?.fullPhysicsValidation === 'boolean'
       ? edgeMessageSummary.fullPhysicsValidation
+      : null,
+    fieldObserverSummarySchema: fieldObserverSummary?.schema || null,
+    fieldObserverSummaryStatus: fieldObserverSummary?.status || null,
+    fieldObserverSummaryCount: fieldObserverSummaries.length,
+    fieldObserverObservedFieldNames,
+    fieldObserverZeroWeightCount: fieldObserverSummary?.zeroWeightCount ?? null,
+    fieldObserverMaxNeighborCount: fieldObserverSummary?.maxNeighborCount ?? null,
+    fieldObserverMaxWeightSum: fieldObserverSummary?.maxWeightSum ?? null,
+    fieldObserverScientificValidation: typeof fieldObserverSummary?.scientificValidation === 'boolean'
+      ? fieldObserverSummary.scientificValidation
+      : null,
+    fieldObserverFullPhysicsValidation: typeof fieldObserverSummary?.fullPhysicsValidation === 'boolean'
+      ? fieldObserverSummary.fullPhysicsValidation
       : null,
     validityStatus: validity.status || null,
     closureValidity: validity.closureValidity || null,
