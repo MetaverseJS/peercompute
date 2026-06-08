@@ -1,5 +1,38 @@
 # Multiscale Ladder Demo Log
 
+## 2026-06-08 13:24:58 AKDT - ULG closure refresh projection
+
+### Prompt
+User asked to continue core technology work, keep commits local, keep using
+Infinite Context Coder, and prepare a Claude handoff when reaching a clean break.
+
+### Actions
+- Projected ULG `peercompute.ulg.closure-refresh-request.v0` fields through
+  Multiscale ULG simulation artifact summaries.
+- Preserved refresh validity status, refresh/invalidation booleans, reason,
+  registry action, and out-of-range bounds in diagnostics, packet aggregate
+  state, and ULG spec contract bridge/handoff evidence.
+- Added focused Multiscale assertions that the in-range ULG runtime path keeps
+  refresh/invalidation recommendations false while preserving explicit
+  non-scientific/full-physics flags.
+- Rebuilt `docs/multiscale`.
+
+### Validation
+- PASS: syntax checks for changed files.
+- PASS: focused ULG simulation artifact test passed.
+- PASS: full `demos/multiscale/tests/multiscaleModel.test.mjs` passed `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale
+  run test:ulg-handoff` reported bridge ack `handoff-ready`, blocker count `0`,
+  and magnetar visible.
+- PASS: `git diff --check`.
+
+### Open
+- This is ULG handoff/contract projection, not closure rederivation or validated
+  material/EOS/SPH/phase-change physics.
+- No push was attempted.
+
 ## 2026-06-06 16:46:02 AKDT - H2O SPH phase-change evidence and magnetar visual smoke
 
 ### Prompt

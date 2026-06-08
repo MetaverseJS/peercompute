@@ -530,6 +530,8 @@ export function createUlgSpecContractReport({
             ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
           simulationArtifactFieldClosureSampleSummaryCount:
             ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+          simulationArtifactFieldClosureSampleValidityStatus:
+            ulgSimulationArtifactSummary?.fieldClosureSampleValidityStatus || null,
           simulationArtifactFieldClosureSampleKind:
             ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
           simulationArtifactFieldClosureSampleClosureId:
@@ -556,6 +558,22 @@ export function createUlgSpecContractReport({
             ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
           simulationArtifactFieldClosureSampleMaxAbsDerivative:
             ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+          simulationArtifactFieldClosureSampleRefreshRequestSchema:
+            ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestSchema || null,
+          simulationArtifactFieldClosureSampleRefreshRequestStatus:
+            ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestStatus || null,
+          simulationArtifactFieldClosureSampleRefreshRecommended:
+            ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRecommended === true,
+          simulationArtifactFieldClosureSampleInvalidationRecommended:
+            ulgSimulationArtifactSummary?.fieldClosureSampleInvalidationRecommended === true,
+          simulationArtifactFieldClosureSampleRefreshReason:
+            ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
+          simulationArtifactFieldClosureSampleRefreshRegistryAction:
+            ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+          simulationArtifactFieldClosureSampleMinOutOfRangeInput:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
+          simulationArtifactFieldClosureSampleMaxOutOfRangeInput:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMaxOutOfRangeInput ?? null,
           simulationArtifactFieldClosureSampleScientificValidation:
             ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
           simulationArtifactFieldClosureSampleFullPhysicsValidation:
@@ -670,6 +688,8 @@ export function createUlgSpecContractReport({
         ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
       ulgSimulationArtifactFieldClosureSampleSummaryCount:
         ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+      ulgSimulationArtifactFieldClosureSampleValidityStatus:
+        ulgSimulationArtifactSummary?.fieldClosureSampleValidityStatus || null,
       ulgSimulationArtifactFieldClosureSampleKind:
         ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
       ulgSimulationArtifactFieldClosureSampleClosureId:
@@ -696,6 +716,22 @@ export function createUlgSpecContractReport({
         ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
       ulgSimulationArtifactFieldClosureSampleMaxAbsDerivative:
         ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+      ulgSimulationArtifactFieldClosureSampleRefreshRequestSchema:
+        ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestSchema || null,
+      ulgSimulationArtifactFieldClosureSampleRefreshRequestStatus:
+        ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestStatus || null,
+      ulgSimulationArtifactFieldClosureSampleRefreshRecommended:
+        ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRecommended === true,
+      ulgSimulationArtifactFieldClosureSampleInvalidationRecommended:
+        ulgSimulationArtifactSummary?.fieldClosureSampleInvalidationRecommended === true,
+      ulgSimulationArtifactFieldClosureSampleRefreshReason:
+        ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
+      ulgSimulationArtifactFieldClosureSampleRefreshRegistryAction:
+        ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+      ulgSimulationArtifactFieldClosureSampleMinOutOfRangeInput:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
+      ulgSimulationArtifactFieldClosureSampleMaxOutOfRangeInput:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMaxOutOfRangeInput ?? null,
       ulgSimulationArtifactFieldClosureSampleScientificValidation:
         ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
       ulgSimulationArtifactFieldClosureSampleFullPhysicsValidation:
@@ -767,6 +803,7 @@ export function createUlgSpecContractReport({
         fieldClosureSampleSummarySchema: ulgSimulationArtifactSummary?.fieldClosureSampleSummarySchema || null,
         fieldClosureSampleSummaryStatus: ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
         fieldClosureSampleSummaryCount: ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+        fieldClosureSampleValidityStatus: ulgSimulationArtifactSummary?.fieldClosureSampleValidityStatus || null,
         fieldClosureSampleKind: ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
         fieldClosureSampleClosureId: ulgSimulationArtifactSummary?.fieldClosureSampleClosureId || null,
         fieldClosureSampleFieldName: ulgSimulationArtifactSummary?.fieldClosureSampleFieldName || null,
@@ -780,6 +817,19 @@ export function createUlgSpecContractReport({
         fieldClosureSampleMinSampledValue: ulgSimulationArtifactSummary?.fieldClosureSampleMinSampledValue ?? null,
         fieldClosureSampleMaxSampledValue: ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
         fieldClosureSampleMaxAbsDerivative: ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+        fieldClosureSampleRefreshRequestSchema: ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestSchema || null,
+        fieldClosureSampleRefreshRequestStatus: ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRequestStatus || null,
+        fieldClosureSampleRefreshRecommended:
+          ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRecommended === true,
+        fieldClosureSampleInvalidationRecommended:
+          ulgSimulationArtifactSummary?.fieldClosureSampleInvalidationRecommended === true,
+        fieldClosureSampleRefreshReason: ulgSimulationArtifactSummary?.fieldClosureSampleRefreshReason || null,
+        fieldClosureSampleRefreshRegistryAction:
+          ulgSimulationArtifactSummary?.fieldClosureSampleRefreshRegistryAction || null,
+        fieldClosureSampleMinOutOfRangeInput:
+          ulgSimulationArtifactSummary?.fieldClosureSampleMinOutOfRangeInput ?? null,
+        fieldClosureSampleMaxOutOfRangeInput:
+          ulgSimulationArtifactSummary?.fieldClosureSampleMaxOutOfRangeInput ?? null,
         fieldClosureSampleScientificValidation:
           ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
         fieldClosureSampleFullPhysicsValidation:

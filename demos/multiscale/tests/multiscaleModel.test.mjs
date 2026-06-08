@@ -91,6 +91,7 @@ import {
 import {
   ULG_KERNEL_PASS_SPEC_SCHEMA,
   ULG_PASS_DAG_SCHEMA,
+  ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
   ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
   ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA,
   ULG_FIELD_OBSERVER_SUMMARY_SCHEMA,
@@ -4869,6 +4870,7 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
         fieldClosureSampleSummary: {
           schema: ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA,
           status: 'pass',
+          validityStatus: 'in-range',
           sampleKind: 'observed-scalar-field-table-sample-reference',
           closureId: 'closure:toy-two-particle-oscillator',
           fieldName: 'closureAxisR',
@@ -4882,6 +4884,23 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
           minSampledValue: 0.25,
           maxSampledValue: 0.25,
           maxAbsDerivative: 0.5,
+          closureRefreshRequest: {
+            schema: ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+            status: 'not-needed',
+            reason: null,
+            registryAction: 'none',
+            refreshRecommended: false,
+            invalidationRecommended: false,
+            scientificValidation: false,
+            fullPhysicsValidation: false,
+            materialValidation: false,
+            eosValidation: false,
+            sphValidation: false,
+            phaseChangeValidation: false
+          },
+          closureRefreshRecommended: false,
+          closureInvalidationRecommended: false,
+          closureRefreshRegistryAction: 'none',
           scientificValidation: false,
           fullPhysicsValidation: false,
           materialValidation: false,
@@ -4972,6 +4991,7 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(summary.fieldClosureSampleSummarySchema, ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA);
   assert.equal(summary.fieldClosureSampleSummaryStatus, 'pass');
   assert.equal(summary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(summary.fieldClosureSampleValidityStatus, 'in-range');
   assert.equal(summary.fieldClosureSampleKind, 'observed-scalar-field-table-sample-reference');
   assert.equal(summary.fieldClosureSampleClosureId, 'closure:toy-two-particle-oscillator');
   assert.equal(summary.fieldClosureSampleFieldName, 'closureAxisR');
@@ -4985,6 +5005,11 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(summary.fieldClosureSampleMinSampledValue, 0.25);
   assert.equal(summary.fieldClosureSampleMaxSampledValue, 0.25);
   assert.equal(summary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(summary.fieldClosureSampleRefreshRequestSchema, ULG_CLOSURE_REFRESH_REQUEST_SCHEMA);
+  assert.equal(summary.fieldClosureSampleRefreshRequestStatus, 'not-needed');
+  assert.equal(summary.fieldClosureSampleRefreshRecommended, false);
+  assert.equal(summary.fieldClosureSampleInvalidationRecommended, false);
+  assert.equal(summary.fieldClosureSampleRefreshRegistryAction, 'none');
   assert.equal(summary.fieldClosureSampleScientificValidation, false);
   assert.equal(summary.fieldClosureSampleFullPhysicsValidation, false);
   assert.equal(summary.fieldClosureSampleMaterialValidation, false);
@@ -5010,6 +5035,7 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(diagnosticsSummary.fieldClosureSampleSummarySchema, ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA);
   assert.equal(diagnosticsSummary.fieldClosureSampleSummaryStatus, 'pass');
   assert.equal(diagnosticsSummary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(diagnosticsSummary.fieldClosureSampleValidityStatus, 'in-range');
   assert.equal(diagnosticsSummary.fieldClosureSampleKind, 'observed-scalar-field-table-sample-reference');
   assert.equal(diagnosticsSummary.fieldClosureSampleClosureId, 'closure:toy-two-particle-oscillator');
   assert.equal(diagnosticsSummary.fieldClosureSampleFieldName, 'closureAxisR');
@@ -5023,6 +5049,11 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(diagnosticsSummary.fieldClosureSampleMinSampledValue, 0.25);
   assert.equal(diagnosticsSummary.fieldClosureSampleMaxSampledValue, 0.25);
   assert.equal(diagnosticsSummary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRequestSchema, ULG_CLOSURE_REFRESH_REQUEST_SCHEMA);
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRequestStatus, 'not-needed');
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRecommended, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleInvalidationRecommended, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleRefreshRegistryAction, 'none');
   assert.equal(diagnosticsSummary.fieldClosureSampleScientificValidation, false);
   assert.equal(diagnosticsSummary.fieldClosureSampleFullPhysicsValidation, false);
   assert.equal(diagnosticsSummary.fieldClosureSampleMaterialValidation, false);
@@ -5067,6 +5098,7 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   );
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSummaryStatus, 'pass');
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleValidityStatus, 'in-range');
   assert.equal(
     packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleKind,
     'observed-scalar-field-table-sample-reference'
@@ -5083,6 +5115,14 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMinSampledValue, 0.25);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaxSampledValue, 0.25);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(
+    packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleRefreshRequestSchema,
+    ULG_CLOSURE_REFRESH_REQUEST_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleRefreshRequestStatus, 'not-needed');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleRefreshRecommended, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleInvalidationRecommended, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleRefreshRegistryAction, 'none');
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleFullPhysicsValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaterialValidation, false);
@@ -5128,6 +5168,7 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   );
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSummaryStatus, 'pass');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSummaryCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleValidityStatus, 'in-range');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleFieldName, 'closureAxisR');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleAxisName, 'r');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleOutputName, 'potentialEnergy');
@@ -5139,6 +5180,14 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMinSampledValue, 0.25);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaxSampledValue, 0.25);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleRefreshRequestSchema,
+    ULG_CLOSURE_REFRESH_REQUEST_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleRefreshRequestStatus, 'not-needed');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleRefreshRecommended, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleInvalidationRecommended, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleRefreshRegistryAction, 'none');
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleFullPhysicsValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaterialValidation, false);

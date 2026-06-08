@@ -10,6 +10,8 @@ export const ULG_DEMO_HANDOFF_ADAPTER_SCHEMA = 'peercompute.ulg.demo-handoff-ada
 export const ULG_HANDOFF_TRANSFER_MANIFEST_SCHEMA = 'peercompute.ulg.handoff-transfer-manifest.v0';
 export const ULG_HANDOFF_SERVICE_ENVELOPE_SCHEMA = 'peercompute.ulg.handoff-service-envelope.v0';
 export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifact.v0';
+export const ULG_CLOSURE_TABLE_WGSL_DESCRIPTOR_SCHEMA = 'peercompute.ulg.closure-table-wgsl-descriptor.v0';
+export const ULG_CLOSURE_REFRESH_REQUEST_SCHEMA = 'peercompute.ulg.closure-refresh-request.v0';
 export const ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA = 'peercompute.ulg.quantum-response-descriptor.v0';
 export const ULG_QUANTUM_RESPONSE_PARITY_SCHEMA = 'peercompute.ulg.quantum-response-parity.v0';
 export const ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA = 'peercompute.ulg.magnetar-dipole-ising-calibration.v0';
@@ -1376,6 +1378,8 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     .map((delta) => plainObjectOrNull(delta?.fieldClosureSampleSummary))
     .filter(Boolean);
   const simulationFieldClosureSampleSummary = simulationFieldClosureSampleSummaries.at(-1) || null;
+  const simulationFieldClosureSampleRefreshRequest =
+    plainObjectOrNull(simulationFieldClosureSampleSummary?.closureRefreshRequest);
   const simulationFinalState = plainObjectOrNull(outputs.finalState);
   const simulationValidation = artifact.validation && typeof artifact.validation === 'object'
     ? artifact.validation
@@ -1396,6 +1400,17 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const closureDescriptor = artifact.validation?.closureDescriptor && typeof artifact.validation.closureDescriptor === 'object'
     ? artifact.validation.closureDescriptor
     : null;
+  const closureTableDescriptor = plainObjectOrNull(artifact.tableDescriptor)
+    || plainObjectOrNull(execution.tableDescriptor)
+    || null;
+  const closureTableWgslDescriptor = plainObjectOrNull(closureTableDescriptor?.wgslTableDescriptor)
+    || plainObjectOrNull(execution.wgslTableDescriptor)
+    || null;
+  const closureTableWgslDescriptorReady =
+    closureTableWgslDescriptor?.schema === ULG_CLOSURE_TABLE_WGSL_DESCRIPTOR_SCHEMA
+    && closureTableWgslDescriptor?.status === 'declared-table-wgsl-layout'
+    && booleanOrNull(closureTableWgslDescriptor.scientificValidation) === false
+    && booleanOrNull(closureTableWgslDescriptor.fullPhysicsValidation) === false;
   const eshkolProductionHandlerBoundary = normalizeEshkolProductionHandlerBoundary(
     findEshkolProductionHandlerBoundary(artifact, closureDescriptor)
   );
@@ -1552,6 +1567,28 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     closureDescriptorScientificValidation: typeof closureDescriptor?.scientificValidation === 'boolean'
       ? closureDescriptor.scientificValidation
       : null,
+    closureTableWgslDescriptorSchema: closureTableWgslDescriptor?.schema || null,
+    closureTableWgslDescriptorStatus: closureTableWgslDescriptor?.status || null,
+    closureTableWgslDescriptorReady,
+    closureTableWgslDescriptorSampleStruct: closureTableWgslDescriptor?.sampleStruct || null,
+    closureTableWgslDescriptorSampleStrideFloats:
+      finiteNumberOrNull(closureTableWgslDescriptor?.sampleStrideFloats),
+    closureTableWgslDescriptorRowLayout:
+      clonePlain(Array.isArray(closureTableWgslDescriptor?.rowLayout) ? closureTableWgslDescriptor.rowLayout : []),
+    closureTableWgslDescriptorStorageBufferAccess:
+      closureTableWgslDescriptor?.storageBufferAccess || null,
+    closureTableWgslDescriptorScientificValidation:
+      booleanOrNull(closureTableWgslDescriptor?.scientificValidation),
+    closureTableWgslDescriptorFullPhysicsValidation:
+      booleanOrNull(closureTableWgslDescriptor?.fullPhysicsValidation),
+    closureTableWgslDescriptorMaterialValidation:
+      booleanOrNull(closureTableWgslDescriptor?.materialValidation),
+    closureTableWgslDescriptorEosValidation:
+      booleanOrNull(closureTableWgslDescriptor?.eosValidation),
+    closureTableWgslDescriptorSphValidation:
+      booleanOrNull(closureTableWgslDescriptor?.sphValidation),
+    closureTableWgslDescriptorPhaseChangeValidation:
+      booleanOrNull(closureTableWgslDescriptor?.phaseChangeValidation),
     eshkolProductionHandlerBoundaryReady: eshkolProductionHandlerBoundary?.ready === true,
     eshkolProductionHandlerBoundarySchema: eshkolProductionHandlerBoundary?.schema || null,
     eshkolProductionHandlerBoundaryStatus: eshkolProductionHandlerBoundary?.status || null,
@@ -1815,6 +1852,7 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     simulationFieldClosureSampleSummarySchema: simulationFieldClosureSampleSummary?.schema || null,
     simulationFieldClosureSampleSummaryStatus: simulationFieldClosureSampleSummary?.status || null,
     simulationFieldClosureSampleSummaryCount: simulationFieldClosureSampleSummaries.length,
+    simulationFieldClosureSampleValidityStatus: simulationFieldClosureSampleSummary?.validityStatus || null,
     simulationFieldClosureSampleKind: simulationFieldClosureSampleSummary?.sampleKind || null,
     simulationFieldClosureSampleClosureId: simulationFieldClosureSampleSummary?.closureId || null,
     simulationFieldClosureSampleFieldName: simulationFieldClosureSampleSummary?.fieldName || null,
@@ -1836,6 +1874,44 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
       finiteNumberOrNull(simulationFieldClosureSampleSummary?.maxSampledValue),
     simulationFieldClosureSampleMaxAbsDerivative:
       finiteNumberOrNull(simulationFieldClosureSampleSummary?.maxAbsDerivative),
+    simulationFieldClosureSampleRefreshRequestSchema:
+      simulationFieldClosureSampleRefreshRequest?.schema || null,
+    simulationFieldClosureSampleRefreshRequestStatus:
+      simulationFieldClosureSampleRefreshRequest?.status || null,
+    simulationFieldClosureSampleRefreshRecommended:
+      booleanOrNull(
+        simulationFieldClosureSampleSummary?.closureRefreshRecommended
+          ?? simulationFieldClosureSampleRefreshRequest?.refreshRecommended
+      ),
+    simulationFieldClosureSampleInvalidationRecommended:
+      booleanOrNull(
+        simulationFieldClosureSampleSummary?.closureInvalidationRecommended
+          ?? simulationFieldClosureSampleRefreshRequest?.invalidationRecommended
+      ),
+    simulationFieldClosureSampleRefreshReason:
+      simulationFieldClosureSampleSummary?.closureRefreshReason
+        || simulationFieldClosureSampleRefreshRequest?.reason
+        || null,
+    simulationFieldClosureSampleRefreshRegistryAction:
+      simulationFieldClosureSampleSummary?.closureRefreshRegistryAction
+        || simulationFieldClosureSampleRefreshRequest?.registryAction
+        || null,
+    simulationFieldClosureSampleMinOutOfRangeInput:
+      finiteNumberOrNull(simulationFieldClosureSampleRefreshRequest?.minOutOfRangeInput),
+    simulationFieldClosureSampleMaxOutOfRangeInput:
+      finiteNumberOrNull(simulationFieldClosureSampleRefreshRequest?.maxOutOfRangeInput),
+    simulationFieldClosureSampleRefreshScientificValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.scientificValidation),
+    simulationFieldClosureSampleRefreshFullPhysicsValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.fullPhysicsValidation),
+    simulationFieldClosureSampleRefreshMaterialValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.materialValidation),
+    simulationFieldClosureSampleRefreshEosValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.eosValidation),
+    simulationFieldClosureSampleRefreshSphValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.sphValidation),
+    simulationFieldClosureSampleRefreshPhaseChangeValidation:
+      booleanOrNull(simulationFieldClosureSampleRefreshRequest?.phaseChangeValidation),
     simulationFieldClosureSampleScientificValidation:
       booleanOrNull(simulationFieldClosureSampleSummary?.scientificValidation),
     simulationFieldClosureSampleFullPhysicsValidation:

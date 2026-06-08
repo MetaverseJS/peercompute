@@ -29,6 +29,8 @@ import {
   ULG_HANDOFF_SUPERVISOR_EXECUTOR_SCHEMA,
   ULG_HANDOFF_SUPERVISOR_SERVICE_SUMMARY_SCHEMA,
   MOONLAB_WEBGPU_COMPLEX64_PARITY_SCOPE_SCHEMA,
+  ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+  ULG_CLOSURE_TABLE_WGSL_DESCRIPTOR_SCHEMA,
   ULG_MAGNETAR_DIPOLE_ISING_CALIBRATION_SCHEMA,
   ULG_QUANTUM_RESPONSE_DESCRIPTOR_SCHEMA,
   ULG_QUANTUM_RESPONSE_PARITY_SCHEMA,
@@ -2464,6 +2466,7 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
             fieldClosureSampleSummary: {
               schema: 'peercompute.ulg.field-closure-sample-summary.v0',
               status: 'pass',
+              validityStatus: 'in-range',
               sampleKind: 'observed-scalar-field-table-sample-reference',
               closureId: 'closure:toy-two-particle-oscillator',
               fieldName: 'closureAxisR',
@@ -2477,6 +2480,23 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
               minSampledValue: 0.25,
               maxSampledValue: 0.25,
               maxAbsDerivative: 0.5,
+              closureRefreshRequest: {
+                schema: ULG_CLOSURE_REFRESH_REQUEST_SCHEMA,
+                status: 'not-needed',
+                reason: null,
+                registryAction: 'none',
+                refreshRecommended: false,
+                invalidationRecommended: false,
+                scientificValidation: false,
+                fullPhysicsValidation: false,
+                materialValidation: false,
+                eosValidation: false,
+                sphValidation: false,
+                phaseChangeValidation: false
+              },
+              closureRefreshRecommended: false,
+              closureInvalidationRecommended: false,
+              closureRefreshRegistryAction: 'none',
               scientificValidation: false,
               fullPhysicsValidation: false,
               materialValidation: false,
@@ -2578,6 +2598,7 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
   );
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSummaryStatus, 'pass');
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSummaryCount, 32);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleValidityStatus, 'in-range');
   assert.equal(
     handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleKind,
     'observed-scalar-field-table-sample-reference'
@@ -2597,6 +2618,14 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMinSampledValue, 0.25);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaxSampledValue, 0.25);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleRefreshRequestSchema,
+    ULG_CLOSURE_REFRESH_REQUEST_SCHEMA
+  );
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleRefreshRequestStatus, 'not-needed');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleRefreshRecommended, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleInvalidationRecommended, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleRefreshRegistryAction, 'none');
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaterialValidation, false);
@@ -2610,6 +2639,58 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
     handoff.readySimulationArtifact.artifactSummary.simulationBlockers,
     ['toy-carrier-reference-not-scientific-physics']
   );
+});
+
+test('summarizeUlgArtifact projects ULG closure table WGSL descriptors without physics overclaim', () => {
+  const wgslTableDescriptor = {
+    schema: ULG_CLOSURE_TABLE_WGSL_DESCRIPTOR_SCHEMA,
+    status: 'declared-table-wgsl-layout',
+    sampleStruct: 'ClosureTableSample',
+    sampleStrideFloats: 4,
+    rowLayout: ['axis:f32', 'value:f32', 'derivative:f32', 'pad0:f32'],
+    storageBufferAccess: 'read',
+    scientificValidation: false,
+    fullPhysicsValidation: false,
+    materialValidation: false,
+    eosValidation: false,
+    sphValidation: false,
+    phaseChangeValidation: false
+  };
+  const summary = summarizeUlgArtifact('closure', {
+    closureId: 'toy-oscillator-closure-121',
+    sourceService: 'ulg-runtime-fixture',
+    closureKind: 'toy-two-particle-oscillator',
+    tableDescriptor: { wgslTableDescriptor },
+    execution: {
+      mode: 'table-interpolation',
+      wgslTableDescriptor
+    },
+    validation: {
+      status: 'pass',
+      scientificValidation: false,
+      fullPhysicsValidation: false
+    },
+    validity: { r: [0.6, 1.8] }
+  });
+
+  assert.equal(summary.schema, ULG_ARTIFACT_SUMMARY_SCHEMA);
+  assert.equal(summary.closureTableWgslDescriptorSchema, ULG_CLOSURE_TABLE_WGSL_DESCRIPTOR_SCHEMA);
+  assert.equal(summary.closureTableWgslDescriptorStatus, 'declared-table-wgsl-layout');
+  assert.equal(summary.closureTableWgslDescriptorReady, true);
+  assert.equal(summary.closureTableWgslDescriptorSampleStruct, 'ClosureTableSample');
+  assert.equal(summary.closureTableWgslDescriptorSampleStrideFloats, 4);
+  assert.deepEqual(summary.closureTableWgslDescriptorRowLayout, [
+    'axis:f32',
+    'value:f32',
+    'derivative:f32',
+    'pad0:f32'
+  ]);
+  assert.equal(summary.closureTableWgslDescriptorScientificValidation, false);
+  assert.equal(summary.closureTableWgslDescriptorFullPhysicsValidation, false);
+  assert.equal(summary.closureTableWgslDescriptorMaterialValidation, false);
+  assert.equal(summary.closureTableWgslDescriptorEosValidation, false);
+  assert.equal(summary.closureTableWgslDescriptorSphValidation, false);
+  assert.equal(summary.closureTableWgslDescriptorPhaseChangeValidation, false);
 });
 
 test('ULG handoff service envelope preserves relay-safe content-addressed artifact refs', () => {

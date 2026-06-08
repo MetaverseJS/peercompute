@@ -7546,6 +7546,7 @@ export class MultiscaleModel {
         fieldClosureSampleSummarySchema: summary.fieldClosureSampleSummarySchema,
         fieldClosureSampleSummaryStatus: summary.fieldClosureSampleSummaryStatus,
         fieldClosureSampleSummaryCount: summary.fieldClosureSampleSummaryCount,
+        fieldClosureSampleValidityStatus: summary.fieldClosureSampleValidityStatus,
         fieldClosureSampleKind: summary.fieldClosureSampleKind,
         fieldClosureSampleClosureId: summary.fieldClosureSampleClosureId,
         fieldClosureSampleFieldName: summary.fieldClosureSampleFieldName,
@@ -7559,6 +7560,14 @@ export class MultiscaleModel {
         fieldClosureSampleMinSampledValue: summary.fieldClosureSampleMinSampledValue,
         fieldClosureSampleMaxSampledValue: summary.fieldClosureSampleMaxSampledValue,
         fieldClosureSampleMaxAbsDerivative: summary.fieldClosureSampleMaxAbsDerivative,
+        fieldClosureSampleRefreshRequestSchema: summary.fieldClosureSampleRefreshRequestSchema,
+        fieldClosureSampleRefreshRequestStatus: summary.fieldClosureSampleRefreshRequestStatus,
+        fieldClosureSampleRefreshRecommended: summary.fieldClosureSampleRefreshRecommended === true,
+        fieldClosureSampleInvalidationRecommended: summary.fieldClosureSampleInvalidationRecommended === true,
+        fieldClosureSampleRefreshReason: summary.fieldClosureSampleRefreshReason,
+        fieldClosureSampleRefreshRegistryAction: summary.fieldClosureSampleRefreshRegistryAction,
+        fieldClosureSampleMinOutOfRangeInput: summary.fieldClosureSampleMinOutOfRangeInput,
+        fieldClosureSampleMaxOutOfRangeInput: summary.fieldClosureSampleMaxOutOfRangeInput,
         fieldClosureSampleScientificValidation: summary.fieldClosureSampleScientificValidation === true,
         fieldClosureSampleFullPhysicsValidation: summary.fieldClosureSampleFullPhysicsValidation === true,
         fieldClosureSampleMaterialValidation: summary.fieldClosureSampleMaterialValidation === true,
@@ -10002,6 +10011,7 @@ export class MultiscaleModel {
             fieldClosureSampleSummarySchema: ulgSimulationArtifactSummary.fieldClosureSampleSummarySchema,
             fieldClosureSampleSummaryStatus: ulgSimulationArtifactSummary.fieldClosureSampleSummaryStatus,
             fieldClosureSampleSummaryCount: ulgSimulationArtifactSummary.fieldClosureSampleSummaryCount,
+            fieldClosureSampleValidityStatus: ulgSimulationArtifactSummary.fieldClosureSampleValidityStatus,
             fieldClosureSampleKind: ulgSimulationArtifactSummary.fieldClosureSampleKind,
             fieldClosureSampleClosureId: ulgSimulationArtifactSummary.fieldClosureSampleClosureId,
             fieldClosureSampleFieldName: ulgSimulationArtifactSummary.fieldClosureSampleFieldName,
@@ -10015,6 +10025,22 @@ export class MultiscaleModel {
             fieldClosureSampleMinSampledValue: ulgSimulationArtifactSummary.fieldClosureSampleMinSampledValue,
             fieldClosureSampleMaxSampledValue: ulgSimulationArtifactSummary.fieldClosureSampleMaxSampledValue,
             fieldClosureSampleMaxAbsDerivative: ulgSimulationArtifactSummary.fieldClosureSampleMaxAbsDerivative,
+            fieldClosureSampleRefreshRequestSchema:
+              ulgSimulationArtifactSummary.fieldClosureSampleRefreshRequestSchema,
+            fieldClosureSampleRefreshRequestStatus:
+              ulgSimulationArtifactSummary.fieldClosureSampleRefreshRequestStatus,
+            fieldClosureSampleRefreshRecommended:
+              ulgSimulationArtifactSummary.fieldClosureSampleRefreshRecommended === true,
+            fieldClosureSampleInvalidationRecommended:
+              ulgSimulationArtifactSummary.fieldClosureSampleInvalidationRecommended === true,
+            fieldClosureSampleRefreshReason:
+              ulgSimulationArtifactSummary.fieldClosureSampleRefreshReason,
+            fieldClosureSampleRefreshRegistryAction:
+              ulgSimulationArtifactSummary.fieldClosureSampleRefreshRegistryAction,
+            fieldClosureSampleMinOutOfRangeInput:
+              ulgSimulationArtifactSummary.fieldClosureSampleMinOutOfRangeInput,
+            fieldClosureSampleMaxOutOfRangeInput:
+              ulgSimulationArtifactSummary.fieldClosureSampleMaxOutOfRangeInput,
             fieldClosureSampleScientificValidation:
               ulgSimulationArtifactSummary.fieldClosureSampleScientificValidation === true,
             fieldClosureSampleFullPhysicsValidation:

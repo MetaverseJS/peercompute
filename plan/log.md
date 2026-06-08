@@ -2,6 +2,49 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-08 13:24:58 AKDT - ULG closure descriptor and refresh projection
+
+### Prompt
+- User instructed continued core-technology work with Infinite Context Coder,
+  local commits only, and asked for a Claude handoff when a clean break is
+  reached because token limits are approaching.
+
+### Actions
+- Used ICC status for PeerCompute and confirmed the repo was clean on
+  `multi-scale-physics-sim`, ahead of origin locally.
+- Added PeerCompute summary projection for ULG closure table WGSL descriptors
+  from `tableDescriptor.wgslTableDescriptor` and
+  `execution.wgslTableDescriptor`.
+- Added summary projection for ULG field-closure refresh requests, including
+  validity status, refresh/invalidation booleans, reason, registry action, and
+  out-of-range input bounds.
+- Threaded those fields through Multiscale simulation artifact summaries,
+  diagnostics, packet aggregate state, and ULG spec contract bridge/handoff
+  evidence.
+- Rebuilt `docs/multiscale`.
+
+### Validation
+- PASS: syntax checks for changed PeerCompute adapter, Multiscale runtime/model,
+  spec-contract, and test files.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `30/30`.
+- PASS: `node --test --test-name-pattern "ULG simulation artifacts"
+  demos/multiscale/tests/multiscaleModel.test.mjs` passed.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` completed with the existing
+  large chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale
+  run test:ulg-handoff` reported ULG handoff ready, Multiscale bridge
+  `handoff-ready`, blocker count `0`, and magnetar visible.
+- PASS: `git diff --check`.
+
+### Open
+- This is projection/contract evidence only. It does not implement production
+  closure regeneration, material/EOS/SPH/phase scientific validation, or
+  full-physics readiness.
+- No push was attempted.
+
 ## 2026-06-06 20:04:13 AKDT - Resource lease broker first pass
 
 ### Prompt
