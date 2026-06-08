@@ -1376,6 +1376,8 @@ function renderScenarioAffordance(scenario = model.getScenario()) {
   const simulationEdgeCount = model.state.ulgSimulationArtifactSummary?.edgeMessageSummaryCount ?? 0;
   const simulationFieldStatus = model.state.ulgSimulationArtifactSummary?.fieldObserverSummaryStatus || null;
   const simulationFieldCount = model.state.ulgSimulationArtifactSummary?.fieldObserverSummaryCount ?? 0;
+  const simulationClosureStatus = model.state.ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null;
+  const simulationClosureCount = model.state.ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0;
   if (scenarioAffordanceTitle) {
     scenarioAffordanceTitle.textContent = scenario.label || 'Magnetar proxy';
   }
@@ -1392,7 +1394,10 @@ function renderScenarioAffordance(scenario = model.getScenario()) {
     const fieldText = simulationFieldStatus
       ? ` / sim field ${formatScenarioAffordanceValue(simulationFieldStatus)} x${simulationFieldCount}`
       : '';
-    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}${edgeText}${fieldText}`;
+    const closureText = simulationClosureStatus
+      ? ` / sim closure ${formatScenarioAffordanceValue(simulationClosureStatus)} x${simulationClosureCount}`
+      : '';
+    scenarioAffordanceNote.textContent = `scale-ladder proxy, not a literal star render / status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}${edgeText}${fieldText}${closureText}`;
   }
   if (scenarioHandoffStatus) {
     scenarioHandoffStatus.textContent = `status ${formatScenarioAffordanceValue(handoffStatus)} / blockers ${blockerCount}`;
@@ -4918,6 +4923,7 @@ const FOCUS_LAYER_READOUT_ROWS = new Set([
   'ulg runtime',
   'ulg sim edge',
   'ulg sim field',
+  'ulg sim closure',
   'particle budget',
   'memory pressure',
   'remote peer',
@@ -6974,6 +6980,35 @@ function formatUlgSimulationFieldObserverSummary(summary) {
   return `${fieldStatus} / ${count} deltas / ${fields} / zero ${zero} / neigh ${neighbors} / weight ${maxWeight} / ${science}`;
 }
 
+function formatUlgSimulationFieldClosureSampleSummary(summary) {
+  if (!summary || summary.schema !== 'peercompute.multiscale.ulg-simulation-artifact-summary.v0') {
+    return 'warming';
+  }
+  const closureStatus = summary.fieldClosureSampleSummaryStatus || 'closure n/a';
+  const deltaCount = summary.fieldClosureSampleSummaryCount ?? 0;
+  const sampleCount = summary.fieldClosureSampleCount ?? 0;
+  const fieldName = summary.fieldClosureSampleFieldName || 'field n/a';
+  const axisName = summary.fieldClosureSampleAxisName || 'axis n/a';
+  const outputName = summary.fieldClosureSampleOutputName || 'output n/a';
+  const inputSpan = summary.fieldClosureSampleMinInput != null && summary.fieldClosureSampleMaxInput != null
+    ? `${formatExp(summary.fieldClosureSampleMinInput, 2)}..${formatExp(summary.fieldClosureSampleMaxInput, 2)}`
+    : 'input n/a';
+  const outputSpan = summary.fieldClosureSampleMinSampledValue != null
+    && summary.fieldClosureSampleMaxSampledValue != null
+    ? `${formatExp(summary.fieldClosureSampleMinSampledValue, 2)}..${formatExp(summary.fieldClosureSampleMaxSampledValue, 2)}`
+    : 'output n/a';
+  const derivative = summary.fieldClosureSampleMaxAbsDerivative != null
+    ? formatExp(summary.fieldClosureSampleMaxAbsDerivative, 2)
+    : 'd n/a';
+  const outOfRange = summary.fieldClosureSampleOutOfRangeCount ?? 0;
+  const nullFields = summary.fieldClosureSampleNullFieldCount ?? 0;
+  const science = summary.fieldClosureSampleScientificValidation ? 'sci' : 'runtime';
+  const material = summary.fieldClosureSampleMaterialValidation ? 'material' : 'material no';
+  const sph = summary.fieldClosureSampleSphValidation ? 'sph' : 'sph no';
+  const phase = summary.fieldClosureSamplePhaseChangeValidation ? 'phase' : 'phase no';
+  return `${closureStatus} / ${deltaCount} deltas / ${fieldName}->${outputName} via ${axisName} / n ${sampleCount} / in ${inputSpan} / out ${outputSpan} / d ${derivative} / oor ${outOfRange} / null ${nullFields} / ${science} / ${material} / ${sph} / ${phase}`;
+}
+
 function countPendingSolverFamilies(status = solverRuntimeStatus) {
   return Object.values(status)
     .filter((entry) => entry && typeof entry === 'object' && entry.pending)
@@ -7881,6 +7916,7 @@ function renderReadout(nowMs = getClockMs(), { forceRuntimeDebug = true } = {}) 
       : 'default'],
     ['ulg sim edge', formatUlgSimulationEdgeSummary(ulgSimulationArtifactSummary)],
     ['ulg sim field', formatUlgSimulationFieldObserverSummary(ulgSimulationArtifactSummary)],
+    ['ulg sim closure', formatUlgSimulationFieldClosureSampleSummary(ulgSimulationArtifactSummary)],
     ['particle budget', computeStatus.peercompute?.computeBudget
       ? `${computeStatus.peercompute.computeBudget.totalParticleCount} x${computeStatus.peercompute.computeBudget.workersPerScale}/scale / cap ${formatFixed(computeStatus.peercompute.computeBudget.capacity?.budgetScale ?? 1, 2, '1.00')}x`
       : 'unknown'],

@@ -1372,6 +1372,10 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     Array.isArray(simulationFieldObserverSummary?.observedFieldNames)
       ? simulationFieldObserverSummary.observedFieldNames
       : [];
+  const simulationFieldClosureSampleSummaries = simulationDeltas
+    .map((delta) => plainObjectOrNull(delta?.fieldClosureSampleSummary))
+    .filter(Boolean);
+  const simulationFieldClosureSampleSummary = simulationFieldClosureSampleSummaries.at(-1) || null;
   const simulationFinalState = plainObjectOrNull(outputs.finalState);
   const simulationValidation = artifact.validation && typeof artifact.validation === 'object'
     ? artifact.validation
@@ -1808,6 +1812,42 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
       booleanOrNull(simulationFieldObserverSummary?.scientificValidation),
     simulationFieldObserverFullPhysicsValidation:
       booleanOrNull(simulationFieldObserverSummary?.fullPhysicsValidation),
+    simulationFieldClosureSampleSummarySchema: simulationFieldClosureSampleSummary?.schema || null,
+    simulationFieldClosureSampleSummaryStatus: simulationFieldClosureSampleSummary?.status || null,
+    simulationFieldClosureSampleSummaryCount: simulationFieldClosureSampleSummaries.length,
+    simulationFieldClosureSampleKind: simulationFieldClosureSampleSummary?.sampleKind || null,
+    simulationFieldClosureSampleClosureId: simulationFieldClosureSampleSummary?.closureId || null,
+    simulationFieldClosureSampleFieldName: simulationFieldClosureSampleSummary?.fieldName || null,
+    simulationFieldClosureSampleAxisName: simulationFieldClosureSampleSummary?.axisName || null,
+    simulationFieldClosureSampleOutputName: simulationFieldClosureSampleSummary?.outputName || null,
+    simulationFieldClosureSampleCount:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.sampleCount),
+    simulationFieldClosureSampleOutOfRangeCount:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.outOfRangeCount),
+    simulationFieldClosureSampleNullFieldCount:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.nullFieldCount),
+    simulationFieldClosureSampleMinInput:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.minInput),
+    simulationFieldClosureSampleMaxInput:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.maxInput),
+    simulationFieldClosureSampleMinSampledValue:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.minSampledValue),
+    simulationFieldClosureSampleMaxSampledValue:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.maxSampledValue),
+    simulationFieldClosureSampleMaxAbsDerivative:
+      finiteNumberOrNull(simulationFieldClosureSampleSummary?.maxAbsDerivative),
+    simulationFieldClosureSampleScientificValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.scientificValidation),
+    simulationFieldClosureSampleFullPhysicsValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.fullPhysicsValidation),
+    simulationFieldClosureSampleMaterialValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.materialValidation),
+    simulationFieldClosureSampleEosValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.eosValidation),
+    simulationFieldClosureSampleSphValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.sphValidation),
+    simulationFieldClosureSamplePhaseChangeValidation:
+      booleanOrNull(simulationFieldClosureSampleSummary?.phaseChangeValidation),
     simulationValidityStatus: validity.status || null,
     simulationClosureValidity: validity.closureValidity || null,
     simulationClosureId: validity.closureId || null,

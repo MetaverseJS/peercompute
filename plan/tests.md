@@ -1142,3 +1142,21 @@
   `pass`, field count `4`, visible `ulg sim field`, visible magnetar
   affordance field status, `scientificRuntimeReady = false`, and
   `fullPhysicsReady = false`.
+- ULG simulation field-closure-sample propagation gate:
+  syntax checks for changed Multiscale, PeerCompute service-orchestration, and
+  test files; focused service-orchestration and Multiscale model closure-sample
+  tests; full service-orchestration and Multiscale model suites; Multiscale
+  build; live ULG handoff smoke; and a browser-injected simulation artifact
+  closure-sample probe against the live `5185` page.
+: current result on 2026-06-08 passed. Focused closure-sample tests passed for
+  service orchestration and Multiscale; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `29/29`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `201/201`;
+  `npm --prefix demos/multiscale run build` passed with the existing
+  large-chunk warning; `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  handoff; and a browser-injected simulation artifact confirmed closure-sample
+  status `pass`, closure-sample count `4`, visible `ulg sim closure`, visible
+  magnetar affordance `sim closure pass x4`, `scientificRuntimeReady = false`,
+  `fullPhysicsReady = false`, and material/EOS/SPH/phase-change validation
+  flags all false.

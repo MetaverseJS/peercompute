@@ -92,6 +92,7 @@ import {
   ULG_KERNEL_PASS_SPEC_SCHEMA,
   ULG_PASS_DAG_SCHEMA,
   ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
+  ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA,
   ULG_FIELD_OBSERVER_SUMMARY_SCHEMA,
   ULG_RUNTIME_MANIFEST_SCHEMA,
   ULG_SIMULATION_ARTIFACT_SCHEMA,
@@ -4864,6 +4865,29 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
           maxWeightSum: 1,
           scientificValidation: false,
           fullPhysicsValidation: false
+        },
+        fieldClosureSampleSummary: {
+          schema: ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA,
+          status: 'pass',
+          sampleKind: 'observed-scalar-field-table-sample-reference',
+          closureId: 'closure:toy-two-particle-oscillator',
+          fieldName: 'closureAxisR',
+          axisName: 'r',
+          outputName: 'potentialEnergy',
+          sampleCount: 2,
+          outOfRangeCount: 0,
+          nullFieldCount: 0,
+          minInput: 1.5,
+          maxInput: 1.5,
+          minSampledValue: 0.25,
+          maxSampledValue: 0.25,
+          maxAbsDerivative: 0.5,
+          scientificValidation: false,
+          fullPhysicsValidation: false,
+          materialValidation: false,
+          eosValidation: false,
+          sphValidation: false,
+          phaseChangeValidation: false
         }
       })),
       invariants: {
@@ -4945,6 +4969,28 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(summary.fieldObserverMaxWeightSum, 1);
   assert.equal(summary.fieldObserverScientificValidation, false);
   assert.equal(summary.fieldObserverFullPhysicsValidation, false);
+  assert.equal(summary.fieldClosureSampleSummarySchema, ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA);
+  assert.equal(summary.fieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(summary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(summary.fieldClosureSampleKind, 'observed-scalar-field-table-sample-reference');
+  assert.equal(summary.fieldClosureSampleClosureId, 'closure:toy-two-particle-oscillator');
+  assert.equal(summary.fieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(summary.fieldClosureSampleAxisName, 'r');
+  assert.equal(summary.fieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(summary.fieldClosureSampleCount, 2);
+  assert.equal(summary.fieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(summary.fieldClosureSampleNullFieldCount, 0);
+  assert.equal(summary.fieldClosureSampleMinInput, 1.5);
+  assert.equal(summary.fieldClosureSampleMaxInput, 1.5);
+  assert.equal(summary.fieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(summary.fieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(summary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(summary.fieldClosureSampleScientificValidation, false);
+  assert.equal(summary.fieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(summary.fieldClosureSampleMaterialValidation, false);
+  assert.equal(summary.fieldClosureSampleEosValidation, false);
+  assert.equal(summary.fieldClosureSampleSphValidation, false);
+  assert.equal(summary.fieldClosureSamplePhaseChangeValidation, false);
   const diagnosticsSummary = model.state.closures.quantumMaterialPotential?.diagnostics?.ulgSimulationArtifactSummary;
   assert.equal(diagnosticsSummary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
   assert.equal(diagnosticsSummary.fieldObserverSummarySchema, ULG_FIELD_OBSERVER_SUMMARY_SCHEMA);
@@ -4961,6 +5007,28 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(diagnosticsSummary.fieldObserverMaxWeightSum, 1);
   assert.equal(diagnosticsSummary.fieldObserverScientificValidation, false);
   assert.equal(diagnosticsSummary.fieldObserverFullPhysicsValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleSummarySchema, ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA);
+  assert.equal(diagnosticsSummary.fieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(diagnosticsSummary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(diagnosticsSummary.fieldClosureSampleKind, 'observed-scalar-field-table-sample-reference');
+  assert.equal(diagnosticsSummary.fieldClosureSampleClosureId, 'closure:toy-two-particle-oscillator');
+  assert.equal(diagnosticsSummary.fieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(diagnosticsSummary.fieldClosureSampleAxisName, 'r');
+  assert.equal(diagnosticsSummary.fieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(diagnosticsSummary.fieldClosureSampleCount, 2);
+  assert.equal(diagnosticsSummary.fieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(diagnosticsSummary.fieldClosureSampleNullFieldCount, 0);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMinInput, 1.5);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMaxInput, 1.5);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(diagnosticsSummary.fieldClosureSampleScientificValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleMaterialValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleEosValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSampleSphValidation, false);
+  assert.equal(diagnosticsSummary.fieldClosureSamplePhaseChangeValidation, false);
   assert.equal(summary.validationMode, 'cpu-reference-invariant-drift');
   assert.equal(summary.scientificValidation, false);
   assert.equal(summary.fullPhysicsValidation, false);
@@ -4993,6 +5061,34 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverMaxWeightSum, 1);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldObserverFullPhysicsValidation, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSummarySchema,
+    ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSummaryCount, 32);
+  assert.equal(
+    packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleKind,
+    'observed-scalar-field-table-sample-reference'
+  );
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleClosureId, 'closure:toy-two-particle-oscillator');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleAxisName, 'r');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleCount, 2);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleNullFieldCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMinInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaxInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleMaterialValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleEosValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSampleSphValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fieldClosureSamplePhaseChangeValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fullPhysicsValidation, false);
   assert.equal(
@@ -5026,6 +5122,29 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverMaxWeightSum, 1);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldObserverFullPhysicsValidation, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSummarySchema,
+    ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSummaryCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleAxisName, 'r');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleCount, 2);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleNullFieldCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMinInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaxInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleMaterialValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleEosValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSampleSphValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fieldClosureSamplePhaseChangeValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactEdgeMessageSummaryStatus, 'pass');
   assert.equal(
     packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverSummarySchema,
@@ -5044,6 +5163,41 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverMaxWeightSum, 1);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldObserverFullPhysicsValidation, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleSummarySchema,
+    ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA
+  );
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleSummaryStatus,
+    'pass'
+  );
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleSummaryCount,
+    32
+  );
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleFieldName,
+    'closureAxisR'
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleAxisName, 'r');
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleOutputName,
+    'potentialEnergy'
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleCount, 2);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleNullFieldCount, 0);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMinInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMaxInput, 1.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleMaterialValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleEosValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSampleSphValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactFieldClosureSamplePhaseChangeValidation, false);
   const validationContract = packet.upward.aggregateState.ulgSpecContracts.rootContracts.find(
     (contract) => contract.id === 'root:validation-provenance'
   );
@@ -5066,6 +5220,29 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverMaxWeightSum, 1);
   assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverScientificValidation, false);
   assert.equal(validationContract.validity.envelope.simulationArtifactFieldObserverFullPhysicsValidation, false);
+  assert.equal(
+    validationContract.validity.envelope.simulationArtifactFieldClosureSampleSummarySchema,
+    ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA
+  );
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleSummaryCount, 32);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleAxisName, 'r');
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleCount, 2);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleNullFieldCount, 0);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMinInput, 1.5);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMaxInput, 1.5);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleScientificValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleMaterialValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleEosValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSampleSphValidation, false);
+  assert.equal(validationContract.validity.envelope.simulationArtifactFieldClosureSamplePhaseChangeValidation, false);
   assert.ok(validationContract.evidence.includes(ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA));
   assert.ok(validationContract.blockers.includes(
     'ULG simulation artifact is runtime evidence only, not scientific/full-physics authority'

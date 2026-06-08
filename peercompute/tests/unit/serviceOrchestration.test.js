@@ -2460,6 +2460,29 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
               maxWeightSum: 1,
               scientificValidation: false,
               fullPhysicsValidation: false
+            },
+            fieldClosureSampleSummary: {
+              schema: 'peercompute.ulg.field-closure-sample-summary.v0',
+              status: 'pass',
+              sampleKind: 'observed-scalar-field-table-sample-reference',
+              closureId: 'closure:toy-two-particle-oscillator',
+              fieldName: 'closureAxisR',
+              axisName: 'r',
+              outputName: 'potentialEnergy',
+              sampleCount: 2,
+              outOfRangeCount: 0,
+              nullFieldCount: 0,
+              minInput: 1.5,
+              maxInput: 1.5,
+              minSampledValue: 0.25,
+              maxSampledValue: 0.25,
+              maxAbsDerivative: 0.5,
+              scientificValidation: false,
+              fullPhysicsValidation: false,
+              materialValidation: false,
+              eosValidation: false,
+              sphValidation: false,
+              phaseChangeValidation: false
             }
           })),
           invariants: {
@@ -2549,6 +2572,37 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverMaxWeightSum, 1);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldObserverFullPhysicsValidation, false);
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSummarySchema,
+    'peercompute.ulg.field-closure-sample-summary.v0'
+  );
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSummaryStatus, 'pass');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSummaryCount, 32);
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleKind,
+    'observed-scalar-field-table-sample-reference'
+  );
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleClosureId,
+    'closure:toy-two-particle-oscillator'
+  );
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleFieldName, 'closureAxisR');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleAxisName, 'r');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleOutputName, 'potentialEnergy');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleCount, 2);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleOutOfRangeCount, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleNullFieldCount, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMinInput, 1.5);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaxInput, 1.5);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMinSampledValue, 0.25);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaxSampledValue, 0.25);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaxAbsDerivative, 0.5);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleScientificValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleFullPhysicsValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleMaterialValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleEosValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSampleSphValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFieldClosureSamplePhaseChangeValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationCalibratedPhysics, false);

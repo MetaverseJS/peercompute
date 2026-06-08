@@ -7543,6 +7543,28 @@ export class MultiscaleModel {
         fieldObserverMaxWeightSum: summary.fieldObserverMaxWeightSum,
         fieldObserverScientificValidation: summary.fieldObserverScientificValidation === true,
         fieldObserverFullPhysicsValidation: summary.fieldObserverFullPhysicsValidation === true,
+        fieldClosureSampleSummarySchema: summary.fieldClosureSampleSummarySchema,
+        fieldClosureSampleSummaryStatus: summary.fieldClosureSampleSummaryStatus,
+        fieldClosureSampleSummaryCount: summary.fieldClosureSampleSummaryCount,
+        fieldClosureSampleKind: summary.fieldClosureSampleKind,
+        fieldClosureSampleClosureId: summary.fieldClosureSampleClosureId,
+        fieldClosureSampleFieldName: summary.fieldClosureSampleFieldName,
+        fieldClosureSampleAxisName: summary.fieldClosureSampleAxisName,
+        fieldClosureSampleOutputName: summary.fieldClosureSampleOutputName,
+        fieldClosureSampleCount: summary.fieldClosureSampleCount,
+        fieldClosureSampleOutOfRangeCount: summary.fieldClosureSampleOutOfRangeCount,
+        fieldClosureSampleNullFieldCount: summary.fieldClosureSampleNullFieldCount,
+        fieldClosureSampleMinInput: summary.fieldClosureSampleMinInput,
+        fieldClosureSampleMaxInput: summary.fieldClosureSampleMaxInput,
+        fieldClosureSampleMinSampledValue: summary.fieldClosureSampleMinSampledValue,
+        fieldClosureSampleMaxSampledValue: summary.fieldClosureSampleMaxSampledValue,
+        fieldClosureSampleMaxAbsDerivative: summary.fieldClosureSampleMaxAbsDerivative,
+        fieldClosureSampleScientificValidation: summary.fieldClosureSampleScientificValidation === true,
+        fieldClosureSampleFullPhysicsValidation: summary.fieldClosureSampleFullPhysicsValidation === true,
+        fieldClosureSampleMaterialValidation: summary.fieldClosureSampleMaterialValidation === true,
+        fieldClosureSampleEosValidation: summary.fieldClosureSampleEosValidation === true,
+        fieldClosureSampleSphValidation: summary.fieldClosureSampleSphValidation === true,
+        fieldClosureSamplePhaseChangeValidation: summary.fieldClosureSamplePhaseChangeValidation === true,
         summaryHash: summary.summaryHash
       };
     }
@@ -9977,6 +9999,34 @@ export class MultiscaleModel {
               ulgSimulationArtifactSummary.fieldObserverScientificValidation === true,
             fieldObserverFullPhysicsValidation:
               ulgSimulationArtifactSummary.fieldObserverFullPhysicsValidation === true,
+            fieldClosureSampleSummarySchema: ulgSimulationArtifactSummary.fieldClosureSampleSummarySchema,
+            fieldClosureSampleSummaryStatus: ulgSimulationArtifactSummary.fieldClosureSampleSummaryStatus,
+            fieldClosureSampleSummaryCount: ulgSimulationArtifactSummary.fieldClosureSampleSummaryCount,
+            fieldClosureSampleKind: ulgSimulationArtifactSummary.fieldClosureSampleKind,
+            fieldClosureSampleClosureId: ulgSimulationArtifactSummary.fieldClosureSampleClosureId,
+            fieldClosureSampleFieldName: ulgSimulationArtifactSummary.fieldClosureSampleFieldName,
+            fieldClosureSampleAxisName: ulgSimulationArtifactSummary.fieldClosureSampleAxisName,
+            fieldClosureSampleOutputName: ulgSimulationArtifactSummary.fieldClosureSampleOutputName,
+            fieldClosureSampleCount: ulgSimulationArtifactSummary.fieldClosureSampleCount,
+            fieldClosureSampleOutOfRangeCount: ulgSimulationArtifactSummary.fieldClosureSampleOutOfRangeCount,
+            fieldClosureSampleNullFieldCount: ulgSimulationArtifactSummary.fieldClosureSampleNullFieldCount,
+            fieldClosureSampleMinInput: ulgSimulationArtifactSummary.fieldClosureSampleMinInput,
+            fieldClosureSampleMaxInput: ulgSimulationArtifactSummary.fieldClosureSampleMaxInput,
+            fieldClosureSampleMinSampledValue: ulgSimulationArtifactSummary.fieldClosureSampleMinSampledValue,
+            fieldClosureSampleMaxSampledValue: ulgSimulationArtifactSummary.fieldClosureSampleMaxSampledValue,
+            fieldClosureSampleMaxAbsDerivative: ulgSimulationArtifactSummary.fieldClosureSampleMaxAbsDerivative,
+            fieldClosureSampleScientificValidation:
+              ulgSimulationArtifactSummary.fieldClosureSampleScientificValidation === true,
+            fieldClosureSampleFullPhysicsValidation:
+              ulgSimulationArtifactSummary.fieldClosureSampleFullPhysicsValidation === true,
+            fieldClosureSampleMaterialValidation:
+              ulgSimulationArtifactSummary.fieldClosureSampleMaterialValidation === true,
+            fieldClosureSampleEosValidation:
+              ulgSimulationArtifactSummary.fieldClosureSampleEosValidation === true,
+            fieldClosureSampleSphValidation:
+              ulgSimulationArtifactSummary.fieldClosureSampleSphValidation === true,
+            fieldClosureSamplePhaseChangeValidation:
+              ulgSimulationArtifactSummary.fieldClosureSamplePhaseChangeValidation === true,
             validationMode: ulgSimulationArtifactSummary.validationMode,
             scientificValidation: ulgSimulationArtifactSummary.scientificValidation === true,
             fullPhysicsValidation: ulgSimulationArtifactSummary.fullPhysicsValidation === true,

@@ -469,6 +469,10 @@ export function createUlgSpecContractReport({
         ulgSimulationArtifactSummary?.fieldObserverSummaryStatus
           ? `field observers ${ulgSimulationArtifactSummary.fieldObserverSummaryStatus}`
           : null,
+        ulgSimulationArtifactSummary?.fieldClosureSampleSummarySchema,
+        ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus
+          ? `field closure samples ${ulgSimulationArtifactSummary.fieldClosureSampleSummaryStatus}`
+          : null,
         ulgSimulationArtifactSummary?.summaryHash
       ].filter(Boolean),
       validity: { assumptions: ['carrier samples are not necessarily literal particles'] }
@@ -519,7 +523,51 @@ export function createUlgSpecContractReport({
           simulationArtifactFieldObserverScientificValidation:
             ulgSimulationArtifactSummary?.fieldObserverScientificValidation === true,
           simulationArtifactFieldObserverFullPhysicsValidation:
-            ulgSimulationArtifactSummary?.fieldObserverFullPhysicsValidation === true
+            ulgSimulationArtifactSummary?.fieldObserverFullPhysicsValidation === true,
+          simulationArtifactFieldClosureSampleSummarySchema:
+            ulgSimulationArtifactSummary?.fieldClosureSampleSummarySchema || null,
+          simulationArtifactFieldClosureSampleSummaryStatus:
+            ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
+          simulationArtifactFieldClosureSampleSummaryCount:
+            ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+          simulationArtifactFieldClosureSampleKind:
+            ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
+          simulationArtifactFieldClosureSampleClosureId:
+            ulgSimulationArtifactSummary?.fieldClosureSampleClosureId || null,
+          simulationArtifactFieldClosureSampleFieldName:
+            ulgSimulationArtifactSummary?.fieldClosureSampleFieldName || null,
+          simulationArtifactFieldClosureSampleAxisName:
+            ulgSimulationArtifactSummary?.fieldClosureSampleAxisName || null,
+          simulationArtifactFieldClosureSampleOutputName:
+            ulgSimulationArtifactSummary?.fieldClosureSampleOutputName || null,
+          simulationArtifactFieldClosureSampleCount:
+            ulgSimulationArtifactSummary?.fieldClosureSampleCount ?? null,
+          simulationArtifactFieldClosureSampleOutOfRangeCount:
+            ulgSimulationArtifactSummary?.fieldClosureSampleOutOfRangeCount ?? null,
+          simulationArtifactFieldClosureSampleNullFieldCount:
+            ulgSimulationArtifactSummary?.fieldClosureSampleNullFieldCount ?? null,
+          simulationArtifactFieldClosureSampleMinInput:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMinInput ?? null,
+          simulationArtifactFieldClosureSampleMaxInput:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMaxInput ?? null,
+          simulationArtifactFieldClosureSampleMinSampledValue:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMinSampledValue ?? null,
+          simulationArtifactFieldClosureSampleMaxSampledValue:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
+          simulationArtifactFieldClosureSampleMaxAbsDerivative:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+          simulationArtifactFieldClosureSampleScientificValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
+          simulationArtifactFieldClosureSampleFullPhysicsValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSampleFullPhysicsValidation === true,
+          simulationArtifactFieldClosureSampleMaterialValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSampleMaterialValidation === true,
+          simulationArtifactFieldClosureSampleEosValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSampleEosValidation === true,
+          simulationArtifactFieldClosureSampleSphValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSampleSphValidation === true,
+          simulationArtifactFieldClosureSamplePhaseChangeValidation:
+            ulgSimulationArtifactSummary?.fieldClosureSamplePhaseChangeValidation === true
         }
       },
       blockers: ulgSimulationArtifactSummary?.scientificRuntimeReady === false
@@ -616,6 +664,50 @@ export function createUlgSpecContractReport({
         ulgSimulationArtifactSummary?.fieldObserverScientificValidation === true,
       ulgSimulationArtifactFieldObserverFullPhysicsValidation:
         ulgSimulationArtifactSummary?.fieldObserverFullPhysicsValidation === true,
+      ulgSimulationArtifactFieldClosureSampleSummarySchema:
+        ulgSimulationArtifactSummary?.fieldClosureSampleSummarySchema || null,
+      ulgSimulationArtifactFieldClosureSampleSummaryStatus:
+        ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
+      ulgSimulationArtifactFieldClosureSampleSummaryCount:
+        ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+      ulgSimulationArtifactFieldClosureSampleKind:
+        ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
+      ulgSimulationArtifactFieldClosureSampleClosureId:
+        ulgSimulationArtifactSummary?.fieldClosureSampleClosureId || null,
+      ulgSimulationArtifactFieldClosureSampleFieldName:
+        ulgSimulationArtifactSummary?.fieldClosureSampleFieldName || null,
+      ulgSimulationArtifactFieldClosureSampleAxisName:
+        ulgSimulationArtifactSummary?.fieldClosureSampleAxisName || null,
+      ulgSimulationArtifactFieldClosureSampleOutputName:
+        ulgSimulationArtifactSummary?.fieldClosureSampleOutputName || null,
+      ulgSimulationArtifactFieldClosureSampleCount:
+        ulgSimulationArtifactSummary?.fieldClosureSampleCount ?? null,
+      ulgSimulationArtifactFieldClosureSampleOutOfRangeCount:
+        ulgSimulationArtifactSummary?.fieldClosureSampleOutOfRangeCount ?? null,
+      ulgSimulationArtifactFieldClosureSampleNullFieldCount:
+        ulgSimulationArtifactSummary?.fieldClosureSampleNullFieldCount ?? null,
+      ulgSimulationArtifactFieldClosureSampleMinInput:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMinInput ?? null,
+      ulgSimulationArtifactFieldClosureSampleMaxInput:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMaxInput ?? null,
+      ulgSimulationArtifactFieldClosureSampleMinSampledValue:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMinSampledValue ?? null,
+      ulgSimulationArtifactFieldClosureSampleMaxSampledValue:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
+      ulgSimulationArtifactFieldClosureSampleMaxAbsDerivative:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+      ulgSimulationArtifactFieldClosureSampleScientificValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
+      ulgSimulationArtifactFieldClosureSampleFullPhysicsValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSampleFullPhysicsValidation === true,
+      ulgSimulationArtifactFieldClosureSampleMaterialValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSampleMaterialValidation === true,
+      ulgSimulationArtifactFieldClosureSampleEosValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSampleEosValidation === true,
+      ulgSimulationArtifactFieldClosureSampleSphValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSampleSphValidation === true,
+      ulgSimulationArtifactFieldClosureSamplePhaseChangeValidation:
+        ulgSimulationArtifactSummary?.fieldClosureSamplePhaseChangeValidation === true,
       ulgSimulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true
     },
     handoffs: {
@@ -672,6 +764,34 @@ export function createUlgSpecContractReport({
           ulgSimulationArtifactSummary?.fieldObserverScientificValidation === true,
         fieldObserverFullPhysicsValidation:
           ulgSimulationArtifactSummary?.fieldObserverFullPhysicsValidation === true,
+        fieldClosureSampleSummarySchema: ulgSimulationArtifactSummary?.fieldClosureSampleSummarySchema || null,
+        fieldClosureSampleSummaryStatus: ulgSimulationArtifactSummary?.fieldClosureSampleSummaryStatus || null,
+        fieldClosureSampleSummaryCount: ulgSimulationArtifactSummary?.fieldClosureSampleSummaryCount ?? 0,
+        fieldClosureSampleKind: ulgSimulationArtifactSummary?.fieldClosureSampleKind || null,
+        fieldClosureSampleClosureId: ulgSimulationArtifactSummary?.fieldClosureSampleClosureId || null,
+        fieldClosureSampleFieldName: ulgSimulationArtifactSummary?.fieldClosureSampleFieldName || null,
+        fieldClosureSampleAxisName: ulgSimulationArtifactSummary?.fieldClosureSampleAxisName || null,
+        fieldClosureSampleOutputName: ulgSimulationArtifactSummary?.fieldClosureSampleOutputName || null,
+        fieldClosureSampleCount: ulgSimulationArtifactSummary?.fieldClosureSampleCount ?? null,
+        fieldClosureSampleOutOfRangeCount: ulgSimulationArtifactSummary?.fieldClosureSampleOutOfRangeCount ?? null,
+        fieldClosureSampleNullFieldCount: ulgSimulationArtifactSummary?.fieldClosureSampleNullFieldCount ?? null,
+        fieldClosureSampleMinInput: ulgSimulationArtifactSummary?.fieldClosureSampleMinInput ?? null,
+        fieldClosureSampleMaxInput: ulgSimulationArtifactSummary?.fieldClosureSampleMaxInput ?? null,
+        fieldClosureSampleMinSampledValue: ulgSimulationArtifactSummary?.fieldClosureSampleMinSampledValue ?? null,
+        fieldClosureSampleMaxSampledValue: ulgSimulationArtifactSummary?.fieldClosureSampleMaxSampledValue ?? null,
+        fieldClosureSampleMaxAbsDerivative: ulgSimulationArtifactSummary?.fieldClosureSampleMaxAbsDerivative ?? null,
+        fieldClosureSampleScientificValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSampleScientificValidation === true,
+        fieldClosureSampleFullPhysicsValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSampleFullPhysicsValidation === true,
+        fieldClosureSampleMaterialValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSampleMaterialValidation === true,
+        fieldClosureSampleEosValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSampleEosValidation === true,
+        fieldClosureSampleSphValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSampleSphValidation === true,
+        fieldClosureSamplePhaseChangeValidation:
+          ulgSimulationArtifactSummary?.fieldClosureSamplePhaseChangeValidation === true,
         blockers: ulgSimulationArtifactSummary?.blockers || []
       }
     },

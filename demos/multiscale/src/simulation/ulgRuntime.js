@@ -14,6 +14,7 @@ export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifa
 export const ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.multiscale.ulg-simulation-artifact-summary.v0';
 export const ULG_EDGE_MESSAGE_SUMMARY_SCHEMA = 'peercompute.ulg.edge-message-summary.v0';
 export const ULG_FIELD_OBSERVER_SUMMARY_SCHEMA = 'peercompute.ulg.field-observer-summary.v0';
+export const ULG_FIELD_CLOSURE_SAMPLE_SUMMARY_SCHEMA = 'peercompute.ulg.field-closure-sample-summary.v0';
 
 export const ULG_LIVE_BACKENDS = ['webgpu'];
 export const ULG_OFFLINE_AUDIT_BACKENDS = ['wasm_audit'];
@@ -781,6 +782,12 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
   const fieldObserverObservedFieldNames = Array.isArray(fieldObserverSummary?.observedFieldNames)
     ? fieldObserverSummary.observedFieldNames
     : [];
+  const fieldClosureSampleSummaries = deltas
+    .map((delta) => delta?.fieldClosureSampleSummary && typeof delta.fieldClosureSampleSummary === 'object'
+      ? delta.fieldClosureSampleSummary
+      : null)
+    .filter(Boolean);
+  const fieldClosureSampleSummary = fieldClosureSampleSummaries.at(-1) || null;
   const invariantReport = outputs.invariants && typeof outputs.invariants === 'object'
     ? outputs.invariants
     : null;
@@ -844,6 +851,40 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     fieldObserverFullPhysicsValidation: typeof fieldObserverSummary?.fullPhysicsValidation === 'boolean'
       ? fieldObserverSummary.fullPhysicsValidation
       : null,
+    fieldClosureSampleSummarySchema: fieldClosureSampleSummary?.schema || null,
+    fieldClosureSampleSummaryStatus: fieldClosureSampleSummary?.status || null,
+    fieldClosureSampleSummaryCount: fieldClosureSampleSummaries.length,
+    fieldClosureSampleKind: fieldClosureSampleSummary?.sampleKind || null,
+    fieldClosureSampleClosureId: fieldClosureSampleSummary?.closureId || null,
+    fieldClosureSampleFieldName: fieldClosureSampleSummary?.fieldName || null,
+    fieldClosureSampleAxisName: fieldClosureSampleSummary?.axisName || null,
+    fieldClosureSampleOutputName: fieldClosureSampleSummary?.outputName || null,
+    fieldClosureSampleCount: fieldClosureSampleSummary?.sampleCount ?? null,
+    fieldClosureSampleOutOfRangeCount: fieldClosureSampleSummary?.outOfRangeCount ?? null,
+    fieldClosureSampleNullFieldCount: fieldClosureSampleSummary?.nullFieldCount ?? null,
+    fieldClosureSampleMinInput: fieldClosureSampleSummary?.minInput ?? null,
+    fieldClosureSampleMaxInput: fieldClosureSampleSummary?.maxInput ?? null,
+    fieldClosureSampleMinSampledValue: fieldClosureSampleSummary?.minSampledValue ?? null,
+    fieldClosureSampleMaxSampledValue: fieldClosureSampleSummary?.maxSampledValue ?? null,
+    fieldClosureSampleMaxAbsDerivative: fieldClosureSampleSummary?.maxAbsDerivative ?? null,
+    fieldClosureSampleScientificValidation: typeof fieldClosureSampleSummary?.scientificValidation === 'boolean'
+      ? fieldClosureSampleSummary.scientificValidation
+      : null,
+    fieldClosureSampleFullPhysicsValidation: typeof fieldClosureSampleSummary?.fullPhysicsValidation === 'boolean'
+      ? fieldClosureSampleSummary.fullPhysicsValidation
+      : null,
+    fieldClosureSampleMaterialValidation: typeof fieldClosureSampleSummary?.materialValidation === 'boolean'
+      ? fieldClosureSampleSummary.materialValidation
+      : null,
+    fieldClosureSampleEosValidation: typeof fieldClosureSampleSummary?.eosValidation === 'boolean'
+      ? fieldClosureSampleSummary.eosValidation
+      : null,
+    fieldClosureSampleSphValidation: typeof fieldClosureSampleSummary?.sphValidation === 'boolean'
+      ? fieldClosureSampleSummary.sphValidation
+      : null,
+    fieldClosureSamplePhaseChangeValidation: typeof fieldClosureSampleSummary?.phaseChangeValidation === 'boolean'
+      ? fieldClosureSampleSummary.phaseChangeValidation
+      : null,
     validationStatus: validation.status || null,
     scientificValidation,
     fullPhysicsValidation,
@@ -896,6 +937,40 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
       : null,
     fieldObserverFullPhysicsValidation: typeof fieldObserverSummary?.fullPhysicsValidation === 'boolean'
       ? fieldObserverSummary.fullPhysicsValidation
+      : null,
+    fieldClosureSampleSummarySchema: fieldClosureSampleSummary?.schema || null,
+    fieldClosureSampleSummaryStatus: fieldClosureSampleSummary?.status || null,
+    fieldClosureSampleSummaryCount: fieldClosureSampleSummaries.length,
+    fieldClosureSampleKind: fieldClosureSampleSummary?.sampleKind || null,
+    fieldClosureSampleClosureId: fieldClosureSampleSummary?.closureId || null,
+    fieldClosureSampleFieldName: fieldClosureSampleSummary?.fieldName || null,
+    fieldClosureSampleAxisName: fieldClosureSampleSummary?.axisName || null,
+    fieldClosureSampleOutputName: fieldClosureSampleSummary?.outputName || null,
+    fieldClosureSampleCount: fieldClosureSampleSummary?.sampleCount ?? null,
+    fieldClosureSampleOutOfRangeCount: fieldClosureSampleSummary?.outOfRangeCount ?? null,
+    fieldClosureSampleNullFieldCount: fieldClosureSampleSummary?.nullFieldCount ?? null,
+    fieldClosureSampleMinInput: fieldClosureSampleSummary?.minInput ?? null,
+    fieldClosureSampleMaxInput: fieldClosureSampleSummary?.maxInput ?? null,
+    fieldClosureSampleMinSampledValue: fieldClosureSampleSummary?.minSampledValue ?? null,
+    fieldClosureSampleMaxSampledValue: fieldClosureSampleSummary?.maxSampledValue ?? null,
+    fieldClosureSampleMaxAbsDerivative: fieldClosureSampleSummary?.maxAbsDerivative ?? null,
+    fieldClosureSampleScientificValidation: typeof fieldClosureSampleSummary?.scientificValidation === 'boolean'
+      ? fieldClosureSampleSummary.scientificValidation
+      : null,
+    fieldClosureSampleFullPhysicsValidation: typeof fieldClosureSampleSummary?.fullPhysicsValidation === 'boolean'
+      ? fieldClosureSampleSummary.fullPhysicsValidation
+      : null,
+    fieldClosureSampleMaterialValidation: typeof fieldClosureSampleSummary?.materialValidation === 'boolean'
+      ? fieldClosureSampleSummary.materialValidation
+      : null,
+    fieldClosureSampleEosValidation: typeof fieldClosureSampleSummary?.eosValidation === 'boolean'
+      ? fieldClosureSampleSummary.eosValidation
+      : null,
+    fieldClosureSampleSphValidation: typeof fieldClosureSampleSummary?.sphValidation === 'boolean'
+      ? fieldClosureSampleSummary.sphValidation
+      : null,
+    fieldClosureSamplePhaseChangeValidation: typeof fieldClosureSampleSummary?.phaseChangeValidation === 'boolean'
+      ? fieldClosureSampleSummary.phaseChangeValidation
       : null,
     validityStatus: validity.status || null,
     closureValidity: validity.closureValidity || null,

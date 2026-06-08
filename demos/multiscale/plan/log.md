@@ -23801,3 +23801,42 @@ User asked whether Infinite Context Coder is being used.
   validate density, EOS, SPH/material physics, calibrated closures,
   phase-change behavior, or full magnetar simulation.
 - No push was attempted.
+
+## 2026-06-08 12:47:55 AKDT - ULG simulation field-closure-sample propagation
+
+### Actions
+- Extended Multiscale's ULG simulation artifact summary to preserve per-delta
+  `peercompute.ulg.field-closure-sample-summary.v0` fields beside the existing
+  edge-message and field-observer summary evidence.
+- Propagated closure-sample schema/status/count, field/axis/output names,
+  sample counts, input/output bounds, derivative bound, and false
+  science/full-physics/material/EOS/SPH/phase flags through diagnostics, packet
+  aggregate state, ULG spec-contract bridge/handoff fields, validation
+  envelope, the magnetar scenario affordance, and the new `ulg sim closure`
+  readout row.
+- Added focus-HUD allowlist support so the closure-sample row appears in the
+  default focused HUD mode.
+- Updated the Multiscale model test fixture/assertions and docs describing the
+  runtime/operator-evidence boundary.
+
+### Validation
+- PASS: syntax checks for changed Multiscale source and test files.
+- PASS: focused Multiscale simulation artifact test.
+- PASS: full `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+  passed `201/201`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  ULG handoff.
+- PASS: browser-injected closure-sample probe confirmed closure status `pass`,
+  closure count `4`, packet/spec-contract propagation, visible
+  `ulg sim closure`, visible magnetar affordance `sim closure pass x4`, and
+  false scientific/full-physics/material/EOS/SPH/phase-change readiness.
+
+### Open
+- Closure samples remain runtime/operator evidence for table sampling over
+  observed scalar fields. They do not validate density, EOS, SPH/material
+  physics, calibrated closures, phase-change behavior, or full magnetar
+  simulation.
+- No push was attempted.
