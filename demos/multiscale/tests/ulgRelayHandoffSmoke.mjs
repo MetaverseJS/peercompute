@@ -1258,6 +1258,34 @@ async function main() {
     }
     assert.equal(servicePlanProbe.readiness.status, 'handoff-ready');
     assert.equal(servicePlanProbe.readiness.blockerCount, 0);
+    assert.equal(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.status,
+      'runtime-evidence-compatible-pending-full-physics-validation'
+    );
+    assert.equal(servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.ready, false);
+    assert.equal(servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.runtimeEvidenceCompatible, true);
+    assert.equal(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.requiredCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.matchedFamilyCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.validatedCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.missingCount, 0);
+    assert.equal(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.hashCompleteCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.ok(
+      servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.blockers?.includes(
+        'full-physics-validation-not-run'
+      )
+    );
     assert.equal(servicePlanProbe.nodeKernel.roomId, roomId);
     assert.equal(servicePlanProbe.nodeKernel.bootstrapPeerCount > 0, true);
     assert.equal(servicePlanProbe.nodeKernel.connectedPeerIds.includes(roomPeerStatus.peerId), true);
@@ -1297,6 +1325,22 @@ async function main() {
         dispatchResourcePreemptionCount: dispatchProbe?.resourcePreemptionCount ?? null,
         dispatchAdapterProbeEnabled: runDispatchAdapters,
         dispatchAdapterDiagnostic: dispatchDiagnostic,
+        fullPhysicsValidationCompatibilityStatus:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.status || null,
+        fullPhysicsValidationRuntimeEvidenceCompatible:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.runtimeEvidenceCompatible ?? null,
+        fullPhysicsValidationCompatibilityReady:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.ready ?? null,
+        fullPhysicsValidationCompatibilityRequiredCount:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.requiredCount ?? null,
+        fullPhysicsValidationCompatibilityMatchedFamilyCount:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.matchedFamilyCount ?? null,
+        fullPhysicsValidationCompatibilityValidatedCount:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.validatedCount ?? null,
+        fullPhysicsValidationCompatibilityMissingCount:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.missingCount ?? null,
+        fullPhysicsValidationCompatibilityHashCompleteCount:
+          servicePlanProbe.readiness.fullPhysicsValidationCompatibility?.hashCompleteCount ?? null,
         scientificScopeFlags
       }
     }, null, 2));

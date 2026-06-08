@@ -1080,3 +1080,18 @@
   and `evidenceHash`, and blocker `full-physics-validation-not-run` through
   artifact, dispatch, supervisor, Multiscale readiness, packet, browser, and
   relay surfaces.
+- Production full-physics runtime-evidence compatibility gate:
+  `node --test demos/multiscale/tests/multiscaleModel.test.mjs` plus live ULG
+  browser and relay handoff smokes.
+: current result on 2026-06-08 passed. The Multiscale model suite passed
+  `200/200`; `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed; `npm --prefix
+  demos/multiscale run build` passed with the existing large-chunk warning; and
+  `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed. The checks
+  assert `peercompute.multiscale.scenario-full-physics-validation-compatibility.v0`,
+  `runtime-evidence-compatible-pending-full-physics-validation`,
+  required/matched/validated/hash-complete counts `5/5/5/5`, no missing runtime
+  evidence, `runtimeEvidenceCompatible = true`, `ready = false`, and blocker
+  `full-physics-validation-not-run`.

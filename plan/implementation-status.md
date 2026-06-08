@@ -1,6 +1,6 @@
 # Implementation Status
 
-Updated: 2026-06-07 00:54:31 AKDT
+Updated: 2026-06-08 10:23:44 AKDT
 
 ## Current Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
@@ -101,6 +101,14 @@ Updated: 2026-06-07 00:54:31 AKDT
   `eshkol.ulg.full-physics-validation-requirements.v0`,
   `declared-not-run`, readiness false, five required runtime-evidence families,
   four required hash fields, and the `full-physics-validation-not-run` blocker.
+- Multiscale now compares those Eshkol full-physics requirements against the
+  scenario runtime-evidence manifest with
+  `peercompute.multiscale.scenario-full-physics-validation-compatibility.v0`.
+  Handoff readiness and packet boundary conditions report missing, proxy-only,
+  schema/scope/hash mismatch, and hash-complete compatible evidence separately.
+  The live ULG handoff currently has five matched validated hash-complete
+  reduced runtime evidence entries, but remains not ready because Eshkol still
+  declares full-physics validation not run.
 
 ## Verified
 - `node --test peercompute/tests/unit/serviceOrchestration.test.js` passed.
@@ -171,6 +179,13 @@ Updated: 2026-06-07 00:54:31 AKDT
   `entry-export-runtime-smoke-passed`, offset probe `runtime-smoke-passed`,
   changed bytes `64`, and production handler boundary
   `production-handler-runtime-smoke-executed`.
+- `npm --prefix demos/multiscale run test:ulg-handoff` and
+  `npm --prefix demos/multiscale run test:ulg-relay-handoff` now also assert the
+  full-physics compatibility report from browser handoff readiness:
+  status `runtime-evidence-compatible-pending-full-physics-validation`,
+  required/matched/validated/hash-complete counts `5/5/5/5`,
+  `runtimeEvidenceCompatible = true`, `ready = false`, and blocker
+  `full-physics-validation-not-run`.
 - PeerCompute descriptor regression now blocks tensor-runtime/table binding
   drift even when the interpolation table itself still reports
   `computed-fixture`: mismatched runtime table hashes and mismatched
@@ -317,6 +332,16 @@ Updated: 2026-06-07 00:54:31 AKDT
   smoke passed with two connected browser peers, two accepted dispatches,
   requirements schema/status/family/hash/blocker propagation, and all
   science/full-physics scope flags false.
+- Current full-physics runtime-evidence compatibility validation passed on
+  2026-06-08: Multiscale syntax checks passed; `node --test
+  demos/multiscale/tests/multiscaleModel.test.mjs` passed `200/200`;
+  `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run
+  test:ulg-handoff` passed; `npm --prefix demos/multiscale run build` passed
+  with the existing large-chunk warning; and `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed. Direct and
+  relay handoffs both report runtime evidence compatible but final readiness
+  blocked by `full-physics-validation-not-run`.
 
 ## Next
 - Promote the production handler runtime smoke into validated production

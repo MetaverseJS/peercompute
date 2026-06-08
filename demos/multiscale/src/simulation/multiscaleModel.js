@@ -181,6 +181,8 @@ export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_GATE_SCHEMA = 'peercompute.m
 export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA = 'peercompute.multiscale.scenario-runtime-evidence-manifest.v0';
 export const MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA =
   'peercompute.multiscale.scenario-runtime-evidence-requirements.v0';
+export const MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA =
+  'peercompute.multiscale.scenario-full-physics-validation-compatibility.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA =
   'peercompute.multiscale.scenario-scientific-runtime-validation.v0';
 export const MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE =
@@ -2425,6 +2427,272 @@ function createScenarioRuntimeEvidenceManifestDiagnostics(sourceEntries = []) {
   };
 }
 
+export function createScenarioFullPhysicsValidationCompatibilityReport({
+  scenarioId = 'magnetar',
+  requirements = null,
+  runtimeEvidence = null
+} = {}) {
+  if (scenarioId !== 'magnetar') {
+    return {
+      schema: MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA,
+      scenarioId: scenarioId || 'default',
+      status: 'not-applicable',
+      ready: false,
+      runtimeEvidenceCompatible: false,
+      requirementsDeclared: false,
+      requirementsReady: false,
+      requiredCount: 0,
+      matchedFamilyCount: 0,
+      validatedCount: 0,
+      proxyOnlyCount: 0,
+      missingCount: 0,
+      hashCompleteCount: 0,
+      blockerCount: 0,
+      blockers: [],
+      entries: []
+    };
+  }
+  const normalizedRequirements = normalizeEshkolFullPhysicsValidationRequirements(requirements);
+  if (!normalizedRequirements) {
+    return {
+      schema: MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA,
+      scenarioId,
+      status: 'full-physics-requirements-missing',
+      ready: false,
+      runtimeEvidenceCompatible: false,
+      requirementsDeclared: false,
+      requirementsReady: false,
+      requirementsSchema: null,
+      requirementsStatus: null,
+      requiredValidationSchema: null,
+      requiredValidationScope: null,
+      requiredCount: 0,
+      matchedFamilyCount: 0,
+      validatedCount: 0,
+      proxyOnlyCount: 0,
+      missingCount: 0,
+      hashCompleteCount: 0,
+      blockerCount: 1,
+      blockers: ['full-physics-validation-requirements-missing'],
+      entries: []
+    };
+  }
+  const runtimeEntries = Array.isArray(runtimeEvidence?.entries) ? runtimeEvidence.entries : [];
+  const requiredEntries = normalizedRequirements.requiredRuntimeEvidence.length > 0
+    ? normalizedRequirements.requiredRuntimeEvidence
+    : normalizedRequirements.requiredRuntimeEvidenceFamilies.map((family, index) => ({
+      family,
+      schema: normalizedRequirements.requiredRuntimeEvidenceSchemas[index] || null,
+      status: 'required-not-provided',
+      required: true
+    }));
+  const requiredHashFields = normalizedRequirements.requiredHashFields;
+  const entries = requiredEntries.map((requiredEntry) => {
+    const sourceEntry = runtimeEntries.find((entry) => (
+      entry?.family === requiredEntry.family
+      || entry?.validation?.family === requiredEntry.family
+    )) || null;
+    return createFullPhysicsValidationCompatibilityEntry({
+      requiredEntry,
+      requiredHashFields,
+      requiredValidationSchema: normalizedRequirements.requiredValidationSchema,
+      requiredValidationScope: normalizedRequirements.requiredValidationScope,
+      runtimeEntry: sourceEntry
+    });
+  });
+  const requiredCount = entries.length;
+  const matchedFamilyCount = entries.filter((entry) => entry.runtimeEvidencePresent).length;
+  const validatedCount = entries.filter((entry) => entry.ready).length;
+  const proxyOnlyCount = entries.filter((entry) => entry.proxyOnly).length;
+  const missingCount = entries.filter((entry) => !entry.runtimeEvidencePresent).length;
+  const hashCompleteCount = entries.filter((entry) => entry.hashFieldsReady).length;
+  const runtimeEvidenceCompatible = requiredCount > 0
+    && validatedCount === requiredCount
+    && normalizedRequirements.declared === true
+    && normalizedRequirements.producerSchema === MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA
+    && normalizedRequirements.requiredValidationSchema === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA
+    && normalizedRequirements.requiredValidationScope === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE
+    && arraysEqual(requiredHashFields, ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS);
+  const ready = runtimeEvidenceCompatible && normalizedRequirements.ready === true;
+  const blockers = ready ? [] : uniqueStrings([
+    ...entries.flatMap((entry) => entry.blockers || []),
+    normalizedRequirements.ready === true ? null : normalizedRequirements.blockedBy,
+    normalizedRequirements.declared === true ? null : 'full-physics-validation-requirements-not-declared'
+  ]);
+  const status = ready
+    ? 'full-physics-validation-compatible'
+    : (
+      runtimeEvidenceCompatible
+        ? 'runtime-evidence-compatible-pending-full-physics-validation'
+        : (
+          missingCount === requiredCount
+            ? 'runtime-evidence-missing'
+            : (
+              proxyOnlyCount > 0 && matchedFamilyCount === requiredCount
+                ? 'runtime-evidence-proxy-only'
+                : 'runtime-evidence-incomplete'
+            )
+        )
+    );
+  return {
+    schema: MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA,
+    scenarioId,
+    status,
+    ready,
+    runtimeEvidenceCompatible,
+    requirementsDeclared: normalizedRequirements.declared === true,
+    requirementsReady: normalizedRequirements.ready === true,
+    requirementsSchema: normalizedRequirements.schema,
+    requirementsStatus: normalizedRequirements.status,
+    producerSchema: normalizedRequirements.producerSchema,
+    producerSchemaMatches: normalizedRequirements.producerSchema
+      === MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_MANIFEST_SCHEMA,
+    requiredValidationSchema: normalizedRequirements.requiredValidationSchema,
+    requiredValidationSchemaMatches: normalizedRequirements.requiredValidationSchema
+      === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCHEMA,
+    requiredValidationScope: normalizedRequirements.requiredValidationScope,
+    requiredValidationScopeMatches: normalizedRequirements.requiredValidationScope
+      === MULTISCALE_SCENARIO_SCIENTIFIC_RUNTIME_VALIDATION_SCOPE,
+    requiredHashFields: clonePlain(requiredHashFields),
+    requiredHashFieldsMatch: arraysEqual(requiredHashFields, ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS),
+    requiredCount,
+    matchedFamilyCount,
+    validatedCount,
+    proxyOnlyCount,
+    missingCount,
+    hashCompleteCount,
+    runtimeEvidenceStatus: runtimeEvidence?.status || null,
+    runtimeEvidenceReady: runtimeEvidence?.ready === true,
+    runtimeEvidenceScientificExecution: runtimeEvidence?.scientificExecution === true,
+    blockerCount: blockers.length,
+    blockers,
+    entries,
+    note: runtimeEvidenceCompatible
+      ? 'Required runtime evidence is contract-compatible, but Eshkol full-physics validation remains gated until the producer requirements mark the validation ready.'
+      : 'Eshkol full-physics validation requirements are declared, but current runtime evidence is missing, proxy-only, or hash/schema incomplete.'
+  };
+}
+
+function createFullPhysicsValidationCompatibilityEntry({
+  requiredEntry,
+  requiredHashFields = [],
+  requiredValidationSchema = null,
+  requiredValidationScope = null,
+  runtimeEntry = null
+} = {}) {
+  const family = requiredEntry.family || null;
+  if (!runtimeEntry) {
+    return {
+      family,
+      requiredSchema: requiredEntry.schema || null,
+      status: 'runtime-evidence-missing',
+      ready: false,
+      runtimeEvidencePresent: false,
+      runtimeEvidenceReady: false,
+      runtimeObserved: false,
+      scientificExecution: false,
+      proxyOnly: false,
+      hashFieldsReady: false,
+      hashFields: Object.fromEntries(requiredHashFields.map((field) => [field, null])),
+      blocker: `${family || 'unknown'}-runtime-evidence-missing`,
+      blockers: [`${family || 'unknown'}-runtime-evidence-missing`]
+    };
+  }
+  const hashFields = Object.fromEntries(requiredHashFields.map((field) => [
+    field,
+    runtimeEvidenceHashField(runtimeEntry, field)
+  ]));
+  const missingHashFields = requiredHashFields.filter((field) => !hasSha256Digest(hashFields[field]));
+  const validationSchema = stringOrNull(
+    runtimeEntry.scientificValidationSchema
+    || runtimeEntry.validationSchema
+    || runtimeEntry.validation?.schema
+  );
+  const validationScope = stringOrNull(
+    runtimeEntry.scientificValidationScope
+    || runtimeEntry.validationScope
+    || runtimeEntry.scope
+    || runtimeEntry.validation?.scope
+  );
+  const scientificExecution = runtimeEntry.scientificExecution === true;
+  const runtimeEvidenceReady = runtimeEntry.ready === true;
+  const validationSchemaMatches = validationSchema === requiredValidationSchema;
+  const validationScopeMatches = validationScope === requiredValidationScope;
+  const hashFieldsReady = missingHashFields.length === 0;
+  const ready = runtimeEvidenceReady
+    && scientificExecution
+    && validationSchemaMatches
+    && validationScopeMatches
+    && hashFieldsReady;
+  const proxyOnly = !ready
+    && runtimeEntry.runtimeObserved === true
+    && (runtimeEntry.proxyOnly === true || !scientificExecution);
+  const blockers = ready ? [] : uniqueStrings([
+    proxyOnly ? `${family}-runtime-evidence-proxy-only` : null,
+    runtimeEvidenceReady ? null : `${family}-runtime-evidence-not-validated`,
+    scientificExecution ? null : `${family}-scientific-execution-missing`,
+    validationSchemaMatches ? null : `${family}-scientific-validation-schema-mismatch`,
+    validationScopeMatches ? null : `${family}-scientific-validation-scope-mismatch`,
+    ...missingHashFields.map((field) => `${family}-${field}-missing`),
+    runtimeEntry.blockers
+  ]);
+  return {
+    family,
+    requiredSchema: requiredEntry.schema || null,
+    status: ready
+      ? 'runtime-evidence-compatible'
+      : (proxyOnly ? 'runtime-evidence-proxy-only' : 'runtime-evidence-incomplete'),
+    ready,
+    runtimeEvidencePresent: true,
+    runtimeEvidenceId: runtimeEntry.id || null,
+    runtimeEvidenceStatus: runtimeEntry.status || null,
+    runtimeEvidenceReady,
+    runtimeObserved: runtimeEntry.runtimeObserved === true,
+    scientificExecution,
+    proxyOnly,
+    validationSchema,
+    validationSchemaMatches,
+    validationScope,
+    validationScopeMatches,
+    hashFieldsReady,
+    missingHashFields,
+    hashFields,
+    blocker: blockers[0] || null,
+    blockers
+  };
+}
+
+function runtimeEvidenceHashField(entry = {}, field) {
+  if (field === 'referenceHash') {
+    return firstSha256Digest(
+      entry.scientificReferenceHash,
+      entry.referenceHash,
+      entry.validation?.scientificReferenceHash,
+      entry.validation?.referenceHash
+    );
+  }
+  if (field === 'toleranceHash') {
+    return firstSha256Digest(
+      entry.scientificToleranceHash,
+      entry.toleranceHash,
+      entry.validation?.scientificToleranceHash,
+      entry.validation?.toleranceHash
+    );
+  }
+  if (field === 'runtimeOutputHash') {
+    return firstSha256Digest(
+      entry.scientificRuntimeOutputHash,
+      entry.runtimeOutputHash,
+      entry.validation?.scientificRuntimeOutputHash,
+      entry.validation?.runtimeOutputHash
+    );
+  }
+  if (field === 'evidenceHash') {
+    return firstSha256Digest(entry.evidenceHash, entry.validation?.evidenceHash);
+  }
+  return firstSha256Digest(entry[field], entry.validation?.[field]);
+}
+
 function findMagnetarRuntimeEvidenceRequirement(source = {}) {
   return MAGNETAR_RUNTIME_EVIDENCE_REQUIREMENTS.find((requirement) => (
     source?.id === requirement.id
@@ -3361,6 +3629,12 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
   const readyHandoffCount = [calibrationReady, closureReady].filter(Boolean).length;
   const allHandoffsReady = requiredHandoffCount > 0 && readyHandoffCount === requiredHandoffCount;
   const scientificRuntimeEvidence = scenario.scientificRuntimeEvidence || scenario.validation?.scientificRuntimeEvidence || null;
+  const fullPhysicsValidationCompatibility = createScenarioFullPhysicsValidationCompatibilityReport({
+    scenarioId,
+    requirements: productionHandlerBoundary?.fullPhysicsValidationRequirements
+      || createFullPhysicsValidationRequirementsFromSummaryFields(productionHandlerBoundary || {}),
+    runtimeEvidence: scientificRuntimeEvidence
+  });
   const scientificRuntimeGate = createScenarioScientificRuntimeGateReport({
     scenarioId,
     allHandoffsReady,
@@ -3476,6 +3750,7 @@ export function createScenarioHandoffReadinessReport(scenario = {}) {
       blockerCount: Array.isArray(scientificRuntimeEvidence.blockers) ? scientificRuntimeEvidence.blockers.length : 0,
       blockers: Array.isArray(scientificRuntimeEvidence.blockers) ? [...scientificRuntimeEvidence.blockers] : []
     } : null,
+    fullPhysicsValidationCompatibility,
     scientificRuntimeGate,
     closureHandoff: {
       provider: closureIngest?.provider || 'eshkol',
@@ -10154,6 +10429,32 @@ export class MultiscaleModel {
             scenario.handoffReadiness?.closureHandoff?.fullPhysicsValidationRequirementsBlockedBy
             || scenario.handoffReadiness?.closureModuleProbe?.fullPhysicsValidationRequirementsBlockedBy
             || [],
+          scenarioFullPhysicsValidationCompatibilityStatus:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.status || null,
+          scenarioFullPhysicsValidationCompatibilityReady:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.ready ?? null,
+          scenarioFullPhysicsValidationRuntimeEvidenceCompatible:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.runtimeEvidenceCompatible ?? null,
+          scenarioFullPhysicsValidationCompatibilityRequirementsDeclared:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.requirementsDeclared ?? null,
+          scenarioFullPhysicsValidationCompatibilityRequirementsReady:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.requirementsReady ?? null,
+          scenarioFullPhysicsValidationCompatibilityRequiredCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.requiredCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityMatchedFamilyCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.matchedFamilyCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityValidatedCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.validatedCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityProxyOnlyCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.proxyOnlyCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityMissingCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.missingCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityHashCompleteCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.hashCompleteCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityBlockerCount:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.blockerCount ?? null,
+          scenarioFullPhysicsValidationCompatibilityBlockers:
+            scenario.handoffReadiness?.fullPhysicsValidationCompatibility?.blockers || [],
           scenarioEshkolProductionDispatchPreflightReady:
             scenario.handoffReadiness?.closureHandoff?.productionDispatchPreflightReady
             ?? scenario.handoffReadiness?.closureModuleProbe?.productionDispatchPreflightReady

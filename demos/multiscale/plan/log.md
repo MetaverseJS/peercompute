@@ -23643,3 +23643,43 @@ User asked whether Infinite Context Coder is being used.
 - The production blocker remains `full-physics-validation-not-run` until the
   five required runtime evidence families have validated hash-backed artifacts.
 - No push was attempted.
+
+## 2026-06-08 10:23:44 AKDT - Full-physics runtime-evidence compatibility report
+
+### Actions
+- Added `peercompute.multiscale.scenario-full-physics-validation-compatibility.v0`
+  to magnetar handoff readiness.
+- Compared Eshkol's declared required runtime evidence families and required
+  hash fields against the current Multiscale runtime evidence manifest.
+- Exposed compatibility status/counts/blockers through handoff readiness,
+  packet boundary conditions, direct ULG browser handoff smoke, relay handoff
+  smoke, and the rebuilt docs bundle.
+- Preserved the overclaim boundary: compatible reduced runtime evidence can set
+  `runtimeEvidenceCompatible = true`, but final compatibility `ready` stays
+  false while Eshkol requirements are `declared-not-run`.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `200/200`.
+- PASS: `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed and reported
+  `runtime-evidence-compatible-pending-full-physics-validation`,
+  required/matched/validated/hash-complete counts `5/5/5/5`,
+  `runtimeEvidenceCompatible = true`, `ready = false`, and blocker
+  `full-physics-validation-not-run`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed with the same
+  compatibility report in the relay-served bundle.
+
+### Open
+- Full-physics validation remains not run. This report proves the current
+  reduced runtime evidence satisfies the declared family/hash compatibility
+  contract, not that the magnetar simulation is full-fidelity.
+- No push was attempted.

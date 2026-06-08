@@ -614,6 +614,24 @@ async function main() {
           readiness.closureHandoff?.fullPhysicsValidationRequiredRuntimeEvidenceCount ?? null,
         fullPhysicsValidationRequiredHashFields:
           readiness.closureHandoff?.fullPhysicsValidationRequiredHashFields ?? [],
+        fullPhysicsValidationCompatibilityStatus:
+          readiness.fullPhysicsValidationCompatibility?.status || null,
+        fullPhysicsValidationCompatibilityReady:
+          readiness.fullPhysicsValidationCompatibility?.ready ?? null,
+        fullPhysicsValidationRuntimeEvidenceCompatible:
+          readiness.fullPhysicsValidationCompatibility?.runtimeEvidenceCompatible ?? null,
+        fullPhysicsValidationCompatibilityRequiredCount:
+          readiness.fullPhysicsValidationCompatibility?.requiredCount ?? null,
+        fullPhysicsValidationCompatibilityMatchedFamilyCount:
+          readiness.fullPhysicsValidationCompatibility?.matchedFamilyCount ?? null,
+        fullPhysicsValidationCompatibilityValidatedCount:
+          readiness.fullPhysicsValidationCompatibility?.validatedCount ?? null,
+        fullPhysicsValidationCompatibilityMissingCount:
+          readiness.fullPhysicsValidationCompatibility?.missingCount ?? null,
+        fullPhysicsValidationCompatibilityHashCompleteCount:
+          readiness.fullPhysicsValidationCompatibility?.hashCompleteCount ?? null,
+        fullPhysicsValidationCompatibilityBlockers:
+          readiness.fullPhysicsValidationCompatibility?.blockers ?? [],
         magnetarVisible: state.magnetarProxyVisual.visible,
         magnetarLayer: state.magnetarProxyVisual.activeLayerId,
         hudStatus: document.querySelector('#scenario-handoff-status')?.textContent || null
@@ -641,6 +659,32 @@ async function main() {
     assert.deepEqual(
       multiscaleProbe.fullPhysicsValidationRequiredHashFields,
       EXPECTED_ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS
+    );
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationCompatibilityStatus,
+      'runtime-evidence-compatible-pending-full-physics-validation'
+    );
+    assert.equal(multiscaleProbe.fullPhysicsValidationCompatibilityReady, false);
+    assert.equal(multiscaleProbe.fullPhysicsValidationRuntimeEvidenceCompatible, true);
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationCompatibilityRequiredCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationCompatibilityMatchedFamilyCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationCompatibilityValidatedCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.equal(multiscaleProbe.fullPhysicsValidationCompatibilityMissingCount, 0);
+    assert.equal(
+      multiscaleProbe.fullPhysicsValidationCompatibilityHashCompleteCount,
+      EXPECTED_ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+    );
+    assert.ok(
+      multiscaleProbe.fullPhysicsValidationCompatibilityBlockers.includes('full-physics-validation-not-run')
     );
     assert.equal(multiscaleProbe.magnetarVisible, true);
     assert.equal(multiscaleProbe.magnetarLayer, 'solar');

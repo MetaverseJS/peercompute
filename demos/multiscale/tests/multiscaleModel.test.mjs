@@ -17,6 +17,7 @@ import {
   MULTISCALE_SCENARIO_CLOSURE_MODULE_PROBE_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_OUTPUT_SEMANTICS_VALIDATION_SCHEMA,
   MULTISCALE_SCENARIO_CLOSURE_INGEST_SCHEMA,
+  MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA,
   MULTISCALE_SCENARIO_HANDOFF_READINESS_SCHEMA,
   MULTISCALE_SCENARIO_PRESET_SCHEMA,
   MULTISCALE_SCENARIO_PRESETS,
@@ -2696,6 +2697,24 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
     scenario.handoffReadiness.closureHandoff,
     'fullPhysicsValidation'
   );
+  assert.equal(
+    scenario.handoffReadiness.fullPhysicsValidationCompatibility.schema,
+    MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA
+  );
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.status, 'runtime-evidence-missing');
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.ready, false);
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.runtimeEvidenceCompatible, false);
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.requirementsDeclared, true);
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.requirementsReady, false);
+  assert.equal(
+    scenario.handoffReadiness.fullPhysicsValidationCompatibility.requiredCount,
+    ESHKOL_FULL_PHYSICS_RUNTIME_EVIDENCE_FAMILIES.length
+  );
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.matchedFamilyCount, 0);
+  assert.equal(scenario.handoffReadiness.fullPhysicsValidationCompatibility.missingCount, 5);
+  assert.ok(
+    scenario.handoffReadiness.fullPhysicsValidationCompatibility.blockers.includes('full-physics-validation-not-run')
+  );
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightStatus, 'blocked');
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightReady, false);
   assert.equal(scenario.handoffReadiness.closureHandoff.productionDispatchPreflightDeclared, true);
@@ -2824,6 +2843,18 @@ test('magnetar scenario accepts descriptor-only Eshkol closure without output se
   assert.deepEqual(
     packet.downward.boundaryConditions.scenarioEshkolFullPhysicsValidationRequirementsBlockedBy,
     [...ESHKOL_PRODUCTION_BLOCKERS]
+  );
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityStatus,
+    'runtime-evidence-missing'
+  );
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationRuntimeEvidenceCompatible, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityRequiredCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityMissingCount, 5);
+  assert.ok(
+    packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityBlockers
+      .includes('full-physics-validation-not-run')
   );
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightReady, false);
   assert.equal(packet.downward.boundaryConditions.scenarioEshkolProductionDispatchPreflightDeclared, true);
@@ -4194,6 +4225,109 @@ test('magnetar runtime evidence requirements manifest exposes the scientific pro
   assert.equal(notApplicable.schema, MULTISCALE_SCENARIO_RUNTIME_EVIDENCE_REQUIREMENTS_SCHEMA);
   assert.equal(notApplicable.status, 'not-applicable');
   assert.equal(notApplicable.requiredCount, 0);
+});
+
+test('magnetar full-physics compatibility report keeps bounded proxy evidence blocked', async () => {
+  const model = new MultiscaleModel({ seed: 4772 });
+  model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    validationStatus: 'descriptor-only',
+    closureKind: 'magnetar-closure-descriptor',
+    closureReady: true,
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: false,
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY,
+    ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY
+  });
+
+  const scenario = await model.refreshScenarioBoundedProxyRuntimeEvidence();
+  const compatibility = scenario.handoffReadiness.fullPhysicsValidationCompatibility;
+
+  assert.equal(compatibility.schema, MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA);
+  assert.equal(compatibility.status, 'runtime-evidence-proxy-only');
+  assert.equal(compatibility.ready, false);
+  assert.equal(compatibility.runtimeEvidenceCompatible, false);
+  assert.equal(compatibility.requirementsDeclared, true);
+  assert.equal(compatibility.requirementsReady, false);
+  assert.equal(compatibility.requiredCount, 5);
+  assert.equal(compatibility.matchedFamilyCount, 5);
+  assert.equal(compatibility.validatedCount, 0);
+  assert.equal(compatibility.proxyOnlyCount, 5);
+  assert.equal(compatibility.missingCount, 0);
+  assert.equal(compatibility.hashCompleteCount, 0);
+  assert.ok(compatibility.blockers.includes('magnetosphere-mhd-runtime-evidence-proxy-only'));
+  assert.ok(compatibility.blockers.includes('magnetosphere-mhd-referenceHash-missing'));
+  assert.ok(compatibility.blockers.includes('full-physics-validation-not-run'));
+
+  const packet = model.createPacket();
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityStatus, 'runtime-evidence-proxy-only');
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityMatchedFamilyCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityProxyOnlyCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityHashCompleteCount, 0);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationRuntimeEvidenceCompatible, false);
+});
+
+test('magnetar full-physics compatibility report separates matching evidence from Eshkol readiness', () => {
+  const model = new MultiscaleModel({ seed: 4773 });
+  model.ingestScenarioClosureSummary({
+    schema: 'peercompute.ulg.artifact-summary.v0',
+    artifactKind: 'closure',
+    artifactId: 'eshkol:magnetar-closure-descriptor',
+    sourceService: 'eshkol',
+    validationStatus: 'descriptor-only',
+    closureKind: 'magnetar-closure-descriptor',
+    closureReady: true,
+    closureServiceWorkerSafe: true,
+    closureRequiresDynamicCode: false,
+    closureRequiresHostImports: false,
+    ...ESHKOL_MAGNETAR_CLOSURE_DESCRIPTOR_SUMMARY,
+    ...ESHKOL_PRODUCTION_HANDLER_BOUNDARY_SUMMARY
+  });
+
+  const scenario = model.ingestScenarioRuntimeEvidenceManifest(createReadyMagnetarRuntimeEvidenceManifest());
+  const compatibility = scenario.handoffReadiness.fullPhysicsValidationCompatibility;
+  const magnetosphere = compatibility.entries.find((entry) => entry.family === 'magnetosphere-mhd');
+
+  assert.equal(compatibility.schema, MULTISCALE_SCENARIO_FULL_PHYSICS_VALIDATION_COMPATIBILITY_SCHEMA);
+  assert.equal(compatibility.status, 'runtime-evidence-compatible-pending-full-physics-validation');
+  assert.equal(compatibility.ready, false);
+  assert.equal(compatibility.runtimeEvidenceCompatible, true);
+  assert.equal(compatibility.requirementsDeclared, true);
+  assert.equal(compatibility.requirementsReady, false);
+  assert.equal(compatibility.requiredCount, 5);
+  assert.equal(compatibility.matchedFamilyCount, 5);
+  assert.equal(compatibility.validatedCount, 5);
+  assert.equal(compatibility.proxyOnlyCount, 0);
+  assert.equal(compatibility.missingCount, 0);
+  assert.equal(compatibility.hashCompleteCount, 5);
+  assert.deepEqual(compatibility.requiredHashFields, [...ESHKOL_FULL_PHYSICS_REQUIRED_HASH_FIELDS]);
+  assert.ok(compatibility.blockers.includes('full-physics-validation-not-run'));
+  assert.equal(magnetosphere.ready, true);
+  assert.equal(magnetosphere.validationSchemaMatches, true);
+  assert.equal(magnetosphere.validationScopeMatches, true);
+  assert.equal(magnetosphere.hashFieldsReady, true);
+  assert.equal(magnetosphere.hashFields.referenceHash.startsWith('sha256:'), true);
+  assert.equal(magnetosphere.hashFields.toleranceHash.startsWith('sha256:'), true);
+  assert.equal(magnetosphere.hashFields.runtimeOutputHash.startsWith('sha256:'), true);
+  assert.equal(magnetosphere.hashFields.evidenceHash.startsWith('sha256:'), true);
+
+  const packet = model.createPacket();
+  assert.equal(
+    packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityStatus,
+    'runtime-evidence-compatible-pending-full-physics-validation'
+  );
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityReady, false);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationRuntimeEvidenceCompatible, true);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityValidatedCount, 5);
+  assert.equal(packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityHashCompleteCount, 5);
+  assert.ok(
+    packet.downward.boundaryConditions.scenarioFullPhysicsValidationCompatibilityBlockers
+      .includes('full-physics-validation-not-run')
+  );
 });
 
 test('magnetar scientific runtime gate accepts explicit validated runtime evidence after prerequisites', () => {

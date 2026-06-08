@@ -52945,3 +52945,51 @@ Open:
   each still needs validated reference/tolerance/runtime-output/evidence
   hashes before the blocker can clear.
 - No push was attempted.
+
+## 2026-06-08 10:23:44 AKDT - Full-physics runtime-evidence compatibility report
+
+### Actions
+- Added `peercompute.multiscale.scenario-full-physics-validation-compatibility.v0`
+  to compare Eshkol's declared full-physics validation requirements against
+  Multiscale runtime-evidence manifests.
+- Wired the compatibility report into magnetar handoff readiness and packet
+  boundary conditions with separate counts for required, matched, validated,
+  proxy-only, missing, and hash-complete runtime evidence families.
+- Added per-family blockers for missing evidence, proxy-only evidence,
+  validation schema/scope mismatches, and missing required hash fields.
+- Kept final report readiness false while Eshkol requirements remain
+  `declared-not-run`; compatible reduced runtime evidence now reports
+  `runtimeEvidenceCompatible = true` without clearing
+  `full-physics-validation-not-run`.
+- Extended direct ULG browser handoff and relay handoff smokes to assert the
+  compatibility report from live browser readiness.
+
+### Validation
+- PASS: `node --check demos/multiscale/src/simulation/multiscaleModel.js`.
+- PASS: `node --check demos/multiscale/tests/multiscaleModel.test.mjs`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `200/200`.
+- PASS: `node --check demos/multiscale/tests/ulgBrowserHandoffSmoke.mjs`.
+- FAIL then fixed: the first live ULG browser handoff assertion expected
+  missing runtime evidence, but the actual live path already had matching
+  reduced validated evidence. The smoke now asserts
+  `runtime-evidence-compatible-pending-full-physics-validation`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with required/matched/
+  validated/hash-complete counts `5/5/5/5`, no missing evidence,
+  `runtimeEvidenceCompatible = true`, `ready = false`, and blocker
+  `full-physics-validation-not-run`.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+- PASS: `node --check demos/multiscale/tests/ulgRelayHandoffSmoke.mjs`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/
+  ULG_RELAY_HANDOFF_TIMEOUT_MS=300000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm
+  --prefix demos/multiscale run test:ulg-relay-handoff` passed with two
+  connected browser peers, two accepted dispatches, two released leases, and
+  the same compatibility counts in the relay-served docs bundle.
+
+### Open
+- This is a requirements-vs-runtime-evidence compatibility layer. It does not
+  run Eshkol full-physics validation and does not claim full-fidelity GRMHD,
+  production PIC, spectral radiation transport, or full magnetar simulation.
+- No push was attempted.
