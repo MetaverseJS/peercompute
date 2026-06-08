@@ -461,6 +461,10 @@ export function createUlgSpecContractReport({
         `${ulgRuntime?.carrierKindCount || 0} carrier kinds`,
         `${ulgRuntime?.stateChannelCount || 0} channels`,
         ulgSimulationArtifactSummary?.sourceSchema,
+        ulgSimulationArtifactSummary?.edgeMessageSummarySchema,
+        ulgSimulationArtifactSummary?.edgeMessageSummaryStatus
+          ? `edge messages ${ulgSimulationArtifactSummary.edgeMessageSummaryStatus}`
+          : null,
         ulgSimulationArtifactSummary?.summaryHash
       ].filter(Boolean),
       validity: { assumptions: ['carrier samples are not necessarily literal particles'] }
@@ -485,7 +489,15 @@ export function createUlgSpecContractReport({
       validity: {
         assumptions: ['residual-based validation', 'explicit provenance and validity status'],
         envelope: {
-          simulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true
+          simulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true,
+          simulationArtifactEdgeMessageSummaryStatus:
+            ulgSimulationArtifactSummary?.edgeMessageSummaryStatus || null,
+          simulationArtifactEdgeMessageSummaryCount:
+            ulgSimulationArtifactSummary?.edgeMessageSummaryCount ?? 0,
+          simulationArtifactEdgeMessageMaxAntisymmetricResidualAbs:
+            ulgSimulationArtifactSummary?.edgeMessageMaxAntisymmetricResidualAbs ?? null,
+          simulationArtifactEdgeMessageOutOfRangeCount:
+            ulgSimulationArtifactSummary?.edgeMessageOutOfRangeCount ?? null
         }
       },
       blockers: ulgSimulationArtifactSummary?.scientificRuntimeReady === false
@@ -558,6 +570,12 @@ export function createUlgSpecContractReport({
       ulgRuntimeStateDeltaSchema: ulgDeltaSummary.schema,
       ulgSimulationArtifactSchema: ulgSimulationArtifactSummary?.sourceSchema || null,
       ulgSimulationArtifactSummarySchema: ulgSimulationArtifactSummary?.schema || null,
+      ulgSimulationArtifactEdgeMessageSummarySchema:
+        ulgSimulationArtifactSummary?.edgeMessageSummarySchema || null,
+      ulgSimulationArtifactEdgeMessageSummaryStatus:
+        ulgSimulationArtifactSummary?.edgeMessageSummaryStatus || null,
+      ulgSimulationArtifactEdgeMessageSummaryCount:
+        ulgSimulationArtifactSummary?.edgeMessageSummaryCount ?? 0,
       ulgSimulationArtifactScientificRuntimeReady: ulgSimulationArtifactSummary?.scientificRuntimeReady === true
     },
     handoffs: {
@@ -588,6 +606,17 @@ export function createUlgSpecContractReport({
         backend: ulgSimulationArtifactSummary?.backend || null,
         deltaCount: ulgSimulationArtifactSummary?.deltaCount ?? 0,
         invariantStatus: ulgSimulationArtifactSummary?.invariantStatus || null,
+        edgeMessageSummarySchema: ulgSimulationArtifactSummary?.edgeMessageSummarySchema || null,
+        edgeMessageSummaryStatus: ulgSimulationArtifactSummary?.edgeMessageSummaryStatus || null,
+        edgeMessageSummaryCount: ulgSimulationArtifactSummary?.edgeMessageSummaryCount ?? 0,
+        edgeMessageMaxNetForceAbs: ulgSimulationArtifactSummary?.edgeMessageMaxNetForceAbs ?? null,
+        edgeMessageMaxAntisymmetricResidualAbs:
+          ulgSimulationArtifactSummary?.edgeMessageMaxAntisymmetricResidualAbs ?? null,
+        edgeMessageOutOfRangeCount: ulgSimulationArtifactSummary?.edgeMessageOutOfRangeCount ?? null,
+        edgeMessageScientificValidation:
+          ulgSimulationArtifactSummary?.edgeMessageScientificValidation === true,
+        edgeMessageFullPhysicsValidation:
+          ulgSimulationArtifactSummary?.edgeMessageFullPhysicsValidation === true,
         blockers: ulgSimulationArtifactSummary?.blockers || []
       }
     },

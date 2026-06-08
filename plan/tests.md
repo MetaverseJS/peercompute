@@ -1109,3 +1109,19 @@
   three-artifact handoff with one `simulation-delta` ULG runtime artifact and
   confirmed `runtimeEvidenceReady = true`, `scientificRuntimeReady = false`,
   and `fullPhysicsReady = false` in packet/spec-contract summaries.
+- ULG simulation edge-summary propagation gate:
+  syntax checks for changed Multiscale, PeerCompute service-orchestration, and
+  test files; focused service-orchestration and Multiscale model edge-summary
+  tests; full service-orchestration and Multiscale model suites; Multiscale
+  build; live ULG handoff smoke; and a browser-injected simulation artifact
+  edge probe against the live `5185` page.
+: current result on 2026-06-08 passed. Focused edge-summary tests passed for
+  service orchestration and Multiscale; `node --test
+  peercompute/tests/unit/serviceOrchestration.test.js` passed `29/29`; `node
+  --test demos/multiscale/tests/multiscaleModel.test.mjs` passed `201/201`;
+  `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run
+  test:ulg-handoff` passed with the default two-artifact handoff; `npm --prefix
+  demos/multiscale run build` passed with the existing large-chunk warning; and
+  a browser-injected simulation artifact confirmed edge status `pass`, edge
+  count `4`, visible `ulg sim edge`, visible magnetar affordance edge status,
+  `scientificRuntimeReady = false`, and `fullPhysicsReady = false`.

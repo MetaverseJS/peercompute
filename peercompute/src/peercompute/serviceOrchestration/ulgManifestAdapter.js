@@ -1360,6 +1360,10 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
   const simulationInvariants = plainObjectOrNull(outputs.invariants);
   const simulationInvariantMetrics = plainObjectOrNull(simulationInvariants?.metrics);
   const simulationDeltas = Array.isArray(outputs.deltas) ? outputs.deltas : [];
+  const simulationEdgeMessageSummaries = simulationDeltas
+    .map((delta) => plainObjectOrNull(delta?.edgeMessageSummary))
+    .filter(Boolean);
+  const simulationEdgeMessageSummary = simulationEdgeMessageSummaries.at(-1) || null;
   const simulationFinalState = plainObjectOrNull(outputs.finalState);
   const simulationValidation = artifact.validation && typeof artifact.validation === 'object'
     ? artifact.validation
@@ -1773,6 +1777,15 @@ export function summarizeUlgArtifact(artifactKind, artifact = {}) {
     simulationInvariantStatus,
     simulationMaxEnergyDriftAbs: finiteNumberOrNull(simulationInvariantMetrics?.maxEnergyDriftAbs),
     simulationMaxMomentumDriftAbs: finiteNumberOrNull(simulationInvariantMetrics?.maxMomentumDriftAbs),
+    simulationEdgeMessageSummarySchema: simulationEdgeMessageSummary?.schema || null,
+    simulationEdgeMessageSummaryStatus: simulationEdgeMessageSummary?.status || null,
+    simulationEdgeMessageSummaryCount: simulationEdgeMessageSummaries.length,
+    simulationEdgeMessageMaxNetForceAbs: finiteNumberOrNull(simulationEdgeMessageSummary?.maxNetForceAbs),
+    simulationEdgeMessageMaxAntisymmetricResidualAbs:
+      finiteNumberOrNull(simulationEdgeMessageSummary?.maxAntisymmetricResidualAbs),
+    simulationEdgeMessageOutOfRangeCount: finiteNumberOrNull(simulationEdgeMessageSummary?.outOfRangeCount),
+    simulationEdgeMessageScientificValidation: booleanOrNull(simulationEdgeMessageSummary?.scientificValidation),
+    simulationEdgeMessageFullPhysicsValidation: booleanOrNull(simulationEdgeMessageSummary?.fullPhysicsValidation),
     simulationValidityStatus: validity.status || null,
     simulationClosureValidity: validity.closureValidity || null,
     simulationClosureId: validity.closureId || null,

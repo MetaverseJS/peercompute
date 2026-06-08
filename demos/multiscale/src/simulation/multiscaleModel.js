@@ -7531,6 +7531,9 @@ export class MultiscaleModel {
         scientificRuntimeReady: summary.scientificRuntimeReady,
         backend: summary.backend,
         deltaCount: summary.deltaCount,
+        edgeMessageSummaryStatus: summary.edgeMessageSummaryStatus,
+        edgeMessageSummaryCount: summary.edgeMessageSummaryCount,
+        edgeMessageMaxAntisymmetricResidualAbs: summary.edgeMessageMaxAntisymmetricResidualAbs,
         summaryHash: summary.summaryHash
       };
     }
@@ -9943,6 +9946,17 @@ export class MultiscaleModel {
             steps: ulgSimulationArtifactSummary.steps,
             deltaCount: ulgSimulationArtifactSummary.deltaCount,
             invariantStatus: ulgSimulationArtifactSummary.invariantStatus,
+            edgeMessageSummarySchema: ulgSimulationArtifactSummary.edgeMessageSummarySchema,
+            edgeMessageSummaryStatus: ulgSimulationArtifactSummary.edgeMessageSummaryStatus,
+            edgeMessageSummaryCount: ulgSimulationArtifactSummary.edgeMessageSummaryCount,
+            edgeMessageMaxNetForceAbs: ulgSimulationArtifactSummary.edgeMessageMaxNetForceAbs,
+            edgeMessageMaxAntisymmetricResidualAbs:
+              ulgSimulationArtifactSummary.edgeMessageMaxAntisymmetricResidualAbs,
+            edgeMessageOutOfRangeCount: ulgSimulationArtifactSummary.edgeMessageOutOfRangeCount,
+            edgeMessageScientificValidation:
+              ulgSimulationArtifactSummary.edgeMessageScientificValidation === true,
+            edgeMessageFullPhysicsValidation:
+              ulgSimulationArtifactSummary.edgeMessageFullPhysicsValidation === true,
             validationMode: ulgSimulationArtifactSummary.validationMode,
             scientificValidation: ulgSimulationArtifactSummary.scientificValidation === true,
             fullPhysicsValidation: ulgSimulationArtifactSummary.fullPhysicsValidation === true,

@@ -2435,7 +2435,17 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
         outputs: {
           deltas: Array.from({ length: 32 }, (_, index) => ({
             schema: 'peercompute.ulg.carrier-delta.v0',
-            step: index + 1
+            step: index + 1,
+            edgeMessageSummary: {
+              schema: 'peercompute.ulg.edge-message-summary.v0',
+              status: 'pass',
+              messageCount: 2,
+              outOfRangeCount: 0,
+              maxNetForceAbs: 0,
+              maxAntisymmetricResidualAbs: 0,
+              scientificValidation: false,
+              fullPhysicsValidation: false
+            }
           })),
           invariants: {
             schema: 'peercompute.ulg.carrier-invariant-drift.v0',
@@ -2496,6 +2506,17 @@ test('ULG demo handoff preserves simulation artifacts without promoting calibrat
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationBackend, 'cpu-reference');
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationDeltaCount, 32);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationInvariantStatus, 'pass');
+  assert.equal(
+    handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageSummarySchema,
+    'peercompute.ulg.edge-message-summary.v0'
+  );
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageSummaryStatus, 'pass');
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageSummaryCount, 32);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageMaxNetForceAbs, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageMaxAntisymmetricResidualAbs, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageOutOfRangeCount, 0);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageScientificValidation, false);
+  assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationEdgeMessageFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationScientificValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationFullPhysicsValidation, false);
   assert.equal(handoff.readySimulationArtifact.artifactSummary.simulationCalibratedPhysics, false);

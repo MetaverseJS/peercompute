@@ -12,6 +12,7 @@ export const ULG_INVARIANT_REPORT_SCHEMA = 'peercompute.ulg.invariant-report.v0'
 export const ULG_COMPACT_DELTA_SCHEMA = 'peercompute.ulg.compact-delta.v0';
 export const ULG_SIMULATION_ARTIFACT_SCHEMA = 'peercompute.ulg.simulation-artifact.v0';
 export const ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA = 'peercompute.multiscale.ulg-simulation-artifact-summary.v0';
+export const ULG_EDGE_MESSAGE_SUMMARY_SCHEMA = 'peercompute.ulg.edge-message-summary.v0';
 
 export const ULG_LIVE_BACKENDS = ['webgpu'];
 export const ULG_OFFLINE_AUDIT_BACKENDS = ['wasm_audit'];
@@ -764,6 +765,12 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     ? artifact.validation
     : {};
   const deltas = asArray(outputs.deltas);
+  const edgeMessageSummaries = deltas
+    .map((delta) => delta?.edgeMessageSummary && typeof delta.edgeMessageSummary === 'object'
+      ? delta.edgeMessageSummary
+      : null)
+    .filter(Boolean);
+  const edgeMessageSummary = edgeMessageSummaries.at(-1) || null;
   const invariantReport = outputs.invariants && typeof outputs.invariants === 'object'
     ? outputs.invariants
     : null;
@@ -802,6 +809,18 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     steps: execution.steps ?? null,
     deltaCount,
     invariantStatus,
+    edgeMessageSummarySchema: edgeMessageSummary?.schema || null,
+    edgeMessageSummaryStatus: edgeMessageSummary?.status || null,
+    edgeMessageSummaryCount: edgeMessageSummaries.length,
+    edgeMessageMaxNetForceAbs: edgeMessageSummary?.maxNetForceAbs ?? null,
+    edgeMessageMaxAntisymmetricResidualAbs: edgeMessageSummary?.maxAntisymmetricResidualAbs ?? null,
+    edgeMessageOutOfRangeCount: edgeMessageSummary?.outOfRangeCount ?? null,
+    edgeMessageScientificValidation: typeof edgeMessageSummary?.scientificValidation === 'boolean'
+      ? edgeMessageSummary.scientificValidation
+      : null,
+    edgeMessageFullPhysicsValidation: typeof edgeMessageSummary?.fullPhysicsValidation === 'boolean'
+      ? edgeMessageSummary.fullPhysicsValidation
+      : null,
     validationStatus: validation.status || null,
     scientificValidation,
     fullPhysicsValidation,
@@ -830,6 +849,18 @@ export function createUlgSimulationArtifactSummary(artifact = {}) {
     invariantStatus,
     maxEnergyDriftAbs: invariantReport?.metrics?.maxEnergyDriftAbs ?? null,
     maxMomentumDriftAbs: invariantReport?.metrics?.maxMomentumDriftAbs ?? null,
+    edgeMessageSummarySchema: edgeMessageSummary?.schema || null,
+    edgeMessageSummaryStatus: edgeMessageSummary?.status || null,
+    edgeMessageSummaryCount: edgeMessageSummaries.length,
+    edgeMessageMaxNetForceAbs: edgeMessageSummary?.maxNetForceAbs ?? null,
+    edgeMessageMaxAntisymmetricResidualAbs: edgeMessageSummary?.maxAntisymmetricResidualAbs ?? null,
+    edgeMessageOutOfRangeCount: edgeMessageSummary?.outOfRangeCount ?? null,
+    edgeMessageScientificValidation: typeof edgeMessageSummary?.scientificValidation === 'boolean'
+      ? edgeMessageSummary.scientificValidation
+      : null,
+    edgeMessageFullPhysicsValidation: typeof edgeMessageSummary?.fullPhysicsValidation === 'boolean'
+      ? edgeMessageSummary.fullPhysicsValidation
+      : null,
     validityStatus: validity.status || null,
     closureValidity: validity.closureValidity || null,
     validationStatus: validation.status || null,

@@ -91,6 +91,7 @@ import {
 import {
   ULG_KERNEL_PASS_SPEC_SCHEMA,
   ULG_PASS_DAG_SCHEMA,
+  ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
   ULG_RUNTIME_MANIFEST_SCHEMA,
   ULG_SIMULATION_ARTIFACT_SCHEMA,
   ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA,
@@ -4836,7 +4837,17 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
       deltas: Array.from({ length: 32 }, (_, index) => ({
         schema: 'peercompute.ulg.carrier-delta.v0',
         step: index + 1,
-        dt: 0.002
+        dt: 0.002,
+        edgeMessageSummary: {
+          schema: ULG_EDGE_MESSAGE_SUMMARY_SCHEMA,
+          status: 'pass',
+          messageCount: 2,
+          outOfRangeCount: 0,
+          maxNetForceAbs: 0,
+          maxAntisymmetricResidualAbs: 0,
+          scientificValidation: false,
+          fullPhysicsValidation: false
+        }
       })),
       invariants: {
         schema: 'peercompute.ulg.carrier-invariant-drift.v0',
@@ -4895,6 +4906,14 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(summary.steps, 32);
   assert.equal(summary.deltaCount, 32);
   assert.equal(summary.invariantStatus, 'pass');
+  assert.equal(summary.edgeMessageSummarySchema, ULG_EDGE_MESSAGE_SUMMARY_SCHEMA);
+  assert.equal(summary.edgeMessageSummaryStatus, 'pass');
+  assert.equal(summary.edgeMessageSummaryCount, 32);
+  assert.equal(summary.edgeMessageMaxNetForceAbs, 0);
+  assert.equal(summary.edgeMessageMaxAntisymmetricResidualAbs, 0);
+  assert.equal(summary.edgeMessageOutOfRangeCount, 0);
+  assert.equal(summary.edgeMessageScientificValidation, false);
+  assert.equal(summary.edgeMessageFullPhysicsValidation, false);
   assert.equal(summary.validationMode, 'cpu-reference-invariant-drift');
   assert.equal(summary.scientificValidation, false);
   assert.equal(summary.fullPhysicsValidation, false);
@@ -4911,6 +4930,9 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.schema, ULG_SIMULATION_ARTIFACT_SUMMARY_SCHEMA);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.deltaCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageSummaryCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.edgeMessageScientificValidation, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.scientificRuntimeReady, false);
   assert.equal(packet.upward.aggregateState.ulgSimulationArtifactSummary.fullPhysicsValidation, false);
   assert.equal(
@@ -4920,6 +4942,14 @@ test('model consumes ULG simulation artifacts as runtime evidence without promot
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.runtimeEvidenceReady, true);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.scientificRuntimeReady, false);
   assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.fullPhysicsReady, false);
+  assert.equal(
+    packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageSummarySchema,
+    ULG_EDGE_MESSAGE_SUMMARY_SCHEMA
+  );
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageSummaryStatus, 'pass');
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageSummaryCount, 32);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.handoffs.ulgRuntimeArtifact.edgeMessageScientificValidation, false);
+  assert.equal(packet.upward.aggregateState.ulgSpecContracts.bridgeContracts.ulgSimulationArtifactEdgeMessageSummaryStatus, 'pass');
   const validationContract = packet.upward.aggregateState.ulgSpecContracts.rootContracts.find(
     (contract) => contract.id === 'root:validation-provenance'
   );

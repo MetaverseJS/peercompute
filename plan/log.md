@@ -53030,3 +53030,92 @@ Open:
 - ULG simulation artifact ingestion is not calibrated physics validation. It is
   a provenance/runtime-evidence bridge for the core carrier path.
 - No push was attempted.
+
+## 2026-06-08 11:50:32 AKDT - ULG simulation edge-summary propagation
+
+### Actions
+- Used Infinite Context Coder before and during the slice: refreshed the stale
+  `peercompute` index/memory at commit `d4fa47487e6688a6b3c7cd7d0d4ea0b7d11ebd69`,
+  checked ULG ICC staleness, and searched ULG/PeerCompute chunks for the
+  simulation artifact and edge-message summary contracts.
+- Added ULG compact-delta `peercompute.ulg.edge-message-summary.v0`
+  propagation to PeerCompute's ULG artifact summarizer, including status,
+  count, max net-force residual, max antisymmetric residual, out-of-range
+  count, and scientific/full-physics validation flags.
+- Extended Multiscale's `peercompute.multiscale.ulg-simulation-artifact-summary.v0`
+  to hash and expose the same edge-message fields, then preserved them through
+  packet aggregates, ULG spec-contract bridge/handoff fields, and the
+  magnetar scenario affordance.
+- Added the `ulg sim edge` readout row and focus-HUD allowlist entry so live
+  browser probes can see the edge-message evidence after a simulation artifact
+  is applied.
+- Updated focused service-orchestration and Multiscale model tests with
+  synthetic edge-message summaries while keeping scientific runtime,
+  SPH/material, and full-physics readiness false.
+- Updated README, Multiscale README, plan/status/tests docs, and the
+  Multiscale plan to record the runtime/operator-evidence scope.
+
+### Files Touched
+- `peercompute/src/peercompute/serviceOrchestration/ulgManifestAdapter.js`
+- `peercompute/tests/unit/serviceOrchestration.test.js`
+- `demos/multiscale/src/simulation/ulgRuntime.js`
+- `demos/multiscale/src/simulation/multiscaleModel.js`
+- `demos/multiscale/src/simulation/ulgSpecContracts.js`
+- `demos/multiscale/src/main.js`
+- `demos/multiscale/tests/multiscaleModel.test.mjs`
+- `README.md`
+- `demos/multiscale/README.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/implementation-status.md`
+- `plan/log.md`
+- `demos/multiscale/plan/plan.md`
+- `demos/multiscale/plan/log.md`
+- `docs/multiscale/**` rebuilt bundle assets
+
+### Commands Run
+- `EMSDK_QUIET=1 /home/cos/projects/infinite_context_coder/.venv/bin/python /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py index --repo peercompute`
+- `EMSDK_QUIET=1 /home/cos/projects/infinite_context_coder/.venv/bin/python /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py build-memory --repo peercompute`
+- `EMSDK_QUIET=1 /home/cos/projects/infinite_context_coder/.venv/bin/python /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py status --repo ulg --check-staleness`
+- `EMSDK_QUIET=1 /home/cos/projects/infinite_context_coder/.venv/bin/python /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py search-chunks --repo ulg --query "edgeMessageSummary peercompute.ulg.edge-message-summary.v0 compact deltas" --limit 8 --context-lines 5 --include-content`
+- Syntax checks with `node --check` for the changed adapter, Multiscale
+  runtime/model/spec-contract/UI files, and tests.
+- `node --test --test-name-pattern "normalizes ULG demo handoff|simulation artifacts" peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test --test-name-pattern "ULG simulation artifacts" demos/multiscale/tests/multiscaleModel.test.mjs`
+- `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+- `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+- `npm --prefix demos/multiscale run build`
+- `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix demos/multiscale run test:ulg-handoff`
+- Two browser-injected simulation edge probes against `https://127.0.0.1:5185/?scenario=magnetar`,
+  followed by the corrected passing probe.
+
+### Validation
+- PASS: syntax checks for changed code and test files.
+- PASS: focused service-orchestration simulation artifact test.
+- PASS: focused Multiscale simulation artifact test.
+- PASS: `node --test peercompute/tests/unit/serviceOrchestration.test.js`
+  passed `29/29`.
+- PASS: `node --test demos/multiscale/tests/multiscaleModel.test.mjs` passed
+  `201/201`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  MoonLab/Eshkol handoff and `simulationStatus = scientific-ready`.
+- FAIL then corrected: first browser edge probe asserted an optional
+  quantum-material diagnostics mirror, but that diagnostics object was null in
+  the page state. The contract assertions were moved to packet/spec-contract
+  fields.
+- FAIL then corrected: second browser edge probe showed the `ulg sim edge` row
+  was filtered out by the focus-HUD allowlist. Added the row to
+  `FOCUS_LAYER_READOUT_ROWS`.
+- PASS: corrected browser edge probe confirmed edge status `pass`, edge count
+  `4`, packet/spec-contract propagation, visible `ulg sim edge`, visible
+  magnetar affordance edge status, `scientificRuntimeReady = false`, and
+  `fullPhysicsReady = false`.
+- PASS: final `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+
+### Open
+- This is runtime/operator evidence propagation for ULG carrier topology. It
+  does not make the toy oscillator a calibrated material/SPH solver or clear
+  full-physics validation.
+- No push was attempted.

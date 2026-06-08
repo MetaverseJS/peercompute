@@ -23726,3 +23726,42 @@ User asked whether Infinite Context Coder is being used.
   magnetar solver. Full-physics validation remains blocked by
   `full-physics-validation-not-run`.
 - No push was attempted.
+
+## 2026-06-08 11:50:32 AKDT - ULG simulation edge-summary propagation
+
+### Actions
+- Extended Multiscale's ULG simulation artifact summary to preserve
+  per-delta `peercompute.ulg.edge-message-summary.v0` fields: status, count,
+  max net-force residual, max antisymmetric residual, out-of-range count, and
+  validation flags.
+- Propagated those fields through packet aggregate state, ULG spec-contract
+  bridge/handoff fields, the magnetar scenario affordance, and the new
+  `ulg sim edge` readout row.
+- Added focus-HUD allowlist support so the new readout row appears in the
+  default focused HUD mode.
+- Updated the Multiscale model test fixture/assertions and the docs describing
+  the runtime/operator-evidence boundary.
+
+### Validation
+- PASS: syntax checks for changed Multiscale source and test files.
+- PASS: focused Multiscale simulation artifact test.
+- PASS: full `node --test demos/multiscale/tests/multiscaleModel.test.mjs`
+  passed `201/201`.
+- PASS: `ULG_HANDOFF_URL=http://127.0.0.1:5173/ npm --prefix
+  demos/multiscale run test:ulg-handoff` passed with the default two-artifact
+  ULG handoff.
+- FAIL then corrected: a browser edge probe first asserted an optional
+  quantum-material diagnostics mirror that was null in that page state.
+- FAIL then corrected: a browser edge probe next showed `ulg sim edge` was
+  filtered by the focus-HUD allowlist.
+- PASS: corrected browser edge probe confirmed edge status `pass`, count `4`,
+  packet/spec-contract propagation, visible `ulg sim edge`, visible magnetar
+  affordance edge status, and false scientific/full-physics readiness.
+- PASS: `npm --prefix demos/multiscale run build` refreshed
+  `docs/multiscale` with the existing large-chunk warning.
+
+### Open
+- Edge summaries remain topology/operator runtime evidence. They do not
+  validate SPH/material physics, calibrated closures, or full magnetar
+  simulation.
+- No push was attempted.

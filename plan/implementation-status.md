@@ -346,12 +346,15 @@ Updated: 2026-06-08 10:23:44 AKDT
   runtime evidence only. PeerCompute normalizes optional
   `peercompute.ulg.simulation-artifact.v0` handoff entries as
   `simulation-delta`, records `peercompute.multiscale.ulg-simulation-artifact-summary.v0`
-  in Multiscale packets/spec contracts, and keeps `scientificRuntimeReady`,
-  `fullPhysicsReady`, SPH/material readiness, and magnetar full-physics
-  readiness false for CPU-reference `carrier-toy` artifacts. Current
-  validation on 2026-06-08 passed syntax checks, service orchestration `29/29`,
-  Multiscale model `201/201`, Multiscale build, live ULG handoff smoke, and a
-  browser-injected three-artifact handoff probe.
+  in Multiscale packets/spec contracts, and now preserves ULG
+  `peercompute.ulg.edge-message-summary.v0` pass/count/residual/out-of-range
+  fields through the handoff adapter, packet aggregate, spec-contract handoff,
+  magnetar affordance, and `ulg sim edge` readout. It keeps
+  `scientificRuntimeReady`, `fullPhysicsReady`, SPH/material readiness, and
+  magnetar full-physics readiness false for CPU-reference `carrier-toy`
+  artifacts. Current validation on 2026-06-08 passed syntax checks, service
+  orchestration `29/29`, Multiscale model `201/201`, Multiscale build, live ULG
+  handoff smoke, and a browser-injected simulation edge probe.
 
 ## Next
 - Promote the production handler runtime smoke into validated production
