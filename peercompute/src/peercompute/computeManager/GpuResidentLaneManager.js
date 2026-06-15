@@ -355,9 +355,22 @@ export class GpuResidentLaneManager {
     const stageResults = [];
     let currentValue = input;
     for (const stage of stagePlan.stages) {
-      const runStage = typeof executor === 'function'
+      let runStage = typeof executor === 'function'
         ? executor
         : (stageExecutors?.[stage.id] || stageExecutors?.[stage.lawNodeId]);
+      let executorSource = typeof executor === 'function'
+        ? 'stage-plan-executor'
+        : (runStage ? 'provided-stage-executor' : null);
+      if (
+        typeof runStage !== 'function'
+        && this.gpuHub
+        && typeof this.gpuHub.hasResidentStageExecutor === 'function'
+        && this.gpuHub.hasResidentStageExecutor(stage)
+        && typeof this.gpuHub.executeResidentStage === 'function'
+      ) {
+        runStage = (args) => this.gpuHub.executeResidentStage(args);
+        executorSource = 'gpu-hub-resident-stage-executor';
+      }
       if (typeof runStage !== 'function') {
         if (!allowMissingExecutors) {
           const err = new Error(`Missing GPU resident lane stage executor: ${stage.id}`);
@@ -400,6 +413,7 @@ export class GpuResidentLaneManager {
         lawNodeId: stage.lawNodeId,
         runtimeTarget: stage.runtimeTarget,
         status: 'completed',
+        executorSource,
         startedAt: stageStartedAt,
         completedAt: this.now(),
         retainedBufferRefs,

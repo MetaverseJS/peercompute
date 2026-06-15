@@ -11,6 +11,7 @@ import {
   GPU_RESIDENT_LANE_STAGE_PLAN_SCHEMA,
   GpuResidentLaneManager
 } from '../../src/peercompute/computeManager/GpuResidentLaneManager.js';
+import { GPUHubManager } from '../../src/peercompute/gpu/GPUHubManager.js';
 
 function monotonicClock(start = 1000) {
   let value = start;
@@ -199,6 +200,71 @@ test('GpuResidentLaneManager executes a resident contract stage plan under one a
   assert.deepEqual(execution.lane.retainedBufferRefs, [
     'grid-momentum-buffer',
     'mls-mpm-mechanics-buffer',
+    'sph-state-buffer'
+  ]);
+});
+
+test('GpuResidentLaneManager can execute contract stages through GPUHub resident executors', async () => {
+  const gpuHub = new GPUHubManager();
+  gpuHub.setDevice({ label: 'gpu-device:hub-stage' });
+  gpuHub.registerResidentStageExecutor({
+    stageId: 'mechanics-p2g',
+    executor({ input, device }) {
+      return {
+        value: { ...input, p2gDevice: device.label },
+        retainedBufferRefs: ['grid-momentum-buffer'],
+        summary: { backend: 'webgpu', source: 'gpu-hub' }
+      };
+    }
+  });
+  gpuHub.registerResidentStageExecutor({
+    stageId: 'mechanics-g2p',
+    executor({ input }) {
+      return {
+        value: { ...input, g2p: true },
+        retainedBufferRefs: ['sph-state-buffer'],
+        gpuFence: {
+          schema: GPU_RESIDENT_LANE_FENCE_REPORT_SCHEMA,
+          status: 'queue-work-completed',
+          fenceSatisfied: true
+        }
+      };
+    }
+  });
+
+  const manager = new GpuResidentLaneManager({
+    gpuHub,
+    deviceId: 'gpu-device:hub-stage',
+    now: monotonicClock()
+  });
+  const contract = residentSequenceContract();
+  const lease = manager.acquireLease({
+    laneId: contract.laneId,
+    stateKey: contract.stateKey,
+    residentSequenceLaneContract: contract
+  });
+
+  const stageExecution = await manager.executeStagePlan(lease.leaseId, {
+    input: { particleCount: 3 }
+  });
+
+  assert.equal(stageExecution.status, 'completed');
+  assert.equal(stageExecution.completedStageCount, 2);
+  assert.deepEqual(stageExecution.output, {
+    particleCount: 3,
+    p2gDevice: 'gpu-device:hub-stage',
+    g2p: true
+  });
+  assert.deepEqual(
+    stageExecution.stageResults.map((entry) => entry.executorSource),
+    ['gpu-hub-resident-stage-executor', 'gpu-hub-resident-stage-executor']
+  );
+  assert.deepEqual(stageExecution.stageResults[0].summary, {
+    backend: 'webgpu',
+    source: 'gpu-hub'
+  });
+  assert.deepEqual(stageExecution.retainedBufferRefs, [
+    'grid-momentum-buffer',
     'sph-state-buffer'
   ]);
 });

@@ -54366,3 +54366,48 @@ Open:
   move actual mechanics P2G/grid/G2P execution behind this boundary before
   claiming lane-owned physics mutation.
 - No push was attempted.
+
+## 2026-06-14 20:04 AKDT - GPUHub resident stage executor registry
+
+### Prompt
+- Continued from the ULG browser same-lane WebGPU validation. The next
+  authority target was to stop treating lane stage functions as ad hoc ULG
+  callbacks and add a ComputeManager/GPUHub-owned stage executor registration
+  boundary before dedicated WebGPU worker residency.
+
+### Actions
+- Added a resident stage executor registry to `GPUHubManager`.
+- `GPUHubManager.registerResidentStageExecutor()` now registers a stage id,
+  optional law-node alias, runtime target, metadata, and executor function.
+- `GPUHubManager.executeResidentStage()` invokes the registered executor with
+  GPUHub, device, hot-store access through the hub, and a serializable
+  executor descriptor.
+- `GpuResidentLaneManager.executeStagePlan()` now falls back to the attached
+  GPUHub when no explicit stage executor was supplied, and records
+  `gpu-hub-resident-stage-executor` on completed stage results.
+- Added unit coverage for direct GPUHub registration/execution and for a
+  resident lane contract executing through GPUHub-registered stages with no
+  supplied stage handler map.
+
+### Commands Run
+- From `/home/cos/projects/peercompute`:
+  `node --check peercompute/src/peercompute/gpu/GPUHubManager.js`
+- From `/home/cos/projects/peercompute`:
+  `node --check peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- From `/home/cos/projects/peercompute`:
+  `node --check peercompute/tests/unit/gpuhubmanager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `node --test peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js`
+
+### Results
+- PASS: syntax checks passed.
+- PASS: focused GPUHub/lane-manager unit tests passed `10/10`.
+
+### Open
+- This is a GPUHub-owned inline executor registry. The next promotion is to
+  wire ULG mechanics stage-chain execution through this registry, then add
+  supervised WebGPU worker residency where the worker owns the lane device and
+  buffers instead of trying to transfer main-thread `GPUBuffer` handles.
+- No push was attempted.

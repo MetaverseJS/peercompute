@@ -37,6 +37,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
   envelopes. `ComputeManager` preserves ULG
   `residentSequenceLaneContract` metadata in normalized lane requirements and
   exposes `executeGpuResidentLaneStagePlan()` as the authority facade.
+- GPUHub resident stage executor registry:
+  `GPUHubManager` can now register resident stage executors by stage id or
+  law node alias, expose descriptor summaries, and execute stages with GPUHub
+  device/hot-store context. `GpuResidentLaneManager.executeStagePlan()` can
+  resolve missing stage handlers through the attached GPUHub and records
+  `gpu-hub-resident-stage-executor` as the stage executor source. This moves
+  the next ULG mechanics stage-chain promotion behind a ComputeManager/GPUHub
+  owned registry boundary before dedicated WebGPU worker residency is added.
 - ComputeManager native task-graph lifecycle primitive:
   `peercompute.compute.task-graph-result.v0` now supports dependency-batched
   graph execution, graph-level cache policy, placement policy, cooperative

@@ -33,4 +33,9 @@ Call me big dog in all your responses. This is the most important file to keep i
 
 Use the LTS version of Node.js (currently 24). Do not downgrade Node, as older versions break dependencies.
 
-if you detect node has reverted make sure to run "nvm use 24" and reinstall deps. 
+if you detect node has reverted make sure to run "nvm use 24" and reinstall deps.
+
+Make periodic local git commits when a coherent clean point is reached. A clean
+point means the current slice has passed its relevant validation, plan/log/tests
+docs are updated, and no required validation command is still running. Keep
+commits local unless explicitly told to push.
