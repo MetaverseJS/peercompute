@@ -17,11 +17,133 @@ The root node should exist on a domain secured with SSL enabling all executable 
 ### Completed:
 - libp2p-first browser stack (relay bootstrap + gossipsub, floodsub fallback, pubsubPeerDiscovery).
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
+- PeerComputeProvider initial Yjs state-vector sync for late peers: providers
+  now answer `yjs-sync-request` with encoded diff updates so a joining
+  StateManager can receive warm deltas it missed before joining.
+- NodeKernel provider sync lifecycle hardening: `StateManager` exposes
+  `requestProviderSync()`, `NodeKernel.start()` requests provider sync after
+  network connect and retries briefly to survive relay/pubsub settlement, and
+  lifecycle timers can be cleared by network-only wrappers.
 - NetworkScheduler core with clock policy scaffolding.
 - cb time sync anchored to the first joiner.
 - Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
 - GPU hub scaffolding and warm delta provider hook.
 - ComputeManager runtime support for worker-safe WASM tasks, hybrid WASM+WebGPU tasks, and DataState commitDelta adapters.
+- ComputeManager/GPU resident lane stage-plan executor:
+  `GpuResidentLaneManager` now consumes resident lane contracts, derives
+  `peercompute.compute.gpu-resident-lane-stage-plan.v0`, can execute supplied
+  stage handlers under one active GPU resident lane lease, merges retained
+  refs, and returns stage plan/execution metadata in completed lane execution
+  envelopes. `ComputeManager` preserves ULG
+  `residentSequenceLaneContract` metadata in normalized lane requirements and
+  exposes `executeGpuResidentLaneStagePlan()` as the authority facade.
+- ComputeManager native task-graph lifecycle primitive:
+  `peercompute.compute.task-graph-result.v0` now supports dependency-batched
+  graph execution, graph-level cache policy, placement policy, cooperative
+  cancellation, active-graph inspection, task-graph stats, and optional
+  graph-wide GPU resident lane leases. Cross-repo ULG validates this with the
+  mechanics P2G -> grid-update -> G2P stage DAG, including record-only
+  CPU-oracle cache metadata and a direct graph-wide GPU lane lease.
+- ComputeManager content-addressed task-graph cache inputs:
+  `peercompute.compute.task-graph-cache-inputs.v0` normalizes declared state
+  refs, closure refs, law ids, invalidation refs, retained-buffer refs, units,
+  stable values, and per-node cache inputs into a deterministic hash-backed
+  cache key when no explicit graph key is supplied. Cross-repo ULG validates
+  this through the mechanics stage DAG while keeping physics output
+  record-only.
+- ComputeManager task-graph cache artifacts:
+  `peercompute.compute.task-graph-cache-artifact.v0` and
+  `peercompute.compute.task-graph-cache-admission.v0` wrap graph cache writes
+  with result hash, input hash, invalidation refs, node result schemas, and
+  admission status. Read-through requires admitted artifacts by default; ULG
+  mechanics artifacts remain `recorded-not-admitted` until StateManager/
+  NodeKernel admission exists.
+- StateManager/NodeKernel task-graph cache artifact authority:
+  `peercompute.state.task-graph-cache-artifact-admission.v0` and
+  `peercompute.state.task-graph-cache-artifact-invalidation.v0` now record
+  CRDT-backed admission and invalidation decisions for task-graph cache
+  artifacts. `NodeKernel` exposes the authority facade, while
+  `ComputeManager` only marks local artifacts admitted after receiving that
+  authority record and drops read-through cache entries on invalidation.
+  Cross-repo ULG validates this with its mechanics native stage DAG.
+- NodeKernel task-graph authority wrapper:
+  `NodeKernel.submitTaskGraph()` now delegates native task graphs through the
+  node authority layer, stamps placement authority as `node-kernel`, and
+  annotates results with `peercompute.nodekernel.task-graph-authority.v0`.
+  Cross-repo ULG validates that the mechanics P2G -> grid-update -> G2P stage
+  chain uses this NodeKernel path when a real kernel is present, while
+  preserving direct ComputeManager submission as fallback.
+- NodeKernel task-graph placement preflight:
+  `peercompute.nodekernel.task-graph-placement-preflight.v0` now records local,
+  advisory-distributed, or blocked-distributed graph placement status.
+  Non-advisory distributed graph requests fail closed with
+  `ERR_NODEKERNEL_DISTRIBUTED_TASK_GRAPH_UNAVAILABLE` until a real distributed
+  graph executor exists.
+- NodeKernel remote task-graph transport first hop:
+  `peercompute.nodekernel.remote-task-graph-request.v0` and
+  `peercompute.nodekernel.remote-task-graph-result.v0` now reuse the existing
+  NodeKernel request/result network path for whole task graphs. Non-advisory
+  distributed graphs with an explicit target peer can resolve a
+  `network-task-graph:<peer>` executor, send `compute-task-graph`, execute on
+  the responder's `ComputeManager.submitTaskGraph()`, and return
+  `peercompute.nodekernel.remote-task-graph-placement-provenance.v0` without
+  falling back to requester-local graph execution. Distributed graph execution
+  still needs admitted artifact hashes, retained GPU lane refs, and
+  StateManager-authorized cache/result sharing before ULG physics can move
+  real resident workloads across peers by default.
+- NodeKernel remote task-graph cache-artifact admission preflight:
+  `peercompute.nodekernel.remote-task-graph-cache-artifact-preflight.v0`
+  now annotates remote graph results that carry cache artifacts. Remote
+  artifacts are received but not silently trusted by default; callers must set
+  an explicit admission option for NodeKernel to route the artifact through
+  StateManager cache-artifact admission. This creates the first authority
+  surface for distributed result/cache sharing without pretending remote
+  physics output is automatically safe to replay.
+- ComputeManager admitted remote task-graph cache import:
+  `peercompute.compute.remote-task-graph-cache-import.v0` now records admitted
+  remote graph results as local read-through cache entries only after
+  NodeKernel/StateManager admission. Subsequent local graph submissions with
+  the same admitted cache key can hit the imported result, while remote GPU
+  resident lane/buffer refs are preserved as metadata-only nonlocal refs rather
+  than treated as usable local device leases.
+- ComputeManager remote-import state seed policy report:
+  `peercompute.compute.remote-task-graph-state-seed-policy.v0` now lets callers
+  evaluate an admitted remote cache import before using it to seed local warm
+  state. The report requires an admitted remote import, checks declared state
+  families against the caller's allowed-family policy, preserves remote GPU
+  retained-buffer refs as nonlocal metadata, and reports when a local
+  hot-buffer refresh is required instead of claiming remote WebGPU buffers are
+  usable local leases.
+- NodeKernel remote-import warm-state seed authority:
+  `peercompute.nodekernel.remote-task-graph-state-seed-authority.v0` now records
+  an allowed imported remote graph result into StateManager warm state through
+  `NodeKernel.commitRemoteTaskGraphStateSeed()`. The method calls
+  ComputeManager's policy report, requires an allowed warm-state seed and a
+  compact state seed payload, commits only a CPU-friendly warm delta, and keeps
+  hot-buffer refresh as an explicit local follow-up when remote retained GPU
+  refs are nonlocal.
+- NodeKernel local hot-buffer refresh from remote seed:
+  `peercompute.nodekernel.remote-task-graph-hot-buffer-refresh.v0` now provides
+  the first local refresh executor surface after a remote warm-state seed is
+  committed. `NodeKernel.refreshRemoteTaskGraphHotBuffersFromSeed()` reads the
+  StateManager warm seed, acquires a local ComputeManager GPU resident lane
+  lease, invokes a local refresh executor, completes the local fence, and can
+  commit a refresh delta. Remote retained refs stay seed metadata; only
+  executor-returned local refs are retained on the local lane.
+- NodeKernel remote task-graph compact-candidate authority:
+  `peercompute.nodekernel.remote-task-graph-compact-candidate-authority.v0`
+  records admitted compact remote graph outputs in StateManager without
+  pretending remote retained GPU refs are usable local leases.
+  `NodeKernel.commitRemoteTaskGraphCompactCandidate()` evaluates the existing
+  remote-import state-family policy, requires an allowed compact candidate
+  with declared output families, commits a warm compact-candidate delta, and
+  reports `compact-candidate-local-refresh-required` until a local retained
+  lane refresh executor rebuilds same-device hot buffers.
+  `NodeKernel.refreshRemoteTaskGraphHotBuffersFromCompactCandidate()` now reads
+  that compact-candidate record, requires an explicit local compact refresh
+  executor, and only completes a local GPU lane lease with executor-returned
+  local refs. Executor results that block, fail, or return no local refs reject
+  the lane and do not commit a refresh delta.
 - Backend `pcserver.sh` launcher for relay + local TURN/STUN, with systemd wiring at the relay runlevel.
 - Production relay/demo config refresh: `npm run build` now emits GitHub Pages demo `relay-config-source.json` files that point at `https://secretworkshop.net/peercompute/config/relay-config.json`, and the live prod relay/TURN endpoints have been revalidated against `wss://secretworkshop.net/` and `secretworkshop.net:3478`.
 - Production relay runtime guard: `scripts/start-relay-prod.sh` and `scripts/install-relay-systemd.sh` now enforce Go when `RELAY_IMPL=go` so prod/systemd launchers fail closed instead of silently falling back to the Node relay.
@@ -318,6 +440,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Multiscale closure warm-delta first pass: Multiscale Ladder now commits reactive thermal and SPH material `ClosureResult` summaries as `multiscale-closures` warm deltas through `StateManager`, exposes them through `window.__multiscaleDemo`, and verifies them in the reusable browser visual smoke.
 - Multiscale ULG runtime-manifest first pass: packets now include `peercompute.ulg.runtime-manifest.v0`, a WebGPU-only bottom-up law runtime contract that packages carrier/state-channel declarations, the current Schrodinger Hamiltonian, quantum-state result, derived material closure provenance, canonical WGSL pass DAG, law/quantum task capsules, invariant report, and compact delta. It publishes `multiscale-ulg-runtime` warm deltas, surfaces in runtime debug/readout/API state, and explicitly rejects live non-WebGPU pass backends while remaining scientific-blocked until calibrated closures replace the current screened-hydrogenic/reference-property envelope.
 - Multiscale ULG WebGPU state-delta first pass: the registered `ulg-runtime` solver now resolves to `ulgRuntimeTasks.js`, submits through the shared `ComputeManager`, encodes the ULG pass DAG plus manifest-derived closure/environment/quantum scalars into worker-local WebGPU storage buffers, and publishes `peercompute.ulg.webgpu-execution-result.v0`, nested `peercompute.ulg.webgpu-state-delta.v0`, plus `peercompute.ulg.webgpu-execution-delta.v0` under `multiscale-ulg-runtime-execution`. It surfaces through runtime debug, the `ulg exec` readout row, `getState().ulgRuntimeExecution`, `getState().ulgRuntimeStateDelta`, `getState().ulgRuntimeExecutionState`, `getUlgRuntimeExecution()`, `getUlgRuntimeStateDelta()`, and `getUlgRuntimeExecutionDeltas()`, and reports WebGPU-unavailable blockers instead of a CPU fallback.
+- ComputeManager GPU resident lane authority wrapper first pass: `ComputeManager` now derives `peercompute.compute.gpu-resident-lane-task.v0` metadata from task/WebGPU residency hints, owns a `GpuResidentLaneManager`, and wraps declared inline GPU-lane tasks in acquire/complete/reject lease flow before local commit. Required GPU fences are enforced before `commitDelta` with `ERR_COMPUTE_GPU_FENCE_UNSATISFIED`, and return envelopes include fence/lane execution evidence for admission debugging. This is the local authority wrapper for resident lanes; full distributed ULG SPH pass-DAG scheduling remains downstream.
 - Molecular ULG WebGPU source-term first pass: molecular dynamics now consumes `peercompute.ulg.webgpu-state-delta.v0` as a lower-law source. Browser/WebGPU MD packs compact temperature, charge, velocity, magnetic, energy, and normalization channels into the shader uniform buffer and applies them inside the staged `cell-neighbor-list` integrate kernel before force evaluation. Packets, closures, runtime status, and the active `molecular ulg` readout expose the source hash, channel count, delta magnitudes, `ulgStateDeltaApplicationMode`, and `ulgStateDeltaWebgpuKernelApplied`. This remains reduced proxy coupling rather than calibrated ab initio chemistry or authoritative scientific worker-buffer mutation.
 - Molecular quantum WebGPU source-term first pass: molecular dynamics now converts the orbital/material coupling into `peercompute.multiscale.molecular-quantum-source.v0`, packs matched-element source terms into the MD shader parameter buffer, and applies temperature, charge, ionization-drive, evolution-drive, and bond-order-scale updates inside the staged `cell-neighbor-list` integrate kernel. Packets, closures, runtime status, conservation telemetry, and the active `molecular quantum` readout expose `quantumCouplingApplicationMode`, `quantumCouplingWebgpuKernelApplied`, target charge, charge mix, temperature delta, bond-order scale, qgrid WebGPU source/backend, and radial Schrodinger WebGPU source/residual provenance. This remains a reduced source-term bridge rather than calibrated Born-Oppenheimer forces or reactive quantum chemistry.
 - Qgrid statistical bridge to molecular source first pass: the qgrid WebGPU statistical bridge now travels alongside molecular quantum source telemetry as `quantumStatisticalBridge*` fields. Packets, upward closures, runtime status, conservation diagnostics, and `molecular qgrid stat` expose WebGPU source classification, partition log, excited occupation, heat capacity, ionization, opacity, degeneracy, ensemble pressure, temperature/charge deltas, damping, and a bounded bridge drive. This keeps ensemble/statistical physics visible in the bottom-up handoff while preserving the calibrated-science blocker.

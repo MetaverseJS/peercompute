@@ -1,5 +1,6 @@
 import { executeTaskPayload } from './taskRuntime.js';
 import { SolverRegistry } from './SolverRegistry.js';
+import { GpuResidentLaneManager } from './GpuResidentLaneManager.js';
 
 function createDefaultComputeWorker() {
   return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
@@ -15,6 +16,18 @@ export const COMPUTE_REMOTE_PLACEMENT_RETRY_SCHEMA = 'peercompute.compute.remote
 export const COMPUTE_REMOTE_TASK_ENVELOPE_SCHEMA = 'peercompute.compute.remote-task-envelope.v0';
 export const COMPUTE_TASK_PACKET_SCHEMA = 'peercompute.compute.task-packet.v0';
 export const COMPUTE_TASK_EXECUTION_SCHEMA = 'peercompute.compute.task-execution.v0';
+export const COMPUTE_TASK_GRAPH_RESULT_SCHEMA = 'peercompute.compute.task-graph-result.v0';
+export const COMPUTE_TASK_GRAPH_CONTEXT_SCHEMA = 'peercompute.compute.task-graph-context.v0';
+export const COMPUTE_TASK_GRAPH_CACHE_POLICY_SCHEMA = 'peercompute.compute.task-graph-cache-policy.v0';
+export const COMPUTE_TASK_GRAPH_CACHE_INPUTS_SCHEMA = 'peercompute.compute.task-graph-cache-inputs.v0';
+export const COMPUTE_TASK_GRAPH_CACHE_ARTIFACT_SCHEMA = 'peercompute.compute.task-graph-cache-artifact.v0';
+export const COMPUTE_TASK_GRAPH_CACHE_ADMISSION_SCHEMA = 'peercompute.compute.task-graph-cache-admission.v0';
+export const COMPUTE_REMOTE_TASK_GRAPH_CACHE_IMPORT_SCHEMA = 'peercompute.compute.remote-task-graph-cache-import.v0';
+export const COMPUTE_REMOTE_TASK_GRAPH_STATE_SEED_POLICY_SCHEMA = 'peercompute.compute.remote-task-graph-state-seed-policy.v0';
+export const COMPUTE_TASK_GRAPH_PLACEMENT_POLICY_SCHEMA = 'peercompute.compute.task-graph-placement-policy.v0';
+export const COMPUTE_TASK_GRAPH_CANCELLATION_SCHEMA = 'peercompute.compute.task-graph-cancellation.v0';
+export const COMPUTE_TASK_GRAPH_GPU_LANE_SCHEMA = 'peercompute.compute.task-graph-gpu-resident-lane.v0';
+export const COMPUTE_GPU_FENCE_REPORT_SCHEMA = 'peercompute.compute.gpu-fence-report.v0';
 const DEFAULT_PLACEMENT_RETRYABLE_ERROR_KINDS = ['timeout', 'executor-error'];
 const TERMINAL_PLACEMENT_ERROR_KINDS = ['rejected', 'verification-failed', 'validation-failed'];
 const GPU_LIMIT_KEYS = [
@@ -255,6 +268,527 @@ function normalizeStringList(value, fallback = []) {
   return [...fallback];
 }
 
+function uniqueStringList(...values) {
+  const seen = new Set();
+  const output = [];
+  for (const value of values) {
+    for (const entry of normalizeStringList(value, [])) {
+      if (seen.has(entry)) continue;
+      seen.add(entry);
+      output.push(entry);
+    }
+  }
+  return output;
+}
+
+function firstNonNull(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return null;
+}
+
+function normalizeGpuFenceRequirements(task = {}) {
+  const webgpu = task.webgpu || task.data?.webgpu || {};
+  const source = task.gpuFence
+    || task.gpuFenceRequirement
+    || webgpu.gpuFence
+    || webgpu.fence
+    || webgpu.fenceRequirement
+    || {};
+  const required = source.required === true
+    || source.fenceRequired === true
+    || webgpu.fenceRequired === true
+    || webgpu.requiresFence === true
+    || webgpu.requiresQueueFence === true;
+  const laneId = firstNonNull(source.laneId, source.gpuLaneId, webgpu.laneId, webgpu.gpuLaneId);
+  const stateKey = firstNonNull(
+    source.stateKey,
+    source.gpuStateKey,
+    webgpu.stateKey,
+    webgpu.gpuStateKey,
+    task.stateKey,
+    task.data?.stateKey,
+    task.data?.input?.stateKey
+  );
+  const queueFencePolicy = firstNonNull(
+    source.queueFencePolicy,
+    source.fencePolicy,
+    webgpu.queueFencePolicy,
+    webgpu.fencePolicy
+  );
+  const retainedBufferRefs = normalizeStringList(
+    source.retainedBufferRefs ?? webgpu.retainedBufferRefs,
+    []
+  );
+  if (!required && !laneId && !stateKey && !queueFencePolicy && retainedBufferRefs.length === 0) return null;
+  return {
+    schema: 'peercompute.compute.gpu-fence-requirement.v0',
+    required,
+    laneId: laneId ? String(laneId) : null,
+    stateKey: stateKey ? String(stateKey) : null,
+    queueFencePolicy: queueFencePolicy ? String(queueFencePolicy) : null,
+    retainedBufferRefs,
+    source: source.source || (webgpu && Object.keys(webgpu).length > 0 ? 'task.webgpu' : 'task.gpuFence')
+  };
+}
+
+function normalizeGpuResidentLaneLeaseSpec(task = {}, gpuFenceRequirement = null) {
+  const webgpu = task.webgpu || task.data?.webgpu || {};
+  const source = task.gpuResidentLane
+    || task.gpuResidentLaneLease
+    || task.residentLane
+    || webgpu.gpuResidentLane
+    || webgpu.residentLane
+    || {};
+  const residency = firstNonNull(
+    source.residency,
+    webgpu.residency,
+    task.residency,
+    task.data?.residency
+  );
+  const enabled = source.enabled === true
+    || source.required === true
+    || source.leaseRequired === true
+    || String(residency || '').trim().toLowerCase() === 'gpu-lane';
+  const laneId = firstNonNull(
+    source.laneId,
+    source.gpuLaneId,
+    webgpu.laneId,
+    webgpu.gpuLaneId,
+    gpuFenceRequirement?.laneId
+  );
+  const stateKey = firstNonNull(
+    source.stateKey,
+    source.gpuStateKey,
+    webgpu.stateKey,
+    webgpu.gpuStateKey,
+    task.stateKey,
+    task.data?.stateKey,
+    task.data?.input?.stateKey,
+    gpuFenceRequirement?.stateKey
+  );
+  const domainKey = firstNonNull(source.domainKey, source.domain, webgpu.domainKey, task.domainKey, task.data?.domainKey);
+  const queueFencePolicy = firstNonNull(
+    source.queueFencePolicy,
+    source.fencePolicy,
+    webgpu.queueFencePolicy,
+    gpuFenceRequirement?.queueFencePolicy
+  );
+  const retainedBufferRefs = normalizeStringList(
+    source.retainedBufferRefs ?? webgpu.retainedBufferRefs,
+    gpuFenceRequirement?.retainedBufferRefs || []
+  );
+  const copyBudget = source.copyBudget && typeof source.copyBudget === 'object'
+    ? JSON.parse(JSON.stringify(source.copyBudget))
+    : (webgpu.copyBudget && typeof webgpu.copyBudget === 'object'
+        ? JSON.parse(JSON.stringify(webgpu.copyBudget))
+        : {});
+  const residentSequenceLaneContract = firstNonNull(
+    source.residentSequenceLaneContract,
+    source.residentLaneContract,
+    source.laneContract,
+    webgpu.residentSequenceLaneContract,
+    task.data?.residentSequenceLaneContract,
+    task.data?.input?.residentSequenceLaneContract,
+    task.lawGraphNode?.residentSequenceLaneContract,
+    null
+  );
+  if (!enabled && !laneId && !stateKey && retainedBufferRefs.length === 0 && Object.keys(copyBudget).length === 0) {
+    return null;
+  }
+  const localExecutionRaw = String(firstNonNull(source.localExecution, source.executionMode, webgpu.localExecution, 'inline') || 'inline')
+    .trim()
+    .toLowerCase();
+  return {
+    schema: 'peercompute.compute.gpu-resident-lane-task.v0',
+    enabled: true,
+    localExecution: localExecutionRaw === 'worker' ? 'worker' : 'inline',
+    laneId: laneId ? String(laneId) : null,
+    stateKey: stateKey ? String(stateKey) : null,
+    domainKey: domainKey ? String(domainKey) : null,
+    solverId: firstNonNull(source.solverId, task.solverId, task.data?.solverId) || null,
+    owner: firstNonNull(source.owner, task.owner, task.taskFamily, task.solverId, 'compute-manager-task'),
+    readFamilies: normalizeStringList(source.readFamilies ?? source.reads ?? webgpu.readFamilies),
+    writeFamilies: normalizeStringList(source.writeFamilies ?? source.writes ?? webgpu.writeFamilies),
+    retainedBufferRefs,
+    queueFencePolicy: queueFencePolicy ? String(queueFencePolicy) : null,
+    copyBudget,
+    residentSequenceLaneContract: residentSequenceLaneContract && typeof residentSequenceLaneContract === 'object'
+      ? cloneTaskGraphCacheValue(residentSequenceLaneContract)
+      : null
+  };
+}
+
+function cloneTaskGraphCacheValue(value) {
+  if (value == null) return value;
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Fall through for function-bearing diagnostic objects.
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeTaskGraphCacheInputs(graph = {}, normalizedNodes = []) {
+  const source = graph.cacheInputs
+    || graph.cachePolicy?.inputs
+    || graph.cache?.inputs
+    || graph.inputRefs
+    || null;
+  const raw = source && typeof source === 'object' ? source : {};
+  const stateRefs = normalizeStringList(raw.stateRefs ?? raw.states ?? graph.stateRefs);
+  const closureRefs = normalizeStringList(raw.closureRefs ?? raw.closures ?? graph.closureRefs);
+  const invalidationRefs = normalizeStringList(raw.invalidationRefs ?? raw.invalidates ?? graph.invalidationRefs);
+  const retainedBufferRefs = normalizeStringList(raw.retainedBufferRefs ?? graph.retainedBufferRefs);
+  const inputHashes = normalizeStringList(raw.inputHashes ?? raw.hashes ?? graph.inputHashes);
+  const lawIds = normalizeStringList(raw.lawIds ?? raw.laws ?? graph.lawIds);
+  const stateFamilies = normalizeStringList(raw.stateFamilies ?? graph.stateFamilies);
+  const readFamilies = normalizeStringList(raw.readFamilies ?? graph.readFamilies);
+  const writeFamilies = normalizeStringList(raw.writeFamilies ?? graph.writeFamilies);
+  const values = firstNonNull(raw.values, raw.value, raw.parameters, graph.cacheInputValues, null);
+  const nodeInputs = normalizedNodes.map((node) => ({
+    id: node.id,
+    dependsOn: [...node.dependsOn],
+    taskFamily: node.taskFamily || node.task?.taskFamily || node.task?.solverId || null,
+    solverId: node.solverId || node.task?.solverId || null,
+    cacheInput: firstNonNull(node.cacheInput, node.cacheInputs, node.task?.cacheInput, null)
+  }));
+  const hasDeclaredInputs = source != null
+    || stateRefs.length > 0
+    || closureRefs.length > 0
+    || invalidationRefs.length > 0
+    || retainedBufferRefs.length > 0
+    || inputHashes.length > 0
+    || lawIds.length > 0
+    || stateFamilies.length > 0
+    || readFamilies.length > 0
+    || writeFamilies.length > 0
+    || values != null
+    || nodeInputs.some((node) => node.cacheInput != null || node.taskFamily || node.solverId);
+  if (!hasDeclaredInputs) return null;
+  const material = {
+    graphFamily: String(firstNonNull(raw.graphFamily, graph.graphFamily, graph.taskFamily, 'task-graph') || 'task-graph'),
+    graphVersion: String(firstNonNull(raw.graphVersion, graph.graphVersion, graph.version, 'v0') || 'v0'),
+    lawGraphId: firstNonNull(raw.lawGraphId, graph.lawGraphId, null),
+    stateRefs,
+    closureRefs,
+    invalidationRefs,
+    retainedBufferRefs,
+    inputHashes,
+    lawIds,
+    stateFamilies,
+    readFamilies,
+    writeFamilies,
+    scaleRegime: firstNonNull(raw.scaleRegime, graph.scaleRegime, null),
+    units: firstNonNull(raw.units, graph.units, null),
+    values,
+    nodes: nodeInputs
+  };
+  const inputHash = hashString(stableSerialize(material));
+  return {
+    schema: COMPUTE_TASK_GRAPH_CACHE_INPUTS_SCHEMA,
+    status: 'content-addressed-inputs-declared',
+    inputHash,
+    stateRefs,
+    closureRefs,
+    invalidationRefs,
+    retainedBufferRefs,
+    inputHashes,
+    lawIds,
+    stateFamilies,
+    readFamilies,
+    writeFamilies,
+    nodeCount: normalizedNodes.length,
+    source: source ? 'graph.cacheInputs' : 'graph-derived-input-refs'
+  };
+}
+
+function normalizeTaskGraphCachePolicy(graph = {}, normalizedNodes = []) {
+  const source = graph.cachePolicy || graph.cache || {};
+  const explicitCacheKey = String(firstNonNull(graph.cacheKey, source.cacheKey, source.key, '') || '').trim() || null;
+  const cacheInputs = normalizeTaskGraphCacheInputs(graph, normalizedNodes);
+  const cacheScope = String(firstNonNull(source.scope, graph.cacheScope, 'compute-manager-local') || 'compute-manager-local');
+  const derivedCacheKey = cacheInputs ? `${cacheScope}:${cacheInputs.inputHash}` : null;
+  const cacheKey = explicitCacheKey || derivedCacheKey;
+  const requestedMode = String(firstNonNull(graph.cacheMode, source.mode, cacheKey ? 'read-through' : 'disabled') || 'disabled')
+    .trim()
+    .toLowerCase();
+  const enabled = source.enabled !== false && cacheKey != null && requestedMode !== 'disabled' && requestedMode !== 'off';
+  let mode = 'disabled';
+  if (enabled) {
+    if (requestedMode === 'record-only' || requestedMode === 'write-only') {
+      mode = 'record-only';
+    } else if (requestedMode === 'read-only') {
+      mode = 'read-only';
+    } else {
+      mode = 'read-through';
+    }
+  }
+  return {
+    schema: COMPUTE_TASK_GRAPH_CACHE_POLICY_SCHEMA,
+    cacheKey,
+    mode,
+    readEnabled: mode === 'read-through' || mode === 'read-only',
+    writeEnabled: mode === 'read-through' || mode === 'record-only',
+    ttlMs: normalizeInteger(source.ttlMs ?? graph.cacheTtlMs, 0, 0, Number.MAX_SAFE_INTEGER),
+    scope: cacheScope,
+    requireAdmitted: source.requireAdmitted !== false && graph.cacheRequireAdmitted !== false,
+    explicitCacheKey,
+    derivedCacheKey,
+    keySource: explicitCacheKey ? 'explicit' : (derivedCacheKey ? 'content-addressed-inputs' : null),
+    inputHash: cacheInputs?.inputHash || null,
+    inputs: cacheInputs,
+    status: enabled ? 'cache-policy-enabled' : 'cache-policy-disabled'
+  };
+}
+
+function normalizeTaskGraphStateSeedPayload(graph = {}) {
+  const source = firstNonNull(
+    graph.stateSeedPayload,
+    graph.cachePolicy?.stateSeedPayload,
+    graph.cache?.stateSeedPayload,
+    graph.remoteStateSeedPayload,
+    null
+  );
+  return source == null ? null : cloneTaskGraphCacheValue(source);
+}
+
+function cloneTaskGraphResultInput(value, seen = new WeakSet()) {
+  if (value == null) return value;
+  if (typeof value === 'function' || typeof value === 'symbol') return undefined;
+  if (typeof value !== 'object') return value;
+  if (ArrayBuffer.isView(value)) return new value.constructor(value);
+  if (value instanceof ArrayBuffer) return value.slice(0);
+  if (seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => cloneTaskGraphResultInput(entry, seen))
+      .filter((entry) => entry !== undefined);
+  }
+  const copy = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const cloned = cloneTaskGraphResultInput(entry, seen);
+    if (cloned !== undefined) copy[key] = cloned;
+  }
+  return copy;
+}
+
+function injectTaskGraphResultInputs(task = {}, node = {}, nodeResults = {}) {
+  const resultInputs = node.resultInputs
+    || node.resultInputMap
+    || (task && typeof task === 'object' ? task.resultInputs : null);
+  if (!resultInputs || typeof resultInputs !== 'object' || Array.isArray(resultInputs)) {
+    return task;
+  }
+  const data = task.data && typeof task.data === 'object' && !Array.isArray(task.data)
+    ? { ...task.data }
+    : {};
+  const injected = {};
+  for (const [inputName, source] of Object.entries(resultInputs)) {
+    const sourceNodeId = typeof source === 'string'
+      ? source
+      : String(source?.nodeId || source?.resultId || source?.from || '').trim();
+    if (!inputName || !sourceNodeId) continue;
+    if (!Object.prototype.hasOwnProperty.call(nodeResults, sourceNodeId)) {
+      throw new Error(`Task graph node ${node.id} requested unavailable result input ${inputName} from ${sourceNodeId}`);
+    }
+    data[inputName] = cloneTaskGraphResultInput(nodeResults[sourceNodeId]);
+    injected[inputName] = sourceNodeId;
+  }
+  if (Object.keys(injected).length === 0) return task;
+  return {
+    ...task,
+    data,
+    taskGraphResultInputs: injected
+  };
+}
+
+function normalizeTaskGraphCacheAdmission(graph = {}, cachePolicy = {}) {
+  const source = graph.cacheAdmission
+    || graph.cachePolicy?.admission
+    || graph.cache?.admission
+    || {};
+  const admitted = source.admitted === true
+    || source.accepted === true
+    || source.status === 'admitted'
+    || source.status === 'admission-accepted';
+  const recordOnly = cachePolicy.mode === 'record-only';
+  const status = source.status
+    || (admitted ? 'admitted' : (recordOnly ? 'recorded-not-admitted' : 'pending-admission'));
+  return {
+    schema: COMPUTE_TASK_GRAPH_CACHE_ADMISSION_SCHEMA,
+    status,
+    admitted,
+    authority: String(firstNonNull(source.authority, graph.cacheAuthority, 'compute-manager-local') || 'compute-manager-local'),
+    admissionId: firstNonNull(source.admissionId, source.id, null),
+    validatorId: firstNonNull(source.validatorId, source.validator, null),
+    reason: String(firstNonNull(
+      source.reason,
+      recordOnly ? 'record-only-cache-artifact-requires-state-manager-admission' : 'cache-artifact-admission-pending',
+      ''
+    ) || ''),
+    invalidationRefs: normalizeStringList(source.invalidationRefs ?? cachePolicy.inputs?.invalidationRefs),
+    acceptedAt: admitted ? (source.acceptedAt || Date.now()) : null
+  };
+}
+
+function createTaskGraphCacheArtifact({
+  graphId,
+  cachePolicy,
+  result,
+  storedAt,
+  expiresAt,
+  admission
+} = {}) {
+  const resultHash = hashString(stableSerialize({
+    schema: result?.schema,
+    graphId: result?.graphId,
+    status: result?.status,
+    nodeReports: result?.nodeReports,
+    nodeResults: result?.nodeResults
+  }));
+  return {
+    schema: COMPUTE_TASK_GRAPH_CACHE_ARTIFACT_SCHEMA,
+    artifactId: `${cachePolicy.cacheKey}:artifact`,
+    cacheKey: cachePolicy.cacheKey,
+    cacheScope: cachePolicy.scope,
+    cacheKeySource: cachePolicy.keySource,
+    inputHash: cachePolicy.inputHash,
+    resultHash,
+    graphId,
+    status: admission?.admitted ? 'admitted-cache-artifact-recorded' : 'recorded-not-admitted',
+    admitted: admission?.admitted === true,
+    admission,
+    inputs: cachePolicy.inputs,
+    invalidationRefs: normalizeStringList(admission?.invalidationRefs, cachePolicy.inputs?.invalidationRefs || []),
+    stateSeedPayload: result?.stateSeedPayload != null
+      ? cloneTaskGraphCacheValue(result.stateSeedPayload)
+      : null,
+    storedAt,
+    expiresAt,
+    ttlMs: cachePolicy.ttlMs,
+    resultSchema: result?.schema || null,
+    nodeCount: result?.nodeCount ?? null,
+    resultNodeSchemas: (result?.nodeReports || []).map((report) => ({
+      nodeId: report.nodeId,
+      resultSchema: report.resultSchema || null,
+      taskFamily: report.taskFamily || null
+    }))
+  };
+}
+
+function normalizeTaskGraphPlacementPolicy(graph = {}) {
+  const source = graph.placementPolicy || graph.placement || graph.placementHint || {};
+  const requestedPlacement = String(firstNonNull(
+    source.requestedPlacement,
+    source.placement,
+    source.mode,
+    graph.requestedPlacement,
+    graph.placementMode,
+    'local'
+  ) || 'local').trim().toLowerCase();
+  return {
+    schema: COMPUTE_TASK_GRAPH_PLACEMENT_POLICY_SCHEMA,
+    requestedPlacement,
+    locality: String(firstNonNull(source.locality, graph.locality, requestedPlacement === 'local' ? 'local-inline' : 'distributed') || ''),
+    authority: String(firstNonNull(source.authority, graph.authority, 'compute-manager') || 'compute-manager'),
+    targetPeerIds: normalizeStringList(source.targetPeerIds ?? source.peers ?? graph.targetPeerIds),
+    targetClusterId: firstNonNull(source.targetClusterId, source.clusterId, graph.targetClusterId, null),
+    gpuResident: source.gpuResident === true || source.gpuLane === true || graph.gpuResident === true,
+    advisory: source.advisory !== false
+  };
+}
+
+function normalizeTaskGraphGpuResidentLaneSpec(graph = {}, graphId = null) {
+  const webgpu = graph.webgpu || {};
+  const source = graph.gpuResidentLane
+    || graph.gpuResidentLaneLease
+    || graph.residentLane
+    || webgpu.gpuResidentLane
+    || webgpu.residentLane
+    || {};
+  const residency = firstNonNull(source.residency, webgpu.residency, graph.residency);
+  const enabled = source.enabled === true
+    || source.required === true
+    || source.leaseRequired === true
+    || String(residency || '').trim().toLowerCase() === 'gpu-lane';
+  const laneId = firstNonNull(source.laneId, source.gpuLaneId, webgpu.laneId, webgpu.gpuLaneId);
+  const stateKey = firstNonNull(source.stateKey, source.gpuStateKey, webgpu.stateKey, webgpu.gpuStateKey, graph.stateKey);
+  const domainKey = firstNonNull(source.domainKey, source.domain, webgpu.domainKey, graph.domainKey);
+  const retainedBufferRefs = normalizeStringList(source.retainedBufferRefs ?? webgpu.retainedBufferRefs ?? graph.retainedBufferRefs);
+  const copyBudget = source.copyBudget && typeof source.copyBudget === 'object'
+    ? cloneTaskGraphCacheValue(source.copyBudget)
+    : (webgpu.copyBudget && typeof webgpu.copyBudget === 'object' ? cloneTaskGraphCacheValue(webgpu.copyBudget) : {});
+  if (!enabled && !laneId && !stateKey && retainedBufferRefs.length === 0 && Object.keys(copyBudget).length === 0) {
+    return null;
+  }
+  return {
+    schema: COMPUTE_TASK_GRAPH_GPU_LANE_SCHEMA,
+    enabled: true,
+    laneId: laneId ? String(laneId) : null,
+    stateKey: stateKey ? String(stateKey) : null,
+    domainKey: domainKey ? String(domainKey) : null,
+    solverId: firstNonNull(source.solverId, graph.solverId, null),
+    taskId: graphId,
+    owner: firstNonNull(source.owner, graph.owner, 'compute-manager-task-graph'),
+    readFamilies: normalizeStringList(source.readFamilies ?? source.reads ?? webgpu.readFamilies ?? graph.readFamilies),
+    writeFamilies: normalizeStringList(source.writeFamilies ?? source.writes ?? webgpu.writeFamilies ?? graph.writeFamilies),
+    retainedBufferRefs,
+    queueFencePolicy: firstNonNull(source.queueFencePolicy, source.fencePolicy, webgpu.queueFencePolicy, null),
+    copyBudget
+  };
+}
+
+function gpuFenceStatusSatisfied(status) {
+  return [
+    'gpu-fence-completed',
+    'remote-gpu-fence-completed',
+    'queue-work-completed',
+    'readback-map-completed',
+    'ordered-before-consumer-queue-completed'
+  ].includes(String(status || ''));
+}
+
+function normalizeGpuFenceReport(source = null, requirement = null) {
+  const raw = source && typeof source === 'object' ? source : {};
+  const status = raw.status
+    || raw.queueCompletionStatus
+    || raw.fenceStatus
+    || raw.completionStatus
+    || (requirement?.required ? 'gpu-fence-report-missing' : null);
+  if (!status && !requirement?.required) return null;
+  const method = raw.method
+    || raw.queueCompletionMethod
+    || raw.fenceMethod
+    || raw.completionMethod
+    || null;
+  const fenceSatisfied = raw.fenceSatisfied === true
+    || raw.satisfied === true
+    || raw.completed === true
+    || gpuFenceStatusSatisfied(status);
+  return {
+    schema: raw.schema || COMPUTE_GPU_FENCE_REPORT_SCHEMA,
+    status,
+    method,
+    fenceSatisfied,
+    required: requirement?.required === true || raw.required === true,
+    laneId: firstNonNull(raw.laneId, raw.gpuLaneId, requirement?.laneId),
+    stateKey: firstNonNull(raw.stateKey, raw.gpuStateKey, requirement?.stateKey),
+    queueFencePolicy: firstNonNull(raw.queueFencePolicy, raw.fencePolicy, requirement?.queueFencePolicy),
+    queueCompletionStatus: raw.queueCompletionStatus || status || null,
+    queueCompletionMethod: raw.queueCompletionMethod || method || null,
+    retainedBufferRefs: normalizeStringList(raw.retainedBufferRefs, requirement?.retainedBufferRefs || []),
+    workerId: raw.workerId || raw.remoteWorkerId || null,
+    deviceId: raw.deviceId || raw.gpuDeviceId || null,
+    completedAt: raw.completedAt || null,
+    source: raw.source || null
+  };
+}
+
 function placementExecutorId(executor) {
   if (!executor) return null;
   if (typeof executor === 'function') return executor.placementExecutorId || executor.id || executor.name || 'placement-executor';
@@ -297,6 +831,9 @@ function normalizeRemoteReplicaSummaries(value) {
       workerId: raw.workerId || raw.remoteWorkerId || null,
       remoteExecution: raw.remoteExecution && typeof raw.remoteExecution === 'object'
         ? JSON.parse(JSON.stringify(raw.remoteExecution))
+        : null,
+      gpuFence: raw.gpuFence && typeof raw.gpuFence === 'object'
+        ? JSON.parse(JSON.stringify(raw.gpuFence))
         : null,
       executorId: raw.executorId || null,
       codeHash: raw.codeHash || null,
@@ -440,6 +977,9 @@ export class ComputeManager {
     this.workers = [];
     this.taskQueue = [];
     this.activeTasks = new Map();
+    this.activeTaskGraphs = new Map();
+    this.taskGraphCache = new Map();
+    this.taskGraphCacheArtifacts = new Map();
     this.workerAffinities = new Map();
     this.workerIds = new WeakMap();
     this.workerUtilization = new Map();
@@ -452,6 +992,10 @@ export class ComputeManager {
       status: 'active'
     }));
     this.solverRegistry = new SolverRegistry(config.solvers || []);
+    this.gpuResidentLaneManager = config.gpuResidentLaneManager || new GpuResidentLaneManager({
+      gpuHub: config.gpuHub || null,
+      deviceId: config.gpuDeviceId || config.deviceId || 'compute-manager-gpu'
+    });
     this.targetWorkerCount = this.workerPolicy.targetWorkers;
     this.workerSpawnFailures = 0;
     this.workerRetirements = 0;
@@ -555,6 +1099,18 @@ export class ComputeManager {
       remoteTaskAttempts: 0,
       remoteTasksRetried: 0,
       remoteTasksRetryExhausted: 0,
+      taskGraphsSubmitted: 0,
+      taskGraphsCompleted: 0,
+      taskGraphsFailed: 0,
+      taskGraphsCancelled: 0,
+      taskGraphCacheHits: 0,
+      taskGraphCacheWrites: 0,
+      taskGraphCacheArtifactsWritten: 0,
+      taskGraphCacheArtifactsAdmitted: 0,
+      taskGraphRemoteCacheImports: 0,
+      taskGraphRemoteCacheImportBlocked: 0,
+      taskGraphCacheInvalidations: 0,
+      taskGraphCacheReadBlocked: 0,
       totalTaskDurationMs: 0,
       averageTaskDurationMs: 0,
       lastTaskDurationMs: 0,
@@ -705,6 +1261,8 @@ export class ComputeManager {
     const taskFamilyStats = this._taskFamilyStats(taskFamily);
     taskFamilyStats.submitted += 1;
     const placement = this._normalizeTaskPlacement(task, { runtime, taskFamily });
+    const gpuFence = normalizeGpuFenceRequirements(task);
+    const gpuResidentLane = normalizeGpuResidentLaneLeaseSpec(task, gpuFence);
     this._recordPlacementSubmitted(placement);
     const payload = {
       id,
@@ -712,6 +1270,8 @@ export class ComputeManager {
       taskFamily,
       solverId: task.solverId,
       placement,
+      gpuFence,
+      gpuResidentLane,
       data: task.data ?? null,
       fn: task.fn ? task.fn.toString() : undefined,
       module: task.module,
@@ -918,6 +1478,337 @@ export class ComputeManager {
     return this.submitTask(task);
   }
 
+  async submitTaskGraph(graph = {}) {
+    const graphId = String(graph.graphId || graph.id || `task-graph:${Date.now()}`).trim();
+    const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+    if (!nodes.length) {
+      throw new Error('submitTaskGraph requires at least one node');
+    }
+    const normalizedNodes = [];
+    const nodeById = new Map();
+    for (const rawNode of nodes) {
+      const id = String(rawNode?.id || rawNode?.nodeId || rawNode?.task?.id || '').trim();
+      if (!id) throw new Error('submitTaskGraph node id is required');
+      if (nodeById.has(id)) throw new Error(`Duplicate task graph node id: ${id}`);
+      const dependsOn = normalizeStringList(rawNode.dependsOn || rawNode.dependencies || []);
+      const node = {
+        ...rawNode,
+        id,
+        dependsOn
+      };
+      normalizedNodes.push(node);
+      nodeById.set(id, node);
+    }
+    for (const node of normalizedNodes) {
+      for (const dependencyId of node.dependsOn) {
+        if (!nodeById.has(dependencyId)) {
+          throw new Error(`Task graph node ${node.id} depends on unknown node ${dependencyId}`);
+        }
+      }
+    }
+
+    this.stats.taskGraphsSubmitted += 1;
+    const cachePolicy = normalizeTaskGraphCachePolicy(graph, normalizedNodes);
+    const stateSeedPayload = normalizeTaskGraphStateSeedPayload(graph);
+    const cacheAdmission = normalizeTaskGraphCacheAdmission(graph, cachePolicy);
+    const placementPolicy = normalizeTaskGraphPlacementPolicy(graph);
+    const graphLaneSpec = normalizeTaskGraphGpuResidentLaneSpec(graph, graphId);
+    const cancellationMode = String(graph.cancellation?.mode || graph.cancellationMode || 'cooperative').trim() || 'cooperative';
+    const abortSignal = graph.abortSignal || graph.cancelSignal || graph.signal || graph.cancellation?.signal || null;
+    const cancellation = {
+      schema: COMPUTE_TASK_GRAPH_CANCELLATION_SCHEMA,
+      mode: cancellationMode,
+      status: 'not-cancelled',
+      reason: null
+    };
+    let cacheEntry = cachePolicy.readEnabled ? this.taskGraphCache.get(cachePolicy.cacheKey) : null;
+    const nowWall = Date.now();
+    if (cacheEntry && cacheEntry.expiresAt && cacheEntry.expiresAt <= nowWall) {
+      this.taskGraphCache.delete(cachePolicy.cacheKey);
+      this.taskGraphCacheArtifacts.delete(cachePolicy.cacheKey);
+      cacheEntry = null;
+    }
+    let cacheReadBlockStatus = null;
+    if (cacheEntry && cachePolicy.requireAdmitted && cacheEntry.artifact?.admitted !== true) {
+      this.stats.taskGraphCacheReadBlocked += 1;
+      cacheReadBlockStatus = 'blocked-unadmitted-cache-artifact';
+      cacheEntry = null;
+    }
+    if (cacheEntry) {
+      this.stats.taskGraphCacheHits += 1;
+      this.stats.taskGraphsCompleted += 1;
+      const cached = cloneTaskGraphCacheValue(cacheEntry.result);
+      const cacheArtifact = cloneTaskGraphCacheValue(cacheEntry.artifact || cached.cacheArtifact || null);
+      return {
+        ...cached,
+        cachePolicy,
+        cacheAdmission: cacheArtifact?.admission || cached.cacheAdmission || cacheAdmission,
+        cacheAdmissionStatus: cacheArtifact?.admission?.status || cached.cacheAdmissionStatus || null,
+        cacheArtifact,
+        cacheArtifactSchema: cacheArtifact?.schema || null,
+        cacheArtifactStatus: cacheArtifact?.status || null,
+        cacheStatus: 'hit',
+        cacheHit: true,
+        cachedAt: cacheEntry.storedAt,
+        durationMs: 0
+      };
+    }
+
+    const pending = new Map(normalizedNodes.map((node) => [node.id, node]));
+    const nodeResults = {};
+    const nodeReports = [];
+    const executionOrder = [];
+    const executionBatches = [];
+    const startedAt = nowMs();
+    const activeGraph = {
+      graphId,
+      startedAt,
+      cancelled: abortSignal?.aborted === true,
+      reason: abortSignal?.reason || null,
+      cacheKey: cachePolicy.cacheKey,
+      stateSeedPayload,
+      placementPolicy,
+      graphLaneSpec
+    };
+    const onAbort = () => {
+      activeGraph.cancelled = true;
+      activeGraph.reason = abortSignal?.reason || 'abort-signal';
+    };
+    if (abortSignal?.addEventListener) abortSignal.addEventListener('abort', onAbort, { once: true });
+    this.activeTaskGraphs.set(graphId, activeGraph);
+
+    const assertNotCancelled = () => {
+      if (!activeGraph.cancelled) return;
+      cancellation.status = 'cancelled';
+      cancellation.reason = String(activeGraph.reason || 'cancelled');
+      const err = new Error(`Task graph cancelled: ${graphId}`);
+      err.code = 'TASK_GRAPH_CANCELLED';
+      err.graphId = graphId;
+      err.cancellation = { ...cancellation };
+      throw err;
+    };
+
+    let graphLease = null;
+    let graphLeaseExecution = null;
+    let graphLeaseStatus = graphLaneSpec ? 'required' : 'not-required';
+    let cacheStatus = cacheReadBlockStatus || (cachePolicy.readEnabled
+      ? 'miss'
+      : (cachePolicy.writeEnabled ? 'record-only' : 'disabled'));
+
+    try {
+      assertNotCancelled();
+      if (graphLaneSpec) {
+        graphLease = this.acquireGpuResidentLaneLease({
+          ...graphLaneSpec,
+          taskId: graphId,
+          owner: graphLaneSpec.owner || 'compute-manager-task-graph'
+        });
+        graphLeaseStatus = 'active';
+      }
+
+      while (pending.size > 0) {
+        assertNotCancelled();
+        const completedNodeIds = new Set(Object.keys(nodeResults));
+        const ready = Array.from(pending.values())
+          .filter((node) => node.dependsOn.every((dependencyId) => completedNodeIds.has(dependencyId)));
+        if (!ready.length) {
+          throw new Error(`Task graph has a cycle or unsatisfied dependency: ${Array.from(pending.keys()).join(', ')}`);
+        }
+        executionBatches.push(ready.map((node) => node.id));
+        const readyResults = await Promise.all(ready.map(async (node) => {
+          assertNotCancelled();
+          const context = {
+            schema: COMPUTE_TASK_GRAPH_CONTEXT_SCHEMA,
+            graphId,
+            nodeId: node.id,
+            dependsOn: [...node.dependsOn],
+            completedNodeIds: Object.keys(nodeResults),
+            nodeResults,
+            results: nodeResults,
+            cachePolicy,
+            cacheKey: cachePolicy.cacheKey,
+            cacheInputs: cachePolicy.inputs,
+            stateSeedPayload,
+            placementPolicy,
+            cancellation,
+            graphLease,
+            graphLeaseSpec: graphLaneSpec,
+            getResult(id) {
+              return nodeResults[id];
+            }
+          };
+          let task = typeof node.createTask === 'function'
+            ? await node.createTask(context)
+            : typeof node.task === 'function'
+              ? await node.task(context)
+              : node.task;
+          if (!task || typeof task !== 'object') {
+            throw new Error(`Task graph node ${node.id} did not produce a task`);
+          }
+          task = injectTaskGraphResultInputs(task, node, nodeResults);
+          assertNotCancelled();
+          const nodeStartedAt = nowMs();
+          const result = await this.submitTask(task);
+          assertNotCancelled();
+          return {
+            node,
+            task,
+            result,
+            durationMs: Math.max(0, nowMs() - nodeStartedAt)
+          };
+        }));
+        for (const entry of readyResults) {
+          pending.delete(entry.node.id);
+          nodeResults[entry.node.id] = entry.result;
+          executionOrder.push(entry.node.id);
+          nodeReports.push({
+            nodeId: entry.node.id,
+            dependsOn: [...entry.node.dependsOn],
+            taskId: entry.task.id || null,
+            taskFamily: entry.task.taskFamily || entry.task.solverId || null,
+            solverId: entry.task.solverId || null,
+            status: 'completed',
+            durationMs: entry.durationMs,
+            resultSchema: entry.result?.computeTaskResultSchema || entry.result?.schema || null
+          });
+        }
+      }
+
+      if (graphLease?.leaseId) {
+        graphLeaseExecution = this.completeGpuResidentLaneLease(graphLease.leaseId, {
+          status: 'ordered-before-consumer-queue-completed',
+          method: 'compute-manager-task-graph-completion',
+          queueCompletionStatus: 'ordered-before-consumer-queue-completed',
+          queueCompletionMethod: 'compute-manager-task-graph-completion',
+          releaseReason: 'task-graph-completed'
+        });
+        graphLeaseStatus = graphLeaseExecution?.lease?.status || 'completed';
+      }
+
+      const result = {
+        schema: COMPUTE_TASK_GRAPH_RESULT_SCHEMA,
+        graphId,
+        status: 'completed',
+        nodeCount: normalizedNodes.length,
+        edgeCount: normalizedNodes.reduce((sum, node) => sum + node.dependsOn.length, 0),
+        executionOrder,
+        executionBatches,
+        nodeReports,
+        nodeResults,
+        cachePolicy,
+        cacheKey: cachePolicy.cacheKey,
+        cacheKeySource: cachePolicy.keySource,
+        cacheInputHash: cachePolicy.inputHash,
+        cacheInputs: cachePolicy.inputs,
+        stateSeedPayload,
+        cacheAdmission,
+        cacheAdmissionStatus: cacheAdmission.status,
+        cacheArtifact: null,
+        cacheArtifactSchema: null,
+        cacheArtifactStatus: null,
+        cacheStatus,
+        cacheHit: false,
+        placementPolicy,
+        cancellation,
+        cancellationStatus: cancellation.status,
+        graphLeaseRequired: graphLaneSpec != null,
+        graphLeaseStatus,
+        graphLeaseSpec: graphLaneSpec,
+        graphLease,
+        graphLeaseExecution,
+        durationMs: Math.max(0, nowMs() - startedAt)
+      };
+      if (cachePolicy.writeEnabled) {
+        const storedAt = Date.now();
+        const expiresAt = cachePolicy.ttlMs > 0 ? storedAt + cachePolicy.ttlMs : null;
+        const cacheArtifact = createTaskGraphCacheArtifact({
+          graphId,
+          cachePolicy,
+          result,
+          storedAt,
+          expiresAt,
+          admission: cacheAdmission
+        });
+        this.taskGraphCache.set(cachePolicy.cacheKey, {
+          storedAt,
+          expiresAt,
+          artifact: cloneTaskGraphCacheValue(cacheArtifact),
+          result: cloneTaskGraphCacheValue(result)
+        });
+        this.taskGraphCacheArtifacts.set(cachePolicy.cacheKey, cloneTaskGraphCacheValue(cacheArtifact));
+        this.stats.taskGraphCacheWrites += 1;
+        this.stats.taskGraphCacheArtifactsWritten += 1;
+        cacheStatus = cachePolicy.readEnabled ? 'miss-stored' : 'recorded';
+        result.cacheStatus = cacheStatus;
+        result.cachedAt = storedAt;
+        result.cacheArtifact = cacheArtifact;
+        result.cacheArtifactSchema = cacheArtifact.schema;
+        result.cacheArtifactStatus = cacheArtifact.status;
+      }
+      this.stats.taskGraphsCompleted += 1;
+      return result;
+    } catch (err) {
+      const wasCancelled = activeGraph.cancelled || err?.code === 'TASK_GRAPH_CANCELLED';
+      if (wasCancelled) {
+        this.stats.taskGraphsCancelled += 1;
+      } else {
+        this.stats.taskGraphsFailed += 1;
+      }
+      if (graphLease?.leaseId && !graphLeaseExecution) {
+        try {
+          this.rejectGpuResidentLaneLease(graphLease.leaseId, wasCancelled ? 'task-graph-cancelled' : 'task-graph-failed');
+          graphLeaseStatus = wasCancelled ? 'rejected-cancelled' : 'rejected-failed';
+        } catch {
+          graphLeaseStatus = 'reject-failed';
+        }
+      }
+      err.graphId = err.graphId || graphId;
+      err.taskGraphStatus = wasCancelled ? 'cancelled' : 'failed';
+      err.graphLeaseStatus = graphLeaseStatus;
+      err.cancellation = err.cancellation || { ...cancellation };
+      throw err;
+    } finally {
+      if (abortSignal?.removeEventListener) abortSignal.removeEventListener('abort', onAbort);
+      this.activeTaskGraphs.delete(graphId);
+    }
+  }
+
+  getGpuResidentLaneManager() {
+    return this.gpuResidentLaneManager;
+  }
+
+  getGpuResidentLaneStats() {
+    return this.gpuResidentLaneManager?.getStats?.() || null;
+  }
+
+  acquireGpuResidentLaneLease(spec = {}) {
+    if (!this.gpuResidentLaneManager?.acquireLease) {
+      throw new Error('GPU resident lane manager is not available');
+    }
+    return this.gpuResidentLaneManager.acquireLease(spec);
+  }
+
+  completeGpuResidentLaneLease(leaseId, options = {}) {
+    if (!this.gpuResidentLaneManager?.completeLease) {
+      throw new Error('GPU resident lane manager is not available');
+    }
+    return this.gpuResidentLaneManager.completeLease(leaseId, options);
+  }
+
+  rejectGpuResidentLaneLease(leaseId, reason = 'lane-validation-rejected') {
+    if (!this.gpuResidentLaneManager?.rejectLease) {
+      throw new Error('GPU resident lane manager is not available');
+    }
+    return this.gpuResidentLaneManager.rejectLease(leaseId, reason);
+  }
+
+  executeGpuResidentLaneStagePlan(leaseId, options = {}) {
+    if (!this.gpuResidentLaneManager?.executeStagePlan) {
+      throw new Error('GPU resident lane manager cannot execute stage plans');
+    }
+    return this.gpuResidentLaneManager.executeStagePlan(leaseId, options);
+  }
+
   /**
    * Distribute task across multiple nodes
    * @param {Object} task - Task to distribute
@@ -940,6 +1831,412 @@ export class ComputeManager {
     // TODO: Find task in active tasks
     // TODO: Terminate worker executing task
     // TODO: Clean up resources
+  }
+
+  cancelTaskGraph(graphId, reason = 'cancelTaskGraph') {
+    const id = String(graphId || '').trim();
+    const active = this.activeTaskGraphs.get(id);
+    if (!active) {
+      return {
+        schema: COMPUTE_TASK_GRAPH_CANCELLATION_SCHEMA,
+        graphId: id || null,
+        status: 'not-found',
+        cancelled: false,
+        reason: String(reason || 'cancelTaskGraph')
+      };
+    }
+    active.cancelled = true;
+    active.reason = String(reason || 'cancelTaskGraph');
+    return {
+      schema: COMPUTE_TASK_GRAPH_CANCELLATION_SCHEMA,
+      graphId: id,
+      status: 'cancel-requested',
+      cancelled: true,
+      reason: active.reason
+    };
+  }
+
+  listActiveTaskGraphs() {
+    return Array.from(this.activeTaskGraphs.values()).map((entry) => ({
+      schema: COMPUTE_TASK_GRAPH_RESULT_SCHEMA,
+      graphId: entry.graphId,
+      status: entry.cancelled ? 'cancel-requested' : 'running',
+      startedAt: entry.startedAt,
+      cacheKey: entry.cacheKey || null,
+      placementPolicy: entry.placementPolicy ? JSON.parse(JSON.stringify(entry.placementPolicy)) : null,
+      graphLeaseRequired: entry.graphLaneSpec != null,
+      cancellationReason: entry.reason || null
+    }));
+  }
+
+  getTaskGraphCacheArtifact(cacheKey) {
+    const key = String(cacheKey || '').trim();
+    const artifact = this.taskGraphCacheArtifacts.get(key);
+    return artifact ? cloneTaskGraphCacheValue(artifact) : null;
+  }
+
+  listTaskGraphCacheArtifacts() {
+    return Array.from(this.taskGraphCacheArtifacts.values())
+      .map((artifact) => cloneTaskGraphCacheValue(artifact))
+      .sort((a, b) => String(a.cacheKey || '').localeCompare(String(b.cacheKey || '')));
+  }
+
+  importRemoteTaskGraphCacheResult(result = {}, admission = {}, options = {}) {
+    const artifact = result?.cacheArtifact && typeof result.cacheArtifact === 'object'
+      ? result.cacheArtifact
+      : null;
+    const key = String(artifact?.cacheKey || result?.cacheKey || admission?.cacheKey || '').trim();
+    if (!key) {
+      this.stats.taskGraphRemoteCacheImportBlocked += 1;
+      throw new Error('importRemoteTaskGraphCacheResult requires a cacheKey');
+    }
+    if (!artifact) {
+      this.stats.taskGraphRemoteCacheImportBlocked += 1;
+      throw new Error('importRemoteTaskGraphCacheResult requires result.cacheArtifact');
+    }
+    if (admission?.admitted !== true) {
+      this.stats.taskGraphRemoteCacheImportBlocked += 1;
+      const err = new Error(`Remote task graph cache artifact is not admitted: ${key}`);
+      err.code = 'ERR_REMOTE_TASK_GRAPH_CACHE_ARTIFACT_NOT_ADMITTED';
+      err.cacheKey = key;
+      throw err;
+    }
+    const importedAt = Date.now();
+    const storedAt = artifact.storedAt || result.cachedAt || importedAt;
+    const expiresAt = artifact.expiresAt || null;
+    const retainedBufferRefs = normalizeStringList(
+      result?.graphLeaseSpec?.retainedBufferRefs,
+      result?.cacheInputs?.retainedBufferRefs,
+      artifact?.inputs?.retainedBufferRefs
+    );
+    const remoteGraphLeaseRefs = {
+      schema: COMPUTE_TASK_GRAPH_GPU_LANE_SCHEMA,
+      source: 'remote-task-graph-result',
+      remoteOnly: true,
+      usableLocally: false,
+      status: retainedBufferRefs.length > 0
+        ? 'remote-retained-buffer-refs-metadata-only'
+        : 'no-remote-retained-buffer-refs',
+      reason: retainedBufferRefs.length > 0
+        ? 'remote-gpu-resident-refs-are-not-local-device-leases'
+        : 'remote-result-did-not-declare-retained-buffer-refs',
+      laneId: result?.graphLeaseSpec?.laneId || result?.graphLease?.laneId || null,
+      stateKey: result?.graphLeaseSpec?.stateKey || result?.graphLease?.stateKey || null,
+      retainedBufferRefs,
+      graphLeaseStatus: result?.graphLeaseStatus || null,
+      graphLeaseRequired: result?.graphLeaseRequired === true
+    };
+    const computeAdmission = {
+      schema: COMPUTE_TASK_GRAPH_CACHE_ADMISSION_SCHEMA,
+      status: 'admitted',
+      admitted: true,
+      authority: admission.authority || 'node-kernel-state-manager',
+      admissionId: admission.admissionId || null,
+      validatorId: admission.validatorId || null,
+      reason: admission.reason || 'remote-task-graph-cache-artifact-admitted',
+      invalidationRefs: normalizeStringList(admission.invalidationRefs, artifact.invalidationRefs),
+      acceptedAt: admission.acceptedAt || admission.admittedAt || importedAt
+    };
+    const importReport = {
+      schema: COMPUTE_REMOTE_TASK_GRAPH_CACHE_IMPORT_SCHEMA,
+      status: 'imported-admitted-remote-cache-result',
+      cacheKey: key,
+      graphId: result?.graphId || artifact.graphId || null,
+      sourcePeerId: options.sourcePeerId || admission.sourcePeerId || null,
+      responderId: options.responderId || admission.responderId || null,
+      requestId: options.requestId || admission.requestId || null,
+      admissionId: admission.admissionId || null,
+      importedAt,
+      remoteArtifactStatus: artifact.status || null,
+      remoteArtifactAdmitted: artifact.admitted === true,
+      retainedGpuLaneRefs: remoteGraphLeaseRefs,
+      retainedGpuLaneRefsStatus: remoteGraphLeaseRefs.status,
+      resultHash: artifact.resultHash || null,
+      inputHash: artifact.inputHash || result?.cacheInputHash || null
+    };
+    const importedArtifact = {
+      ...cloneTaskGraphCacheValue(artifact),
+      cacheKey: key,
+      status: 'admitted-remote-cache-artifact-recorded',
+      admitted: true,
+      admission: computeAdmission,
+      stateAdmission: cloneTaskGraphCacheValue(admission),
+      remoteCacheImport: importReport,
+      remoteGraphLeaseRefs
+    };
+    const importedResult = {
+      ...cloneTaskGraphCacheValue(result),
+      cacheKey: key,
+      cacheAdmission: computeAdmission,
+      cacheAdmissionStatus: computeAdmission.status,
+      cacheArtifact: cloneTaskGraphCacheValue(importedArtifact),
+      cacheArtifactStatus: importedArtifact.status,
+      cacheArtifactSchema: importedArtifact.schema || null,
+      cacheStatus: 'remote-imported',
+      cacheHit: false,
+      remoteTaskGraphCacheImport: importReport,
+      remoteGraphLeaseRefs
+    };
+    this.taskGraphCacheArtifacts.set(key, cloneTaskGraphCacheValue(importedArtifact));
+    this.taskGraphCache.set(key, {
+      storedAt,
+      expiresAt,
+      artifact: cloneTaskGraphCacheValue(importedArtifact),
+      result: cloneTaskGraphCacheValue(importedResult)
+    });
+    this.stats.taskGraphRemoteCacheImports += 1;
+    return cloneTaskGraphCacheValue(importReport);
+  }
+
+  evaluateRemoteTaskGraphStateSeedPolicy(cacheKeyOrOptions, options = {}) {
+    const source = cacheKeyOrOptions && typeof cacheKeyOrOptions === 'object'
+      ? cacheKeyOrOptions
+      : options;
+    const key = String(
+      typeof cacheKeyOrOptions === 'string'
+        ? cacheKeyOrOptions
+        : source?.cacheKey || ''
+    ).trim();
+    const requestedAt = Date.now();
+    const cacheEntry = key ? this.taskGraphCache.get(key) || null : null;
+    const artifact = key
+      ? this.taskGraphCacheArtifacts.get(key) || cacheEntry?.artifact || null
+      : null;
+    const result = cacheEntry?.result || null;
+    const importReport = result?.remoteTaskGraphCacheImport
+      || artifact?.remoteCacheImport
+      || null;
+    const stateSeedPayload = firstNonNull(
+      result?.stateSeedPayload,
+      result?.stateSeed,
+      result?.warmStateSeed,
+      artifact?.stateSeedPayload,
+      artifact?.stateSeed,
+      artifact?.outputs?.stateSeed,
+      source?.stateSeedPayload,
+      source?.stateSeed
+    );
+    const remoteGraphLeaseRefs = result?.remoteGraphLeaseRefs
+      || artifact?.remoteGraphLeaseRefs
+      || importReport?.retainedGpuLaneRefs
+      || null;
+    const stateFamilies = uniqueStringList(
+      result?.cacheInputs?.stateFamilies,
+      result?.cachePolicy?.inputs?.stateFamilies,
+      artifact?.inputs?.stateFamilies,
+      artifact?.cacheInputs?.stateFamilies,
+      source?.stateFamilies
+    );
+    const readFamilies = uniqueStringList(
+      result?.cacheInputs?.readFamilies,
+      result?.cachePolicy?.inputs?.readFamilies,
+      artifact?.inputs?.readFamilies,
+      artifact?.cacheInputs?.readFamilies,
+      source?.readFamilies
+    );
+    const writeFamilies = uniqueStringList(
+      result?.cacheInputs?.writeFamilies,
+      result?.cachePolicy?.inputs?.writeFamilies,
+      artifact?.inputs?.writeFamilies,
+      artifact?.cacheInputs?.writeFamilies,
+      source?.writeFamilies
+    );
+    const allowedStateFamilies = normalizeStringList(
+      source?.allowedStateFamilies ?? source?.allowedFamilies,
+      []
+    );
+    const retainedBufferRefs = uniqueStringList(
+      remoteGraphLeaseRefs?.retainedBufferRefs,
+      result?.graphLeaseSpec?.retainedBufferRefs,
+      result?.cacheInputs?.retainedBufferRefs,
+      artifact?.inputs?.retainedBufferRefs,
+      source?.retainedBufferRefs
+    );
+    const remoteRetainedRefsUsableLocally = remoteGraphLeaseRefs?.usableLocally === true
+      && remoteGraphLeaseRefs?.remoteOnly !== true;
+    const remoteImported = importReport?.schema === COMPUTE_REMOTE_TASK_GRAPH_CACHE_IMPORT_SCHEMA
+      || result?.cacheStatus === 'remote-imported'
+      || artifact?.status === 'admitted-remote-cache-artifact-recorded';
+    const admitted = artifact?.admitted === true;
+    const requireStateFamilies = source?.requireStateFamilies !== false;
+    const disallowedStateFamilies = allowedStateFamilies.length > 0
+      ? stateFamilies.filter((family) => !allowedStateFamilies.includes(family))
+      : [];
+    let stateFamilyStatus = 'state-family-not-evaluated';
+    if (stateFamilies.length === 0) {
+      stateFamilyStatus = requireStateFamilies
+        ? 'state-family-missing'
+        : 'state-family-not-declared';
+    } else if (allowedStateFamilies.length === 0) {
+      stateFamilyStatus = 'state-family-policy-not-declared';
+    } else if (disallowedStateFamilies.length > 0) {
+      stateFamilyStatus = 'state-family-blocked';
+    } else {
+      stateFamilyStatus = 'state-family-allowed';
+    }
+
+    let status = 'policy-ready';
+    let reason = 'remote-cache-import-admitted-for-local-policy';
+    if (!key) {
+      status = 'blocked-no-cache-key';
+      reason = 'remote-state-seed-policy-requires-cache-key';
+    } else if (!cacheEntry && !artifact) {
+      status = 'blocked-cache-miss';
+      reason = 'cache-entry-not-found';
+    } else if (!admitted) {
+      status = 'blocked-unadmitted-cache-artifact';
+      reason = 'cache-artifact-is-not-admitted';
+    } else if (!remoteImported) {
+      status = 'blocked-not-remote-import';
+      reason = 'cache-entry-did-not-originate-from-admitted-remote-task-graph-import';
+    } else if (stateFamilyStatus === 'state-family-missing') {
+      status = 'blocked-missing-state-families';
+      reason = 'remote-import-did-not-declare-state-families';
+    } else if (stateFamilyStatus === 'state-family-policy-not-declared') {
+      status = 'blocked-missing-state-family-policy';
+      reason = 'allowed-state-family-policy-is-required';
+    } else if (stateFamilyStatus === 'state-family-blocked') {
+      status = 'blocked-state-family-policy';
+      reason = 'remote-import-declares-state-families-outside-policy';
+    }
+    const ready = status === 'policy-ready';
+    const allowWarmStateSeed = source?.allowWarmStateSeed === true;
+    const allowHotBufferRefresh = source?.allowHotBufferRefresh === true;
+    const warmStateSeedStatus = allowWarmStateSeed
+      ? (ready ? 'warm-state-seed-allowed' : 'warm-state-seed-blocked')
+      : 'warm-state-seed-not-requested';
+    let hotBufferRefreshStatus = allowHotBufferRefresh
+      ? 'no-retained-buffer-refs'
+      : 'hot-buffer-refresh-not-requested';
+    if (allowHotBufferRefresh && !ready) {
+      hotBufferRefreshStatus = 'hot-buffer-refresh-blocked';
+    } else if (allowHotBufferRefresh && retainedBufferRefs.length > 0 && remoteRetainedRefsUsableLocally) {
+      hotBufferRefreshStatus = 'local-buffer-refs-usable';
+    } else if (allowHotBufferRefresh && retainedBufferRefs.length > 0) {
+      hotBufferRefreshStatus = 'local-refresh-required';
+    }
+
+    return {
+      schema: COMPUTE_REMOTE_TASK_GRAPH_STATE_SEED_POLICY_SCHEMA,
+      status,
+      reason,
+      cacheKey: key || null,
+      requestedAt,
+      cacheEntryPresent: cacheEntry != null,
+      artifactPresent: artifact != null,
+      admitted,
+      remoteImported,
+      importStatus: importReport?.status || null,
+      importSchema: importReport?.schema || null,
+      importReport: importReport ? cloneTaskGraphCacheValue(importReport) : null,
+      stateFamilies,
+      readFamilies,
+      writeFamilies,
+      stateSeedPayloadAvailable: stateSeedPayload != null,
+      stateSeedPayload: stateSeedPayload != null ? cloneTaskGraphCacheValue(stateSeedPayload) : null,
+      allowedStateFamilies,
+      disallowedStateFamilies,
+      stateFamilyStatus,
+      warmStateSeedRequested: allowWarmStateSeed,
+      warmStateSeedStatus,
+      hotBufferRefreshRequested: allowHotBufferRefresh,
+      hotBufferRefreshStatus,
+      retainedBufferRefs,
+      remoteRetainedRefsUsableLocally,
+      remoteGraphLeaseRefs: remoteGraphLeaseRefs ? cloneTaskGraphCacheValue(remoteGraphLeaseRefs) : null
+    };
+  }
+
+  admitTaskGraphCacheArtifact(cacheKeyOrAdmission, admission = {}) {
+    const source = cacheKeyOrAdmission && typeof cacheKeyOrAdmission === 'object'
+      ? cacheKeyOrAdmission
+      : admission;
+    const key = String(
+      typeof cacheKeyOrAdmission === 'string'
+        ? cacheKeyOrAdmission
+        : source?.cacheKey || ''
+    ).trim();
+    if (!key) {
+      throw new Error('admitTaskGraphCacheArtifact requires a cacheKey');
+    }
+    const cacheEntry = this.taskGraphCache.get(key);
+    const existingArtifact = this.taskGraphCacheArtifacts.get(key) || cacheEntry?.artifact || null;
+    if (!existingArtifact) return null;
+    const stateAdmission = cloneTaskGraphCacheValue(source || {});
+    const acceptedAt = stateAdmission.admittedAt || stateAdmission.acceptedAt || Date.now();
+    const computeAdmission = {
+      schema: COMPUTE_TASK_GRAPH_CACHE_ADMISSION_SCHEMA,
+      status: 'admitted',
+      admitted: true,
+      authority: stateAdmission.authority || 'state-manager',
+      admissionId: stateAdmission.admissionId || null,
+      validatorId: stateAdmission.validatorId || null,
+      reason: stateAdmission.reason || 'state-manager-cache-artifact-admitted',
+      invalidationRefs: normalizeStringList(stateAdmission.invalidationRefs),
+      acceptedAt
+    };
+    const wasAdmitted = existingArtifact.admitted === true;
+    const artifact = {
+      ...cloneTaskGraphCacheValue(existingArtifact),
+      status: 'admitted-cache-artifact-recorded',
+      admitted: true,
+      admission: computeAdmission,
+      stateAdmission
+    };
+    this.taskGraphCacheArtifacts.set(key, cloneTaskGraphCacheValue(artifact));
+    if (cacheEntry) {
+      const result = cloneTaskGraphCacheValue(cacheEntry.result || {});
+      result.cacheAdmission = computeAdmission;
+      result.cacheAdmissionStatus = computeAdmission.status;
+      result.cacheArtifact = cloneTaskGraphCacheValue(artifact);
+      result.cacheArtifactStatus = artifact.status;
+      result.cacheArtifactSchema = artifact.schema || null;
+      this.taskGraphCache.set(key, {
+        ...cacheEntry,
+        artifact: cloneTaskGraphCacheValue(artifact),
+        result
+      });
+    }
+    if (!wasAdmitted) {
+      this.stats.taskGraphCacheArtifactsAdmitted += 1;
+    }
+    return cloneTaskGraphCacheValue(artifact);
+  }
+
+  invalidateTaskGraphCacheArtifact(cacheKeyOrInvalidation, options = {}) {
+    const source = cacheKeyOrInvalidation && typeof cacheKeyOrInvalidation === 'object'
+      ? cacheKeyOrInvalidation
+      : options;
+    const key = String(
+      typeof cacheKeyOrInvalidation === 'string'
+        ? cacheKeyOrInvalidation
+        : source?.cacheKey || ''
+    ).trim();
+    if (!key) {
+      throw new Error('invalidateTaskGraphCacheArtifact requires a cacheKey');
+    }
+    const invalidation = cloneTaskGraphCacheValue(source || {});
+    const cacheEntry = this.taskGraphCache.get(key);
+    const existingArtifact = this.taskGraphCacheArtifacts.get(key) || cacheEntry?.artifact || null;
+    this.taskGraphCache.delete(key);
+    this.stats.taskGraphCacheInvalidations += 1;
+    if (!existingArtifact) {
+      return {
+        cacheKey: key,
+        status: 'invalidated',
+        admitted: false,
+        invalidation
+      };
+    }
+    const artifact = {
+      ...cloneTaskGraphCacheValue(existingArtifact),
+      status: 'invalidated',
+      admitted: false,
+      invalidation,
+      invalidatedAt: invalidation.invalidatedAt || Date.now()
+    };
+    this.taskGraphCacheArtifacts.set(key, cloneTaskGraphCacheValue(artifact));
+    return cloneTaskGraphCacheValue(artifact);
   }
 
   /**
@@ -1156,6 +2453,7 @@ export class ComputeManager {
       lastWorkerResize: JSON.parse(JSON.stringify(this.lastWorkerResize)),
       workerResizeHistory: JSON.parse(JSON.stringify(this.workerResizeHistory)),
       workerAutoScaleHold: this._getWorkerAutoScaleHoldStatus(),
+      gpuResidentLanes: this.getGpuResidentLaneStats(),
       stats: this.getStats()
     };
   }
@@ -1183,6 +2481,18 @@ export class ComputeManager {
       remoteTaskAttempts: this.stats.remoteTaskAttempts,
       remoteTasksRetried: this.stats.remoteTasksRetried,
       remoteTasksRetryExhausted: this.stats.remoteTasksRetryExhausted,
+      taskGraphsSubmitted: this.stats.taskGraphsSubmitted,
+      taskGraphsCompleted: this.stats.taskGraphsCompleted,
+      taskGraphsFailed: this.stats.taskGraphsFailed,
+      taskGraphsCancelled: this.stats.taskGraphsCancelled,
+      taskGraphCacheHits: this.stats.taskGraphCacheHits,
+      taskGraphCacheWrites: this.stats.taskGraphCacheWrites,
+      taskGraphCacheArtifactsWritten: this.stats.taskGraphCacheArtifactsWritten,
+      taskGraphCacheArtifactsAdmitted: this.stats.taskGraphCacheArtifactsAdmitted,
+      taskGraphRemoteCacheImports: this.stats.taskGraphRemoteCacheImports,
+      taskGraphRemoteCacheImportBlocked: this.stats.taskGraphRemoteCacheImportBlocked,
+      taskGraphCacheInvalidations: this.stats.taskGraphCacheInvalidations,
+      taskGraphCacheReadBlocked: this.stats.taskGraphCacheReadBlocked,
       averageTaskDuration: this.stats.averageTaskDurationMs,
       averageTaskDurationMs: this.stats.averageTaskDurationMs,
       lastTaskDurationMs: this.stats.lastTaskDurationMs,
@@ -1190,7 +2500,10 @@ export class ComputeManager {
       maxTaskDurationMs: this.stats.maxTaskDurationMs,
       currentLoad: Number(currentLoad.toFixed(4)),
       activeTaskCount: this.activeTasks.size,
+      activeTaskGraphCount: this.activeTaskGraphs.size,
       queuedTaskCount: this.taskQueue.length,
+      taskGraphCacheSize: this.taskGraphCache.size,
+      taskGraphCacheArtifactCount: this.taskGraphCacheArtifacts.size,
       workerCount: this.workers.length,
       targetWorkers: this.targetWorkerCount,
       workerPoolRevision: this.workerPoolRevision,
@@ -1198,6 +2511,8 @@ export class ComputeManager {
       workerResizeHistory: JSON.parse(JSON.stringify(this.workerResizeHistory)),
       workerAutoScaleHold: this._getWorkerAutoScaleHoldStatus(),
       workerUtilization: this._getWorkerUtilizationReport(),
+      activeTaskGraphs: this.listActiveTaskGraphs(),
+      gpuResidentLanes: this.getGpuResidentLaneStats(),
       taskPlacement: JSON.parse(JSON.stringify(this.stats.taskPlacement)),
       lastCompletedAt: this.stats.lastCompletedAt,
       byRuntime: JSON.parse(JSON.stringify(this.stats.byRuntime)),
@@ -1291,6 +2606,8 @@ export class ComputeManager {
       data: payload.data,
       args: payload.args,
       webgpu: payload.webgpu,
+      gpuFence: payload.gpuFence,
+      gpuResidentLane: payload.gpuResidentLane,
       placement
     };
     const codeHash = hashString(stableSerialize(codeEnvelope));
@@ -1311,6 +2628,13 @@ export class ComputeManager {
       taskFamily: payload.taskFamily || null,
       solverId: payload.solverId || null,
       requestedPlacement: placement?.requestedPlacement || null,
+      gpuFenceRequired: payload.gpuFence?.required === true,
+      gpuFenceSchema: payload.gpuFence?.schema || null,
+      gpuLaneId: payload.gpuFence?.laneId || null,
+      gpuStateKey: payload.gpuFence?.stateKey || null,
+      gpuQueueFencePolicy: payload.gpuFence?.queueFencePolicy || null,
+      gpuResidentLaneSchema: payload.gpuResidentLane?.schema || null,
+      gpuResidentLaneLocalExecution: payload.gpuResidentLane?.localExecution || null,
       codeHash,
       inputHash,
       taskHash,
@@ -1752,6 +3076,18 @@ export class ComputeManager {
       || resultObject.replicas
       || resultObject.replicaResults
     );
+    const gpuFence = normalizeGpuFenceReport(
+      raw.gpuFence
+      || raw.gpuFenceReport
+      || resultObject.gpuFence
+      || resultObject.gpuFenceReport
+      || finalObject.gpuFence
+      || finalObject.gpuFenceReport
+      || raw.remoteExecution?.gpuFence
+      || raw.remoteExecution?.gpuFenceReport
+      || raw.remoteExecution?.computeExecution?.gpuFence,
+      payload.gpuFence || taskPacket?.gpuFence || null
+    );
 
     return {
       schema: COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,
@@ -1782,6 +3118,9 @@ export class ComputeManager {
       remoteExecution: raw.remoteExecution && typeof raw.remoteExecution === 'object'
         ? JSON.parse(JSON.stringify(raw.remoteExecution))
         : null,
+      gpuFence,
+      gpuFenceStatus: gpuFence?.status ?? null,
+      gpuFenceSatisfied: gpuFence?.fenceSatisfied ?? false,
       codeHash: raw.codeHash || resultObject.codeHash || taskPacket?.codeHash || null,
       inputHash: raw.inputHash || resultObject.inputHash || taskPacket?.inputHash || null,
       taskHash: raw.taskHash || resultObject.taskHash || taskPacket?.taskHash || null,
@@ -1850,12 +3189,23 @@ export class ComputeManager {
         ok: !!expected && expected === actual
       };
     });
+    if (taskPacket.gpuFenceRequired === true) {
+      checks.push({
+        field: 'gpuFence',
+        expected: 'fence-satisfied',
+        actual: provenance?.gpuFence?.status || null,
+        ok: provenance?.gpuFence?.fenceSatisfied === true
+      });
+    }
     const mismatchFields = checks.filter((check) => !check.ok).map((check) => check.field);
+    const reason = mismatchFields.length === 0
+      ? 'hashes-match'
+      : (mismatchFields.includes('gpuFence') ? 'gpu-fence-missing-or-unsatisfied' : 'hash-mismatch');
     return {
       schema: COMPUTE_REMOTE_PLACEMENT_VERIFICATION_SCHEMA,
       verified: mismatchFields.length === 0,
       skipped: false,
-      reason: mismatchFields.length === 0 ? 'hashes-match' : 'hash-mismatch',
+      reason,
       taskPacketSchema: taskPacket.schema,
       hashAlgorithm: taskPacket.hashAlgorithm || null,
       mismatchFields,
@@ -2620,7 +3970,92 @@ export class ComputeManager {
     }, this.workerPolicy.idleScaleDownMs);
   }
 
+  _requiresInlineExecution(task) {
+    return task.payload?.gpuResidentLane?.localExecution === 'inline';
+  }
+
+  _acquireTaskGpuResidentLaneLease(task) {
+    const spec = task.payload?.gpuResidentLane;
+    if (!spec || task.gpuResidentLaneLease || task.gpuResidentLaneExecution) return task.gpuResidentLaneLease || null;
+    if (!this.gpuResidentLaneManager?.acquireLease) {
+      throw new Error('GPU resident lane manager is not available for declared resident-lane task');
+    }
+    const lease = this.acquireGpuResidentLaneLease({
+      ...spec,
+      taskId: spec.taskId || task.id || task.payload?.id || null,
+      solverId: spec.solverId || task.payload?.solverId || task.payload?.taskFamily || null,
+      owner: spec.owner || task.payload?.taskFamily || 'compute-manager-task',
+      queueFencePolicy: spec.queueFencePolicy || task.payload?.gpuFence?.queueFencePolicy || null,
+      retainedBufferRefs: spec.retainedBufferRefs?.length
+        ? spec.retainedBufferRefs
+        : (task.payload?.gpuFence?.retainedBufferRefs || []),
+      residentSequenceLaneContract: spec.residentSequenceLaneContract || null
+    });
+    task.gpuResidentLaneLease = lease;
+    return lease;
+  }
+
+  _completeTaskGpuResidentLaneLease(task, result, { mode = null } = {}) {
+    const lease = task.gpuResidentLaneLease;
+    if (!lease || task.gpuResidentLaneExecution) return result;
+    const resultObject = result && typeof result === 'object' ? result : {};
+    const resultFence = normalizeGpuFenceReport(
+      resultObject.gpuFence || resultObject.gpuFenceReport,
+      task.payload?.gpuFence || null
+    );
+    const required = task.payload?.gpuFence?.required === true;
+    const retainedBufferRefs = resultFence?.retainedBufferRefs?.length
+      ? resultFence.retainedBufferRefs
+      : (task.payload?.gpuResidentLane?.retainedBufferRefs?.length
+          ? task.payload.gpuResidentLane.retainedBufferRefs
+          : (task.payload?.gpuFence?.retainedBufferRefs || lease.retainedBufferRefs || []));
+    const execution = this.completeGpuResidentLaneLease(lease.leaseId, {
+      status: resultFence?.status || (required ? 'gpu-fence-report-missing' : 'queue-work-completed'),
+      method: resultFence?.method || null,
+      queueCompletionStatus: resultFence?.queueCompletionStatus || resultFence?.status || null,
+      queueCompletionMethod: resultFence?.queueCompletionMethod || resultFence?.method || null,
+      retainedBufferRefs,
+      completed: resultFence ? resultFence.fenceSatisfied === true : (required ? false : null),
+      source: mode ? `compute-manager-${mode}` : 'compute-manager-local-task'
+    });
+    task.gpuResidentLaneExecution = execution;
+    task.gpuResidentLaneLease = null;
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      return {
+        ...result,
+        gpuFence: result.gpuFence || execution.gpuFence,
+        gpuResidentLaneExecution: result.gpuResidentLaneExecution || execution,
+        gpuResidentLaneLease: result.gpuResidentLaneLease || execution.lease
+      };
+    }
+    return result;
+  }
+
+  _rejectTaskGpuResidentLaneLease(task, reason = 'task-failed') {
+    const lease = task.gpuResidentLaneLease;
+    if (!lease || task.gpuResidentLaneExecution || task.gpuResidentLaneRejected) return null;
+    const rejected = this.rejectGpuResidentLaneLease(lease.leaseId, reason);
+    task.gpuResidentLaneRejected = rejected;
+    task.gpuResidentLaneLease = null;
+    return rejected;
+  }
+
+  _assertRequiredGpuFenceSatisfied(task, result) {
+    if (task.payload?.gpuFence?.required !== true) return;
+    const resultObject = result && typeof result === 'object' ? result : {};
+    const gpuFence = task.gpuResidentLaneExecution?.gpuFence
+      || normalizeGpuFenceReport(resultObject.gpuFence || resultObject.gpuFenceReport, task.payload.gpuFence);
+    if (gpuFence?.fenceSatisfied === true) return;
+    const err = new Error(`GPU fence missing or unsatisfied for task ${task.id || task.payload?.id || 'unknown'}`);
+    err.name = 'GpuFenceUnsatisfiedError';
+    err.code = 'ERR_COMPUTE_GPU_FENCE_UNSATISFIED';
+    err.gpuFence = gpuFence || null;
+    err.gpuFenceRequirement = task.payload.gpuFence;
+    throw err;
+  }
+
   _dispatchToWorker(task) {
+    if (this._requiresInlineExecution(task)) return false;
     const affinityKey = task.payload?.affinityKey;
     const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
     let worker = null;
@@ -2660,11 +4095,16 @@ export class ComputeManager {
     return true;
   }
 
-  _buildTaskExecutionReport(task, { mode = null } = {}) {
+  _buildTaskExecutionReport(task, { mode = null, result = null } = {}) {
     const executionMode = mode || task.executionMode || null;
     const runtime = task.runtime || task.payload?.runtime || null;
     const taskFamily = task.taskFamily || task.payload?.taskFamily || null;
     const taskId = task.id || task.payload?.id || null;
+    const resultObject = result && typeof result === 'object' ? result : {};
+    const gpuFence = normalizeGpuFenceReport(
+      resultObject.gpuFence || resultObject.gpuFenceReport,
+      task.payload?.gpuFence || null
+    ) || task.gpuResidentLaneExecution?.gpuFence || null;
     const executorId = task.executorId || (
       executionMode === 'inline' || executionMode === 'inline-fallback'
         ? this.inlineExecutorId
@@ -2680,13 +4120,20 @@ export class ComputeManager {
       taskFamily,
       executionMode,
       executorId,
-      workerId
+      workerId,
+      gpuFenceRequirement: task.payload?.gpuFence || null,
+      gpuFence,
+      gpuFenceStatus: gpuFence?.status ?? null,
+      gpuFenceSatisfied: gpuFence?.fenceSatisfied ?? false,
+      gpuResidentLaneRequirement: task.payload?.gpuResidentLane || null,
+      gpuResidentLaneExecution: task.gpuResidentLaneExecution || null,
+      gpuResidentLaneRejected: task.gpuResidentLaneRejected || null
     };
   }
 
   _attachTaskExecutionReport(result, task, { mode = null } = {}) {
     if (task.payload?.returnEnvelope !== true) return result;
-    const computeExecution = this._buildTaskExecutionReport(task, { mode });
+    const computeExecution = this._buildTaskExecutionReport(task, { mode, result });
     if (result && typeof result === 'object' && !Array.isArray(result)) {
       const next = { ...result };
       if (!next.computeExecution) next.computeExecution = computeExecution;
@@ -2705,7 +4152,10 @@ export class ComputeManager {
     task.executionMode ||= 'inline';
     this._recordExecutorStart(this.inlineExecutorId, task, { kind: 'inline' });
     try {
-      const result = await executeTaskPayload(task.payload);
+      this._acquireTaskGpuResidentLaneLease(task);
+      const rawResult = await executeTaskPayload(task.payload);
+      const result = this._completeTaskGpuResidentLaneLease(task, rawResult, { mode: task.executionMode || 'inline' });
+      this._assertRequiredGpuFenceSatisfied(task, result);
       if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'commitDelta')) {
         if (task.payload?.suppressCommitDelta !== true) {
           this.commitDelta(result.commitDelta);
@@ -2722,6 +4172,7 @@ export class ComputeManager {
         ? this._attachTaskExecutionReport(result, task, { mode: task.executionMode || 'inline' })
         : result);
     } catch (err) {
+      this._rejectTaskGpuResidentLaneLease(task, err?.code || 'inline-task-error');
       this._recordTaskCompletion(task, { ok: false, mode: task.executionMode || 'inline' });
       task.reject(err);
     }
@@ -2789,6 +4240,10 @@ export class ComputeManager {
     const remaining = [];
     while (this.taskQueue.length > 0) {
       const next = this.taskQueue.shift();
+      if (this._requiresInlineExecution(next)) {
+        this._executeInline(next);
+        continue;
+      }
       if (!this._dispatchToWorker(next)) {
         remaining.push(next);
       }

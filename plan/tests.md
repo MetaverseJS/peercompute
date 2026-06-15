@@ -1,5 +1,290 @@
 ## PeerCompute Test Strategy
 
+### Current focused result - 2026-06-14 AKDT
+- ComputeManager GPU resident lane stage-plan executor:
+  - `node --check` passed for
+    `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`,
+    `peercompute/src/peercompute/computeManager/ComputeManager.js`,
+    `peercompute/src/peercompute/index.js`,
+    `peercompute/tests/unit/gpuResidentLaneManager.test.js`, and ULG
+    `tests/peercomputeComputeManagerIntegration.test.mjs`.
+  - `EMSDK_QUIET=1 node --test peercompute/tests/unit/gpuResidentLaneManager.test.js`
+    passed `6/6`.
+  - `EMSDK_QUIET=1 node --test peercompute/tests/computeManager.unit.test.js`
+    passed `2/2`.
+  - `EMSDK_QUIET=1 node --test peercompute/tests/unit/computeManager.commitDelta.test.js`
+    passed `19/19`.
+  - Broader accumulated architecture validation also passed:
+    `EMSDK_QUIET=1 node --test peercompute/tests/unit/nodeKernel.start.test.js`
+    `7/7`,
+    `EMSDK_QUIET=1 node --test peercompute/tests/unit/nodeKernel.remoteCompute.test.js`
+    `8/8`,
+    `EMSDK_QUIET=1 node --test peercompute/tests/stateManager.unit.test.js`
+    `6/6`, and
+    `EMSDK_QUIET=1 node --test demos/multiscale/tests/multiscaleModel.test.mjs --test-name-pattern "ULG|StateManager|ComputeManager|solver descriptors|law graph|quantum material potential"`
+    `203/203`.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "resident pass-DAG task runs through real PeerCompute GPU lane authority|GPU resident lane|law graph"`
+    passed `11/11`, proving ULG's
+    `peercompute.ulg.mls-mpm-resident-sequence-lane-contract.v0` survives
+    `ComputeManager.submitTask()` as a GPU resident lane stage plan with
+    `defaultEnabled=false`.
+  - Cross-repo ULG physics/visual gates:
+    `npm run test:physics-atomics` passed `7` with the expected opt-in
+    long-horizon liquid skip, and visual matrix
+    `codex-lane-stage-plan-executor-20260614` passed `3/3` with two captured
+    frames per scenario.
+- NodeKernel remote task-graph compact-candidate authority:
+  - `node --check` passed for
+    `src/peercompute/nodeKernel/NodeKernel.js`, `src/peercompute/index.js`,
+    and `tests/unit/nodeKernel.start.test.js`.
+  - `node --test tests/unit/nodeKernel.start.test.js` passed `7/7`.
+  - Coverage: `NodeKernel.commitRemoteTaskGraphCompactCandidate()` evaluates
+    the existing remote task-graph state-family policy, rejects missing or
+    disallowed compact candidates, commits
+    `peercompute.nodekernel.remote-task-graph-compact-candidate-authority.v0`
+    into StateManager for allowed output families, keeps
+    `remoteRetainedRefsUsableLocally=false`, and reports
+    `compact-candidate-local-refresh-required` until a local retained-lane
+    refresh executor exists. The same test now proves
+    `NodeKernel.refreshRemoteTaskGraphHotBuffersFromCompactCandidate()` blocks
+    without a local compact refresh executor, then completes only when the
+    executor returns local retained refs and a satisfied fence. A blocked
+    executor result with no local refs is rejected as
+    `compact-hot-buffer-refresh-not-completed` and commits no refresh delta.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "remote seed graph builder"`
+    passed `11/11`, proving ULG records compact no-full mechanics output
+    through the NodeKernel compact-candidate authority path, can opt into the
+    compact refresh surface, and still returns a blocked hot-buffer refresh
+    plus no local retained refs when no local compact executor is supplied.
+  - Cross-repo ULG physics/visual gates:
+    `npm run test:physics-atomics` passed `6` with the expected opt-in
+    long-horizon liquid skip, and visual matrix
+    `codex-compact-executor-contract-20260614` passed five scenarios with
+    `failedCount=0` and `frameCount=5`.
+- NodeKernel remote task-graph transport:
+  - `node --check` passed for
+    `src/peercompute/computeManager/ComputeManager.js`,
+    `src/peercompute/nodeKernel/NodeKernel.js`, `src/peercompute/index.js`,
+    and `tests/unit/nodeKernel.start.test.js`.
+  - `node --test tests/unit/nodeKernel.start.test.js` passed `7/7`.
+  - Coverage: non-advisory distributed graphs without an executor still throw
+    `ERR_NODEKERNEL_DISTRIBUTED_TASK_GRAPH_UNAVAILABLE`; graphs with explicit
+    `targetPeerIds` resolve a `network-task-graph:<peer>` executor, emit
+    `compute-task-graph`, run on the responder's
+    `ComputeManager.submitTaskGraph()`, and return
+    `peercompute.nodekernel.remote-task-graph-placement-provenance.v0` while
+    the requester-local ComputeManager graph path is not invoked. Remote graph
+    cache artifacts also report
+    `peercompute.nodekernel.remote-task-graph-cache-artifact-preflight.v0`:
+    default behavior is `remote-cache-artifact-received-not-admitted`, while
+    explicit admission routes the artifact through NodeKernel/StateManager and
+    reports `admitted-through-node-kernel-state-manager`. The explicit
+    admission path now imports the result as
+    `peercompute.compute.remote-task-graph-cache-import.v0`; a later local
+    graph submission with the same admitted cache key returns `cacheStatus:
+    hit`, and remote retained GPU refs are preserved as metadata-only
+    nonlocal refs. The same focused test now evaluates
+    `peercompute.compute.remote-task-graph-state-seed-policy.v0`, proving that
+    allowed `particle-kinematics` imports may seed warm state, disallowed
+    state families are blocked, and remote retained GPU refs trigger
+    `local-refresh-required` rather than becoming local leases. The explicit
+    admission path now also carries a compact state seed payload through
+    `NodeKernel.commitRemoteTaskGraphStateSeed()` and commits
+    `peercompute.nodekernel.remote-task-graph-state-seed-authority.v0` into the
+    requester StateManager warm-delta sink. It then calls
+    `NodeKernel.refreshRemoteTaskGraphHotBuffersFromSeed()`, proving
+    `peercompute.nodekernel.remote-task-graph-hot-buffer-refresh.v0` reads the
+    warm seed, acquires a local GPU resident lane lease, runs a local refresh
+    executor, completes a local fence, and commits a refresh delta. The blocked
+    disallowed-family path does not commit another delta.
+  - Regression coverage: `node --test tests/unit/nodeKernel.remoteCompute.test.js`
+    passed `8/8`, proving the existing single-task remote compute transport
+    and redundant placement paths still work after adding graph messages.
+  - ComputeManager cache regression:
+    `node --test tests/unit/computeManager.commitDelta.test.js --test-name-pattern "task graph"`
+    passed `17/17`, proving existing task-graph cache admission behavior still
+    blocks unadmitted artifacts.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving the local CPU-oracle mechanics graph still reports
+    NodeKernel placement preflight and authority metadata.
+  - Cross-repo ULG physics gate:
+    `npm run test:physics-atomics` passed `5` with the expected opt-in
+    long-horizon liquid skip.
+  - Cross-repo ULG visual gate:
+    `ULG_VISUAL_MATRIX_RUN_ID=codex-hot-buffer-refresh-sequence-20260614 ... npm run probe:sph-visual-matrix`
+    passed with `failedCount=0` and `frameCount=3` for H2O/H2O MLS-MPM,
+    H2O/H2O CPU-SPH, Fe/H2O contact, and hot H2O phase-change scenarios.
+  - Remaining gap: this is the first remote graph transport hop. Admitted
+    imports can now commit compact warm-state seed records and run a local
+    hot-buffer refresh hook through a local GPU lane lease. ULG still needs to
+    plug its real resident SPH/MLS-MPM buffer rebuild into that hook before
+    resident workloads run remote by default.
+- NodeKernel task-graph placement preflight:
+  - `node --check` passed for
+    `src/peercompute/nodeKernel/NodeKernel.js`, `src/peercompute/index.js`,
+    and `tests/unit/nodeKernel.start.test.js`.
+  - `node --test tests/unit/nodeKernel.start.test.js` passed `5/5`.
+  - Coverage: local task graphs report `local-placement-accepted`,
+    advisory distributed task graphs report
+    `advisory-distributed-placement-local-execution-allowed`, and
+    non-advisory distributed task graphs throw
+    `ERR_NODEKERNEL_DISTRIBUTED_TASK_GRAPH_UNAVAILABLE` before any local
+    ComputeManager execution.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving the mechanics stage-chain artifact records
+    `peercompute.nodekernel.task-graph-placement-preflight.v0` and
+    `local-placement-accepted`.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`.
+  - Cross-repo ULG physics gate:
+    `npm run test:physics-atomics` passed `5` with the expected opt-in
+    long-horizon liquid skip.
+  - Hygiene: `git diff --check` passed in ULG and PeerCompute. ULG ICC
+    refreshed with `indexedFiles=233` and `memoryChunks=1218`.
+- NodeKernel task-graph authority wrapper:
+  - `node --check` passed for
+    `src/peercompute/nodeKernel/NodeKernel.js`, `src/peercompute/index.js`,
+    and `tests/unit/nodeKernel.start.test.js`.
+  - `node --test tests/unit/nodeKernel.start.test.js` passed `3/3`, proving
+    `NodeKernel.submitTaskGraph()` stamps placement authority as `node-kernel`
+    and returns `peercompute.nodekernel.task-graph-authority.v0`.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving the ULG mechanics stage-chain artifact reports
+    `node-kernel-submit-task-graph` and `nodeKernelOwned=true`.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`.
+  - Cross-repo ULG physics/visual gates:
+    `npm run test:physics-atomics` passed `5` with the expected opt-in
+    long-horizon liquid skip, and visual matrix run
+    `codex-nodekernel-task-graph-sequence-20260614` reported `failedCount=0`
+    with `frameCount=3` for H2O/H2O MLS-MPM, H2O/H2O CPU-SPH, Fe/H2O contact,
+    and hot H2O phase-change scenarios.
+  - Hygiene: `git diff --check` passed in ULG and PeerCompute. ULG ICC
+    refreshed with `indexedFiles=233` and `memoryChunks=1218`.
+- StateManager/NodeKernel task-graph cache artifact authority:
+  - `node --check` passed for
+    `src/peercompute/stateManager/StateManager.js`,
+    `src/peercompute/computeManager/ComputeManager.js`,
+    `src/peercompute/nodeKernel/NodeKernel.js`, `src/peercompute/index.js`,
+    `tests/stateManager.unit.test.js`,
+    `tests/unit/computeManager.commitDelta.test.js`, and
+    `tests/unit/nodeKernel.start.test.js`.
+  - `node --test tests/stateManager.unit.test.js tests/unit/computeManager.commitDelta.test.js tests/unit/nodeKernel.start.test.js`
+    passed `25/25`.
+  - Coverage: StateManager records task-graph cache artifact admission and
+    invalidation, ComputeManager read-through remains blocked until authority
+    admission and invalidates local cache entries afterward, and NodeKernel
+    routes admission/invalidation through StateManager authority.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving a ULG mechanics native stage-DAG artifact is
+    admitted and invalidated through a NodeKernel-owned StateManager.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`.
+  - Cross-repo ULG physics/visual gates:
+    `npm run test:physics-atomics` passed `5` with the expected opt-in
+    long-horizon liquid skip, and visual matrix run
+    `codex-state-manager-cache-admission-sequence-20260614` reported
+    `failedCount=0` with `frameCount=3` for H2O/H2O MLS-MPM, H2O/H2O CPU-SPH,
+    Fe/H2O contact, and hot H2O phase-change scenarios.
+  - Hygiene: `git diff --check` passed in ULG and PeerCompute. ULG ICC
+    refreshed with `indexedFiles=233` and `memoryChunks=1216`.
+- ComputeManager task-graph cache artifacts:
+  - `node --check /home/cos/projects/peercompute/peercompute/src/peercompute/computeManager/ComputeManager.js`
+    passed from `/home/cos/projects/ulg`.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving mechanics graph writes produce
+    `peercompute.compute.task-graph-cache-artifact.v0` with
+    `recorded-not-admitted` admission metadata and an `fnv1a32-*` result hash.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`, proving the mounted browser authority host exposes the same
+    artifact schema/status/admission fields.
+- ComputeManager content-addressed task-graph cache inputs:
+  - `node --check /home/cos/projects/peercompute/peercompute/src/peercompute/computeManager/ComputeManager.js`
+    passed from `/home/cos/projects/ulg`.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7`, proving the mechanics stage graph derives a scoped cache
+    key from `peercompute.compute.task-graph-cache-inputs.v0` instead of an
+    explicit key.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`, proving the mounted browser authority host exposes the same
+    cache-input schema/hash evidence.
+- ComputeManager task-graph lifecycle primitive:
+  - `node --check /home/cos/projects/peercompute/peercompute/src/peercompute/computeManager/ComputeManager.js`
+    passed.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "ULG resident solver descriptors publish executable pass-DAG plus metadata law-family nodes"`
+    passed `7/7` from `/home/cos/projects/ulg`, proving
+    `submitTaskGraph()` dependency execution plus graph-level cache policy,
+    placement policy, cancellation status, task stats, and graph-wide GPU
+    resident lane lease evidence on the mechanics P2G -> grid-update -> G2P
+    DAG.
+  - Cross-repo ULG browser validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 PLAYWRIGHT_ENABLE_UNSAFE_WEBGPU=1 npx playwright test --config tests/playwright.config.mjs --grep "SPH phase resident steps can use the real browser PeerCompute resident authority host"`
+    passed `1/1`, proving the real browser authority host exposes the graph
+    lifecycle fields.
+- NodeKernel provider sync lifecycle hardening:
+  - `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+    passed.
+  - `node --check peercompute/src/peercompute/stateManager/StateManager.js`
+    passed.
+  - `node --check peercompute/tests/stateManager.unit.test.js` and
+    `node --check peercompute/tests/unit/nodeKernel.start.test.js` passed.
+  - `node --test peercompute/tests/stateManager.unit.test.js peercompute/tests/unit/nodeKernel.start.test.js`
+    passed `6/6`.
+  - `node --test peercompute/tests/stateManager.unit.test.js peercompute/tests/unit/nodeKernel.start.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js peercompute/tests/unit/computeManager.commitDelta.test.js`
+    passed `27/27`.
+  - Coverage: a provider-backed StateManager can request sync explicitly after
+    initialization, local-only StateManagers no-op, and `NodeKernel.start()`
+    requests provider sync after NetworkManager connect.
+  - Cross-repo ULG live validation:
+    `PLAYWRIGHT_SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:5173 npx playwright test tests/demo.e2e.mjs --config=tests/playwright.config.mjs --project=chromium --grep "provider transport replays resident warm deltas"`
+    passed `1/1` from `/home/cos/projects/ulg`, proving a late browser
+    NodeKernel receives a preexisting ULG resident warm delta over a local WSS
+    relay and live PeerComputeProvider transport.
+- PeerComputeProvider initial Yjs sync handshake:
+  - `node --check peercompute/src/peercompute/stateManager/PeerComputeProvider.js`
+    passed.
+  - `node --check peercompute/tests/stateManager.unit.test.js` passed.
+  - `node --test peercompute/tests/stateManager.unit.test.js` passed `3/3`.
+  - Coverage: a source `StateManager` commits a warm resident delta before a
+    replica joins; the replica's real `PeerComputeProvider` sends
+    `yjs-sync-request`; the source provider responds with `yjs-sync-response`
+    carrying an encoded Yjs diff; the replica reads the preexisting warm
+    delta.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs --test-name-pattern "PeerComputeProvider transports"`
+    passed `6/6` from `/home/cos/projects/ulg`, proving the same handshake for
+    a ULG resident `ulg-sph-resident-pass-dag` delta.
+  - The live browser/libp2p gate is now covered by the NodeKernel provider
+    sync lifecycle result above.
+
+### Current focused result - 2026-06-12 AKDT
+- ComputeManager GPU resident lane authority wrapper slice:
+  - `node --check peercompute/src/peercompute/computeManager/ComputeManager.js && node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+    passed.
+  - `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js`
+    passed `5/5`, covering passive lane leases plus `ComputeManager` wrapping
+    declared inline GPU-lane tasks before commit and rejecting missing required
+    fences before `commitDelta`.
+  - `node --test peercompute/tests/computeManager.unit.test.js peercompute/tests/unit/computeManager.commitDelta.test.js peercompute/tests/unit/computeManager.wasm.test.js peercompute/tests/unit/computeManager.worker.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js`
+    passed `32/32`.
+  - `git diff --check` passed.
+  - `npm --prefix /home/cos/projects/peercompute/peercompute run build` passed
+    with the existing circular chunk and large bundle warnings.
+
 ### Schrodinger/materials simulation planning gate
 - Branch plan: `plan/branch/schrodinger-simulation.md`.
 - First implementation slice must add deterministic tests before visual polish or multi-scale integration.

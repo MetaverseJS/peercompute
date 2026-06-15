@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  COMPUTE_GPU_FENCE_REPORT_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_RETRY_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_VALIDATION_SCHEMA,
@@ -256,6 +257,133 @@ test('ComputeManager can delegate non-advisory remote placement through one mana
   assert.equal(manager.getCapabilities().remoteResultVerification, true);
   assert.equal(manager.getCapabilities().placementResultValidator, false);
   assert.equal(manager.getCapabilities().placementTaskSigner, false);
+});
+
+test('ComputeManager accepts remote placement only after required GPU fence evidence is satisfied', async () => {
+  const manager = new ComputeManager({
+    enableWorkers: false,
+    placementExecutor: async (payload, context) => {
+      assert.equal(payload.gpuFence.schema, 'peercompute.compute.gpu-fence-requirement.v0');
+      assert.equal(payload.gpuFence.required, true);
+      assert.equal(payload.gpuFence.laneId, 'ulg-resident-lane:a');
+      assert.equal(payload.gpuFence.stateKey, 'ulg:sph-state');
+      assert.equal(payload.taskPacket.gpuFenceRequired, true);
+      assert.equal(payload.taskPacket.gpuLaneId, 'ulg-resident-lane:a');
+      assert.equal(context.taskPacket.gpuQueueFencePolicy, 'queue.onSubmittedWorkDone');
+      return {
+        value: {
+          ok: true,
+          gpuFenceAccepted: true
+        },
+        provenance: {
+          executorId: 'gpu-fence-peer-executor',
+          peerId: 'peer-gpu-a',
+          workerId: 'worker-gpu-a',
+          gpuFence: {
+            status: 'queue-work-completed',
+            method: 'queue.onSubmittedWorkDone',
+            laneId: 'ulg-resident-lane:a',
+            stateKey: 'ulg:sph-state',
+            queueFencePolicy: 'queue.onSubmittedWorkDone',
+            retainedBufferRefs: ['sph-state-buffer', 'mls-mechanics-buffer'],
+            workerId: 'worker-gpu-a'
+          }
+        }
+      };
+    }
+  });
+
+  const result = await manager.submitTask({
+    id: 'remote-gpu-fence-task',
+    taskFamily: 'ulg-resident-gpu-lane',
+    placementHint: {
+      solverKey: 'ulg-resident-step',
+      requestedPlacement: 'peer',
+      advisoryOnly: false,
+      peerId: 'peer-gpu-a'
+    },
+    webgpu: {
+      fenceRequired: true,
+      laneId: 'ulg-resident-lane:a',
+      stateKey: 'ulg:sph-state',
+      queueFencePolicy: 'queue.onSubmittedWorkDone',
+      retainedBufferRefs: ['sph-state-buffer', 'mls-mechanics-buffer']
+    },
+    fn: () => {
+      throw new Error('local path should not run');
+    }
+  });
+
+  assert.deepEqual(result, { ok: true, gpuFenceAccepted: true });
+  const provenance = manager.getStats().taskPlacement.lastPlacement.provenance;
+  assert.equal(provenance.schema, COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA);
+  assert.equal(provenance.gpuFence.schema, COMPUTE_GPU_FENCE_REPORT_SCHEMA);
+  assert.equal(provenance.gpuFence.status, 'queue-work-completed');
+  assert.equal(provenance.gpuFence.fenceSatisfied, true);
+  assert.equal(provenance.gpuFence.laneId, 'ulg-resident-lane:a');
+  assert.equal(provenance.gpuFence.stateKey, 'ulg:sph-state');
+  assert.deepEqual(provenance.gpuFence.retainedBufferRefs, ['sph-state-buffer', 'mls-mechanics-buffer']);
+  assert.equal(provenance.gpuFenceSatisfied, true);
+  assert.equal(provenance.verification.verified, true);
+  assert.equal(provenance.verification.reason, 'hashes-match');
+  assert.equal(provenance.verification.checks.find((check) => check.field === 'gpuFence').ok, true);
+});
+
+test('ComputeManager rejects remote placement when a required GPU fence report is missing', async () => {
+  const manager = new ComputeManager({
+    enableWorkers: false,
+    placementExecutor: async () => ({
+      value: { ok: true },
+      commitDelta: {
+        taskId: 'remote-gpu-fence-missing-task',
+        scope: 'gpu-fence-missing',
+        payload: { shouldNotCommit: true }
+      },
+      provenance: {
+        executorId: 'gpu-fence-missing-executor',
+        peerId: 'peer-gpu-missing'
+      }
+    })
+  });
+  const deltas = [];
+  manager.setCommitDeltaHandler((delta) => deltas.push(delta));
+
+  await assert.rejects(
+    manager.submitTask({
+      id: 'remote-gpu-fence-missing-task',
+      taskFamily: 'ulg-resident-gpu-lane',
+      placementHint: {
+        solverKey: 'ulg-resident-step',
+        requestedPlacement: 'peer',
+        advisoryOnly: false,
+        peerId: 'peer-gpu-missing'
+      },
+      gpuFence: {
+        required: true,
+        laneId: 'ulg-resident-lane:missing',
+        stateKey: 'ulg:sph-state',
+        queueFencePolicy: 'queue.onSubmittedWorkDone'
+      },
+      fn: () => {
+        throw new Error('local path should not run');
+      }
+    }),
+    (err) => {
+      assert.equal(err.code, 'ERR_COMPUTE_PLACEMENT_VERIFICATION');
+      assert.equal(err.reason, 'gpu-fence-missing-or-unsatisfied');
+      assert.deepEqual(err.verification.mismatchFields, ['gpuFence']);
+      assert.equal(err.provenance.gpuFence.status, 'gpu-fence-report-missing');
+      assert.equal(err.provenance.gpuFence.fenceSatisfied, false);
+      return true;
+    }
+  );
+
+  assert.equal(deltas.length, 0);
+  const lastPlacement = manager.getStats().taskPlacement.lastPlacement;
+  assert.equal(lastPlacement.errorKind, 'verification-failed');
+  assert.equal(lastPlacement.provenance.verification.reason, 'gpu-fence-missing-or-unsatisfied');
+  assert.deepEqual(lastPlacement.provenance.verification.mismatchFields, ['gpuFence']);
+  assert.equal(lastPlacement.provenance.gpuFenceSatisfied, false);
 });
 
 test('ComputeManager attaches signed task envelopes before remote admission and execution', async () => {
@@ -838,4 +966,194 @@ test('ComputeManager times out stalled non-advisory remote placement tasks', asy
   assert.equal(stats.taskPlacement.lastPlacement.actualPlacement, 'remote-cluster');
   assert.equal(stats.taskPlacement.lastPlacement.errorKind, 'timeout');
   assert.match(stats.taskPlacement.lastPlacement.errorMessage, /timed out/);
+});
+
+test('ComputeManager read-through cache remains blocked until authority admission', async () => {
+  const manager = new ComputeManager({ enableWorkers: false });
+  const graph = {
+    graphId: 'cache-authority-fixture',
+    cachePolicy: {
+      mode: 'read-through',
+      scope: 'unit-cache-authority'
+    },
+    cacheInputs: {
+      lawGraphId: 'unit-law-graph',
+      lawIds: ['mechanics:test'],
+      stateRefs: ['state:fixture'],
+      invalidationRefs: ['law:mechanics:test:v1'],
+      values: {
+        fixture: 'cache-admission'
+      }
+    },
+    cacheAdmission: {
+      status: 'recorded-not-admitted',
+      admitted: false,
+      authority: 'state-manager-required'
+    },
+    nodes: [
+      {
+        id: 'node-a',
+        task: {
+          id: 'cache-authority-task-a',
+          taskFamily: 'cache-authority-fixture',
+          fn: () => ({ ok: true })
+        }
+      }
+    ]
+  };
+
+  const first = await manager.submitTaskGraph(graph);
+  assert.equal(first.cacheHit, false);
+  assert.equal(first.cacheArtifact.admitted, false);
+  assert.equal(manager.getStats().totalTasksCompleted, 1);
+
+  const second = await manager.submitTaskGraph(graph);
+  assert.equal(second.cacheHit, false);
+  assert.equal(manager.getStats().taskGraphCacheReadBlocked, 1);
+  assert.equal(manager.getStats().totalTasksCompleted, 2);
+
+  const admitted = manager.admitTaskGraphCacheArtifact(first.cacheKey, {
+    cacheKey: first.cacheKey,
+    admissionId: 'state-admission-1',
+    authority: 'state-manager',
+    validatorId: 'cpu-oracle',
+    reason: 'unit-test-authority-admitted',
+    invalidationRefs: ['law:mechanics:test:v1'],
+    admittedAt: 123
+  });
+  assert.equal(admitted.admitted, true);
+  assert.equal(admitted.status, 'admitted-cache-artifact-recorded');
+  assert.equal(manager.getStats().taskGraphCacheArtifactsAdmitted, 1);
+
+  const third = await manager.submitTaskGraph(graph);
+  assert.equal(third.cacheHit, true);
+  assert.equal(third.cacheAdmissionStatus, 'admitted');
+  assert.deepEqual(third.nodeResults['node-a'], { ok: true });
+  assert.equal(manager.getStats().totalTasksCompleted, 2);
+
+  const invalidated = manager.invalidateTaskGraphCacheArtifact(first.cacheKey, {
+    cacheKey: first.cacheKey,
+    reason: 'unit-test-invalidation'
+  });
+  assert.equal(invalidated.admitted, false);
+  assert.equal(invalidated.status, 'invalidated');
+  assert.equal(manager.getStats().taskGraphCacheInvalidations, 1);
+
+  const fourth = await manager.submitTaskGraph(graph);
+  assert.equal(fourth.cacheHit, false);
+  assert.equal(manager.getStats().totalTasksCompleted, 3);
+});
+
+test('ComputeManager task graph resultInputs inject completed node results into downstream task data', async () => {
+  const manager = new ComputeManager({ enableWorkers: false });
+  const graph = {
+    graphId: 'task-graph-result-inputs-fixture',
+    cachePolicy: {
+      mode: 'record-only',
+      scope: 'unit-result-inputs'
+    },
+    nodes: [
+      {
+        id: 'source-node',
+        task: {
+          id: 'result-input-source',
+          taskFamily: 'result-inputs-fixture',
+          fn: () => ({
+            value: 7,
+            rows: new Float32Array([1.5, 2.5]),
+            dropMe() {
+              return 'not-cloneable';
+            }
+          })
+        }
+      },
+      {
+        id: 'consumer-node',
+        dependsOn: ['source-node'],
+        resultInputs: {
+          upstream: 'source-node'
+        },
+        task: {
+          id: 'result-input-consumer',
+          taskFamily: 'result-inputs-fixture',
+          data: {
+            local: 3
+          },
+          fn: (data) => ({
+            upstreamValue: data.upstream.value,
+            upstreamRow0: data.upstream.rows[0],
+            upstreamFunctionDropped: Object.prototype.hasOwnProperty.call(data.upstream, 'dropMe') === false,
+            local: data.local
+          })
+        }
+      }
+    ]
+  };
+
+  const result = await manager.submitTaskGraph(graph);
+  assert.equal(result.nodeResults['consumer-node'].upstreamValue, 7);
+  assert.equal(result.nodeResults['consumer-node'].upstreamRow0, 1.5);
+  assert.equal(result.nodeResults['consumer-node'].upstreamFunctionDropped, true);
+  assert.equal(result.nodeResults['consumer-node'].local, 3);
+});
+
+test('ComputeManager task graph cache artifacts preserve graph state seed payloads', async () => {
+  const manager = new ComputeManager({ enableWorkers: false });
+  const stateSeedPayload = {
+    schema: 'peercompute.test.task-graph-state-seed.v0',
+    cacheKey: 'task-graph-state-seed:fixture',
+    stateKey: 'state:seeded-fixture',
+    centerOfMass: [1, 2, 3],
+    state: {
+      particleCount: 2
+    }
+  };
+  const graph = {
+    graphId: 'task-graph-state-seed-fixture',
+    cachePolicy: {
+      mode: 'read-through',
+      scope: 'unit-state-seed-cache'
+    },
+    cacheInputs: {
+      graphFamily: 'state-seed-fixture',
+      stateFamilies: ['particle-kinematics'],
+      values: {
+        fixture: 'state-seed'
+      }
+    },
+    stateSeedPayload,
+    cacheAdmission: {
+      status: 'recorded-not-admitted',
+      admitted: false,
+      authority: 'state-manager-required'
+    },
+    nodes: [
+      {
+        id: 'seed-node',
+        task: {
+          id: 'state-seed-task',
+          taskFamily: 'state-seed-fixture',
+          fn: () => ({ ok: true })
+        }
+      }
+    ]
+  };
+
+  const first = await manager.submitTaskGraph(graph);
+  assert.equal(first.cacheHit, false);
+  assert.deepEqual(first.stateSeedPayload, stateSeedPayload);
+  assert.deepEqual(first.cacheArtifact.stateSeedPayload, stateSeedPayload);
+
+  manager.admitTaskGraphCacheArtifact(first.cacheKey, {
+    cacheKey: first.cacheKey,
+    admissionId: 'state-seed-admission',
+    authority: 'state-manager',
+    validatorId: 'state-seed-fixture-validator',
+    reason: 'unit-test-state-seed-admitted'
+  });
+
+  const cached = await manager.submitTaskGraph(graph);
+  assert.equal(cached.cacheHit, true);
+  assert.deepEqual(cached.stateSeedPayload, stateSeedPayload);
+  assert.deepEqual(cached.cacheArtifact.stateSeedPayload, stateSeedPayload);
 });

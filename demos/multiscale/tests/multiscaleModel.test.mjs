@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  COMPUTE_GPU_FENCE_REPORT_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_VALIDATION_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_VERIFICATION_SCHEMA,
@@ -152,6 +153,8 @@ import {
   readComputeOverrides
 } from '../src/compute/adaptiveComputeBudget.js';
 import {
+  MULTISCALE_ULG_RUNTIME_GPU_LANE_ID,
+  MULTISCALE_ULG_RUNTIME_GPU_QUEUE_FENCE_POLICY,
   MULTISCALE_SOLVER_DESCRIPTORS,
   MULTISCALE_SOLVER_DESCRIPTORS_SCHEMA,
   createMultiscaleSolverDescriptors
@@ -372,6 +375,8 @@ import {
   ULG_RUNTIME_EXECUTION_DELTA_SCHEMA,
   ULG_RUNTIME_EXECUTION_RESULT_SCHEMA,
   ULG_RUNTIME_EXECUTION_WEBGPU_SCHEMA,
+  ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA,
+  ULG_RUNTIME_GPU_LANE_ID,
   ULG_RUNTIME_STATE_DELTA_SCHEMA,
   stepUlgRuntime
 } from '../src/compute/ulgRuntimeTasks.js';
@@ -637,6 +642,207 @@ class SharedInlineManagerStub {
       queuedTaskCount: 0
     };
   }
+}
+
+function installUlgRuntimeWebGpuMock() {
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const previousGpuBufferUsage = globalThis.GPUBufferUsage;
+  const previousGpuMapMode = globalThis.GPUMapMode;
+
+  class FakeBuffer {
+    constructor(size) {
+      this.buffer = new ArrayBuffer(size);
+      this.destroyed = false;
+    }
+
+    write(offset, data) {
+      const source = ArrayBuffer.isView(data)
+        ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        : new Uint8Array(data);
+      new Uint8Array(this.buffer).set(source, offset);
+    }
+
+    async mapAsync() {
+      return undefined;
+    }
+
+    getMappedRange() {
+      return this.buffer;
+    }
+
+    unmap() {}
+
+    destroy() {
+      this.destroyed = true;
+    }
+  }
+
+  function resourceBuffer(bindGroup, binding) {
+    return bindGroup.entries.find((entry) => entry.binding === binding)?.resource?.buffer;
+  }
+
+  function runUlgPass(bindGroup) {
+    const inputBuffer = resourceBuffer(bindGroup, 0);
+    const paramsBuffer = resourceBuffer(bindGroup, 1);
+    const outputBuffer = resourceBuffer(bindGroup, 2);
+    const stateInputBuffer = resourceBuffer(bindGroup, 3);
+    const passInputs = new Float32Array(inputBuffer.buffer);
+    const params = new Float32Array(paramsBuffer.buffer);
+    const stateInputs = new Float32Array(stateInputBuffer.buffer);
+    const outputs = new Float32Array(outputBuffer.buffer);
+    const passCount = Math.max(0, Math.round(params[0] || 0));
+    let executedPasses = 0;
+    let summedWorkItems = 0;
+
+    for (let index = 0; index < passCount; index += 1) {
+      const offset = index * 8;
+      const backendOk = passInputs[offset + 0];
+      const dispatchProduct = Math.max(1, passInputs[offset + 1]) * Math.max(1, passInputs[offset + 2]) * Math.max(1, passInputs[offset + 3]);
+      const workgroupProduct = Math.max(1, passInputs[offset + 4]) * Math.max(1, passInputs[offset + 5]) * Math.max(1, passInputs[offset + 6]);
+      const executionOk = backendOk * passInputs[offset + 7];
+      const workItems = dispatchProduct * workgroupProduct;
+      const passWeight = index + 1;
+      summedWorkItems += workItems;
+      if (executionOk > 0.5) executedPasses += 1;
+      outputs[offset + 0] = workItems;
+      outputs[offset + 1] = executionOk;
+      outputs[offset + 2] = passWeight;
+      outputs[offset + 3] = workItems * executionOk;
+      outputs[offset + 4] = workItems * passWeight;
+      outputs[offset + 5] = executionOk * passWeight;
+      outputs[offset + 6] = params[2] || 0;
+      outputs[offset + 7] = params[1] || 0;
+    }
+
+    const summaryOffset = passCount * 8;
+    const passDenom = Math.max(1, passCount);
+    const executedFraction = Math.min(1, Math.max(0, executedPasses / passDenom));
+    const proxyReady = Math.min(1, Math.max(0, stateInputs[12] || 0));
+    const scientificReady = Math.min(1, Math.max(0, stateInputs[13] || 0));
+    const materialReady = Math.min(1, Math.max(0, stateInputs[14] || 0));
+    const manifestReady = Math.min(1, Math.max(0, stateInputs[15] || 0));
+    const readiness = executedFraction * proxyReady * materialReady * manifestReady;
+    outputs[summaryOffset + 0] = readiness;
+    outputs[summaryOffset + 1] = executedFraction;
+    outputs[summaryOffset + 2] = proxyReady;
+    outputs[summaryOffset + 3] = readiness * scientificReady;
+    outputs[summaryOffset + 4] = readiness * 1.25;
+    outputs[summaryOffset + 5] = readiness * 0.125;
+    outputs[summaryOffset + 6] = readiness * 0.0625;
+    outputs[summaryOffset + 7] = readiness * 0.03125;
+    outputs[summaryOffset + 8] = readiness * 0.015625;
+    outputs[summaryOffset + 9] = 0;
+    outputs[summaryOffset + 10] = readiness * 0.5;
+    outputs[summaryOffset + 11] = 0;
+    outputs[summaryOffset + 20] = summedWorkItems;
+    outputs[summaryOffset + 21] = params[2] || 0;
+    outputs[summaryOffset + 22] = params[1] || 0;
+    outputs[summaryOffset + 23] = readiness + (params[1] || 0) * 0.001;
+  }
+
+  class FakeCommandEncoder {
+    constructor() {
+      this.commands = [];
+    }
+
+    beginComputePass() {
+      const encoder = this;
+      let bindGroup = null;
+      return {
+        setPipeline() {},
+        setBindGroup(_index, nextBindGroup) {
+          bindGroup = nextBindGroup;
+        },
+        dispatchWorkgroups() {},
+        end() {
+          encoder.commands.push(() => runUlgPass(bindGroup));
+        }
+      };
+    }
+
+    copyBufferToBuffer(source, sourceOffset, target, targetOffset, size) {
+      this.commands.push(() => {
+        const bytes = new Uint8Array(source.buffer, sourceOffset, size);
+        new Uint8Array(target.buffer).set(bytes, targetOffset);
+      });
+    }
+
+    finish() {
+      return {
+        execute: () => {
+          for (const command of this.commands) command();
+        }
+      };
+    }
+  }
+
+  const device = {
+    queue: {
+      writeBuffer(buffer, offset, data) {
+        buffer.write(offset, data);
+      },
+      submit(commands) {
+        for (const command of commands) command.execute?.();
+      },
+      async onSubmittedWorkDone() {
+        return undefined;
+      }
+    },
+    createShaderModule() {
+      return {};
+    },
+    createComputePipeline() {
+      return {
+        getBindGroupLayout() {
+          return {};
+        }
+      };
+    },
+    createBuffer({ size }) {
+      return new FakeBuffer(size);
+    },
+    createBindGroup({ entries }) {
+      return { entries };
+    },
+    createCommandEncoder() {
+      return new FakeCommandEncoder();
+    }
+  };
+
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      gpu: {
+        async requestAdapter() {
+          return {
+            async requestDevice() {
+              return device;
+            }
+          };
+        }
+      }
+    }
+  });
+  globalThis.GPUBufferUsage = { STORAGE: 1, COPY_DST: 2, UNIFORM: 4, COPY_SRC: 8, MAP_READ: 16 };
+  globalThis.GPUMapMode = { READ: 1 };
+
+  return () => {
+    if (previousNavigator) {
+      Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (previousGpuBufferUsage === undefined) {
+      delete globalThis.GPUBufferUsage;
+    } else {
+      globalThis.GPUBufferUsage = previousGpuBufferUsage;
+    }
+    if (previousGpuMapMode === undefined) {
+      delete globalThis.GPUMapMode;
+    } else {
+      globalThis.GPUMapMode = previousGpuMapMode;
+    }
+  };
 }
 
 const ESHKOL_CLOSURE_OUTPUT_SEMANTICS_SUMMARY = Object.freeze({
@@ -4786,12 +4992,16 @@ test('ULG runtime worker is WebGPU-only and publishes compact execution deltas',
   assert.equal(result.value.liveBackendPolicy, 'webgpu-only-no-cpu-fallback');
   assert.equal(result.value.webgpuStatus.schema, ULG_RUNTIME_EXECUTION_WEBGPU_SCHEMA);
   assert.equal(result.value.stateDelta.schema, ULG_RUNTIME_STATE_DELTA_SCHEMA);
+  assert.equal(result.value.gpuFence.schema, ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA);
+  assert.equal(result.value.gpuFence.laneId, ULG_RUNTIME_GPU_LANE_ID);
+  assert.equal(result.value.gpuFence.stateKey, 'ulg:test');
   assert.equal(result.value.passCount, packet.ulgRuntime.passDag.passCount);
   assert.equal(result.value.manifestHash.startsWith('sha256:'), true);
   assert.equal(result.commitDelta.payload.schema, ULG_RUNTIME_EXECUTION_DELTA_SCHEMA);
   assert.equal(result.commitDelta.payload.liveBackendPolicy, 'webgpu-only-no-cpu-fallback');
   assert.equal(result.commitDelta.payload.passCount, packet.ulgRuntime.passDag.passCount);
   assert.equal(result.commitDelta.payload.stateDelta.schema, ULG_RUNTIME_STATE_DELTA_SCHEMA);
+  assert.equal(result.commitDelta.payload.gpuFence.schema, ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA);
 
   if (result.value.status === 'webgpu-executed') {
     assert.equal(result.value.ok, true);
@@ -4802,6 +5012,9 @@ test('ULG runtime worker is WebGPU-only and publishes compact execution deltas',
     assert.ok(result.value.stateDelta.channelUpdateCount > 0);
     assert.equal(result.value.stateDelta.appliedChannelUpdateCount, result.value.stateDelta.channelUpdateCount);
     assert.equal(result.value.stateDelta.authoritativeWorkerBufferMutation, false);
+    assert.equal(result.value.gpuFence.status, 'queue-work-completed');
+    assert.equal(result.value.gpuFence.fenceSatisfied, true);
+    assert.equal(result.value.webgpuStatus.gpuFenceSatisfied, true);
   } else {
     assert.equal(result.value.ok, false);
     assert.equal(result.value.status, 'blocked-webgpu-unavailable');
@@ -4811,6 +5024,8 @@ test('ULG runtime worker is WebGPU-only and publishes compact execution deltas',
     assert.equal(result.value.stateDelta.status, 'blocked-webgpu-unavailable');
     assert.equal(result.value.stateDelta.channelUpdateCount, 0);
     assert.equal(result.value.stateDelta.proxyStateApplied, false);
+    assert.equal(result.value.gpuFence.status, 'gpu-fence-not-submitted');
+    assert.equal(result.value.gpuFence.fenceSatisfied, false);
   }
 
   model.applyUlgRuntimeExecutionResult(result.value);
@@ -8877,6 +9092,106 @@ test('loopback remote placement executor runs a solver through the non-advisory 
   assert.match(placement.provenance.commitDeltaHash, /^fnv1a32-/);
 });
 
+test('loopback remote placement admits ULG runtime only with a satisfied GPU fence report', async () => {
+  const restoreWebGpu = installUlgRuntimeWebGpuMock();
+  try {
+    const model = new MultiscaleModel({ seed: 29 });
+    model.setLayerById('orbital');
+    const packet = model.createPacket();
+    const solverId = 'ulg-runtime';
+    const stateKey = 'ulg:fenced-loopback-test';
+    const taskId = 'loopback-ulg-runtime-fence-task';
+    const executor = createLoopbackRemotePlacementExecutor({
+      executorId: 'multiscale-loopback-ulg-fence-test',
+      peerId: 'loopback-peer-ulg'
+    });
+    const manager = new ComputeManager({
+      enableWorkers: false,
+      placementExecutor: executor,
+      placementExecutorId: executor.placementExecutorId,
+      placementTimeoutMs: 15000,
+      remoteResultVerification: true,
+      placementResultValidator: (result, context) => {
+        assert.equal(result.schema, ULG_RUNTIME_EXECUTION_RESULT_SCHEMA);
+        assert.equal(result.gpuFence.schema, ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA);
+        assert.equal(result.gpuFence.fenceSatisfied, true);
+        assert.equal(context.taskPacket.schema, COMPUTE_TASK_PACKET_SCHEMA);
+        assert.equal(context.taskPacket.gpuFenceRequired, true);
+        assert.equal(context.taskPacket.gpuLaneId, MULTISCALE_ULG_RUNTIME_GPU_LANE_ID);
+        assert.equal(context.taskPacket.gpuStateKey, stateKey);
+        assert.equal(context.provenance.gpuFence.schema, COMPUTE_GPU_FENCE_REPORT_SCHEMA);
+        assert.equal(context.provenance.gpuFenceSatisfied, true);
+        return {
+          schema: COMPUTE_REMOTE_PLACEMENT_VALIDATION_SCHEMA,
+          valid: true,
+          reason: 'ulg-gpu-fence-test-accepted'
+        };
+      },
+      placementResultValidatorId: 'ulg-gpu-fence-validator'
+    });
+    for (const descriptor of createMultiscaleSolverDescriptors({ ulgRuntimeModuleUrl: ulgRuntimeTaskModuleUrl })) {
+      manager.registerSolver(descriptor);
+    }
+    const deltas = [];
+    manager.setCommitDeltaHandler((delta) => deltas.push(delta));
+
+    const result = await manager.submitSolverTask(solverId, {
+      id: taskId,
+      stateKey,
+      input: {
+        taskId,
+        stateKey,
+        scope: 'multiscale-ulg-runtime-execution',
+        emitCommitDelta: true,
+        sequence: 3,
+        timeSeconds: model.time,
+        manifest: packet.ulgRuntime
+      },
+      placementHint: {
+        solverKey: 'ulgRuntime',
+        solverId,
+        requestedPlacement: 'peer',
+        recommendedPlacement: 'peer',
+        executionMode: 'non-advisory-remote',
+        syncMode: 'queue-fenced',
+        advisoryOnly: false,
+        confidence: 0.99,
+        targetReplicaCount: 1,
+        coupling: 'tight',
+        remoteClass: 'gpu-resident',
+        reasons: ['unit-loopback-ulg-gpu-fence']
+      }
+    });
+
+    assert.equal(result.schema, ULG_RUNTIME_EXECUTION_RESULT_SCHEMA);
+    assert.equal(result.status, 'webgpu-executed');
+    assert.equal(result.gpuFence.schema, ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA);
+    assert.equal(result.gpuFence.status, 'queue-work-completed');
+    assert.equal(result.gpuFence.fenceSatisfied, true);
+    assert.equal(result.gpuFence.laneId, ULG_RUNTIME_GPU_LANE_ID);
+    assert.equal(result.gpuFence.stateKey, stateKey);
+    assert.equal(result.webgpuStatus.gpuFenceSatisfied, true);
+    assert.equal(deltas.length, 1);
+    assert.equal(deltas[0].scope, 'multiscale-ulg-runtime-execution');
+    assert.equal(deltas[0].payload.schema, ULG_RUNTIME_EXECUTION_DELTA_SCHEMA);
+    assert.equal(deltas[0].payload.gpuFence.schema, ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA);
+    assert.equal(deltas[0].payload.gpuFenceSatisfied, true);
+
+    const placement = manager.getStats().taskPlacement.lastPlacement;
+    assert.equal(placement.actualPlacement, 'remote-peer');
+    assert.equal(placement.provenance.schema, COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA);
+    assert.equal(placement.provenance.gpuFence.schema, COMPUTE_GPU_FENCE_REPORT_SCHEMA);
+    assert.equal(placement.provenance.gpuFence.status, 'queue-work-completed');
+    assert.equal(placement.provenance.gpuFence.fenceSatisfied, true);
+    assert.equal(placement.provenance.gpuFenceSatisfied, true);
+    assert.equal(placement.provenance.verification.verified, true);
+    assert.equal(placement.provenance.verification.checks.find((check) => check.field === 'gpuFence').ok, true);
+    assert.equal(placement.provenance.validation.reason, 'ulg-gpu-fence-test-accepted');
+  } finally {
+    restoreWebGpu();
+  }
+});
+
 test('peer network overrides default off and parse opt-in NodeKernel flags', () => {
   const defaults = readPeerNetworkOverrides('');
   assert.equal(defaults.enablePeerNetwork, false);
@@ -10784,7 +11099,12 @@ test('multiscale solver descriptors can attach executable solver task modules', 
   assert.equal(ulgRuntime.module, ulgRuntimeTaskModuleUrl);
   assert.equal(ulgRuntime.exportName, 'stepUlgRuntime');
   assert.equal(ulgRuntime.warmDelta.schema, ULG_RUNTIME_EXECUTION_DELTA_SCHEMA);
-  assert.equal(ulgRuntime.validity.approximation, 'webgpu-pass-dag-state-delta-no-cpu-fallback');
+  assert.equal(ulgRuntime.validity.approximation, 'webgpu-pass-dag-state-delta-queue-fenced-no-cpu-fallback');
+  assert.equal(ulgRuntime.webgpu.fenceRequired, true);
+  assert.equal(ulgRuntime.webgpu.requiresQueueFence, true);
+  assert.equal(ulgRuntime.webgpu.laneId, MULTISCALE_ULG_RUNTIME_GPU_LANE_ID);
+  assert.equal(ulgRuntime.webgpu.queueFencePolicy, MULTISCALE_ULG_RUNTIME_GPU_QUEUE_FENCE_POLICY);
+  assert.ok(ulgRuntime.outputFields.some((field) => field.name === 'gpuFence'));
   assert.equal(maxwell.module, maxwellTaskModuleUrl);
   assert.equal(maxwell.exportName, 'stepMaxwellFields');
   assert.equal(maxwell.warmDelta.schema, MAXWELL_FIELD_DELTA_SCHEMA);

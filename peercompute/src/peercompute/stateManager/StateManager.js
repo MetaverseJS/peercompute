@@ -11,6 +11,33 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { PeerComputeProvider } from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
 
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE = 'taskGraphCacheArtifactAdmissions';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE = 'taskGraphCacheArtifactInvalidations';
+
+function normalizeStringList(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [...fallback];
+}
+
+function cloneStateManagerValue(value) {
+  if (value == null) return value;
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Fall through for plain JSON diagnostics.
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 /**
  * StateManager class - Handles distributed state coordination
  * Provides CRDT-based state management with automatic P2P sync
@@ -161,6 +188,136 @@ export class StateManager {
 
   getHotBuffer(key) {
     return this.dataState.getHotBuffer(key);
+  }
+
+  /**
+   * Admit a ComputeManager task-graph cache artifact into the CRDT authority
+   * ledger. ComputeManager may record local artifacts, but this StateManager
+   * record is the durable admission decision peers should trust.
+   * @param {Object} artifact
+   * @param {Object} options
+   * @returns {Object}
+   */
+  admitTaskGraphCacheArtifact(artifact = {}, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    if (!artifact || typeof artifact !== 'object') {
+      throw new Error('admitTaskGraphCacheArtifact requires an artifact object');
+    }
+    const cacheKey = String(options.cacheKey || artifact.cacheKey || '').trim();
+    if (!cacheKey) {
+      throw new Error('admitTaskGraphCacheArtifact requires artifact.cacheKey');
+    }
+    const admittedAt = Number.isFinite(options.admittedAt) ? options.admittedAt : Date.now();
+    const invalidationRefs = normalizeStringList(
+      options.invalidationRefs ?? artifact.invalidationRefs ?? artifact.admission?.invalidationRefs,
+      []
+    );
+    const record = {
+      schema: STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA,
+      admissionId: String(
+        options.admissionId
+          || artifact.admission?.admissionId
+          || `task-graph-cache-admission:${cacheKey}:${admittedAt}`
+      ),
+      cacheKey,
+      artifactId: artifact.artifactId || `${cacheKey}:artifact`,
+      artifactSchema: artifact.schema || null,
+      artifactStatus: artifact.status || null,
+      cacheScope: artifact.cacheScope || options.cacheScope || null,
+      cacheKeySource: artifact.cacheKeySource || options.cacheKeySource || null,
+      inputHash: artifact.inputHash || options.inputHash || null,
+      resultHash: artifact.resultHash || options.resultHash || null,
+      status: options.status || 'admitted',
+      admitted: true,
+      authority: options.authority || 'state-manager',
+      validatorId: options.validatorId || artifact.admission?.validatorId || null,
+      reason: options.reason || 'state-manager-cache-artifact-admission',
+      invalidationRefs,
+      admittedAt,
+      acceptedAt: admittedAt,
+      expiresAt: options.expiresAt ?? artifact.expiresAt ?? null,
+      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null,
+      artifact: cloneStateManagerValue(artifact)
+    };
+    this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, record);
+    return cloneStateManagerValue(record);
+  }
+
+  /**
+   * Mark an admitted artifact as invalidated and write an audit record.
+   * @param {string|Object} cacheKeyOrArtifact
+   * @param {Object} options
+   * @returns {Object}
+   */
+  invalidateTaskGraphCacheArtifact(cacheKeyOrArtifact, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const artifact = cacheKeyOrArtifact && typeof cacheKeyOrArtifact === 'object'
+      ? cacheKeyOrArtifact
+      : null;
+    const cacheKey = String(options.cacheKey || artifact?.cacheKey || cacheKeyOrArtifact || '').trim();
+    if (!cacheKey) {
+      throw new Error('invalidateTaskGraphCacheArtifact requires a cacheKey');
+    }
+    const existing = this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey);
+    const invalidatedAt = Number.isFinite(options.invalidatedAt) ? options.invalidatedAt : Date.now();
+    const invalidationRefs = normalizeStringList(
+      options.invalidationRefs ?? artifact?.invalidationRefs ?? existing?.invalidationRefs,
+      []
+    );
+    const invalidation = {
+      schema: STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA,
+      invalidationId: String(options.invalidationId || `task-graph-cache-invalidation:${cacheKey}:${invalidatedAt}`),
+      cacheKey,
+      artifactId: artifact?.artifactId || existing?.artifactId || `${cacheKey}:artifact`,
+      status: 'invalidated',
+      authority: options.authority || 'state-manager',
+      reason: options.reason || 'state-manager-cache-artifact-invalidated',
+      invalidationRefs,
+      previousAdmissionStatus: existing?.status || null,
+      invalidatedAt,
+      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null
+    };
+    this.writeScoped(
+      STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE,
+      invalidation.invalidationId,
+      invalidation
+    );
+    if (existing) {
+      this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, {
+        ...existing,
+        status: 'invalidated',
+        admitted: false,
+        invalidatedAt,
+        invalidation
+      });
+    }
+    return cloneStateManagerValue(invalidation);
+  }
+
+  getTaskGraphCacheArtifactAdmission(cacheKey) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const key = String(cacheKey || '').trim();
+    if (!key) return null;
+    const record = this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, key);
+    return record ? cloneStateManagerValue(record) : null;
+  }
+
+  listTaskGraphCacheArtifactAdmissions(options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const includeInvalidated = options.includeInvalidated !== false;
+    return this.listNamespaceKeys(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE)
+      .map((key) => this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, key))
+      .filter((record) => record && (includeInvalidated || record.admitted === true))
+      .map((record) => cloneStateManagerValue(record))
+      .sort((a, b) => String(a.cacheKey || '').localeCompare(String(b.cacheKey || '')));
   }
 
   /**
@@ -622,6 +779,17 @@ export class StateManager {
    */
   getAwareness() {
     return this.libp2pProvider?.awareness || null;
+  }
+
+  /**
+   * Request a full Yjs state sync from peers once the backing network is live.
+   * PeerComputeProvider is created during StateManager initialization, which can
+   * happen before NodeKernel connects the NetworkManager.
+   */
+  async requestProviderSync() {
+    if (!this.libp2pProvider?.requestSync) return false;
+    await this.libp2pProvider.requestSync();
+    return true;
   }
 
   /**

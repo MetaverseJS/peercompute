@@ -2,6 +2,8 @@ export const ULG_RUNTIME_EXECUTION_RESULT_SCHEMA = 'peercompute.ulg.webgpu-execu
 export const ULG_RUNTIME_EXECUTION_DELTA_SCHEMA = 'peercompute.ulg.webgpu-execution-delta.v0';
 export const ULG_RUNTIME_EXECUTION_WEBGPU_SCHEMA = 'peercompute.ulg.webgpu-pass-execution.v0';
 export const ULG_RUNTIME_STATE_DELTA_SCHEMA = 'peercompute.ulg.webgpu-state-delta.v0';
+export const ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA = 'peercompute.compute.gpu-fence-report.v0';
+export const ULG_RUNTIME_GPU_LANE_ID = 'ulg-runtime:webgpu-pass-dag';
 
 const DEFAULT_STATE_KEY = 'ulg:runtime:active-pass-dag';
 const DEFAULT_DELTA_SCOPE = 'multiscale-ulg-runtime-execution';
@@ -224,6 +226,47 @@ function summarizeManifest(manifest) {
   };
 }
 
+function resolveGpuLaneId(resolved = {}) {
+  return resolved.input?.gpuLaneId
+    || resolved.input?.gpuLane
+    || resolved.input?.webgpu?.laneId
+    || resolved.input?.webgpu?.gpuLaneId
+    || ULG_RUNTIME_GPU_LANE_ID;
+}
+
+function createGpuFenceReport(resolved, {
+  status = 'gpu-fence-not-submitted',
+  method = null,
+  fenceSatisfied = false,
+  queueCompletionStatus = status,
+  queueCompletionMethod = method,
+  readbackCompletionStatus = null,
+  readbackCompletionMethod = null,
+  passCount = null,
+  dispatchWorkgroups = null,
+  source = 'ulg-runtime-webgpu-pass-dag'
+} = {}) {
+  return {
+    schema: ULG_RUNTIME_GPU_FENCE_REPORT_SCHEMA,
+    status,
+    method,
+    fenceSatisfied,
+    required: true,
+    laneId: resolveGpuLaneId(resolved),
+    stateKey: resolved.stateKey,
+    queueFencePolicy: 'queue.onSubmittedWorkDone-before-readback-map',
+    queueCompletionStatus,
+    queueCompletionMethod,
+    readbackCompletionStatus,
+    readbackCompletionMethod,
+    retainedBufferRefs: [],
+    passCount,
+    dispatchWorkgroups,
+    completedAt: fenceSatisfied ? Date.now() : null,
+    source
+  };
+}
+
 function createDeltaPayload(result, resolved) {
   const stateDelta = result.stateDelta ? compactStateDelta(result.stateDelta) : null;
   return {
@@ -246,7 +289,10 @@ function createDeltaPayload(result, resolved) {
     evidenceHash: result.evidenceHash,
     stateDelta,
     webgpuStatus: result.webgpuStatus,
-    webgpuError: result.webgpuError || null
+    webgpuError: result.webgpuError || null,
+    gpuFence: result.gpuFence || null,
+    gpuFenceStatus: result.gpuFence?.status || null,
+    gpuFenceSatisfied: result.gpuFence?.fenceSatisfied === true
   };
 }
 
@@ -294,6 +340,16 @@ function createBlockedResult(resolved, { status, reason, manifestSummary = null,
     evidenceHash: stableHash({ status, reason, manifestHash: summary.manifestHash, sequence: resolved.sequence }),
     passEvidencePreview: [],
     stateDelta: blockedStateDelta,
+    gpuFence: createGpuFenceReport(resolved, {
+      status: 'gpu-fence-not-submitted',
+      method: null,
+      fenceSatisfied: false,
+      queueCompletionStatus: 'not-submitted',
+      queueCompletionMethod: null,
+      passCount: summary.passCount,
+      dispatchWorkgroups: null,
+      source: 'ulg-runtime-blocked-before-webgpu-submit'
+    }),
     webgpuStatus: {
       schema: ULG_RUNTIME_EXECUTION_WEBGPU_SCHEMA,
       status: status || 'blocked-webgpu-unavailable',
@@ -672,12 +728,26 @@ async function executePassDagWebGpu(resolved, manifestSummary) {
   const passEncoder = commandEncoder.beginComputePass();
   passEncoder.setPipeline(pipeline);
   passEncoder.setBindGroup(0, bindGroup);
-  passEncoder.dispatchWorkgroups(Math.ceil(passes.length / WORKGROUP_SIZE));
+  const dispatchWorkgroups = Math.ceil(passes.length / WORKGROUP_SIZE);
+  passEncoder.dispatchWorkgroups(dispatchWorkgroups);
   passEncoder.end();
   commandEncoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, outputBytes);
   device.queue.submit([commandEncoder.finish()]);
-  await device.queue.onSubmittedWorkDone?.();
+  const hasQueueFence = typeof device.queue.onSubmittedWorkDone === 'function';
+  let queueCompletionStatus = 'queue-work-submitted';
+  let queueCompletionMethod = 'queue.submit';
+  if (hasQueueFence) {
+    await device.queue.onSubmittedWorkDone();
+    queueCompletionStatus = 'queue-work-completed';
+    queueCompletionMethod = 'queue.onSubmittedWorkDone';
+  }
   await readBuffer.mapAsync(GPUMapMode.READ);
+  const readbackCompletionStatus = 'readback-map-completed';
+  const readbackCompletionMethod = 'GPUBuffer.mapAsync';
+  if (!hasQueueFence) {
+    queueCompletionStatus = readbackCompletionStatus;
+    queueCompletionMethod = readbackCompletionMethod;
+  }
   const raw = new Float32Array(readBuffer.getMappedRange()).slice();
   readBuffer.unmap();
   inputBuffer.destroy?.();
@@ -729,6 +799,17 @@ async function executePassDagWebGpu(resolved, manifestSummary) {
     status,
     ok
   });
+  const gpuFence = createGpuFenceReport(resolved, {
+    status: queueCompletionStatus,
+    method: queueCompletionMethod,
+    fenceSatisfied: true,
+    queueCompletionStatus,
+    queueCompletionMethod,
+    readbackCompletionStatus,
+    readbackCompletionMethod,
+    passCount: passes.length,
+    dispatchWorkgroups
+  });
 
   return {
     ok,
@@ -753,13 +834,14 @@ async function executePassDagWebGpu(resolved, manifestSummary) {
     evidenceHash,
     passEvidencePreview,
     stateDelta,
+    gpuFence,
     webgpuStatus: {
       schema: ULG_RUNTIME_EXECUTION_WEBGPU_SCHEMA,
       status: 'webgpu-executed',
       kernelMode: 'ulg-pass-dag-state-delta-v0',
       liveBackendPolicy: 'webgpu-only-no-cpu-fallback',
       workgroupSize: WORKGROUP_SIZE,
-      dispatchWorkgroups: Math.ceil(passes.length / WORKGROUP_SIZE),
+      dispatchWorkgroups,
       passCount: passes.length,
       executedPassCount,
       invalidLivePassCount,
@@ -767,7 +849,13 @@ async function executePassDagWebGpu(resolved, manifestSummary) {
       stateInputBytes: stateInputs.data.byteLength,
       outputBytes,
       stateDeltaHash: stateDelta.stateDeltaHash,
-      evidenceHash
+      evidenceHash,
+      gpuFenceStatus: gpuFence.status,
+      gpuFenceSatisfied: gpuFence.fenceSatisfied,
+      queueCompletionStatus,
+      queueCompletionMethod,
+      readbackCompletionStatus,
+      readbackCompletionMethod
     },
     webgpuError: null
   };

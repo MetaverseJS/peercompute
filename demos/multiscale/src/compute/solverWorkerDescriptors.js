@@ -1,4 +1,6 @@
 export const MULTISCALE_SOLVER_DESCRIPTORS_SCHEMA = 'peercompute.multiscale.solver-descriptors.v0';
+export const MULTISCALE_ULG_RUNTIME_GPU_LANE_ID = 'ulg-runtime:webgpu-pass-dag';
+export const MULTISCALE_ULG_RUNTIME_GPU_QUEUE_FENCE_POLICY = 'queue.onSubmittedWorkDone-before-readback-map';
 
 export const MULTISCALE_SOLVER_DESCRIPTORS = [
   {
@@ -195,12 +197,21 @@ export const MULTISCALE_SOLVER_DESCRIPTORS = [
       { name: 'passExecutionEvidence', unit: 'peercompute.ulg.webgpu-pass-execution.v0', dimensions: 'mixed', location: 'worker-task' },
       { name: 'executedPassCount', unit: 'count', dimensions: '1', location: 'region' },
       { name: 'evidenceHash', unit: 'hash', dimensions: '1', location: 'region' },
+      { name: 'gpuFence', unit: 'peercompute.compute.gpu-fence-report.v0', dimensions: 'mixed', location: 'worker-task' },
       { name: 'compactExecutionDelta', unit: 'peercompute.ulg.webgpu-execution-delta.v0', dimensions: 'mixed', location: 'warm-state' }
     ],
     conservedFields: ['unit-hash', 'closure-provenance', 'live-backend-policy'],
     timestep: { mode: 'manifest-triggered-webgpu-pass-dag', maxDt: null, subcycles: 1 },
     validity: { regimes: ['orbital', 'molecular', 'mpm', 'surface', 'solar', 'galactic', 'supergalactic'], approximation: 'webgpu-pass-execution-evidence-not-scientific-solve' },
     affinity: { policy: 'ulg-manifest', keyFields: ['solverId', 'manifestHash', 'activeLayerId'] },
+    webgpu: {
+      required: true,
+      fenceRequired: true,
+      requiresQueueFence: true,
+      laneId: MULTISCALE_ULG_RUNTIME_GPU_LANE_ID,
+      queueFencePolicy: MULTISCALE_ULG_RUNTIME_GPU_QUEUE_FENCE_POLICY,
+      source: 'solver-descriptor:webgpu'
+    },
     warmDelta: { scope: 'multiscale-ulg-runtime-execution', schema: 'peercompute.ulg.webgpu-execution-delta.v0' }
   },
   {
@@ -633,7 +644,7 @@ export function createMultiscaleSolverDescriptors({
         exportName: 'stepUlgRuntime',
         validity: {
           ...descriptor.validity,
-          approximation: 'webgpu-pass-dag-state-delta-no-cpu-fallback'
+          approximation: 'webgpu-pass-dag-state-delta-queue-fenced-no-cpu-fallback'
         }
       };
     }
