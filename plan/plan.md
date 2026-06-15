@@ -59,6 +59,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `GpuResidentLaneManager.executeStagePlan()` includes that worker-residency
   descriptor on per-stage results so ULG can validate fallback versus true
   worker execution before claiming copy avoidance.
+- GPUHub resident stage worker backend adapter:
+  GPUHub resident stage executors can now attach a worker backend runner. When
+  present, the worker policy reports `worker-ready`, `executeResidentStage()`
+  invokes the backend runner instead of inline fallback, and lane stage results
+  carry the worker-ready residency descriptor. This is the adapter boundary for
+  supervised worker hosts; browser-spawned WebGPU worker device/buffer
+  ownership still remains the next backend implementation.
 - ComputeManager native task-graph lifecycle primitive:
   `peercompute.compute.task-graph-result.v0` now supports dependency-batched
   graph execution, graph-level cache policy, placement policy, cooperative

@@ -54499,3 +54499,46 @@ Open:
   stages and expose the blocked/fallback status in browser and Node validation;
   after that, add a real worker-owned GPU device/buffer backend.
 - No push was attempted.
+
+## 2026-06-14 20:47 AKDT - GPUHub resident stage worker backend adapter
+
+### Prompt
+- Continued the supervised worker-residency path after adding policy evidence.
+  The next bounded step was to add a real execution hook for a supervised
+  worker backend while still not claiming browser-spawned WebGPU workers or
+  transferable main-thread `GPUBuffer` handles.
+
+### Actions
+- `GPUHubManager.registerResidentStageExecutor()` now accepts `workerRunner`
+  or `workerBackend` in addition to an inline executor.
+- When a worker backend is attached, the stage worker policy reports
+  `worker-ready`, `runtimeTarget` defaults to
+  `gpu-hub-resident-stage-worker`, and `executeResidentStage()` invokes the
+  worker backend instead of inline fallback.
+- Worker backends can be functions or objects exposing `runStage()`. This is
+  the adapter surface a future `WorkerSupervisor`/child-worker host can attach
+  to without changing lane execution.
+- Extended GPUHub and lane-manager tests so one stage remains
+  `blocked-worker-backend-missing` while another executes through an attached
+  worker backend and reports `worker-ready`.
+
+### Commands Run
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/gpu/GPUHubManager.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuhubmanager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --test peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js`
+
+### Results
+- PASS: syntax checks passed.
+- PASS: focused GPUHub/lane-manager unit tests passed `12/12`.
+
+### Open
+- This is an adapter for a supervised worker backend. The next implementation
+  step is a browser/WorkerSupervisor host that owns its WebGPU device and
+  retained buffers for a whole lane/stage chain instead of receiving
+  main-thread `GPUBuffer` handles.
+- No push was attempted.

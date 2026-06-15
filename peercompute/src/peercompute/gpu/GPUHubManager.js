@@ -57,6 +57,12 @@ function normalizeResidentStageWorkerPolicy(source = {}, stageId = null) {
   };
 }
 
+async function executeWorkerRunner(runner, args) {
+  if (typeof runner === 'function') return runner(args);
+  if (runner && typeof runner.runStage === 'function') return runner.runStage(args);
+  throw new Error('[GPUHubManager] Resident stage worker backend must be a function or expose runStage()');
+}
+
 export class GPUHubManager {
   /**
    * @param {Object} config
@@ -138,16 +144,24 @@ export class GPUHubManager {
       throw new Error('[GPUHubManager] Resident stage executor requires a stageId');
     }
     const run = spec.executor || executor;
-    if (typeof run !== 'function') {
+    const workerRunner = spec.workerRunner || spec.workerBackend || spec.workerPolicy?.workerRunner || null;
+    if (typeof run !== 'function' && !workerRunner) {
       throw new Error(`[GPUHubManager] Resident stage executor must be a function: ${stageId}`);
     }
     const record = {
       schema: GPU_HUB_RESIDENT_STAGE_EXECUTOR_SCHEMA,
       stageId,
       lawNodeId: normalizeString(spec.lawNodeId, null),
-      runtimeTarget: normalizeString(spec.runtimeTarget, 'gpu-hub-inline-stage-executor'),
-      executor: run,
-      workerPolicy: normalizeResidentStageWorkerPolicy(spec.workerPolicy || spec.workerResidency || {}, stageId),
+      runtimeTarget: normalizeString(
+        spec.runtimeTarget,
+        workerRunner ? 'gpu-hub-resident-stage-worker' : 'gpu-hub-inline-stage-executor'
+      ),
+      executor: typeof run === 'function' ? run : null,
+      workerRunner,
+      workerPolicy: normalizeResidentStageWorkerPolicy({
+        ...(spec.workerPolicy || spec.workerResidency || {}),
+        workerReady: (spec.workerPolicy || spec.workerResidency || {}).workerReady || Boolean(workerRunner)
+      }, stageId),
       metadata: cloneMetadata(spec.metadata || {}),
       registeredAt: Date.now()
     };
@@ -202,12 +216,16 @@ export class GPUHubManager {
       err.stage = args.stage || null;
       throw err;
     }
-    return record.executor({
+    const executionArgs = {
       ...args,
       gpuHub: this,
       device: this.device,
       executor: this.describeResidentStageExecutor(record.stageId)
-    });
+    };
+    if (record.workerRunner) {
+      return executeWorkerRunner(record.workerRunner, executionArgs);
+    }
+    return record.executor(executionArgs);
   }
 
   registerTask(id, task) {

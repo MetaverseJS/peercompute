@@ -106,3 +106,46 @@ test('GPUHubManager records requested resident worker policy without overclaimin
   assert.equal(descriptor.workerPolicy.bufferTransferPolicy, 'worker-owns-device-and-retained-buffers-required');
   assert.equal(descriptor.workerPolicy.fallbackRuntimeTarget, 'gpu-hub-inline-stage-executor');
 });
+
+test('GPUHubManager executes a resident stage through an attached worker backend', async () => {
+  const hub = new GPUHubManager();
+  const descriptor = hub.registerResidentStageExecutor({
+    stageId: 'mechanics-g2p',
+    workerPolicy: {
+      mode: 'dedicated-worker',
+      workerType: 'webgpu-compute-worker',
+      workerModuleUrl: '/workers/ulg-mechanics-g2p-worker.js'
+    },
+    workerRunner: {
+      async runStage({ stage, input, executor }) {
+        return {
+          value: {
+            ...input,
+            stageId: stage.id,
+            workerRan: true,
+            workerStatus: executor.workerPolicy.status
+          },
+          retainedBufferRefs: ['sph-state-buffer'],
+          summary: { backend: 'webgpu-worker' }
+        };
+      }
+    }
+  });
+
+  assert.equal(descriptor.runtimeTarget, 'gpu-hub-resident-stage-worker');
+  assert.equal(descriptor.workerPolicy.status, 'worker-ready');
+  assert.equal(descriptor.workerPolicy.fallbackRuntimeTarget, null);
+
+  const result = await hub.executeResidentStage({
+    stage: { id: 'mechanics-g2p' },
+    input: { particleCount: 2 }
+  });
+  assert.deepEqual(result.value, {
+    particleCount: 2,
+    stageId: 'mechanics-g2p',
+    workerRan: true,
+    workerStatus: 'worker-ready'
+  });
+  assert.deepEqual(result.retainedBufferRefs, ['sph-state-buffer']);
+  assert.deepEqual(result.summary, { backend: 'webgpu-worker' });
+});
