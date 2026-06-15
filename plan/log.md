@@ -54452,3 +54452,50 @@ Open:
   Dedicated GPU worker residency and avoiding CPU/GPU copy loops remain the
   next architecture promotions.
 - No push was attempted.
+
+## 2026-06-14 20:34 AKDT - GPUHub resident stage worker policy evidence
+
+### Prompt
+- Continued after the ULG mechanics stage chain was routed through the GPUHub
+  resident stage executor registry. The next todo item is supervised
+  GPUHub/ComputeManager worker residency, but the implementation must not
+  pretend main-thread `GPUBuffer` handles can be safely transferred into
+  arbitrary workers.
+
+### Actions
+- Added `peercompute.gpu.resident-stage-worker-policy.v0` descriptors to
+  GPUHub resident stage executor registrations.
+- A stage can now request dedicated WebGPU worker residency with worker type,
+  worker module URL, startup mode, idle TTL, same-device requirement, and
+  buffer-transfer policy.
+- If a dedicated worker backend is requested but no worker-owned device/buffer
+  backend is attached, GPUHub records `blocked-worker-backend-missing` plus
+  `fallbackRuntimeTarget: gpu-hub-inline-stage-executor`.
+- `GpuResidentLaneManager.executeStagePlan()` now carries the GPUHub worker
+  policy into each completed stage result as `workerResidency`.
+- Added focused unit coverage for default inline-ready policy, requested
+  dedicated-worker blocked fallback, and lane execution surfacing the policy
+  per stage.
+
+### Commands Run
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/gpu/GPUHubManager.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuhubmanager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --test peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js`
+
+### Results
+- PASS: syntax checks passed.
+- PASS: focused GPUHub/lane-manager unit tests passed `11/11`.
+
+### Open
+- This is still policy and evidence, not live worker execution. The next
+  implementation step is to let ULG request this worker policy on mechanics
+  stages and expose the blocked/fallback status in browser and Node validation;
+  after that, add a real worker-owned GPU device/buffer backend.
+- No push was attempted.

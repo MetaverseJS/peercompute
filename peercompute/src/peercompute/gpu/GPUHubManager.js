@@ -3,6 +3,7 @@
  */
 
 const GPU_HUB_RESIDENT_STAGE_EXECUTOR_SCHEMA = 'peercompute.gpu.resident-stage-executor.v0';
+export const GPU_HUB_RESIDENT_STAGE_WORKER_POLICY_SCHEMA = 'peercompute.gpu.resident-stage-worker-policy.v0';
 
 function normalizeString(value, fallback = null) {
   const text = String(value ?? '').trim();
@@ -11,6 +12,49 @@ function normalizeString(value, fallback = null) {
 
 function cloneMetadata(value) {
   return value == null ? null : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeBoolean(value, fallback = false) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizePositiveInteger(value, fallback = null) {
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function normalizeResidentStageWorkerPolicy(source = {}, stageId = null) {
+  const policy = source && typeof source === 'object' ? source : {};
+  const requestedMode = normalizeString(policy.mode ?? policy.residencyMode, null);
+  const hasWorkerTarget = Boolean(policy.worker || policy.workerReady || policy.workerModuleUrl || policy.workerType);
+  const mode = requestedMode || (hasWorkerTarget ? 'dedicated-worker' : 'inline');
+  const workerReady = normalizeBoolean(policy.workerReady, false) || Boolean(policy.worker);
+  const dedicated = mode === 'dedicated-worker' || mode === 'webgpu-worker' || mode === 'gpu-compute-worker';
+  const normalizedMode = dedicated ? 'dedicated-worker' : 'inline';
+  const status = dedicated
+    ? (workerReady ? 'worker-ready' : 'blocked-worker-backend-missing')
+    : 'inline-ready';
+  return {
+    schema: GPU_HUB_RESIDENT_STAGE_WORKER_POLICY_SCHEMA,
+    stageId,
+    mode: normalizedMode,
+    status,
+    workerType: normalizeString(policy.workerType, dedicated ? 'webgpu-compute-worker' : null),
+    workerModuleUrl: normalizeString(policy.workerModuleUrl ?? policy.moduleUrl, null),
+    startupMode: normalizeString(policy.startupMode, dedicated ? 'warm-on-first-use' : 'inline'),
+    idleTtlMs: normalizePositiveInteger(policy.idleTtlMs, dedicated ? 60000 : null),
+    sameDeviceRequired: normalizeBoolean(policy.sameDeviceRequired, dedicated),
+    bufferTransferPolicy: normalizeString(
+      policy.bufferTransferPolicy,
+      dedicated
+        ? 'worker-owns-device-and-retained-buffers-required'
+        : 'main-thread-gpuhub-inline'
+    ),
+    fallbackRuntimeTarget: status === 'blocked-worker-backend-missing'
+      ? 'gpu-hub-inline-stage-executor'
+      : null,
+    authority: 'compute-manager-gpuhub-resident-stage-worker-policy'
+  };
 }
 
 export class GPUHubManager {
@@ -103,6 +147,7 @@ export class GPUHubManager {
       lawNodeId: normalizeString(spec.lawNodeId, null),
       runtimeTarget: normalizeString(spec.runtimeTarget, 'gpu-hub-inline-stage-executor'),
       executor: run,
+      workerPolicy: normalizeResidentStageWorkerPolicy(spec.workerPolicy || spec.workerResidency || {}, stageId),
       metadata: cloneMetadata(spec.metadata || {}),
       registeredAt: Date.now()
     };
@@ -119,6 +164,7 @@ export class GPUHubManager {
       stageId: record.stageId,
       lawNodeId: record.lawNodeId,
       runtimeTarget: record.runtimeTarget,
+      workerPolicy: cloneMetadata(record.workerPolicy),
       metadata: cloneMetadata(record.metadata || {}),
       registeredAt: record.registeredAt
     };

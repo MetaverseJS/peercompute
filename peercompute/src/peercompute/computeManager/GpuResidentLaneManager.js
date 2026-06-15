@@ -371,6 +371,10 @@ export class GpuResidentLaneManager {
         runStage = (args) => this.gpuHub.executeResidentStage(args);
         executorSource = 'gpu-hub-resident-stage-executor';
       }
+      const gpuHubExecutorDescriptor = executorSource === 'gpu-hub-resident-stage-executor'
+        && typeof this.gpuHub?.describeResidentStageExecutor === 'function'
+        ? this.gpuHub.describeResidentStageExecutor(stage)
+        : null;
       if (typeof runStage !== 'function') {
         if (!allowMissingExecutors) {
           const err = new Error(`Missing GPU resident lane stage executor: ${stage.id}`);
@@ -382,7 +386,8 @@ export class GpuResidentLaneManager {
           stageId: stage.id,
           lawNodeId: stage.lawNodeId,
           status: 'blocked-missing-stage-executor',
-          retainedBufferRefs: []
+          retainedBufferRefs: [],
+          workerResidency: null
         });
         continue;
       }
@@ -418,6 +423,7 @@ export class GpuResidentLaneManager {
         completedAt: this.now(),
         retainedBufferRefs,
         gpuFence: normalized.gpuFence,
+        workerResidency: clonePlain(gpuHubExecutorDescriptor?.workerPolicy),
         summary: normalized.summary
       });
     }

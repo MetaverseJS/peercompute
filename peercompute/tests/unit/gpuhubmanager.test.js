@@ -54,6 +54,9 @@ test('GPUHubManager registers and executes resident stage executors', async () =
   assert.equal(descriptor.schema, 'peercompute.gpu.resident-stage-executor.v0');
   assert.equal(descriptor.stageId, 'mechanics-p2g');
   assert.equal(descriptor.lawNodeId, 'ulg-mls-mpm-mechanics-law');
+  assert.equal(descriptor.workerPolicy.schema, 'peercompute.gpu.resident-stage-worker-policy.v0');
+  assert.equal(descriptor.workerPolicy.mode, 'inline');
+  assert.equal(descriptor.workerPolicy.status, 'inline-ready');
   assert.equal(hub.hasResidentStageExecutor({ id: 'mechanics-p2g' }), true);
   assert.equal(hub.hasResidentStageExecutor({ id: 'other', lawNodeId: 'ulg-mls-mpm-mechanics-law' }), true);
   assert.deepEqual(hub.listResidentStageExecutors().map((entry) => entry.stageId), ['mechanics-p2g']);
@@ -71,4 +74,35 @@ test('GPUHubManager registers and executes resident stage executors', async () =
   });
   assert.deepEqual(result.retainedBufferRefs, ['mls-mpm-p2g-grid-buffer']);
   assert.deepEqual(result.summary, { backend: 'webgpu' });
+});
+
+test('GPUHubManager records requested resident worker policy without overclaiming execution', () => {
+  const hub = new GPUHubManager();
+  const descriptor = hub.registerResidentStageExecutor({
+    stageId: 'mechanics-grid-update',
+    lawNodeId: 'ulg-mls-mpm-mechanics-grid-update-stage',
+    runtimeTarget: 'gpu-hub-resident-stage-worker',
+    workerPolicy: {
+      mode: 'dedicated-worker',
+      workerType: 'webgpu-compute-worker',
+      workerModuleUrl: '/workers/ulg-mechanics-grid-update-worker.js',
+      startupMode: 'warm-on-first-use',
+      idleTtlMs: 120000,
+      sameDeviceRequired: true
+    },
+    executor() {
+      return { value: { ok: true } };
+    }
+  });
+
+  assert.equal(descriptor.workerPolicy.schema, 'peercompute.gpu.resident-stage-worker-policy.v0');
+  assert.equal(descriptor.workerPolicy.mode, 'dedicated-worker');
+  assert.equal(descriptor.workerPolicy.status, 'blocked-worker-backend-missing');
+  assert.equal(descriptor.workerPolicy.workerType, 'webgpu-compute-worker');
+  assert.equal(descriptor.workerPolicy.workerModuleUrl, '/workers/ulg-mechanics-grid-update-worker.js');
+  assert.equal(descriptor.workerPolicy.startupMode, 'warm-on-first-use');
+  assert.equal(descriptor.workerPolicy.idleTtlMs, 120000);
+  assert.equal(descriptor.workerPolicy.sameDeviceRequired, true);
+  assert.equal(descriptor.workerPolicy.bufferTransferPolicy, 'worker-owns-device-and-retained-buffers-required');
+  assert.equal(descriptor.workerPolicy.fallbackRuntimeTarget, 'gpu-hub-inline-stage-executor');
 });

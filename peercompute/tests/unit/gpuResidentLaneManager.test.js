@@ -209,6 +209,13 @@ test('GpuResidentLaneManager can execute contract stages through GPUHub resident
   gpuHub.setDevice({ label: 'gpu-device:hub-stage' });
   gpuHub.registerResidentStageExecutor({
     stageId: 'mechanics-p2g',
+    workerPolicy: {
+      mode: 'dedicated-worker',
+      workerType: 'webgpu-compute-worker',
+      workerModuleUrl: '/workers/ulg-mechanics-p2g-worker.js',
+      startupMode: 'warm-on-first-use',
+      sameDeviceRequired: true
+    },
     executor({ input, device }) {
       return {
         value: { ...input, p2gDevice: device.label },
@@ -259,6 +266,12 @@ test('GpuResidentLaneManager can execute contract stages through GPUHub resident
     stageExecution.stageResults.map((entry) => entry.executorSource),
     ['gpu-hub-resident-stage-executor', 'gpu-hub-resident-stage-executor']
   );
+  assert.equal(stageExecution.stageResults[0].workerResidency.schema, 'peercompute.gpu.resident-stage-worker-policy.v0');
+  assert.equal(stageExecution.stageResults[0].workerResidency.mode, 'dedicated-worker');
+  assert.equal(stageExecution.stageResults[0].workerResidency.status, 'blocked-worker-backend-missing');
+  assert.equal(stageExecution.stageResults[0].workerResidency.fallbackRuntimeTarget, 'gpu-hub-inline-stage-executor');
+  assert.equal(stageExecution.stageResults[1].workerResidency.mode, 'inline');
+  assert.equal(stageExecution.stageResults[1].workerResidency.status, 'inline-ready');
   assert.deepEqual(stageExecution.stageResults[0].summary, {
     backend: 'webgpu',
     source: 'gpu-hub'
