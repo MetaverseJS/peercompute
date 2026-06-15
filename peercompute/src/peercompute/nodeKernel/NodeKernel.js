@@ -508,7 +508,8 @@ export class NodeKernel {
         autoScaleWorkers: this.config.autoScaleWorkers,
         resourceProfile: this.config.resourceProfile,
         workerBootstrapURL: this.config.workerBootstrapURL || this.config.computeWorkerBootstrapURL,
-        enableWorkers: this.config.enableWorkers !== false
+        enableWorkers: this.config.enableWorkers !== false,
+        gpuHub: this.gpuHub || null
       });
       await this.computeManager.initialize();
       this.computeManager.setCommitDeltaHandler((delta) => {

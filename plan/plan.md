@@ -45,6 +45,11 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `gpu-hub-resident-stage-executor` as the stage executor source. This moves
   the next ULG mechanics stage-chain promotion behind a ComputeManager/GPUHub
   owned registry boundary before dedicated WebGPU worker residency is added.
+- NodeKernel shared GPUHub lane authority:
+  when `NodeKernel` creates `GPUHubManager`, it now passes that same GPUHub
+  into `ComputeManager` so the resident lane manager resolves stage executors
+  against the NodeKernel-owned GPUHub rather than an unconnected manager-local
+  lane registry.
 - ComputeManager native task-graph lifecycle primitive:
   `peercompute.compute.task-graph-result.v0` now supports dependency-batched
   graph execution, graph-level cache policy, placement policy, cooperative

@@ -52,6 +52,28 @@ function connectInMemoryTaskGraphKernels({
   };
 }
 
+test('NodeKernel passes GPUHub to ComputeManager resident lane manager', async (t) => {
+  const node = new NodeKernel({
+    enableGPUHub: true,
+    enableWebGPU: false,
+    enableWorkers: false,
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false,
+    disableStateNetworkProvider: true,
+    disableStateBroadcast: true,
+    enablePersistence: false
+  });
+  t.after(() => node.stateManager?.destroy?.());
+  await node.initialize();
+
+  const gpuHub = node.getGPUHub();
+  const computeManager = node.getComputeManager();
+  const laneManager = computeManager.getGpuResidentLaneManager();
+  assert.ok(gpuHub);
+  assert.equal(laneManager.gpuHub, gpuHub);
+});
+
 test('NodeKernel requests StateManager provider sync after network connect', async () => {
   const events = [];
   const node = new NodeKernel({

@@ -54411,3 +54411,44 @@ Open:
   supervised WebGPU worker residency where the worker owns the lane device and
   buffers instead of trying to transfer main-thread `GPUBuffer` handles.
 - No push was attempted.
+
+## 2026-06-14 20:17 AKDT - NodeKernel shares GPUHub with ComputeManager lanes
+
+### Prompt
+- Continued the ULG/PeerCompute architecture refactor after adding the GPUHub
+  resident stage executor registry. While wiring ULG toward that registry, I
+  found that `NodeKernel` created `GPUHubManager` but did not pass the same hub
+  into `ComputeManager`, which would leave lane execution unable to resolve
+  NodeKernel-owned GPUHub stage executors.
+
+### Actions
+- Updated `NodeKernel.initialize()` so `new ComputeManager()` receives
+  `gpuHub: this.gpuHub || null`.
+- Added focused unit coverage proving that a NodeKernel with `enableGPUHub`
+  initializes a ComputeManager whose `GpuResidentLaneManager.gpuHub` is the
+  same object returned by `node.getGPUHub()`.
+- The first test run exposed Node persistence trying to open IndexedDB in the
+  Node test environment. The test fixture now sets `enablePersistence: false`
+  to keep the unit focused on the GPUHub authority handoff.
+
+### Commands Run
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks passed.
+- FAIL then fixed: the first NodeKernel unit run failed with
+  `ReferenceError: indexedDB is not defined` because persistence was enabled in
+  the new fixture.
+- PASS: focused NodeKernel start/authority suite passed `8/8` after disabling
+  persistence in the test fixture.
+
+### Open
+- This only connects NodeKernel-owned GPUHub to ComputeManager lane authority.
+  Dedicated GPU worker residency and avoiding CPU/GPU copy loops remain the
+  next architecture promotions.
+- No push was attempted.
