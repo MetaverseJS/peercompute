@@ -144,7 +144,11 @@ export {
   normalizeUlgTaskCapsule,
   summarizeUlgArtifact
 } from './serviceOrchestration/index.js';
-export { GPUHubManager } from './gpu/GPUHubManager.js';
+export {
+  GPUHubManager,
+  ResidentStageWorkerBackend,
+  createResidentStageWorkerBackend
+} from './gpu/GPUHubManager.js';
 export {
   GPU_RESIDENT_LANE_COPY_BUDGET_SCHEMA,
   GPU_RESIDENT_LANE_EXECUTION_SCHEMA,

@@ -54542,3 +54542,46 @@ Open:
   retained buffers for a whole lane/stage chain instead of receiving
   main-thread `GPUBuffer` handles.
 - No push was attempted.
+
+## 2026-06-14 20:53 AKDT - GPUHub resident stage Worker bridge
+
+### Prompt
+- Continued the GPUHub worker-residency path after the generic worker backend
+  adapter. The bounded step was to add an explicit Worker-style message
+  protocol so a warm child worker can run resident stages without changing the
+  ComputeManager/GPUHub lane authority boundary.
+
+### Actions
+- Added `peercompute.gpu.resident-stage-worker-backend.v0` and exported
+  `ResidentStageWorkerBackend` plus `createResidentStageWorkerBackend()`.
+- The backend creates a Worker-like host on first use, posts
+  `run-resident-stage` messages with stage/input/lease/lane/context/executor
+  payloads, correlates replies by request id, rejects timed-out or disposed
+  requests, and terminates the host during dispose.
+- Public PeerCompute exports now include the resident stage Worker bridge.
+- Added a fake-Worker unit test proving the bridge protocol, worker-ready
+  descriptor evidence, result propagation, retained-buffer metadata, and worker
+  termination.
+
+### Commands Run
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/gpu/GPUHubManager.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/src/peercompute/index.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuhubmanager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- From `/home/cos/projects/peercompute`:
+  `EMSDK_QUIET=1 node --test peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/gpuResidentLaneManager.test.js`
+
+### Results
+- PASS: syntax checks passed.
+- PASS: focused GPUHub/lane-manager unit tests passed `13/13`.
+
+### Open
+- This bridge proves the protocol, not final copy-free WebGPU residency. The
+  next step is a real browser/WorkerSupervisor host that initializes its own
+  WebGPU device, keeps Eshkol/MoonLab/law kernels warm where latency matters,
+  and retains lane buffers inside the worker between stage invocations.
+- No push was attempted.

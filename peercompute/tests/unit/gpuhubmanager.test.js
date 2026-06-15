@@ -1,6 +1,53 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GPUHubManager } from '../../src/peercompute/gpu/GPUHubManager.js';
+import {
+  GPUHubManager,
+  createResidentStageWorkerBackend
+} from '../../src/peercompute/gpu/GPUHubManager.js';
+
+class FakeResidentStageWorker {
+  constructor() {
+    this.listeners = new Set();
+    this.messages = [];
+    this.terminated = false;
+  }
+
+  addEventListener(type, listener) {
+    if (type === 'message') this.listeners.add(listener);
+  }
+
+  removeEventListener(type, listener) {
+    if (type === 'message') this.listeners.delete(listener);
+  }
+
+  postMessage(message) {
+    this.messages.push(message);
+    queueMicrotask(() => {
+      const payload = message.payload || {};
+      this.emit({
+        type: 'resident-stage-result',
+        id: message.id,
+        result: {
+          value: {
+            ...payload.input,
+            stageId: payload.stage.id,
+            workerBridge: true
+          },
+          retainedBufferRefs: ['worker-retained-buffer'],
+          summary: { protocol: message.type }
+        }
+      });
+    });
+  }
+
+  emit(data) {
+    for (const listener of this.listeners) listener({ data });
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+}
 
 test('GPUHubManager initializes with provided device and creates hot buffers', async () => {
   let createArgs = null;
@@ -148,4 +195,46 @@ test('GPUHubManager executes a resident stage through an attached worker backend
   });
   assert.deepEqual(result.retainedBufferRefs, ['sph-state-buffer']);
   assert.deepEqual(result.summary, { backend: 'webgpu-worker' });
+});
+
+test('createResidentStageWorkerBackend bridges resident stage messages to a Worker-like host', async () => {
+  const fakeWorker = new FakeResidentStageWorker();
+  const backend = createResidentStageWorkerBackend({
+    workerModuleUrl: '/workers/resident-stage.js',
+    workerFactory: () => fakeWorker,
+    timeoutMs: 1000
+  });
+  const hub = new GPUHubManager();
+  const descriptor = hub.registerResidentStageExecutor({
+    stageId: 'mechanics-worker-bridge',
+    workerPolicy: {
+      mode: 'dedicated-worker',
+      workerModuleUrl: '/workers/resident-stage.js'
+    },
+    workerRunner: backend
+  });
+
+  assert.equal(backend.schema, 'peercompute.gpu.resident-stage-worker-backend.v0');
+  assert.equal(descriptor.workerPolicy.status, 'worker-ready');
+  assert.equal(descriptor.workerPolicy.workerModuleUrl, '/workers/resident-stage.js');
+
+  const result = await hub.executeResidentStage({
+    stage: { id: 'mechanics-worker-bridge' },
+    input: { particleCount: 3 }
+  });
+
+  assert.equal(fakeWorker.messages.length, 1);
+  assert.equal(fakeWorker.messages[0].type, 'run-resident-stage');
+  assert.equal(fakeWorker.messages[0].payload.stage.id, 'mechanics-worker-bridge');
+  assert.deepEqual(fakeWorker.messages[0].payload.input, { particleCount: 3 });
+  assert.deepEqual(result.value, {
+    particleCount: 3,
+    stageId: 'mechanics-worker-bridge',
+    workerBridge: true
+  });
+  assert.deepEqual(result.retainedBufferRefs, ['worker-retained-buffer']);
+  assert.deepEqual(result.summary, { protocol: 'run-resident-stage' });
+
+  backend.dispose();
+  assert.equal(fakeWorker.terminated, true);
 });

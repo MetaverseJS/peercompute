@@ -66,6 +66,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
   carry the worker-ready residency descriptor. This is the adapter boundary for
   supervised worker hosts; browser-spawned WebGPU worker device/buffer
   ownership still remains the next backend implementation.
+- GPUHub resident stage Worker bridge:
+  `createResidentStageWorkerBackend()` now wraps Worker-like hosts with an
+  explicit `run-resident-stage` request and `resident-stage-result` /
+  `resident-stage-error` response protocol. The bridge keeps the worker warm,
+  correlates in-flight stage requests, exposes a public PeerCompute export, and
+  terminates the host on dispose. This proves the protocol boundary for
+  dedicated GPU/CPU resident law workers while still requiring the next step to
+  create worker-owned WebGPU devices and retained lane buffers.
 - ComputeManager native task-graph lifecycle primitive:
   `peercompute.compute.task-graph-result.v0` now supports dependency-batched
   graph execution, graph-level cache policy, placement policy, cooperative
