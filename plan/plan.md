@@ -44,6 +44,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   and max concurrent stage count. This gives ULG's law-stage DAG a real
   ComputeManager-owned concurrency surface while keeping same-queue WebGPU
   ordering and state-authority constraints explicit.
+- GPU resident lane state-family conflict batching:
+  ready stages are now batched only when their declared read/write families do
+  not conflict. Write/write, write/read, and read/write overlaps defer the
+  later ready stage into a later batch and are recorded in execution metadata.
+  This keeps concurrency under ComputeManager authority without inventing
+  implicit dataflow: stages still need `dependsOn` or `inputFrom` when they
+  require another stage's value.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

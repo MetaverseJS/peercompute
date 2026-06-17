@@ -1,6 +1,31 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- GPU resident lane state-family conflict batching:
+  - `node --check` passed for
+    `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js` and
+    `peercompute/tests/unit/gpuResidentLaneManager.test.js`.
+  - `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js` passed
+    `9/9`.
+  - Coverage: explicit dependency plans now apply a
+    `defer-read-write-conflicting-ready-stages` policy. A ready stage that
+    reads a family another ready stage writes is deferred to a later batch; the
+    execution report records conflict type, affected families, blocker stage,
+    and batch index. The test also preserves the important distinction that
+    conflict deferral orders stages but does not create an implicit `inputFrom`
+    data dependency.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs` passed
+    `16/16`, proving ULG mechanics stage-chain telemetry records the conflict
+    policy with zero deferrals for the current non-conflicting P2G plus
+    pressure/interface batch.
+  - Cross-repo ULG behavior/visual gates:
+    `npm run test:physics-atomics` passed `11` checks with `3` expected
+    opt-in skips, and visual matrix
+    `codex-state-family-conflict-batching-20260617` passed three rows with
+    `failedCount=0`.
+
+### Current focused result - 2026-06-17 AKDT
 - GPU resident lane dependency batches:
   - `node --check` passed for
     `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js` and

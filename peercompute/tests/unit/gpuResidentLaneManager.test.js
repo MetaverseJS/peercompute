@@ -297,6 +297,8 @@ test('GpuResidentLaneManager executes explicit dependency batches concurrently',
   assert.equal(stageExecution.status, 'completed');
   assert.equal(stageExecution.dependencyMode, 'explicit-stage-dependencies');
   assert.equal(stageExecution.parallelStageExecution, true);
+  assert.equal(stageExecution.stateFamilyConflictPolicy, 'defer-read-write-conflicting-ready-stages');
+  assert.equal(stageExecution.stateFamilyConflictDeferralCount, 0);
   assert.deepEqual(stageExecution.executionBatches, [
     ['p2g', 'pressureInterface'],
     ['gridUpdate'],
@@ -314,6 +316,106 @@ test('GpuResidentLaneManager executes explicit dependency batches concurrently',
   assert.ok(events.indexOf('finish:pressureInterface') < events.indexOf('finish:p2g'));
   assert.ok(events.includes('start:gridUpdate:true'));
   assert.ok(events.includes('start:g2p:true'));
+});
+
+test('GpuResidentLaneManager defers ready stages with state-family conflicts', async () => {
+  const manager = new GpuResidentLaneManager({
+    deviceId: 'gpu-device:state-conflicts',
+    now: monotonicClock()
+  });
+  const contract = residentSequenceContract({
+    stageDependencyMode: 'explicit-stage-dependencies',
+    parallelStageExecution: true,
+    passDagStages: [
+      {
+        id: 'p2g',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['sph-particle-state'],
+        writes: ['mls-mpm-grid']
+      },
+      {
+        id: 'gridDiagnostics',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['mls-mpm-grid'],
+        writes: ['diagnostics']
+      },
+      {
+        id: 'pressureInterface',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['resident-gas-pressure'],
+        writes: ['pressure-interface-force-rows']
+      },
+      {
+        id: 'gridUpdate',
+        runtimeTarget: 'webgpu-compute',
+        dependsOn: ['p2g', 'pressureInterface'],
+        inputFrom: 'pressureInterface',
+        reads: ['mls-mpm-grid', 'pressure-interface-force-rows'],
+        writes: ['mls-mpm-grid']
+      }
+    ]
+  });
+  const lease = manager.acquireLease({
+    laneId: contract.laneId,
+    stateKey: contract.stateKey,
+    residentSequenceLaneContract: contract
+  });
+
+  const events = [];
+  const stageExecution = await manager.executeStagePlan(lease.leaseId, {
+    input: { particleCount: 8 },
+    stageExecutors: {
+      p2g: async ({ input }) => {
+        events.push('start:p2g');
+        await delayMs(20);
+        events.push('finish:p2g');
+        return { value: { ...input, p2g: true } };
+      },
+      gridDiagnostics: ({ input }) => {
+        events.push(`start:gridDiagnostics:${input.p2g === true}`);
+        return { value: { diagnostics: true, sawP2g: input.p2g === true } };
+      },
+      pressureInterface: async ({ input }) => {
+        events.push('start:pressureInterface');
+        await delayMs(5);
+        events.push('finish:pressureInterface');
+        return { value: { ...input, pressureInterfaceStageTask: true } };
+      },
+      gridUpdate: ({ input }) => {
+        events.push(`start:gridUpdate:${input.pressureInterfaceStageTask === true}`);
+        return { value: { gridUpdate: true } };
+      }
+    }
+  });
+
+  assert.equal(stageExecution.status, 'completed');
+  assert.equal(stageExecution.stateFamilyConflictPolicy, 'defer-read-write-conflicting-ready-stages');
+  assert.deepEqual(stageExecution.executionBatches, [
+    ['p2g', 'pressureInterface'],
+    ['gridDiagnostics'],
+    ['gridUpdate']
+  ]);
+  assert.equal(stageExecution.maxConcurrentStageCount, 2);
+  assert.equal(stageExecution.stateFamilyConflictDeferralCount, 2);
+  assert.deepEqual(stageExecution.stateFamilyConflictDeferrals, [
+    {
+      stageId: 'gridDiagnostics',
+      blockedByStageId: 'p2g',
+      conflictType: 'write-read',
+      families: ['mls-mpm-grid'],
+      batchIndex: 0
+    },
+    {
+      stageId: 'gridUpdate',
+      blockedByStageId: 'gridDiagnostics',
+      conflictType: 'read-write',
+      families: ['mls-mpm-grid'],
+      batchIndex: 1
+    }
+  ]);
+  assert.ok(events.indexOf('start:pressureInterface') < events.indexOf('finish:p2g'));
+  assert.ok(events.indexOf('start:gridDiagnostics:false') > events.indexOf('finish:p2g'));
+  assert.ok(events.includes('start:gridUpdate:true'));
 });
 
 test('GpuResidentLaneManager can execute contract stages through GPUHub resident executors', async () => {

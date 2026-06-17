@@ -164,6 +164,60 @@ function inputForStage(stage, {
   return currentValue;
 }
 
+function stringIntersection(a = [], b = []) {
+  const right = new Set(normalizeStringList(b));
+  return normalizeStringList(a).filter((entry) => right.has(entry));
+}
+
+function stateFamilyConflictBetweenStages(left = {}, right = {}) {
+  const writeWrite = stringIntersection(left.writes, right.writes);
+  if (writeWrite.length > 0) {
+    return {
+      conflictType: 'write-write',
+      families: writeWrite
+    };
+  }
+  const leftWriteRightRead = stringIntersection(left.writes, right.reads);
+  if (leftWriteRightRead.length > 0) {
+    return {
+      conflictType: 'write-read',
+      families: leftWriteRightRead
+    };
+  }
+  const leftReadRightWrite = stringIntersection(left.reads, right.writes);
+  if (leftReadRightWrite.length > 0) {
+    return {
+      conflictType: 'read-write',
+      families: leftReadRightWrite
+    };
+  }
+  return null;
+}
+
+function selectConflictFreeReadyBatch(readyStages = []) {
+  const batch = [];
+  const deferred = [];
+  for (const stage of readyStages) {
+    const conflict = batch
+      .map((batchStage) => ({
+        stage: batchStage,
+        conflict: stateFamilyConflictBetweenStages(batchStage, stage)
+      }))
+      .find((entry) => entry.conflict);
+    if (conflict) {
+      deferred.push({
+        stageId: stage.id,
+        blockedByStageId: conflict.stage.id,
+        conflictType: conflict.conflict.conflictType,
+        families: conflict.conflict.families
+      });
+    } else {
+      batch.push(stage);
+    }
+  }
+  return { batch, deferred };
+}
+
 function fenceSatisfied(status) {
   return [
     'gpu-fence-completed',
@@ -395,6 +449,7 @@ export class GpuResidentLaneManager {
     const startedAt = this.now();
     const stageResults = [];
     const executionBatches = [];
+    const stateFamilyConflictDeferrals = [];
     const stageValues = {};
     const stageIds = new Set(stagePlan.stages.map((stage) => stage.id));
     for (const stage of stagePlan.stages) {
@@ -499,8 +554,16 @@ export class GpuResidentLaneManager {
           err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_CYCLE';
           throw err;
         }
-        executionBatches.push(ready.map((stage) => stage.id));
-        const readyResults = await Promise.all(ready.map((stage) => runOneStage(
+        const { batch, deferred } = selectConflictFreeReadyBatch(ready);
+        const batchIndex = executionBatches.length;
+        stateFamilyConflictDeferrals.push(
+          ...deferred.map((entry) => ({
+            ...entry,
+            batchIndex
+          }))
+        );
+        executionBatches.push(batch.map((stage) => stage.id));
+        const readyResults = await Promise.all(batch.map((stage) => runOneStage(
           stage,
           inputForStage(stage, {
             baseInput: input,
@@ -508,8 +571,8 @@ export class GpuResidentLaneManager {
             stageValues
           })
         )));
-        for (let i = 0; i < ready.length; i += 1) {
-          const stage = ready[i];
+        for (let i = 0; i < batch.length; i += 1) {
+          const stage = batch[i];
           const entry = readyResults[i];
           pending.delete(stage.id);
           stageValues[stage.id] = entry.value;
@@ -539,6 +602,11 @@ export class GpuResidentLaneManager {
       completedStageCount: stageResults.filter((result) => result.status === 'completed').length,
       dependencyMode: useExplicitDependencies ? 'explicit-stage-dependencies' : 'sequential-stage-order',
       parallelStageExecution: useExplicitDependencies,
+      stateFamilyConflictPolicy: useExplicitDependencies
+        ? 'defer-read-write-conflicting-ready-stages'
+        : 'sequential-stage-order',
+      stateFamilyConflictDeferrals,
+      stateFamilyConflictDeferralCount: stateFamilyConflictDeferrals.length,
       executionBatches,
       maxConcurrentStageCount: executionBatches.reduce((max, batch) => Math.max(max, batch.length), 0),
       stageResults,

@@ -2,6 +2,69 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 15:53:07 AKDT - GPU resident lane state-family conflict batching
+
+### Prompt
+- Continuing the ULG/PeerCompute architecture refactor after establishing
+  explicit dependency batches and Worker-retained continuation planning.
+- The next concurrency gap was that ready-batch execution respected explicit
+  dependencies but did not yet account for declared state-family read/write
+  conflicts.
+
+### Actions
+- Added state-family conflict checks to `GpuResidentLaneManager`.
+- Ready stages are now greedily batched only when they do not conflict with
+  stages already selected for that batch.
+- Conflicts are detected for write/write, write/read, and read/write overlaps
+  using each stage's declared `reads` and `writes`.
+- Deferred ready stages remain pending for later batches; the deferral records
+  stage id, blocking stage id, conflict type, affected families, and batch
+  index.
+- Added stage execution metadata:
+  `stateFamilyConflictPolicy`,
+  `stateFamilyConflictDeferrals`, and
+  `stateFamilyConflictDeferralCount`.
+- Added focused unit coverage proving a ready diagnostics stage that reads
+  `mls-mpm-grid` is not batched with P2G while P2G writes that family, and a
+  later grid update is not batched with that diagnostics read.
+
+### Files Touched
+- `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- Cross-repo ULG:
+  `node --check src/runtime/sph/sphMlsMpmGpuStep.js`
+- Cross-repo ULG:
+  `node --check tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG:
+  `node --test tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG: `npm run test:physics-atomics`
+- Cross-repo ULG visual:
+  `ULG_VISUAL_MATRIX_RUN_ID=codex-state-family-conflict-batching-20260617 ... npm run probe:sph-visual-matrix`
+
+### Results
+- PASS: PeerCompute syntax checks.
+- PASS: `node --test tests/unit/gpuResidentLaneManager.test.js` passed `9/9`.
+- PASS: ULG PeerCompute integration passed `16/16`.
+- PASS: ULG physics atomics passed `11` checks with `3` expected opt-in
+  skips.
+- PASS: ULG visual matrix passed `3/3` with `failedCount=0` and empty issue
+  counts.
+
+### Open
+- Conflict deferral is scheduling order only. It does not create a dataflow
+  input; stages still need explicit `dependsOn` or `inputFrom` if they need a
+  previous stage's value.
+- Next work is to lift this conflict policy into broader ComputeManager/GPUHub
+  placement across Workers/devices/peers.
+
 ## 2026-06-17 15:32:08 AKDT - GPU resident lane dependency batches
 
 ### Prompt
