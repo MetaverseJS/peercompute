@@ -37,6 +37,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   envelopes. `ComputeManager` preserves ULG
   `residentSequenceLaneContract` metadata in normalized lane requirements and
   exposes `executeGpuResidentLaneStagePlan()` as the authority facade.
+- GPU resident lane dependency batches:
+  `GpuResidentLaneManager` can now normalize explicit stage dependencies,
+  preserve sequential fallback for older contracts, validate dependency ids,
+  execute dependency-ready batches, and report dependency mode, batch layout,
+  and max concurrent stage count. This gives ULG's law-stage DAG a real
+  ComputeManager-owned concurrency surface while keeping same-queue WebGPU
+  ordering and state-authority constraints explicit.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

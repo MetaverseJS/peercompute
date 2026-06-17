@@ -21,6 +21,10 @@ function monotonicClock(start = 1000) {
   };
 }
 
+function delayMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function residentSequenceContract(overrides = {}) {
   return {
     schema: 'peercompute.ulg.mls-mpm-resident-sequence-lane-contract.v0',
@@ -202,6 +206,114 @@ test('GpuResidentLaneManager executes a resident contract stage plan under one a
     'mls-mpm-mechanics-buffer',
     'sph-state-buffer'
   ]);
+});
+
+test('GpuResidentLaneManager executes explicit dependency batches concurrently', async () => {
+  const manager = new GpuResidentLaneManager({
+    deviceId: 'gpu-device:dependency-batches',
+    now: monotonicClock()
+  });
+  const contract = residentSequenceContract({
+    stageDependencyMode: 'explicit-stage-dependencies',
+    parallelStageExecution: true,
+    passDagStages: [
+      {
+        id: 'p2g',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['sph-particle-state'],
+        writes: ['mls-mpm-grid']
+      },
+      {
+        id: 'pressureInterface',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['resident-gas-pressure'],
+        writes: ['pressure-interface-force-rows']
+      },
+      {
+        id: 'gridUpdate',
+        runtimeTarget: 'webgpu-compute',
+        dependsOn: ['p2g', 'pressureInterface'],
+        inputFrom: 'pressureInterface',
+        reads: ['mls-mpm-grid', 'pressure-interface-force-rows'],
+        writes: ['mls-mpm-grid']
+      },
+      {
+        id: 'g2p',
+        runtimeTarget: 'webgpu-compute',
+        dependsOn: ['gridUpdate'],
+        inputFrom: 'gridUpdate',
+        reads: ['mls-mpm-grid'],
+        writes: ['sph-particle-state']
+      }
+    ]
+  });
+  const lease = manager.acquireLease({
+    laneId: contract.laneId,
+    stateKey: contract.stateKey,
+    residentSequenceLaneContract: contract
+  });
+  assert.equal(lease.stagePlan.dependencyMode, 'explicit-stage-dependencies');
+  assert.equal(lease.stagePlan.parallelStageExecution, true);
+
+  const events = [];
+  const stageExecution = await manager.executeStagePlan(lease.leaseId, {
+    input: { particleCount: 8 },
+    stageExecutors: {
+      p2g: async ({ input }) => {
+        events.push('start:p2g');
+        await delayMs(25);
+        events.push('finish:p2g');
+        return {
+          value: { ...input, p2g: true },
+          retainedBufferRefs: ['grid-momentum-buffer']
+        };
+      },
+      pressureInterface: async ({ input }) => {
+        events.push('start:pressureInterface');
+        await delayMs(5);
+        events.push('finish:pressureInterface');
+        return {
+          value: { ...input, pressureInterfaceStageTask: true },
+          retainedBufferRefs: ['pressure-interface-force-rows-buffer']
+        };
+      },
+      gridUpdate: ({ input }) => {
+        events.push(`start:gridUpdate:${input.pressureInterfaceStageTask === true}`);
+        return {
+          value: { gridUpdate: true, pressureInput: input.pressureInterfaceStageTask === true },
+          retainedBufferRefs: ['mls-mpm-grid-update-buffer']
+        };
+      },
+      g2p: ({ input }) => {
+        events.push(`start:g2p:${input.gridUpdate === true}`);
+        return {
+          value: { g2p: true, pressureInput: input.pressureInput === true },
+          retainedBufferRefs: ['sph-state-buffer']
+        };
+      }
+    }
+  });
+
+  assert.equal(stageExecution.status, 'completed');
+  assert.equal(stageExecution.dependencyMode, 'explicit-stage-dependencies');
+  assert.equal(stageExecution.parallelStageExecution, true);
+  assert.deepEqual(stageExecution.executionBatches, [
+    ['p2g', 'pressureInterface'],
+    ['gridUpdate'],
+    ['g2p']
+  ]);
+  assert.equal(stageExecution.maxConcurrentStageCount, 2);
+  assert.deepEqual(stageExecution.output, { g2p: true, pressureInput: true });
+  assert.deepEqual(stageExecution.stageResults.map((entry) => entry.stageId), [
+    'p2g',
+    'pressureInterface',
+    'gridUpdate',
+    'g2p'
+  ]);
+  assert.ok(events.indexOf('start:pressureInterface') < events.indexOf('finish:p2g'));
+  assert.ok(events.indexOf('finish:pressureInterface') < events.indexOf('finish:p2g'));
+  assert.ok(events.includes('start:gridUpdate:true'));
+  assert.ok(events.includes('start:g2p:true'));
 });
 
 test('GpuResidentLaneManager can execute contract stages through GPUHub resident executors', async () => {

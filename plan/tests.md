@@ -1,5 +1,31 @@
 ## PeerCompute Test Strategy
 
+### Current focused result - 2026-06-17 AKDT
+- GPU resident lane dependency batches:
+  - `node --check` passed for
+    `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js` and
+    `peercompute/tests/unit/gpuResidentLaneManager.test.js`.
+  - `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js` passed
+    `8/8`.
+  - Coverage: resident stage plans now preserve sequential behavior by
+    default, but contracts with `stageDependencyMode:
+    explicit-stage-dependencies` can execute dependency-ready batches. The new
+    test proves `p2g` and `pressureInterface` are in the first batch,
+    `gridUpdate` waits for both and receives its declared `inputFrom`, `g2p`
+    waits for `gridUpdate`, and execution metadata reports
+    `maxConcurrentStageCount=2`.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs` passed
+    `16/16`, proving ULG's mechanics lane reports dependency batches
+    `[['p2g'], ['gridUpdate'], ['g2p']]` for mechanics-only and
+    `[['p2g', 'pressureInterface'], ['gridUpdate'], ['g2p'], ['thermalPhase'], ['reactionProduct']]`
+    for pressure/thermal/reaction stage chains.
+  - Cross-repo ULG physics/visual gates:
+    `npm run test:physics-atomics` passed `11` checks with `3` expected
+    opt-in long-horizon skips, and visual matrix
+    `codex-stage-dependency-batches-20260617` passed three representative rows
+    with `failedCount=0`.
+
 ### Current focused result - 2026-06-14 AKDT
 - ComputeManager GPU resident lane stage-plan executor:
   - `node --check` passed for

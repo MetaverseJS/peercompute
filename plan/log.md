@@ -2,6 +2,69 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 15:32:08 AKDT - GPU resident lane dependency batches
+
+### Prompt
+- User asked whether the WebGPU work is sufficiently concurrent while the ULG
+  architecture refactor remains active.
+- Answered that the current path is not sufficiently concurrent yet: the
+  scheduler can expose more concurrency, but same-device WebGPU queues still
+  execute in order and too much ULG hot-loop work still waits on fences and
+  readbacks.
+
+### Actions
+- Extended `GpuResidentLaneManager` stage normalization to carry explicit
+  `dependsOn` and `inputFrom` fields.
+- Added dependency-mode metadata to stage plans while preserving sequential
+  fallback for resident contracts that do not declare dependencies.
+- Added ready-batch execution for explicit dependency plans using
+  `Promise.all`.
+- Added validation for unknown stage dependencies and a cycle/unsatisfied
+  dependency error.
+- Added execution metadata: dependency mode, parallel-stage flag, execution
+  batches, and max concurrent stage count.
+- Added focused unit coverage proving `p2g` and `pressureInterface` can run in
+  the same ready batch, while `gridUpdate` and `g2p` wait for their declared
+  inputs.
+
+### Files Touched
+- `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `node --check tests/unit/gpuResidentLaneManager.test.js`
+- `node --test tests/unit/gpuResidentLaneManager.test.js`
+- Cross-repo ULG:
+  `node --check src/runtime/sph/sphMlsMpmGpuStep.js`
+- Cross-repo ULG:
+  `node --check tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG:
+  `node --test tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG: `npm run test:physics-atomics`
+- Cross-repo ULG visual:
+  `ULG_VISUAL_MATRIX_RUN_ID=codex-stage-dependency-batches-20260617 ... npm run probe:sph-visual-matrix`
+
+### Results
+- PASS: PeerCompute syntax checks.
+- PASS: `node --test tests/unit/gpuResidentLaneManager.test.js` passed `8/8`.
+- PASS: ULG PeerCompute integration passed `16/16`.
+- PASS: ULG physics atomics passed `11` checks with `3` expected opt-in
+  long-horizon skips.
+- PASS: ULG short visual matrix passed `3/3` with `failedCount=0` and empty
+  issue counts.
+
+### Open
+- This is scheduler-level concurrency, not a promise of simultaneous WebGPU
+  kernel execution on one ordered queue.
+- Next work is conflict-aware placement over state-family read/write sets and
+  Worker-retained access contracts so independent law-family, closure, cache,
+  and remote-peer work can overlap without copying or corrupting resident
+  state.
+
 ## 2026-06-14 14:33 AKDT - Fail-closed compact candidate hot-buffer refresh
 
 ### Prompt

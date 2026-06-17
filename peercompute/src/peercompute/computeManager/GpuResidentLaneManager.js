@@ -51,6 +51,8 @@ function normalizeStageRecord(stage = {}, index = 0) {
     index,
     lawNodeId: normalizeString(stage.lawNodeId, null),
     runtimeTarget: normalizeString(stage.runtimeTarget, null),
+    dependsOn: normalizeStringList(stage.dependsOn ?? stage.dependencies),
+    inputFrom: normalizeString(stage.inputFrom ?? stage.primaryInputFrom ?? stage.inputStageId, null),
     reads: normalizeStringList(stage.reads ?? stage.readFamilies),
     writes: normalizeStringList(stage.writes ?? stage.writeFamilies)
   };
@@ -66,6 +68,12 @@ function createStagePlanFromContract(contract = null, {
   const stages = Array.isArray(contract.passDagStages)
     ? contract.passDagStages.map((stage, index) => normalizeStageRecord(stage, index))
     : [];
+  const dependencyMode = normalizeString(
+    contract.stageDependencyMode ?? contract.dependencyMode,
+    stages.some((stage) => stage.dependsOn.length > 0) || contract.parallelStageExecution === true
+      ? 'explicit-stage-dependencies'
+      : 'sequential-stage-order'
+  );
   return {
     schema: GPU_RESIDENT_LANE_STAGE_PLAN_SCHEMA,
     status: stages.length > 0
@@ -81,6 +89,8 @@ function createStagePlanFromContract(contract = null, {
     sequenceMode: normalizeString(contract.sequenceMode, null),
     sequenceRunnable: contract.sequenceRunnable === true,
     defaultEnabled: contract.defaultEnabled === true,
+    dependencyMode,
+    parallelStageExecution: dependencyMode === 'explicit-stage-dependencies',
     stageCount: stages.length,
     stages
   };
@@ -121,6 +131,37 @@ function mergeCopyBudget(a = {}, b = {}) {
     compactSummaryBytes: left.compactSummaryBytes + right.compactSummaryBytes,
     fullReadbackReason: right.fullReadbackReason || left.fullReadbackReason || null
   };
+}
+
+function stagePlanUsesExplicitDependencies(stagePlan = {}) {
+  return stagePlan.parallelStageExecution === true
+    || stagePlan.dependencyMode === 'explicit-stage-dependencies'
+    || (stagePlan.stages || []).some((stage) => (stage.dependsOn || []).length > 0);
+}
+
+function inputForStage(stage, {
+  baseInput = null,
+  currentValue = null,
+  stageValues = {}
+} = {}) {
+  if (stage.inputFrom && Object.prototype.hasOwnProperty.call(stageValues, stage.inputFrom)) {
+    return stageValues[stage.inputFrom];
+  }
+  const dependsOn = normalizeStringList(stage.dependsOn);
+  if (dependsOn.length === 1 && Object.prototype.hasOwnProperty.call(stageValues, dependsOn[0])) {
+    return stageValues[dependsOn[0]];
+  }
+  if (dependsOn.length > 1) {
+    return {
+      source: 'gpu-resident-lane-stage-dependencies',
+      dependencyResults: Object.fromEntries(
+        dependsOn.map((stageId) => [stageId, stageValues[stageId]])
+      ),
+      previousValue: currentValue,
+      baseInput
+    };
+  }
+  return currentValue;
 }
 
 function fenceSatisfied(status) {
@@ -353,8 +394,21 @@ export class GpuResidentLaneManager {
 
     const startedAt = this.now();
     const stageResults = [];
-    let currentValue = input;
+    const executionBatches = [];
+    const stageValues = {};
+    const stageIds = new Set(stagePlan.stages.map((stage) => stage.id));
     for (const stage of stagePlan.stages) {
+      for (const dependencyId of stage.dependsOn || []) {
+        if (!stageIds.has(dependencyId)) {
+          const err = new Error(`GPU resident lane stage ${stage.id} depends on unknown stage ${dependencyId}`);
+          err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_MISSING';
+          err.stage = clonePlain(stage);
+          throw err;
+        }
+      }
+    }
+    let currentValue = input;
+    const runOneStage = async (stage, stageInput) => {
       let runStage = typeof executor === 'function'
         ? executor
         : (stageExecutors?.[stage.id] || stageExecutors?.[stage.lawNodeId]);
@@ -382,26 +436,27 @@ export class GpuResidentLaneManager {
           err.stage = clonePlain(stage);
           throw err;
         }
-        stageResults.push({
-          stageId: stage.id,
-          lawNodeId: stage.lawNodeId,
-          status: 'blocked-missing-stage-executor',
-          retainedBufferRefs: [],
-          workerResidency: null
-        });
-        continue;
+        return {
+          result: {
+            stageId: stage.id,
+            lawNodeId: stage.lawNodeId,
+            status: 'blocked-missing-stage-executor',
+            retainedBufferRefs: [],
+            workerResidency: null
+          },
+          value: stageInput
+        };
       }
       const stageStartedAt = this.now();
       const rawResult = await runStage({
         stage: clonePlain(stage),
         stageIndex: stage.index,
-        input: currentValue,
+        input: stageInput,
         lease: clonePlain(lease),
         lane: lane ? this.snapshotLane(lane.laneId) : null,
         context
       });
       const normalized = normalizeStageExecutorResult(rawResult);
-      currentValue = normalized.value;
       const retainedBufferRefs = normalizeStringList(normalized.retainedBufferRefs);
       if (retainedBufferRefs.length > 0) {
         lease.retainedBufferRefs = normalizeStringList([
@@ -413,19 +468,63 @@ export class GpuResidentLaneManager {
           lane.updatedAt = this.now();
         }
       }
-      stageResults.push({
-        stageId: stage.id,
-        lawNodeId: stage.lawNodeId,
-        runtimeTarget: stage.runtimeTarget,
-        status: 'completed',
-        executorSource,
-        startedAt: stageStartedAt,
-        completedAt: this.now(),
-        retainedBufferRefs,
-        gpuFence: normalized.gpuFence,
-        workerResidency: clonePlain(gpuHubExecutorDescriptor?.workerPolicy),
-        summary: normalized.summary
-      });
+      return {
+        result: {
+          stageId: stage.id,
+          lawNodeId: stage.lawNodeId,
+          runtimeTarget: stage.runtimeTarget,
+          status: 'completed',
+          executorSource,
+          startedAt: stageStartedAt,
+          completedAt: this.now(),
+          retainedBufferRefs,
+          gpuFence: normalized.gpuFence,
+          workerResidency: clonePlain(gpuHubExecutorDescriptor?.workerPolicy),
+          summary: normalized.summary
+        },
+        value: normalized.value
+      };
+    };
+
+    const useExplicitDependencies = stagePlanUsesExplicitDependencies(stagePlan);
+    if (useExplicitDependencies) {
+      const pending = new Map(stagePlan.stages.map((stage) => [stage.id, stage]));
+      while (pending.size > 0) {
+        const completedStageIds = new Set(Object.keys(stageValues));
+        const ready = stagePlan.stages
+          .filter((stage) => pending.has(stage.id))
+          .filter((stage) => (stage.dependsOn || []).every((dependencyId) => completedStageIds.has(dependencyId)));
+        if (!ready.length) {
+          const err = new Error(`GPU resident lane stage plan has a cycle or unsatisfied dependencies: ${Array.from(pending.keys()).join(', ')}`);
+          err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_CYCLE';
+          throw err;
+        }
+        executionBatches.push(ready.map((stage) => stage.id));
+        const readyResults = await Promise.all(ready.map((stage) => runOneStage(
+          stage,
+          inputForStage(stage, {
+            baseInput: input,
+            currentValue,
+            stageValues
+          })
+        )));
+        for (let i = 0; i < ready.length; i += 1) {
+          const stage = ready[i];
+          const entry = readyResults[i];
+          pending.delete(stage.id);
+          stageValues[stage.id] = entry.value;
+          currentValue = entry.value;
+          stageResults.push(entry.result);
+        }
+      }
+    } else {
+      for (const stage of stagePlan.stages) {
+        executionBatches.push([stage.id]);
+        const entry = await runOneStage(stage, currentValue);
+        currentValue = entry.value;
+        stageValues[stage.id] = entry.value;
+        stageResults.push(entry.result);
+      }
     }
 
     const blocked = stageResults.some((result) => result.status !== 'completed');
@@ -438,6 +537,10 @@ export class GpuResidentLaneManager {
       stagePlan: clonePlain(stagePlan),
       stageCount: stagePlan.stages.length,
       completedStageCount: stageResults.filter((result) => result.status === 'completed').length,
+      dependencyMode: useExplicitDependencies ? 'explicit-stage-dependencies' : 'sequential-stage-order',
+      parallelStageExecution: useExplicitDependencies,
+      executionBatches,
+      maxConcurrentStageCount: executionBatches.reduce((max, batch) => Math.max(max, batch.length), 0),
       stageResults,
       retainedBufferRefs: normalizeStringList(lease.retainedBufferRefs),
       output: currentValue,
