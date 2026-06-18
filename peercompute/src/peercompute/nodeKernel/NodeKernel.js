@@ -34,6 +34,9 @@ export const NODE_KERNEL_TASK_GRAPH_AUTHORITY_SCHEMA = 'peercompute.nodekernel.t
 export const NODE_KERNEL_TASK_GRAPH_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.task-graph-placement-preflight.v0';
 export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0';
 export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0';
+export const NODE_KERNEL_GPU_RESIDENT_STAGE_EXECUTION_AUTHORITY_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-execution-authority.v0';
+export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0';
+export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Math.floor(Number(value));
@@ -1478,6 +1481,129 @@ export class NodeKernel {
       throw err;
     }
     return preflight;
+  }
+
+  async executeGpuResidentLaneStagePlan(leaseId, options = {}) {
+    const submittedAt = Date.now();
+    const placement = normalizeGpuResidentStagePlacementOptions(options);
+    const localPlacement = taskGraphPlacementIsLocal(placement.requestedPlacement);
+    const placementPreflight = this.preflightGpuResidentLaneStagePlacement(leaseId, options);
+    let result;
+    let status;
+    let remoteResultPreflight = null;
+    let remoteExecutor = null;
+
+    if (localPlacement || placement.advisory) {
+      if (!this.computeManager?.executeGpuResidentLaneStagePlan) {
+        const err = new Error('ComputeManager GPU resident stage execution is unavailable');
+        err.code = 'ERR_NODEKERNEL_GPU_RESIDENT_STAGE_EXECUTION_UNAVAILABLE';
+        err.leaseId = String(leaseId || '');
+        err.placementPreflight = placementPreflight;
+        throw err;
+      }
+      result = await this.computeManager.executeGpuResidentLaneStagePlan(leaseId, options);
+      status = localPlacement
+        ? 'executed-through-local-compute-manager'
+        : 'executed-through-local-compute-manager-advisory-distributed';
+    } else {
+      remoteExecutor = this._resolveGpuResidentStagePlacementExecutor(leaseId, options, {
+        placement,
+        submittedAt,
+        placementPreflight
+      });
+      if (remoteExecutor?.contractReady !== true || typeof remoteExecutor.executor !== 'function') {
+        const err = new Error(`Distributed GPU resident stage execution is not available: ${placement.requestedPlacement}`);
+        err.code = 'ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_EXECUTION_UNAVAILABLE';
+        err.leaseId = String(leaseId || '');
+        err.placementPreflight = placementPreflight;
+        err.executorContract = cloneSerializableValue(remoteExecutor?.contract) || null;
+        throw err;
+      }
+      const request = {
+        schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA,
+        leaseId: String(leaseId || ''),
+        requesterId: this.nodeId || null,
+        targetPeerId: placement.targetPeerIds[0] || remoteExecutor.targetPeerId || null,
+        requestedPlacement: placement.requestedPlacement,
+        placementPreflight: cloneSerializableValue(placementPreflight),
+        executorContract: cloneSerializableValue(remoteExecutor.contract),
+        input: cloneSerializableValue(options.input),
+        context: cloneSerializableValue(options.context),
+        sentAt: submittedAt
+      };
+      result = await remoteExecutor.executor(request, {
+        nodeKernel: this,
+        leaseId,
+        options,
+        placement,
+        placementPreflight,
+        executorContract: remoteExecutor.contract,
+        submittedAt
+      });
+      status = 'submitted-through-node-kernel-distributed-resident-stage-executor';
+      const resultObject = result && typeof result === 'object' ? result : { value: result };
+      const remoteRetainedBufferRefs = normalizeStringList(
+        resultObject.retainedBufferRefs || resultObject.remoteRetainedBufferRefs
+      );
+      remoteResultPreflight = {
+        schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA,
+        status: 'remote-resident-stage-result-received-not-admitted',
+        admittedLocally: false,
+        remoteRetainedRefsUsableLocally: false,
+        localHotBufferRefreshRequired: true,
+        leaseId: String(leaseId || ''),
+        executorId: remoteExecutor.executorId || null,
+        executorTransport: remoteExecutor.transport || null,
+        targetPeerId: remoteExecutor.targetPeerId || placement.targetPeerIds[0] || null,
+        resultSchema: resultObject.schema || null,
+        resultStatus: resultObject.status || null,
+        cacheKey: resultObject.cacheKey || null,
+        remoteRetainedBufferRefs,
+        retainedBufferRefs: remoteRetainedBufferRefs,
+        reason: 'remote-resident-stage-result-requires-state-manager-admission-and-local-hot-buffer-refresh'
+      };
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        result.remoteGpuResidentStageResultPreflight = remoteResultPreflight;
+      }
+    }
+
+    const completedAt = Date.now();
+    const authority = {
+      schema: NODE_KERNEL_GPU_RESIDENT_STAGE_EXECUTION_AUTHORITY_SCHEMA,
+      status,
+      nodeId: this.nodeId || null,
+      leaseId: String(leaseId || ''),
+      localPlacement,
+      advisory: placement.advisory,
+      requestedPlacement: placement.requestedPlacement,
+      targetPeerIds: placement.targetPeerIds,
+      targetPeerId: placement.targetPeerIds[0] || remoteExecutor?.targetPeerId || null,
+      placementAuthority: 'node-kernel',
+      placementPreflight: cloneSerializableValue(placementPreflight),
+      executorId: remoteExecutor?.executorId || null,
+      executorTransport: remoteExecutor?.transport || null,
+      executorContract: cloneSerializableValue(remoteExecutor?.contract) || null,
+      remoteResultPreflight,
+      remoteResultAdmitted: false,
+      remoteRetainedRefsUsableLocally: remoteResultPreflight
+        ? false
+        : null,
+      localHotBufferRefreshRequired: remoteResultPreflight
+        ? true
+        : null,
+      submittedAt,
+      completedAt
+    };
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      return {
+        ...result,
+        nodeKernelGpuResidentStageAuthority: authority
+      };
+    }
+    return {
+      value: result,
+      nodeKernelGpuResidentStageAuthority: authority
+    };
   }
 
   async submitTaskGraph(graph = {}) {

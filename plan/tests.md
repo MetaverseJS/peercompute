@@ -1,6 +1,25 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- NodeKernel GPU resident stage execution authority:
+  - `node --check` passed for
+    `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/nodeKernel.start.test.js`.
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+    `15/15`.
+  - Coverage: local GPU resident stage execution wraps
+    `ComputeManager.executeGpuResidentLaneStagePlan()` with
+    `peercompute.nodekernel.gpu-resident-stage-execution-authority.v0`.
+    Non-advisory distributed execution uses only a validated resident-stage
+    executor, emits
+    `peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0`,
+    and records returned remote retained refs as
+    `remote-resident-stage-result-received-not-admitted` with
+    `remoteRetainedRefsUsableLocally=false` and
+    `localHotBufferRefreshRequired=true`.
+
+### Current focused result - 2026-06-17 AKDT
 - NodeKernel GPU resident stage placement executor contract:
   - `node --check` passed for
     `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,

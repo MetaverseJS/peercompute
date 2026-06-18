@@ -85,6 +85,17 @@ The root node should exist on a domain secured with SSL enabling all executable 
   the same distributed placement error and detailed contract failure reasons.
   Local and advisory demo paths remain on the existing ComputeManager preflight
   route; no remote GPU buffer is treated as locally usable.
+- NodeKernel GPU resident stage execution authority:
+  `NodeKernel.executeGpuResidentLaneStagePlan()` now wraps resident stage
+  execution with `peercompute.nodekernel.gpu-resident-stage-execution-authority.v0`.
+  Local and advisory placement executes through the local ComputeManager stage
+  plan path. Non-advisory distributed placement can call only a validated
+  resident-stage placement executor and sends
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0`.
+  Returned remote retained refs are recorded under
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0`
+  as received but not admitted, not locally usable, and requiring a local
+  hot-buffer refresh/admission follow-up before any state mutation is trusted.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

@@ -2,6 +2,59 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 16:57:30 AKDT - GPU resident stage execution authority
+
+### Prompt
+- Continued from the resident-stage placement executor contract slice.
+- User wanted the architecture refactor to keep moving toward WebGPU/
+  PeerCompute-resident physics without breaking existing demos.
+
+### Actions
+- Added
+  `peercompute.nodekernel.gpu-resident-stage-execution-authority.v0`.
+- Added
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0`.
+- Added
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0`.
+- Added `NodeKernel.executeGpuResidentLaneStagePlan()`.
+- Local and advisory placement execution now delegates to
+  `ComputeManager.executeGpuResidentLaneStagePlan()` and stamps the result
+  with NodeKernel execution authority metadata.
+- Non-advisory distributed execution now requires the validated resident-stage
+  placement executor contract added in the prior slice. It calls only that
+  executor and never silently falls back to requester-local ComputeManager
+  execution.
+- Remote executor output is preserved as metadata and explicitly marked
+  `remote-resident-stage-result-received-not-admitted`,
+  `remoteRetainedRefsUsableLocally=false`, and
+  `localHotBufferRefreshRequired=true`.
+- Exported the new schemas through the package root.
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/nodeKernel.start.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks.
+- PASS: `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+  `15/15`.
+
+### Open
+- This is still an explicit-executor first hop, not the browser network
+  request/result transport.
+- Remote resident-stage results are not admitted and cannot mutate local state
+  until StateManager admission plus a local hot-buffer refresh path is added.
+
 ## 2026-06-17 16:50:58 AKDT - GPU resident stage placement executor contract
 
 ### Prompt
