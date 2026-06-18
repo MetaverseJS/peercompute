@@ -7,6 +7,7 @@ import {
 } from '../../src/peercompute/computeManager/ComputeManager.js';
 import {
   NodeKernel,
+  NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_CACHE_ARTIFACT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_COMPACT_CANDIDATE_AUTHORITY_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_HOT_BUFFER_REFRESH_SCHEMA,
@@ -238,6 +239,118 @@ test('NodeKernel submits task graphs through compute manager with authority meta
   );
   assert.equal(result.nodeKernelAuthority.placementPreflight.status, 'local-placement-accepted');
   assert.equal(result.placementPolicy.authority, 'node-kernel');
+});
+
+test('NodeKernel wraps local GPU resident stage placement preflight with authority metadata', () => {
+  const node = new NodeKernel({
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false
+  });
+  node.nodeId = 'node-gpu-stage-local-preflight';
+  let called = false;
+  node.computeManager = {
+    preflightGpuResidentLaneStagePlacement(leaseId, options) {
+      called = true;
+      assert.equal(leaseId, 'lease-local');
+      assert.equal(options.context?.scenario, 'local-unit');
+      return {
+        schema: 'peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0',
+        status: 'placement-preflight-ready',
+        canExecute: true,
+        placementBatches: [['p2g'], ['gridUpdate'], ['g2p']]
+      };
+    }
+  };
+
+  const preflight = node.preflightGpuResidentLaneStagePlacement('lease-local', {
+    context: { scenario: 'local-unit' },
+    placementPolicy: { requestedPlacement: 'local' }
+  });
+
+  assert.equal(called, true);
+  assert.equal(preflight.schema, NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA);
+  assert.equal(preflight.status, 'local-placement-accepted');
+  assert.equal(preflight.nodeId, 'node-gpu-stage-local-preflight');
+  assert.equal(preflight.requestedPlacement, 'local');
+  assert.equal(preflight.localPlacement, true);
+  assert.equal(preflight.advisory, true);
+  assert.equal(preflight.computeManagerPreflightStatus, 'placement-preflight-ready');
+  assert.equal(preflight.computeManagerCanExecute, true);
+  assert.deepEqual(preflight.computeManagerPreflight.placementBatches, [['p2g'], ['gridUpdate'], ['g2p']]);
+});
+
+test('NodeKernel allows advisory distributed GPU resident stage placement as local preflight only', () => {
+  const node = new NodeKernel({
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false
+  });
+  node.nodeId = 'node-gpu-stage-advisory-preflight';
+  node.computeManager = {
+    preflightGpuResidentLaneStagePlacement() {
+      return {
+        schema: 'peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0',
+        status: 'placement-preflight-ready',
+        canExecute: true
+      };
+    }
+  };
+
+  const preflight = node.preflightGpuResidentLaneStagePlacement('lease-advisory', {
+    placementPolicy: {
+      requestedPlacement: 'peer',
+      advisory: true,
+      targetPeerIds: ['peer-b']
+    }
+  });
+
+  assert.equal(preflight.schema, NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA);
+  assert.equal(preflight.status, 'advisory-distributed-placement-local-execution-allowed');
+  assert.equal(preflight.requestedPlacement, 'peer');
+  assert.equal(preflight.targetPeerId, 'peer-b');
+  assert.deepEqual(preflight.targetPeerIds, ['peer-b']);
+  assert.equal(preflight.localPlacement, false);
+  assert.equal(preflight.advisory, true);
+  assert.equal(preflight.distributedStagePlacementExecutorAvailable, false);
+  assert.equal(preflight.computeManagerPreflightStatus, 'placement-preflight-ready');
+});
+
+test('NodeKernel blocks non-advisory distributed GPU resident stage placement', () => {
+  const node = new NodeKernel({
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false
+  });
+  node.nodeId = 'node-gpu-stage-distributed-block';
+  let called = false;
+  node.computeManager = {
+    preflightGpuResidentLaneStagePlacement() {
+      called = true;
+      throw new Error('distributed GPU resident stage should not preflight locally');
+    }
+  };
+
+  assert.throws(
+    () => node.preflightGpuResidentLaneStagePlacement('lease-distributed', {
+      placementPolicy: {
+        requestedPlacement: 'peer',
+        advisory: false,
+        targetPeerIds: ['peer-b']
+      }
+    }),
+    (err) => {
+      assert.equal(called, false);
+      assert.equal(err.code, 'ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE');
+      assert.equal(err.placementPreflight.schema, NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA);
+      assert.equal(err.placementPreflight.status, 'blocked-distributed-resident-stage-placement-unavailable');
+      assert.equal(err.placementPreflight.requestedPlacement, 'peer');
+      assert.equal(err.placementPreflight.targetPeerId, 'peer-b');
+      assert.equal(err.placementPreflight.advisory, false);
+      assert.equal(err.placementPreflight.computeManagerPreflight, null);
+      return true;
+    }
+  );
 });
 
 test('NodeKernel blocks non-advisory distributed task graphs until graph executor exists', async () => {

@@ -1,6 +1,22 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- NodeKernel GPU resident stage placement authority preflight:
+  - `node --check` passed for
+    `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/nodeKernel.start.test.js`.
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+    `11/11`.
+  - Coverage: local GPU resident stage preflight wraps the ComputeManager
+    preflight with
+    `peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0`;
+    advisory distributed requests record local fallback; non-advisory
+    distributed resident stage placement fails closed with
+    `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE`
+    before any local ComputeManager preflight runs.
+
+### Current focused result - 2026-06-17 AKDT
 - ComputeManager GPU resident lane placement preflight:
   - `node --check` passed for
     `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`,

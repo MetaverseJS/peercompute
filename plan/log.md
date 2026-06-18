@@ -2,6 +2,55 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 16:24:14 AKDT - NodeKernel GPU resident stage placement preflight
+
+### Prompt
+- Continuing the WebGPU concurrency/authority refactor after adding the
+  ComputeManager GPU resident stage placement preflight.
+- The next clean architecture step was to put a NodeKernel authority wrapper
+  around that preflight and fail closed for non-advisory distributed resident
+  placement.
+
+### Actions
+- Added
+  `peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0`.
+- Added `NodeKernel.preflightGpuResidentLaneStagePlacement()`.
+- The method wraps local ComputeManager GPU resident stage placement preflight
+  with NodeKernel placement authority metadata.
+- Advisory distributed resident placement records local execution fallback.
+- Non-advisory distributed resident placement throws
+  `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE`
+  before any local ComputeManager preflight runs.
+- Exported the new schema through the package root.
+- Added focused NodeKernel unit coverage for local, advisory distributed, and
+  blocked non-advisory distributed resident stage placement preflight.
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/nodeKernel.start.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks.
+- PASS: `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+  `11/11`.
+
+### Open
+- There is still no remote GPU resident stage executor. The wrapper makes that
+  explicit by failing closed for non-advisory distributed resident placement.
+- Next ULG step is to route resident mechanics stage preflight through
+  NodeKernel when a real kernel owns the ComputeManager, while preserving the
+  raw ComputeManager preflight for injected/local-only paths.
+
 ## 2026-06-17 16:15:23 AKDT - ComputeManager GPU resident lane placement preflight
 
 ### Prompt

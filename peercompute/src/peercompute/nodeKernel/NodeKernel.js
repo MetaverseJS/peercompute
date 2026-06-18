@@ -32,6 +32,7 @@ export const NODE_KERNEL_PEER_CAPABILITIES_SCHEMA = 'peercompute.nodekernel.peer
 export const NODE_KERNEL_COMPUTE_CAPACITY_SCHEMA = 'peercompute.nodekernel.compute-capacity.v0';
 export const NODE_KERNEL_TASK_GRAPH_AUTHORITY_SCHEMA = 'peercompute.nodekernel.task-graph-authority.v0';
 export const NODE_KERNEL_TASK_GRAPH_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.task-graph-placement-preflight.v0';
+export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Math.floor(Number(value));
@@ -214,6 +215,45 @@ function taskGraphPlacementIsLocal(requestedPlacement) {
 function normalizeTaskGraphAdvisoryPlacement(graph = {}) {
   const source = graph.placementPolicy || graph.placement || graph.placementHint || {};
   return source.advisory !== false && graph.advisory !== false;
+}
+
+function normalizeGpuResidentStagePlacementOptions(options = {}) {
+  const source = options.placementPolicy || options.placement || options.placementHint || {};
+  return {
+    requestedPlacement: String(firstDefined(
+      source.requestedPlacement,
+      source.placement,
+      source.mode,
+      options.requestedPlacement,
+      options.placementMode,
+      'local'
+    ) || 'local').trim().toLowerCase(),
+    targetPeerIds: (() => {
+      const out = [];
+      const seen = new Set();
+      const add = (value) => {
+        for (const peerId of normalizePeerIdList(value)) {
+          if (seen.has(peerId)) continue;
+          seen.add(peerId);
+          out.push(peerId);
+        }
+      };
+      add(source.targetPeerIds);
+      add(source.peers);
+      add(source.peerIds);
+      add(source.targetPeerId);
+      add(source.peerId);
+      add(source.remotePeerId);
+      add(options.targetPeerIds);
+      add(options.peers);
+      add(options.peerIds);
+      add(options.targetPeerId);
+      add(options.peerId);
+      add(options.remotePeerId);
+      return out;
+    })(),
+    advisory: source.advisory !== false && options.advisory !== false
+  };
 }
 
 /**
@@ -1011,6 +1051,58 @@ export class NodeKernel {
       throw new Error('ComputeManager not initialized');
     }
     return this.computeManager.submitTask(task);
+  }
+
+  preflightGpuResidentLaneStagePlacement(leaseId, options = {}) {
+    const submittedAt = Date.now();
+    const placement = normalizeGpuResidentStagePlacementOptions(options);
+    const localPlacement = taskGraphPlacementIsLocal(placement.requestedPlacement);
+    const distributedStagePlacementExecutorAvailable = false;
+    const computeManagerPreflight = localPlacement || placement.advisory
+      ? this.computeManager?.preflightGpuResidentLaneStagePlacement?.(leaseId, options)
+      : null;
+    const preflight = {
+      schema: NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
+      status: localPlacement
+        ? 'local-placement-accepted'
+        : (placement.advisory
+            ? 'advisory-distributed-placement-local-execution-allowed'
+            : 'blocked-distributed-resident-stage-placement-unavailable'),
+      nodeId: this.nodeId || null,
+      leaseId: String(leaseId || ''),
+      requestedPlacement: placement.requestedPlacement,
+      targetPeerIds: placement.targetPeerIds,
+      targetPeerId: placement.targetPeerIds[0] || null,
+      localPlacement,
+      advisory: placement.advisory,
+      distributedStagePlacementExecutorAvailable,
+      computeManagerPreflight: cloneSerializableValue(computeManagerPreflight),
+      computeManagerPreflightSchema: computeManagerPreflight?.schema || null,
+      computeManagerPreflightStatus: computeManagerPreflight?.status || null,
+      computeManagerCanExecute: computeManagerPreflight?.canExecute === true,
+      placementAuthority: 'node-kernel',
+      reason: localPlacement
+        ? 'gpu-resident-stage-placement-local'
+        : (placement.advisory
+            ? 'distributed-gpu-resident-stage-placement-is-advisory'
+            : 'non-advisory-distributed-gpu-resident-stage-placement-not-implemented'),
+      submittedAt
+    };
+    if (!localPlacement && !placement.advisory && !distributedStagePlacementExecutorAvailable) {
+      const err = new Error(`Distributed GPU resident stage placement is not available: ${placement.requestedPlacement}`);
+      err.code = 'ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE';
+      err.leaseId = preflight.leaseId;
+      err.placementPreflight = preflight;
+      throw err;
+    }
+    if ((localPlacement || placement.advisory) && !computeManagerPreflight) {
+      const err = new Error('ComputeManager GPU resident stage placement preflight is unavailable');
+      err.code = 'ERR_NODEKERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_UNAVAILABLE';
+      err.leaseId = preflight.leaseId;
+      err.placementPreflight = preflight;
+      throw err;
+    }
+    return preflight;
   }
 
   async submitTaskGraph(graph = {}) {

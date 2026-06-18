@@ -63,6 +63,17 @@ The root node should exist on a domain secured with SSL enabling all executable 
   This gives ULG and later NodeKernel/peer placement a truthful concurrency
   audit surface without claiming that one ordered WebGPU queue runs kernels out
   of order or that remote GPU buffers are locally usable.
+- NodeKernel GPU resident stage placement authority preflight:
+  `NodeKernel.preflightGpuResidentLaneStagePlacement()` now wraps the local
+  ComputeManager preflight with
+  `peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0`.
+  Local and advisory distributed requests can continue to local
+  ComputeManager preflight while recording NodeKernel placement authority.
+  Non-advisory distributed resident stage placement fails closed with
+  `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE`
+  until a real remote resident-stage placement executor exists. This mirrors
+  the task-graph placement contract for the narrower GPU resident lane stage
+  path.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub
