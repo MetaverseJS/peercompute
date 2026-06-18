@@ -51,6 +51,18 @@ The root node should exist on a domain secured with SSL enabling all executable 
   This keeps concurrency under ComputeManager authority without inventing
   implicit dataflow: stages still need `dependsOn` or `inputFrom` when they
   require another stage's value.
+- ComputeManager GPU resident lane placement preflight:
+  `GpuResidentLaneManager` now exposes
+  `peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0`, using
+  the same dependency-ready batching and read/write conflict policy as actual
+  execution before any stage handlers run. `ComputeManager` exposes the
+  authority facade through `preflightGpuResidentLaneStagePlacement()` and
+  `planGpuResidentLaneStagePlacement()`. The report records placement batches,
+  max concurrent stage count, conflict deferrals, executor sources, GPUHub
+  Worker policy status, missing executors, and worker-ready/fallback counts.
+  This gives ULG and later NodeKernel/peer placement a truthful concurrency
+  audit surface without claiming that one ordered WebGPU queue runs kernels out
+  of order or that remote GPU buffers are locally usable.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

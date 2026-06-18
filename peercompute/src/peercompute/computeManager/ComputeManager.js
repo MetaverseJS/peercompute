@@ -1809,6 +1809,17 @@ export class ComputeManager {
     return this.gpuResidentLaneManager.executeStagePlan(leaseId, options);
   }
 
+  preflightGpuResidentLaneStagePlacement(leaseId, options = {}) {
+    if (!this.gpuResidentLaneManager?.preflightStagePlacement) {
+      throw new Error('GPU resident lane manager cannot preflight stage placement');
+    }
+    return this.gpuResidentLaneManager.preflightStagePlacement(leaseId, options);
+  }
+
+  planGpuResidentLaneStagePlacement(leaseId, options = {}) {
+    return this.preflightGpuResidentLaneStagePlacement(leaseId, options);
+  }
+
   /**
    * Distribute task across multiple nodes
    * @param {Object} task - Task to distribute

@@ -1,6 +1,32 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- ComputeManager GPU resident lane placement preflight:
+  - `node --check` passed for
+    `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`,
+    `peercompute/src/peercompute/computeManager/ComputeManager.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/gpuResidentLaneManager.test.js`.
+  - `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js` passed
+    `10/10`.
+  - Coverage: `ComputeManager.preflightGpuResidentLaneStagePlacement()`
+    reports `peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0`
+    before execution, using the same explicit dependency batches and
+    state-family conflict deferrals as the stage executor. The test proves the
+    report includes GPUHub executor sources, Worker residency status, worker
+    ready/fallback counts, missing-executor counts, placement batches, and max
+    concurrent stage count.
+  - Cross-repo ULG validation:
+    `node --test tests/peercomputeComputeManagerIntegration.test.mjs` passed
+    `16/16`, proving ULG mechanics telemetry records the preflight for both
+    mechanics-only and pressure/thermal/reaction Worker-ready stage chains.
+  - Cross-repo ULG behavior/visual gates:
+    `npm run test:physics-atomics` passed `11` checks with `3` expected
+    opt-in skips, and visual matrix
+    `codex-stage-placement-preflight-20260617` passed three rows with
+    `failedCount=0`.
+
+### Current focused result - 2026-06-17 AKDT
 - GPU resident lane state-family conflict batching:
   - `node --check` passed for
     `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js` and

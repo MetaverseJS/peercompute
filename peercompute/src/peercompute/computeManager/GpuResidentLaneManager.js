@@ -6,8 +6,12 @@ export const GPU_RESIDENT_LANE_COPY_BUDGET_SCHEMA = 'peercompute.compute.gpu-res
 export const GPU_RESIDENT_LANE_FENCE_REPORT_SCHEMA = 'peercompute.compute.gpu-fence-report.v0';
 export const GPU_RESIDENT_LANE_STAGE_PLAN_SCHEMA = 'peercompute.compute.gpu-resident-lane-stage-plan.v0';
 export const GPU_RESIDENT_LANE_STAGE_EXECUTION_SCHEMA = 'peercompute.compute.gpu-resident-lane-stage-execution.v0';
+export const GPU_RESIDENT_LANE_STAGE_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0';
 
 const DEFAULT_QUEUE_FENCE_POLICY = 'queue.onSubmittedWorkDone-before-readback-map';
+const EXPLICIT_STAGE_DEPENDENCY_MODE = 'explicit-stage-dependencies';
+const SEQUENTIAL_STAGE_ORDER_MODE = 'sequential-stage-order';
+const STATE_FAMILY_CONFLICT_POLICY = 'defer-read-write-conflicting-ready-stages';
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -135,7 +139,7 @@ function mergeCopyBudget(a = {}, b = {}) {
 
 function stagePlanUsesExplicitDependencies(stagePlan = {}) {
   return stagePlan.parallelStageExecution === true
-    || stagePlan.dependencyMode === 'explicit-stage-dependencies'
+    || stagePlan.dependencyMode === EXPLICIT_STAGE_DEPENDENCY_MODE
     || (stagePlan.stages || []).some((stage) => (stage.dependsOn || []).length > 0);
 }
 
@@ -216,6 +220,109 @@ function selectConflictFreeReadyBatch(readyStages = []) {
     }
   }
   return { batch, deferred };
+}
+
+function validateStageDependencies(stagePlan = {}) {
+  const stageIds = new Set((stagePlan.stages || []).map((stage) => stage.id));
+  for (const stage of stagePlan.stages || []) {
+    for (const dependencyId of stage.dependsOn || []) {
+      if (!stageIds.has(dependencyId)) {
+        const err = new Error(`GPU resident lane stage ${stage.id} depends on unknown stage ${dependencyId}`);
+        err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_MISSING';
+        err.stage = clonePlain(stage);
+        throw err;
+      }
+    }
+  }
+}
+
+function planStageExecutionBatches(stagePlan = {}) {
+  validateStageDependencies(stagePlan);
+  const useExplicitDependencies = stagePlanUsesExplicitDependencies(stagePlan);
+  const executionBatches = [];
+  const stateFamilyConflictDeferrals = [];
+  if (useExplicitDependencies) {
+    const pending = new Map((stagePlan.stages || []).map((stage) => [stage.id, stage]));
+    const completedStageIds = new Set();
+    while (pending.size > 0) {
+      const ready = (stagePlan.stages || [])
+        .filter((stage) => pending.has(stage.id))
+        .filter((stage) => (stage.dependsOn || []).every((dependencyId) => completedStageIds.has(dependencyId)));
+      if (!ready.length) {
+        const err = new Error(`GPU resident lane stage plan has a cycle or unsatisfied dependencies: ${Array.from(pending.keys()).join(', ')}`);
+        err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_CYCLE';
+        throw err;
+      }
+      const { batch, deferred } = selectConflictFreeReadyBatch(ready);
+      const batchIndex = executionBatches.length;
+      stateFamilyConflictDeferrals.push(
+        ...deferred.map((entry) => ({
+          ...entry,
+          batchIndex
+        }))
+      );
+      executionBatches.push(batch.map((stage) => stage.id));
+      for (const stage of batch) {
+        pending.delete(stage.id);
+        completedStageIds.add(stage.id);
+      }
+    }
+  } else {
+    for (const stage of stagePlan.stages || []) {
+      executionBatches.push([stage.id]);
+    }
+  }
+  return {
+    dependencyMode: useExplicitDependencies ? EXPLICIT_STAGE_DEPENDENCY_MODE : SEQUENTIAL_STAGE_ORDER_MODE,
+    parallelStageExecution: useExplicitDependencies,
+    stateFamilyConflictPolicy: useExplicitDependencies
+      ? STATE_FAMILY_CONFLICT_POLICY
+      : SEQUENTIAL_STAGE_ORDER_MODE,
+    stateFamilyConflictDeferrals,
+    stateFamilyConflictDeferralCount: stateFamilyConflictDeferrals.length,
+    executionBatches,
+    maxConcurrentStageCount: executionBatches.reduce((max, batch) => Math.max(max, batch.length), 0)
+  };
+}
+
+function summarizeStagePlacement(stage = {}, {
+  batchIndex = -1,
+  executorSource = null,
+  gpuHubExecutorDescriptor = null
+} = {}) {
+  const workerPolicy = clonePlain(gpuHubExecutorDescriptor?.workerPolicy);
+  const workerMode = normalizeString(workerPolicy?.mode, null);
+  const workerReady = workerPolicy?.status === 'worker-ready';
+  const workerRequested = workerMode === 'dedicated-worker';
+  let placementTarget = 'missing-stage-executor';
+  if (executorSource === 'stage-plan-executor') {
+    placementTarget = 'stage-plan-executor';
+  } else if (executorSource === 'provided-stage-executor') {
+    placementTarget = 'provided-stage-executor';
+  } else if (executorSource === 'gpu-hub-resident-stage-executor') {
+    if (workerReady) placementTarget = 'gpu-hub-worker-resident-stage';
+    else if (workerRequested) placementTarget = 'gpu-hub-inline-fallback-for-worker-stage';
+    else placementTarget = 'gpu-hub-inline-resident-stage';
+  }
+  return {
+    stageId: stage.id,
+    lawNodeId: stage.lawNodeId,
+    runtimeTarget: stage.runtimeTarget,
+    batchIndex,
+    dependsOn: normalizeStringList(stage.dependsOn),
+    inputFrom: normalizeString(stage.inputFrom, null),
+    reads: normalizeStringList(stage.reads),
+    writes: normalizeStringList(stage.writes),
+    executorSource,
+    placementTarget,
+    gpuHubExecutorDescriptor: clonePlain(gpuHubExecutorDescriptor),
+    workerPolicy,
+    workerResidencyStatus: workerPolicy?.status || null,
+    workerRequested,
+    workerReady,
+    sameDeviceRequired: workerPolicy?.sameDeviceRequired === true,
+    bufferTransferPolicy: workerPolicy?.bufferTransferPolicy || null
+  };
 }
 
 function fenceSatisfied(status) {
@@ -448,20 +555,9 @@ export class GpuResidentLaneManager {
 
     const startedAt = this.now();
     const stageResults = [];
-    const executionBatches = [];
-    const stateFamilyConflictDeferrals = [];
     const stageValues = {};
-    const stageIds = new Set(stagePlan.stages.map((stage) => stage.id));
-    for (const stage of stagePlan.stages) {
-      for (const dependencyId of stage.dependsOn || []) {
-        if (!stageIds.has(dependencyId)) {
-          const err = new Error(`GPU resident lane stage ${stage.id} depends on unknown stage ${dependencyId}`);
-          err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_MISSING';
-          err.stage = clonePlain(stage);
-          throw err;
-        }
-      }
-    }
+    const batchPlan = planStageExecutionBatches(stagePlan);
+    const stageById = new Map(stagePlan.stages.map((stage) => [stage.id, stage]));
     let currentValue = input;
     const runOneStage = async (stage, stageInput) => {
       let runStage = typeof executor === 'function'
@@ -541,28 +637,10 @@ export class GpuResidentLaneManager {
       };
     };
 
-    const useExplicitDependencies = stagePlanUsesExplicitDependencies(stagePlan);
+    const useExplicitDependencies = batchPlan.parallelStageExecution === true;
     if (useExplicitDependencies) {
-      const pending = new Map(stagePlan.stages.map((stage) => [stage.id, stage]));
-      while (pending.size > 0) {
-        const completedStageIds = new Set(Object.keys(stageValues));
-        const ready = stagePlan.stages
-          .filter((stage) => pending.has(stage.id))
-          .filter((stage) => (stage.dependsOn || []).every((dependencyId) => completedStageIds.has(dependencyId)));
-        if (!ready.length) {
-          const err = new Error(`GPU resident lane stage plan has a cycle or unsatisfied dependencies: ${Array.from(pending.keys()).join(', ')}`);
-          err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DEPENDENCY_CYCLE';
-          throw err;
-        }
-        const { batch, deferred } = selectConflictFreeReadyBatch(ready);
-        const batchIndex = executionBatches.length;
-        stateFamilyConflictDeferrals.push(
-          ...deferred.map((entry) => ({
-            ...entry,
-            batchIndex
-          }))
-        );
-        executionBatches.push(batch.map((stage) => stage.id));
+      for (const batchStageIds of batchPlan.executionBatches) {
+        const batch = batchStageIds.map((stageId) => stageById.get(stageId)).filter(Boolean);
         const readyResults = await Promise.all(batch.map((stage) => runOneStage(
           stage,
           inputForStage(stage, {
@@ -574,15 +652,14 @@ export class GpuResidentLaneManager {
         for (let i = 0; i < batch.length; i += 1) {
           const stage = batch[i];
           const entry = readyResults[i];
-          pending.delete(stage.id);
           stageValues[stage.id] = entry.value;
           currentValue = entry.value;
           stageResults.push(entry.result);
         }
       }
     } else {
-      for (const stage of stagePlan.stages) {
-        executionBatches.push([stage.id]);
+      for (const batchStageIds of batchPlan.executionBatches) {
+        const stage = stageById.get(batchStageIds[0]);
         const entry = await runOneStage(stage, currentValue);
         currentValue = entry.value;
         stageValues[stage.id] = entry.value;
@@ -600,15 +677,13 @@ export class GpuResidentLaneManager {
       stagePlan: clonePlain(stagePlan),
       stageCount: stagePlan.stages.length,
       completedStageCount: stageResults.filter((result) => result.status === 'completed').length,
-      dependencyMode: useExplicitDependencies ? 'explicit-stage-dependencies' : 'sequential-stage-order',
-      parallelStageExecution: useExplicitDependencies,
-      stateFamilyConflictPolicy: useExplicitDependencies
-        ? 'defer-read-write-conflicting-ready-stages'
-        : 'sequential-stage-order',
-      stateFamilyConflictDeferrals,
-      stateFamilyConflictDeferralCount: stateFamilyConflictDeferrals.length,
-      executionBatches,
-      maxConcurrentStageCount: executionBatches.reduce((max, batch) => Math.max(max, batch.length), 0),
+      dependencyMode: batchPlan.dependencyMode,
+      parallelStageExecution: batchPlan.parallelStageExecution,
+      stateFamilyConflictPolicy: batchPlan.stateFamilyConflictPolicy,
+      stateFamilyConflictDeferrals: batchPlan.stateFamilyConflictDeferrals,
+      stateFamilyConflictDeferralCount: batchPlan.stateFamilyConflictDeferralCount,
+      executionBatches: batchPlan.executionBatches,
+      maxConcurrentStageCount: batchPlan.maxConcurrentStageCount,
       stageResults,
       retainedBufferRefs: normalizeStringList(lease.retainedBufferRefs),
       output: currentValue,
@@ -618,6 +693,106 @@ export class GpuResidentLaneManager {
     lease.stageExecution = clonePlain(execution);
     if (lane) lane.updatedAt = this.now();
     return execution;
+  }
+
+  preflightStagePlacement(leaseOrId, {
+    executor = null,
+    stageExecutors = {},
+    allowMissingExecutors = false
+  } = {}) {
+    const lease = typeof leaseOrId === 'string' ? this.leases.get(leaseOrId) : leaseOrId;
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseOrId}`);
+    const lane = this.lanes.get(lease.laneId);
+    const stagePlan = lease.stagePlan || createStagePlanFromContract(lease.residentSequenceLaneContract, {
+      laneId: lease.laneId,
+      stateKey: lease.stateKey,
+      domainKey: lease.domainKey,
+      queueFencePolicy: lease.queueFencePolicy
+    });
+    if (!stagePlan || !Array.isArray(stagePlan.stages) || stagePlan.stages.length === 0) {
+      const err = new Error(`GPU resident lane lease ${lease.leaseId} has no executable stage plan`);
+      err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_PLAN_MISSING';
+      throw err;
+    }
+    const batchPlan = planStageExecutionBatches(stagePlan);
+    const batchIndexByStageId = new Map();
+    batchPlan.executionBatches.forEach((batch, batchIndex) => {
+      for (const stageId of batch) batchIndexByStageId.set(stageId, batchIndex);
+    });
+    const stagePlacements = stagePlan.stages.map((stage) => {
+      let runStage = typeof executor === 'function'
+        ? executor
+        : (stageExecutors?.[stage.id] || stageExecutors?.[stage.lawNodeId]);
+      let executorSource = typeof executor === 'function'
+        ? 'stage-plan-executor'
+        : (runStage ? 'provided-stage-executor' : null);
+      let gpuHubExecutorDescriptor = null;
+      if (
+        typeof runStage !== 'function'
+        && this.gpuHub
+        && typeof this.gpuHub.hasResidentStageExecutor === 'function'
+        && this.gpuHub.hasResidentStageExecutor(stage)
+        && typeof this.gpuHub.describeResidentStageExecutor === 'function'
+      ) {
+        gpuHubExecutorDescriptor = this.gpuHub.describeResidentStageExecutor(stage);
+        executorSource = 'gpu-hub-resident-stage-executor';
+      }
+      return summarizeStagePlacement(stage, {
+        batchIndex: batchIndexByStageId.get(stage.id) ?? -1,
+        executorSource,
+        gpuHubExecutorDescriptor
+      });
+    });
+    const missingExecutorStageIds = stagePlacements
+      .filter((entry) => !entry.executorSource)
+      .map((entry) => entry.stageId);
+    const workerRequestedStageIds = stagePlacements
+      .filter((entry) => entry.workerRequested)
+      .map((entry) => entry.stageId);
+    const workerReadyStageIds = stagePlacements
+      .filter((entry) => entry.workerReady)
+      .map((entry) => entry.stageId);
+    const workerFallbackStageIds = stagePlacements
+      .filter((entry) => entry.workerRequested && !entry.workerReady)
+      .map((entry) => entry.stageId);
+    const canExecute = allowMissingExecutors === true || missingExecutorStageIds.length === 0;
+    return {
+      schema: GPU_RESIDENT_LANE_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
+      status: canExecute ? 'placement-preflight-ready' : 'blocked-missing-stage-executors',
+      authority: 'compute-manager-gpu-resident-lane-manager',
+      advisory: true,
+      leaseId: lease.leaseId,
+      laneId: lease.laneId,
+      stateKey: lease.stateKey,
+      domainKey: lease.domainKey,
+      deviceId: lane?.deviceId || this.deviceId,
+      stagePlan: clonePlain(stagePlan),
+      stageCount: stagePlan.stages.length,
+      dependencyMode: batchPlan.dependencyMode,
+      parallelStageExecution: batchPlan.parallelStageExecution,
+      stateFamilyConflictPolicy: batchPlan.stateFamilyConflictPolicy,
+      stateFamilyConflictDeferrals: batchPlan.stateFamilyConflictDeferrals,
+      stateFamilyConflictDeferralCount: batchPlan.stateFamilyConflictDeferralCount,
+      placementBatches: batchPlan.executionBatches,
+      maxConcurrentStageCount: batchPlan.maxConcurrentStageCount,
+      stagePlacements,
+      executorSources: Object.fromEntries(stagePlacements.map((entry) => [entry.stageId, entry.executorSource])),
+      workerResidencyStatuses: Object.fromEntries(stagePlacements.map((entry) => [entry.stageId, entry.workerResidencyStatus])),
+      missingExecutorStageIds,
+      missingExecutorCount: missingExecutorStageIds.length,
+      workerRequestedStageIds,
+      workerRequestedCount: workerRequestedStageIds.length,
+      workerReadyStageIds,
+      workerReadyCount: workerReadyStageIds.length,
+      workerFallbackStageIds,
+      workerFallbackCount: workerFallbackStageIds.length,
+      canExecute,
+      createdAt: this.now()
+    };
+  }
+
+  planStagePlacement(leaseOrId, options = {}) {
+    return this.preflightStagePlacement(leaseOrId, options);
   }
 
   rejectLease(leaseId, reason = 'lane-validation-rejected') {

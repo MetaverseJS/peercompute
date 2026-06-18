@@ -2,6 +2,76 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 16:15:23 AKDT - ComputeManager GPU resident lane placement preflight
+
+### Prompt
+- User asked whether the WebGPU work is sufficiently concurrent, then said
+  "alright go for it" to proceed with the next architecture slice.
+- The active follow-up was to lift dependency/conflict scheduling evidence from
+  per-lane execution into a broader ComputeManager/GPUHub placement preflight.
+
+### Actions
+- Added
+  `peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0`.
+- Refactored GPU resident lane dependency/conflict batch planning into shared
+  helpers so execution and preflight use the same dependency validation,
+  state-family conflict deferrals, batch layout, and max-concurrency count.
+- Added `GpuResidentLaneManager.preflightStagePlacement()` and
+  `planStagePlacement()`.
+- Added `ComputeManager.preflightGpuResidentLaneStagePlacement()` and
+  `planGpuResidentLaneStagePlacement()` as the authority facade.
+- Placement preflight now reports stage placements, GPUHub executor sources,
+  Worker policy status, worker-ready/fallback counts, missing executors,
+  state-family conflict deferrals, and placement batches before any stage
+  handler runs.
+- Exported the new schema from the package root.
+- Added focused lane-manager coverage for dependency batches, state-family
+  conflicts, GPUHub worker policy, and the ComputeManager facade.
+
+### Files Touched
+- `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `node --check peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- Cross-repo ULG:
+  `node --check src/runtime/sph/sphMlsMpmGpuStep.js`
+- Cross-repo ULG:
+  `node --check tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG:
+  `node --test tests/peercomputeComputeManagerIntegration.test.mjs`
+- Cross-repo ULG: `npm run test:physics-atomics`
+- Cross-repo ULG visual:
+  `ULG_VISUAL_MATRIX_RUN_ID=codex-stage-placement-preflight-20260617 ... npm run probe:sph-visual-matrix`
+
+### Results
+- PASS: PeerCompute syntax checks.
+- PASS: `node --test peercompute/tests/unit/gpuResidentLaneManager.test.js`
+  passed `10/10`.
+- PASS: ULG PeerCompute integration passed `16/16`.
+- PASS: ULG physics atomics passed `11` checks with `3` expected opt-in
+  skips.
+- PASS: ULG visual matrix passed `3/3` with `failedCount=0`, empty issue
+  counts, and two frames per row under
+  `/tmp/ulg-visual-sanity-matrix/codex-stage-placement-preflight-20260617`.
+
+### Open
+- This is still an advisory/pre-execution placement surface. It does not make
+  a single WebGPU queue unordered or move retained GPU buffers across devices
+  or peers.
+- Next PeerCompute authority work is to connect this preflight to
+  NodeKernel/ComputeManager placement decisions across Workers/devices/peers
+  and eventually fail closed for non-advisory distributed resident placement.
+
 ## 2026-06-17 15:53:07 AKDT - GPU resident lane state-family conflict batching
 
 ### Prompt

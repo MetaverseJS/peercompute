@@ -8,6 +8,7 @@ import {
   GPU_RESIDENT_LANE_MANAGER_SCHEMA,
   GPU_RESIDENT_LANE_SCHEMA,
   GPU_RESIDENT_LANE_STAGE_EXECUTION_SCHEMA,
+  GPU_RESIDENT_LANE_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
   GPU_RESIDENT_LANE_STAGE_PLAN_SCHEMA,
   GpuResidentLaneManager
 } from '../../src/peercompute/computeManager/GpuResidentLaneManager.js';
@@ -416,6 +417,131 @@ test('GpuResidentLaneManager defers ready stages with state-family conflicts', a
   assert.ok(events.indexOf('start:pressureInterface') < events.indexOf('finish:p2g'));
   assert.ok(events.indexOf('start:gridDiagnostics:false') > events.indexOf('finish:p2g'));
   assert.ok(events.includes('start:gridUpdate:true'));
+});
+
+test('ComputeManager preflights GPU resident lane placement with dependency batches, conflicts, and worker policy', () => {
+  const gpuHub = new GPUHubManager();
+  gpuHub.setDevice({ label: 'gpu-device:placement-preflight' });
+  for (const stageId of ['p2g', 'pressureInterface', 'gridDiagnostics', 'gridUpdate']) {
+    gpuHub.registerResidentStageExecutor({
+      stageId,
+      workerPolicy: stageId === 'p2g'
+        ? {
+            mode: 'dedicated-worker',
+            workerType: 'webgpu-compute-worker',
+            workerModuleUrl: `/workers/${stageId}.js`,
+            sameDeviceRequired: true
+          }
+        : { mode: 'inline' },
+      executor: () => ({ value: { stageId } })
+    });
+  }
+  gpuHub.registerResidentStageExecutor({
+    stageId: 'g2p',
+    workerPolicy: {
+      mode: 'dedicated-worker',
+      workerType: 'webgpu-compute-worker',
+      workerModuleUrl: '/workers/g2p.js',
+      sameDeviceRequired: true
+    },
+    workerRunner: () => ({ value: { stageId: 'g2p' } })
+  });
+  const laneManager = new GpuResidentLaneManager({
+    gpuHub,
+    deviceId: 'gpu-device:placement-preflight',
+    now: monotonicClock()
+  });
+  const computeManager = new ComputeManager({
+    enableWorkers: false,
+    gpuResidentLaneManager: laneManager
+  });
+  const contract = residentSequenceContract({
+    stageDependencyMode: 'explicit-stage-dependencies',
+    parallelStageExecution: true,
+    passDagStages: [
+      {
+        id: 'p2g',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['sph-particle-state'],
+        writes: ['mls-mpm-grid']
+      },
+      {
+        id: 'gridDiagnostics',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['mls-mpm-grid'],
+        writes: ['diagnostics']
+      },
+      {
+        id: 'pressureInterface',
+        runtimeTarget: 'webgpu-compute',
+        reads: ['resident-gas-pressure'],
+        writes: ['pressure-interface-force-rows']
+      },
+      {
+        id: 'gridUpdate',
+        runtimeTarget: 'webgpu-compute',
+        dependsOn: ['p2g', 'pressureInterface'],
+        reads: ['mls-mpm-grid', 'pressure-interface-force-rows'],
+        writes: ['mls-mpm-grid']
+      },
+      {
+        id: 'g2p',
+        runtimeTarget: 'webgpu-compute',
+        dependsOn: ['gridUpdate'],
+        reads: ['mls-mpm-grid'],
+        writes: ['sph-particle-state']
+      }
+    ]
+  });
+  const lease = computeManager.acquireGpuResidentLaneLease({
+    laneId: contract.laneId,
+    stateKey: contract.stateKey,
+    residentSequenceLaneContract: contract
+  });
+
+  const preflight = computeManager.preflightGpuResidentLaneStagePlacement(lease.leaseId);
+
+  assert.equal(preflight.schema, GPU_RESIDENT_LANE_STAGE_PLACEMENT_PREFLIGHT_SCHEMA);
+  assert.equal(preflight.status, 'placement-preflight-ready');
+  assert.equal(preflight.authority, 'compute-manager-gpu-resident-lane-manager');
+  assert.equal(preflight.dependencyMode, 'explicit-stage-dependencies');
+  assert.equal(preflight.parallelStageExecution, true);
+  assert.equal(preflight.stateFamilyConflictPolicy, 'defer-read-write-conflicting-ready-stages');
+  assert.deepEqual(preflight.placementBatches, [
+    ['p2g', 'pressureInterface'],
+    ['gridDiagnostics'],
+    ['gridUpdate'],
+    ['g2p']
+  ]);
+  assert.equal(preflight.maxConcurrentStageCount, 2);
+  assert.equal(preflight.stateFamilyConflictDeferralCount, 2);
+  assert.deepEqual(preflight.executorSources, {
+    p2g: 'gpu-hub-resident-stage-executor',
+    gridDiagnostics: 'gpu-hub-resident-stage-executor',
+    pressureInterface: 'gpu-hub-resident-stage-executor',
+    gridUpdate: 'gpu-hub-resident-stage-executor',
+    g2p: 'gpu-hub-resident-stage-executor'
+  });
+  assert.deepEqual(preflight.workerResidencyStatuses, {
+    p2g: 'blocked-worker-backend-missing',
+    gridDiagnostics: 'inline-ready',
+    pressureInterface: 'inline-ready',
+    gridUpdate: 'inline-ready',
+    g2p: 'worker-ready'
+  });
+  assert.deepEqual(preflight.workerRequestedStageIds, ['p2g', 'g2p']);
+  assert.deepEqual(preflight.workerReadyStageIds, ['g2p']);
+  assert.deepEqual(preflight.workerFallbackStageIds, ['p2g']);
+  assert.equal(preflight.canExecute, true);
+  assert.equal(preflight.missingExecutorCount, 0);
+  assert.equal(
+    preflight.stagePlacements.find((entry) => entry.stageId === 'p2g')?.placementTarget,
+    'gpu-hub-inline-fallback-for-worker-stage'
+  );
+  assert.equal(
+    preflight.stagePlacements.find((entry) => entry.stageId === 'g2p')?.placementTarget,
+    'gpu-hub-worker-resident-stage'
+  );
 });
 
 test('GpuResidentLaneManager can execute contract stages through GPUHub resident executors', async () => {
