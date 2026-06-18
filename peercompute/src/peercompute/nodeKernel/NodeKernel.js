@@ -37,6 +37,7 @@ export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA =
 export const NODE_KERNEL_GPU_RESIDENT_STAGE_EXECUTION_AUTHORITY_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-execution-authority.v0';
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0';
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0';
+export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Math.floor(Number(value));
@@ -1603,6 +1604,132 @@ export class NodeKernel {
     return {
       value: result,
       nodeKernelGpuResidentStageAuthority: authority
+    };
+  }
+
+  commitRemoteGpuResidentStageExecutionResult(resultOrOptions = {}, options = {}) {
+    const source = resultOrOptions && typeof resultOrOptions === 'object' ? resultOrOptions : {};
+    const config = options && typeof options === 'object' ? options : {};
+    const preflight = source.remoteGpuResidentStageResultPreflight
+      || source.nodeKernelGpuResidentStageAuthority?.remoteResultPreflight
+      || source.remoteResultPreflight
+      || (source.schema === NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA ? source : null);
+    const requestedAt = Date.now();
+    const base = {
+      schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA,
+      status: 'blocked',
+      admitted: false,
+      committed: false,
+      authority: 'node-kernel-state-manager',
+      nodeId: this.nodeId || null,
+      leaseId: String(preflight?.leaseId || source.leaseId || config.leaseId || ''),
+      cacheKey: preflight?.cacheKey || source.cacheKey || config.cacheKey || null,
+      requestedAt
+    };
+    if (!preflight || preflight.schema !== NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA) {
+      return {
+        ...base,
+        status: 'blocked-missing-remote-resident-stage-result-preflight',
+        reason: 'remote-gpu-resident-stage-result-preflight-required'
+      };
+    }
+    if (!this.stateManager?.commitDelta) {
+      return {
+        ...base,
+        status: 'state-manager-admission-unavailable',
+        reason: 'state-manager-commit-delta-required',
+        remoteResultPreflight: cloneSerializableValue(preflight)
+      };
+    }
+    const stateFamilies = normalizeStringList(
+      config.stateFamilies
+        || source.stateFamilies
+        || source.outputFamilies
+        || preflight.stateFamilies
+    );
+    const allowedStateFamilies = normalizeStringList(config.allowedStateFamilies);
+    const disallowedStateFamilies = allowedStateFamilies.length > 0
+      ? stateFamilies.filter((family) => !allowedStateFamilies.includes(family))
+      : [];
+    if (disallowedStateFamilies.length > 0) {
+      return {
+        ...base,
+        status: 'blocked-disallowed-state-family',
+        reason: 'remote-resident-stage-result-state-family-not-allowed',
+        stateFamilies,
+        allowedStateFamilies,
+        disallowedStateFamilies,
+        remoteResultPreflight: cloneSerializableValue(preflight)
+      };
+    }
+    const compactPayload = config.compactCandidate
+      || config.stateSeedPayload
+      || config.compactPayload
+      || source.compactCandidate
+      || source.stateSeedPayload
+      || source.compactPayload
+      || source.resultSummary
+      || null;
+    if (!compactPayload && config.allowMetadataOnlyAdmission !== true) {
+      return {
+        ...base,
+        status: 'blocked-no-compact-result-payload',
+        reason: 'remote-resident-stage-result-requires-compact-or-state-seed-payload',
+        stateFamilies,
+        allowedStateFamilies,
+        remoteResultPreflight: cloneSerializableValue(preflight)
+      };
+    }
+    const admittedAt = Date.now();
+    const remoteRetainedBufferRefs = normalizeStringList(
+      preflight.remoteRetainedBufferRefs
+        || preflight.retainedBufferRefs
+        || source.remoteRetainedBufferRefs
+        || source.retainedBufferRefs
+    );
+    const payload = {
+      schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA,
+      status: 'remote-resident-stage-result-admitted-metadata',
+      admitted: true,
+      committed: true,
+      authority: 'node-kernel-state-manager',
+      nodeId: this.nodeId || null,
+      leaseId: base.leaseId || null,
+      cacheKey: base.cacheKey,
+      resultSchema: source.schema || preflight.resultSchema || null,
+      resultStatus: source.status || preflight.resultStatus || null,
+      stateFamilies,
+      allowedStateFamilies,
+      remoteRetainedBufferRefs,
+      retainedBufferRefs: remoteRetainedBufferRefs,
+      remoteRetainedRefsUsableLocally: false,
+      localHotBufferRefreshRequired: true,
+      compactPayload: cloneSerializableValue(compactPayload),
+      remoteResultPreflight: cloneSerializableValue(preflight),
+      admittedAt
+    };
+    const scope = String(config.scope || config.admissionScope || 'remote-gpu-resident-stage-results').trim()
+      || 'remote-gpu-resident-stage-results';
+    const taskId = String(
+      config.taskId
+        || config.admissionTaskId
+        || `remote-gpu-resident-stage-result:${payload.cacheKey || payload.leaseId || admittedAt}`
+    ).trim();
+    const commitDelta = {
+      taskId,
+      scope,
+      version: config.version ?? admittedAt,
+      timestamp: admittedAt,
+      payload
+    };
+    this.stateManager.commitDelta(commitDelta);
+    return {
+      ...payload,
+      commitDeltaScope: scope,
+      commitDeltaTaskId: taskId,
+      commitDelta: config.returnCommitDelta === true
+        ? cloneSerializableValue(commitDelta)
+        : null
     };
   }
 

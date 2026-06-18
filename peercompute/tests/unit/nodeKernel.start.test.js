@@ -12,6 +12,7 @@ import {
   NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA,
   NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA,
+  NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_CACHE_ARTIFACT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_COMPACT_CANDIDATE_AUTHORITY_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_HOT_BUFFER_REFRESH_SCHEMA,
@@ -607,6 +608,76 @@ test('NodeKernel submits distributed GPU resident stage execution through valida
     result.nodeKernelGpuResidentStageAuthority.placementPreflight.status,
     'distributed-resident-stage-placement-executor-ready'
   );
+});
+
+test('NodeKernel admits remote GPU resident stage execution results as metadata only', async () => {
+  const node = new NodeKernel({
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false
+  });
+  node.nodeId = 'node-gpu-stage-remote-admission';
+  const committedDeltas = [];
+  node.stateManager = {
+    commitDelta(delta) {
+      committedDeltas.push(delta);
+    }
+  };
+  node.computeManager = {
+    preflightGpuResidentLaneStagePlacement() {
+      throw new Error('distributed GPU resident stage should not preflight locally');
+    }
+  };
+  node.registerGpuResidentStagePlacementExecutor(
+    'gpu-resident-stage-placement:peer-b',
+    {
+      executor: async () => ({
+        schema: 'peercompute.test.remote-gpu-resident-stage-result.v0',
+        status: 'completed',
+        cacheKey: 'remote-stage-cache:admit',
+        stateFamilies: ['particle-kinematics'],
+        retainedBufferRefs: ['remote-buffer:positions'],
+        compactCandidate: {
+          schema: 'peercompute.test.remote-stage-compact-candidate.v0',
+          hash: 'fnv1a32-remote-stage-compact',
+          particleCount: 2
+        }
+      }),
+      targetPeerId: 'peer-b',
+      supportsGpuResidentStagePlacement: true,
+      retainedRefPolicy: 'metadata-only-nonlocal',
+      stateAuthority: 'node-kernel-state-manager',
+      cacheAdmissionPolicy: 'state-manager-required'
+    }
+  );
+
+  const result = await node.executeGpuResidentLaneStagePlan('lease-remote-admission', {
+    placementPolicy: {
+      requestedPlacement: 'peer',
+      advisory: false,
+      targetPeerIds: ['peer-b']
+    }
+  });
+  const admission = node.commitRemoteGpuResidentStageExecutionResult(result, {
+    allowedStateFamilies: ['particle-kinematics'],
+    returnCommitDelta: true
+  });
+
+  assert.equal(admission.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA);
+  assert.equal(admission.status, 'remote-resident-stage-result-admitted-metadata');
+  assert.equal(admission.admitted, true);
+  assert.equal(admission.committed, true);
+  assert.equal(admission.cacheKey, 'remote-stage-cache:admit');
+  assert.deepEqual(admission.stateFamilies, ['particle-kinematics']);
+  assert.deepEqual(admission.remoteRetainedBufferRefs, ['remote-buffer:positions']);
+  assert.equal(admission.remoteRetainedRefsUsableLocally, false);
+  assert.equal(admission.localHotBufferRefreshRequired, true);
+  assert.equal(admission.remoteResultPreflight.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA);
+  assert.equal(admission.commitDelta.scope, 'remote-gpu-resident-stage-results');
+  assert.equal(committedDeltas.length, 1);
+  assert.equal(committedDeltas[0].payload.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA);
+  assert.equal(committedDeltas[0].payload.remoteRetainedRefsUsableLocally, false);
+  assert.equal(committedDeltas[0].payload.localHotBufferRefreshRequired, true);
 });
 
 test('NodeKernel blocks non-advisory distributed task graphs until graph executor exists', async () => {

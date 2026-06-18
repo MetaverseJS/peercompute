@@ -96,6 +96,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0`
   as received but not admitted, not locally usable, and requiring a local
   hot-buffer refresh/admission follow-up before any state mutation is trusted.
+- NodeKernel remote GPU resident stage result metadata admission:
+  `peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0`
+  records remote resident-stage execution output into StateManager warm deltas
+  only as compact metadata. Admission requires a remote execution result
+  preflight, StateManager commit authority, allowed state-family checks, and a
+  compact/state-seed payload unless the caller explicitly permits
+  metadata-only admission. Remote retained refs remain nonlocal and a local
+  hot-buffer refresh is still required before they can affect local state.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

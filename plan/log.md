@@ -2,6 +2,53 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 17:00:58 AKDT - Remote GPU resident stage result metadata admission
+
+### Prompt
+- Continued from the resident-stage execution authority slice.
+- The next concrete gap was that remote resident-stage output could be
+  received but was intentionally unusable until admitted.
+
+### Actions
+- Added
+  `peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0`.
+- Added `NodeKernel.commitRemoteGpuResidentStageExecutionResult()`.
+- The method requires a remote resident-stage execution result preflight,
+  StateManager `commitDelta`, state-family allow-list checks, and a compact
+  candidate/state-seed payload unless `allowMetadataOnlyAdmission` is explicit.
+- Admission commits only warm metadata into the
+  `remote-gpu-resident-stage-results` scope.
+- The admitted payload keeps `remoteRetainedRefsUsableLocally=false` and
+  `localHotBufferRefreshRequired=true`; it does not make remote WebGPU refs
+  local and does not mutate hot physics state.
+- Exported the admission schema through the package root.
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/nodeKernel.start.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks.
+- PASS: `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+  `16/16`.
+
+### Open
+- Local hot-buffer refresh from admitted remote resident-stage metadata is
+  still required before ULG can use remote resident-stage outputs in local hot
+  GPU lanes.
+- This still uses explicit executor hooks. Browser network request/result
+  transport for resident-stage execution remains a later slice.
+
 ## 2026-06-17 16:57:30 AKDT - GPU resident stage execution authority
 
 ### Prompt

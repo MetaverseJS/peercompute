@@ -1,6 +1,22 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- NodeKernel remote GPU resident stage result metadata admission:
+  - `node --check` passed for
+    `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/nodeKernel.start.test.js`.
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+    `16/16`.
+  - Coverage: a remote GPU resident stage execution result with compact
+    candidate metadata can be recorded through
+    `peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0`
+    into StateManager warm deltas only after a remote result preflight and
+    allowed state-family check. The admitted record preserves remote retained
+    refs as nonlocal metadata with `remoteRetainedRefsUsableLocally=false` and
+    `localHotBufferRefreshRequired=true`.
+
+### Current focused result - 2026-06-17 AKDT
 - NodeKernel GPU resident stage execution authority:
   - `node --check` passed for
     `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
