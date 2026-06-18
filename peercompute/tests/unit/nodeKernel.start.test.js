@@ -12,6 +12,7 @@ import {
   NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA,
   NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA,
+  NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA,
   NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_CACHE_ARTIFACT_PREFLIGHT_SCHEMA,
   NODE_KERNEL_REMOTE_TASK_GRAPH_COMPACT_CANDIDATE_AUTHORITY_SCHEMA,
@@ -678,6 +679,105 @@ test('NodeKernel admits remote GPU resident stage execution results as metadata 
   assert.equal(committedDeltas[0].payload.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA);
   assert.equal(committedDeltas[0].payload.remoteRetainedRefsUsableLocally, false);
   assert.equal(committedDeltas[0].payload.localHotBufferRefreshRequired, true);
+});
+
+test('NodeKernel refreshes local hot buffers from admitted remote GPU resident stage metadata', async () => {
+  const node = new NodeKernel({
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false
+  });
+  node.nodeId = 'node-gpu-stage-remote-refresh';
+  const committedDeltas = [];
+  let acquiredSpec = null;
+  let completedOptions = null;
+  node.stateManager = {
+    commitDelta(delta) {
+      committedDeltas.push(delta);
+    }
+  };
+  node.computeManager = {
+    acquireGpuResidentLaneLease(spec) {
+      acquiredSpec = spec;
+      return {
+        schema: 'peercompute.compute.gpu-resident-lane-lease.v0',
+        leaseId: 'local-refresh-lease',
+        laneId: spec.laneId,
+        stateKey: spec.stateKey,
+        retainedBufferRefs: spec.retainedBufferRefs,
+        remoteRetainedBufferRefs: spec.remoteRetainedBufferRefs
+      };
+    },
+    completeGpuResidentLaneLease(leaseId, options) {
+      assert.equal(leaseId, 'local-refresh-lease');
+      completedOptions = options;
+      return {
+        schema: 'peercompute.compute.gpu-resident-lane-execution.v0',
+        lease: { leaseId },
+        gpuFence: {
+          status: options.status,
+          method: options.method,
+          fenceSatisfied: true
+        },
+        retainedBufferRefs: options.retainedBufferRefs
+      };
+    },
+    rejectGpuResidentLaneLease() {
+      throw new Error('refresh should not reject successful lease');
+    }
+  };
+  const admission = {
+    schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA,
+    status: 'remote-resident-stage-result-admitted-metadata',
+    admitted: true,
+    cacheKey: 'remote-stage-cache:refresh',
+    leaseId: 'remote-stage-lease',
+    stateFamilies: ['particle-kinematics'],
+    remoteRetainedBufferRefs: ['remote-buffer:positions'],
+    retainedBufferRefs: ['remote-buffer:positions'],
+    remoteRetainedRefsUsableLocally: false,
+    localHotBufferRefreshRequired: true,
+    compactPayload: {
+      schema: 'peercompute.test.remote-stage-compact-candidate.v0',
+      particleCount: 2
+    }
+  };
+
+  const refresh = await node.refreshRemoteGpuResidentStageHotBuffersFromAdmission(admission, {
+    returnCommitDelta: true,
+    refreshExecutor: async ({ admission: refreshAdmission, compactPayload, lease }) => {
+      assert.equal(refreshAdmission.cacheKey, 'remote-stage-cache:refresh');
+      assert.equal(compactPayload.particleCount, 2);
+      assert.equal(lease.leaseId, 'local-refresh-lease');
+      return {
+        schema: 'peercompute.test.local-remote-stage-refresh.v0',
+        status: 'completed',
+        localBufferRefs: ['local-buffer:positions'],
+        retainedBufferRefs: ['local-buffer:positions'],
+        gpuFence: {
+          status: 'queue-work-completed',
+          method: 'unit-remote-stage-refresh'
+        }
+      };
+    }
+  });
+
+  assert.equal(refresh.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA);
+  assert.equal(refresh.status, 'hot-buffer-refresh-completed');
+  assert.equal(refresh.refreshed, true);
+  assert.deepEqual(refresh.remoteRetainedBufferRefs, ['remote-buffer:positions']);
+  assert.deepEqual(refresh.retainedBufferRefs, ['local-buffer:positions']);
+  assert.deepEqual(refresh.localBufferRefs, ['local-buffer:positions']);
+  assert.equal(refresh.remoteRetainedRefsUsableLocally, false);
+  assert.equal(refresh.execution.gpuFence.fenceSatisfied, true);
+  assert.equal(refresh.commitDelta.scope, 'remote-gpu-resident-stage-hot-buffer-refreshes');
+  assert.deepEqual(acquiredSpec.readFamilies, ['particle-kinematics']);
+  assert.deepEqual(acquiredSpec.writeFamilies, ['particle-kinematics']);
+  assert.deepEqual(acquiredSpec.remoteRetainedBufferRefs, ['remote-buffer:positions']);
+  assert.deepEqual(completedOptions.retainedBufferRefs, ['local-buffer:positions']);
+  assert.equal(committedDeltas.length, 1);
+  assert.equal(committedDeltas[0].payload.schema, NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA);
+  assert.deepEqual(committedDeltas[0].payload.retainedBufferRefs, ['local-buffer:positions']);
 });
 
 test('NodeKernel blocks non-advisory distributed task graphs until graph executor exists', async () => {

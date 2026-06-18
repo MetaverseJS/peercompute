@@ -104,6 +104,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
   compact/state-seed payload unless the caller explicitly permits
   metadata-only admission. Remote retained refs remain nonlocal and a local
   hot-buffer refresh is still required before they can affect local state.
+- NodeKernel local hot-buffer refresh from remote resident-stage admission:
+  `peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0`
+  rebuilds same-device hot refs from an admitted remote resident-stage
+  metadata record. The method reads or receives the admission record, requires
+  a local refresh executor, acquires a local ComputeManager GPU resident lane,
+  rejects blocked/no-ref executor output, and completes the lane only with
+  executor-returned local retained refs. Remote retained refs remain source
+  metadata and are never treated as local WebGPU leases.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

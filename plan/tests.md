@@ -1,6 +1,21 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- NodeKernel local hot-buffer refresh from remote resident-stage admission:
+  - `node --check` passed for
+    `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/nodeKernel.start.test.js`.
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+    `17/17`.
+  - Coverage: an admitted remote GPU resident stage metadata record can drive
+    `peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0`
+    only through a local refresh executor and local ComputeManager GPU lane
+    lease. The test proves the lease carries remote refs as source metadata,
+    completes only with executor-returned local refs, commits a refresh warm
+    delta, and keeps `remoteRetainedRefsUsableLocally=false`.
+
+### Current focused result - 2026-06-17 AKDT
 - NodeKernel remote GPU resident stage result metadata admission:
   - `node --check` passed for
     `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,

@@ -2,6 +2,55 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 17:05:02 AKDT - Local hot-buffer refresh from remote resident-stage admission
+
+### Prompt
+- User interrupted to confirm that reactions still do not appear to work and
+  fluids no longer appear to flow.
+- Acknowledged that this is a separate ULG physics regression and should be
+  prioritized after finishing the current clean PeerCompute slice.
+
+### Actions
+- Added
+  `peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0`.
+- Added `NodeKernel.refreshRemoteGpuResidentStageHotBuffersFromAdmission()`.
+- The method accepts or reads an admitted remote resident-stage result
+  metadata record, requires a local refresh executor, acquires a local
+  ComputeManager GPU resident lane lease, and passes compact metadata plus
+  remote retained refs as source metadata only.
+- Blocked executor results or results with no local retained refs reject the
+  lease and do not commit a refresh delta.
+- Successful refresh completes the local lane with executor-returned local
+  retained refs, commits an optional warm refresh delta, and keeps
+  `remoteRetainedRefsUsableLocally=false`.
+- Exported the refresh schema through the package root.
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/nodeKernel.start.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks.
+- PASS: `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+  `17/17`.
+
+### Open
+- Browser network request/result transport for resident-stage execution remains
+  future work.
+- ULG physics behavior is still visibly broken: reactions are not behaving and
+  fluids appear not to flow/merge correctly. Next work should pivot back to
+  solver behavior and visual sequence validation.
+
 ## 2026-06-17 17:00:58 AKDT - Remote GPU resident stage result metadata admission
 
 ### Prompt

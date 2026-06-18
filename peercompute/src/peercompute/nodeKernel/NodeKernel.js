@@ -38,6 +38,7 @@ export const NODE_KERNEL_GPU_RESIDENT_STAGE_EXECUTION_AUTHORITY_SCHEMA = 'peerco
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_REQUEST_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0';
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_EXECUTION_RESULT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0';
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0';
+export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Math.floor(Number(value));
@@ -1729,8 +1730,224 @@ export class NodeKernel {
       commitDeltaTaskId: taskId,
       commitDelta: config.returnCommitDelta === true
         ? cloneSerializableValue(commitDelta)
-        : null
+      : null
     };
+  }
+
+  async refreshRemoteGpuResidentStageHotBuffersFromAdmission(admissionOrOptions = {}, options = {}) {
+    const source = admissionOrOptions && typeof admissionOrOptions === 'object' ? admissionOrOptions : {};
+    const config = options && typeof options === 'object' ? options : {};
+    const requestedAt = Date.now();
+    const base = {
+      schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA,
+      status: 'blocked',
+      refreshed: false,
+      authority: 'node-kernel-compute-manager-local-gpu-lane',
+      nodeId: this.nodeId || null,
+      requestedAt
+    };
+    let admission = source.schema === NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA
+      ? source
+      : source.admission || source.remoteResidentStageResultAdmission || null;
+    const admissionScope = String(
+      config.admissionScope || config.scope || source.admissionScope || 'remote-gpu-resident-stage-results'
+    ).trim() || 'remote-gpu-resident-stage-results';
+    const admissionTaskId = String(
+      config.admissionTaskId || config.taskId || source.admissionTaskId || ''
+    ).trim();
+    if (!admission && this.stateManager?.getWarmDeltas) {
+      const warmDeltas = this.stateManager.getWarmDeltas(admissionScope) || {};
+      admission = (admissionTaskId ? warmDeltas[admissionTaskId]?.payload : null)
+        || Object.values(warmDeltas)
+          .map((entry) => entry?.payload)
+          .find((payload) => payload?.schema === NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA
+            && (
+              !config.cacheKey
+              || payload.cacheKey === config.cacheKey
+              || payload.leaseId === config.leaseId
+            ))
+        || null;
+    }
+    if (!admission || admission.schema !== NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA) {
+      return {
+        ...base,
+        status: 'blocked-missing-remote-resident-stage-result-admission',
+        reason: 'remote-gpu-resident-stage-result-admission-required',
+        admissionScope,
+        admissionTaskId: admissionTaskId || null
+      };
+    }
+    if (admission.admitted !== true) {
+      return {
+        ...base,
+        status: 'blocked-admission-not-admitted',
+        reason: 'remote-gpu-resident-stage-result-admission-must-be-admitted',
+        admission: cloneSerializableValue(admission),
+        admissionScope,
+        admissionTaskId: admissionTaskId || null
+      };
+    }
+    if (!this.computeManager?.acquireGpuResidentLaneLease
+      || !this.computeManager?.completeGpuResidentLaneLease
+      || !this.computeManager?.rejectGpuResidentLaneLease) {
+      return {
+        ...base,
+        status: 'gpu-lane-unavailable',
+        reason: 'compute-manager-gpu-resident-lane-api-unavailable',
+        admission: cloneSerializableValue(admission)
+      };
+    }
+    if (typeof config.refreshExecutor !== 'function') {
+      return {
+        ...base,
+        status: 'refresh-executor-unavailable',
+        reason: 'local-remote-resident-stage-hot-buffer-refresh-executor-required',
+        admission: cloneSerializableValue(admission)
+      };
+    }
+    const cacheKey = String(config.cacheKey || admission.cacheKey || '').trim();
+    const leaseId = String(config.sourceLeaseId || admission.leaseId || '').trim();
+    const stateFamilies = normalizeStringList(config.stateFamilies || admission.stateFamilies);
+    const remoteRetainedBufferRefs = normalizeStringList(
+      config.remoteRetainedBufferRefs || admission.remoteRetainedBufferRefs || admission.retainedBufferRefs
+    );
+    const initialLocalRetainedBufferRefs = normalizeStringList(config.localRetainedBufferRefs);
+    const leaseSpec = {
+      laneId: config.laneId || `remote-gpu-resident-stage-refresh:${cacheKey || leaseId || requestedAt}`,
+      stateKey: config.stateKey || `remote-gpu-resident-stage-state:${cacheKey || leaseId || requestedAt}`,
+      domainKey: config.domainKey || 'remote-gpu-resident-stage-hot-buffer-refresh',
+      solverId: config.solverId || 'remote-gpu-resident-stage-hot-buffer-refresh',
+      taskId: config.refreshTaskId || `remote-gpu-resident-stage-hot-buffer-refresh:${cacheKey || leaseId || requestedAt}`,
+      owner: 'node-kernel-remote-gpu-resident-stage-hot-buffer-refresh',
+      readFamilies: stateFamilies,
+      writeFamilies: stateFamilies,
+      retainedBufferRefs: initialLocalRetainedBufferRefs,
+      remoteRetainedBufferRefs,
+      copyBudget: config.copyBudget || {
+        uploadBytes: 0,
+        readbackBytes: 0,
+        retainedBytes: 0,
+        compactSummaryBytes: 0
+      }
+    };
+    let lease = null;
+    try {
+      lease = this.computeManager.acquireGpuResidentLaneLease(leaseSpec);
+      const refreshResult = await config.refreshExecutor({
+        cacheKey,
+        leaseId,
+        admission: cloneSerializableValue(admission),
+        compactPayload: cloneSerializableValue(admission.compactPayload),
+        lease: cloneSerializableValue(lease),
+        nodeKernel: this,
+        computeManager: this.computeManager,
+        stateManager: this.stateManager,
+        gpuHub: this.gpuHub || null
+      });
+      const localRetainedRefs = normalizeStringList(
+        refreshResult?.retainedBufferRefs || refreshResult?.localBufferRefs || initialLocalRetainedBufferRefs
+      );
+      const refreshStatusText = String(refreshResult?.status || '').trim().toLowerCase();
+      const executorBlocked = refreshResult?.refreshed === false
+        || refreshStatusText.startsWith('blocked')
+        || refreshStatusText.includes('unavailable')
+        || refreshStatusText.includes('failed');
+      if (executorBlocked || localRetainedRefs.length === 0) {
+        let rejectedLease = null;
+        try {
+          rejectedLease = this.computeManager.rejectGpuResidentLaneLease(
+            lease.leaseId,
+            'remote-gpu-resident-stage-hot-buffer-refresh-not-completed'
+          );
+        } catch {
+          rejectedLease = null;
+        }
+        return {
+          ...base,
+          status: 'hot-buffer-refresh-not-completed',
+          reason: refreshResult?.reason
+            || (localRetainedRefs.length === 0
+              ? 'local-remote-resident-stage-refresh-produced-no-local-refs'
+              : 'local-remote-resident-stage-refresh-executor-blocked'),
+          admission: cloneSerializableValue(admission),
+          refreshResult: cloneSerializableValue(refreshResult),
+          lease: cloneSerializableValue(lease),
+          rejectedLease: cloneSerializableValue(rejectedLease)
+        };
+      }
+      const execution = this.computeManager.completeGpuResidentLaneLease(lease.leaseId, {
+        status: refreshResult?.gpuFence?.status || refreshResult?.fenceStatus || 'queue-work-completed',
+        method: refreshResult?.gpuFence?.method || refreshResult?.fenceMethod || 'local-remote-resident-stage-hot-buffer-refresh-executor',
+        retainedBufferRefs: localRetainedRefs,
+        source: 'node-kernel-remote-gpu-resident-stage-hot-buffer-refresh'
+      });
+      const refreshedAt = Date.now();
+      const payload = {
+        schema: NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA,
+        status: 'hot-buffer-refresh-recorded',
+        authority: 'node-kernel-compute-manager-local-gpu-lane',
+        nodeId: this.nodeId || null,
+        cacheKey: cacheKey || null,
+        sourceLeaseId: leaseId || null,
+        refreshedAt,
+        stateFamilies,
+        remoteRetainedBufferRefs,
+        retainedBufferRefs: localRetainedRefs,
+        localBufferRefs: normalizeStringList(refreshResult?.localBufferRefs || localRetainedRefs),
+        remoteRetainedRefsUsableLocally: false,
+        admission: cloneSerializableValue(admission),
+        lease: cloneSerializableValue(lease),
+        execution: cloneSerializableValue(execution),
+        refreshResult: cloneSerializableValue(refreshResult)
+      };
+      let commitDelta = null;
+      if (config.commitRefreshDelta !== false && this.stateManager?.commitDelta) {
+        const refreshScope = String(config.refreshScope || 'remote-gpu-resident-stage-hot-buffer-refreshes').trim()
+          || 'remote-gpu-resident-stage-hot-buffer-refreshes';
+        const refreshTaskId = String(
+          config.refreshDeltaTaskId
+            || `remote-gpu-resident-stage-hot-buffer-refresh:${cacheKey || leaseId || refreshedAt}`
+        ).trim();
+        commitDelta = {
+          taskId: refreshTaskId,
+          scope: refreshScope,
+          version: config.version ?? refreshedAt,
+          timestamp: refreshedAt,
+          payload
+        };
+        this.stateManager.commitDelta(commitDelta);
+      }
+      return {
+        ...payload,
+        status: 'hot-buffer-refresh-completed',
+        refreshed: true,
+        commitDelta: config.returnCommitDelta === true && commitDelta
+          ? cloneSerializableValue(commitDelta)
+          : null
+      };
+    } catch (err) {
+      let rejectedLease = null;
+      if (lease?.leaseId) {
+        try {
+          rejectedLease = this.computeManager.rejectGpuResidentLaneLease(
+            lease.leaseId,
+            'remote-gpu-resident-stage-hot-buffer-refresh-failed'
+          );
+        } catch {
+          rejectedLease = null;
+        }
+      }
+      return {
+        ...base,
+        status: 'hot-buffer-refresh-failed',
+        reason: 'local-remote-resident-stage-hot-buffer-refresh-executor-failed',
+        errorCode: err?.code || null,
+        errorMessage: err?.message || String(err),
+        admission: cloneSerializableValue(admission),
+        lease: cloneSerializableValue(lease),
+        rejectedLease: cloneSerializableValue(rejectedLease)
+      };
+    }
   }
 
   async submitTaskGraph(graph = {}) {
