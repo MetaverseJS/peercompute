@@ -1,6 +1,24 @@
 ## PeerCompute Test Strategy
 
 ### Current focused result - 2026-06-17 AKDT
+- NodeKernel GPU resident stage placement executor contract:
+  - `node --check` passed for
+    `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,
+    `peercompute/src/peercompute/index.js`, and
+    `peercompute/tests/unit/nodeKernel.start.test.js`.
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+    `13/13`.
+  - Coverage: non-advisory distributed GPU resident stage placement remains
+    fail-closed without an executor. A registered executor reports
+    `distributed-resident-stage-placement-executor-ready` only when its
+    `peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0`
+    declares GPU resident stage capability, metadata-only nonlocal retained
+    refs, NodeKernel/StateManager authority, and cache admission requirements.
+    An invalid executor contract still throws
+    `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE`
+    with detailed contract failures and no local ComputeManager preflight.
+
+### Current focused result - 2026-06-17 AKDT
 - NodeKernel GPU resident stage placement authority preflight:
   - `node --check` passed for
     `peercompute/src/peercompute/nodeKernel/NodeKernel.js`,

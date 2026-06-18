@@ -33,6 +33,7 @@ export const NODE_KERNEL_COMPUTE_CAPACITY_SCHEMA = 'peercompute.nodekernel.compu
 export const NODE_KERNEL_TASK_GRAPH_AUTHORITY_SCHEMA = 'peercompute.nodekernel.task-graph-authority.v0';
 export const NODE_KERNEL_TASK_GRAPH_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.task-graph-placement-preflight.v0';
 export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_PREFLIGHT_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0';
+export const NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA = 'peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Math.floor(Number(value));
@@ -256,6 +257,152 @@ function normalizeGpuResidentStagePlacementOptions(options = {}) {
   };
 }
 
+function isPromiseLike(value) {
+  return !!value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function';
+}
+
+function valueIsTrue(...values) {
+  return values.some((value) => value === true || value === 'true' || value === 'yes');
+}
+
+function normalizeContractText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function retainedRefPolicyIsMetadataOnly(policy) {
+  const normalized = normalizeContractText(policy);
+  return normalized === 'metadata-only'
+    || normalized === 'metadata-only-nonlocal'
+    || normalized === 'nonlocal-metadata-only'
+    || normalized === 'remote-metadata-only';
+}
+
+function gpuResidentStageCapabilityDeclared(candidate, contract, peerCapabilities) {
+  const compute = peerCapabilities?.compute || {};
+  return valueIsTrue(
+    candidate?.supportsGpuResidentStagePlacement,
+    candidate?.gpuResidentStagePlacement,
+    contract?.supportsGpuResidentStagePlacement,
+    contract?.gpuResidentStagePlacement,
+    peerCapabilities?.supportsGpuResidentStagePlacement,
+    peerCapabilities?.gpuResidentStagePlacement,
+    peerCapabilities?.gpuResidentStages,
+    compute.supportsGpuResidentStagePlacement,
+    compute.gpuResidentStagePlacement,
+    compute.gpuResidentStages
+  );
+}
+
+function normalizeGpuResidentStagePlacementExecutorContract(candidate, {
+  executor,
+  executorId = null,
+  transport = null,
+  targetPeerId = null,
+  peerCapabilities = null
+} = {}) {
+  const source = candidate && (typeof candidate === 'object' || typeof candidate === 'function') ? candidate : {};
+  const contract = source.gpuResidentStagePlacementContract
+    || source.executorContract
+    || source.contract
+    || executor?.gpuResidentStagePlacementContract
+    || {};
+  const capabilities = source.peerCapabilities
+    || source.capabilities
+    || contract.peerCapabilities
+    || peerCapabilities
+    || {};
+  const computeCapabilities = capabilities.compute || {};
+  const retainedRefPolicy = firstDefined(
+    source.retainedRefPolicy,
+    source.retainedRefLocality,
+    contract.retainedRefPolicy,
+    contract.retainedRefLocality,
+    capabilities.retainedRefPolicy,
+    capabilities.retainedRefLocality,
+    computeCapabilities.gpuResidentRetainedRefPolicy,
+    computeCapabilities.gpuResidentRetainedRefLocality,
+    source.remoteRetainedRefsUsableLocally === false || contract.remoteRetainedRefsUsableLocally === false
+      ? 'metadata-only-nonlocal'
+      : null
+  );
+  const stateAuthority = firstDefined(
+    source.stateAuthority,
+    contract.stateAuthority,
+    capabilities.stateAuthority,
+    computeCapabilities.gpuResidentStageStateAuthority,
+    computeCapabilities.stateAuthority
+  );
+  const cacheAdmissionPolicy = firstDefined(
+    source.cacheAdmissionPolicy,
+    source.cacheAdmission,
+    contract.cacheAdmissionPolicy,
+    contract.cacheAdmission,
+    capabilities.cacheAdmissionPolicy,
+    computeCapabilities.gpuResidentStageCacheAdmissionPolicy,
+    computeCapabilities.cacheAdmissionPolicy
+  );
+  const supportsGpuResidentStagePlacement = gpuResidentStageCapabilityDeclared(source, contract, capabilities);
+  const retainedRefsMetadataOnly = retainedRefPolicyIsMetadataOnly(retainedRefPolicy);
+  const stateAuthorityText = normalizeContractText(stateAuthority);
+  const stateManagerAdmissionRequired = valueIsTrue(
+    source.stateManagerAdmissionRequired,
+    contract.stateManagerAdmissionRequired,
+    capabilities.stateManagerAdmissionRequired,
+    computeCapabilities.stateManagerAdmissionRequired
+  ) || stateAuthorityText.includes('state-manager');
+  const cacheAdmissionText = normalizeContractText(cacheAdmissionPolicy);
+  const cacheAdmissionRequired = valueIsTrue(
+    source.cacheAdmissionRequired,
+    contract.cacheAdmissionRequired,
+    capabilities.cacheAdmissionRequired,
+    computeCapabilities.cacheAdmissionRequired
+  ) || cacheAdmissionText.includes('state-manager') || cacheAdmissionText.includes('required');
+  const failures = [];
+  if (typeof executor !== 'function') failures.push('resident-stage-placement-executor-function-required');
+  if (!supportsGpuResidentStagePlacement) failures.push('gpu-resident-stage-placement-capability-required');
+  if (!retainedRefsMetadataOnly) failures.push('remote-retained-refs-must-be-metadata-only-nonlocal');
+  if (!stateManagerAdmissionRequired) failures.push('state-manager-authority-required');
+  if (!cacheAdmissionRequired) failures.push('cache-admission-required');
+  const ready = failures.length === 0;
+  return {
+    schema: NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA,
+    status: ready
+      ? 'resident-stage-placement-executor-contract-ready'
+      : 'blocked-resident-stage-placement-executor-contract-invalid',
+    executorId,
+    transport,
+    targetPeerId,
+    executorReady: typeof executor === 'function',
+    supportsGpuResidentStagePlacement,
+    retainedRefPolicy: retainedRefPolicy ? String(retainedRefPolicy) : null,
+    retainedRefStatus: retainedRefsMetadataOnly
+      ? 'metadata-only-nonlocal-retained-refs'
+      : 'blocked-retained-ref-locality-undeclared',
+    remoteRetainedRefsUsableLocally: false,
+    localHotBufferRefreshRequired: true,
+    stateAuthority: stateAuthority ? String(stateAuthority) : null,
+    stateAuthorityStatus: stateManagerAdmissionRequired
+      ? 'node-kernel-state-manager-required'
+      : 'blocked-state-manager-authority-undeclared',
+    cacheAdmissionPolicy: cacheAdmissionPolicy ? String(cacheAdmissionPolicy) : null,
+    cacheAdmissionStatus: cacheAdmissionRequired
+      ? 'node-kernel-state-manager-cache-admission-required'
+      : 'blocked-cache-admission-undeclared',
+    peerCapabilityStatus: supportsGpuResidentStagePlacement
+      ? 'gpu-resident-stage-capability-declared'
+      : 'blocked-gpu-resident-stage-capability-missing',
+    peerCapabilities: cloneSerializableValue(capabilities),
+    failures,
+    required: {
+      executorFunction: true,
+      supportsGpuResidentStagePlacement: true,
+      retainedRefPolicy: 'metadata-only-nonlocal',
+      stateAuthority: 'node-kernel-state-manager',
+      cacheAdmissionPolicy: 'state-manager-required'
+    }
+  };
+}
+
 /**
  * NodeKernel class - Core orchestrator for a PeerCompute node
  * Coordinates State, Network, and Compute managers
@@ -428,6 +575,7 @@ export class NodeKernel {
     this.netVizDiscoveredSessions = new Map();
     this.pendingRemoteComputeRequests = new Map();
     this.pendingRemoteTaskGraphRequests = new Map();
+    this.gpuResidentStagePlacementExecutors = new Map();
     this.kernelTickMs = Math.round(1000 / (this.config.clockPolicy.tickHz || 30));
   }
 
@@ -1053,11 +1201,219 @@ export class NodeKernel {
     return this.computeManager.submitTask(task);
   }
 
+  registerGpuResidentStagePlacementExecutor(executorId, executorOrCandidate = {}, metadata = {}) {
+    let id = executorId;
+    let candidate = executorOrCandidate;
+    let extra = metadata;
+    if (typeof executorId === 'function' || (executorId && typeof executorId === 'object')) {
+      candidate = executorId;
+      extra = executorOrCandidate && typeof executorOrCandidate === 'object' ? executorOrCandidate : {};
+      id = firstDefined(
+        candidate.executorId,
+        candidate.gpuResidentStagePlacementExecutorId,
+        candidate.placementExecutorId,
+        extra.executorId,
+        extra.gpuResidentStagePlacementExecutorId,
+        extra.placementExecutorId
+      );
+    }
+    const executorIdText = String(firstDefined(id, candidate?.executorId, candidate?.gpuResidentStagePlacementExecutorId, '') || '').trim();
+    if (!executorIdText) {
+      throw new Error('registerGpuResidentStagePlacementExecutor requires an executorId');
+    }
+    const record = typeof candidate === 'function'
+      ? { ...extra, executor: candidate, executorId: executorIdText }
+      : { ...(candidate || {}), ...extra, executorId: executorIdText };
+    this.gpuResidentStagePlacementExecutors.set(executorIdText, record);
+    return {
+      schema: NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA,
+      executorId: executorIdText,
+      registered: true,
+      registeredExecutorCount: this.gpuResidentStagePlacementExecutors.size
+    };
+  }
+
+  unregisterGpuResidentStagePlacementExecutor(executorId) {
+    return this.gpuResidentStagePlacementExecutors.delete(String(executorId || '').trim());
+  }
+
+  listGpuResidentStagePlacementExecutors() {
+    return Array.from(this.gpuResidentStagePlacementExecutors.values()).map((candidate) => {
+      const executor = typeof candidate === 'function'
+        ? candidate
+        : (typeof candidate?.executor === 'function' ? candidate.executor : null);
+      const normalized = this._normalizeGpuResidentStagePlacementExecutorCandidate(candidate, {
+        fallbackExecutorId: candidate?.executorId || null,
+        fallbackTransport: candidate?.transport || 'registered-gpu-resident-stage-placement-executor',
+        fallbackTargetPeerId: candidate?.targetPeerId || null,
+        peerCapabilities: candidate?.peerCapabilities || candidate?.capabilities || null
+      });
+      return {
+        executorId: normalized?.executorId || candidate?.executorId || null,
+        transport: normalized?.transport || candidate?.transport || null,
+        targetPeerId: normalized?.targetPeerId || candidate?.targetPeerId || null,
+        executorReady: typeof executor === 'function',
+        contractStatus: normalized?.contractStatus || null,
+        contractReady: normalized?.contractReady === true,
+        contractFailures: normalized?.contractFailures || []
+      };
+    });
+  }
+
+  _getConnectedPeerCapabilities(peerId) {
+    const targetPeerId = String(peerId || '').trim();
+    if (!targetPeerId || !this.networkManager?.getConnectedPeers) return null;
+    const peers = this.networkManager.getConnectedPeers() || [];
+    const peer = peers.find((entry) => entry?.peerId === targetPeerId);
+    return cloneSessionMetadata(peer?.capabilities) || null;
+  }
+
+  _normalizeGpuResidentStagePlacementExecutorCandidate(candidate, {
+    fallbackExecutorId = null,
+    fallbackTransport = null,
+    fallbackTargetPeerId = null,
+    peerCapabilities = null,
+    source = null
+  } = {}) {
+    if (!candidate || isPromiseLike(candidate)) return null;
+    const raw = (typeof candidate === 'object' || typeof candidate === 'function') ? candidate : {};
+    const executor = typeof candidate === 'function'
+      ? candidate
+      : (typeof raw.executor === 'function' ? raw.executor : null);
+    const executorId = String(firstDefined(
+      raw.executorId,
+      raw.gpuResidentStagePlacementExecutorId,
+      raw.placementExecutorId,
+      executor?.gpuResidentStagePlacementExecutorId,
+      executor?.placementExecutorId,
+      fallbackExecutorId
+    ) || '').trim() || null;
+    const transport = String(firstDefined(
+      raw.transport,
+      raw.gpuResidentStagePlacementExecutorTransport,
+      raw.placementExecutorTransport,
+      executor?.gpuResidentStagePlacementExecutorTransport,
+      executor?.placementExecutorTransport,
+      fallbackTransport,
+      'gpu-resident-stage-placement-executor'
+    ) || '').trim() || null;
+    const targetPeerId = String(firstDefined(
+      raw.targetPeerId,
+      raw.peerId,
+      executor?.targetPeerId,
+      fallbackTargetPeerId
+    ) || '').trim() || null;
+    const contract = normalizeGpuResidentStagePlacementExecutorContract(raw, {
+      executor,
+      executorId,
+      transport,
+      targetPeerId,
+      peerCapabilities: raw.peerCapabilities || raw.capabilities || peerCapabilities
+    });
+    return {
+      executor,
+      executorId,
+      transport,
+      targetPeerId,
+      source,
+      contract,
+      contractStatus: contract.status,
+      contractReady: contract.status === 'resident-stage-placement-executor-contract-ready',
+      contractFailures: contract.failures || []
+    };
+  }
+
+  _resolveGpuResidentStagePlacementExecutor(leaseId, options = {}, context = {}) {
+    const placement = context.placement || normalizeGpuResidentStagePlacementOptions(options);
+    const targetPeerIds = Array.isArray(placement.targetPeerIds) ? placement.targetPeerIds : [];
+    const fallbackPeerId = targetPeerIds[0] || null;
+    const fallbackExecutorId = fallbackPeerId
+      ? `gpu-resident-stage-placement:${fallbackPeerId}`
+      : 'gpu-resident-stage-placement-executor';
+    const source = options.placementPolicy || options.placement || options.placementHint || {};
+    const peerCapabilities = this._getConnectedPeerCapabilities(fallbackPeerId);
+    const resolverContext = {
+      ...context,
+      leaseId,
+      options,
+      placement,
+      targetPeerIds,
+      targetPeerId: fallbackPeerId,
+      peerCapabilities,
+      nodeKernel: this
+    };
+    const normalize = (candidate, sourceName, fallbackId = fallbackExecutorId) => this._normalizeGpuResidentStagePlacementExecutorCandidate(candidate, {
+      fallbackExecutorId: fallbackId,
+      fallbackTransport: sourceName,
+      fallbackTargetPeerId: fallbackPeerId,
+      peerCapabilities,
+      source: sourceName
+    });
+
+    const explicitCandidate = firstDefined(
+      options.gpuResidentStagePlacementExecutor,
+      options.residentStagePlacementExecutor,
+      options.stagePlacementExecutor,
+      source.gpuResidentStagePlacementExecutor,
+      source.residentStagePlacementExecutor,
+      source.stagePlacementExecutor
+    );
+    const explicit = normalize(explicitCandidate, 'explicit-gpu-resident-stage-placement-executor');
+    if (explicit) return explicit;
+
+    if (typeof this.config.resolveGpuResidentStagePlacementExecutor === 'function') {
+      const candidate = this.config.resolveGpuResidentStagePlacementExecutor(resolverContext);
+      const resolved = normalize(candidate, 'resolved-gpu-resident-stage-placement-executor');
+      if (resolved) return resolved;
+    }
+
+    const configuredCandidate = firstDefined(
+      this.config.gpuResidentStagePlacementExecutor,
+      this.config.residentStagePlacementExecutor,
+      this.config.stagePlacementExecutor
+    );
+    const configured = normalize(configuredCandidate, 'configured-gpu-resident-stage-placement-executor');
+    if (configured) return configured;
+
+    const requestedExecutorId = String(firstDefined(
+      options.gpuResidentStagePlacementExecutorId,
+      options.residentStagePlacementExecutorId,
+      source.gpuResidentStagePlacementExecutorId,
+      source.residentStagePlacementExecutorId,
+      source.executorId
+    ) || '').trim();
+    const registryIds = [
+      requestedExecutorId,
+      fallbackExecutorId,
+      fallbackPeerId,
+      'gpu-resident-stage-placement-executor'
+    ].filter(Boolean);
+    for (const registryId of registryIds) {
+      const registered = this.gpuResidentStagePlacementExecutors.get(registryId);
+      const normalized = normalize(registered, 'registered-gpu-resident-stage-placement-executor', registryId);
+      if (normalized) return normalized;
+    }
+    for (const candidate of this.gpuResidentStagePlacementExecutors.values()) {
+      const candidateTargetPeerId = String(firstDefined(candidate?.targetPeerId, candidate?.peerId, '') || '').trim();
+      if (candidateTargetPeerId && candidateTargetPeerId === fallbackPeerId) {
+        const normalized = normalize(candidate, 'registered-gpu-resident-stage-placement-executor');
+        if (normalized) return normalized;
+      }
+    }
+    return null;
+  }
+
   preflightGpuResidentLaneStagePlacement(leaseId, options = {}) {
     const submittedAt = Date.now();
     const placement = normalizeGpuResidentStagePlacementOptions(options);
     const localPlacement = taskGraphPlacementIsLocal(placement.requestedPlacement);
-    const distributedStagePlacementExecutorAvailable = false;
+    const remoteExecutor = !localPlacement && !placement.advisory
+      ? this._resolveGpuResidentStagePlacementExecutor(leaseId, options, {
+        placement,
+        submittedAt
+      })
+      : null;
+    const distributedStagePlacementExecutorAvailable = remoteExecutor?.contractReady === true;
     const computeManagerPreflight = localPlacement || placement.advisory
       ? this.computeManager?.preflightGpuResidentLaneStagePlacement?.(leaseId, options)
       : null;
@@ -1067,7 +1423,11 @@ export class NodeKernel {
         ? 'local-placement-accepted'
         : (placement.advisory
             ? 'advisory-distributed-placement-local-execution-allowed'
-            : 'blocked-distributed-resident-stage-placement-unavailable'),
+            : (distributedStagePlacementExecutorAvailable
+                ? 'distributed-resident-stage-placement-executor-ready'
+                : (remoteExecutor
+                    ? 'blocked-distributed-resident-stage-placement-executor-contract-invalid'
+                    : 'blocked-distributed-resident-stage-placement-unavailable'))),
       nodeId: this.nodeId || null,
       leaseId: String(leaseId || ''),
       requestedPlacement: placement.requestedPlacement,
@@ -1076,6 +1436,17 @@ export class NodeKernel {
       localPlacement,
       advisory: placement.advisory,
       distributedStagePlacementExecutorAvailable,
+      executorId: remoteExecutor?.executorId || null,
+      executorTransport: remoteExecutor?.transport || null,
+      executorTargetPeerId: remoteExecutor?.targetPeerId || null,
+      executorSource: remoteExecutor?.source || null,
+      executorContract: cloneSerializableValue(remoteExecutor?.contract) || null,
+      executorContractSchema: remoteExecutor?.contract?.schema || null,
+      executorContractStatus: remoteExecutor?.contractStatus || null,
+      executorContractReady: remoteExecutor?.contractReady === true,
+      executorContractFailures: remoteExecutor?.contractFailures || [],
+      remoteRetainedRefsUsableLocally: remoteExecutor?.contract?.remoteRetainedRefsUsableLocally ?? null,
+      localHotBufferRefreshRequired: remoteExecutor?.contract?.localHotBufferRefreshRequired ?? null,
       computeManagerPreflight: cloneSerializableValue(computeManagerPreflight),
       computeManagerPreflightSchema: computeManagerPreflight?.schema || null,
       computeManagerPreflightStatus: computeManagerPreflight?.status || null,
@@ -1085,7 +1456,11 @@ export class NodeKernel {
         ? 'gpu-resident-stage-placement-local'
         : (placement.advisory
             ? 'distributed-gpu-resident-stage-placement-is-advisory'
-            : 'non-advisory-distributed-gpu-resident-stage-placement-not-implemented'),
+            : (distributedStagePlacementExecutorAvailable
+                ? 'non-advisory-distributed-gpu-resident-stage-placement-executor-available'
+                : (remoteExecutor
+                    ? 'non-advisory-distributed-gpu-resident-stage-placement-executor-contract-invalid'
+                    : 'non-advisory-distributed-gpu-resident-stage-placement-not-implemented'))),
       submittedAt
     };
     if (!localPlacement && !placement.advisory && !distributedStagePlacementExecutorAvailable) {
@@ -2159,6 +2534,7 @@ export class NodeKernel {
         gpuCount,
         webgpuAvailable: capabilities.webgpu === true || this.config.enableWebGPU === true,
         wasmAvailable: capabilities.wasm === true,
+        supportsGpuResidentStagePlacement: typeof this.computeManager?.preflightGpuResidentLaneStagePlacement === 'function',
         resourceTier: typeof resourceProfile.tier === 'string' ? resourceProfile.tier : null,
         memoryBudgetMB: normalizeFiniteNumber(resourceProfile.memoryBudgetMB, null, 0, 1048576),
         gpuMemoryBudgetMB: normalizeFiniteNumber(resourceProfile.gpuMemoryBudgetMB, null, 0, 1048576),
@@ -2167,7 +2543,18 @@ export class NodeKernel {
           0,
           0,
           1000000
-        )
+        ),
+        gpuResidentStagePlacement: {
+          schema: NODE_KERNEL_GPU_RESIDENT_STAGE_PLACEMENT_EXECUTOR_CONTRACT_SCHEMA,
+          localPreflightAvailable: typeof this.computeManager?.preflightGpuResidentLaneStagePlacement === 'function',
+          registeredExecutorCount: this.gpuResidentStagePlacementExecutors?.size || 0,
+          supportsGpuResidentStagePlacement: typeof this.computeManager?.preflightGpuResidentLaneStagePlacement === 'function',
+          retainedRefPolicy: 'metadata-only-nonlocal',
+          remoteRetainedRefsUsableLocally: false,
+          localHotBufferRefreshRequired: true,
+          stateAuthority: 'node-kernel-state-manager',
+          cacheAdmissionPolicy: 'state-manager-required'
+        }
       }
     };
   }

@@ -74,6 +74,17 @@ The root node should exist on a domain secured with SSL enabling all executable 
   until a real remote resident-stage placement executor exists. This mirrors
   the task-graph placement contract for the narrower GPU resident lane stage
   path.
+- NodeKernel GPU resident stage placement executor contract:
+  `peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0`
+  now defines the first remote/dedicated resident-stage placement executor
+  gate. `NodeKernel` can register and resolve explicit/configured/registered
+  resident-stage placement executors, but reports non-advisory distributed
+  placement as ready only when the executor declares GPU resident stage
+  capability, metadata-only nonlocal retained refs, StateManager authority,
+  and cache admission requirements. Invalid contracts remain fail-closed with
+  the same distributed placement error and detailed contract failure reasons.
+  Local and advisory demo paths remain on the existing ComputeManager preflight
+  route; no remote GPU buffer is treated as locally usable.
 - GPUHub resident stage executor registry:
   `GPUHubManager` can now register resident stage executors by stage id or
   law node alias, expose descriptor summaries, and execute stages with GPUHub

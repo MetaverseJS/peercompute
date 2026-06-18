@@ -2,6 +2,67 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-06-17 16:50:58 AKDT - GPU resident stage placement executor contract
+
+### Prompt
+- User said "alright go for it" to proceed with the next PeerCompute
+  architecture slice after asking whether the WebGPU path is sufficiently
+  concurrent.
+- During implementation the user asked whether the PeerCompute edits are
+  sufficiently abstract for the intended roadmap and whether they should avoid
+  breaking existing demos.
+
+### Actions
+- Added
+  `peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0`.
+- Added `NodeKernel.registerGpuResidentStagePlacementExecutor()`,
+  `unregisterGpuResidentStagePlacementExecutor()`, and
+  `listGpuResidentStagePlacementExecutors()`.
+- Added NodeKernel resident-stage placement executor normalization and
+  resolution for explicit, configured, and registered executor candidates.
+- Updated `NodeKernel.preflightGpuResidentLaneStagePlacement()` so
+  non-advisory distributed resident-stage placement can report
+  `distributed-resident-stage-placement-executor-ready` only when the executor
+  contract declares:
+  - GPU resident stage placement capability.
+  - metadata-only nonlocal retained refs.
+  - NodeKernel/StateManager state authority.
+  - StateManager cache admission requirements.
+- Invalid resident-stage placement executor contracts still fail closed with
+  `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE` and
+  explicit contract failure reasons. Local and advisory distributed placement
+  still use the existing local ComputeManager preflight path.
+- Added GPU resident stage placement capability details to NodeKernel presence
+  capability packets so later schedulers can score peers without claiming
+  remote retained WebGPU refs are locally usable.
+- Exported the contract schema through the package root.
+
+### Files Touched
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/tests/unit/nodeKernel.start.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands Run
+- `node --check peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `node --check peercompute/src/peercompute/index.js`
+- `node --check peercompute/tests/unit/nodeKernel.start.test.js`
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+
+### Results
+- PASS: syntax checks.
+- PASS: `node --test peercompute/tests/unit/nodeKernel.start.test.js` passed
+  `13/13`.
+
+### Open
+- This is a placement/preflight contract only. It does not yet execute remote
+  resident stage plans, admit remote resident outputs, or make remote GPU
+  retained refs usable on a local WebGPU device.
+- Next architecture step is to add the actual remote/dedicated resident-stage
+  execution request path and result admission path behind this contract.
+
 ## 2026-06-17 16:24:14 AKDT - NodeKernel GPU resident stage placement preflight
 
 ### Prompt
