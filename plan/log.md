@@ -55040,3 +55040,499 @@ Open:
   WebGPU device, keeps Eshkol/MoonLab/law kernels warm where latency matters,
   and retains lane buffers inside the worker between stage invocations.
 - No push was attempted.
+
+## 2026-06-18 10:35:03 AKDT - ULG demo regression sweep with local ICE/TURN
+
+### Prompt
+- User asked to run tests for the ULG-heavy branch and create a report
+  describing anything broken in the demos, specifically using a local
+  STUN/TURN/ICE/relay server. User then confirmed to proceed with full access.
+
+### Files Touched
+- Added `plan/reports/2026-06-18-ulg-demo-regression-report.md`.
+- Updated `plan/plan.md`, `plan/tests.md`, and
+  `demos/multiscale/plan/plan.md` with the current validation snapshot.
+- Updated `plan/log.md` and `demos/multiscale/plan/log.md` with this run's
+  narrative.
+- Updated WebGpuPhys test harnesses:
+  `demos/webgpuphys/tests/headless-runtime.js`,
+  `demos/webgpuphys/tests/ppf-runtime.js`, and
+  `demos/webgpuphys/tests/ppf-contact-runtime.js`.
+
+### Setup And Cleanup
+- Verified Node `v24.17.0` and npm `11.13.0`.
+- Verified the target ULG server at `https://127.0.0.1:5173/`.
+- Started a test-owned coturn instance on `127.0.0.1:34790` with STUN and
+  TURN UDP/TCP credentials `peer` / `compute`.
+- Used local relay WebRTC config with STUN plus TURN UDP/TCP URLs and dynamic
+  local PeerCompute Go relays for P2P/runtime handoff tests.
+- Stopped the test coturn server, docs Vite server on `4173`, and Multiscale
+  Vite server on `5185`.
+- Removed a partial Playwright
+  `/home/cos/.cache/ms-playwright/chromium_headless_shell-1200` cache left by
+  a hung install attempt.
+- Restored generated docs build output and removed generated
+  `relay-config-source.json` files so only intentional harness/report/plan
+  changes remain.
+
+### Commands Run
+- `npm --prefix peercompute run test:unit`
+- `npm run test:backend`
+- `npm --prefix demos/planetgen test`
+- `npm --prefix demos/multiscale test`
+- `npm --prefix demos/schrodinger test`
+- `npm --prefix net-chaos-lab run test:behavior`
+- `npm run build:all`
+- `npm run test:runtime`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RUNTIME_P2P_DEMOS=daddygo DEMO_TIMEOUT_MS=90000 RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RUNTIME_P2P_DEMOS=sneakywoods,daddygo DEMO_TIMEOUT_MS=90000 RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RUNTIME_P2P_DEMOS=cubechat,hyperborea,sneakywoods,daddygo DEMO_TIMEOUT_MS=90000 RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `npm --prefix demos/netviz run test:session`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ npm --prefix demos/multiscale run test:ulg-handoff`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ ULG_HANDOFF_TIMEOUT_MS=120000 npm --prefix demos/multiscale run test:ulg-handoff`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 RELAY_CONFIG_TIMEOUT_MS=60000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 ULG_RELAY_HANDOFF_WEBRTC_CONFIG='<local coturn ICE JSON>' npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `env MULTISCALE_SMOKE_URL=https://127.0.0.1:4173/multiscale/ npm --prefix demos/multiscale run test:visual`
+- `npm --prefix demos/multiscale run test:visual`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm --prefix demos/multiscale run test:remote-placement`
+- `npm --prefix demos/multiscale run test:perf`
+- `node --test peercompute/tests/computeManager.unit.test.js peercompute/tests/stateManager.unit.test.js peercompute/tests/runtime/gossipsub-mesh.test.js`
+- `node peercompute/tests/runtime/webrtc-config.smoke.js`
+- `node --check demos/webgpuphys/tests/headless-runtime.js`
+- `node --check demos/webgpuphys/tests/ppf-runtime.js`
+- `node --check demos/webgpuphys/tests/ppf-contact-runtime.js`
+- `npm --prefix demos/webgpuphys run test:headless`
+- `npm --prefix demos/webgpuphys run test:ppf`
+- `npm --prefix demos/webgpuphys run test:ppf-contact`
+
+### Results
+- PASS: PeerCompute unit tests passed `187/187`.
+- PASS: backend/release tests passed `20/20`.
+- PASS: PlanetGen, Multiscale model tests, Schrodinger, and net-chaos behavior
+  suites passed.
+- PASS: `npm run build:all` completed with existing warnings for PeerCompute
+  chunk cycles/bundle size, PlanetGen `WebGL1Renderer` import, and large Vite
+  chunks.
+- PASS: non-P2P runtime smoke loaded the docs builds for the main demos.
+- PASS: NetViz session smoke passed against a local docs server.
+- PASS: relay-backed ULG handoff reached `handoff-ready`, service envelope and
+  dispatch readiness, two connected Multiscale peers, and kept final
+  full-physics readiness false.
+- PASS: WebGpuPhys headless, PPF, and PPF contact smokes passed after allowing
+  the harness to use system Chrome.
+- FAIL: DaddyGo P2P timed out after the full ordered runtime P2P matrix, while
+  DaddyGo alone and SneakyWoods plus DaddyGo passed.
+- FAIL: direct ULG browser handoff timed out waiting for the Multiscale popup to
+  reach `handoff-ready`.
+- FAIL: Multiscale visual smoke found the Na/Cl append produced 17 atoms but
+  only 10 bonds, so the NaCl pair was not published in packet state.
+- FAIL: Multiscale live remote placement reached dispatch-ready policy but
+  remote execution/admission failed with `quorum-mismatch`.
+- CONCERN: Multiscale performance probe passed but averaged about `4.29` FPS.
+- BLOCKED: PeerCompute Playwright/direct-path tests are fixed to port `5173`,
+  which was occupied by the live ULG target, so they were not run in this
+  sweep.
+
+### Open
+- Fix or triage the DaddyGo P2P matrix-order failure before treating the demos
+  as P2P-clean.
+- Fix direct ULG `Launch Magnetar` popup handoff readiness; relay-backed
+  handoff passing means the service-envelope path is not the failing surface.
+- Fix Multiscale molecular append packet/bond propagation for the NaCl pair.
+- Fix Multiscale remote placement validation/admission quorum mismatch.
+- Investigate Multiscale frame cadence and WebGL readback stalls.
+- Widen the coturn relay port range for longer soak testing; the narrow
+  `50080-50100` range emitted `create_relay_ioa_sockets: no available ports 3`
+  during cleanup.
+- No push was attempted, and no local commit was made because the sweep found
+  active regressions.
+
+## 2026-06-18 12:48:21 AKDT - Multiplayer browser interaction sweep
+
+### Prompt
+- User asked to stand up a few independent browser instances, watch console
+  output, verify the pages are connected to local infra, and prove multiplayer
+  input/display works for CubeChat and the other multiplayer demos. User also
+  asked to consider using Chaos Lab behavior and fake video/display streams.
+
+### Files Touched
+- Updated `demos/tests/runtime-p2p.mjs`.
+- Added `plan/reports/2026-06-18-multiplayer-interaction-report.md`.
+- Updated `plan/tests.md`, `plan/plan.md`, and `plan/log.md`.
+
+### Actions
+- Reused the existing multi-page runtime P2P runner and strengthened it with
+  Chaos Lab's `runSimulationProfile()` behavior harness.
+- Added bot-bridge local/remote movement assertions for CubeChat, Hyperborea,
+  and SneakyWoods.
+- Added WebGL/2D canvas display checks.
+- Added CubeChat fake camera/mic plus fake screen-share validation.
+- Added DaddyGo bidirectional high-score propagation and local obstacle-toggle
+  UI validation.
+- Fixed NetViz-only relay config setup so it also writes `docs/cubechat`
+  relay config for the source tab.
+- Started test-owned coturn on `127.0.0.1:34790` with relay range
+  `50200-50499`, then stopped it after the run.
+
+### Commands Run
+- `node --check demos/tests/runtime-p2p.mjs`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=60000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=cubechat RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=120000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=hyperborea RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=90000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=sneakywoods RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=90000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=daddygo RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=90000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=netviz RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=120000 RUNTIME_P2P_INTERACTION_MS=2500 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=120000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=cubechat,hyperborea RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=120000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=hyperborea,sneakywoods RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=90000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=sneakywoods,daddygo RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- `npm --prefix net-chaos-lab run test:behavior`
+- `EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py index --repo peercompute && EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py build-memory --repo peercompute && EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py status --repo peercompute --check-staleness`
+
+### Results
+- PASS: CubeChat individual strengthened interaction test.
+- PASS: Hyperborea individual strengthened interaction test after ignoring the
+  known headless pointer-lock artifact.
+- PASS: SneakyWoods individual strengthened interaction test.
+- PASS: DaddyGo individual strengthened interaction/high-score test.
+- PASS: NetViz attach/topology test after fixing source CubeChat relay config.
+- PASS: CubeChat followed by Hyperborea.
+- PASS: SneakyWoods followed by DaddyGo.
+- PASS: Chaos Lab behavior tests passed `13/13`.
+- PASS: ICC refreshed `574` indexed files and `3650` memory chunks; status
+  reported `is_stale=false`.
+- FAIL: the full ordered runtime P2P matrix still failed after CubeChat, with
+  the shared browser context closed around the Hyperborea-to-SneakyWoods
+  transition.
+- FAIL: `RUNTIME_P2P_DEMOS=hyperborea,sneakywoods` reproduced the sequence
+  issue: Hyperborea completed, SneakyWoods connected peers, then the browser
+  context closed during SneakyWoods simulated input.
+- CONCERN: the widened coturn range `50200-50499` still emitted many
+  `create_relay_ioa_sockets: no available ports 3` messages under repeated
+  browser runs.
+
+### Open
+- The multiplayer demos work individually against local infra with simulated
+  input/display checks.
+- The shared-browser ordered demo matrix remains unsafe after Hyperborea; this
+  needs follow-up before claiming cross-demo soak stability.
+- Future local TURN soak runs need a much larger relay allocation range than
+  300 ports or a different cleanup strategy.
+- No push was attempted, and no local commit was made because the ordered
+  matrix still has active failures.
+
+## 2026-06-18 14:02:25 AKDT - SneakyWoods-only multiplayer rerun
+
+### Prompt
+- User asked to run the test for just SneakyWoods.
+
+### Files Touched
+- Updated `plan/log.md` with this rerun result.
+
+### Actions
+- Verified no leftover test listener was active on `34790` or `4180`.
+- Started a fresh test-owned coturn server on `127.0.0.1:34790` with relay
+  port range `52000-52999`.
+- Ran the strengthened runtime P2P browser interaction test with only
+  `RUNTIME_P2P_DEMOS=sneakywoods`.
+- Stopped coturn and verified no runtime P2P, relay, or coturn test processes
+  remained.
+
+### Commands Run
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 DEMO_TIMEOUT_MS=90000 RUNTIME_P2P_INTERACTION_MS=2500 RUNTIME_P2P_DEMOS=sneakywoods RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm run test:runtime:p2p`
+- Cleanup checks:
+  `ss -ltnup | rg ':(34790|4180)\b'`
+  and
+  `ps -eo pid,ppid,stat,cmd | rg 'turnserver --listening-ip=127.0.0.1 --listening-port=34790|runtime-p2p|run-go-relay|relay-go|node demos/tests/runtime-p2p|go run'`
+
+### Results
+- PASS: SneakyWoods-only strengthened browser interaction test passed.
+- Evidence from the run:
+  - local PeerCompute Go relay started and wrote
+    `docs/sneakywoods/relay-config.json`;
+  - two SneakyWoods browser pages and room-directory peers connected to the
+    relay;
+  - the strengthened runner completed canvas display, bot-bridge simulated
+    movement, HUD player count, and remote moved-position checks;
+  - test output ended with `Runtime P2P tests passed.`
+- PASS: cleanup checks found no listeners on `34790` or `4180` and no leftover
+  runtime P2P, test relay, or coturn process.
+
+### Open
+- This confirms SneakyWoods itself is passing in isolation. The remaining
+  failure remains the sequence after Hyperborea, where the shared browser
+  context closes during SneakyWoods simulated input.
+
+## 2026-06-18 14:30:13 AKDT - Local infra stack shutdown
+
+### Prompt
+- User asked to bring down the local infra stack.
+
+### Files Touched
+- Updated `plan/log.md` with the shutdown evidence.
+
+### Actions
+- Inspected repo scripts for cleanup/down commands and confirmed there is no
+  top-level Makefile or dedicated local-infra down wrapper.
+- Checked listeners and processes for PeerCompute runtime P2P, local relay,
+  coturn, Vite, chaos-lab, and ULG dev servers.
+- Found no active PeerCompute runtime P2P, dynamic Go relay, chaos-lab, or
+  test coturn process.
+- Stopped ULG Vite process groups that were still listening on local dev ports
+  from prior validation sessions.
+- Checked for chaos-lab `mn.*` containers; none were present.
+- Attempted to stop the system coturn service with
+  `sudo -n systemctl stop coturn.service`; this failed because sudo requires a
+  password.
+- Attempted direct `kill -TERM 2673` for the root-owned coturn process; this
+  failed with `Operation not permitted`.
+
+### Commands Run
+- `rg -n "down|stop|cleanup|local-relay|vpn-coturn|turn|relay" package.json Makefile scripts net-chaos-lab/package.json net-chaos-lab/scripts -g '*'`
+- `ss -ltnup | rg ':(3478|34790|4180|4173|5185|5173|5174|5195|5277)\b'`
+- `ps -eo pid,ppid,stat,cmd | rg 'peercompute|run-go-relay|relay-go|runtime-p2p|turnserver|vite|chaos-lab|containernet|docker|go run'`
+- `ps -o pid,ppid,pgid,sid,stat,cmd -p 228577,228593,228594,3435695,3435696,3460091,3460092,138557,138558,2673`
+- `systemctl is-active peercompute-coturn.service coturn.service turnserver.service 2>/dev/null || true`
+- `docker ps -a --format '{{.Names}} {{.Status}}' | awk '/^mn\./ {print}'`
+- `kill -TERM -228577 -3435683 -3460080 -138523 2>/dev/null || true`
+- `sudo -n systemctl stop coturn.service`
+- `kill -TERM 2673 2>&1 || true`
+
+### Results
+- PASS: no PeerCompute test relay/runtime P2P listeners remain on `34790`,
+  `4180`, `4173`, or `5185`.
+- PASS: ULG Vite dev servers on `5173`, `5174`, `5195`, and `5277` were
+  stopped.
+- PASS: no chaos-lab `mn.*` containers were present.
+- BLOCKED: system `coturn.service` remains active on `3478` because stopping
+  it requires sudo credentials not available non-interactively.
+
+### Open
+- To fully stop the system TURN service, run
+  `sudo systemctl stop coturn.service` from an interactive shell with sudo
+  credentials.
+
+## 2026-06-18 14:32:56 AKDT - README capability snapshot refresh
+
+### Prompt
+- User asked to update the PeerCompute README and describe the project's full
+  capabilities as they stand.
+
+### Files Touched
+- Updated `README.md`.
+- Updated `plan/plan.md`.
+- Updated `plan/log.md`.
+
+### Actions
+- Reviewed `AGENTS.md`, `plan/plan.md`, and recent `plan/log.md` entries before
+  editing.
+- Checked ICC status for the `peercompute` repo; artifacts were present and not
+  stale.
+- Read the existing README structure, package scripts, demo README summaries,
+  and package manifests to align the README with current repo capabilities.
+- Added a dated README current-status section with a capability map covering
+  browser P2P networking, NodeKernel orchestration, shared state, ComputeManager
+  task graphs/GPU resident lanes, service orchestration, multiplayer media and
+  bots, observability/operations, WebGPU demos, and Multiscale/ULG integration.
+- Added the June 18 validation snapshot and known open breakages to the README,
+  including the ordered P2P matrix instability, direct ULG handoff timeout,
+  Multiscale NaCl packet/bond loss, remote-placement quorum mismatch, and low
+  headless FPS concern.
+- Expanded the README test matrix, added local ICE/TURN cleanup notes, added
+  `fano-reactor` to project structure, and replaced stale roadmap items with
+  the current branch roadmap.
+
+### Commands Run
+- `sed -n '1,220p' /home/cos/.codex/skills/icc/SKILL.md`
+- `rg -n "peercompute|multiscale|ULG|cubechat|sneakywoods|netviz|hyperborea|daddygo|chaos" /home/cos/.codex/memories/MEMORY.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `sed -n '1,260p' AGENTS.md`
+- `sed -n '1,260p' plan/plan.md`
+- `tail -n 260 plan/log.md`
+- `sed -n '1,260p' README.md`
+- `EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py status --repo peercompute --check-staleness`
+- `rg -n "^#{1,3} " README.md`
+- `wc -l README.md`
+- `sed -n '1,240p' package.json`
+- `find demos -maxdepth 2 \( -name README.md -o -name package.json \) | sort`
+- `EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py architecture-summary --repo peercompute --bundle --include-cheatsheet`
+- `sed -n '1,130p' README.md`
+- `sed -n '130,220p' README.md`
+- `sed -n '523,570p' README.md`
+- `sed -n '804,864p' README.md`
+- `for f in demos/README.md demos/cubechat/README.md demos/hyperborea/README.md demos/sneakywoods/README.md demos/daddygo/README.md demos/netviz/README.md demos/planetgen/README.md demos/multiscale/README.md demos/universes/README.md demos/webgpuphys/README.md demos/fano-reactor/README.md demos/schrodinger/README.md; do printf '\n### %s\n' "$f"; sed -n '1,90p' "$f"; done`
+- `sed -n '1,220p' peercompute/package.json`
+- `sed -n '1,220p' demos/multiscale/package.json`
+- `sed -n '1,180p' net-chaos-lab/package.json`
+- `git status --short`
+- `git diff -- README.md`
+- `node -v && npm -v`
+- `git diff --check`
+- `node --test demos/tests/demo-ports.test.js`
+- `rg -n "^## Current Status|^### Capability Map|^### Validation Snapshot|^## Tests|^## Roadmap Highlights" README.md`
+
+### Results
+- PASS: ICC status reported `is_stale=false` for `peercompute`.
+- PASS: Node remained on `v24.17.0` with npm `11.13.0`.
+- PASS: `git diff --check` returned clean.
+- PASS: README heading checks found the new current-status, capability,
+  validation, tests, and roadmap sections.
+- FAIL: `node --test demos/tests/demo-ports.test.js` still fails one existing
+  Multiscale assertion:
+  `multiscale main must import PeerCompute ComputeManager and StateManager`.
+  The other `21/22` checks passed. This failure is not caused by the README
+  edit and was left open rather than broadening this documentation task into a
+  Multiscale wiring change.
+
+### Open
+- The README now reflects the current capability surface and known breakages.
+- Follow up separately on the `demo-ports.test.js` Multiscale first-class demo
+  wiring assertion if that static gate should be green before the next broad
+  validation run.
+
+## 2026-06-18 17:21:49 AKDT - Deno root-node todo plan
+
+### Prompt
+- User asked for a todo file for building out an instance of the PeerCompute
+  root node. The root node is mentioned in docs but not really implemented. It
+  should run on Deno and perform root-node orchestration tasks for PeerCompute
+  implementations that need that functionality, synchronization, and data
+  saving.
+
+### Files Touched
+- Added `plan/root-node-todo.md`.
+- Updated `plan/plan.md`.
+- Updated `plan/tests.md`.
+- Updated `plan/branch/distributed-compute.md`.
+- Updated `plan/branch/keystone-demo.md`.
+- Updated `plan/log.md`.
+
+### Actions
+- Read the ICC skill instructions and checked ICC status for `peercompute`;
+  artifacts were present and not stale.
+- Searched project docs/source for root-node, authority, orchestration,
+  synchronization, persistence, and Deno references.
+- Reviewed `plan/arch/node-roles.md`, `plan/arch/compute-node.md`,
+  `plan/arch/nodekernel.md`, `plan/arch/datastate.md`, `plan/tests.md`,
+  `peercompute/src/peercompute/index.js`, `NetworkManager` authority/scheduler
+  hooks, `scripts/pcserver.sh`, `peercompute/docs/RELAY_SERVER.md`,
+  `peercompute/deno.json`, `plan/branch/keystone-demo.md`,
+  `plan/branch/distributed-compute.md`, and `plan/branch/topologies.md`.
+- Confirmed the existing Deno relay is documented as legacy and should not be
+  reused as the production root node.
+- Created `plan/root-node-todo.md` as the durable implementation plan for a
+  new Deno control-plane/root-authority sidecar. The todo covers purpose,
+  non-goals, capabilities, proposed repo shape, versioned schemas, public
+  HTTP/WebSocket API sketch, browser integration, Deno phases, storage,
+  synchronization, topology orchestration, task/service orchestration, data
+  saving/replay, NetViz/operator visibility, deployment, tests, first slice,
+  and open questions.
+- Linked the new todo from `plan/plan.md`, added planned root-node validation
+  gates to `plan/tests.md`, and aligned the distributed-compute and Keystone
+  branch plans with the optional Deno-root mode.
+
+### Commands Run
+- `sed -n '1,220p' /home/cos/.codex/skills/icc/SKILL.md`
+- `rg -n "root node|root-node|rootNode|root peer|authority|orchestrat|synchronization|data saving|persistence|save" README.md plan demos peercompute/src scripts package.json`
+- `rg -n "root node|root-node|rootNode|root peer|peercompute|multiscale|NodeKernel|Deno" /home/cos/.codex/memories/MEMORY.md`
+- `date '+%Y-%m-%d %H:%M:%S %Z'`
+- `EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py status --repo peercompute --check-staleness`
+- `sed -n '1,220p' plan/arch/node-roles.md`
+- `sed -n '1,220p' plan/arch/compute-node.md`
+- `sed -n '1,220p' plan/arch/nodekernel.md`
+- `sed -n '1,220p' plan/arch/datastate.md`
+- `sed -n '1,220p' plan/tests.md`
+- `sed -n '1,260p' peercompute/src/peercompute/index.js`
+- `sed -n '730,940p' peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `sed -n '880,930p' README.md`
+- `sed -n '1,220p' scripts/pcserver.sh`
+- `EMSDK_QUIET=1 python3 /home/cos/projects/infinite_context_coder/scripts/codebase_tool.py search-chunks --repo peercompute --query "root node authority topology persistence deno orchestration"`
+- `find plan/branch -maxdepth 1 -type f -print | sort`
+- `for f in plan/branch/*.md; do printf '%s\n' "$f"; sed -n '1,80p' "$f"; done`
+- `rg -n "multi-scale-physics-sim|root node|branch" plan/branch plan/plan.md plan/log.md`
+- `git branch --show-current`
+- `ls -la plan | sed -n '1,160p'`
+- `sed -n '1,220p' plan/branch/keystone-demo.md`
+- `sed -n '1,220p' plan/branch/distributed-compute.md`
+- `sed -n '1,220p' plan/branch/topologies.md`
+- `rg -n "Deno|deno" . --glob '!node_modules/**' --glob '!docs/**' --glob '!dist/**'`
+- `ls -la plan/branch/current-branch.md plan/branch`
+- `sed -n '1,120p' peercompute/docs/RELAY_SERVER.md`
+- `sed -n '1,80p' peercompute/deno.json`
+- `sed -n '620,690p' plan/plan.md`
+- `test -e plan/root-node-todo.md; printf 'exists=%s\n' "$?"`
+- `tail -n 80 plan/branch/distributed-compute.md`
+- `tail -n 80 plan/branch/keystone-demo.md`
+- `tail -n 80 plan/tests.md`
+- `git diff --check -- plan/root-node-todo.md plan/plan.md plan/tests.md plan/branch/distributed-compute.md plan/branch/keystone-demo.md`
+- `rg -n "^# |^## |^### |Root node implementation planning|Planned root-node validation|Root Node Sidecar|Deno Root Node Alignment" plan/root-node-todo.md plan/plan.md plan/tests.md plan/branch/distributed-compute.md plan/branch/keystone-demo.md`
+- `git diff --stat -- plan/root-node-todo.md plan/plan.md plan/tests.md plan/branch/distributed-compute.md plan/branch/keystone-demo.md`
+- `git diff --check`
+- `rg -n '[ \t]+$' plan/root-node-todo.md plan/plan.md plan/tests.md plan/branch/distributed-compute.md plan/branch/keystone-demo.md plan/log.md`
+- `git status --short`
+- `wc -l plan/root-node-todo.md`
+- `deno --version`
+
+### Results
+- PASS: ICC status reported `is_stale=false`.
+- PASS: branch remained `multi-scale-physics-sim`.
+- PASS: root-node references were traced to the architecture docs and the
+  Keystone/distributed-compute branch plans.
+- PASS: Deno relay status was confirmed as legacy in
+  `peercompute/docs/RELAY_SERVER.md`, so the new todo scopes a separate Deno
+  root-node control plane rather than reviving the relay.
+- PASS: tracked markdown edits passed `git diff --check`.
+- PASS: heading/reference scan found the new root-node todo, planned
+  root-node validation section, distributed-compute root sidecar section, and
+  Keystone Deno-root alignment section.
+- PASS: full `git diff --check` was clean.
+- PASS: the root-node todo is `526` lines and the trailing-whitespace scan did
+  not report new `plan/root-node-todo.md` issues. It did report old historical
+  trailing spaces in existing `plan/plan.md` / `plan/log.md` lines, which were
+  left alone.
+- INFO: local Deno is available as `deno 2.6.8`.
+- No executable runtime tests were run because this was a planning/documentation
+  artifact only.
+
+### Open
+- Next implementation step is the Phase 0 design lock in
+  `plan/root-node-todo.md`: decide final folder boundary, storage baseline,
+  root authority mode, threat model, session identifiers, and clock behavior.
+
+## 2026-07-11 13:38:56 AKDT - ComputeManager GPU lane lease identity handoff
+
+### Prompt
+- Continuation of the user's instruction to complete the ULG GPU-resident
+  physics refactor. The NEIGH/LANE audit required ULG to consume actual
+  ComputeManager lane/lease/state/source-family identity rather than
+  self-generated identifiers.
+
+### Actions
+- Added `sourceFamily` to normalized lane requirements, persistent lane state,
+  and acquired lease records.
+- Added the compact
+  `peercompute.compute.gpu-resident-lane-lease-identity.v0` envelope.
+- `ComputeManager` now shallow-clones object task data after lease acquisition
+  and injects the actual envelope as `gpuResidentLaneLeaseIdentity`; it does
+  not mutate the submitted payload or synthesize ULG tokens.
+- Extended the inline lane test to compare the injected lease ID with the
+  completed lease and to validate lane/state/source-family identity.
+
+### Files Touched
+- `peercompute/src/peercompute/computeManager/ComputeManager.js`
+- `peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`
+- `peercompute/tests/unit/gpuResidentLaneManager.test.js`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands And Results
+- `node --check peercompute/src/peercompute/computeManager/ComputeManager.js`:
+  PASS.
+- `node --check peercompute/src/peercompute/computeManager/GpuResidentLaneManager.js`:
+  PASS.
+- `node --test tests/unit/gpuResidentLaneManager.test.js`: PASS `10/10`.
+- `npm run test:unit`: PASS `187/187`.
+
+### Open
+- StateManager publication remains owned by the ULG solid/authority integration
+  work. This slice intentionally changed no StateManager files.

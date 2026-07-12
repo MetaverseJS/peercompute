@@ -2,9 +2,105 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Key Innovation
-Given a network of compute nodes with varying mutual bandwidth and compute power it's possible to use cellular automata rules (where each node attempts to maximize it's own compute throughput) to form optimal compute networks for arbitrary workloads. 
-The Keystone demo (planned) will visualize this reconfiguration live with selectable workloads and topology modes.
+## Current Status - June 18, 2026
+PeerCompute currently ships as a browser-first P2P runtime plus a set of
+production-shaped demos, validation harnesses, and deployment scripts. It is no
+longer only a relay/chat experiment: the repo has usable networking, state,
+compute, observability, bot, media, WebGPU, and service-orchestration surfaces,
+with the Multiscale Ladder acting as the largest integration proving ground.
+
+The stable core is the `NodeKernel` stack: `NetworkManager`, `NetworkScheduler`,
+`StateManager`, `ComputeManager`, optional GPU hub, telemetry, and local IO
+policy. Demos can join scoped rooms, exchange snapshots/events/commands, sync
+Yjs-backed state, publish warm deltas, run browser worker workloads, and expose
+runtime metadata to NetViz.
+
+### Capability Map
+- **Browser P2P networking**: libp2p websocket relay bootstrap, relay
+  reservations, gossipsub/floodsub fallback, pubsub peer discovery, scoped
+  rooms/game IDs/topology IDs, relay-config discovery, relay-retention policy,
+  WebRTC/direct-path upgrade attempts, ICE configuration handoff, and explicit
+  transport truth for relay, relay-WebRTC, direct WebRTC, signaling, pubsub, and
+  media paths.
+- **Runtime orchestration**: `NodeKernel` lifecycle management, configurable
+  clocking modes, profile-driven scheduler cadence, snapshot/event/command
+  streams, keepalive/retry behavior, placement policy hooks, local/advisory
+  distributed execution modes, and fail-closed gates for distributed paths that
+  do not yet have a validated executor.
+- **Shared state and persistence**: Yjs document sync through
+  `PeerComputeProvider`, late-peer state-vector recovery, scoped state
+  namespaces, hot/warm/cold `DataState`, `commitDelta` adapters, IndexedDB cold
+  storage, cache-artifact admission/invalidation records, and metadata-only
+  import paths for remote results.
+- **Compute runtime**: inline JS tasks, worker-safe JS tasks, pure WASM tasks,
+  worker-local WebGPU tasks, hybrid WASM+WebGPU tasks, task-graph submission,
+  dependency batching, graph cancellation, content-addressed graph cache
+  inputs/artifacts, GPU resident lane stage plans, GPUHub resident stage
+  executors, worker policy descriptors, remote task-graph request/result
+  transport, and NodeKernel authority wrappers around placement, admission,
+  execution, cache import, warm-state seed, and local hot-buffer refresh.
+- **Service orchestration**: manifest-described compute services,
+  `ComputeServiceRegistry`, child-worker lease management, worker supervision,
+  cancellation-tree revocation, content-addressed artifact references,
+  ULG v0.5 manifest/task adapter helpers, classic/module worker type
+  preservation, and headless ComputeManager-backed service execution.
+- **Multiplayer media and game input**: CubeChat video/audio and screen-share
+  signaling, replicated movement, hidden same-origin bot peers, shared
+  Quake-style behavior profiles, multiplayer runtime browser gates, fake media
+  stream testing, and demo-level room/password flows.
+- **Observability and operations**: NetViz session discovery and attach,
+  runtime metadata panels, peer/edge transport inspection, RTC candidate-path
+  evidence, manager/task-family telemetry, warm-delta counters, relay keepers,
+  chaos-lab scenario overlays, generated relay config artifacts, Node and Go
+  relay launchers, coturn integration, and systemd install scripts.
+- **Simulation and WebGPU demos**: PlanetGen procedural planets/weather,
+  Universes galaxy generation, WebGPUPhys rigid-body and MLS-MPM workbenches,
+  Schrodinger atom/orbital/material console, Fano Reactor algebraic chemistry
+  scaffold, and the Multiscale Ladder's WebGPU-first supergalactic-to-orbital
+  proxy physics stack.
+- **Multiscale/ULG integration**: runtime packets, warm deltas, NetViz metadata,
+  render/readback/frame-budget telemetry, law-graph consistency reports, ULG
+  runtime manifests, ULG WebGPU execution deltas, qgrid/qmat WebGPU workers,
+  reduced molecular dynamics, qmat-to-MD source handoff, reaction/source-buffer
+  gates, source transfer/target mutation preflights, proxy worker-write
+  execution/verification, and explicit scientific-readiness blockers.
+
+### Validation Snapshot
+The latest local regression reports live in:
+- `plan/reports/2026-06-18-ulg-demo-regression-report.md`
+- `plan/reports/2026-06-18-multiplayer-interaction-report.md`
+
+Validated in that sweep:
+- PeerCompute unit tests, backend/release tests, PlanetGen, Multiscale model
+  tests, Schrodinger, Net Chaos Lab behavior tests, `build:all`, non-P2P docs
+  runtime smoke, NetViz session smoke, WebGpuPhys browser smokes, and
+  relay-backed ULG handoff.
+- Individual strengthened multiplayer browser checks for CubeChat, Hyperborea,
+  SneakyWoods, Daddy Go!, and NetViz against local ICE/TURN/relay infra with
+  simulated input/display assertions; CubeChat also validates fake camera/mic
+  and fake screen-share propagation.
+
+Known open breakages in the same snapshot:
+- The full ordered multiplayer P2P matrix is still unstable after Hyperborea;
+  Hyperborea followed by SneakyWoods can close the shared browser context during
+  simulated input even though SneakyWoods passes in isolation.
+- Daddy Go! can fail after the full ordered multi-demo matrix even though it
+  passes alone and after SneakyWoods.
+- Direct ULG browser handoff times out waiting for Multiscale `handoff-ready`;
+  relay-backed ULG handoff passes.
+- Multiscale visual smoke currently loses the appended NaCl pair in packet
+  bond state, live remote placement fails with `quorum-mismatch`, and the perf
+  probe remains diagnostic with low headless FPS.
+- System coturn on port `3478` may still be running on this workstation unless
+  stopped with interactive sudo; test-owned TURN/relay/dev-server processes are
+  expected to be cleaned up after local runs.
+
+## Design Target
+Given a network of compute nodes with varying mutual bandwidth and compute
+power, PeerCompute is aimed at self-organizing compute networks where nodes can
+form topology-aware groups for arbitrary workloads. The planned Keystone demo
+will visualize this reconfiguration live with selectable workloads and topology
+modes.
 
 
 ## What You Can Use Today
@@ -803,16 +899,52 @@ Default chaos-lab topology uses `peercompute/net-chaos-lab-node:latest` for agen
 
 ## Tests
 ```bash
+# Core/runtime gates
 npm --prefix peercompute run test:unit
+npm run test:backend
 node --test demos/tests/demo-ports.test.js
+
+# Demo/model gates
+npm --prefix demos/planetgen test
+npm --prefix demos/multiscale test
+npm --prefix demos/schrodinger test
+npm --prefix demos/webgpuphys run test:headless
+npm --prefix demos/webgpuphys run test:ppf
+npm --prefix demos/webgpuphys run test:ppf-contact
+
+# Build and browser smoke gates
+npm run build:all
+npm run test:runtime
+
+# Multiplayer/local-infra gates
 npm --prefix net-chaos-lab run test:behavior
 npm run test:runtime:p2p
 RUNTIME_P2P_DEMOS=hyperborea npm run test:runtime:p2p
+
+# Multiscale/ULG focused browser gates
+npm --prefix demos/multiscale run test:visual
+npm --prefix demos/multiscale run test:perf
+npm --prefix demos/multiscale run test:remote-placement
+npm --prefix demos/multiscale run test:ulg-handoff
+npm --prefix demos/multiscale run test:ulg-relay-handoff
 ```
 
-Note: Playwright is blocked in sandboxed environments (Chromium EPERM).
-`npm run test:runtime` also exercises the built docs bundle, but it includes non-multiplayer demos as well.
-`npm run test:runtime:p2p` is the full multiplayer browser gate for `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`; use `RUNTIME_P2P_DEMOS=...` to isolate a subset while debugging.
+Notes:
+- Playwright is blocked in some sandboxed environments (Chromium EPERM); on
+  this workstation the WebGpuPhys browser smokes can use system Chrome when the
+  matching managed Playwright browser is absent.
+- `npm run test:runtime` exercises the built docs bundle and includes
+  non-multiplayer demos.
+- `npm run test:runtime:p2p` is the full multiplayer browser gate for
+  `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`; use
+  `RUNTIME_P2P_DEMOS=...` to isolate a subset while debugging.
+- Relay-backed P2P/ULG tests should be run with a local ICE config, usually a
+  test-owned coturn instance plus the repo's local relay scripts. Shut those
+  servers down after the run.
+- As of the June 18, 2026 sweep, individual multiplayer demos pass the
+  strengthened browser interaction checks, but the full ordered P2P matrix and
+  several Multiscale/ULG gates still have open failures listed near the top of
+  this README.
 `node --test demos/tests/demo-ports.test.js` is the fast static/docs gate for demo wiring, bot bridge registration, and settings-surface expectations.
 `npm --prefix net-chaos-lab run test:behavior` verifies the reusable bot behavior core, personalities, navigation, and demo interaction profiles.
 
@@ -823,6 +955,7 @@ docs/
 demos/
 ├── cubechat/
 ├── daddygo/
+├── fano-reactor/
 ├── hyperborea/
 ├── multiscale/
 ├── netviz/
@@ -854,11 +987,24 @@ scripts/
 ```
 
 ## Roadmap Highlights
-- Adaptive profiles (RTT/peer count aware).
-- Authority election + snapshot ownership modes.
-- Optional binary encoding for high-throughput channels.
-- ComputeManager integration with network scheduler for distributed workloads.
-- Portable compute placement across JS, WASM, and hybrid WASM+WebGPU task descriptors.
+- Stabilize the ordered multi-demo P2P browser matrix, especially the
+  Hyperborea-to-SneakyWoods shared-context failure and Daddy Go! after full
+  matrix order.
+- Fix direct ULG `Launch Magnetar` handoff readiness while keeping the
+  relay-backed handoff path green.
+- Repair Multiscale NaCl append packet/bond propagation, remote-placement
+  `quorum-mismatch`, and low-FPS diagnostic pressure before calling the branch
+  demo-clean.
+- Promote distributed task-graph and GPU resident-stage paths from
+  metadata/advisory authority into validated remote execution with admitted
+  result/cache/state sharing.
+- Add a worker-owned WebGPU resident backend so GPUHub worker policy can move
+  beyond inline fallback or adapter-bound bridges.
+- Replace reduced/proxy Multiscale chemistry, EOS, material-response, and
+  source-transfer telemetry with calibrated conservative mutation paths and
+  reference replay suites.
+- Build the Keystone self-organizing topology/workload-placement demo on top of
+  the current relay, NetViz, scheduler, task-graph, and chaos-lab surfaces.
 
 ## License
 MIT

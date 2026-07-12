@@ -1,5 +1,87 @@
 ## PeerCompute Test Strategy
 
+### Planned root-node validation
+- Root node work is tracked in `plan/root-node-todo.md`.
+- The first implementation slice should add Deno unit tests for root schemas,
+  identity/signing, session registry, leases, policy revisions, storage
+  adapters, sync admission, checkpoints, and replay manifests.
+- Browser contract tests should prove a `RootAuthorityClient` can fetch a local
+  Deno root bootstrap manifest, connect over WebSocket, receive a root lease,
+  apply a root scheduler policy without breaking non-root demos, and export an
+  admitted namespace checkpoint from `StateManager`.
+- Integration tests should spawn a local Deno root plus local relay, join two
+  headless browser peers into one root-managed session, verify matching root
+  policy revision/lease terms, ingest at least one warm delta into the root
+  journal, checkpoint the session, and restore after root restart.
+- Security tests should reject stale lease terms, unadmitted namespaces, invalid
+  hashes, unsigned/invalid policy updates, disallowed origins, and repeated bad
+  WebSocket messages.
+- Root-node integration must use test-owned Deno/relay/TURN processes and shut
+  them down after each run.
+
+### Current focused result - 2026-06-18 AKDT
+- Multiplayer interaction validation with independent browser pages, local
+  coturn STUN/TURN/ICE on `127.0.0.1:34790`, dynamic local PeerCompute Go
+  relays, fake camera/microphone, and fake display stream:
+  - Report:
+    `plan/reports/2026-06-18-multiplayer-interaction-report.md`.
+  - Test harness strengthened in `demos/tests/runtime-p2p.mjs` using Chaos
+    Lab's behavior profiles and the demos' bot-bridge snapshots.
+  - PASS: CubeChat two-page local media, remote media, fake screen-share,
+    simulated movement input, canvas display, and remote moved-position
+    propagation.
+  - PASS: Hyperborea two-page local relay connection, canvas display,
+    simulated movement input, and remote moved-position propagation.
+  - PASS: SneakyWoods two-page local relay connection, canvas display,
+    simulated movement input, HUD player count, and remote moved-position
+    propagation.
+  - PASS: DaddyGo two-page local relay connection, canvas display, obstacle
+    toggle input, and bidirectional global high-score propagation.
+  - PASS: NetViz attach from a live CubeChat source tab, relay connection,
+    peer topology status, and topology canvas display.
+  - PASS: `npm --prefix net-chaos-lab run test:behavior` passed `13/13`.
+  - FAIL: full ordered `npm run test:runtime:p2p` still closes the shared
+    browser context around the Hyperborea-to-SneakyWoods transition.
+  - FAIL: `RUNTIME_P2P_DEMOS=hyperborea,sneakywoods` also closes the browser
+    context during SneakyWoods simulated input after Hyperborea has completed.
+  - CONCERN: repeated local browser sweeps exhausted even the widened coturn
+    relay port range `50200-50499`; long soak runs need a much larger TURN
+    allocation range or more aggressive allocation cleanup.
+
+### Current focused result - 2026-06-18 AKDT
+- ULG/demo regression sweep with local coturn STUN/TURN/ICE on
+  `127.0.0.1:34790` and dynamic local PeerCompute Go relays:
+  - Report:
+    `plan/reports/2026-06-18-ulg-demo-regression-report.md`.
+  - PASS: `npm --prefix peercompute run test:unit` passed `187/187`.
+  - PASS: `npm run test:backend` passed `20/20`.
+  - PASS: `npm --prefix demos/planetgen test`.
+  - PASS: `npm --prefix demos/multiscale test` passed `203/203`.
+  - PASS: `npm --prefix demos/schrodinger test` passed `20/20`.
+  - PASS: `npm --prefix net-chaos-lab run test:behavior` passed `13/13`.
+  - PASS: `npm run build:all` completed with existing bundle/chunk/import
+    warnings.
+  - PASS: non-P2P runtime docs smoke loaded Hyperborea, CubeChat,
+    SneakyWoods, DaddyGo, PlanetGen, Universes, Fano Reactor, and WebGpuPhys.
+  - PASS: NetViz session smoke after starting a local docs server.
+  - PASS: relay-backed ULG handoff with local ICE reached `handoff-ready`,
+    service envelope ready, dispatch adapters ready, and two connected
+    Multiscale peers.
+  - PASS: WebGpuPhys `test:headless`, `test:ppf`, and `test:ppf-contact`
+    after the harness was updated to use system Chrome when needed.
+  - FAIL: DaddyGo P2P score/state sync times out after the full ordered P2P
+    demo matrix, while DaddyGo alone and SneakyWoods plus DaddyGo pass.
+  - FAIL: direct ULG browser handoff times out waiting for the Multiscale popup
+    to reach `getScenarioHandoffReadiness().status === "handoff-ready"`.
+  - FAIL: Multiscale visual smoke reports the Na/Cl live append as 17 atoms
+    but only 10 bonds, so the NaCl pair did not propagate into packet state.
+  - FAIL: Multiscale live remote placement reaches dispatch-ready policy but
+    remote execution/admission fails with `quorum-mismatch`.
+  - CONCERN: Multiscale performance probe passed but averaged about `4.29`
+    FPS with all sampled frames above 100 ms.
+  - BLOCKED: PeerCompute Playwright/direct-path suite is fixed to port `5173`,
+    which was occupied by the live ULG target for this sweep.
+
 ### Current focused result - 2026-06-17 AKDT
 - NodeKernel local hot-buffer refresh from remote resident-stage admission:
   - `node --check` passed for
@@ -1606,6 +1688,15 @@
   magnetar affordance `sim closure pass x4`, `scientificRuntimeReady = false`,
   `fullPhysicsReady = false`, and material/EOS/SPH/phase-change validation
   flags all false.
+
+- GPU resident lane lease-identity injection gate:
+  `node --test tests/unit/gpuResidentLaneManager.test.js` and the complete
+  `npm run test:unit` suite must prove that `ComputeManager` acquires the lease
+  before invoking an inline object-data task, injects
+  `peercompute.compute.gpu-resident-lane-lease-identity.v0`, preserves
+  `leaseId`/`laneId`/`stateKey`/`sourceFamily`, and returns the same lease ID in
+  completion evidence. The submitted task data object must not be mutated.
+: current result on 2026-07-11 passed: focused `10/10`; full unit `187/187`.
 
 - ULG out-of-range closure refresh propagation gate (recommended-work item 2):
   feed a ULG simulation artifact whose authoritative artifact-level

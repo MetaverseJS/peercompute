@@ -14,6 +14,32 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+### Current Validation Snapshot - 2026-06-18 AKDT
+- The top-level README now includes a dated current capability map, validation
+  snapshot, known open breakages, expanded test matrix, updated project
+  structure, and branch-relevant roadmap.
+- Root node implementation planning now lives in `plan/root-node-todo.md`.
+  The planned service is a new Deno control-plane/root-authority sidecar for
+  orchestration, synchronization, and durable saved state; it is not a revival
+  of the legacy Deno relay or a replacement for browser `NodeKernel` peers.
+- ULG/demo regression sweep results are recorded in
+  `plan/reports/2026-06-18-ulg-demo-regression-report.md`.
+- Multiplayer interaction sweep results are recorded in
+  `plan/reports/2026-06-18-multiplayer-interaction-report.md`.
+- Keep these failures open before claiming this branch is demo-clean:
+  DaddyGo P2P fails after the full multi-demo runtime matrix, direct ULG
+  browser `Launch Magnetar` handoff does not reach Multiscale
+  `handoff-ready`, Multiscale visual smoke loses the appended NaCl pair in
+  packet state, live Multiscale remote placement fails with
+  `quorum-mismatch`, and the strengthened multiplayer runner still closes the
+  shared browser context when Hyperborea is followed by SneakyWoods.
+- Relay-backed ULG handoff passed against the local coturn/ICE configuration,
+  so the current breakage is not a blanket ULG artifact or service-envelope
+  failure. Individual strengthened multiplayer interaction checks pass for
+  CubeChat, Hyperborea, SneakyWoods, DaddyGo, and NetViz. WebGpuPhys browser
+  smokes now use a system Chrome executable when the matching Playwright
+  managed browser is absent.
+
 ### Completed:
 - libp2p-first browser stack (relay bootstrap + gossipsub, floodsub fallback, pubsubPeerDiscovery).
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
@@ -729,3 +755,11 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Browser-based P2P compute network using WebGPU.
 - Support hierarchical or emergent topologies based on bandwidth/compute affinity.
 - HTTPS/WSS deployment with signed code and data-only replication.
+
+## GPU resident lane lease identity
+- [x] Preserve a lane's declared `sourceFamily` on the lane and every acquired
+  lease.
+- [x] Inject the actual acquired inline lease into object task data as
+  `gpuResidentLaneLeaseIdentity` without mutating the submitted payload.
+- [x] Keep identity authority with `ComputeManager`/`GpuResidentLaneManager`;
+  downstream ULG code may validate and bind this identity but may not invent it.

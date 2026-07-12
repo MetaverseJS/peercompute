@@ -9,6 +9,18 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Portable runtimes matter: the same workload should be placeable as JS, WASM, or hybrid WASM+WebGPU depending on peer capability.
 - Metrics are first-class and feed scheduling decisions.
 
+## Root Node Sidecar
+- Detailed implementation todo: `plan/root-node-todo.md`.
+- The distributed-compute plan now assumes some deployments can opt into a
+  Deno root-node control plane for durable authority, synchronization, and
+  saved state while keeping browser peers on `NodeKernel` and keeping relay/TURN
+  on the existing backend stack.
+- The Deno root should provide signed session manifests, role/lease authority,
+  scheduler/topology policy, checkpoint/replay APIs, and warm-delta/state
+  admission for root-managed sessions.
+- The root sidecar should remain optional. Fully local/browser-hosted demos and
+  advisory distributed paths should continue to run without it.
+
 ## Phase 0: Definitions + Data Model
 1) Define metrics schema (shared across nodes):
    - Network: RTT, jitter, uplink/downlink throughput, packet loss.
@@ -88,6 +100,7 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Do we require explicit admission control for GPU-heavy tasks?
 
 ## Immediate Next Steps
-1) Write MetricsManager stub and publish local metrics.
-2) Add a simple CA rule set for LAN clustering.
-3) Integrate placement hints into NetworkScheduler.
+1) Lock the Deno root-node MVP boundary from `plan/root-node-todo.md`.
+2) Write MetricsManager stub and publish local metrics.
+3) Add a simple CA rule set for LAN clustering.
+4) Integrate placement hints into NetworkScheduler.

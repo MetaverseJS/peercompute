@@ -16,6 +16,27 @@ atomic / quantum / MD
   -> supergalactic
 ```
 
+## Current Validation Snapshot - 2026-06-18 AKDT
+- Relay-backed ULG handoff passed against the live ULG server at
+  `https://127.0.0.1:5173/` using local coturn STUN/TURN/ICE and dynamic local
+  PeerCompute relays. The handoff reached `handoff-ready`, carried the service
+  envelope and dispatch adapters, connected two Multiscale peers, and kept
+  full-physics readiness false as expected.
+- Direct ULG browser handoff failed: after ULG clicked `Launch Magnetar`, the
+  Multiscale popup never reached
+  `getScenarioHandoffReadiness().status === "handoff-ready"` within 120 s.
+- Visual smoke failed in the molecular live append path: appending Na and Cl to
+  the water recipe produced 17 atoms but only 10 bonds, so the expected NaCl
+  pair did not propagate into packet state.
+- Live remote placement failed after relay discovery and policy promotion:
+  `remoteRequested=5`, `remoteExecuted=0`, `remoteValidationFailed=4`, and the
+  last remote-placement error was `quorum-mismatch`.
+- Performance probe passed but measured about `4.29` FPS, with all sampled
+  frames above 100 ms. Treat this as a current performance concern for the
+  workbench.
+- Full details live in
+  `plan/reports/2026-06-18-ulg-demo-regression-report.md`.
+
 ## Current Slice
 - Standalone Vite + vanilla JS + Three.js demo at `demos/multiscale`.
 - Port: `5185`.

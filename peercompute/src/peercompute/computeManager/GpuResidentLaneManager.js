@@ -1,6 +1,8 @@
 export const GPU_RESIDENT_LANE_MANAGER_SCHEMA = 'peercompute.compute.gpu-resident-lane-manager.v0';
 export const GPU_RESIDENT_LANE_SCHEMA = 'peercompute.compute.gpu-resident-lane.v0';
 export const GPU_RESIDENT_LANE_LEASE_SCHEMA = 'peercompute.compute.gpu-resident-lane-lease.v0';
+export const GPU_RESIDENT_LANE_LEASE_IDENTITY_SCHEMA =
+  'peercompute.compute.gpu-resident-lane-lease-identity.v0';
 export const GPU_RESIDENT_LANE_EXECUTION_SCHEMA = 'peercompute.compute.gpu-resident-lane-execution.v0';
 export const GPU_RESIDENT_LANE_COPY_BUDGET_SCHEMA = 'peercompute.compute.gpu-resident-lane-copy-budget.v0';
 export const GPU_RESIDENT_LANE_FENCE_REPORT_SCHEMA = 'peercompute.compute.gpu-fence-report.v0';
@@ -370,12 +372,19 @@ export class GpuResidentLaneManager {
   getOrCreateLane(spec = {}) {
     const laneId = this.resolveLaneId(spec);
     const stateKey = normalizeString(spec.stateKey, null);
+    const sourceFamily = normalizeString(spec.sourceFamily, null);
     const existing = this.lanes.get(laneId);
     if (existing) {
       if (stateKey && existing.stateKey && existing.stateKey !== stateKey) {
         throw new Error(`GPU resident lane ${laneId} already owns stateKey ${existing.stateKey}, not ${stateKey}`);
       }
       if (stateKey && !existing.stateKey) existing.stateKey = stateKey;
+      if (sourceFamily && existing.sourceFamily && existing.sourceFamily !== sourceFamily) {
+        throw new Error(
+          `GPU resident lane ${laneId} already owns sourceFamily ${existing.sourceFamily}, not ${sourceFamily}`
+        );
+      }
+      if (sourceFamily && !existing.sourceFamily) existing.sourceFamily = sourceFamily;
       if (spec.domainKey && !existing.domainKey) existing.domainKey = normalizeString(spec.domainKey, null);
       if (spec.solverId && !existing.solverId) existing.solverId = normalizeString(spec.solverId, null);
       return existing;
@@ -385,6 +394,7 @@ export class GpuResidentLaneManager {
       schema: GPU_RESIDENT_LANE_SCHEMA,
       laneId,
       stateKey,
+      sourceFamily,
       domainKey: normalizeString(spec.domainKey, null),
       solverId: normalizeString(spec.solverId, null),
       deviceId: normalizeString(spec.deviceId, this.deviceId),
@@ -431,6 +441,7 @@ export class GpuResidentLaneManager {
       leaseId,
       laneId: lane.laneId,
       stateKey: lane.stateKey,
+      sourceFamily: normalizeString(spec.sourceFamily, lane.sourceFamily),
       domainKey: lane.domainKey,
       solverId: normalizeString(spec.solverId, lane.solverId),
       taskId: normalizeString(spec.taskId, null),

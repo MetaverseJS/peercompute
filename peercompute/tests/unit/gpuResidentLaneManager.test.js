@@ -684,10 +684,12 @@ test('ComputeManager wraps declared inline tasks in GPU resident lane leases bef
     id: 'local-gpu-lane-task',
     taskFamily: 'ulg-resident-gpu-lane',
     returnEnvelope: true,
+    data: {},
     gpuResidentLane: {
       enabled: true,
       laneId: 'ulg:sph:lane:inline',
       stateKey: 'ulg:sph-state:inline',
+      sourceFamily: 'sph-particle-state',
       domainKey: 'tile:0',
       readFamilies: ['sph-particle-state'],
       writeFamilies: ['sph-particle-state', 'mls-mpm-mechanics'],
@@ -710,13 +712,13 @@ test('ComputeManager wraps declared inline tasks in GPU resident lane leases bef
       queueFencePolicy: 'queue.onSubmittedWorkDone',
       retainedBufferRefs: ['sph-state-buffer', 'mls-mechanics-buffer']
     },
-    fn: () => ({
+    fn: (data) => ({
       commitDelta: {
         taskId: 'local-gpu-lane-task',
         scope: 'ulg-resident-inline',
         payload: { nextStep: 2 }
       },
-      value: { ok: true },
+      value: { ok: true, leaseIdentity: data.gpuResidentLaneLeaseIdentity },
       gpuFence: {
         status: 'queue-work-completed',
         method: 'queue.onSubmittedWorkDone',
@@ -733,7 +735,19 @@ test('ComputeManager wraps declared inline tasks in GPU resident lane leases bef
     scope: 'ulg-resident-inline',
     payload: { nextStep: 2 }
   }]);
-  assert.deepEqual(result.value, { ok: true });
+  assert.equal(result.value.ok, true);
+  assert.equal(
+    result.value.leaseIdentity.schema,
+    'peercompute.compute.gpu-resident-lane-lease-identity.v0'
+  );
+  assert.equal(result.value.leaseIdentity.authoritative, true);
+  assert.equal(result.value.leaseIdentity.laneId, 'ulg:sph:lane:inline');
+  assert.equal(result.value.leaseIdentity.stateKey, 'ulg:sph-state:inline');
+  assert.equal(result.value.leaseIdentity.sourceFamily, 'sph-particle-state');
+  assert.equal(
+    result.value.leaseIdentity.leaseId,
+    result.gpuResidentLaneExecution.lease.leaseId
+  );
   assert.equal(result.gpuResidentLaneExecution.schema, GPU_RESIDENT_LANE_EXECUTION_SCHEMA);
   assert.equal(result.gpuResidentLaneExecution.gpuFence.schema, GPU_RESIDENT_LANE_FENCE_REPORT_SCHEMA);
   assert.equal(result.gpuResidentLaneExecution.gpuFence.fenceSatisfied, true);

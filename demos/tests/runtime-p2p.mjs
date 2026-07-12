@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { runSimulationProfile } from '../../net-chaos-lab/agent/player-behavior-harness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -13,6 +14,8 @@ const port = Number(process.env.DEMO_PORT || 4180);
 const baseUrl = `http://${host}:${port}`;
 const relayConfigTimeoutMs = Number(process.env.RELAY_CONFIG_TIMEOUT_MS || 10000);
 const demoTimeoutMs = Number(process.env.DEMO_TIMEOUT_MS || 30000);
+const interactionMs = Number(process.env.RUNTIME_P2P_INTERACTION_MS || 3000);
+const movementEpsilon = Number(process.env.RUNTIME_P2P_MOVEMENT_EPSILON || 0.01);
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   || process.env.CHROME_EXECUTABLE_PATH
   || (existsSync('/bin/google-chrome') ? '/bin/google-chrome' : undefined);
@@ -52,6 +55,7 @@ const ignoredConsoleErrors = [
   /WebGPU is not supported/i,
   /WebGPU device lost/i,
   /Device was destroyed/i,
+  /root document of this element is not valid for pointer lock/i,
   /Failed to load resource: the server responded with a status of 404/i
 ];
 
@@ -159,8 +163,12 @@ function restoreFiles(snapshots) {
 }
 
 function startRelay() {
-  const relayConfigDirs = selectedDemos
-    .map((demo) => path.join(docsRoot, demo.name))
+  const relayDemoNames = [...new Set([
+    ...selectedDemos.map((demo) => demo.name),
+    ...(selectedDemos.some((demo) => demo.name === 'netviz') ? ['cubechat'] : [])
+  ])];
+  const relayConfigDirs = relayDemoNames
+    .map((name) => path.join(docsRoot, name))
     .filter((dir) => existsSync(dir));
   const relayConfigPaths = relayConfigDirs.flatMap((dir) => ([
     path.join(dir, 'relay-config.json'),
@@ -302,6 +310,233 @@ function waitForConsoleMatch(page, matcher, timeoutMs, label, buffer) {
   });
 }
 
+function asPoint(value) {
+  if (!value || typeof value !== 'object') return null;
+  const x = Number(value.x);
+  const y = Number(value.y);
+  const z = Number(value.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  return { x, y, z };
+}
+
+function distanceBetween(a, b) {
+  const left = asPoint(a);
+  const right = asPoint(b);
+  if (!left || !right) return 0;
+  const dx = left.x - right.x;
+  const dy = left.y - right.y;
+  const dz = left.z - right.z;
+  return Math.hypot(dx, dy, dz);
+}
+
+function summarizeBridgeSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    gameId: snapshot.gameId || null,
+    localId: snapshot.localId || null,
+    localPosition: asPoint(snapshot.localPosition),
+    peerCount: Number(snapshot.peerCount || 0),
+    peers: Array.isArray(snapshot.peers)
+      ? snapshot.peers.map((peer) => ({
+        id: peer?.id || null,
+        position: asPoint(peer?.position),
+        hasMedia: Boolean(peer?.hasMedia),
+        screenSharing: Boolean(peer?.screenSharing),
+        lastSeenAgeMs: Number.isFinite(peer?.lastSeenAgeMs) ? peer.lastSeenAgeMs : null
+      })).filter((peer) => peer.id)
+      : []
+  };
+}
+
+async function readBotBridgeSnapshot(page, bridgeId) {
+  const snapshot = await page.evaluate((id) => {
+    const registry = window.__PEERCOMPUTE_BOT_BRIDGES__;
+    const bridge = registry?.[id] || null;
+    if (!bridge || typeof bridge.snapshot !== 'function') return null;
+    return bridge.snapshot() || null;
+  }, bridgeId).catch(() => null);
+  return summarizeBridgeSnapshot(snapshot);
+}
+
+async function waitForBotBridgeSnapshot(page, bridgeId, label) {
+  await page.waitForFunction((id) => {
+    const registry = window.__PEERCOMPUTE_BOT_BRIDGES__;
+    const bridge = registry?.[id] || null;
+    if (!bridge || typeof bridge.snapshot !== 'function') return false;
+    const snapshot = bridge.snapshot() || null;
+    return Boolean(snapshot?.localId && snapshot?.localPosition);
+  }, bridgeId, { timeout: demoTimeoutMs });
+  const snapshot = await readBotBridgeSnapshot(page, bridgeId);
+  if (!snapshot?.localId || !snapshot?.localPosition) {
+    throw new Error(`${label || bridgeId} bot bridge did not expose a usable local snapshot`);
+  }
+  return snapshot;
+}
+
+async function waitForRemoteBridgePeer(page, bridgeId, peerId, label) {
+  const peer = await page.waitForFunction(({ id, peerId: expectedPeerId }) => {
+    const registry = window.__PEERCOMPUTE_BOT_BRIDGES__;
+    const bridge = registry?.[id] || null;
+    if (!bridge || typeof bridge.snapshot !== 'function') return false;
+    const snapshot = bridge.snapshot() || null;
+    const peers = Array.isArray(snapshot?.peers) ? snapshot.peers : [];
+    const peer = peers.find((entry) => entry?.id === expectedPeerId && entry?.position);
+    if (!peer) return false;
+    return {
+      id: peer.id,
+      position: peer.position,
+      hasMedia: Boolean(peer.hasMedia),
+      screenSharing: Boolean(peer.screenSharing),
+      lastSeenAgeMs: Number.isFinite(peer.lastSeenAgeMs) ? peer.lastSeenAgeMs : null
+    };
+  }, { id: bridgeId, peerId }, { timeout: demoTimeoutMs });
+  const value = await peer.jsonValue();
+  if (!asPoint(value?.position)) {
+    throw new Error(`${label || bridgeId} did not expose remote peer ${peerId}`);
+  }
+  return value;
+}
+
+async function waitForRemoteBridgePeerMovement(page, bridgeId, peerId, beforePosition, label) {
+  const result = await page.waitForFunction(({ id, peerId: expectedPeerId, before, epsilon }) => {
+    const registry = window.__PEERCOMPUTE_BOT_BRIDGES__;
+    const bridge = registry?.[id] || null;
+    if (!bridge || typeof bridge.snapshot !== 'function') return false;
+    const snapshot = bridge.snapshot() || null;
+    const peers = Array.isArray(snapshot?.peers) ? snapshot.peers : [];
+    const peer = peers.find((entry) => entry?.id === expectedPeerId && entry?.position);
+    if (!peer) return false;
+    const pos = peer.position;
+    const dx = Number(pos.x) - Number(before.x);
+    const dy = Number(pos.y) - Number(before.y);
+    const dz = Number(pos.z) - Number(before.z);
+    const distance = Math.hypot(dx, dy, dz);
+    if (!Number.isFinite(distance) || distance <= epsilon) return false;
+    return {
+      id: peer.id,
+      position: pos,
+      movement: distance,
+      hasMedia: Boolean(peer.hasMedia),
+      screenSharing: Boolean(peer.screenSharing)
+    };
+  }, {
+    id: bridgeId,
+    peerId,
+    before: asPoint(beforePosition),
+    epsilon: movementEpsilon
+  }, { timeout: demoTimeoutMs });
+  const value = await result.jsonValue();
+  if (!value || !Number.isFinite(Number(value.movement))) {
+    throw new Error(`${label || bridgeId} did not observe remote movement for ${peerId}`);
+  }
+  return value;
+}
+
+async function runAndVerifyBridgeInput(page, bridgeId, label) {
+  const before = await waitForBotBridgeSnapshot(page, bridgeId, `${label} before input`);
+  const simulation = await runSimulationProfile(page, bridgeId, interactionMs);
+  const after = summarizeBridgeSnapshot(simulation?.finalSnapshot) || await readBotBridgeSnapshot(page, bridgeId);
+  const movement = distanceBetween(before.localPosition, after?.localPosition);
+  if (!simulation?.applied || movement <= movementEpsilon) {
+    throw new Error(
+      `${label} simulated input did not move local display state: ` +
+      JSON.stringify({
+        applied: Boolean(simulation?.applied),
+        driver: simulation?.driver || null,
+        tickCount: simulation?.tickCount || null,
+        movement,
+        before,
+        after,
+        steps: simulation?.steps || []
+      })
+    );
+  }
+  return {
+    localId: before.localId,
+    before,
+    after,
+    movement,
+    simulation
+  };
+}
+
+async function verifyCanvasDisplay(page, selectors, label) {
+  const result = await page.waitForFunction(({ selectors: candidateSelectors }) => {
+    const canvases = candidateSelectors
+      .map((selector) => document.querySelector(selector))
+      .filter(Boolean);
+    for (const canvas of canvases) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width < 16 || rect.height < 16 || canvas.width < 16 || canvas.height < 16) continue;
+      const base = {
+        selector: candidateSelectors.find((selector) => document.querySelector(selector) === canvas) || 'canvas',
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        bufferWidth: canvas.width,
+        bufferHeight: canvas.height
+      };
+      try {
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (gl && typeof gl.readPixels === 'function') {
+          const width = gl.drawingBufferWidth || canvas.width;
+          const height = gl.drawingBufferHeight || canvas.height;
+          const samples = [
+            [0.5, 0.5],
+            [0.25, 0.25],
+            [0.75, 0.25],
+            [0.25, 0.75],
+            [0.75, 0.75]
+          ];
+          const pixel = new Uint8Array(4);
+          for (const [sx, sy] of samples) {
+            const x = Math.max(0, Math.min(width - 1, Math.floor(width * sx)));
+            const y = Math.max(0, Math.min(height - 1, Math.floor(height * sy)));
+            gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            if (pixel[3] > 0 || pixel[0] + pixel[1] + pixel[2] > 8) {
+              return { ...base, rendered: true, method: 'webgl-readpixels' };
+            }
+          }
+          continue;
+        }
+      } catch (_) {
+        // Fall through to a visibility-only check when the browser blocks readback.
+      }
+      try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          const width = canvas.width;
+          const height = canvas.height;
+          const samples = [
+            [0.5, 0.5],
+            [0.25, 0.25],
+            [0.75, 0.25],
+            [0.25, 0.75],
+            [0.75, 0.75]
+          ];
+          for (const [sx, sy] of samples) {
+            const x = Math.max(0, Math.min(width - 1, Math.floor(width * sx)));
+            const y = Math.max(0, Math.min(height - 1, Math.floor(height * sy)));
+            const data = ctx.getImageData(x, y, 1, 1).data;
+            if (data[3] > 0 || data[0] + data[1] + data[2] > 8) {
+              return { ...base, rendered: true, method: '2d-readpixels' };
+            }
+          }
+          continue;
+        }
+      } catch (_) {
+        // Existing WebGL contexts cannot be re-opened as 2D; visible + sized is still useful.
+      }
+      return { ...base, rendered: true, method: 'visible-sized-canvas' };
+    }
+    return false;
+  }, { selectors }, { timeout: demoTimeoutMs });
+  const value = await result.jsonValue();
+  if (!value?.rendered) {
+    throw new Error(`${label} did not render a visible canvas`);
+  }
+  return value;
+}
+
 async function runCubeChat(context) {
   const errors = [];
   const pageA = await context.newPage();
@@ -364,6 +599,23 @@ async function runCubeChat(context) {
       pageA.waitForFunction(() => window.__cubechatTest?.remoteStreamCount > 0, null, { timeout: demoTimeoutMs }),
       pageB.waitForFunction(() => window.__cubechatTest?.remoteStreamCount > 0, null, { timeout: demoTimeoutMs })
     ]);
+    await Promise.all([
+      verifyCanvasDisplay(pageA, ['#scene-container canvas', 'canvas'], 'CubeChat pageA scene'),
+      verifyCanvasDisplay(pageB, ['#scene-container canvas', 'canvas'], 'CubeChat pageB scene')
+    ]);
+
+    const snapshotA = await waitForBotBridgeSnapshot(pageA, 'cubechat', 'CubeChat pageA');
+    const snapshotB = await waitForBotBridgeSnapshot(pageB, 'cubechat', 'CubeChat pageB');
+    const remoteAOnB = await waitForRemoteBridgePeer(pageB, 'cubechat', snapshotA.localId, 'CubeChat pageB remote pageA');
+    const remoteBOnA = await waitForRemoteBridgePeer(pageA, 'cubechat', snapshotB.localId, 'CubeChat pageA remote pageB');
+    const [inputA, inputB] = await Promise.all([
+      runAndVerifyBridgeInput(pageA, 'cubechat', 'CubeChat pageA'),
+      runAndVerifyBridgeInput(pageB, 'cubechat', 'CubeChat pageB')
+    ]);
+    await Promise.all([
+      waitForRemoteBridgePeerMovement(pageB, 'cubechat', inputA.localId, remoteAOnB.position, 'CubeChat pageB display of pageA movement'),
+      waitForRemoteBridgePeerMovement(pageA, 'cubechat', inputB.localId, remoteBOnA.position, 'CubeChat pageA display of pageB movement')
+    ]);
 
     await pageA.click('#settings-button');
     await pageA.click('#screen-share-toggle');
@@ -374,6 +626,11 @@ async function runCubeChat(context) {
     );
     await pageB.waitForFunction(
       () => window.__cubechatTest?.remoteScreenStreamCount > 0,
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await pageB.waitForFunction(
+      () => window.__remoteTrackSeen === true,
       null,
       { timeout: demoTimeoutMs }
     );
@@ -396,10 +653,14 @@ async function runCubeChat(context) {
       remoteStreamCount: window.__cubechatTest?.remoteStreamCount ?? null,
       remoteScreenStreamCount: window.__cubechatTest?.remoteScreenStreamCount ?? null
     })).catch(() => null);
+    const bridgeA = await readBotBridgeSnapshot(pageA, 'cubechat').catch(() => null);
+    const bridgeB = await readBotBridgeSnapshot(pageB, 'cubechat').catch(() => null);
     errors.push(
       `Cubechat P2P wait failed: ${err?.message || err}\n` +
       `pageA: ${JSON.stringify(debugA)}\n` +
       `pageB: ${JSON.stringify(debugB)}\n` +
+      `pageA bridge: ${JSON.stringify(bridgeA)}\n` +
+      `pageB bridge: ${JSON.stringify(bridgeB)}\n` +
       `pageA logs: ${logsA.slice(-10).join(' | ')}\n` +
       `pageB logs: ${logsB.slice(-10).join(' | ')}`
     );
@@ -460,13 +721,33 @@ async function runHyperborea(context) {
         { timeout: demoTimeoutMs }
       )
     ]);
+    await Promise.all([
+      verifyCanvasDisplay(pageA, ['#gameCanvas', 'canvas'], 'Hyperborea pageA scene'),
+      verifyCanvasDisplay(pageB, ['#gameCanvas', 'canvas'], 'Hyperborea pageB scene')
+    ]);
+    const snapshotA = await waitForBotBridgeSnapshot(pageA, 'hyperborea', 'Hyperborea pageA');
+    const snapshotB = await waitForBotBridgeSnapshot(pageB, 'hyperborea', 'Hyperborea pageB');
+    const remoteAOnB = await waitForRemoteBridgePeer(pageB, 'hyperborea', snapshotA.localId, 'Hyperborea pageB remote pageA');
+    const remoteBOnA = await waitForRemoteBridgePeer(pageA, 'hyperborea', snapshotB.localId, 'Hyperborea pageA remote pageB');
+    const [inputA, inputB] = await Promise.all([
+      runAndVerifyBridgeInput(pageA, 'hyperborea', 'Hyperborea pageA'),
+      runAndVerifyBridgeInput(pageB, 'hyperborea', 'Hyperborea pageB')
+    ]);
+    await Promise.all([
+      waitForRemoteBridgePeerMovement(pageB, 'hyperborea', inputA.localId, remoteAOnB.position, 'Hyperborea pageB display of pageA movement'),
+      waitForRemoteBridgePeerMovement(pageA, 'hyperborea', inputB.localId, remoteBOnA.position, 'Hyperborea pageA display of pageB movement')
+    ]);
   } catch (err) {
     const debugA = await pageA.evaluate(() => window.__hyperboreaTest || null).catch(() => null);
     const debugB = await pageB.evaluate(() => window.__hyperboreaTest || null).catch(() => null);
+    const bridgeA = await readBotBridgeSnapshot(pageA, 'hyperborea').catch(() => null);
+    const bridgeB = await readBotBridgeSnapshot(pageB, 'hyperborea').catch(() => null);
     errors.push(
       `Hyperborea P2P wait failed: ${err?.message || err}\n` +
       `pageA state: ${JSON.stringify(debugA)}\n` +
       `pageB state: ${JSON.stringify(debugB)}\n` +
+      `pageA bridge: ${JSON.stringify(bridgeA)}\n` +
+      `pageB bridge: ${JSON.stringify(bridgeB)}\n` +
       `pageA logs: ${logsA.slice(-12).join(' | ')}\n` +
       `pageB logs: ${logsB.slice(-12).join(' | ')}`
     );
@@ -516,9 +797,34 @@ async function runSneakyWoods(context) {
       null,
       { timeout: demoTimeoutMs }
     );
+    await pageB.waitForFunction(
+      () => document.getElementById('players')?.textContent?.includes('Players: 2'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await Promise.all([
+      verifyCanvasDisplay(pageA, ['canvas'], 'SneakyWoods pageA scene'),
+      verifyCanvasDisplay(pageB, ['canvas'], 'SneakyWoods pageB scene')
+    ]);
+    const snapshotA = await waitForBotBridgeSnapshot(pageA, 'sneakywoods', 'SneakyWoods pageA');
+    const snapshotB = await waitForBotBridgeSnapshot(pageB, 'sneakywoods', 'SneakyWoods pageB');
+    const remoteAOnB = await waitForRemoteBridgePeer(pageB, 'sneakywoods', snapshotA.localId, 'SneakyWoods pageB remote pageA');
+    const remoteBOnA = await waitForRemoteBridgePeer(pageA, 'sneakywoods', snapshotB.localId, 'SneakyWoods pageA remote pageB');
+    const [inputA, inputB] = await Promise.all([
+      runAndVerifyBridgeInput(pageA, 'sneakywoods', 'SneakyWoods pageA'),
+      runAndVerifyBridgeInput(pageB, 'sneakywoods', 'SneakyWoods pageB')
+    ]);
+    await Promise.all([
+      waitForRemoteBridgePeerMovement(pageB, 'sneakywoods', inputA.localId, remoteAOnB.position, 'SneakyWoods pageB display of pageA movement'),
+      waitForRemoteBridgePeerMovement(pageA, 'sneakywoods', inputB.localId, remoteBOnA.position, 'SneakyWoods pageA display of pageB movement')
+    ]);
   } catch (err) {
+    const bridgeA = await readBotBridgeSnapshot(pageA, 'sneakywoods').catch(() => null);
+    const bridgeB = await readBotBridgeSnapshot(pageB, 'sneakywoods').catch(() => null);
     errors.push(
       `SneakyWoods P2P wait failed: ${err?.message || err}\n` +
+      `pageA bridge: ${JSON.stringify(bridgeA)}\n` +
+      `pageB bridge: ${JSON.stringify(bridgeB)}\n` +
       `pageA logs: ${logsA.slice(-12).join(' | ')}\n` +
       `pageB logs: ${logsB.slice(-12).join(' | ')}`
     );
@@ -571,6 +877,22 @@ async function runDaddyGo(context) {
         { timeout: demoTimeoutMs }
       )
     ]);
+    await Promise.all([
+      verifyCanvasDisplay(pageA, ['#canvas3d', 'canvas'], 'DaddyGo pageA scene'),
+      verifyCanvasDisplay(pageB, ['#canvas3d', 'canvas'], 'DaddyGo pageB scene')
+    ]);
+    await pageA.click('#toggleObstacles');
+    await pageA.waitForFunction(
+      () => document.getElementById('toggleObstacles')?.textContent?.includes('OFF'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await pageA.click('#toggleObstacles');
+    await pageA.waitForFunction(
+      () => document.getElementById('toggleObstacles')?.textContent?.includes('ON'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
     await pageA.evaluate(() => window.__daddygoTest?.setScore?.(11));
     await pageA.waitForFunction(
       () => window.__daddygoTest?.globalScoreText?.includes('11'),
@@ -579,6 +901,17 @@ async function runDaddyGo(context) {
     );
     await pageB.waitForFunction(
       () => window.__daddygoTest?.globalScoreText?.includes('11'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await pageB.evaluate(() => window.__daddygoTest?.setScore?.(17));
+    await pageB.waitForFunction(
+      () => window.__daddygoTest?.globalScoreText?.includes('17'),
+      null,
+      { timeout: demoTimeoutMs }
+    );
+    await pageA.waitForFunction(
+      () => window.__daddygoTest?.globalScoreText?.includes('17'),
       null,
       { timeout: demoTimeoutMs }
     );
@@ -657,6 +990,7 @@ async function runNetViz(context) {
       return Array.isArray(status?.peers)
         && status.peers.some((peer) => !peer?.isRelay && peer?.peerId);
     }, null, { timeout: demoTimeoutMs + 15000 });
+    await verifyCanvasDisplay(page, ['#netviz-canvas', 'canvas'], 'NetViz topology scene');
   } catch (err) {
     const sourceDebug = await sourcePage.evaluate(() => ({
       localStreamReady: window.__cubechatTest?.localStreamReady ?? null,

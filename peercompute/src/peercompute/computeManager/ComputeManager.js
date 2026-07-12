@@ -1,6 +1,9 @@
 import { executeTaskPayload } from './taskRuntime.js';
 import { SolverRegistry } from './SolverRegistry.js';
-import { GpuResidentLaneManager } from './GpuResidentLaneManager.js';
+import {
+  GpuResidentLaneManager,
+  GPU_RESIDENT_LANE_LEASE_IDENTITY_SCHEMA
+} from './GpuResidentLaneManager.js';
 
 function createDefaultComputeWorker() {
   return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
@@ -369,6 +372,12 @@ function normalizeGpuResidentLaneLeaseSpec(task = {}, gpuFenceRequirement = null
     gpuFenceRequirement?.stateKey
   );
   const domainKey = firstNonNull(source.domainKey, source.domain, webgpu.domainKey, task.domainKey, task.data?.domainKey);
+  const sourceFamily = firstNonNull(
+    source.sourceFamily,
+    webgpu.sourceFamily,
+    task.data?.sourceFamily,
+    task.data?.input?.sourceFamily
+  );
   const queueFencePolicy = firstNonNull(
     source.queueFencePolicy,
     source.fencePolicy,
@@ -406,6 +415,7 @@ function normalizeGpuResidentLaneLeaseSpec(task = {}, gpuFenceRequirement = null
     localExecution: localExecutionRaw === 'worker' ? 'worker' : 'inline',
     laneId: laneId ? String(laneId) : null,
     stateKey: stateKey ? String(stateKey) : null,
+    sourceFamily: sourceFamily ? String(sourceFamily) : null,
     domainKey: domainKey ? String(domainKey) : null,
     solverId: firstNonNull(source.solverId, task.solverId, task.data?.solverId) || null,
     owner: firstNonNull(source.owner, task.owner, task.taskFamily, task.solverId, 'compute-manager-task'),
@@ -4006,6 +4016,33 @@ export class ComputeManager {
     return lease;
   }
 
+  _taskPayloadWithGpuResidentLaneLeaseIdentity(task) {
+    const payload = task.payload;
+    const lease = task.gpuResidentLaneLease;
+    if (!lease) return payload;
+    const identity = Object.freeze({
+      schema: GPU_RESIDENT_LANE_LEASE_IDENTITY_SCHEMA,
+      authoritative: true,
+      leaseId: lease.leaseId,
+      laneId: lease.laneId,
+      stateKey: lease.stateKey,
+      sourceFamily: lease.sourceFamily,
+      domainKey: lease.domainKey,
+      solverId: lease.solverId,
+      taskId: lease.taskId,
+      owner: lease.owner
+    });
+    const data = payload?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { ...payload, gpuResidentLaneLeaseIdentity: identity };
+    }
+    return {
+      ...payload,
+      data: { ...data, gpuResidentLaneLeaseIdentity: identity },
+      gpuResidentLaneLeaseIdentity: identity
+    };
+  }
+
   _completeTaskGpuResidentLaneLease(task, result, { mode = null } = {}) {
     const lease = task.gpuResidentLaneLease;
     if (!lease || task.gpuResidentLaneExecution) return result;
@@ -4164,7 +4201,9 @@ export class ComputeManager {
     this._recordExecutorStart(this.inlineExecutorId, task, { kind: 'inline' });
     try {
       this._acquireTaskGpuResidentLaneLease(task);
-      const rawResult = await executeTaskPayload(task.payload);
+      const rawResult = await executeTaskPayload(
+        this._taskPayloadWithGpuResidentLaneLeaseIdentity(task)
+      );
       const result = this._completeTaskGpuResidentLaneLease(task, rawResult, { mode: task.executionMode || 'inline' });
       this._assertRequiredGpuFenceSatisfied(task, result);
       if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'commitDelta')) {

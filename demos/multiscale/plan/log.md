@@ -23873,3 +23873,58 @@ User asked whether Infinite Context Coder is being used.
   physics, calibrated closures, phase-change behavior, or full magnetar
   simulation.
 - No push was attempted.
+
+## 2026-06-18 10:35:03 AKDT - ULG handoff and Multiscale demo regression sweep
+
+### Prompt
+- User asked for a full ULG/demo regression test pass with a local
+  STUN/TURN/ICE/relay server and a report describing broken demos.
+
+### Actions
+- Validated against the live ULG HTTPS server at `https://127.0.0.1:5173/`.
+- Started local coturn on `127.0.0.1:34790` and injected STUN plus TURN UDP/TCP
+  ICE config into the relay-backed Multiscale and runtime P2P tests.
+- Ran Multiscale unit/model, visual, direct ULG handoff, relay ULG handoff,
+  live remote-placement, and performance probes.
+- Started and stopped local Vite servers for docs and Multiscale where the
+  tests required them.
+- Added the full report at
+  `plan/reports/2026-06-18-ulg-demo-regression-report.md` and updated the root
+  and Multiscale plan/test summaries.
+
+### Commands Run
+- `npm --prefix demos/multiscale test`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ npm --prefix demos/multiscale run test:ulg-handoff`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ ULG_HANDOFF_TIMEOUT_MS=120000 npm --prefix demos/multiscale run test:ulg-handoff`
+- `env ULG_HANDOFF_URL=https://127.0.0.1:5173/ ULG_RELAY_HANDOFF_TIMEOUT_MS=180000 RELAY_CONFIG_TIMEOUT_MS=60000 ULG_RELAY_HANDOFF_RUN_DISPATCH=1 ULG_RELAY_HANDOFF_WEBRTC_CONFIG='<local coturn ICE JSON>' npm --prefix demos/multiscale run test:ulg-relay-handoff`
+- `env MULTISCALE_SMOKE_URL=https://127.0.0.1:4173/multiscale/ npm --prefix demos/multiscale run test:visual`
+- `npm --prefix demos/multiscale run test:visual`
+- `env RELAY_CONFIG_TIMEOUT_MS=60000 RELAY_WEBRTC_CONFIG='<local coturn ICE JSON>' npm --prefix demos/multiscale run test:remote-placement`
+- `npm --prefix demos/multiscale run test:perf`
+
+### Results
+- PASS: `npm --prefix demos/multiscale test` passed `203/203`.
+- PASS: relay-backed ULG handoff reached `handoff-ready`, reported
+  `blockerCount=0`, kept `simulationStatus="scientific-ready"`, connected two
+  Multiscale peers, prepared the service envelope and dispatch adapters,
+  accepted two dispatches, and left full-physics readiness false with
+  `runtime-evidence-compatible-pending-full-physics-validation`.
+- FAIL: direct ULG browser handoff timed out after ULG clicked
+  `Launch Magnetar`; the Multiscale popup did not reach
+  `getScenarioHandoffReadiness().status === "handoff-ready"` within 120 s.
+- FAIL: docs visual smoke timed out waiting for the quantum readout to include
+  quantum basis/worker/finite-grid evidence.
+- FAIL: dev visual smoke reached molecular append validation and reported
+  17 atoms but only 10 bonds after appending Na and Cl, so the expected NaCl
+  pair did not propagate to packet state.
+- FAIL: live remote placement reached relay discovery and dispatch-ready policy
+  but remote execution/admission failed with `quorum-mismatch`.
+- CONCERN: performance probe passed but measured about `4.29` FPS, with all
+  sampled frames above 100 ms.
+
+### Open
+- Direct ULG popup readiness, NaCl append packet propagation, remote placement
+  quorum validation, and current frame cadence need follow-up before the
+  Multiscale workbench can be called demo-clean.
+- No push was attempted, and no local commit was made because this pass
+  intentionally captured active regressions.
