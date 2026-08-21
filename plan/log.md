@@ -982,10 +982,33 @@ Instructions: This file contains a detailed implementation log describing choice
   bundles were not post-processed because changing their emitted payloads would
   break Vite build reproducibility and content hashes.
 
-### Remaining For This Prompt
+### Release Commit And Public Deployment Check
 
-- Commit and push the atomic final source/generated/docs release checkpoint,
-  then verify the public GitHub Pages asset revision.
+- Committed the atomic generated/source/docs release as
+  `bbbc683f7efbb8e5957d4c978aa99116e8941cf9` (`Publish production demo
+  bundles`) and pushed `39003828..bbbc683f` to `origin/ulg` successfully.
+  A subsequent fetch confirmed local `HEAD`, `origin/ulg`, and GitHub's public
+  commit API all resolve to that exact commit.
+- GitHub's unauthenticated repository Pages-settings API returned `404`, but
+  the public deployment API shows the most recent `github-pages` deployment is
+  commit `b082ff37` from branch `demo-fixes`, not `ulg`. The live CubeChat HTML
+  still references `assets/index-D0l_3sgy.js`; the new
+  `index-CXmtRpZB.js` and stable Multiscale qgrid/qmat/ULG module URLs return
+  `404` there.
+- Fetched remote state and confirmed `origin/demo-fixes` is the older deployed
+  commit `b082ff37`, is an ancestor of `origin/ulg`, and has not moved. Did not
+  fast-forward that separate production branch because this prompt authorized
+  pushing the local changes to `ulg`; changing the Pages deployment source is
+  an additional external mutation requiring explicit direction.
+- No `secretworkshop.net` service was restarted or modified. Public native
+  service checks remain green, public browser TURN allocation remains red, and
+  the session still has no trusted authenticated host-administration path.
+
+### Remaining / Blocked
+
+- Publishing this build to the live GitHub Pages site requires explicit
+  authorization to fast-forward `demo-fixes` to the validated `ulg` commit (or
+  an intentional Pages-source reconfiguration).
 - Repairing or upgrading production coturn requires the user to restore a
   trusted authenticated administrative path to `secretworkshop.net`; capture
   service logs/config and rollback state before any mutation.
