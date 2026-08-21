@@ -29,9 +29,10 @@ runtime metadata to NetViz.
   do not yet have a validated executor.
 - **Shared state and persistence**: Yjs document sync through
   `PeerComputeProvider`, late-peer state-vector recovery, scoped state
-  namespaces, hot/warm/cold `DataState`, `commitDelta` adapters, IndexedDB cold
-  storage, cache-artifact admission/invalidation records, and metadata-only
-  import paths for remote results.
+  namespaces whose observers follow concurrent nested-map replacement,
+  hot/warm/cold `DataState`, `commitDelta` adapters, IndexedDB cold storage,
+  cache-artifact admission/invalidation records, and metadata-only import paths
+  for remote results.
 - **Compute runtime**: inline JS tasks, worker-safe JS tasks, pure WASM tasks,
   worker-local WebGPU tasks, hybrid WASM+WebGPU tasks, task-graph submission,
   dependency batching, graph cancellation, content-addressed graph cache
@@ -45,9 +46,10 @@ runtime metadata to NetViz.
   ULG v0.5 manifest/task adapter helpers, classic/module worker type
   preservation, and headless ComputeManager-backed service execution.
 - **Multiplayer media and game input**: CubeChat video/audio and screen-share
-  signaling, replicated movement, hidden same-origin bot peers, shared
-  Quake-style behavior profiles, multiplayer runtime browser gates, fake media
-  stream testing, and demo-level room/password flows.
+  signaling with relay-configured STUN/TURN fallback, replicated movement,
+  hidden same-origin bot peers, shared Quake-style behavior profiles,
+  multiplayer runtime browser gates, fake media stream testing, and demo-level
+  room/password flows.
 - **Observability and operations**: NetViz session discovery and attach,
   runtime metadata panels, peer/edge transport inspection, RTC candidate-path
   evidence, manager/task-family telemetry, warm-delta counters, relay keepers,
@@ -66,11 +68,27 @@ runtime metadata to NetViz.
   execution/verification, and explicit scientific-readiness blockers.
 
 ### Validation Snapshot
-The latest local regression reports live in:
+
+The focused 2026-08-21 repair is green without running the full chaos lab:
+
+- StateManager namespace replacement regressions passed `8/8`, plus a
+  10,000-transition adversarial stress check.
+- Fresh temporary production builds passed three clean isolated two-page
+  SneakyWoods checks and three CubeChat checks with bidirectional movement,
+  theme, room-directory, camera/audio, screen-share, and remote-track coverage.
+- CubeChat application media passed forced TURN relay-only checks over both UDP
+  and TCP; both pages reported succeeded relay candidate pairs with positive
+  bidirectional bytes.
+- PeerCompute units passed `190` with one skip and no failures; backend/release
+  checks passed `20/20`.
+
+The prior full local regression reports live in:
+
 - `plan/reports/2026-06-18-ulg-demo-regression-report.md`
 - `plan/reports/2026-06-18-multiplayer-interaction-report.md`
 
-Validated in that sweep:
+Validated in that prior sweep:
+
 - PeerCompute unit tests, backend/release tests, PlanetGen, Multiscale model
   tests, Schrodinger, Net Chaos Lab behavior tests, `build:all`, non-P2P docs
   runtime smoke, NetViz session smoke, WebGpuPhys browser smokes, and
@@ -80,12 +98,16 @@ Validated in that sweep:
   simulated input/display assertions; CubeChat also validates fake camera/mic
   and fake screen-share propagation.
 
-Known open breakages in the same snapshot:
-- The full ordered multiplayer P2P matrix is still unstable after Hyperborea;
-  Hyperborea followed by SneakyWoods can close the shared browser context during
-  simulated input even though SneakyWoods passes in isolation.
+Known open breakages/coverage gaps:
+
+- The current focused fix makes isolated SneakyWoods pass consistently, but the
+  full ordered multiplayer P2P matrix and its historical
+  Hyperborea-to-SneakyWoods shared-context failure were not rerun.
 - Daddy Go! can fail after the full ordered multi-demo matrix even though it
   passes alone and after SneakyWoods.
+- Live four-peer CubeChat media convergence remains a separate known regression;
+  the focused validation covered two application peers and did not claim the
+  production four-peer issue is resolved.
 - Direct ULG browser handoff times out waiting for Multiscale `handoff-ready`;
   relay-backed ULG handoff passes.
 - Multiscale visual smoke currently loses the appended NaCl pair in packet
@@ -205,7 +227,9 @@ modes.
 - The repo includes both lightweight static gates and full headless Chromium runtime gates so transport or demo regressions can be checked locally before deploy.
 
 ### Demo and Product Surfaces
-- **CubeChat** is a browser 3D social/video world with room/password deep links, remote webcam playback, screen share, themed worlds, and bot spawning from settings.
+- **CubeChat** is a browser 3D social/video world with room/password deep links,
+  remote webcam playback, configured STUN/TURN media fallback, screen share,
+  themed worlds, and bot spawning from settings.
 - **Hyperborea** is a top-down multiplayer action surface used to validate replicated remote-player state, attacks, room flow, bot control, and runtime attach/debug behavior.
 - **SneakyWoods** is a stealth/action multiplayer surface with shared room presence, combat hooks, and the same bot/settings integration path as the other live demos.
 - **Daddy Go!** is a smaller multiplayer validation surface used for deterministic replicated score/state checks in the browser runtime suite.

@@ -116,6 +116,28 @@ test('NodeKernel requests StateManager provider sync after network connect', asy
   ]);
 });
 
+test('NodeKernel recognizes provider-owned Yjs sync messages without warning', () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+
+  try {
+    const node = makeStartedKernel('node-yjs-sync-fixture');
+    node._handleNetworkMessage('peer-a', {
+      type: 'yjs-sync-request',
+      data: { requestId: 'request-1' }
+    });
+    node._handleNetworkMessage('peer-a', {
+      type: 'yjs-sync-response',
+      data: { requestId: 'request-1', update: [] }
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.deepEqual(warnings, []);
+});
+
 test('NodeKernel routes task graph cache artifact admission through StateManager authority', () => {
   const events = [];
   const artifact = {

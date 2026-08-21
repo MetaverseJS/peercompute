@@ -14,7 +14,45 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
-### Current Validation Snapshot - 2026-06-18 AKDT
+### Current Validation Snapshot - 2026-08-21 AKDT
+
+- The focused SneakyWoods/CubeChat repair is complete without a full chaos-lab
+  run. `StateManager.observeNamespace()` now follows the winning nested
+  `Y.Map` after concurrent namespace creation, removes keys that existed only
+  in a detached map, replays the winning snapshot, and detaches both root and
+  child observers on unsubscribe.
+- Deterministic StateManager regressions pass `8/8`; an adversarial 40-seed,
+  10,000-transition namespace stress check kept observer-backed caches equal to
+  the active Yjs namespace after writes, deletes, replacements, and one-way
+  synchronization.
+- Three clean, isolated two-page SneakyWoods runs passed fresh temporary
+  production builds against dynamic local Go relays, including both pages'
+  presence, canvas, simulated movement, and remote moved-position assertions.
+- CubeChat's application `RTCPeerConnection` paths now consume the loaded
+  `webrtc.iceServers` and `webrtc.rtcConfiguration` instead of hardcoding only
+  Google STUN. Three direct two-page runs passed the strengthened media,
+  movement, screen-share, bidirectional room-theme, and bidirectional room-
+  directory checks.
+- Forced relay-only CubeChat runs passed through test-owned coturn over both
+  TURN UDP and TURN TCP. Both pages reported connected/succeeded application
+  media pairs, `iceTransportPolicy=relay`, local and remote `relay` candidates,
+  and bidirectional bytes. This proves the configured TURN fallback for the
+  two-peer camera/audio/data path; it does not clear the separate live
+  four-peer production regression.
+- NodeKernel now recognizes provider-owned `yjs-sync-request` and
+  `yjs-sync-response` messages without duplicate handling or false unknown-
+  message warnings. The full PeerCompute unit suite passed `190`, skipped one,
+  and failed zero; backend/release checks passed `20/20`.
+- Fresh CubeChat and SneakyWoods builds were written only to a test-owned
+  temporary directory because tracked `docs/` output already contains unrelated
+  worktree changes. The temporary builds, coturn, relays, browsers, and test
+  listeners were removed/stopped after validation.
+- Keep the prior full ordered-demo instability, live four-peer CubeChat media,
+  ULG handoff contract drift, and unrelated Multiscale/DaddyGo findings open;
+  they were not revalidated by this focused repair.
+
+### Prior Validation Snapshot - 2026-06-18 AKDT
+
 - The top-level README now includes a dated current capability map, validation
   snapshot, known open breakages, expanded test matrix, updated project
   structure, and branch-relevant roadmap.
@@ -41,15 +79,23 @@ The root node should exist on a domain secured with SSL enabling all executable 
   managed browser is absent.
 
 ### Completed:
+
 - libp2p-first browser stack (relay bootstrap + gossipsub, floodsub fallback, pubsubPeerDiscovery).
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
 - PeerComputeProvider initial Yjs state-vector sync for late peers: providers
   now answer `yjs-sync-request` with encoded diff updates so a joining
   StateManager can receive warm deltas it missed before joining.
+- StateManager namespace observer replacement safety: namespace consumers now
+  follow the active nested Yjs map when concurrent peers create competing maps,
+  receive stale-key removals plus a winning-map snapshot, and cleanly detach
+  both child and root observers on unsubscribe.
 - NodeKernel provider sync lifecycle hardening: `StateManager` exposes
   `requestProviderSync()`, `NodeKernel.start()` requests provider sync after
   network connect and retries briefly to survive relay/pubsub settlement, and
   lifecycle timers can be cleared by network-only wrappers.
+- NodeKernel provider sync routing recognizes provider-owned
+  `yjs-sync-request` / `yjs-sync-response` messages without warning or applying
+  them a second time.
 - NetworkScheduler core with clock policy scaffolding.
 - cb time sync anchored to the first joiner.
 - Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
@@ -650,6 +696,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - NetworkManager transport-limit decoupling: logical topology cap (`maxConnections`) is now separated from libp2p transport cap via `transportConnectionHeadroom`/`transportMaxConnections`, preventing bootstrap/control churn while keeping relay-scaling topology defaults intact.
 - NetworkManager logical-cap reservation guard: pending topology requests, inbound accepts, and in-flight peer dials now reserve logical peer slots, preventing `maxConnections` overshoot during concurrent discovery/topology churn and exposing separate logical-vs-raw connection counters for diagnosis.
 - CubeChat polish: Safari/iOS/macOS welcome overlay dismissal fix, room-scoped multi-biome world themes (`Tron`, `Moon`, `Beach`, `Desert`, `Jungle`, `Hyperborea`, `Ireland`), moon terrain/rocks/dust (including landing dust poofs + stronger crater ridges) plus world-anchored moon surface texture phase to prevent crater/grain sliding during floor expansion, synthwave Tron skybox (sunset/mountains/city, with horizon/sun/city visibility tuning), cross-theme skybox horizon visibility tuning for `Beach`/`Desert`/`Jungle`/`Hyperborea` (including a stronger second-pass raise), skybox anchoring to player/camera for infinite-space feel, seeded world-coordinate decor streaming for stable cross-client procedural placements during expansion (moon/jungle/ireland decor), Ireland gray-sky intermittent rain weather + cow sprites + green rolling hills + a single smaller skyline castle (visibility/readability tuned) plus low stone-wall pasture dividers (two-axis generation with larger pasture spacing), taller/denser jungle tree sprites with full-canopy sky coverage (plus ground-contact grounding fix), terrain-contour-following player cubes on non-`Tron` themes, Tron movement light-trails, avatar visual cleanup (no direction arrow, local rear-facing video / remote front-facing video), and room/theme/password deep-link query params for shareable private-room links.
+- CubeChat configured media ICE: offerer and answerer application peer
+  connections now preserve loaded RTC policies and STUN/TURN credentials, use
+  configured ICE servers when present, and retain Google STUN only as the
+  no-config fallback. The focused runtime gate can require actual relay
+  candidates and bidirectional TURN bytes with
+  `CUBECHAT_REQUIRE_RELAY_MEDIA=1`.
 
 ### TODO:
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.

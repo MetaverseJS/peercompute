@@ -55536,3 +55536,581 @@ Open:
 ### Open
 - StateManager publication remains owned by the ULG solid/authority integration
   work. This slice intentionally changed no StateManager files.
+
+## 2026-08-20 07:50:53 AKDT - ULG demo and focused network-stack audit
+
+### Prompt
+- User asked for a report-only audit of whether the ULG-related changes kept
+  the demos intact, whether STUN/TURN/ICE/relay functionality still works, and
+  whether the changes conform to the project plan. The user explicitly allowed
+  dependency installation if needed and excluded the full chaos lab.
+
+### Scope And Constraints
+- Audited branch `ulg` at `2834322f`, matching `origin/ulg`, plus the existing
+  dirty worktree.
+- Did not fix source, tests, plans, README claims, or failing behavior.
+- Did not run a Containernet/Mininet chaos scenario or chaos matrix. Only the
+  fast `net-chaos-lab` behavior unit harness was run.
+- Used Node `v24.18.0` and npm `11.16.0` as required.
+- The host identifies itself as Ubuntu `26.04` (`resolute`), not the Kubuntu
+  `24.04` environment recorded in `AGENTS.md`. This affected Playwright browser
+  installation.
+
+### Files Touched
+- Intentionally appended this audit record to `plan/log.md` only.
+- `npm run build:all` regenerated the already-dirty demo/docs relay configs and
+  hashed production assets under `demos/*/public` and `docs/*`. These are test
+  outputs, not source fixes. The pre-existing source/test worktree changes in
+  `ComputeManager.js`, `computeWorker.js`, `NodeKernel.js`, and
+  `computeManager.worker.test.js` were not edited by this audit.
+- No files in `/home/cos/projects/ulg` were edited; its Vite server was used as
+  the live cross-repository handoff target.
+- A user-space coturn package plus required shared libraries were downloaded
+  and extracted under `/tmp/peercompute-coturn-audit.DQSueY`; no system package
+  was installed because non-interactive sudo was unavailable. Test-owned
+  coturn was stopped. `gio trash` could not remove this `/tmp` directory because
+  trashing on the system internal mount is unsupported.
+
+### Actions
+- Read `AGENTS.md`, `plan/plan.md`, recent `plan/log.md`, `plan/tests.md`, the
+  ULG regression and multiplayer reports, relevant branch/demo plans, package
+  manifests, and current source/test diffs.
+- Created ICC task `ulg-demo-network-plan-audit-20260820`, checked fresh index
+  status/source drift, discovered project verification commands, and ran ICC
+  readiness, production-audit, and guard-diff gates.
+- Compared the 117-commit `ulg` branch delta against `origin/main` and reviewed
+  the uncommitted required-worker-bootstrap change separately.
+- Validated installed npm dependencies, Go, Chrome, and relay/coturn tooling.
+- Ran unit, static, production-build, built-browser, WebGPU browser, P2P,
+  remote-placement, direct-path, live ULG handoff, local ICE/TURN, and
+  production TURN/config checks.
+- For coturn, the first loopback client attempt correctly received `403
+  Forbidden IP`; restarted the test-only server with
+  `--allow-loopback-peers` and a writable temporary user database, after which
+  UDP and TCP TURN packet tests passed.
+- Used headless Chrome with `iceTransportPolicy: relay` to prove actual relay
+  candidates and data-channel delivery for TURN UDP and TURN TCP. Chrome stats
+  reported `candidateType=relay`; the TCP case reported `relayProtocol=tcp`.
+- Inspected the current ULG handoff after both PeerCompute ULG smokes failed.
+  The live handoff still has two artifacts, but the raw Eshkol/MoonLab artifacts
+  expose only generic validation/provenance and omit the canonical suite,
+  closure descriptor, source/WASM hashes, and transferred module metadata that
+  PeerCompute's handoff tests require.
+- Stopped all test-owned Vite, webpack, Go relay, Playwright, and coturn
+  processes and verified the audit ports had no remaining listeners.
+
+### Commands Run
+- Repository/ICC inspection: `git status --short --branch`, `git log`,
+  `git diff --stat`, `git diff --check`, ICC `codebase_work`, `codebase_status`,
+  `codebase_source_drift`, `codebase_project_commands`,
+  `codebase_project_verify_plan`, `codebase_readiness`,
+  `codebase_production_audit`, and `codebase_guard_diff`.
+- Dependency/environment checks: `npm ls --depth=0`,
+  `npm exec playwright -- --version`, `go version`, `lsb_release -a`,
+  `/etc/os-release`, `ss`, and process scans.
+- Core/static checks: `npm run test:backend`,
+  `npm --prefix peercompute run test:unit`,
+  `node --test peercompute/tests/computeManager.unit.test.js peercompute/tests/stateManager.unit.test.js peercompute/tests/runtime/gossipsub-mesh.test.js`,
+  `npm --prefix demos/multiscale run test`,
+  `npm --prefix demos/schrodinger test`,
+  `npm --prefix demos/planetgen test`,
+  `node --test demos/tests/demo-ports.test.js`,
+  `npm --prefix net-chaos-lab run test:behavior`,
+  `node peercompute/tests/runtime/webrtc-config.smoke.js`, shell syntax checks,
+  and `go test ./...` under `peercompute/src/relay-go`.
+- Build/browser checks: `npm run build:all`,
+  `node demos/tests/runtime-smoke.mjs`, and all three WebGpuPhys headless/PPF
+  browser scripts.
+- Multiscale checks: `npm --prefix demos/multiscale run test:visual`,
+  `npm --prefix demos/multiscale run test:remote-placement`,
+  `npm --prefix demos/multiscale run test:ulg-handoff`, and
+  `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff`
+  with the live ULG Vite server.
+- P2P checks: full five-demo `npm run test:runtime:p2p`, followed by isolated
+  SneakyWoods and DaddyGo reruns, all with a test-owned local coturn ICE JSON.
+- TURN checks: locally extracted coturn `4.6.1`, `turnutils_uclient` over UDP
+  and TCP, two headless-Chrome relay-only data-channel probes, and production
+  `secretworkshop.net:3478` UDP/TCP `turnutils_uclient` probes.
+- Production/config checks: `npm run backend:dry-run`, coturn-aware
+  `npm run dev:vpn-coturn -- --dry-run`, and live GitHub Pages plus
+  `secretworkshop.net` relay-config retrieval/validation.
+- Direct path: `npm --prefix peercompute run test:direct-path`, attempted
+  `npm exec playwright install chromium-headless-shell`, then reran the direct
+  path harness through a process-local Playwright launch override pointing at
+  `/bin/google-chrome` without editing the harness.
+
+### Passing Results
+- PASS: dependency tree resolved; Node remained on v24.
+- PASS: `git diff --check` before the log append.
+- PASS: backend/release tests `20/20`.
+- PASS: PeerCompute unit suite `189` passed, `0` failed, `1` skipped.
+- PASS: extra ComputeManager/StateManager/gossipsub checks `9/9`.
+- PASS: Multiscale unit/model suite `203/203`.
+- PASS: Schrodinger suite `20/20`; PlanetGen's four unit scripts passed.
+- PASS: behavior-only chaos harness `13/13`; no full chaos lab was run.
+- PASS: Go relay test command completed (`[no test files]`).
+- PASS: `npm run build:all` built PeerCompute and all eleven demos. Existing
+  circular-chunk, large-bundle, and PlanetGen `WebGL1Renderer` warnings remain.
+- PASS: built-browser smoke loaded Hyperborea, CubeChat, SneakyWoods,
+  DaddyGo, PlanetGen, Universes, Fano Reactor, and WebGpuPhys.
+- PASS: WebGpuPhys headless, PPF cubic barrier, and PPF contact browser smokes.
+- PASS: local coturn authenticated UDP/TCP allocations and relayed four packets
+  each with zero loss.
+- PASS: headless Chrome relay-only ICE data channels over TURN UDP and TURN TCP.
+- PASS: in the full P2P run, CubeChat, Hyperborea, and NetViz produced no
+  failure entry and completed against the test-owned Go relay/ICE stack.
+- PASS: backend and VPN-coturn dry-runs.
+- PASS: all five deployed demo relay-config source/fallback checks; live
+  production config returned two bootstrap peers and two ICE entries.
+- PASS: production coturn UDP/TCP probes moved four packets each with zero
+  loss; average round trips were about `95.75 ms` UDP and `114.25 ms` TCP.
+- PASS: all test-owned servers/processes were stopped and audit ports were
+  clear at cleanup.
+
+### Failures And Findings
+- FAIL: static demo wiring gate passed `21/22`; Multiscale no longer directly
+  imports `ComputeManager` and `StateManager` from `@peercompute`, while the
+  test and plan still require that exact first-class wiring assertion. This was
+  already documented on 2026-06-18 and remains open.
+- FAIL: Multiscale visual smoke stopped at the SPH overlay. It observed
+  `h2oPhaseChangeEvidenceStatus=reduced-sph-phase-change-warming` while the
+  test requires `reduced-sph-phase-change-ready`. The prior NaCl append check
+  was not reached, so this run cannot clear the documented NaCl regression.
+- FAIL: full five-demo P2P interaction run timed out for SneakyWoods and
+  DaddyGo. SneakyWoods state was asymmetric (`pageA peerCount=1`,
+  `pageB peerCount=0`) with relay-WebRTC signal timeout/direct no-transport
+  errors. DaddyGo also timed out with relay signal/direct stream errors.
+- FAIL: isolated SneakyWoods and isolated DaddyGo reruns reproduced their
+  failures. This is worse than the June report, where both passed in isolation.
+- FAIL: direct and relay-backed ULG handoff smokes both stopped before handoff
+  readiness because the expected canonical suite hash was `null` instead of
+  `sha256:7d4e6372e49689d2202914e210af84d19d776dc6fbc5b7e08b19cbedfb71b455`.
+  Live inspection showed the current ULG default handoff omits all richer
+  closure/WASM provenance expected by PeerCompute, indicating cross-repository
+  contract/fixture drift rather than a relay-only failure.
+- FAIL: live Multiscale remote placement again timed out with six requested,
+  zero executed/admitted, six failed, and six validation failures. Primary and
+  replica execution returned, but admission rejected `quorum-mismatch`.
+- BLOCKED/FAIL: direct-path harness initially could not launch Playwright's
+  managed Chromium. Installation failed because Playwright does not support
+  `chromium-headless-shell` on detected Ubuntu `26.04`. With a process-local
+  system-Chrome override, the harness reached the page but timed out because
+  the webpack-dev-server overlay intercepted `#initBtn`; direct-path behavior
+  was therefore not validated.
+- FAIL: ICC production audit verdict `fail` with 11 risks. ICC guard diff found
+  three violations and two warnings, dominated by hashed docs asset deletions
+  plus untracked replacements. ICC readiness was `blocked` at score `82`.
+
+### Plan Conformance Assessment
+- The committed ULG architecture broadly follows the documented Multiscale
+  roadmap: ES modules, one shared ComputeManager/NodeKernel authority, typed
+  service/handoff envelopes, worker/GPU lane contracts, StateManager authority,
+  explicit provenance, and preserved reduced-vs-scientific/full-physics
+  boundaries. Core unit coverage supports those claims.
+- Current runtime state does not conform to the plan's verified-state claims:
+  direct/relay ULG handoff contracts drifted, isolated multiplayer failures
+  expanded, remote placement remains blocked, and the Multiscale visual gate
+  now fails before its previously documented NaCl check.
+- `plan/implementation-status.md` is dated 2026-06-08, the root validation
+  snapshot/reports are dated 2026-06-18, and the last prior root log entry was
+  2026-07-11. They do not describe the current ULG payload or August failures.
+- The current uncommitted `requireWorkers`/worker-bootstrap acknowledgement
+  source and unit-test changes are not represented in `plan/plan.md`,
+  `plan/tests.md`, `README.md`, or a prior log entry. The option is also not
+  enabled by any demo, so it currently adds a tested opt-in policy surface but
+  does not prove a ULG demo is running under required-worker admission.
+- The current branch is named `ulg`, but there is no `plan/branch/ulg.md`;
+  related intent is distributed across `multiscale-ladder.md`,
+  `distributed-compute.md`, and the root plan.
+
+### Open
+- Demos are buildable and many load, but the current tree is not demo-clean.
+- STUN/TURN and both local/production TURN transports are healthy; the failed
+  application P2P smokes point above the raw TURN service at PeerCompute
+  signaling/discovery/state convergence.
+- The ULG handoff failure currently blocks evaluation of downstream relay
+  dispatch readiness against the live ULG repo.
+- No fixes, commits, or pushes were made.
+
+## 2026-08-20 08:27:05 AKDT - Focused SneakyWoods and CubeChat network diagnosis
+
+### Prompt
+- User asked for a closer investigation of SneakyWoods and whether CubeChat
+  works correctly, following the report-only ULG/demo/network audit.
+
+### Scope And Constraints
+- Continued as a report-only diagnosis. No application, library, test,
+  planning-status, or README behavior was fixed.
+- Did not run the full chaos lab.
+- Used the ICC control plane under task
+  `sneakywoods-cubechat-network-diagnosis-20260820` and split read-only
+  SneakyWoods and CubeChat investigation into parallel agents while the root
+  agent inspected the shared runner, StateManager, NetworkManager, history,
+  and focused unit coverage.
+- Used Node `v24.18.0` from the preceding audit environment.
+
+### Files Touched
+- Appended this prompt record to `plan/log.md` only.
+- No SneakyWoods, CubeChat, PeerCompute source, test, generated demo, or relay
+  configuration file was intentionally edited.
+- Test-owned relay identities/configs and inline Playwright diagnostics lived
+  only in exact `mktemp` directories under `/tmp`; all focused diagnostic
+  directories were removed after their owning checks.
+
+### Actions And Source Findings
+- Re-read `AGENTS.md`, `plan/plan.md`, recent `plan/log.md`, the June
+  multiplayer report, and relevant sections of `plan/tests.md` before testing.
+- Refreshed ICC task context and verified the index, codebase memory, and Git
+  history were current before relying on cached evidence.
+- Reviewed the built-doc two-page P2P runner and distinguished the demos'
+  state paths:
+  - CubeChat publishes application player snapshots through NetworkScheduler,
+    then uses its own WebRTC media/data connections.
+  - SneakyWoods writes player state into a nested StateManager/Yjs namespace
+    and drives its UI from `observeNamespace()` callbacks.
+- Traced SneakyWoods' asymmetric UI to a concrete nested-Yjs-map observer
+  race. `StateManager._getNamespaceMap()` creates a new nested `Y.Map` when the
+  shared root key is absent. Two peers can create competing map objects before
+  synchronization. Yjs selects one root value during merge, but
+  `observeNamespace()` permanently observes the originally captured map and
+  does not rebind when that map loses the conflict.
+- Verified the failure boundary in live pages: the losing SneakyWoods page's
+  active `sneakywoods` namespace contained both players and continuously
+  advancing remote timestamps; its pubsub counters continued increasing and
+  relay/direct connections were open, but the active map had zero original
+  observers and its UI eventually pruned the remote player. Attaching a fresh
+  observer to the active map immediately received about 48-51 events in 1.8 s.
+- Confirmed this defect predates ULG work. `_getNamespaceMap()` and
+  `observeNamespace()` blame to `edb8f04a` from 2025-11-20; SneakyWoods'
+  observer setup predates the ULG branch; SneakyWoods has no current worktree
+  diff and no `origin/main...HEAD` source diff. The stricter current runtime
+  harness now requires both pages and bidirectional movement, exposing the
+  previously masked asymmetry.
+- Confirmed SneakyWoods does not use CubeChat's
+  `transportManager: { faultTolerance: 'no-fatal' }`. That is a resilience
+  difference but was not causal here: every game/directory node started,
+  state continued arriving, and direct WebRTC paths formed during the failed
+  UI runs.
+- Inspected CubeChat beyond page load. Its core player state avoids the broken
+  StateManager observer path, so two-page peer discovery and movement stayed
+  healthy. Its room theme and RoomDirectory do use `observeNamespace()` and
+  reproduced the same detached-map behavior.
+- Inspected actual application WebRTC statistics. CubeChat camera/audio/data
+  used a nominated, succeeded direct host-to-host UDP candidate pair in the
+  local run; audio/video RTP and screen-share tracks flowed in both expected
+  directions.
+- Found that CubeChat's two application `RTCPeerConnection` construction paths
+  hardcode only `stun:stun.l.google.com:19302`. The loaded PeerCompute
+  `this.webrtc` config, including configured TURN servers, is passed to the
+  libp2p `NodeKernel` but not to CubeChat's media peer connections. Therefore
+  PeerCompute signaling over relay works, but TURN fallback for
+  camera/audio/screen media is neither exercised by the current local gate nor
+  available from the inspected construction paths.
+- Tested current CubeChat source over HTTPS against the production config/WSS
+  relay and tested the live GitHub Pages build in unique private rooms. Both
+  two-page probes reached bootstrap discovery, one remote application peer,
+  one app media peer connection, and one remote stream per page. The deployed
+  site still served its older hashed bundle, so this was not treated as proof
+  that current generated docs had been deployed.
+- Observed repeated benign-but-noisy `Unknown message type:
+  yjs-sync-request/response` warnings on the current-source production-WSS
+  run. PeerComputeProvider handles those messages, but NodeKernel's general
+  switch has no explicit cases and warns after receiving them.
+- Discarded an initial HTTP-local-page/production-WSS failure as invalid
+  production evidence: CubeChat intentionally rewrites `/wss/` addresses to
+  `/ws/` on HTTP pages, so port 443 could not be dialed. The HTTPS
+  current-source and live-deploy probes succeeded.
+
+### Commands Run
+- ICC/repository inspection: ICC `codebase_repo_resolve`, `codebase_status`
+  with staleness checking, and `codebase_work`; `git status --short --branch`,
+  `git diff`, `git log`, `git blame`, `rg`, `sed`, and `nl` over the focused
+  source/test/plan files.
+- Focused unit/static gates:
+  - `cd peercompute && node --test tests/unit/networkManager.webrtc.test.js tests/unit/nodeKernel.start.test.js`
+  - `node --test demos/tests/demo-release.test.js --test-name-pattern='sneakywoods|cubechat'`
+- Root standalone two-StateManager/Yjs reproduction:
+  `cd peercompute && node --input-type=module -e '<create two concurrent nested maps, merge both Y.Docs, compare current-map identity and observer events>'`.
+- SneakyWoods diagnostics used test-owned relays and stdin-only Playwright
+  programs, without writing diagnostic scripts:
+  - relay/HTTP ports `43991/43992`: two-page 30 s transport, namespace,
+    telemetry, HUD, and console capture;
+  - ports `43993/43994`: two trials with Y.Doc client ids, namespace origin,
+    observer count, active entries, pubsub counters, transports, and fresh
+    observer event counts;
+  - ports `43995/43996`: three additional compact repetitions;
+  - ports `43997/43998`: long sample at 5 s and 17 s to prove stale UI pruning
+    while current CRDT entries and RX traffic remained live.
+  Each relay used the exact form
+  `RELAY_LISTEN_HOST=127.0.0.1 RELAY_LISTEN_PORT=<relay-port> RELAY_PUBLIC_HOST=127.0.0.1 RELAY_PUBLIC_PORT=<relay-port> RELAY_PUBLIC_PROTOCOL=ws RELAY_IDENTITY_FILE=<tmp>/id.json RELAY_CONFIG_FILE=<tmp>/config.json RELAY_CONFIG_DIRS= bash scripts/run-relay.sh`.
+- CubeChat standard isolated gate, repeated on ports 4288, 4289, and 4290:
+  `RUNTIME_P2P_DEMOS=cubechat DEMO_HOST=127.0.0.1 DEMO_PORT=<port> DEMO_TIMEOUT_MS=45000 RELAY_CONFIG_TIMEOUT_MS=15000 npm run test:runtime:p2p`.
+- CubeChat instrumented local run used a test-owned Go relay on 4292 and an
+  stdin-only Playwright docs server/probe on 4293. It ran both bot simulation
+  profiles, asserted opposite-page movement and screen sharing, and queried
+  every application `RTCPeerConnection.getStats()` report.
+- CubeChat theme/directory probes used the same relay and stdin-only Playwright
+  pages on 4294 and 4295. They changed theme A-to-B and B-to-A, injected
+  distinct directory keys from both pages, and compared active map keys,
+  observer counts, `readScoped()` values, UI theme, and cached room lists.
+- Current-source production-WSS probe:
+  `npm --prefix demos/cubechat run dev -- --host 127.0.0.1 --port 4296 --strictPort`,
+  followed by a two-page stdin Playwright probe against
+  `https://127.0.0.1:4296/?e2e=1&room=<unique-private-room>&privacy=private&password=<redacted>`.
+- Live deployed two-page probe used
+  `https://metaversejs.github.io/peercompute/cubechat/?e2e=1&room=<unique-private-room>&privacy=private&password=<redacted>`.
+- Production relay config was fetched and sanitized to bootstrap count,
+  pubsub type, ICE count, and WebRTC key names; credentials were not printed.
+- Cleanup checks used `ss`, `ps`, and exact focused port/process patterns for
+  ports `4288-4296` and `43991-43998`.
+
+### Passing Results
+- PASS: focused NetworkManager/NodeKernel unit suite `60/60`.
+- PASS: demo release/static suite `13/13`.
+- PASS: standalone concurrent-nested-map reproduction showed both peers'
+  current namespace keys converge while exactly the observer whose original
+  nested map was replaced stops receiving events.
+- PASS: all seven isolated/instrumented SneakyWoods browser repetitions showed
+  live network/CRDT delivery and made the observer failure boundary
+  reproducible. This is a diagnostic pass, not an application pass.
+- PASS: CubeChat's standard two-page interaction gate passed `3/3`.
+- PASS: instrumented CubeChat local run showed one application peer on each
+  page, open data channels, bidirectional movement, audio/video RTP, decoded
+  and encoded frames, page-B screen share, and no console/page errors.
+- PASS: current source over production WSS and the live deployed page each
+  passed a two-client bootstrap, discovery, media-connection, and remote-stream
+  probe in unique private rooms.
+- PASS: all focused test-owned relays, HTTP/HTTPS servers, Vite, Playwright
+  browsers, and temporary directories were stopped/removed. Focused port and
+  process scans were empty, and CubeChat relay-config hashes matched their
+  pre-test values.
+
+### Failures And Interpretation
+- FAIL: SneakyWoods is not application-correct. Depending on which concurrent
+  nested map wins, one original UI observer is detached. In the long run the
+  affected page went from `Players: 2` at 5 s to `Players: 1` at 17 s even
+  though its current namespace still contained two live entries and pubsub RX
+  had reached `409`.
+- PASS at the transport/state boundary: this particular SneakyWoods failure is
+  not evidence that relay, ICE, discovery, pubsub, or CRDT delivery stopped.
+  The live state reached both pages; the application observed the wrong map.
+- FAIL: CubeChat room-directory propagation failed in one direction in both
+  targeted runs. The active CRDT map contained the opposite page's room key,
+  but the affected RoomDirectory cache had no active-map observer and did not
+  update.
+- FLAKY/FAIL: CubeChat world-theme propagation failed in one direction in one
+  of two targeted runs. The receiving page's `readScoped('world', 'theme')`
+  contained the new `moon` value, but its active world map had zero observers
+  and its UI remained `tron`. The second run happened to bind both theme
+  observers to the winning map and passed both directions.
+- LIMITATION: CubeChat's proven local media route was direct host-to-host UDP.
+  The hardcoded STUN-only media configuration means a restrictive-NAT/TURN-only
+  CubeChat media path was not validated and is expected to lack the configured
+  TURN fallback even though PeerCompute relay signaling itself works.
+- LIMITATION: only two production peers were exercised. The documented live
+  four-peer media instability in `plan/plan.md` and `plan/tests.md` remains
+  open and was not retested.
+- The detached-map bug is old, not introduced by the current ULG edits. The
+  stronger current browser assertions expose it reliably; the current ULG
+  provider-sync additions also generate unhandled-warning noise but were not
+  shown to cause the map-observer defect.
+
+### Open
+- SneakyWoods needs namespace observers that follow root-map replacement (or a
+  namespace representation that cannot be concurrently replaced) before it
+  can be called multiplayer-correct.
+- CubeChat's core two-peer player/media loop works, including production WSS
+  signaling, but CubeChat as a whole cannot be called fully correct while
+  room-directory/theme observers can detach and media TURN config is ignored.
+- No fixes, commits, or pushes were made.
+
+## 2026-08-21 11:19:20 AKDT - SneakyWoods/CubeChat convergence and TURN-media repair
+
+### Prompt
+
+- User followed the focused SneakyWoods/CubeChat diagnosis with: "can you
+  fix?"
+- Interpreted the authorized repair as the proven causal defects from the
+  preceding prompt: detached namespace observers, CubeChat ignoring configured
+  application-media ICE/TURN, and false NodeKernel warnings for provider-owned
+  Yjs synchronization messages.
+- Kept the full chaos lab, full ordered multi-demo matrix, and live three/four-
+  peer production soak out of scope. Also kept SneakyWoods' different
+  transport-manager failure policy unchanged because all diagnosed nodes had
+  started and no transport startup fatal caused the application failure.
+
+### ICC And Worktree Control
+
+- Read and followed the installed `icc-control-plane` skill, resumed through
+  `codebase_assistant_status`, and created durable task
+  `fix-demo-network-convergence-20260821` with a focused five-item plan.
+- Ran ICC agent preflights and published non-overlapping leases for the root
+  NodeKernel/docs slice, the StateManager slice, and the CubeChat media/runtime
+  slice before parallel work.
+- Preserved the existing dirty ULG build output and required-worker-bootstrap
+  edits. In particular, the pre-existing `requireWorkers` /
+  `workerBootstrapTimeoutMs` hunk in `NodeKernel.js` was not rewritten as part
+  of this repair.
+- An ICC attempt record was created in progress. Its aggregate result was
+  `ok=false` because the cached ICC index became stale after edits and the
+  shared worktree already contained unrelated generated-doc deletions; scoped
+  guard/diff checks for the StateManager and CubeChat leases were clean.
+- A preflight that included the already-dirty tracked `docs/` output correctly
+  failed its rollback guard (`1185` deleted lines versus the `200` limit).
+  Validation therefore used `RUNTIME_P2P_DOCS_ROOT` and fresh temporary builds
+  instead of overwriting tracked generated assets.
+
+### Files Touched
+
+- Updated `peercompute/src/peercompute/stateManager/StateManager.js`.
+- Updated `peercompute/tests/stateManager.unit.test.js`.
+- Added `demos/cubechat/src/p2p/rtcConfig.js` and
+  `demos/cubechat/src/p2p/rtcConfig.test.js`.
+- Updated `demos/cubechat/src/p2p/network.js` and
+  `demos/tests/runtime-p2p.mjs`.
+- Updated `peercompute/src/peercompute/nodeKernel/NodeKernel.js` and
+  `peercompute/tests/unit/nodeKernel.start.test.js`; the file's unrelated
+  existing worker-policy hunk remains separate worktree content.
+- Updated `README.md`, `plan/plan.md`, `plan/tests.md`, and this log.
+- No SneakyWoods source file and no tracked `docs/` bundle was edited by this
+  repair. Fresh CubeChat/SneakyWoods builds lived under the exact temporary
+  root `/tmp/peercompute-demo-fix.jXMmcz` and were removed after validation.
+- During final status review, the pre-existing untracked generated
+  `relay-config-source.json` files were unexpectedly absent from both demo
+  public directories and built-doc directories. Recreated all 22 files with
+  the generator's exact deterministic JSON through `apply_patch`; the restored
+  CubeChat public/docs files both match their pre-task SHA-256
+  `c630f16bf5c782966ed9ac1f08c3482a58788293683d6eafbd51b3c2bafbf6f1`.
+
+### Implementation
+
+- Reworked `StateManager.observeNamespace()` so it observes both the active
+  namespace map and the root state map. When Yjs resolves competing nested-map
+  assignments, the observer now detaches from the losing child, attaches to the
+  current winning `Y.Map`, emits `undefined` for stale keys, replays a captured
+  winning snapshot, suppresses duplicate child events from the replacement
+  transaction, and removes both observers through an idempotent unsubscribe.
+- Added deterministic tests that create two concurrent namespace maps, detect
+  which local map loses, assert exact stale-removal/winning-replay events,
+  propagate later writes, verify child/root unsubscribe, delete/recreate a
+  namespace with a pre-populated map, and exercise callback-reentrant writes.
+- Added pure `buildCubeChatRtcConfiguration()`. It preserves
+  `rtcConfiguration` policies such as `iceTransportPolicy`, normalizes direct
+  or nested ICE servers and the legacy `url` alias, retains TURN credentials,
+  ignores invalid entries, prefers the configured direct list, and uses the
+  existing Google STUN entry only when no valid ICE server is configured.
+- Replaced both CubeChat application `RTCPeerConnection` hardcoded-STUN sites
+  (offerer and answerer) with the shared helper. PeerCompute/libp2p signaling
+  and application camera/audio/data/screen media now consume the same loaded
+  relay ICE policy.
+- Strengthened the CubeChat two-page runtime gate with A-to-B and B-to-A world-
+  theme/state/scene/select convergence, bidirectional room-directory cache plus
+  scoped-state probes, temporary build-root support, and detailed media-
+  candidate diagnostics.
+- Added opt-in `CUBECHAT_REQUIRE_RELAY_MEDIA=1`. It inspects only CubeChat's
+  application peer connections and requires each page to show a connected PC,
+  connected/completed ICE, `iceTransportPolicy=relay`, a succeeded selected
+  pair, local and remote `relay` candidates, positive sent/received bytes, and
+  the existing remote-media gate.
+- Added explicit NodeKernel cases for `yjs-sync-request` and
+  `yjs-sync-response`. `PeerComputeProvider` remains the sole owner of those
+  messages; NodeKernel now recognizes them without duplicate application or an
+  `Unknown message type` warning.
+
+### Commands Run
+
+- ICC/control plane:
+  - `codebase_assistant_status --repo peercompute`
+  - `codebase_work --repo peercompute --task-id fix-demo-network-convergence-20260821 --mode plan ...`
+  - `/home/cos/projects/infinite_context_coder/bin/icc agent-preflight --repo peercompute --task-id fix-demo-network-convergence-20260821 --allow-dirty ...`
+  - ICC `codebase_agent_session`, `codebase_task_attempt`, scoped guard/diff,
+    and agent-status calls.
+- Focused static/unit checks:
+  - `node --test peercompute/tests/stateManager.unit.test.js`
+  - `node --test peercompute/tests/unit/nodeKernel.start.test.js`
+  - `node --test demos/cubechat/src/p2p/rtcConfig.test.js`
+  - `node --check demos/tests/runtime-p2p.mjs`
+  - `node --check demos/cubechat/src/p2p/network.js`
+  - `node --check demos/cubechat/src/p2p/rtcConfig.js`
+  - `npm --prefix peercompute run test:unit`
+  - `npm run test:backend`
+- StateManager adversarial review used an stdin-only Node ES module with 40
+  deterministic seeds x 250 randomized writes, key deletes, root-map
+  replacements/deletes, and one-way Yjs synchronizations, comparing each
+  observer-backed cache to its current namespace after every transition.
+- Fresh temporary builds:
+  - `npm --prefix demos/cubechat run build -- --outDir /tmp/peercompute-demo-fix.jXMmcz/cubechat`
+  - `npm --prefix demos/sneakywoods run build -- --outDir /tmp/peercompute-demo-fix.jXMmcz/sneakywoods`
+- Clean isolated browser gates used the form:
+  `RUNTIME_P2P_DOCS_ROOT=/tmp/peercompute-demo-fix.jXMmcz RUNTIME_P2P_DEMOS=<demo> DEMO_HOST=127.0.0.1 DEMO_PORT=<port> DEMO_TIMEOUT_MS=60000 RELAY_CONFIG_TIMEOUT_MS=30000 RUNTIME_P2P_INTERACTION_MS=2500 npm run test:runtime:p2p`.
+  Root-owned clean runs used CubeChat port `42872` and SneakyWoods ports
+  `42871`, `42877`, and `42878`; the CubeChat implementation agent also ran two
+  isolated fresh-source gates on `42861` and `42862`.
+- Started test-owned coturn `4.6.1` on `127.0.0.1:34791`, relay range
+  `53000-54999`, with `--allow-loopback-peers`, `peer` / `compute` test
+  credentials, and a temporary SQLite database. No system package was
+  installed; the user-space binary extracted during the preceding audit was
+  reused.
+- Forced CubeChat application media through TURN UDP on port `42873` and TURN
+  TCP on port `42874` with `CUBECHAT_REQUIRE_RELAY_MEDIA=1`,
+  `iceTransportPolicy=relay`, and the corresponding `turn:127.0.0.1:34791`
+  transport URL.
+- Cleanup/status checks used `ps`, `ss`, exact focused port/process patterns,
+  SHA-256 checks, and removal of the explicit temporary build root.
+
+### Results
+
+- PASS: StateManager focused suite `8/8`.
+- PASS: randomized StateManager observer/cache stress reported `fuzz ok` after
+  10,000 checked transitions with zero mismatches.
+- PASS: CubeChat RTC configuration helper suite `5/5`.
+- PASS: NodeKernel focused suite `18/18`.
+- PASS: full PeerCompute unit suite: `190` passed, `1` skipped, `0` failed out
+  of `191` tests. The skip is the existing staged ULG tensor-runtime candidate.
+- PASS: backend/release suite `20/20`.
+- PASS: fresh temporary CubeChat and SneakyWoods Vite builds; only the existing
+  Vite chunk-size warnings remained.
+- PASS: three clean isolated SneakyWoods two-page gates. This reverses the
+  preceding reproducible asymmetric UI result: both pages now retain presence,
+  render, move, and observe the other page's movement while the namespace map
+  conflict is resolved underneath them.
+- PASS: three CubeChat direct two-page gates in total. The strengthened gate
+  covered peer discovery, bilateral camera/audio/data, canvas, snapshots,
+  movement both ways, theme both ways, directory entries both ways, screen
+  share, and remote tracks.
+- PASS: forced TURN UDP CubeChat media. Page A selected a succeeded relay/relay
+  pair with `9214` bytes sent and `9389` received; page B sent `10341` and
+  received `10197`. Both local candidates reported `relayProtocol=udp`.
+- PASS: forced TURN TCP CubeChat media. Page A selected a succeeded relay/relay
+  pair with `15503` bytes sent and `16313` received; page B sent `16436` and
+  received `15580`. Both local candidates reported `relayProtocol=tcp`.
+- PASS: focused coturn, Go relays, browser runners, ports `34791` and
+  `42871-42878`, and the temporary build directory were all stopped/removed.
+
+### Failed Attempts And Corrections
+
+- An initial attempt to run two additional SneakyWoods repetitions in parallel
+  pointed both runners at the same temporary demo directory. Their dynamic
+  relays raced on one `relay-config.json`, cross-connected eight demo/directory
+  nodes, and the tool calls yielded before completion. Those results were
+  discarded as methodologically invalid. Waited for both process groups to
+  clean up, verified ports `42875/42876` were closed, rebuilt the temporary
+  SneakyWoods bundle, then ran the valid `42877` and `42878` repetitions
+  sequentially; both passed.
+- Coturn could not write its default `/var/run/turnserver.pid` as the local
+  user, fell back to `/var/tmp/turnserver.pid`, and otherwise started normally.
+  No TURN allocation or media failure occurred.
+
+### Open
+
+- The live GitHub Pages four-peer CubeChat media regression remains open. This
+  repair proves two-peer direct and TURN UDP/TCP application media, not higher-
+  peer production convergence.
+- The full ordered multiplayer demo matrix and prior
+  Hyperborea-to-SneakyWoods shared-context failure were not rerun; the isolated
+  SneakyWoods failure itself is fixed and passed three clean runs.
+- The full chaos lab was intentionally not run.
+- `StateManager._getNamespaceMap()` still assumes an existing truthy namespace
+  root is a `Y.Map`; arbitrary non-Y.Map values at namespace roots remain a
+  pre-existing invariant/edge case outside this repair.
+- No push was attempted.

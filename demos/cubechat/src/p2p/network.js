@@ -1,5 +1,6 @@
 import { NodeKernel } from '@peercompute';
 import { readPeercomputeBotParams } from '../../../shared/peercomputeBots.js';
+import { buildCubeChatRtcConfiguration } from './rtcConfig.js';
 
 const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
 
@@ -513,11 +514,7 @@ export class P2PNetwork {
       return;
     }
 
-    const config = {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    };
-
-    const pc = new RTCPeerConnection(config);
+    const pc = new RTCPeerConnection(buildCubeChatRtcConfiguration(this.webrtc));
     this.peerConnections.set(peerId, pc);
 
     const dataChannel = pc.createDataChannel('playerState');
@@ -596,11 +593,7 @@ export class P2PNetwork {
       return;
     }
 
-    const config = {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    };
-
-    pc = new RTCPeerConnection(config);
+    pc = new RTCPeerConnection(buildCubeChatRtcConfiguration(this.webrtc));
     this.peerConnections.set(peerId, pc);
 
     pc.ondatachannel = (event) => {

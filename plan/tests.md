@@ -1,6 +1,7 @@
 ## PeerCompute Test Strategy
 
 ### Planned root-node validation
+
 - Root node work is tracked in `plan/root-node-todo.md`.
 - The first implementation slice should add Deno unit tests for root schemas,
   identity/signing, session registry, leases, policy revisions, storage
@@ -18,6 +19,47 @@
   WebSocket messages.
 - Root-node integration must use test-owned Deno/relay/TURN processes and shut
   them down after each run.
+
+### Current focused result - 2026-08-21 AKDT
+
+- Scope: repair the proven SneakyWoods/CubeChat nested-namespace observer race,
+  make CubeChat application media honor configured ICE/TURN, and remove false
+  NodeKernel warnings for provider-owned Yjs sync messages. The full chaos lab,
+  full ordered demo matrix, and live three/four-peer production soak were not
+  run.
+- PASS: `node --test peercompute/tests/stateManager.unit.test.js` passed `8/8`,
+  including deterministic concurrent-map loss, stale-key removal, winning-map
+  replay, later writes, unsubscribe, root deletion/recreation, and callback-
+  reentrant writes.
+- PASS: a read-only adversarial 40-seed x 250-transition StateManager stress
+  probe completed 10,000 checked namespace transitions with observer caches
+  always equal to the active Yjs map.
+- PASS: `node --test demos/cubechat/src/p2p/rtcConfig.test.js` passed `5/5`;
+  direct/nested ICE, TURN credentials, RTC policies, invalid entries, legacy
+  `url`, and Google-STUN fallback are covered.
+- PASS: `npm --prefix peercompute run test:unit` passed `190`, skipped `1`, and
+  failed `0`; `npm run test:backend` passed `20/20`.
+- PASS: fresh temporary CubeChat and SneakyWoods Vite production builds
+  completed. `RUNTIME_P2P_DOCS_ROOT` let the browser gate consume those builds
+  without mutating the already-dirty tracked `docs/` tree.
+- PASS: three clean isolated SneakyWoods two-page runs completed against
+  dynamic local Go relays with both pages present, visible canvas, simulated
+  movement, and opposite-page movement observation.
+- PASS: three CubeChat two-page direct-path runs covered peer discovery, remote
+  camera/audio, data channels, movement in both directions, A-to-B moon and
+  B-to-A jungle theme/state/UI convergence, room-directory entries in both
+  directions, screen share, and remote track delivery.
+- PASS: test-owned loopback coturn with `--allow-loopback-peers` and
+  `iceTransportPolicy=relay` carried the CubeChat application media path over
+  TURN UDP and TURN TCP in separate runs. On both pages the selected pair was
+  succeeded, both candidate types were `relay`, sent/received byte counters
+  were positive, and the local relay protocol matched UDP or TCP.
+- PASS: all focused browsers, relays, coturn, listeners, and temporary build
+  output were stopped or removed. The dependency-only user-space coturn
+  extraction from the preceding audit remains outside the repository.
+- OPEN: the known live four-peer CubeChat convergence regression remains a
+  separate production gate; the full chaos lab and full ordered demo matrix
+  remain intentionally unrun.
 
 ### Current focused result - 2026-06-18 AKDT
 - Multiplayer interaction validation with independent browser pages, local
@@ -988,11 +1030,19 @@
 - Gate: run when changing `demos/netviz/src/main.js`, `demos/netviz/src/relayOverlay.js`, or relay-line visualization semantics.
 
 ### Multiplayer runtime gate
+
 - Command: `npm run test:runtime:p2p`
-- Purpose: validate the built docs bundles for all multiplayer demos plus NetViz attach against a local Go relay, including CubeChat media/screen-share negotiation, Hyperborea replicated remote-player visibility, SneakyWoods room presence, DaddyGo score replication, and NetViz attach-session discovery.
+- Purpose: validate the built docs bundles for all multiplayer demos plus NetViz attach against a local Go relay, including CubeChat media/screen-share negotiation plus bidirectional theme/room-directory convergence, Hyperborea replicated remote-player visibility, SneakyWoods room presence, DaddyGo score replication, and NetViz attach-session discovery.
 - Notes:
 : `demos/tests/runtime-p2p.mjs` now clears built `relay-config-source.json` files before injecting local relay configs so the harness does not accidentally bootstrap against the live production relay.
 : `RUNTIME_P2P_DEMOS` can be used to run a subset while debugging.
+: `RUNTIME_P2P_DOCS_ROOT=/absolute/temp/root` can target fresh temporary builds
+  laid out as `<root>/<demo>/`, avoiding mutations to tracked `docs/` output.
+: For CubeChat, set `CUBECHAT_REQUIRE_RELAY_MEDIA=1` and supply a relay-only
+  `RELAY_WEBRTC_CONFIG` backed by test-owned coturn. The gate then requires
+  both application media PCs (not libp2p PCs) to report connected/succeeded
+  selected pairs, `iceTransportPolicy=relay`, local and remote `relay`
+  candidates, positive bidirectional bytes, and remote media.
 : Hyperborea now uses a lightweight `?e2e=1` state surface plus `transportManager.faultTolerance = no-fatal` on its browser nodes so transient circuit-listen timeouts do not abort multiplayer startup before remote-player replication can be observed.
 
 ### Production CubeChat multi-peer media gate
@@ -1325,6 +1375,12 @@
 - Verify remote players' cubes show video only on the front-facing face (not on the back face).
 
 ### CubeChat room-theme sync manual regression check
+
+- Automated baseline: the CubeChat subset of `demos/tests/runtime-p2p.mjs`
+  changes theme A-to-B and B-to-A and requires matching application state,
+  scene state, selector state, and scoped Yjs state. It also announces and
+  observes distinct room-directory entries in both directions. Keep the manual
+  checks below for visual theme quality and long-distance procedural behavior.
 - In CubeChat settings, verify the `World -> Theme` dropdown includes `Tron`, `Moon`, `Beach`, `Desert`, `Jungle`, `Hyperborea`, and `Ireland`.
 - Change `World -> Theme` across multiple options (at minimum `Tron`, `Moon`, `Beach`, `Ireland`, and `Hyperborea`).
 - Verify the floor appearance and skybox update immediately on the local client.

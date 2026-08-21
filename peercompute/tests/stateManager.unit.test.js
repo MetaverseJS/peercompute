@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as Y from 'yjs';
 import {
   STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA,
   STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA,
@@ -11,6 +12,19 @@ const makeStateManager = async () => {
   await sm.initialize();
   return sm;
 };
+
+function exchangeYjsUpdates(left, right) {
+  const leftUpdate = Y.encodeStateAsUpdate(left.getYDoc());
+  const rightUpdate = Y.encodeStateAsUpdate(right.getYDoc());
+  Y.applyUpdate(left.getYDoc(), rightUpdate);
+  Y.applyUpdate(right.getYDoc(), leftUpdate);
+}
+
+function syncYjsUpdate(source, target) {
+  const stateVector = Y.encodeStateVector(target.getYDoc());
+  const update = Y.encodeStateAsUpdate(source.getYDoc(), stateVector);
+  Y.applyUpdate(target.getYDoc(), update);
+}
 
 function createInMemoryProviderMesh(peerIds = []) {
   const managers = new Map();
@@ -81,6 +95,112 @@ test('clearNamespace removes entries and broadcasts delete intent', async () => 
   sm.clearNamespace('ns');
   assert.deepEqual(sm.listNamespaceKeys('ns'), []);
   assert.equal(sm.readScoped('ns', 'a'), undefined);
+});
+
+test('observeNamespace follows the winning concurrent namespace map', async (t) => {
+  const left = await makeStateManager();
+  const right = await makeStateManager();
+  const namespace = 'concurrent-observer-test';
+  const leftEvents = [];
+  const rightEvents = [];
+  const unsubscribeLeft = left.observeNamespace(namespace, (value, key) => {
+    leftEvents.push({ key, value });
+  });
+  const unsubscribeRight = right.observeNamespace(namespace, (value, key) => {
+    rightEvents.push({ key, value });
+  });
+  t.after(async () => {
+    unsubscribeLeft();
+    unsubscribeRight();
+    await left.destroy();
+    await right.destroy();
+  });
+
+  const leftInitialMap = left.getYMap().get(namespace);
+  const rightInitialMap = right.getYMap().get(namespace);
+  left.writeScoped(namespace, 'left-only', 'left-value');
+  right.writeScoped(namespace, 'right-only', 'right-value');
+  leftEvents.length = 0;
+  rightEvents.length = 0;
+
+  exchangeYjsUpdates(left, right);
+
+  const leftLost = left.getYMap().get(namespace) !== leftInitialMap;
+  const rightLost = right.getYMap().get(namespace) !== rightInitialMap;
+  assert.notEqual(leftLost, rightLost, 'exactly one locally-created namespace map should lose');
+
+  const loser = leftLost ? left : right;
+  const winner = leftLost ? right : left;
+  const losingEvents = leftLost ? leftEvents : rightEvents;
+  const losingKey = leftLost ? 'left-only' : 'right-only';
+  const winningKey = leftLost ? 'right-only' : 'left-only';
+  const winningValue = leftLost ? 'right-value' : 'left-value';
+  const unsubscribeLoser = leftLost ? unsubscribeLeft : unsubscribeRight;
+
+  assert.deepEqual(losingEvents, [
+    { key: losingKey, value: undefined },
+    { key: winningKey, value: winningValue }
+  ], 'replacement notification should remove stale keys and replay the winning snapshot');
+
+  losingEvents.length = 0;
+  winner.writeScoped(namespace, 'after-merge', 'visible-to-loser');
+  syncYjsUpdate(winner, loser);
+  assert.deepEqual(losingEvents, [
+    { key: 'after-merge', value: 'visible-to-loser' }
+  ], 'the observer formerly attached to the losing map should follow later writes');
+
+  unsubscribeLoser();
+  losingEvents.length = 0;
+  winner.writeScoped(namespace, 'after-unsubscribe', 'must-not-notify');
+  syncYjsUpdate(winner, loser);
+  assert.deepEqual(losingEvents, [], 'unsubscribe should detach the rebound child observer');
+
+  const finalNamespaceMap = new Y.Map();
+  winner.getYMap().set(namespace, finalNamespaceMap);
+  finalNamespaceMap.set('replacement-after-unsubscribe', 'must-not-replay');
+  syncYjsUpdate(winner, loser);
+  assert.deepEqual(losingEvents, [], 'unsubscribe should detach the root replacement observer');
+});
+
+test('observeNamespace replays a recreated namespace before following callback writes', async (t) => {
+  const source = await makeStateManager();
+  const replica = await makeStateManager();
+  const namespace = 'recreated-observer-test';
+  source.writeScoped(namespace, 'stale', 'old-value');
+  syncYjsUpdate(source, replica);
+
+  const events = [];
+  const unsubscribe = replica.observeNamespace(namespace, (value, key) => {
+    events.push({ key, value });
+    if (key === 'recreated' && !replica.hasScoped(namespace, 'derived')) {
+      replica.writeScoped(namespace, 'derived', `derived-from-${value}`);
+    }
+  });
+  t.after(async () => {
+    unsubscribe();
+    await source.destroy();
+    await replica.destroy();
+  });
+
+  source.delete(namespace);
+  syncYjsUpdate(source, replica);
+  assert.deepEqual(events, [
+    { key: 'stale', value: undefined }
+  ], 'deleting the root namespace should remove keys from the observed snapshot');
+
+  events.length = 0;
+  const recreatedMap = new Y.Map();
+  source.getYDoc().transact(() => {
+    source.getYMap().set(namespace, recreatedMap);
+    recreatedMap.set('recreated', 'new-value');
+  });
+  syncYjsUpdate(source, replica);
+
+  assert.deepEqual(events, [
+    { key: 'recreated', value: 'new-value' },
+    { key: 'derived', value: 'derived-from-new-value' }
+  ]);
+  assert.equal(replica.readScoped(namespace, 'derived'), 'derived-from-new-value');
 });
 
 test('StateManager admits and invalidates task graph cache artifacts as authority records', async () => {

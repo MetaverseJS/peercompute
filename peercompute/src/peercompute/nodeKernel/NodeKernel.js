@@ -3870,6 +3870,13 @@ export class NodeKernel {
         }
         break;
 
+      case 'yjs-sync-request':
+      case 'yjs-sync-response':
+        // PeerComputeProvider owns the request/response synchronization flow.
+        // NetworkManager also forwards these messages to NodeKernel, so mark
+        // them as recognized here without applying the update a second time.
+        break;
+
       case 'compute-task':
         this._handleComputeTask(peerId, message.data);
         break;

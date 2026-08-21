@@ -8,7 +8,7 @@ import { runSimulationProfile } from '../../net-chaos-lab/agent/player-behavior-
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const docsRoot = path.join(repoRoot, 'docs');
+const docsRoot = path.resolve(process.env.RUNTIME_P2P_DOCS_ROOT || path.join(repoRoot, 'docs'));
 const host = process.env.DEMO_HOST || '127.0.0.1';
 const port = Number(process.env.DEMO_PORT || 4180);
 const baseUrl = `http://${host}:${port}`;
@@ -16,6 +16,7 @@ const relayConfigTimeoutMs = Number(process.env.RELAY_CONFIG_TIMEOUT_MS || 10000
 const demoTimeoutMs = Number(process.env.DEMO_TIMEOUT_MS || 30000);
 const interactionMs = Number(process.env.RUNTIME_P2P_INTERACTION_MS || 3000);
 const movementEpsilon = Number(process.env.RUNTIME_P2P_MOVEMENT_EPSILON || 0.01);
+const requireCubeChatRelayMedia = process.env.CUBECHAT_REQUIRE_RELAY_MEDIA === '1';
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   || process.env.CHROME_EXECUTABLE_PATH
   || (existsSync('/bin/google-chrome') ? '/bin/google-chrome' : undefined);
@@ -73,7 +74,8 @@ function resolveRequestPath(reqUrl) {
     ? `${trimmed}index.html`
     : trimmed;
   const normalized = path.normalize(path.join(docsRoot, rawPath));
-  if (!normalized.startsWith(docsRoot)) return null;
+  const relative = path.relative(docsRoot, normalized);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
   return normalized;
 }
 
@@ -537,6 +539,145 @@ async function verifyCanvasDisplay(page, selectors, label) {
   return value;
 }
 
+async function readCubeChatMediaCandidatePairs(page) {
+  return page.evaluate(async () => {
+    const peerConnections = Array.from(window.__cubechat?.network?.peerConnections?.entries?.() || []);
+    const toCandidate = (candidate) => candidate ? {
+      id: candidate.id || null,
+      candidateType: candidate.candidateType || null,
+      protocol: candidate.protocol || null,
+      relayProtocol: candidate.relayProtocol || null
+    } : null;
+    const pairs = [];
+
+    for (const [peerId, pc] of peerConnections) {
+      let selectedPair = null;
+      let localCandidate = null;
+      let remoteCandidate = null;
+      let statsError = null;
+      try {
+        const stats = await pc.getStats();
+        for (const report of stats.values()) {
+          if (report.type === 'transport' && report.selectedCandidatePairId) {
+            selectedPair = stats.get(report.selectedCandidatePairId) || null;
+            break;
+          }
+        }
+        if (!selectedPair) {
+          for (const report of stats.values()) {
+            if (report.type === 'candidate-pair' && report.nominated && report.state === 'succeeded') {
+              selectedPair = report;
+              break;
+            }
+          }
+        }
+        if (selectedPair) {
+          localCandidate = stats.get(selectedPair.localCandidateId) || null;
+          remoteCandidate = stats.get(selectedPair.remoteCandidateId) || null;
+        }
+      } catch (error) {
+        statsError = error?.message || String(error);
+      }
+      pairs.push({
+        peerId,
+        connectionState: pc.connectionState || null,
+        iceConnectionState: pc.iceConnectionState || null,
+        configuredIceTransportPolicy: pc.getConfiguration?.().iceTransportPolicy || 'all',
+        selectedPairId: selectedPair?.id || null,
+        selectedPairState: selectedPair?.state || null,
+        localCandidate: toCandidate(localCandidate),
+        remoteCandidate: toCandidate(remoteCandidate),
+        bytesSent: Number.isFinite(selectedPair?.bytesSent) ? selectedPair.bytesSent : null,
+        bytesReceived: Number.isFinite(selectedPair?.bytesReceived) ? selectedPair.bytesReceived : null,
+        statsError
+      });
+    }
+    return pairs;
+  });
+}
+
+async function waitForCubeChatRelayMedia(page, label) {
+  const deadline = Date.now() + demoTimeoutMs;
+  let pairs = [];
+  do {
+    pairs = await readCubeChatMediaCandidatePairs(page);
+    if (pairs.length > 0 && pairs.every((pair) => (
+      pair.connectionState === 'connected'
+      && (pair.iceConnectionState === 'connected' || pair.iceConnectionState === 'completed')
+      && pair.configuredIceTransportPolicy === 'relay'
+      && pair.selectedPairId
+      && pair.selectedPairState === 'succeeded'
+      && pair.localCandidate?.candidateType === 'relay'
+      && pair.remoteCandidate?.candidateType === 'relay'
+      && Number(pair.bytesSent) > 0
+      && Number(pair.bytesReceived) > 0
+    ))) {
+      return pairs;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  } while (Date.now() < deadline);
+
+  throw new Error(`${label} did not prove bidirectional relay media: ${JSON.stringify(pairs)}`);
+}
+
+async function setCubeChatThemeAndWait(sourcePage, targetPage, theme, label) {
+  const applied = await sourcePage.evaluate((nextTheme) => {
+    const app = window.__cubechat;
+    if (!app || typeof app.setRoomTheme !== 'function') return false;
+    app.setRoomTheme(nextTheme, { announce: true });
+    return app.worldTheme === nextTheme;
+  }, theme);
+  if (!applied) {
+    throw new Error(`${label} source did not apply theme ${theme}`);
+  }
+
+  await targetPage.waitForFunction((expectedTheme) => {
+    const app = window.__cubechat;
+    const state = app?.network?.stateManager?.readScoped?.('world', 'theme');
+    return app?.worldTheme === expectedTheme
+      && app?.scene?.getWorldTheme?.() === expectedTheme
+      && document.getElementById('world-theme')?.value === expectedTheme
+      && state?.id === expectedTheme;
+  }, theme, { timeout: demoTimeoutMs });
+}
+
+async function announceCubeChatDirectoryProbe(page, probe, label) {
+  await page.waitForFunction(
+    () => Boolean(window.__cubechat?.roomDirectory?.stateManager),
+    null,
+    { timeout: demoTimeoutMs }
+  );
+  const announced = await page.evaluate((entry) => {
+    const directory = window.__cubechat?.roomDirectory;
+    if (!directory || typeof directory.announceRoom !== 'function') return false;
+    directory.announceRoom({
+      name: entry.name,
+      visibility: 'public',
+      roomId: entry.roomId
+    });
+    return directory.stateManager?.readScoped?.('rooms', entry.key)?.roomId === entry.roomId;
+  }, probe);
+  if (!announced) {
+    throw new Error(`${label} source did not announce directory probe ${probe.key}`);
+  }
+}
+
+async function waitForCubeChatDirectoryProbe(page, probe, label) {
+  await page.waitForFunction((entry) => {
+    const directory = window.__cubechat?.roomDirectory;
+    const cached = directory?.rooms?.get?.(entry.key);
+    const scoped = directory?.stateManager?.readScoped?.('rooms', entry.key);
+    return cached?.roomId === entry.roomId && scoped?.roomId === entry.roomId;
+  }, probe, { timeout: demoTimeoutMs });
+  const observed = await page.evaluate((entry) => {
+    const directory = window.__cubechat?.roomDirectory;
+    return directory?.rooms?.get?.(entry.key) || null;
+  }, probe);
+  if (observed?.roomId !== probe.roomId) {
+    throw new Error(`${label} did not cache directory probe ${probe.key}`);
+  }
+}
+
 async function runCubeChat(context) {
   const errors = [];
   const pageA = await context.newPage();
@@ -599,6 +740,16 @@ async function runCubeChat(context) {
       pageA.waitForFunction(() => window.__cubechatTest?.remoteStreamCount > 0, null, { timeout: demoTimeoutMs }),
       pageB.waitForFunction(() => window.__cubechatTest?.remoteStreamCount > 0, null, { timeout: demoTimeoutMs })
     ]);
+    if (requireCubeChatRelayMedia) {
+      const [relayPairsA, relayPairsB] = await Promise.all([
+        waitForCubeChatRelayMedia(pageA, 'CubeChat pageA'),
+        waitForCubeChatRelayMedia(pageB, 'CubeChat pageB')
+      ]);
+      console.log('[runtime-p2p] CubeChat relay media verified:', JSON.stringify({
+        pageA: relayPairsA,
+        pageB: relayPairsB
+      }));
+    }
     await Promise.all([
       verifyCanvasDisplay(pageA, ['#scene-container canvas', 'canvas'], 'CubeChat pageA scene'),
       verifyCanvasDisplay(pageB, ['#scene-container canvas', 'canvas'], 'CubeChat pageB scene')
@@ -616,6 +767,25 @@ async function runCubeChat(context) {
       waitForRemoteBridgePeerMovement(pageB, 'cubechat', inputA.localId, remoteAOnB.position, 'CubeChat pageB display of pageA movement'),
       waitForRemoteBridgePeerMovement(pageA, 'cubechat', inputB.localId, remoteBOnA.position, 'CubeChat pageA display of pageB movement')
     ]);
+
+    await setCubeChatThemeAndWait(pageA, pageB, 'moon', 'CubeChat pageA → pageB theme');
+    await setCubeChatThemeAndWait(pageB, pageA, 'jungle', 'CubeChat pageB → pageA theme');
+
+    const directoryToken = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const directoryProbeA = {
+      name: `e2e-a-${directoryToken}`,
+      roomId: `e2e-a-${directoryToken}`,
+      key: `room-e2e-a-${directoryToken}`
+    };
+    const directoryProbeB = {
+      name: `e2e-b-${directoryToken}`,
+      roomId: `e2e-b-${directoryToken}`,
+      key: `room-e2e-b-${directoryToken}`
+    };
+    await announceCubeChatDirectoryProbe(pageA, directoryProbeA, 'CubeChat pageA');
+    await waitForCubeChatDirectoryProbe(pageB, directoryProbeA, 'CubeChat pageB');
+    await announceCubeChatDirectoryProbe(pageB, directoryProbeB, 'CubeChat pageB');
+    await waitForCubeChatDirectoryProbe(pageA, directoryProbeB, 'CubeChat pageA');
 
     await pageA.click('#settings-button');
     await pageA.click('#screen-share-toggle');
@@ -642,7 +812,11 @@ async function runCubeChat(context) {
       peerCount: window.__cubechatTest?.peerCount ?? null,
       peerConnectionCount: window.__cubechatTest?.peerConnectionCount ?? null,
       remoteStreamCount: window.__cubechatTest?.remoteStreamCount ?? null,
-      remoteScreenStreamCount: window.__cubechatTest?.remoteScreenStreamCount ?? null
+      remoteScreenStreamCount: window.__cubechatTest?.remoteScreenStreamCount ?? null,
+      worldTheme: window.__cubechat?.worldTheme ?? null,
+      worldThemeState: window.__cubechat?.network?.stateManager?.readScoped?.('world', 'theme') ?? null,
+      worldThemeSelect: document.getElementById('world-theme')?.value ?? null,
+      roomDirectoryKeys: Array.from(window.__cubechat?.roomDirectory?.rooms?.keys?.() || []).slice(-12)
     })).catch(() => null);
     const debugB = await pageB.evaluate(() => ({
       localStreamReady: window.__cubechatTest?.localStreamReady ?? null,
@@ -651,16 +825,24 @@ async function runCubeChat(context) {
       peerCount: window.__cubechatTest?.peerCount ?? null,
       peerConnectionCount: window.__cubechatTest?.peerConnectionCount ?? null,
       remoteStreamCount: window.__cubechatTest?.remoteStreamCount ?? null,
-      remoteScreenStreamCount: window.__cubechatTest?.remoteScreenStreamCount ?? null
+      remoteScreenStreamCount: window.__cubechatTest?.remoteScreenStreamCount ?? null,
+      worldTheme: window.__cubechat?.worldTheme ?? null,
+      worldThemeState: window.__cubechat?.network?.stateManager?.readScoped?.('world', 'theme') ?? null,
+      worldThemeSelect: document.getElementById('world-theme')?.value ?? null,
+      roomDirectoryKeys: Array.from(window.__cubechat?.roomDirectory?.rooms?.keys?.() || []).slice(-12)
     })).catch(() => null);
     const bridgeA = await readBotBridgeSnapshot(pageA, 'cubechat').catch(() => null);
     const bridgeB = await readBotBridgeSnapshot(pageB, 'cubechat').catch(() => null);
+    const candidatePairsA = await readCubeChatMediaCandidatePairs(pageA).catch(() => null);
+    const candidatePairsB = await readCubeChatMediaCandidatePairs(pageB).catch(() => null);
     errors.push(
       `Cubechat P2P wait failed: ${err?.message || err}\n` +
       `pageA: ${JSON.stringify(debugA)}\n` +
       `pageB: ${JSON.stringify(debugB)}\n` +
       `pageA bridge: ${JSON.stringify(bridgeA)}\n` +
       `pageB bridge: ${JSON.stringify(bridgeB)}\n` +
+      `pageA media candidates: ${JSON.stringify(candidatePairsA)}\n` +
+      `pageB media candidates: ${JSON.stringify(candidatePairsB)}\n` +
       `pageA logs: ${logsA.slice(-10).join(' | ')}\n` +
       `pageB logs: ${logsB.slice(-10).join(' | ')}`
     );

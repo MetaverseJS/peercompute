@@ -679,14 +679,83 @@ export class StateManager {
    * @returns {Function} unsubscribe
    */
   observeNamespace(namespace, callback) {
-    const nsMap = this._getNamespaceMap(namespace);
-    const handler = (event) => {
+    let nsMap = this._getNamespaceMap(namespace);
+    let observedKeys = new Set(nsMap.keys());
+    let replacementTransaction = null;
+    let active = true;
+
+    const currentNamespaceMap = () => {
+      const value = this.state.get(namespace);
+      return value instanceof Y.Map ? value : null;
+    };
+
+    let namespaceHandler;
+    const rebindNamespaceMap = (nextMap, transaction = null) => {
+      if (!active || nextMap === nsMap) return;
+
+      const previousKeys = observedKeys;
+      const nextEntries = nextMap ? Array.from(nextMap.entries()) : [];
+      const nextKeys = new Set(nextEntries.map(([key]) => key));
+
+      nsMap?.unobserve(namespaceHandler);
+      nsMap = nextMap;
+      observedKeys = nextKeys;
+      replacementTransaction = transaction;
+      nsMap?.observe(namespaceHandler);
+
+      // A nested Y.Map can lose a concurrent assignment to the namespace key.
+      // Replaying the winning map keeps consumers from retaining keys that only
+      // existed in the detached map and gives them one coherent replacement view.
+      for (const key of previousKeys) {
+        if (!nextKeys.has(key)) {
+          if (!active || currentNamespaceMap() !== nsMap) return;
+          callback(undefined, key);
+        }
+      }
+      for (const [key, value] of nextEntries) {
+        if (!active || currentNamespaceMap() !== nsMap) return;
+        callback(value, key);
+      }
+    };
+
+    namespaceHandler = (event, transaction) => {
+      if (!active || event.target !== nsMap) return;
+
+      const currentMap = currentNamespaceMap();
+      if (currentMap !== nsMap) {
+        rebindNamespaceMap(currentMap, transaction);
+        return;
+      }
+
+      // The replacement snapshot already contains every change from the Yjs
+      // transaction that installed the winning nested map.
+      if (transaction === replacementTransaction) return;
+
       event.keysChanged.forEach((key) => {
+        if (!active || event.target !== nsMap || currentNamespaceMap() !== nsMap) return;
+        if (nsMap.has(key)) {
+          observedKeys.add(key);
+        } else {
+          observedKeys.delete(key);
+        }
         callback(nsMap.get(key), key);
       });
     };
-    nsMap.observe(handler);
-    return () => nsMap.unobserve(handler);
+
+    const rootHandler = (event, transaction) => {
+      if (!active || !event.keysChanged.has(namespace)) return;
+      rebindNamespaceMap(currentNamespaceMap(), transaction);
+    };
+
+    nsMap.observe(namespaceHandler);
+    this.state.observe(rootHandler);
+
+    return () => {
+      if (!active) return;
+      active = false;
+      nsMap?.unobserve(namespaceHandler);
+      this.state.unobserve(rootHandler);
+    };
   }
 
   /**
