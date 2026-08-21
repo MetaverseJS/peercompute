@@ -878,16 +878,117 @@ Instructions: This file contains a detailed implementation log describing choice
 - All Multiscale temporary build output was removed. The full chaos lab was not
   run.
 
+### Source Commit And Generated Release Integration
+
+- Committed the coherent worker/runtime source checkpoint as `39003828`
+  (`Harden required workers and production demo build`) and pushed the expected
+  fast-forward `5c64a7e9..39003828` to `origin/ulg`.
+- Ended all source-edit leases, reran ICC assistant status, then ran a repo-wide
+  generated-output preflight and published lease
+  `codex-root-generated-deploy`. The preflight had no agent conflicts; its
+  rollback guard rejected the expected replacement of old tracked hashed
+  assets, and it warned about the dirty generated baseline plus the repo's
+  stale `origin/master` default rather than `origin/ulg`.
+- Ran `npm run build` under Node `v24.18.0`. PeerCompute and all eleven demo
+  builds completed; the existing webpack circular-chunk/size warnings, Vite
+  large-chunk warnings, and PlanetGen `WebGL1Renderer` warning remained.
+- A first generated-site audit found ten reachable broken Multiscale imports.
+  Vite had emitted stable task entries but also copied development fallback
+  source modules whose imports either escaped `docs/` or named missing sibling
+  modules. Held the generated commit instead of publishing that output.
+- Updated `peercomputeLadderRuntime.js` and `solverWorkerDescriptors.js` so
+  development fallback URLs remain runtime-dynamic and do not become raw Vite
+  assets, while production continues to resolve stable bundled entries.
+  Declared `es-module-lexer` as a direct Multiscale test dependency and expanded
+  `workerBuild.test.mjs` to parse every emitted JavaScript module, rejecting any
+  missing or build-root-escaping relative import.
+- `npm install --package-lock-only --ignore-scripts` reported the lockfile up to
+  date and did not install runtime packages. Its existing dependency audit
+  summary was 41 vulnerabilities (`5` low, `14` moderate, `19` high, `3`
+  critical); no broad or breaking `npm audit fix` was attempted in this scoped
+  release.
+- The first strengthened worker-build run failed because its old exact-string
+  assertion did not account for the new shared stable-assets resolver. After
+  checking the built code, changed that assertion to require the stable asset
+  names and assets-directory resolver semantically. The next run failed because
+  an overbroad assertion rejected PeerCompute's legitimate self-contained
+  `computeWorker-*.js` asset; removed that assertion and retained the stronger
+  per-module import-closure check. Final focused worker-build result: `3/3`
+  passing.
+- `npm --prefix demos/multiscale test`: PASS `206/206`. Rebuilt Multiscale, then
+  reran final root `npm run build` from the complete source snapshot: PASS.
+- `npm run test:backend`: PASS `21/21`. `git diff --check` and syntax checks for
+  the new Multiscale resolver/test paths passed.
+- ICC's source/README/plan scoped `guard-diff` passed with no violations. The
+  generated `demos`/`docs` guard rejected the expected hashed-asset rotation
+  (`23` deleted files and `32355` deleted lines under its counted scope) and
+  reported only nonblocking rollback-sensitive findings inside replaced
+  generated bundles; the final reference traversal and browser gates below
+  verify that their replacement assets are linked and functional.
+- A small first inline config-summary script had a missing closing brace and
+  failed with `SyntaxError`; the corrected draft then incorrectly expected two
+  fallback bootstrap peers and read `pubsub` instead of `pubsubType`. Discarded
+  that faulty local assertion. The independent final validator checked the
+  actual release contract: all 22 demo/docs fallback/source pairs contain a
+  production WSS peer, gossipsub, STUN, authenticated TURN UDP/TCP, and the
+  production HTTPS runtime URL, with no localhost/floodsub entries.
+
+### Final Generated And Browser Results
+
+- PASS: final generated-site traversal seeded all 18 demo HTML entries and
+  reached 83 local files across 72 HTML edges, 10 literal module-URL edges, 52
+  static imports, and one dynamic import. Broken or build-root-escaping
+  references: `0`.
+- PASS: the stable Multiscale worker/qgrid/qmat/ULG graph is import-closed; all
+  expected task exports exist and the built custom worker emitted exactly one
+  readiness frame. Generated CubeChat and SneakyWoods semantic checks found the
+  new RTC-config helper and namespace-observer replacement logic.
+- PASS: `node --test demos/multiscale/tests/workerBuild.test.mjs
+  demos/cubechat/src/p2p/rtcConfig.test.js` passed `8/8` during independent
+  artifact review.
+- PASS: `DOCS_HOST=127.0.0.1 DOCS_PORT=43900 DEMO_WAIT_MS=3000
+  DEMO_READY_TIMEOUT_MS=45000 node demos/tests/runtime-smoke.mjs` loaded all
+  eight built-doc harness demos.
+- PASS: a test-owned copy of final CubeChat/SneakyWoods docs ran with
+  `RUNTIME_P2P_DEMOS=cubechat,sneakywoods`, port `43901`, timeout `90000`, and
+  interaction window `3000`. CubeChat passed media, screen share, movement,
+  theme, and room-directory checks in both directions; SneakyWoods passed
+  two-player presence and movement in both directions.
+- PASS at the public native-service boundary: the production config returned
+  `200` with CORS/no-store and dual WSS bootstrap plus STUN/TURN; apex WSS
+  returned `101`; IPv4 and IPv6 STUN binding passed; authenticated native TURN
+  UDP and TCP each relayed bidirectional packets with zero loss.
+- FAIL at the public browser-service boundary: final built CubeChat forced to
+  relay-only application media discovered its peer and created media state, but
+  both application peer connections stayed ICE `new` with no candidate pair.
+  An independent Chrome 151 RTCPeerConnection probe reproduced no relay
+  candidates over production TURN UDP or TCP and emitted error `701` (allocate
+  request timed out). The same browser gathered server-reflexive candidates
+  from production and Google STUN, isolating the failure to browser TURN
+  allocation rather than general browser networking.
+- Production reports coturn `4.5.2`, but version/config/firewall/NAT causality
+  cannot be assigned without host logs. No verified SSH/cloud administrative
+  path exists in this session, so no remote pull, package change, config edit,
+  or service restart was attempted. Native health alone is not sufficient to
+  claim the requested browser ICE/TURN backend deployment complete.
+- All focused browsers, Go relays, Vite/docs servers, temporary Multiscale
+  builds, disposable CubeChat trees, and ports `43900-43943` were cleaned up.
+  The full chaos lab and known live four-peer CubeChat soak remained out of
+  scope.
+- Staged the complete 128-file release checkpoint. A full
+  `git diff --cached --check` reports whitespace warnings only inside generated
+  JavaScript shader/source template payloads. The scoped non-generated check,
+  `git diff --cached --check -- . ':(exclude)docs/**/*.js'`, passes. Generated
+  bundles were not post-processed because changing their emitted payloads would
+  break Vite build reproducibility and content hashes.
+
 ### Remaining For This Prompt
 
-- Commit and push the coherent source/tests/docs checkpoint.
-- Claim the generated-output scope, run the complete production build, validate
-  generated config/module/reference closure and focused built-browser paths,
-  then commit and push the atomic generated deployment.
-- Repeat public WSS/STUN/TURN/browser verification. A remote Git/service update
-  remains blocked until a trusted host identity and authenticated admin channel
-  are supplied; healthy services will not be restarted merely to claim a
-  deployment occurred.
+- Commit and push the atomic final source/generated/docs release checkpoint,
+  then verify the public GitHub Pages asset revision.
+- Repairing or upgrading production coturn requires the user to restore a
+  trusted authenticated administrative path to `secretworkshop.net`; capture
+  service logs/config and rollback state before any mutation.
 
 ## 2026-06-06 20:04:13 AKDT - Resource lease broker first pass
 

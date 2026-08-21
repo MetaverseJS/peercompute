@@ -437,123 +437,83 @@ export const MULTISCALE_SOLVER_DESCRIPTORS = [
   }
 ];
 
-export function resolveNBodyGravityTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/nbodyGravityTasks.js', globalThis.document.baseURI).href;
+function resolveTaskModuleUrl(assetName) {
+  const baseURI = globalThis.document?.baseURI;
+  if (import.meta.env?.PROD && baseURI) {
+    return new globalThis.URL(`./assets/${assetName}`, baseURI).href;
   }
-  return new URL('./nbodyGravityTasks.js', import.meta.url).href;
+
+  // Keep the development URL dynamic so Vite does not copy raw source files
+  // (and their source-tree imports) into an otherwise self-contained build.
+  return new globalThis.URL(`./${assetName}`, import.meta.url).href;
+}
+
+export function resolveNBodyGravityTaskModuleUrl() {
+  return resolveTaskModuleUrl('nbodyGravityTasks.js');
 }
 
 export function resolveReactiveThermalTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/reactiveThermalTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./reactiveThermalTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('reactiveThermalTasks.js');
 }
 
 export function resolveMolecularDynamicsTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/molecularDynamicsTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./molecularDynamicsTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('molecularDynamicsTasks.js');
 }
 
 export function resolveQuantumOrbitalGridTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/quantumOrbitalGridTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./quantumOrbitalGridTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('quantumOrbitalGridTasks.js');
 }
 
 export function resolveQuantumMaterialPotentialTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/quantumMaterialPotentialTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./quantumMaterialPotentialTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('quantumMaterialPotentialTasks.js');
 }
 
 export function resolveUlgRuntimeTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/ulgRuntimeTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./ulgRuntimeTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('ulgRuntimeTasks.js');
 }
 
 export function resolveMaxwellTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/maxwellTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./maxwellTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('maxwellTasks.js');
 }
 
 export function resolveCosmologyExpansionTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/cosmologyExpansionTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./cosmologyExpansionTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('cosmologyExpansionTasks.js');
 }
 
 export function resolveSphMaterialTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/sphMaterialTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./sphMaterialTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('sphMaterialTasks.js');
 }
 
 export function resolveHydroAtmosphereTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/hydroAtmosphereTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./hydroAtmosphereTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('hydroAtmosphereTasks.js');
 }
 
 export function resolveRadiationOpacityTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/radiationOpacityTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./radiationOpacityTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('radiationOpacityTasks.js');
 }
 
 export function resolveStellarFusionTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/stellarFusionTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./stellarFusionTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('stellarFusionTasks.js');
 }
 
 export function resolveMagnetospherePlasmaTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/magnetospherePlasmaTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./magnetospherePlasmaTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('magnetospherePlasmaTasks.js');
 }
 
 export function resolvePicPlasmaPatchTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/picPlasmaPatchTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./picPlasmaPatchTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('picPlasmaPatchTasks.js');
 }
 
 export function resolveRelativisticCorrectionTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/relativisticCorrectionTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./relativisticCorrectionTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('relativisticCorrectionTasks.js');
 }
 
 export function resolveCombustionPlumeTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/combustionPlumeTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./combustionPlumeTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('combustionPlumeTasks.js');
 }
 
 export function resolveMembraneShellTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/membraneShellTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./membraneShellTasks.js', import.meta.url).href;
+  return resolveTaskModuleUrl('membraneShellTasks.js');
 }
 
 export function createMultiscaleSolverDescriptors({

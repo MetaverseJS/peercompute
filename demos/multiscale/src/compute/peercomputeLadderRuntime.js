@@ -2,18 +2,23 @@ import { WebGpuLadderCompute } from './webgpuLadderCompute.js';
 
 export const PEERCOMPUTE_LADDER_RUNTIME_SCHEMA = 'peercompute.multiscale.peercompute.runtime.v0';
 
-export function resolvePeerComputeWorkerBootstrapUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/peercomputeComputeWorker.js', globalThis.document.baseURI).href;
+function resolveRuntimeModuleUrl(assetName) {
+  const baseURI = globalThis.document?.baseURI;
+  if (import.meta.env?.PROD && baseURI) {
+    return new globalThis.URL(`./assets/${assetName}`, baseURI).href;
   }
-  return new URL('./peercomputeComputeWorker.js', import.meta.url).href;
+
+  // Keep the development URL dynamic so Vite does not copy the unbundled
+  // source module into production output alongside the stable Rollup entry.
+  return new globalThis.URL(`./${assetName}`, import.meta.url).href;
+}
+
+export function resolvePeerComputeWorkerBootstrapUrl() {
+  return resolveRuntimeModuleUrl('peercomputeComputeWorker.js');
 }
 
 function resolveDefaultTaskModuleUrl() {
-  if (import.meta.env?.PROD && globalThis.document?.baseURI) {
-    return new URL('./assets/peercomputeLadderTasks.js', globalThis.document.baseURI).href;
-  }
-  return new URL('./peercomputeLadderTasks.js', import.meta.url).href;
+  return resolveRuntimeModuleUrl('peercomputeLadderTasks.js');
 }
 
 const TASK_MODULE_URL = resolveDefaultTaskModuleUrl();

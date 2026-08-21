@@ -2,7 +2,7 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Current Status - June 18, 2026
+## Current Status - August 21, 2026
 PeerCompute currently ships as a browser-first P2P runtime plus a set of
 production-shaped demos, validation harnesses, and deployment scripts. It is no
 longer only a relay/chat experiment: the repo has usable networking, state,
@@ -85,6 +85,19 @@ The focused 2026-08-21 repair is green without running the full chaos lab:
 - PeerCompute units passed `204` with one skip and no failures; Multiscale
   model/worker-build checks passed `206/206`; backend/release checks passed
   `21/21`.
+- A final root production build regenerated every demo plus all production
+  relay fallbacks/source pointers. The 18-entry generated-site audit reached
+  83 local files and 135 HTML/module/URL edges with zero missing references;
+  all 22 demo/docs config pairs advertise production WSS, STUN, and
+  authenticated TURN UDP/TCP.
+- Built-doc runtime smoke passed all eight harness demos. The focused built-doc
+  CubeChat/SneakyWoods run also passed peer discovery, media, interaction, and
+  bidirectional state/movement checks against a test-owned local relay.
+- Public `secretworkshop.net` config, WSS, IPv4/IPv6 STUN, and native
+  authenticated TURN UDP/TCP probes pass. Chrome still fails to gather a TURN
+  relay candidate from that production coturn endpoint (`701` allocation
+  timeout), so browser TURN interoperability remains an operational blocker
+  even though native coturn clients relay packets successfully.
 
 The prior full local regression reports live in:
 
@@ -104,6 +117,10 @@ Validated in that prior sweep:
 
 Known open breakages/coverage gaps:
 
+- Production browser TURN allocation needs host-side coturn logs/config review
+  and likely service maintenance. The current session had no authenticated SSH
+  or cloud-admin path, so the healthy relay/coturn services were not restarted
+  blindly.
 - The current focused fix makes isolated SneakyWoods pass consistently, but the
   full ordered multiplayer P2P matrix and its historical
   Hyperborea-to-SneakyWoods shared-context failure were not rerun.

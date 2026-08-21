@@ -70,6 +70,20 @@
   test:unit` passed `204`, skipped `1`, and failed `0`; `npm --prefix
   demos/multiscale test` passed `206/206`; `npm run test:backend` passed
   `21/21`.
+- PASS: final `npm run build` completed under Node `v24.18.0` for PeerCompute
+  and all eleven demos. Existing circular-chunk, large-bundle, and PlanetGen
+  `WebGL1Renderer` warnings remain non-fatal.
+- PASS: all 22 demo/docs relay fallback/source pairs have production WSS,
+  gossipsub, STUN, authenticated TURN UDP/TCP, and the production HTTPS runtime
+  config URL. An 18-HTML-entry traversal reached 83 local files across 135
+  HTML/import/new-URL edges with zero missing or escaping references.
+- PASS: Multiscale's production build emits stable, import-closed worker/task
+  entries. The worker-build regression now parses every emitted JavaScript
+  module with `es-module-lexer` and rejects relative imports outside or missing
+  from the build root.
+- PASS: `node demos/tests/runtime-smoke.mjs` loaded all eight built-doc harness
+  demos. The focused built-doc `cubechat,sneakywoods` P2P run passed the full
+  two-page interaction assertions against a test-owned local relay.
 - PASS: fresh temporary CubeChat and SneakyWoods Vite production builds
   completed. `RUNTIME_P2P_DOCS_ROOT` let the browser gate consume those builds
   without mutating the already-dirty tracked `docs/` tree.
@@ -88,9 +102,20 @@
 - PASS: all focused browsers, relays, coturn, listeners, and temporary build
   output were stopped or removed. The dependency-only user-space coturn
   extraction from the preceding audit remains outside the repository.
+- PASS at the native backend boundary: production config/CORS, apex WSS,
+  IPv4/IPv6 STUN binding, and authenticated TURN UDP/TCP relayed-packet probes
+  all succeeded.
+- FAIL at the production browser boundary: fresh built CubeChat and an
+  independent Chrome 151 RTCPeerConnection both failed to gather a production
+  TURN relay candidate over UDP or TCP. Chrome emitted error `701` (allocation
+  timeout), while STUN server-reflexive gathering worked. Host logs/config are
+  required to determine whether coturn `4.5.2`, firewall/NAT, or another server
+  compatibility detail is responsible.
 - OPEN: the known live four-peer CubeChat convergence regression remains a
   separate production gate; the full chaos lab and full ordered demo matrix
-  remain intentionally unrun.
+  remain intentionally unrun. Production browser TURN repair is additionally
+  blocked until an authenticated administrative path to `secretworkshop.net`
+  is available.
 
 ### Current focused result - 2026-06-18 AKDT
 - Multiplayer interaction validation with independent browser pages, local

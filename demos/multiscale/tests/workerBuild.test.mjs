@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { init as initModuleLexer, parse as parseModuleImports } from 'es-module-lexer';
 import { build } from 'vite';
 
 import {
@@ -133,9 +134,16 @@ test('fresh production build emits descriptor-addressable modules with a closed 
     for (const expected of stableTaskModules) {
       const emittedPath = `assets/${expected.assetName}`;
       assert.ok(emittedPaths.has(emittedPath), `${emittedPath} was not emitted`);
-      assert.match(chunkCode, new RegExp(`\\./assets/${expected.assetName.replace('.', '\\.')}["']`));
+      assert.ok(
+        chunkCode.includes(expected.assetName),
+        `${expected.assetName} is not referenced by the production runtime`
+      );
       assert.ok((await stat(path.resolve(outputDir, emittedPath))).isFile());
     }
+    assert.ok(
+      chunkCode.includes('./assets/'),
+      'production runtime does not retain the stable assets directory resolver'
+    );
 
     assert.ok(emittedPaths.has('assets/peercomputeComputeWorker.js'));
     for (const entry of emitted) {
@@ -149,6 +157,32 @@ test('fresh production build emits descriptor-addressable modules with a closed 
         assert.ok(
           emittedPaths.has(dependency),
           `${entry.fileName} references missing build output ${dependency}`
+        );
+      }
+    }
+
+    await initModuleLexer;
+    for (const emittedPath of emittedPaths) {
+      if (!emittedPath.endsWith('.js')) continue;
+      const modulePath = path.resolve(outputDir, emittedPath);
+      const source = await readFile(modulePath, 'utf8');
+      const [imports] = parseModuleImports(source);
+      for (const record of imports) {
+        if (!record.n?.startsWith('.')) continue;
+        const dependencyPath = path.resolve(
+          path.dirname(modulePath),
+          record.n.split(/[?#]/, 1)[0]
+        );
+        const relativeDependency = path.relative(outputDir, dependencyPath);
+        assert.ok(
+          relativeDependency &&
+            !relativeDependency.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relativeDependency),
+          `${emittedPath} imports outside build output: ${record.n}`
+        );
+        assert.ok(
+          (await stat(dependencyPath)).isFile(),
+          `${emittedPath} references missing build output ${record.n}`
         );
       }
     }

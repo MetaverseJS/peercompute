@@ -56,10 +56,20 @@ The root node should exist on a domain secured with SSL enabling all executable 
   message warnings. After the release worker additions, the full PeerCompute
   unit suite passed `204`, skipped one, and failed zero; Multiscale passed
   `206/206`; backend/release checks passed `21/21`.
-- Fresh CubeChat and SneakyWoods builds were written only to a test-owned
-  temporary directory because tracked `docs/` output already contains unrelated
-  worktree changes. The temporary builds, coturn, relays, browsers, and test
-  listeners were removed/stopped after validation.
+- The final Node-24 root production build regenerated every demo and production
+  config pair. A release reachability audit covered 18 generated HTML entries,
+  83 reachable files, and 135 HTML/module/URL edges with zero broken
+  references; the Multiscale stable worker/task graph is closed and no longer
+  emits reachable source-tree imports.
+- Built-doc runtime smoke passed all eight harness demos, and a focused
+  CubeChat/SneakyWoods two-page run passed media, interaction, bidirectional
+  theme/directory state, presence, and movement against a test-owned relay.
+- Public config/CORS, WSS, IPv4/IPv6 STUN, and native authenticated TURN UDP/TCP
+  all pass. Chrome 151 nevertheless receives TURN error `701` and gathers no
+  relay candidate over either advertised transport, including in an independent
+  RTCPeerConnection probe. This is now a production coturn/browser
+  interoperability blocker; no remote service mutation was attempted without a
+  trusted host identity and authenticated administrative path.
 - Keep the prior full ordered-demo instability, live four-peer CubeChat media,
   ULG handoff contract drift, and unrelated Multiscale/DaddyGo findings open;
   they were not revalidated by this focused repair.

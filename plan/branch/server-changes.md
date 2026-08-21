@@ -75,5 +75,10 @@ Instructions: This file contains short term goals for the current branch.
   TURN TCP, and a focused browser relay-only media path after deployment.
 - Keep the full chaos lab out of this release unless separately requested.
 
-Status: in progress under ICC task
+Status: the source and generated frontend release is validated and included in
+the current `ulg` release checkpoint. Public config/CORS, WSS, dual-stack STUN,
+and native authenticated TURN UDP/TCP pass, but Chrome TURN allocation fails
+with error `701` over both transports. Backend mutation is blocked pending
+authenticated host access plus coturn logs/config review; healthy services were
+not restarted blindly. Tracked under ICC task
 `ulg-release-secretworkshop-deploy-20260821`.
