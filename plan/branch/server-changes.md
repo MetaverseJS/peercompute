@@ -54,3 +54,26 @@ Instructions: This file contains short term goals for the current branch.
 - [x] Tests/validation updated.
 - [x] Persist relay identity key so peerId stays stable across restarts.
 - [x] Runtime relay-config URL override + source file support in demos.
+
+### 2026-08-21 Production Redeploy Directive
+
+- Complete the audited `ulg` source and generated-frontend release before
+  changing the production backend. Do not deploy the stale local-build relay
+  fallbacks currently present in the worktree.
+- Deploy the production Go relay and coturn/STUN service to the
+  `secretworkshop.net` host through the existing split systemd service model.
+- Treat the live runtime config as part of the deployment contract: it must
+  advertise the public WSS bootstrap peer plus a STUN entry and authenticated
+  TURN UDP/TCP entries that match the running coturn service.
+- Keep `publicHost` empty in the checked-in production config. The prior
+  literal no longer matched production DNS and the combined TURN launcher could
+  have mistaken it for coturn's `external-ip`; NAT deployments must provide
+  `PCSERVER_TURN_EXTERNAL_IP` explicitly after verifying the host address.
+- Capture current remote Git/service/config/listener state before mutation and
+  retain a rollback path for service units and coturn/relay configuration.
+- Verify HTTPS runtime-config CORS, WSS relay discovery, STUN binding, TURN UDP,
+  TURN TCP, and a focused browser relay-only media path after deployment.
+- Keep the full chaos lab out of this release unless separately requested.
+
+Status: in progress under ICC task
+`ulg-release-secretworkshop-deploy-20260821`.

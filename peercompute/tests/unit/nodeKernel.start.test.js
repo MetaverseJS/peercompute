@@ -81,6 +81,129 @@ test('NodeKernel passes GPUHub to ComputeManager resident lane manager', async (
   assert.equal(laneManager.gpuHub, gpuHub);
 });
 
+test('NodeKernel forwards required-worker options and stop cleans initialized managers before start', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let createdWorker = null;
+
+  globalThis.Worker = class ReadyWorker {
+    constructor(url, options) {
+      this.url = String(url);
+      this.options = options;
+      createdWorker = this;
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+
+  const node = new NodeKernel({
+    enableWebGPU: false,
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 73,
+    workerBootstrapURL: '/assets/required-compute-worker.js',
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false,
+    disableStateNetworkProvider: true,
+    disableStateBroadcast: true,
+    enablePersistence: false
+  });
+  t.after(async () => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+    await node.stop().catch(() => {});
+  });
+
+  await node.initialize();
+  assert.equal(node.computeManager.config.requireWorkers, true);
+  assert.equal(node.computeManager.config.workerBootstrapTimeoutMs, 73);
+  assert.equal(createdWorker.url, '/assets/required-compute-worker.js');
+  assert.equal(createdWorker.options?.type, 'module');
+  assert.equal(node.computeManager.getCapabilities().workerRequirement.status, 'ready');
+
+  await node.stop();
+  assert.equal(createdWorker.terminated, true);
+  assert.equal(node.computeManager, null);
+  assert.equal(node.networkManager, null);
+  assert.equal(node.stateManager, null);
+  assert.equal(node.isInitialized, false);
+  assert.equal(node.isStarted, false);
+});
+
+test('NodeKernel cleans partial managers after required-worker handshake failure', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let createdWorker = null;
+  let capturedComputeManager = null;
+  let capturedNetworkManager = null;
+  let capturedStateManager = null;
+  let node = null;
+
+  globalThis.Worker = class HangingWorker {
+    constructor() {
+      createdWorker = this;
+      capturedComputeManager = node.computeManager;
+      capturedNetworkManager = node.networkManager;
+      capturedStateManager = node.stateManager;
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+
+  node = new NodeKernel({
+    enableWebGPU: false,
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10,
+    enableNetVizDebugTelemetry: false,
+    enableNetVizSessionBroadcast: false,
+    enableNetVizSessionDiscovery: false,
+    disableStateNetworkProvider: true,
+    disableStateBroadcast: true,
+    enablePersistence: false
+  });
+  t.after(async () => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+    await node.stop().catch(() => {});
+  });
+
+  await assert.rejects(node.initialize(), (error) => {
+    assert.equal(error.code, 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE');
+    assert.match(error.reason, /did not acknowledge readiness within 10ms/);
+    return true;
+  });
+
+  assert.ok(capturedComputeManager);
+  assert.ok(capturedNetworkManager);
+  assert.ok(capturedStateManager);
+  assert.equal(createdWorker.terminated, true);
+  assert.equal(capturedComputeManager.initialized, false);
+  assert.equal(capturedComputeManager.workers.length, 0);
+  assert.equal(capturedNetworkManager.peerId, null);
+  assert.equal(capturedStateManager.isInitialized, false);
+  assert.equal(node.computeManager, null);
+  assert.equal(node.networkManager, null);
+  assert.equal(node.stateManager, null);
+  assert.equal(node.isInitialized, false);
+  assert.equal(node.isStarted, false);
+  await node.stop();
+});
+
 test('NodeKernel requests StateManager provider sync after network connect', async () => {
   const events = [];
   const node = new NodeKernel({

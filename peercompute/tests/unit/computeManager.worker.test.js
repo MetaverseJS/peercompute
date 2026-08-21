@@ -54,6 +54,571 @@ test('ComputeManager bootstraps workers with module worker URLs', async (t) => {
   assert.equal(created[1].url, '/assets/peercomputeComputeWorker.js');
 });
 
+test('ComputeManager requires a real worker bootstrap only when configured', async (t) => {
+  const originalWorker = globalThis.Worker;
+  class ReadyWorker {
+    constructor() {
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+    }
+
+    addEventListener() {}
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  globalThis.Worker = ReadyWorker;
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 50
+  });
+  await manager.initialize();
+  const requirement = manager.getCapabilities().workerRequirement;
+  assert.equal(requirement.required, true);
+  assert.equal(requirement.status, 'ready');
+  assert.equal(requirement.readyWorkerCount, 1);
+});
+
+test('ComputeManager fails closed when a required worker cannot be created', async (t) => {
+  const originalWorker = globalThis.Worker;
+  delete globalThis.Worker;
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({ requireWorkers: true });
+  await assert.rejects(
+    manager.initialize(),
+    (error) => error?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+  );
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+  await assert.rejects(
+    manager.submitTask({ fn: () => 'must-not-run' }),
+    (error) => error?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+  );
+});
+
+test('ComputeManager validates direct and task-graph payloads before worker initialization', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let constructions = 0;
+
+  globalThis.Worker = class CountingWorker {
+    constructor() {
+      constructions += 1;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  await assert.rejects(
+    manager.submitTask({ data: { invalid: true } }),
+    /JavaScript tasks must provide fn or module/
+  );
+  await assert.rejects(
+    manager.submitTaskGraph({
+      graphId: 'invalid-before-worker-bootstrap',
+      nodes: [{ id: 'invalid', task: { data: { invalid: true } } }]
+    }),
+    /JavaScript tasks must provide fn or module/
+  );
+
+  assert.equal(constructions, 0);
+  assert.equal(manager.initialized, false);
+  assert.equal(manager.getStats().totalTasksSubmitted, 0);
+});
+
+test('ComputeManager preserves optional inline fallback when Worker construction throws', async (t) => {
+  const originalWorker = globalThis.Worker;
+  globalThis.Worker = class ThrowingWorker {
+    constructor() {
+      throw new Error('optional worker constructor failed');
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({ maxWorkers: 1 });
+  assert.equal(await manager.submitTask({ fn: () => 7 }), 7);
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'not-required');
+  assert.ok(manager.getCapabilities().workerSpawnFailures >= 1);
+  assert.equal(manager.getStats().inlineTasksCompleted, 1);
+});
+
+test('ComputeManager reports and preserves a required Worker constructor failure', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const cause = new Error('required worker constructor failed');
+  globalThis.Worker = class ThrowingWorker {
+    constructor() {
+      throw cause;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({ maxWorkers: 1, requireWorkers: true });
+  await assert.rejects(manager.initialize(), (error) => {
+    assert.equal(error.code, 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE');
+    assert.equal(error.reason, 'constructing a browser worker threw');
+    assert.equal(error.cause, cause);
+    return true;
+  });
+  assert.equal(manager.initialized, false);
+  assert.equal(manager.workers.length, 0);
+  assert.equal(manager.getCapabilities().workerSpawnFailures, 1);
+});
+
+test('ComputeManager immediately tears down a partial pool on constructor failure', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let constructionCount = 0;
+  let firstWorker = null;
+  const cause = new Error('second required worker constructor failed');
+
+  globalThis.Worker = class PartiallyConstructedPoolWorker {
+    constructor() {
+      constructionCount += 1;
+      if (constructionCount === 2) throw cause;
+      firstWorker = this;
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 2,
+    targetWorkers: 2,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 1000
+  });
+  await assert.rejects(manager.initialize(), (error) => {
+    assert.equal(error.code, 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE');
+    assert.equal(error.reason, 'constructing a browser worker threw');
+    assert.equal(error.cause, cause);
+    return true;
+  });
+  assert.equal(constructionCount, 2);
+  assert.equal(firstWorker.terminated, true);
+  assert.equal(manager.workers.length, 0);
+});
+
+test('ComputeManager terminates an unacknowledged required worker after handshake timeout', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let createdWorker = null;
+
+  globalThis.Worker = class HangingWorker {
+    constructor() {
+      createdWorker = this;
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  await assert.rejects(manager.initialize(), (error) => {
+    assert.equal(error.code, 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE');
+    assert.match(error.reason, /did not acknowledge readiness within 10ms/);
+    return true;
+  });
+  assert.equal(createdWorker.terminated, true);
+  assert.equal(manager.initialized, false);
+  assert.equal(manager.workers.length, 0);
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+});
+
+test('ComputeManager requires every admitted startup worker to acknowledge readiness', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const createdWorkers = [];
+
+  globalThis.Worker = class PartiallyReadyWorker {
+    constructor() {
+      createdWorkers.push(this);
+      if (createdWorkers.length === 1) {
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+      }
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 2,
+    targetWorkers: 2,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  await assert.rejects(
+    manager.initialize(),
+    (error) => error?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+      && /did not acknowledge readiness within 10ms/.test(error.reason)
+  );
+  assert.equal(createdWorkers.length, 2);
+  assert.ok(createdWorkers.every((worker) => worker.terminated));
+  assert.equal(manager.workers.length, 0);
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+});
+
+test('ComputeManager blocks concurrent task submission until startup admission completes', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const createdWorkers = [];
+  let postedTaskCount = 0;
+
+  globalThis.Worker = class PartiallyReadyWorker {
+    constructor() {
+      createdWorkers.push(this);
+      if (createdWorkers.length === 1) {
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+      }
+    }
+
+    addEventListener() {}
+
+    postMessage(message) {
+      postedTaskCount += 1;
+      queueMicrotask(() => this.onmessage?.({
+        data: { id: message.id, type: 'result', result: 'must-not-complete' }
+      }));
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 2,
+    targetWorkers: 2,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 15
+  });
+  const tasks = [1, 2].map((value) => manager.submitTask({
+    module: fixtureModuleUrl,
+    exportName: 'sumTask',
+    data: { a: value, b: value }
+  }));
+  const results = await Promise.allSettled(tasks);
+
+  assert.ok(results.every((result) => (
+    result.status === 'rejected'
+      && result.reason?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+  )));
+  assert.equal(postedTaskCount, 0);
+  assert.equal(manager.getStats().totalTasksSubmitted, 0);
+});
+
+test('ComputeManager cannot resize a required pool to zero during admission', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let createdWorker = null;
+
+  globalThis.Worker = class HangingWorker {
+    constructor() {
+      createdWorker = this;
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 0,
+    targetWorkers: 1,
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  const initialization = manager.initialize();
+  manager.resizeWorkers(0, { reason: 'required-worker-test-zero' });
+
+  await assert.rejects(
+    initialization,
+    (error) => error?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+  );
+  assert.equal(manager.targetWorkerCount, 1);
+  assert.equal(createdWorker.terminated, true);
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+});
+
+test('ComputeManager times out an unacknowledged worker added after startup', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const createdWorkers = [];
+
+  globalThis.Worker = class ScalingWorker {
+    constructor() {
+      createdWorkers.push(this);
+      if (createdWorkers.length === 1) {
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+      }
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 1,
+    targetWorkers: 1,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  await manager.initialize();
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'ready');
+  manager.resizeWorkers(2, { reason: 'required-worker-test' });
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'bootstrapping');
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+  assert.equal(manager.workers.length, 0);
+  assert.ok(createdWorkers.every((worker) => worker.terminated));
+});
+
+test('ComputeManager fails the pool when an added worker constructor throws', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let constructionCount = 0;
+  let firstWorker = null;
+
+  globalThis.Worker = class ScalingConstructorWorker {
+    constructor() {
+      constructionCount += 1;
+      if (constructionCount === 2) {
+        throw new Error('scaled worker constructor failed');
+      }
+      firstWorker = this;
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 1,
+    targetWorkers: 1,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 50
+  });
+  await manager.initialize();
+  manager.resizeWorkers(2, { reason: 'required-worker-constructor-test' });
+
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+  assert.equal(manager.workers.length, 0);
+  assert.equal(firstWorker.terminated, true);
+});
+
+test('ComputeManager cancels a bootstrap timeout when resize retires that worker', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const createdWorkers = [];
+
+  globalThis.Worker = class ScalingWorker {
+    constructor() {
+      createdWorkers.push(this);
+      if (createdWorkers.length === 1) {
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+      }
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    minWorkers: 1,
+    targetWorkers: 1,
+    maxWorkers: 2,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 10
+  });
+  await manager.initialize();
+  manager.resizeWorkers(2, { reason: 'required-worker-test-up' });
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'bootstrapping');
+  manager.resizeWorkers(1, { reason: 'required-worker-test-down' });
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'ready');
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'ready');
+  assert.equal(manager.workers.length, 1);
+  assert.equal(createdWorkers[0].terminated, undefined);
+  assert.equal(createdWorkers[1].terminated, true);
+  await manager.destroy();
+});
+
+test('ComputeManager can initialize again after destroy cancels pending worker bootstrap', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const createdWorkers = [];
+
+  class HangingWorker {
+    constructor() {
+      createdWorkers.push(this);
+    }
+
+    addEventListener() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  globalThis.Worker = HangingWorker;
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 100
+  });
+  const firstInitialization = manager.initialize();
+  await Promise.resolve();
+  const staleErrorHandler = createdWorkers[0].onerror;
+  await manager.destroy();
+  await assert.rejects(
+    firstInitialization,
+    (error) => error?.code === 'ERR_COMPUTE_MANAGER_DESTROYED'
+  );
+  assert.equal(createdWorkers[0].terminated, true);
+  assert.equal(createdWorkers[0].onerror, null);
+  staleErrorHandler?.(new Error('late error from destroyed worker'));
+  assert.equal(manager.workerRequirementError, null);
+  assert.equal(manager.initialized, false);
+
+  globalThis.Worker = class ReadyWorker extends HangingWorker {
+    constructor() {
+      super();
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+    }
+  };
+  await manager.initialize();
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'ready');
+  await manager.destroy();
+});
+
 test('ComputeManager falls back inline when a worker fails after dispatch', async (t) => {
   const originalWorker = globalThis.Worker;
   let createdWorker = null;
@@ -115,6 +680,73 @@ test('ComputeManager falls back inline when a worker fails after dispatch', asyn
   assert.equal(stats.workerUtilization.workers[0].submitted, 1);
   assert.equal(stats.workerUtilization.workers[0].abandoned, 1);
   assert.equal(stats.workerUtilization.workers[0].activeTaskCount, 0);
+});
+
+test('ComputeManager rejects active and queued tasks when a required worker fails', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let createdWorker = null;
+
+  class ReadyWorker {
+    constructor() {
+      createdWorker = this;
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }));
+    }
+
+    addEventListener() {}
+
+    postMessage(message) {
+      this.lastMessage = message;
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  globalThis.Worker = ReadyWorker;
+  t.after(() => {
+    if (originalWorker === undefined) {
+      delete globalThis.Worker;
+    } else {
+      globalThis.Worker = originalWorker;
+    }
+  });
+
+  const manager = new ComputeManager({
+    maxWorkers: 1,
+    requireWorkers: true,
+    workerBootstrapTimeoutMs: 50
+  });
+  await manager.initialize();
+  const activePromise = manager.submitTask({
+    module: fixtureModuleUrl,
+    exportName: 'sumTask',
+    data: { a: 7, b: 5 }
+  });
+  const queuedPromise = manager.submitTask({
+    module: fixtureModuleUrl,
+    exportName: 'sumTask',
+    data: { a: 3, b: 4 }
+  });
+  const outcomesPromise = Promise.allSettled([activePromise, queuedPromise]);
+
+  await Promise.resolve();
+  assert.equal(createdWorker.lastMessage?.type, 'run');
+  assert.equal(manager.activeTasks.size, 1);
+  assert.equal(manager.taskQueue.length, 1);
+  createdWorker.onerror({ message: 'worker lost' });
+
+  const outcomes = await outcomesPromise;
+  assert.deepEqual(outcomes.map((outcome) => outcome.status), ['rejected', 'rejected']);
+  assert.ok(outcomes.every((outcome) => (
+    outcome.reason?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+  )));
+  assert.equal(manager.getCapabilities().workerRequirement.status, 'blocked');
+  assert.equal(manager.activeTasks.size, 0);
+  assert.equal(manager.taskQueue.length, 0);
+  assert.equal(createdWorker.terminated, true);
+  assert.equal(manager.getStats().totalTasksFailed, 2);
+  assert.equal(manager.getStats().inlineTasksCompleted, 0);
 });
 
 test('ComputeManager keeps affinity-key tasks on the assigned worker', async (t) => {

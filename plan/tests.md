@@ -1,5 +1,34 @@
 ## PeerCompute Test Strategy
 
+### ULG release and production backend gate - 2026-08-21 AKDT
+
+- Required-worker unit coverage must prove the default optional-worker path
+  still validates task payloads before initialization and retains inline
+  fallback, while opt-in required-worker mode admits every current worker's
+  real `ready` acknowledgement and fails closed on unavailable construction,
+  partial-pool constructor failure, startup and scale-up handshake timeout,
+  concurrent submission before admission, and active/queued worker loss.
+  Resize retirement, zero-target clamping, destroy/reinitialize, and late
+  callbacks from removed workers must not poison a healthy or replacement pool.
+- NodeKernel coverage must prove `requireWorkers` and
+  `workerBootstrapTimeoutMs` reach `ComputeManager`, and that initialization
+  failure disconnects/destroys already-created managers instead of leaving a
+  partially initialized kernel behind.
+- Multiscale worker-build coverage must execute the custom worker protocol,
+  resolve production solver descriptor URLs, build into a test-owned temporary
+  directory, require the stable qgrid/qmat/ULG module filenames, traverse every
+  emitted relative import, import the built task modules, and observe the built
+  worker readiness acknowledgement.
+- The generated release gate must require every demo and docs fallback config
+  to advertise the production WSS peer plus STUN and authenticated TURN UDP/TCP,
+  every source config to point at the production HTTPS runtime config, and every
+  generated HTML/module reference to resolve locally.
+- Production backend verification is a focused operational gate, not a chaos
+  run: check HTTPS config status/CORS, WSS upgrade, IPv4/IPv6 STUN binding,
+  authenticated TURN allocation over UDP/TCP, public listeners, and a two-page
+  relay-only CubeChat media path. Remote service mutation additionally requires
+  verified administrative access, a pre-change snapshot, and a rollback path.
+
 ### Planned root-node validation
 
 - Root node work is tracked in `plan/root-node-todo.md`.
@@ -37,8 +66,10 @@
 - PASS: `node --test demos/cubechat/src/p2p/rtcConfig.test.js` passed `5/5`;
   direct/nested ICE, TURN credentials, RTC policies, invalid entries, legacy
   `url`, and Google-STUN fallback are covered.
-- PASS: `npm --prefix peercompute run test:unit` passed `190`, skipped `1`, and
-  failed `0`; `npm run test:backend` passed `20/20`.
+- PASS: after the release worker additions, `npm --prefix peercompute run
+  test:unit` passed `204`, skipped `1`, and failed `0`; `npm --prefix
+  demos/multiscale test` passed `206/206`; `npm run test:backend` passed
+  `21/21`.
 - PASS: fresh temporary CubeChat and SneakyWoods Vite production builds
   completed. `RUNTIME_P2P_DOCS_ROOT` let the browser gate consume those builds
   without mutating the already-dirty tracked `docs/` tree.

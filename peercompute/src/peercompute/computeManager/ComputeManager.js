@@ -10,6 +10,7 @@ function createDefaultComputeWorker() {
 }
 
 const WORKER_HARD_CAP = 128;
+const DEFAULT_REQUIRED_WORKER_BOOTSTRAP_TIMEOUT_MS = 5000;
 export const COMPUTE_WORKER_UTILIZATION_SCHEMA = 'peercompute.compute.worker-utilization.v0';
 export const COMPUTE_TASK_PLACEMENT_SCHEMA = 'peercompute.compute.task-placement.v0';
 export const COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA = 'peercompute.compute.remote-placement-provenance.v0';
@@ -973,6 +974,16 @@ export class ComputeManager {
     this.config = {
       enableWebGPU: config.enableWebGPU || false,
       enableWorkers: config.enableWorkers !== false,
+      // Most PeerCompute clients may intentionally choose inline execution.
+      // A browser simulation can opt into this stricter policy when a worker
+      // pool is an admission requirement rather than an optimization.
+      requireWorkers: config.requireWorkers === true,
+      workerBootstrapTimeoutMs: normalizeInteger(
+        config.workerBootstrapTimeoutMs,
+        DEFAULT_REQUIRED_WORKER_BOOTSTRAP_TIMEOUT_MS,
+        1,
+        60000
+      ),
       minWorkers: this.workerPolicy.minWorkers,
       targetWorkers: this.workerPolicy.targetWorkers,
       maxWorkers: this.workerPolicy.maxWorkers || defaultWorkers,
@@ -983,6 +994,13 @@ export class ComputeManager {
     this.config.targetWorkers = this.workerPolicy.targetWorkers;
     this.config.maxWorkers = this.workerPolicy.maxWorkers;
     this.config.autoScaleWorkers = this.workerPolicy.autoScale;
+    this.config.requireWorkers = config.requireWorkers === true;
+    this.config.workerBootstrapTimeoutMs = normalizeInteger(
+      config.workerBootstrapTimeoutMs,
+      DEFAULT_REQUIRED_WORKER_BOOTSTRAP_TIMEOUT_MS,
+      1,
+      60000
+    );
 
     this.workers = [];
     this.taskQueue = [];
@@ -992,6 +1010,10 @@ export class ComputeManager {
     this.taskGraphCacheArtifacts = new Map();
     this.workerAffinities = new Map();
     this.workerIds = new WeakMap();
+    this.workerBootstrap = new WeakMap();
+    this.workerRequirementError = null;
+    this.workerInitializationPromise = null;
+    this.workerLifecycleRevision = 0;
     this.workerUtilization = new Map();
     this.nextWorkerOrdinal = 1;
     this.inlineExecutorId = 'inline';
@@ -1185,10 +1207,18 @@ export class ComputeManager {
    * @returns {Promise<void>}
    */
   async initialize() {
+    if (this.workerRequirementError) throw this.workerRequirementError;
+    if (this.workerInitializationPromise) return this.workerInitializationPromise;
     if (this.initialized) return;
+    const lifecycleRevision = this.workerLifecycleRevision;
     this.initialized = true;
 
     if (!this._supportsWorkers()) {
+      if (this.config.requireWorkers) {
+        throw this._failRequiredWorkerPool(this._createRequiredWorkerError(
+          'browser Worker construction is unavailable or workers were disabled'
+        ));
+      }
       console.warn('[ComputeManager] Web Workers not available; falling back to inline execution');
       return;
     }
@@ -1199,8 +1229,92 @@ export class ComputeManager {
     }
 
     if (this.workers.length === 0) {
+      if (this.config.requireWorkers) {
+        throw this._failRequiredWorkerPool(
+          this.workerRequirementError || this._createRequiredWorkerError(
+            'no browser worker could be constructed during bootstrap'
+          )
+        );
+      }
       console.warn('[ComputeManager] Worker bootstrap failed; falling back to inline execution');
+      return;
     }
+
+    if (this.config.requireWorkers) {
+      const initializationPromise = this._waitForRequiredWorkerBootstrap();
+      this.workerInitializationPromise = initializationPromise;
+      try {
+        await initializationPromise;
+        if (this.workerLifecycleRevision !== lifecycleRevision) {
+          throw Object.assign(
+            new Error('ComputeManager was destroyed during worker bootstrap'),
+            {
+              name: 'ComputeManagerDestroyedError',
+              code: 'ERR_COMPUTE_MANAGER_DESTROYED'
+            }
+          );
+        }
+        if (this.workerRequirementError) throw this.workerRequirementError;
+        const requirement = this._getWorkerRequirementReport();
+        if (
+          requirement.workerCount === 0
+          || requirement.readyWorkerCount !== requirement.workerCount
+        ) {
+          throw this._createRequiredWorkerError(
+            'the required worker pool changed before admission completed'
+          );
+        }
+      } catch (error) {
+        if (this.workerLifecycleRevision !== lifecycleRevision) throw error;
+        throw this._failRequiredWorkerPool(error);
+      } finally {
+        if (this.workerInitializationPromise === initializationPromise) {
+          this.workerInitializationPromise = null;
+        }
+      }
+    }
+  }
+
+  /**
+   * Stop worker execution and reject work that can no longer complete.
+   * @returns {Promise<void>}
+   */
+  async destroy() {
+    this.workerLifecycleRevision += 1;
+    clearTimeout(this.scaleDownTimer);
+    this.scaleDownTimer = null;
+
+    const error = this.workerRequirementError || Object.assign(
+      new Error('ComputeManager was destroyed before pending work completed'),
+      {
+        name: 'ComputeManagerDestroyedError',
+        code: 'ERR_COMPUTE_MANAGER_DESTROYED'
+      }
+    );
+
+    for (const worker of [...this.workers]) {
+      this._markWorkerBootstrapFailed(worker, error);
+      this._removeWorker(worker);
+    }
+    for (const [taskId, task] of this.activeTasks.entries()) {
+      this.activeTasks.delete(taskId);
+      this._rejectTaskGpuResidentLaneLease(task, error.code);
+      task.reject?.(error);
+    }
+    while (this.taskQueue.length > 0) {
+      const task = this.taskQueue.shift();
+      this._rejectTaskGpuResidentLaneLease(task, error.code);
+      task.reject?.(error);
+    }
+
+    this.workerAffinities.clear();
+    this.activeTaskGraphs.clear();
+    this.commitDeltaHandler = null;
+    this.initialized = false;
+    this.workerRequirementError = null;
+    this.workerInitializationPromise = null;
+    this.workerBootstrap = new WeakMap();
+    this.workerIds = new WeakMap();
   }
 
   async refreshGpuLimits() {
@@ -1260,6 +1374,12 @@ export class ComputeManager {
       throw new Error('wasm-webgpu tasks must provide hostModule or module');
     }
 
+    if (this.workerRequirementError) throw this.workerRequirementError;
+    if (!this.initialized || (this.config.requireWorkers && this.workerInitializationPromise)) {
+      await this.initialize();
+    }
+    if (this.workerRequirementError) throw this.workerRequirementError;
+
     const idSource = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
@@ -1298,10 +1418,8 @@ export class ComputeManager {
       affinityKey: task.affinityKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey
     };
 
-    if (!this.initialized) {
-      await this.initialize();
-    }
     this._ensureTargetWorkers({ reason: 'task-demand' });
+    if (this.workerRequirementError) throw this.workerRequirementError;
 
     return new Promise((resolve, reject) => {
       const wrapped = {
@@ -1346,10 +1464,13 @@ export class ComputeManager {
   resizeWorkers(targetCount, { reason = 'manual' } = {}) {
     const previousTargetWorkers = this.targetWorkerCount;
     const previousWorkerCount = this.workers.length;
+    const minimumTarget = this.config.requireWorkers
+      ? Math.max(1, this.workerPolicy.minWorkers)
+      : this.workerPolicy.minWorkers;
     const nextTarget = normalizeInteger(
       targetCount,
       this.targetWorkerCount,
-      this.workerPolicy.minWorkers,
+      minimumTarget,
       this.workerPolicy.maxWorkers
     );
     this.targetWorkerCount = nextTarget;
@@ -2474,6 +2595,7 @@ export class ComputeManager {
       lastWorkerResize: JSON.parse(JSON.stringify(this.lastWorkerResize)),
       workerResizeHistory: JSON.parse(JSON.stringify(this.workerResizeHistory)),
       workerAutoScaleHold: this._getWorkerAutoScaleHoldStatus(),
+      workerRequirement: this._getWorkerRequirementReport(),
       gpuResidentLanes: this.getGpuResidentLaneStats(),
       stats: this.getStats()
     };
@@ -2531,6 +2653,7 @@ export class ComputeManager {
       lastWorkerResize: JSON.parse(JSON.stringify(this.lastWorkerResize)),
       workerResizeHistory: JSON.parse(JSON.stringify(this.workerResizeHistory)),
       workerAutoScaleHold: this._getWorkerAutoScaleHoldStatus(),
+      workerRequirement: this._getWorkerRequirementReport(),
       workerUtilization: this._getWorkerUtilizationReport(),
       activeTaskGraphs: this.listActiveTaskGraphs(),
       gpuResidentLanes: this.getGpuResidentLaneStats(),
@@ -2603,6 +2726,166 @@ export class ComputeManager {
   /* Internal helpers */
   _supportsWorkers() {
     return typeof Worker !== 'undefined' && this.config.enableWorkers;
+  }
+
+  _createRequiredWorkerError(reason, cause = null) {
+    const error = new Error(`ComputeManager requires a bootstrapped browser worker: ${reason}`);
+    error.name = 'RequiredWorkerUnavailableError';
+    error.code = 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE';
+    error.reason = reason;
+    if (cause != null) error.cause = cause;
+    return error;
+  }
+
+  _failRequiredWorkerPool(error) {
+    const requiredWorkerError = error?.code === 'ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE'
+      ? error
+      : this._createRequiredWorkerError(
+          error?.message || String(error || 'the required worker pool failed'),
+          error
+        );
+    this.workerRequirementError = requiredWorkerError;
+    this.initialized = false;
+    clearTimeout(this.scaleDownTimer);
+    this.scaleDownTimer = null;
+
+    for (const worker of [...this.workers]) {
+      this._markWorkerBootstrapFailed(worker, requiredWorkerError);
+      this._removeWorker(worker);
+    }
+    for (const [taskId, task] of this.activeTasks.entries()) {
+      this.activeTasks.delete(taskId);
+      this._rejectTaskGpuResidentLaneLease(task, requiredWorkerError.code);
+      this._recordTaskCompletion(task, {
+        ok: false,
+        mode: task.executionMode || 'worker',
+        errorKind: 'required-worker-unavailable',
+        errorMessage: requiredWorkerError.message
+      });
+      task.reject(requiredWorkerError);
+    }
+    this._rejectQueuedTasksForRequiredWorkerFailure(requiredWorkerError);
+    this.workerAffinities.clear();
+    return requiredWorkerError;
+  }
+
+  _createWorkerBootstrapRecord(worker) {
+    let resolve = null;
+    let reject = null;
+    const record = {
+      status: 'bootstrapping',
+      startedAt: nowMs(),
+      readyAt: null,
+      reason: null,
+      promise: null,
+      resolve: null,
+      reject: null,
+      timeout: null,
+      messageErrorListener: null
+    };
+    record.promise = new Promise((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    // A default-mode worker failure must retain the historical fallback
+    // behavior without producing an unhandled rejected bootstrap promise.
+    record.promise.catch(() => {});
+    record.resolve = resolve;
+    record.reject = reject;
+    this.workerBootstrap.set(worker, record);
+    if (this.config.requireWorkers) {
+      const timeoutMs = this.config.workerBootstrapTimeoutMs;
+      record.timeout = setTimeout(() => {
+        if (record.status !== 'bootstrapping') return;
+        this._handleWorkerFailure(worker, this._createRequiredWorkerError(
+          `worker bootstrap did not acknowledge readiness within ${timeoutMs}ms`
+        ));
+      }, timeoutMs);
+    }
+    return record;
+  }
+
+  _markWorkerBootstrapped(worker) {
+    const record = this.workerBootstrap.get(worker);
+    if (!record || record.status !== 'bootstrapping') return;
+    clearTimeout(record.timeout);
+    record.timeout = null;
+    record.status = 'ready';
+    record.readyAt = nowMs();
+    record.resolve?.(worker);
+  }
+
+  _markWorkerBootstrapFailed(worker, error) {
+    const record = this.workerBootstrap.get(worker);
+    if (!record || record.status !== 'bootstrapping') return;
+    clearTimeout(record.timeout);
+    record.timeout = null;
+    record.status = 'failed';
+    record.reason = error?.message || String(error || 'worker bootstrap failed');
+    record.reject?.(error instanceof Error
+      ? error
+      : this._createRequiredWorkerError(record.reason));
+  }
+
+  _markWorkerBootstrapRetired(worker) {
+    const record = this.workerBootstrap.get(worker);
+    if (!record || record.status !== 'bootstrapping') return;
+    clearTimeout(record.timeout);
+    record.timeout = null;
+    record.status = 'retired';
+    record.reason = 'worker retired before bootstrap completed';
+    // A deliberate resize is not a bootstrap failure. Resolve any startup
+    // barrier that captured this record; current workers still determine the
+    // required-pool capability state.
+    record.resolve?.(worker);
+  }
+
+  _getWorkerRequirementReport() {
+    const readyWorkerCount = this.workers.filter((worker) => (
+      this.workerBootstrap.get(worker)?.status === 'ready'
+    )).length;
+    const bootstrappingWorkerCount = this.workers.filter((worker) => (
+      this.workerBootstrap.get(worker)?.status === 'bootstrapping'
+    )).length;
+    const required = this.config.requireWorkers === true;
+    return {
+      required,
+      status: this.workerRequirementError
+        ? 'blocked'
+        : !required
+          ? 'not-required'
+          : readyWorkerCount > 0 && readyWorkerCount === this.workers.length
+            ? 'ready'
+            : 'bootstrapping',
+      workerCount: this.workers.length,
+      readyWorkerCount,
+      bootstrappingWorkerCount,
+      reason: this.workerRequirementError?.message || null
+    };
+  }
+
+  async _waitForRequiredWorkerBootstrap() {
+    const records = this.workers
+      .map((worker) => this.workerBootstrap.get(worker))
+      .filter(Boolean);
+    if (records.length === 0) {
+      throw this._createRequiredWorkerError('no browser worker was registered during bootstrap');
+    }
+    await Promise.all(records.map((record) => record.promise));
+  }
+
+  _rejectQueuedTasksForRequiredWorkerFailure(error) {
+    while (this.taskQueue.length > 0) {
+      const task = this.taskQueue.shift();
+      this._rejectTaskGpuResidentLaneLease(task, error.code || 'required-worker-unavailable');
+      this._recordTaskCompletion(task, {
+        ok: false,
+        mode: 'worker',
+        errorKind: 'required-worker-unavailable',
+        errorMessage: error.message
+      });
+      task.reject(error);
+    }
   }
 
   _canDispatchRemotePlacement(placement = {}) {
@@ -3419,6 +3702,7 @@ export class ComputeManager {
       const worker = this.workerBootstrapURL
         ? new Worker(this.workerBootstrapURL, { type: 'module' })
         : createDefaultComputeWorker();
+      this._createWorkerBootstrapRecord(worker);
       const ordinal = this.nextWorkerOrdinal;
       this.nextWorkerOrdinal += 1;
       const workerId = `worker-${ordinal}`;
@@ -3432,12 +3716,22 @@ export class ComputeManager {
       worker.onmessage = (evt) => this._handleWorkerMessage(worker, evt.data);
       worker.onerror = (err) => this._handleWorkerFailure(worker, err);
       if (typeof worker.addEventListener === 'function') {
-        worker.addEventListener('messageerror', (err) => this._handleWorkerFailure(worker, err));
+        const record = this.workerBootstrap.get(worker);
+        const messageErrorListener = (err) => this._handleWorkerFailure(worker, err);
+        if (record) record.messageErrorListener = messageErrorListener;
+        worker.addEventListener('messageerror', messageErrorListener);
       }
       this.workers.push(worker);
       return worker;
     } catch (err) {
       this.workerSpawnFailures += 1;
+      if (this.config.requireWorkers) {
+        this._failRequiredWorkerPool(this._createRequiredWorkerError(
+          'constructing a browser worker threw',
+          err
+        ));
+        return null;
+      }
       console.warn('[ComputeManager] Failed to start worker; falling back to inline execution', err);
       return null;
     }
@@ -3886,6 +4180,19 @@ export class ComputeManager {
   }
 
   _removeWorker(worker, { terminate = true } = {}) {
+    this._markWorkerBootstrapRetired(worker);
+    const bootstrapRecord = this.workerBootstrap.get(worker);
+    worker.onmessage = null;
+    worker.onerror = null;
+    if (
+      bootstrapRecord?.messageErrorListener
+      && typeof worker.removeEventListener === 'function'
+    ) {
+      try {
+        worker.removeEventListener('messageerror', bootstrapRecord.messageErrorListener);
+      } catch {}
+      bootstrapRecord.messageErrorListener = null;
+    }
     const workerId = this._workerId(worker) || 'worker-unknown';
     if (workerId && this.workerUtilization.has(workerId)) {
       const stats = this.workerUtilization.get(workerId);
@@ -4106,12 +4413,17 @@ export class ComputeManager {
     if (this._requiresInlineExecution(task)) return false;
     const affinityKey = task.payload?.affinityKey;
     const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
+    const dispatchableWorkers = this.config.requireWorkers
+      ? this.workers.filter((entry) => this.workerBootstrap.get(entry)?.status === 'ready')
+      : this.workers;
     let worker = null;
 
     if (affinityKey && this.workerAffinities.has(affinityKey)) {
       const assigned = this.workerAffinities.get(affinityKey);
       if (!this.workers.includes(assigned)) {
         this.workerAffinities.delete(affinityKey);
+      } else if (!dispatchableWorkers.includes(assigned)) {
+        return false;
       } else if (busyWorkers.has(assigned)) {
         return false;
       } else {
@@ -4121,8 +4433,8 @@ export class ComputeManager {
 
     if (!worker) {
       const assignedWorkers = new Set(this.workerAffinities.values());
-      worker = this.workers.find((entry) => !busyWorkers.has(entry) && !assignedWorkers.has(entry))
-        || this.workers.find((entry) => !busyWorkers.has(entry));
+      worker = dispatchableWorkers.find((entry) => !busyWorkers.has(entry) && !assignedWorkers.has(entry))
+        || dispatchableWorkers.find((entry) => !busyWorkers.has(entry));
       if (worker && affinityKey) {
         this.workerAffinities.set(affinityKey, worker);
       }
@@ -4139,7 +4451,11 @@ export class ComputeManager {
     };
     this._recordExecutorStart(workerId, startedTask, { kind: 'worker' });
     this.activeTasks.set(task.id, startedTask);
-    worker.postMessage({ type: 'run', ...task.payload });
+    try {
+      worker.postMessage({ type: 'run', ...task.payload });
+    } catch (error) {
+      this._handleWorkerFailure(worker, error);
+    }
     return true;
   }
 
@@ -4229,7 +4545,13 @@ export class ComputeManager {
   }
 
   _handleWorkerMessage(worker, message) {
+    if (!this.workers.includes(worker)) return;
     const { id, type, result, error } = message || {};
+    if (type === 'ready') {
+      this._markWorkerBootstrapped(worker);
+      this._scheduleNext();
+      return;
+    }
     const task = this.activeTasks.get(id);
     if (!task) return;
 
@@ -4256,9 +4578,18 @@ export class ComputeManager {
   }
 
   _handleWorkerFailure(worker, error) {
-    console.warn('[ComputeManager] Worker error; falling back to inline execution', error);
-    this._removeWorker(worker);
+    if (!this.workers.includes(worker)) return;
+    this._markWorkerBootstrapFailed(worker, error);
 
+    if (this.config.requireWorkers) {
+      this._failRequiredWorkerPool(this._createRequiredWorkerError(
+        'an active browser worker failed',
+        error
+      ));
+      return;
+    }
+
+    this._removeWorker(worker);
     const stranded = [];
     for (const [taskId, task] of this.activeTasks.entries()) {
       if (task.worker !== worker) continue;
@@ -4266,6 +4597,7 @@ export class ComputeManager {
       stranded.push(task);
     }
 
+    console.warn('[ComputeManager] Worker error; falling back to inline execution', error);
     stranded.forEach((task) => {
       if (this.workers.length > 0 && this._dispatchToWorker(task)) {
         return;
@@ -4279,8 +4611,24 @@ export class ComputeManager {
 
   _scheduleNext() {
     if (this.taskQueue.length === 0) return;
+    if (this.workerRequirementError) {
+      this._rejectQueuedTasksForRequiredWorkerFailure(this.workerRequirementError);
+      return;
+    }
     this._ensureTargetWorkers({ reason: 'queue-dispatch' });
+    if (this.workerRequirementError) {
+      this._rejectQueuedTasksForRequiredWorkerFailure(this.workerRequirementError);
+      return;
+    }
     if (this.workers.length === 0) {
+      if (this.config.requireWorkers) {
+        const error = this._createRequiredWorkerError(
+          'the required worker pool is empty while work is queued'
+        );
+        this.workerRequirementError = error;
+        this._rejectQueuedTasksForRequiredWorkerFailure(error);
+        return;
+      }
       while (this.taskQueue.length > 0) {
         this._executeInline(this.taskQueue.shift());
       }
@@ -4302,6 +4650,7 @@ export class ComputeManager {
   }
 
   _ensureTargetWorkers({ reason = 'task-demand' } = {}) {
+    if (this.workerRequirementError) return this.workers.length;
     if (!this.initialized || !this._supportsWorkers()) return this.workers.length;
     const desired = normalizeInteger(
       this.targetWorkerCount,

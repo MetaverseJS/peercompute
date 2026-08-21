@@ -16,6 +16,18 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ### Current Validation Snapshot - 2026-08-21 AKDT
 
+- The current release slice makes browser-worker execution an explicit policy.
+  `ComputeManager` keeps its default optional-worker/inline-fallback behavior,
+  while `requireWorkers: true` requires a real worker-module `ready`
+  acknowledgement within a bounded timeout and rejects bootstrap, queued, and
+  active work with `ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE` rather than
+  changing execution mode. `NodeKernel` forwards that policy and cleans up
+  partially initialized managers when required-worker admission fails.
+- Multiscale's custom worker now participates in that readiness contract. Its
+  production build has stable Rollup entries for
+  `quantumOrbitalGridTasks.js`, `quantumMaterialPotentialTasks.js`, and
+  `ulgRuntimeTasks.js`, matching the URLs returned by production solver
+  descriptors instead of leaving those document-relative imports as 404s.
 - The focused SneakyWoods/CubeChat repair is complete without a full chaos-lab
   run. `StateManager.observeNamespace()` now follows the winning nested
   `Y.Map` after concurrent namespace creation, removes keys that existed only
@@ -41,8 +53,9 @@ The root node should exist on a domain secured with SSL enabling all executable 
   four-peer production regression.
 - NodeKernel now recognizes provider-owned `yjs-sync-request` and
   `yjs-sync-response` messages without duplicate handling or false unknown-
-  message warnings. The full PeerCompute unit suite passed `190`, skipped one,
-  and failed zero; backend/release checks passed `20/20`.
+  message warnings. After the release worker additions, the full PeerCompute
+  unit suite passed `204`, skipped one, and failed zero; Multiscale passed
+  `206/206`; backend/release checks passed `21/21`.
 - Fresh CubeChat and SneakyWoods builds were written only to a test-owned
   temporary directory because tracked `docs/` output already contains unrelated
   worktree changes. The temporary builds, coturn, relays, browsers, and test

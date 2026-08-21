@@ -619,6 +619,276 @@ Instructions: This file contains a detailed implementation log describing choice
   full-physics readiness.
 - No push was attempted.
 
+## 2026-08-21 11:56:26 AKDT - Audit whether to commit and push all local `ulg` changes
+
+### Prompt
+
+- User asked: "should we commit and push all local changes to ulg?"
+- Treated this as a recommendation and release-readiness audit. Did not stage,
+  commit, push, clean, restore, or rewrite any existing source, generated
+  output, configuration, or user work.
+- Used Node `v24.18.0` and the ICC control plane under durable task
+  `audit-ulg-local-push-20260821`.
+
+### Files Touched
+
+- Appended this required prompt/audit record to `plan/log.md` only.
+- No code, test, demo, relay configuration, generated bundle, or remote Git
+  reference was changed by this audit.
+
+### Actions And Findings
+
+- Resolved the registered `peercompute` repository through ICC, checked fresh
+  index/memory/Git-history status, and built a bounded audit dossier.
+- Inventoried the worktree before this log append: `102` entries comprising
+  four required-worker source/test files and `98` demo relay/generated-doc
+  files. No change was staged.
+- Queried the authoritative remote without fetching or mutating refs. Remote
+  `ulg` remained `2834322faf88725a821403830669e19dbdae0c9d`; local HEAD was
+  `5c64a7e933ad5f15e19e20c2024f9118925d3d11`, exactly one commit ahead and
+  zero behind. Pushing the existing commit alone would therefore be a clean
+  fast-forward.
+- Reviewed the four-file required-worker slice. It adds an opt-in
+  `requireWorkers` policy, worker-ready acknowledgement, bootstrap timeout,
+  NodeKernel option forwarding, failure telemetry, and focused tests. Its
+  scoped ICC diff guard passed and its focused suites passed.
+- Found that the required-worker slice is not production-complete:
+  Multiscale's supported custom bootstrap does not send the new `ready`
+  acknowledgement; a required-worker NodeKernel initialization failure leaves
+  already-created managers behind; `submitTask()` now creates/initializes
+  workers before rejecting an invalid payload for default callers; no demo or
+  current ULG source enables the option; and its browser/custom-bootstrap,
+  timeout, cleanup, queue-failure, plan, test-strategy, README, and log contract
+  coverage is incomplete.
+- Audited all generated relay files. Every one of the 22 current demo/docs
+  `relay-config.json` fallbacks has the same local-test payload: a
+  `localhost:8080` relay, `floodsub`, and no WebRTC/STUN/TURN configuration.
+  That differs from `config/relay.json`, whose production generator emits
+  `secretworkshop.net`, `gossipsub`, and STUN/TURN. The demo-config ICC guard
+  failed its deletion-line policy and the docs guard failed on the large
+  hashed-asset replacement set.
+- Confirmed all 22 untracked `relay-config-source.json` files consistently point
+  to `https://secretworkshop.net/peercompute/config/relay-config.json`; the
+  live resource returned HTTP 200 with usable CORS. They were intentionally
+  absent at HEAD and should not be swept into an all-files commit without an
+  explicit tracking/deployment decision.
+- Proved the checked-in generated application bundles are stale relative to
+  current source. In particular, the CubeChat asset referenced by
+  `docs/cubechat/index.html` still contains both hardcoded Google-STUN
+  `RTCPeerConnection` paths and no `iceTransportPolicy`, so it omits the
+  configured TURN-media repair. The SneakyWoods bundle still contains the old
+  detached namespace-observer behavior.
+- Checked generated HTML linkage: 94 local top-level references resolved and
+  no deleted hashed asset remained referenced. This shows the old generated
+  set is mechanically linked, not that it represents the repaired source.
+- Built all 11 demos in isolated temporary Node-24 output roots. Builds passed
+  with the existing warnings, and fresh output differed from the dirty docs
+  for Hyperborea, CubeChat, Multiscale, SneakyWoods, DaddyGo, Schrodinger, and
+  NetViz.
+- Found a separate pre-existing Multiscale deployment blocker: production
+  descriptors resolve stable `quantumOrbitalGridTasks.js`,
+  `quantumMaterialPotentialTasks.js`, and `ulgRuntimeTasks.js`, but neither the
+  current docs nor a fresh Vite build emits those stable files. All three live
+  GitHub Pages URLs returned 404, breaking those planned worker module paths.
+- Scanned the generated/config slice for private keys and common cloud/API
+  tokens; none were found. The old VPN endpoint `100.86.83.35` is absent.
+
+### Commands And Results
+
+- `git status --short --branch`, `git diff --name-status`, `git diff --stat`,
+  `git diff --numstat`, `git ls-files --others --exclude-standard`,
+  `git branch -vv`, and `git log --oneline --decorate -8`: PASS; established
+  the split worktree inventory and one-commit branch lead.
+- `git ls-remote --heads origin refs/heads/ulg` and
+  `git rev-list --left-right --count origin/ulg...HEAD`: PASS; remote/local
+  divergence was `0 1`.
+- `git diff --check`: PASS.
+- `node --test peercompute/tests/unit/computeManager.worker.test.js`: PASS
+  `9/9` on Node `v24.18.0`.
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js`: PASS `18/18`.
+- Focused manual required-worker probes: the timeout path failed closed and
+  removed its worker as designed; the NodeKernel cleanup and invalid-task
+  ordering probes exposed the gaps described above.
+- ICC `codebase_guard_diff`: PASS for the four source/test paths; FAIL for the
+  demo relay-config slice (`275` policy-deleted lines) and generated docs slice
+  (`17` tracked deletions plus untracked replacements).
+- Isolated fresh builds for all 11 demos: PASS with existing warnings. No
+  tracked output was overwritten by those comparisons.
+- Local HTML asset-reference check: PASS, `94` references and `0` missing.
+- Live production relay-config and three Multiscale stable-module URL probes:
+  relay config PASS HTTP 200/CORS; all three stable worker module URLs FAIL
+  HTTP 404.
+
+### Recommendation And Open Questions
+
+- Do not `git add -A`, commit, or push the whole current worktree.
+- The already committed repair `5c64a7e9` is independently validated and may
+  be pushed alone as a clean fast-forward, but that source-only push will not
+  update the GitHub Pages bundles.
+- Hold the required-worker slice for a separate change after fixing its custom
+  bootstrap contract, NodeKernel cleanup and validation-order regressions,
+  adding real-browser/integration coverage, and updating README/plan/tests/log.
+- Fix the three missing stable Multiscale worker entries before calling a new
+  generated deployment complete.
+- From the final reviewed source snapshot, regenerate production relay configs
+  and all docs under Node 24, validate release and focused runtime behavior,
+  and commit the complete asset additions/deletions/references atomically as a
+  separate deployment commit.
+- No full chaos lab was run. No push was attempted.
+
+## 2026-08-21 12:39:39 AKDT - Complete `ulg` release and deploy the production network backend
+
+### Prompt
+
+- User said: "proceed. once done id like you to desploy the backend stuff to
+  the secretworkshop/net host. its currently missing stun turn and ice."
+- Interpreted "proceed" as authorization for the audited sequence: push the
+  already-validated repair alone; finish the held required-worker and
+  Multiscale production-module slices; regenerate and validate production
+  frontend artifacts; commit and push coherent source/deploy checkpoints; then
+  update and verify the `secretworkshop.net` backend relay plus STUN/TURN/ICE.
+- Kept the full chaos lab out of scope. Credentials, private relay identity,
+  SSH material, and unredacted remote secrets must not be written to this log.
+
+### Initial Actions
+
+- Read and followed the installed ICC control-plane skill, resumed through ICC
+  assistant status, refreshed the stale codebase index/memory/Git-history, and
+  created task `ulg-release-secretworkshop-deploy-20260821`.
+- Reviewed `AGENTS.md`, `plan/plan.md`, `plan/tests.md`, recent `plan/log.md`,
+  `plan/branch/server-changes.md`, the production relay/coturn scripts, and the
+  current dirty source/generated-output split.
+- Pushed only validated commit
+  `5c64a7e933ad5f15e19e20c2024f9118925d3d11` to `origin/ulg`; Git reported the
+  expected fast-forward `2834322f..5c64a7e9`. No uncommitted file was included.
+- Ran ICC agent preflights and published non-overlapping leases for the root
+  release/docs/deploy scope, required-worker source/tests, and Multiscale
+  stable-worker build scope before parallel edits.
+- The first three preflight invocations mistakenly passed unsupported
+  `--plan-item-id` arguments and exited `2`; reran without that flag. Worker
+  and Multiscale preflights passed. The broad generated-output root preflight
+  correctly failed the rollback guard on the existing dirty hashed-asset
+  deletions, so the root lease was narrowed to README/plan/scripts/config and
+  passed. Generated paths will be claimed only for the final atomic rebuild.
+- Started two leased implementation reviews and one read-only production-host
+  reconnaissance task. No remote service or host configuration has been
+  changed yet.
+
+### Commands And Results So Far
+
+- `/home/cos/projects/infinite_context_coder/bin/icc index --repo peercompute --jobs 0`:
+  PASS, `595` files indexed at HEAD `5c64a7e9`.
+- `/home/cos/projects/infinite_context_coder/bin/icc build-memory --repo peercompute`:
+  PASS, `9469` chunks.
+- `/home/cos/projects/infinite_context_coder/bin/icc build-git-history --repo peercompute`:
+  PASS, `262` commits indexed.
+- `git push origin ulg`: PASS, `2834322f..5c64a7e9`.
+- ICC worker and Multiscale scoped preflights: PASS. Narrow root
+  README/plan/scripts/config preflight: PASS with expected dirty-worktree and
+  missing `origin/master` warnings.
+
+### Source And Test Implementation
+
+- Added opt-in `ComputeManager` required-worker admission. Required mode waits
+  for every admitted worker module's `{ type: 'ready' }` acknowledgement,
+  applies a per-worker bounded `workerBootstrapTimeoutMs`, reports requirement
+  state through capabilities, and rejects bootstrap, active, and queued work with
+  `ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE` instead of silently executing it
+  inline. Default optional-worker behavior remains an inline fallback.
+- Moved direct and task-graph payload validation ahead of worker startup, kept
+  constructor failure provenance, added worker teardown/rejection cleanup, and
+  added `ComputeManager.destroy()` for lifecycle ownership.
+- Adversarial review found and drove fixes for five concurrency/lifecycle holes:
+  partial multi-worker readiness, concurrent task submission during admission,
+  post-start scale-up timeout, deliberate scale-down of a bootstrapping worker,
+  and destroy/late-callback/reinitialize races. Required startup now waits for
+  the whole current pool; task submission waits on pending admission; required
+  pools cannot resize to zero; intentional retirement settles its bootstrap
+  record; removed workers lose all callbacks and late messages/errors are
+  ignored; constructor failure tears down the pool immediately; and a lifecycle
+  revision prevents an old initialization rejection from poisoning a new one.
+- Forwarded the worker requirement/timeout through `NodeKernel`; consolidated
+  manager cleanup so failed initialization and `stop()` before `start()` both
+  destroy/disconnect partial managers and unregister the kernel cleanly.
+- Updated both the core compute worker and Multiscale custom worker to emit the
+  readiness acknowledgement after their module graphs evaluate.
+- Added stable Multiscale Rollup inputs for
+  `quantumOrbitalGridTasks.js`, `quantumMaterialPotentialTasks.js`, and
+  `ulgRuntimeTasks.js`. Added a focused test that executes the custom protocol,
+  validates descriptor URLs, builds to a temporary directory, walks emitted
+  imports, imports the three built task modules, and observes readiness from the
+  built worker.
+- Strengthened backend/release tests to require the split production relay and
+  coturn service wiring plus production WSS, STUN, TURN UDP/TCP, and configured
+  TURN authentication fields without printing credential values.
+- Cleared the stale literal `config/relay.json` `publicHost`. It did not match
+  current production DNS and could be consumed as coturn `external-ip` by the
+  combined launcher. The canonical relay/runtime host remains
+  `secretworkshop.net`; NAT-specific TURN addressing now requires the explicit
+  `PCSERVER_TURN_EXTERNAL_IP` override already documented in the README.
+- Updated `README.md`, `plan/plan.md`, `plan/tests.md`,
+  `plan/branch/multiscale-ladder.md`, and
+  `plan/branch/server-changes.md` with the worker contract, stable production
+  module paths, focused release gate, and safe backend deployment boundary.
+
+### Production Backend Reconnaissance
+
+- The assumption that the host lacked STUN/TURN/ICE was not reproduced. The
+  public runtime config returned `200` with CORS and no-store, advertised the
+  dual-stack WSS peer plus Google STUN and authenticated TURN UDP/TCP, and the
+  apex WSS endpoint completed a `101` upgrade.
+- RFC 5389 STUN binding succeeded over IPv4 and IPv6. Authenticated coturn relay
+  traffic succeeded over UDP and TCP. This establishes that the backend
+  services are healthy; ICE itself is browser-side and has no separate daemon.
+- The likely user-visible gap was CubeChat's old application media code ignoring
+  runtime TURN configuration. That frontend repair is in pushed commit
+  `5c64a7e9` and will be included in the regenerated docs deployment.
+- No verified administrative path to the server is available in this session:
+  the SSH agent has no loaded identity, batch public-key attempts failed, and no
+  configured cloud CLI or matching Tailscale host was found. No remote mutation
+  or restart was attempted. The safe action is to publish/verify the frontend
+  first and avoid restarting healthy backend services unless an authenticated
+  remote comparison later proves drift.
+- The `relay.secretworkshop.net` certificate does not cover that subdomain; the
+  working production endpoint and checked-in config use the apex
+  `secretworkshop.net` hostname.
+
+### Additional Commands And Results
+
+- First combined focused run:
+  `node --test peercompute/tests/unit/computeManager.worker.test.js
+  peercompute/tests/unit/nodeKernel.start.test.js
+  demos/multiscale/tests/workerBuild.test.mjs
+  demos/tests/backend-server.test.js demos/tests/demo-release.test.js`:
+  FAIL `54/55` because a new optional-fallback test incorrectly required only
+  one worker-constructor attempt while existing autoscale retries made four.
+  The overly strict attempt-count assertion was removed; the behavior gate now
+  checks the actual contract (inline result, fallback status, failure telemetry,
+  and one inline completion).
+- The focused worker/NodeKernel gate progressed from `33/33` to final
+  `41/41` as adversarial multi-worker, concurrent-submit, resize, constructor,
+  destroy/reinitialize, and stale-callback regressions were added.
+- `npm --prefix peercompute run test:unit`: PASS `204`, SKIP `1`, FAIL `0`.
+- `npm --prefix demos/multiscale test`: PASS `206/206`, including the new
+  three-test production worker-build suite and temporary Vite build.
+- `npm run test:backend`: PASS `21/21`.
+- Syntax checks for all changed runtime/worker/Vite sources: PASS.
+- Scoped `git diff --check` over the source, tests, README, and plan files:
+  PASS.
+- All Multiscale temporary build output was removed. The full chaos lab was not
+  run.
+
+### Remaining For This Prompt
+
+- Commit and push the coherent source/tests/docs checkpoint.
+- Claim the generated-output scope, run the complete production build, validate
+  generated config/module/reference closure and focused built-browser paths,
+  then commit and push the atomic generated deployment.
+- Repeat public WSS/STUN/TURN/browser verification. A remote Git/service update
+  remains blocked until a trusted host identity and authenticated admin channel
+  are supplied; healthy services will not be restarted merely to claim a
+  deployment occurred.
+
 ## 2026-06-06 20:04:13 AKDT - Resource lease broker first pass
 
 ### Prompt

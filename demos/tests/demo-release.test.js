@@ -29,6 +29,47 @@ test('config/relay.json exists and build writes relay-config.json for demos', ()
   );
 });
 
+test('production relay config advertises WSS plus STUN and TURN UDP/TCP', () => {
+  const config = JSON.parse(read('config/relay.json'));
+  assert.equal(config.relayHost, 'secretworkshop.net');
+  assert.equal(config.relayProtocol, 'wss');
+  assert.equal(
+    config.publicHost,
+    '',
+    'production config must not derive coturn external-ip from a stale literal address'
+  );
+  assert.equal(
+    config.relayConfigUrl,
+    'https://secretworkshop.net/peercompute/config/relay-config.json'
+  );
+  assert.equal(typeof config.relayPeerId, 'string');
+  assert.ok(config.relayPeerId.length > 0, 'production relay peer id missing');
+
+  const iceServers = config.webrtc?.iceServers;
+  assert.ok(Array.isArray(iceServers), 'production ICE server list missing');
+  const urls = iceServers.flatMap((server) => (
+    Array.isArray(server?.urls) ? server.urls : [server?.urls]
+  )).filter((url) => typeof url === 'string');
+  assert.ok(urls.some((url) => url.startsWith('stun:')), 'production STUN URL missing');
+  assert.ok(
+    urls.includes('turn:secretworkshop.net:3478?transport=udp'),
+    'production TURN UDP URL missing'
+  );
+  assert.ok(
+    urls.includes('turn:secretworkshop.net:3478?transport=tcp'),
+    'production TURN TCP URL missing'
+  );
+
+  const turnServer = iceServers.find((server) => (
+    (Array.isArray(server?.urls) ? server.urls : [server?.urls])
+      .some((url) => typeof url === 'string' && url.startsWith('turn:'))
+  ));
+  assert.equal(typeof turnServer?.username, 'string', 'TURN username missing');
+  assert.ok(turnServer.username.length > 0, 'TURN username empty');
+  assert.equal(typeof turnServer?.credential, 'string', 'TURN credential missing');
+  assert.ok(turnServer.credential.length > 0, 'TURN credential empty');
+});
+
 test('backend launcher and systemd wiring include relay + turn stack', () => {
   assert.ok(exists('scripts/pcserver.sh'), 'pcserver.sh missing');
   assert.ok(exists('scripts/start-turn-prod.sh'), 'start-turn-prod.sh missing');

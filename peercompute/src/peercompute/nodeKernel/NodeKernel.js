@@ -702,6 +702,8 @@ export class NodeKernel {
         resourceProfile: this.config.resourceProfile,
         workerBootstrapURL: this.config.workerBootstrapURL || this.config.computeWorkerBootstrapURL,
         enableWorkers: this.config.enableWorkers !== false,
+        requireWorkers: this.config.requireWorkers === true,
+        workerBootstrapTimeoutMs: this.config.workerBootstrapTimeoutMs,
         gpuHub: this.gpuHub || null
       });
       await this.computeManager.initialize();
@@ -714,8 +716,61 @@ export class NodeKernel {
       console.log('[NodeKernel] Initialization complete');
       
     } catch (error) {
+      try {
+        await this._cleanupManagers();
+      } catch (cleanupError) {
+        if (error && typeof error === 'object') error.cleanupError = cleanupError;
+        console.error('[NodeKernel] Initialization cleanup failed:', cleanupError);
+      }
       console.error('[NodeKernel] Initialization failed:', error);
       throw error;
+    }
+  }
+
+  async _cleanupManagers({ writeStopped = false } = {}) {
+    const computeManager = this.computeManager;
+    const networkManager = this.networkManager;
+    const stateManager = this.stateManager;
+    const cleanupErrors = [];
+    const attempt = async (phase, callback) => {
+      try {
+        await callback();
+      } catch (error) {
+        const cleanupError = error instanceof Error ? error : new Error(String(error));
+        cleanupError.cleanupPhase ||= phase;
+        cleanupErrors.push(cleanupError);
+      }
+    };
+
+    this._stopKernelClock();
+    this._clearStateProviderSyncTimers();
+    this._stopNetVizDebugTelemetryLoop();
+    this._stopNetVizSessionBroadcast();
+    this._stopNetVizNetworkSessionLoop();
+
+    if (writeStopped && stateManager?.write) {
+      await attempt('state-status', () => stateManager.write('status', 'stopped'));
+    }
+    if (computeManager?.destroy) {
+      await attempt('compute-manager', () => computeManager.destroy());
+    }
+    if (networkManager?.disconnect) {
+      await attempt('network-manager', () => networkManager.disconnect());
+    }
+    if (stateManager?.destroy) {
+      await attempt('state-manager', () => stateManager.destroy());
+    }
+
+    this.computeManager = null;
+    this.networkManager = null;
+    this.stateManager = null;
+    this.gpuHub = null;
+    this.isStarted = false;
+    this.isInitialized = false;
+    this._unregisterBrowserKernelHandle();
+
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(cleanupErrors, 'NodeKernel manager cleanup failed');
     }
   }
 
@@ -772,41 +827,15 @@ export class NodeKernel {
    * @returns {Promise<void>}
    */
   async stop() {
-    if (!this.isStarted) {
+    const hasManagers = !!(this.computeManager || this.networkManager || this.stateManager);
+    if (!this.isStarted && !this.isInitialized && !hasManagers) {
       console.warn('[NodeKernel] Node not started');
       return;
     }
 
     try {
       console.log('[NodeKernel] Stopping...');
-      this._stopKernelClock();
-      this._clearStateProviderSyncTimers();
-      this._stopNetVizDebugTelemetryLoop();
-      this._stopNetVizSessionBroadcast();
-      this._stopNetVizNetworkSessionLoop();
-      
-      // Update state
-      if (this.stateManager) {
-        this.stateManager.write('status', 'stopped');
-      }
-      
-      // Disconnect from network
-      if (this.networkManager) {
-        await this.networkManager.disconnect();
-      }
-      
-      // Cleanup state manager
-      if (this.stateManager) {
-        await this.stateManager.destroy();
-      }
-      
-      // Cleanup compute manager
-      if (this.computeManager) {
-        // await this.computeManager.destroy();
-      }
-      
-      this.isStarted = false;
-      this._unregisterBrowserKernelHandle();
+      await this._cleanupManagers({ writeStopped: this.isStarted });
       console.log('[NodeKernel] Node stopped');
       
     } catch (error) {

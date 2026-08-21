@@ -1,5 +1,9 @@
 import { executeTaskPayload } from '../../../../peercompute/src/peercompute/computeManager/taskRuntime.js';
 
+// Required-worker clients admit this worker only after its module graph has
+// evaluated successfully. Emit readiness before accepting the first task.
+globalThis.self.postMessage({ type: 'ready' });
+
 globalThis.self.onmessage = async (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'run') return;

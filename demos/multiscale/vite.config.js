@@ -36,6 +36,9 @@ export default defineConfig(({ command }) => ({
         nbodyGravityTasks: path.resolve(__dirname, 'src/compute/nbodyGravityTasks.js'),
         cosmologyExpansionTasks: path.resolve(__dirname, 'src/compute/cosmologyExpansionTasks.js'),
         molecularDynamicsTasks: path.resolve(__dirname, 'src/compute/molecularDynamicsTasks.js'),
+        quantumOrbitalGridTasks: path.resolve(__dirname, 'src/compute/quantumOrbitalGridTasks.js'),
+        quantumMaterialPotentialTasks: path.resolve(__dirname, 'src/compute/quantumMaterialPotentialTasks.js'),
+        ulgRuntimeTasks: path.resolve(__dirname, 'src/compute/ulgRuntimeTasks.js'),
         reactiveThermalTasks: path.resolve(__dirname, 'src/compute/reactiveThermalTasks.js'),
         maxwellTasks: path.resolve(__dirname, 'src/compute/maxwellTasks.js'),
         sphMaterialTasks: path.resolve(__dirname, 'src/compute/sphMaterialTasks.js'),
@@ -52,7 +55,7 @@ export default defineConfig(({ command }) => ({
       },
       output: {
         entryFileNames: (chunkInfo) => (
-          ['peercomputeComputeWorker', 'peercomputeLadderTasks', 'nbodyGravityTasks', 'cosmologyExpansionTasks', 'molecularDynamicsTasks', 'reactiveThermalTasks', 'maxwellTasks', 'sphMaterialTasks', 'hydroAtmosphereTasks', 'radiationOpacityTasks', 'stellarFusionTasks', 'magnetospherePlasmaTasks', 'picPlasmaPatchTasks', 'relativisticCorrectionTasks', 'combustionPlumeTasks', 'membraneShellTasks', 'ulgMoonLabDispatchServiceHost', 'ulgEshkolDispatchServiceHost'].includes(chunkInfo.name)
+          ['peercomputeComputeWorker', 'peercomputeLadderTasks', 'nbodyGravityTasks', 'cosmologyExpansionTasks', 'molecularDynamicsTasks', 'quantumOrbitalGridTasks', 'quantumMaterialPotentialTasks', 'ulgRuntimeTasks', 'reactiveThermalTasks', 'maxwellTasks', 'sphMaterialTasks', 'hydroAtmosphereTasks', 'radiationOpacityTasks', 'stellarFusionTasks', 'magnetospherePlasmaTasks', 'picPlasmaPatchTasks', 'relativisticCorrectionTasks', 'combustionPlumeTasks', 'membraneShellTasks', 'ulgMoonLabDispatchServiceHost', 'ulgEshkolDispatchServiceHost'].includes(chunkInfo.name)
             ? `assets/${chunkInfo.name}.js`
             : 'assets/[name]-[hash].js'
         )

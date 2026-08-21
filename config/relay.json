@@ -48,7 +48,7 @@
       "max": 10
     }
   },
-  "publicHost": "2605:59c0:2c05:c108:c95c:4e95:717:86d1",
+  "publicHost": "",
   "publicPort": "",
   "sslCert": "",
   "sslKey": "",
