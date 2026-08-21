@@ -1023,6 +1023,187 @@ Instructions: This file contains a detailed implementation log describing choice
   trusted authenticated administrative path to `secretworkshop.net`; capture
   service logs/config and rollback state before any mutation.
 
+## 2026-08-21 13:42:27 AKDT - Publish Pages and repair SecretWorkshop browser TURN
+
+### Prompt And Authorization
+
+- User explicitly authorized the pending GitHub Pages publication and
+  authenticated SSH access to the SecretWorkshop host as `cos`, supplying a
+  login credential. The credential is intentionally represented here only as
+  `<redacted credential>`; it was never written to the repository, a command
+  argument, a committed file, or an ICC artifact.
+- Interpreted the informal host name `sw` as `secretworkshop.net` only after
+  read-only identity checks showed that bare `sw` had no resolver, SSH-config,
+  hosts-file, alias, or known-host entry, while `sw.secretworkshop.net`, the
+  apex name, its IPv4 address, and its IPv6 address all presented the same host
+  keys. Used the already trusted apex ED25519 key and strict host-key checking.
+- Scope remained the validated Pages release plus the focused production
+  WSS/STUN/TURN/ICE browser gate. The full chaos lab and known three/four-peer
+  CubeChat soak remained out of scope.
+
+### ICC And Release Control
+
+- Read and followed the installed ICC control-plane skill, resumed task
+  `ulg-release-secretworkshop-deploy-20260821`, and maintained the focused
+  `codex-root-pages-backend` lease. Before documentation edits, ran:
+  `/home/cos/projects/infinite_context_coder/bin/icc agent-preflight --repo
+  peercompute --agent-id codex-root-pages-backend --task-id
+  ulg-release-secretworkshop-deploy-20260821 --path-prefix plan/log.md
+  --path-prefix plan/plan.md --path-prefix plan/tests.md --path-prefix
+  plan/branch/server-changes.md --path-prefix README.md --allow-dirty --format
+  json`. It passed with no conflicts or rollback findings; the only warning was
+  the repository's stale configured `origin/master` upstream name.
+- Published the expanded non-overlapping lease for `README.md`,
+  `plan/plan.md`, `plan/tests.md`, `plan/log.md`, and
+  `plan/branch/server-changes.md`. Read-only release monitoring ran separately
+  and made no worktree changes.
+
+### GitHub Pages Publication
+
+- Confirmed `origin/demo-fixes` at `b082ff37` was an ancestor of the validated
+  `origin/ulg` release and fast-forwarded it without force using
+  `git push origin refs/remotes/origin/ulg:refs/heads/demo-fixes`.
+- GitHub Pages workflow run `32529794706` and deployment `6029778879` completed
+  successfully for commit `07e79766d6de76a64a4efeef75b11e2d5c55a6f6`.
+- Live CubeChat HTML now references `assets/index-CXmtRpZB.js`. Its HTML and
+  bundle, Multiscale HTML and `index-DSMfE6Z8.js`, and the stable
+  `quantumOrbitalGridTasks.js`, `quantumMaterialPotentialTasks.js`, and
+  `ulgRuntimeTasks.js` URLs returned `200` and byte-for-byte matched commit
+  `07e79766`.
+
+### Host Identity, Audit, And Rollback
+
+- DNS resolved the host to IPv4 `23.239.29.243` and IPv6
+  `2600:3c00::f03c:93ff:fe48:8d2c`. Strict-host-key SSH authenticated as
+  `cos`; the remote hostname is `p2p.secretworkshop.net`, the account is uid
+  `1000`, and it has sudo authorization. No SSH private key, password, or
+  control socket was placed in the repository.
+- Pre-change remote checks showed:
+  - clean `demo-fixes` checkout at the prior deployed commit `b082ff37`;
+  - active/enabled `peercompute-relay.service`,
+    `peercompute-coturn.service`, and nginx;
+  - inactive/disabled legacy `coturn.service`;
+  - Ubuntu coturn `4.5.2-3.1~ubuntu22.04.1`;
+  - public IPv4/IPv6 TURN listeners on `3478`, with UFW inactive on the
+    directly addressed host;
+  - `/etc/turnserver.conf` was the untouched 27,610-byte distro example and
+    its only active directive was `syslog`.
+- Captured the root-only rollback snapshot
+  `/var/backups/peercompute/20260821T215713Z` before mutation. It has mode
+  `0700`; contained config/unit/package/service-state/repo-head records are mode
+  `0600`. The snapshot remains on the host for rollback.
+- A normal remote `git fetch origin` failed because the host's configured
+  GitHub SSH identity was denied. Used a one-time unauthenticated HTTPS fetch
+  and `git merge --ff-only FETCH_HEAD` instead, leaving the configured remote
+  URL untouched. The remote checkout advanced cleanly to `07e79766`. A later
+  HTTPS fetch updated `refs/remotes/origin/demo-fixes`, so branch status is no
+  longer misleadingly ahead of its stale tracking ref.
+
+### Browser TURN Root Cause
+
+- Before mutation, the public runtime config, CORS/no-store response, apex WSS
+  upgrade, IPv4/IPv6 STUN binding, and native coturn UDP/TCP relay clients all
+  passed. Chrome 151 nevertheless produced error `701` and gathered no relay
+  candidate over either advertised TURN transport.
+- A second bounded Chrome probe using the numeric IPv4 address removed DNS from
+  the path and reproduced the same UDP/TCP failure, while the same browser
+  gathered server-reflexive candidates through both production and Google
+  STUN.
+- Captured TURN packet headers only, with no payload or credential content.
+  Every 28-byte Chrome Allocate request reached the host and received an
+  80-byte reply, disproving a simple inbound/outbound firewall loss.
+- A sanitized raw STUN/TURN response parser showed that the old service
+  answered unauthenticated Allocate with a success response containing relayed
+  and mapped addresses, lifetime, and software attributes, but no long-term-
+  credential challenge or fingerprint. The runtime config advertised an
+  authenticated TURN service, so Chrome rejected that anonymous coturn
+  behavior. The original `701` was browser-generated, not a coturn protocol
+  response code.
+
+### Focused Host Repair
+
+- Generated and installed `/etc/turnserver.conf` as `root:turnserver` mode
+  `0640`, using the checked-out production host/port/realm and the same TURN
+  username/credential already advertised by the public runtime config without
+  emitting those values. The active contract is:
+  fingerprinted long-term credentials, stale nonces, public IPv4/IPv6 listen
+  and relay addresses, `3478` TCP/UDP, relay range `49152-65535`, quota `200`,
+  multicast denial, no CLI, syslog, and explicit plaintext TURN (`no-tls`,
+  `no-dtls`) with a writable pidfile.
+- Restarted only `peercompute-coturn.service`. The Go relay and nginx were not
+  restarted or reinstalled. The coturn unit returned active with main PID
+  `3180290`, `NRestarts=0`, and active timestamp
+  `2026-08-21 22:01:37 UTC`; relay and nginx stayed active.
+- A first remote config-generation command failed on nested shell/JQ quoting
+  before creating or replacing any file. The corrected command sourced the
+  Bash-oriented `config/relay.env` under `sh`; it emitted a late
+  `[[: not found` warning after the required TURN values had loaded. Verified
+  the generated configuration before installing it rather than treating the
+  warning as success.
+- Coturn `4.5.2` rejected `no-loopback-peers` as an unknown directive. Removed
+  that line because this release denies loopback peers by default, then added
+  `no-tls`, `no-dtls`, and the explicit pidfile to remove irrelevant TLS/PID
+  warnings. The final configuration hash is
+  `8321cde888fd1e6d5e1fada6cdc827b86cb1e1763a2c109b74ffb9d7d9c20fd5`;
+  current-PID journal review found no fatal, bad-config, bind-failure, or
+  authentication-failure lines.
+- After repair, an unauthenticated raw Allocate received the correct `401`
+  challenge with realm, nonce, software, and fingerprint. Independent Chrome
+  gathered a numeric IPv4 TURN/UDP relay candidate in `304 ms`, a TURN/TCP
+  relay candidate in `457 ms`, and four relay candidates from the combined DNS
+  UDP/TCP configuration in `467 ms`, with no `701` errors.
+
+### Production Relay-Only CubeChat Gate
+
+- Copied only the final `docs/cubechat` build into the test-owned directory
+  `/tmp/peercompute-prod-turn-cube.TnxYWa`, kept signaling on a dynamic local Go
+  relay, and supplied the public production ICE servers through an in-memory
+  `RELAY_WEBRTC_CONFIG`. No credential was printed or written to the repo.
+- Final command shape:
+  `RELAY_WEBRTC_CONFIG="$RELAY_WEBRTC_CONFIG"
+  RUNTIME_P2P_DOCS_ROOT="$PC_CUBE_TMP" RUNTIME_P2P_DEMOS=cubechat
+  DEMO_HOST=127.0.0.1 DEMO_PORT=43960 DEMO_TIMEOUT_MS=90000
+  RELAY_CONFIG_TIMEOUT_MS=30000 RUNTIME_P2P_INTERACTION_MS=3000
+  CUBECHAT_REQUIRE_RELAY_MEDIA=1 node demos/tests/runtime-p2p.mjs`.
+  The in-memory WebRTC config placed `iceTransportPolicy: "relay"` under the
+  standards-shaped `rtcConfiguration` object.
+- PASS: both application PCs were connected with connected ICE and a succeeded
+  relay/relay UDP selected pair. Page A reported `9181` selected-pair bytes sent
+  and `1714` received; page B reported `9693` sent and `8999` received at the
+  assertion point. Both local candidates reported `relayProtocol=udp`. The
+  same run passed remote camera/audio, bidirectional movement, theme and room-
+  directory convergence, data/state flow, screen share, and remote track
+  assertions.
+- Two preceding attempts were deliberately rejected by the harness as invalid
+  proof. The first child relay inherited default policy `all` because the
+  in-memory config was not explicitly handed to that child. The second passed
+  the config but placed `iceTransportPolicy` beside `rtcConfiguration`; the
+  released CubeChat helper correctly preserves standards-level policies from
+  inside `rtcConfiguration`, so it again selected a direct host pair. Corrected
+  only the test configuration shape and reran; no product code was changed.
+
+### Final Public And Remote Results
+
+- Public relay config returned HTTP `200`, JSON, CORS `*`, and `no-store`; a
+  sanitized parser found two WSS bootstrap addresses plus STUN, TURN/UDP, and
+  TURN/TCP without printing endpoint credentials. Apex WSS returned
+  `101 Switching Protocols`; curl timed out only because the deliberately
+  bounded upgraded socket remained open.
+- Remote checkout and its `origin/demo-fixes` tracking ref both resolve to
+  `07e79766`. `peercompute-relay.service`, `peercompute-coturn.service`, and
+  nginx are active; coturn has zero automatic restarts. The config is
+  `root:turnserver` mode `0640`, and the rollback directory remains
+  `root:root` mode `0700`.
+- Documentation validation ran under Node `v24.18.0`:
+  `npm run test:backend` passed `21/21`, and `git diff --check` passed across
+  `README.md` plus all four touched plan files.
+- Removed `/tmp/peercompute-prod-turn-cube.TnxYWa`, unset the in-memory browser
+  ICE configuration, and confirmed no listener on the focused relay/browser
+  ports and no matching runtime-P2P, Go-relay, or Playwright process remained.
+- This completes the requested two-peer browser STUN/TURN/ICE path. It does not
+  claim the known live four-peer CubeChat regression, the full ordered-demo
+  matrix, or chaos-lab behavior is fixed or rerun.
+
 ## 2026-06-06 20:04:13 AKDT - Resource lease broker first pass
 
 ### Prompt

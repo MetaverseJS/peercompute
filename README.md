@@ -93,11 +93,15 @@ The focused 2026-08-21 repair is green without running the full chaos lab:
 - Built-doc runtime smoke passed all eight harness demos. The focused built-doc
   CubeChat/SneakyWoods run also passed peer discovery, media, interaction, and
   bidirectional state/movement checks against a test-owned local relay.
-- Public `secretworkshop.net` config, WSS, IPv4/IPv6 STUN, and native
-  authenticated TURN UDP/TCP probes pass. Chrome still fails to gather a TURN
-  relay candidate from that production coturn endpoint (`701` allocation
-  timeout), so browser TURN interoperability remains an operational blocker
-  even though native coturn clients relay packets successfully.
+- The validated frontend is live from GitHub Pages commit `07e79766`, including
+  CubeChat's runtime ICE/TURN configuration and Multiscale's stable worker/task
+  modules. Public `secretworkshop.net` config, WSS, IPv4/IPv6 STUN, native TURN
+  UDP/TCP, and browser TURN allocation now pass.
+- A focused two-page production-TURN CubeChat gate forced only the application
+  media peer connections to `iceTransportPolicy=relay`. Both pages selected
+  succeeded relay/relay UDP pairs, exchanged bytes in both directions, and
+  passed remote media, movement, shared theme/directory state, and screen-share
+  assertions. The full chaos lab was not run.
 
 The prior full local regression reports live in:
 
@@ -117,10 +121,6 @@ Validated in that prior sweep:
 
 Known open breakages/coverage gaps:
 
-- Production browser TURN allocation needs host-side coturn logs/config review
-  and likely service maintenance. The current session had no authenticated SSH
-  or cloud-admin path, so the healthy relay/coturn services were not restarted
-  blindly.
 - The current focused fix makes isolated SneakyWoods pass consistently, but the
   full ordered multiplayer P2P matrix and its historical
   Hyperborea-to-SneakyWoods shared-context failure were not rerun.
@@ -614,13 +614,18 @@ lt-cred-mech
 user=peer:compute
 realm=secretworkshop.net
 stale-nonce
-no-loopback-peers
 no-multicast-peers
 min-port=49152
 max-port=65535
 total-quota=200
 bps-capacity=0
 ```
+
+Coturn releases differ on the `no-loopback-peers` spelling. Ubuntu's coturn
+`4.5.2` rejects that directive and already denies loopback peers by default;
+only add it on a version whose parser supports it. For a plaintext TURN service
+on port `3478`, `no-tls` and `no-dtls` also avoid implying a TLS listener that
+has no configured certificate.
 
 If you use special characters in TURN credentials, set `RELAY_WEBRTC_CONFIG` directly with a full JSON string instead of composing it via per-field env vars.
 
@@ -656,7 +661,9 @@ Use this together with `PCSERVER_ENABLE_TURN=0` on `scripts/install-relay-system
 
 ### Coturn Hardening Checklist
 - Use long random TURN credentials and rotate them regularly.
-- Keep `stale-nonce`, `no-loopback-peers`, and `no-multicast-peers` enabled.
+- Keep `fingerprint`, long-term credentials, `stale-nonce`, and
+  `no-multicast-peers` enabled. Use `no-loopback-peers` only when supported by
+  the installed coturn version; older releases deny loopback peers by default.
 - Open firewall for `3478/tcp`, `3478/udp`, and relay RTP/RTCP UDP range (`49152-65535/udp`).
 - If your server is behind NAT, set coturn `external-ip` and `relay-ip` explicitly.
 - Keep relay `webrtc.iceServers` aligned with coturn host/port and credentials.

@@ -64,12 +64,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Built-doc runtime smoke passed all eight harness demos, and a focused
   CubeChat/SneakyWoods two-page run passed media, interaction, bidirectional
   theme/directory state, presence, and movement against a test-owned relay.
-- Public config/CORS, WSS, IPv4/IPv6 STUN, and native authenticated TURN UDP/TCP
-  all pass. Chrome 151 nevertheless receives TURN error `701` and gathers no
-  relay candidate over either advertised transport, including in an independent
-  RTCPeerConnection probe. This is now a production coturn/browser
-  interoperability blocker; no remote service mutation was attempted without a
-  trusted host identity and authenticated administrative path.
+- The validated release is live from GitHub Pages commit `07e79766`. The
+  `secretworkshop.net` host was snapshotted before mutation, its stale anonymous
+  coturn default was replaced by fingerprinted long-term-credential
+  configuration aligned with the public runtime config, and only the split
+  `peercompute-coturn.service` was restarted; relay and nginx stayed active.
+- Public config/CORS, WSS, IPv4/IPv6 STUN, native authenticated TURN UDP/TCP,
+  independent Chrome relay-candidate gathering over UDP/TCP, and the focused
+  two-page CubeChat relay-only application-media gate now pass. Both pages used
+  succeeded relay/relay pairs with bidirectional bytes. The known four-peer
+  CubeChat regression and full chaos lab remain outside this proof.
 - Keep the prior full ordered-demo instability, live four-peer CubeChat media,
   ULG handoff contract drift, and unrelated Multiscale/DaddyGo findings open;
   they were not revalidated by this focused repair.

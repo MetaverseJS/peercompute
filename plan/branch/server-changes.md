@@ -75,10 +75,17 @@ Instructions: This file contains short term goals for the current branch.
   TURN TCP, and a focused browser relay-only media path after deployment.
 - Keep the full chaos lab out of this release unless separately requested.
 
-Status: the source and generated frontend release is validated and included in
-the current `ulg` release checkpoint. Public config/CORS, WSS, dual-stack STUN,
-and native authenticated TURN UDP/TCP pass, but Chrome TURN allocation fails
-with error `701` over both transports. Backend mutation is blocked pending
-authenticated host access plus coturn logs/config review; healthy services were
-not restarted blindly. Tracked under ICC task
-`ulg-release-secretworkshop-deploy-20260821`.
+Status: completed on 2026-08-21 under ICC task
+`ulg-release-secretworkshop-deploy-20260821`. The validated release is live from
+GitHub Pages commit `07e79766`. Before host mutation, remote Git, units,
+listeners, package state, and configs were captured under a root-only rollback
+snapshot. The existing coturn unit had been launching the untouched distro
+default (`syslog` only), so it returned anonymous Allocate responses even
+though the runtime config advertised authenticated TURN. Installed a
+fingerprinted long-term-credential config aligned with the public runtime
+config, retained the split service model, and restarted only
+`peercompute-coturn.service`; the Go relay and nginx remained active. Public
+config/CORS, apex WSS, dual-stack STUN, native TURN UDP/TCP, independent Chrome
+TURN UDP/TCP gathering, and a two-page CubeChat relay-only application-media
+gate all pass. The full chaos lab and known four-peer CubeChat regression remain
+out of scope.

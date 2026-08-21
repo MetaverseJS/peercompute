@@ -105,17 +105,23 @@
 - PASS at the native backend boundary: production config/CORS, apex WSS,
   IPv4/IPv6 STUN binding, and authenticated TURN UDP/TCP relayed-packet probes
   all succeeded.
-- FAIL at the production browser boundary: fresh built CubeChat and an
-  independent Chrome 151 RTCPeerConnection both failed to gather a production
-  TURN relay candidate over UDP or TCP. Chrome emitted error `701` (allocation
-  timeout), while STUN server-reflexive gathering worked. Host logs/config are
-  required to determine whether coturn `4.5.2`, firewall/NAT, or another server
-  compatibility detail is responsible.
+- PASS after host repair at the production browser boundary: packet-header-only
+  capture first proved Chrome Allocate requests and coturn replies crossed the
+  network, while a sanitized raw response inspection showed the service was
+  answering anonymous Allocate without the fingerprinted long-term-credential
+  challenge expected by the advertised runtime config. After installing the
+  matched coturn configuration, an independent Chrome 151 RTCPeerConnection
+  gathered relay candidates over numeric IPv4 TURN/UDP and TURN/TCP and over
+  the combined DNS configuration without error `701`.
+- PASS: final built-doc CubeChat ran two pages with application media forced to
+  `iceTransportPolicy=relay` against production TURN. On both pages the
+  application PC was connected, ICE was connected, the selected pair was
+  succeeded, both candidate types were `relay`, and selected-pair sent/received
+  byte counters were positive. The existing interaction gate also covered
+  bilateral media, movement, theme/directory convergence, and screen share.
 - OPEN: the known live four-peer CubeChat convergence regression remains a
   separate production gate; the full chaos lab and full ordered demo matrix
-  remain intentionally unrun. Production browser TURN repair is additionally
-  blocked until an authenticated administrative path to `secretworkshop.net`
-  is available.
+  remain intentionally unrun.
 
 ### Current focused result - 2026-06-18 AKDT
 - Multiplayer interaction validation with independent browser pages, local
