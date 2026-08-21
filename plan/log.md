@@ -1003,6 +1003,16 @@ Instructions: This file contains a detailed implementation log describing choice
 - No `secretworkshop.net` service was restarted or modified. Public native
   service checks remain green, public browser TURN allocation remains red, and
   the session still has no trusted authenticated host-administration path.
+- Committed the deployment-boundary record as `0f2331f9` and pushed
+  `bbbc683f..0f2331f9` to `origin/ulg`. The first final ICC refresh command
+  mistakenly added unsupported `--format json` to `icc index` and exited `2`;
+  reran the supported `icc index --repo peercompute --jobs 0` form successfully
+  at `0f2331f9` (`596` files). `icc build-memory` produced `9493` chunks and
+  `icc build-git-history` indexed `265` commits. Final repo-wide ICC
+  `guard-diff` passed on a clean worktree. Recorded blocked attempt
+  `20260821-release-push-backend-browser-gate` with the public browser TURN and
+  access boundaries, ended lease `codex-root-generated-deploy`, and confirmed
+  ICC reports zero active or stale sessions and zero conflicts.
 
 ### Remaining / Blocked
 
