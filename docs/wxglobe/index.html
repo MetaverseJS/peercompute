@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A token-free Cesium whole-Earth terrain and bathymetry viewer rendered as green elevation contours on black."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='27' fill='%23000' stroke='%2300ff66' stroke-width='4'/%3E%3Cpath d='M8 32h48M32 5c10 8 15 17 15 27S42 51 32 59M32 5C22 13 17 22 17 32s5 19 15 27' fill='none' stroke='%2300ff66' stroke-width='2'/%3E%3C/svg%3E" />
+    <title>WXGlobe // Whole-Planet Topography</title>
+    <script type="module" crossorigin src="./assets/index-C_bfW7KW.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bt1hFAn0.css">
+  </head>
+  <body>
+    <div id="app">
+      <div id="viewer" aria-label="Interactive whole-Earth terrain globe"></div>
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <aside id="console" class="console" aria-label="WXGlobe controls">
+        <header class="console__header">
+          <div>
+            <p class="eyebrow">WHOLE PLANET // TERRAIN LINK</p>
+            <h1>WXGLOBE</h1>
+          </div>
+          <button id="toggle-console" class="icon-button" type="button" aria-expanded="true" aria-controls="console-body">
+            HIDE
+          </button>
+        </header>
+
+        <div id="console-body" class="console__body">
+          <div class="status-line">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="provider-status" role="status" aria-live="polite" aria-atomic="true">TERRAIN: INITIALIZING</span>
+          </div>
+
+          <dl class="telemetry-grid">
+            <div>
+              <dt>TILES</dt>
+              <dd id="tile-count">0 / 0</dd>
+            </div>
+            <div>
+              <dt>HEIGHT RANGE</dt>
+              <dd id="height-range">AWAITING DATA</dd>
+            </div>
+            <div>
+              <dt>BATHYMETRY</dt>
+              <dd id="bathymetry-status">PENDING</dd>
+            </div>
+            <div>
+              <dt>CURSOR</dt>
+              <dd id="cursor-position">MOVE OVER GLOBE</dd>
+            </div>
+          </dl>
+
+          <section class="control-block" aria-labelledby="terrain-source-label">
+            <div class="control-label">
+              <label id="terrain-source-label" for="terrain-source">TERRAIN SOURCE</label>
+              <output id="terrain-source-mode" for="terrain-source">POLE-TO-POLE</output>
+            </div>
+            <select id="terrain-source">
+              <option value="noaa-etopo2022" selected>NOAA ETOPO 2022 · whole Earth</option>
+              <option value="aws-terrarium">AWS Terrarium · detailed ±85°</option>
+            </select>
+          </section>
+
+          <section class="control-block" aria-labelledby="contour-label">
+            <div class="control-label">
+              <label id="contour-label" for="contour-spacing">CONTOUR INTERVAL</label>
+              <output id="contour-spacing-value" for="contour-spacing">500 M</output>
+            </div>
+            <select id="contour-spacing">
+              <option value="100">100 m</option>
+              <option value="250">250 m</option>
+              <option value="500" selected>500 m</option>
+              <option value="1000">1,000 m</option>
+              <option value="2000">2,000 m</option>
+            </select>
+          </section>
+
+          <section class="control-block">
+            <div class="control-label">
+              <label for="line-width">LINE WEIGHT</label>
+              <output id="line-width-value" for="line-width">1.5 PX</output>
+            </div>
+            <input id="line-width" type="range" min="0.5" max="3" step="0.25" value="1.5" />
+          </section>
+
+          <section class="control-block">
+            <div class="control-label">
+              <label for="terrain-exaggeration">VERTICAL GAIN</label>
+              <output id="terrain-exaggeration-value" for="terrain-exaggeration">1.0×</output>
+            </div>
+            <input id="terrain-exaggeration" type="range" min="1" max="5" step="0.5" value="1" />
+          </section>
+
+          <section class="presets" aria-label="Camera presets">
+            <button type="button" data-camera="world">WORLD</button>
+            <button type="button" data-camera="himalaya">HIMALAYA</button>
+            <button type="button" data-camera="mariana">MARIANA</button>
+            <button type="button" data-camera="alaska">ALASKA</button>
+          </section>
+
+          <section class="source-note">
+            <p><strong>NO IMAGERY LAYER.</strong> The globe is terrain geometry plus elevation contours.</p>
+            <p>
+              The default NOAA ETOPO 2022 source is true pole-to-pole relief and bathymetry at about
+              1.85 km north-south native resolution at the equator. It is a global relief model for
+              visualization, not navigation.
+            </p>
+            <p>
+              The optional AWS source combines SRTM, GMTED, ETOPO1, and regional inputs for better
+              land detail, but its Web Mercator terrain stops at ±85.051°.
+            </p>
+            <details id="aws-terrain-attribution">
+              <summary>DATA CREDITS + REQUIRED AWS ATTRIBUTION</summary>
+              <p>
+                NOAA/NCEI ETOPO 2022 Global Relief (CC0; not for navigation). The optional AWS Terrain
+                Tiles source requires the following notices:
+              </p>
+              <ul class="credits-list">
+                <li>ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded under National Science Foundation awards 1043681, 1559691, and 1542736;</li>
+                <li>Australia terrain data © Commonwealth of Australia (Geoscience Australia) 2017;</li>
+                <li>Austria terrain data © offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich;</li>
+                <li>Canada terrain data contains information licensed under the Open Government Licence – Canada;</li>
+                <li>Europe terrain data produced using Copernicus data and information funded by the European Union - EU-DEM layers;</li>
+                <li>Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration</li>
+                <li>Mexico terrain data source: INEGI, Continental relief, 2016;</li>
+                <li>New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New Zealand and the New Zealand Government (All rights reserved);</li>
+                <li>Norway terrain data © Kartverket;</li>
+                <li>United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved;</li>
+                <li>United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.</li>
+              </ul>
+              <p>
+                <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">AWS Open Data registry</a>
+                · <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noreferrer">upstream required-attribution source</a>
+              </p>
+            </details>
+          </section>
+        </div>
+      </aside>
+
+      <div class="readout" aria-hidden="true">
+        <span>EPSG:4326 + EPSG:3857</span>
+        <span>NOAA Z6 // AWS Z15</span>
+        <span>CONTOURS INCLUDE NEGATIVE ELEVATION</span>
+      </div>
+    </div>
+
+  </body>
+</html>

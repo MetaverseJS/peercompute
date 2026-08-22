@@ -1,5 +1,62 @@
 ## PeerCompute Test Strategy
 
+### WXGlobe whole-planet terrain gate - 2026-08-22 AKDT
+
+- Pure Node tests cover NOAA ETOPO 2022 signed little-endian BIP decoding,
+  optional MSB-first validity masks, exact mosaic pinning, half-post padding,
+  pole/dateline repair, bounded same/cross-level boundary canonicalization,
+  native z6 request availability, terminal child masks, telemetry, retry/
+  cancellation classification, and persistent root-failure diagnostics.
+- Pure Node tests cover AWS Terrarium RGBA decoding, fractional and negative
+  heights, public US S3 XYZ URLs, a cached symmetric 3 × 3 halo resampled into
+  257 endpoint posts, exact neighboring edges, stale-rejection LRU safety,
+  native z15 request availability, terminal masks, retries, aborts, telemetry,
+  and asynchronous failure classification.
+- Material tests require opaque black base terrain plus Cesium
+  `ElevationContour` in neon green and prove contour interval/width can update
+  without recreating the globe. Contour ink must be suppressed on the exact
+  skirt texture boundary so vertical crack guards do not render as meridians.
+- Static release gates keep the root workspace, port `5186`, both dev
+  launchers, build order, docs card, imagery-free Viewer configuration, retired
+  weather dependency exclusions, and production docs output wired.
+- The generated artifact gate requires
+  `cesium/{Workers,ThirdParty,Assets,Widgets}` plus Cesium `LICENSE.md` and
+  `ThirdParty.json` beneath `docs/wxglobe`, rejects a hoisted `node_modules`
+  segment and domain-root asset URLs, and inspects the hashed entry bundle for
+  the capped-provider, deep-success telemetry, and abortable-retry paths.
+- Focused built-doc runtime command:
+  `RUNTIME_SMOKE_DEMOS=wxglobe WXGLOBE_REQUIRE_LIVE_TERRAIN=1 WXGLOBE_REQUIRE_AWS_TERRAIN=1 DOCS_HOST=127.0.0.1 DOCS_PORT=43910 DEMO_WAIT_MS=3000 DEMO_READY_TIMEOUT_MS=90000 node demos/tests/runtime-smoke.mjs`.
+  It must observe a current-generation rendered NOAA frame, zero imagery,
+  settled tiles, positive and negative heights, no terminal failures, then a
+  successfully loaded AWS z15 257-post tile with child mask zero and stable
+  request counters, followed by a newly rendered NOAA generation.
+- `RUNTIME_SMOKE_DEMOS` must reject unknown names before opening a server or
+  browser; `RUNTIME_SMOKE_DEMOS=wxglob ...` is the negative regression.
+- Manually inspect the whole-Earth NOAA view and a close AWS Mariana view in a
+  real browser. This is a focused terrain/network validation, not a chaos-lab
+  run.
+- PASS: `npm --prefix demos/wxglobe test` passed `26/26` under Node
+  `v24.18.0`.
+- PASS: `node --test demos/tests/demo-ports.test.js
+  demos/tests/demo-release.test.js` passed `40/40`; `npm run test:backend`
+  passed `23/23`.
+- PASS: final `npm run build` regenerated PeerCompute plus all 12 demos and
+  copied 389 Cesium runtime files plus two notice files into
+  `docs/wxglobe/cesium`. Expected existing
+  circular-chunk, bundle-size, and PlanetGen renderer warnings were non-fatal.
+- PASS: full built-doc runtime smoke loaded all nine harness demos. The focused
+  live-source command passed NOAA, switched the same page to AWS Terrarium,
+  loaded and validated a real z15 terminal tile, observed negative and positive
+  heights, stabilized all logical/source counters, retained zero imagery, and
+  returned to a later NOAA generation with zero terminal failures.
+- PASS: generated config validation covered 12 demos / 24 public+docs config
+  pairs with production WSS, STUN, TURN UDP/TCP, and HTTPS source URLs.
+- PASS: visually inspected 1440x900 NOAA whole-Earth and close AWS Mariana
+  views; the post-repair gallery frame no longer contains the false straight
+  prime-meridian contour drawn by Cesium heightmap skirts.
+- NOT RUN: full chaos lab, because this standalone non-P2P demo only requires
+  the focused terrain, generated-site, and existing-demo regression gates.
+
 ### ULG release and production backend gate - 2026-08-21 AKDT
 
 - Required-worker unit coverage must prove the default optional-worker path
@@ -69,11 +126,11 @@
 - PASS: after the release worker additions, `npm --prefix peercompute run
   test:unit` passed `204`, skipped `1`, and failed `0`; `npm --prefix
   demos/multiscale test` passed `206/206`; `npm run test:backend` passed
-  `21/21`.
+  `23/23`.
 - PASS: final `npm run build` completed under Node `v24.18.0` for PeerCompute
-  and all eleven demos. Existing circular-chunk, large-bundle, and PlanetGen
+  and all twelve demos. Existing circular-chunk, large-bundle, and PlanetGen
   `WebGL1Renderer` warnings remain non-fatal.
-- PASS: all 22 demo/docs relay fallback/source pairs have production WSS,
+- PASS: all 24 demo/docs relay fallback/source pairs have production WSS,
   gossipsub, STUN, authenticated TURN UDP/TCP, and the production HTTPS runtime
   config URL. An 18-HTML-entry traversal reached 83 local files across 135
   HTML/import/new-URL edges with zero missing or escaping references.
@@ -81,7 +138,7 @@
   entries. The worker-build regression now parses every emitted JavaScript
   module with `es-module-lexer` and rejects relative imports outside or missing
   from the build root.
-- PASS: `node demos/tests/runtime-smoke.mjs` loaded all eight built-doc harness
+- PASS: `node demos/tests/runtime-smoke.mjs` loaded all nine built-doc harness
   demos. The focused built-doc `cubechat,sneakywoods` P2P run passed the full
   two-page interaction assertions against a test-owned local relay.
 - PASS: fresh temporary CubeChat and SneakyWoods Vite production builds

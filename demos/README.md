@@ -1,6 +1,6 @@
 # PeerCompute Demos
 
-Each demo under `demos/` is a standalone Vite app that integrates PeerCompute for networking and/or compute offload.
+Each demo under `demos/` is a standalone Vite app. Networking and compute demos integrate PeerCompute; focused visualization demos may remain intentionally local.
 
 ## Run From Repo Root
 ```bash
@@ -21,6 +21,7 @@ npm run dev
 - `sneakywoods` - Lightweight multiplayer arena
 - `daddygo` - Pose-controlled runner with global high score sync
 - `planetgen` - Procedural planet generator + weather compute
+- `wxglobe` - Cesium whole-Earth terrain and bathymetry rendered as an imagery-free green-on-black contour globe; NOAA ETOPO 2022 is the pole-to-pole default, with optional AWS Terrarium detail, on port 5186; builds to `docs/wxglobe`
 - `multiscale` - WebGPU-first zoomable multiscale physics ladder scaffold using one PeerCompute `ComputeManager` for affinity-keyed per-scale shard jobs, manager stats/load/task-family telemetry, runtime-debug plus solver-state-remap/invariant panel/API, NetViz session metadata, adaptive worker/workload scaling, and executable N-body, cosmology expansion, stellar-fusion, magnetosphere/MHD, PIC plasma, relativistic correction, Maxwell, hydro, radiation, combustion, membrane, reactive, SPH, molecular-dynamics, quantum-material, and quantum-orbital-grid law workers, including staged WebGPU MD neighbor-list telemetry, reduced H2O geometry force-law and seeded topology telemetry, qgrid electric/Stark, magnetic/Zeeman, reduced statistical-ensemble handoffs, qmat electronic charge-source handoffs, and qmat reaction-barrier gate handoffs, on port 5185; builds to `docs/multiscale`
 - `universes` - Galaxy/universe generator with ComputeManager
 - `webgpuphys` - WebGPU physics + MLS-MPM demos

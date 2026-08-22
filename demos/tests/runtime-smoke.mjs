@@ -7,7 +7,7 @@ import { ensureDevHttpsCert } from '../../scripts/https.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const docsRoot = path.join(repoRoot, 'docs');
+const docsRoot = path.resolve(process.env.RUNTIME_SMOKE_DOCS_ROOT || path.join(repoRoot, 'docs'));
 const port = Number(process.env.DOCS_PORT || 4179);
 const host = process.env.DOCS_HOST || '127.0.0.1';
 const baseUrl = `https://${host}:${port}`;
@@ -17,16 +17,50 @@ const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   || process.env.CHROME_EXECUTABLE_PATH
   || (existsSync('/bin/google-chrome') ? '/bin/google-chrome' : undefined);
 
-const demos = [
+const allDemos = [
   { name: 'hyperborea', path: '/hyperborea/cb.html' },
   { name: 'cubechat', path: '/cubechat/' },
   { name: 'sneakywoods', path: '/sneakywoods/' },
   { name: 'daddygo', path: '/daddygo/' },
   { name: 'planetgen', path: '/planetgen/', waitMs: 9000, readyTimeoutMs: 45000 },
+  {
+    name: 'wxglobe',
+    path: '/wxglobe/',
+    waitMs: 3000,
+    readyTimeoutMs: 45000,
+    readyCheck: () => {
+      const state = window.__wxglobe?.getState?.();
+      return Boolean(
+        state?.ready
+        && state.frameCount > 0
+        && state.imageryLayerCount === 0
+        && state.materialType === 'WxGlobeTopoMaterial'
+        && state.terrainProviderType === 'CappedHeightmapTerrainProvider'
+        && state.terminalLodEnforced === true
+        && !state.fatalError
+      );
+    },
+    verify: () => window.__wxglobe?.getState?.() ?? null
+  },
   { name: 'universes', path: '/universes/', waitMs: 9000, readyTimeoutMs: 45000 },
   { name: 'fano-reactor', path: '/fano-reactor/', waitMs: 3000 },
   { name: 'webgpuphys', path: '/webgpuphys/demos/toychest.html', waitMs: 9000, readyTimeoutMs: 45000 }
 ];
+
+const requestedDemoNames = new Set(
+  String(process.env.RUNTIME_SMOKE_DEMOS || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+);
+const knownDemoNames = new Set(allDemos.map((demo) => demo.name));
+const unknownDemoNames = [...requestedDemoNames].filter((name) => !knownDemoNames.has(name));
+if (unknownDemoNames.length > 0) {
+  throw new Error(`Unknown runtime smoke demo(s): ${unknownDemoNames.join(', ')}`);
+}
+const demos = requestedDemoNames.size > 0
+  ? allDemos.filter((demo) => requestedDemoNames.has(demo.name))
+  : allDemos;
 
 const mime = {
   '.html': 'text/html',
@@ -151,11 +185,117 @@ async function runDemo(context, demo) {
   try {
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction(
-      () => Boolean(document.querySelector('canvas') || document.querySelector('#app')),
+      demo.readyCheck || (() => Boolean(document.querySelector('canvas') || document.querySelector('#app'))),
       null,
       { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs }
     );
     await page.waitForTimeout(demo.waitMs || defaultWaitMs);
+
+    if (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_LIVE_TERRAIN === '1') {
+      await page.waitForFunction(() => {
+        const state = window.__wxglobe?.getState?.();
+        return state?.terrain?.loaded > 0
+          && state.terrain?.providerGeneration === state.providerGeneration
+          && state.terrain?.terminalFailures === 0
+          && state.tilesLoaded
+          && state.ready
+          && !state.fatalError;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+    }
+
+    if (demo.verify) {
+      const state = await page.evaluate(demo.verify);
+      if (!state) {
+        errors.push('[runtime] readiness state unavailable');
+      } else if (state.fatalError) {
+        errors.push(`[runtime] fatal error: ${state.fatalError}`);
+      } else if (demo.name === 'wxglobe' && state.terrain?.terminalFailures > 0) {
+        errors.push(`[runtime] ${state.terrain.terminalFailures} terrain tile(s) failed terminally`);
+      } else if (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_LIVE_TERRAIN === '1') {
+        if (!(state.terrain?.loaded > 0)) errors.push('[runtime] no live terrain tile loaded');
+        if (!state.terrain?.lastLoadedTile) errors.push('[runtime] no successfully loaded terrain tile recorded');
+        if (!(state.terrain?.negativeSamples > 0)) errors.push('[runtime] bathymetric heights were not observed');
+        if (!(state.terrain?.positiveSamples > 0)) errors.push('[runtime] positive land heights were not observed');
+        if (state.terrain?.terminalFailures !== 0) {
+          errors.push(`[runtime] ${state.terrain.terminalFailures} live terrain tile(s) failed terminally`);
+        }
+        if (state.terrain?.providerGeneration !== state.providerGeneration) {
+          errors.push('[runtime] terrain telemetry does not belong to the active provider generation');
+        }
+        if (!state.tilesLoaded) errors.push('[runtime] active globe tiles did not settle');
+      }
+    }
+
+    if (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_AWS_TERRAIN === '1') {
+      const noaaState = await page.evaluate(demo.verify);
+      await page.selectOption('#terrain-source', 'aws-terrarium');
+      await page.click('[data-camera="mariana"]');
+      await page.waitForFunction(() => {
+        const state = window.__wxglobe?.getState?.();
+        return state?.terrainSource === 'aws-terrarium'
+          && state.providerGeneration > 1
+          && state.terrain?.providerGeneration === state.providerGeneration
+          && state.terrain?.loaded > 0
+          && state.terrain?.maximumLoadedLevel >= 3
+          && state.terrain?.lastLoadedTile?.level >= 0
+          && state.terrain?.negativeSamples > 0
+          && state.terrain?.positiveSamples > 0
+          && state.terrain?.terminalFailures === 0
+          && state.tilesLoaded
+          && !state.fatalError;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+
+      const terminalProbe = await page.evaluate(async ({ timeoutMs }) => Promise.race([
+        window.__wxglobe.probeTerrainTile({ longitude: 145.4, latitude: 11.2 }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('maximum-level terrain probe timed out')), timeoutMs))
+      ]), { timeoutMs: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      await page.waitForFunction(() => {
+        const state = window.__wxglobe?.getState?.();
+        return state?.terrainSource === 'aws-terrarium'
+          && state.terrain?.providerGeneration === state.providerGeneration
+          && state.terrain?.maximumLoadedLevel === state.maximumLevel
+          && state.terrain?.terminalTiles > 0
+          && state.terrain?.inFlight === 0
+          && state.tilesLoaded;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+
+      const stableBefore = await page.evaluate(demo.verify);
+      await page.waitForTimeout(1200);
+      const awsState = await page.evaluate(demo.verify);
+      if (awsState.terrain?.terminalFailures !== 0) {
+        errors.push(`[runtime] ${awsState.terrain.terminalFailures} AWS terrain tile(s) failed terminally`);
+      }
+      if (awsState.imageryLayerCount !== 0) errors.push('[runtime] AWS terrain switch introduced an imagery layer');
+      if (awsState.coverage?.maximumLevel !== 15) errors.push('[runtime] AWS terrain z15 boundary is not exposed');
+      if (!awsState.terminalLodEnforced) errors.push('[runtime] AWS terrain provider does not enforce terminal LOD');
+      if (terminalProbe.childTileMask !== 0) errors.push('[runtime] AWS terminal tile advertises children');
+      if (terminalProbe.sampleCount !== 257 * 257) errors.push('[runtime] AWS terrain grid is not 257×257 posts');
+      if (awsState.terrain?.requested !== stableBefore.terrain?.requested
+        || awsState.terrain?.loaded !== stableBefore.terrain?.loaded
+        || awsState.terrain?.sourceTilesRequested !== stableBefore.terrain?.sourceTilesRequested) {
+        errors.push('[runtime] AWS terrain requests did not stabilize after terminal LOD settled');
+      }
+
+      const awsGeneration = awsState.providerGeneration;
+      await page.selectOption('#terrain-source', 'noaa-etopo2022');
+      await page.click('[data-camera="world"]');
+      await page.waitForFunction((priorGeneration) => {
+        const state = window.__wxglobe?.getState?.();
+        return state?.terrainSource === 'noaa-etopo2022'
+          && state.providerGeneration > priorGeneration
+          && state.terrain?.providerGeneration === state.providerGeneration
+          && state.terrain?.loaded > 0
+          && state.terrain?.terminalFailures === 0
+          && state.tilesLoaded
+          && state.ready
+          && !state.fatalError;
+      }, awsGeneration, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      const restoredState = await page.evaluate(demo.verify);
+      if (restoredState.providerGeneration <= noaaState.providerGeneration) {
+        errors.push('[runtime] reverse NOAA activation did not advance provider generation');
+      }
+      if (restoredState.imageryLayerCount !== 0) errors.push('[runtime] reverse NOAA switch introduced an imagery layer');
+    }
 
     if (missing.size) {
       errors.push(`[404] ${Array.from(missing).join(', ')}`);

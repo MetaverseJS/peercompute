@@ -14,7 +14,34 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
-### Current Validation Snapshot - 2026-08-21 AKDT
+### Current Validation Snapshot - 2026-08-22 AKDT
+
+- WXGlobe is now a first-class standalone demo on port `5186`, selectively
+  ported from `origin/3drtma` without the retired RTMA/RAP/GRIB/weather-data
+  path. It uses modular vanilla ES modules and Cesium `1.144.0` under Vite.
+- The default terrain provider requests signed little-endian heightmaps from
+  NOAA's token-free `DEM_all` ImageServer, pinned to
+  `ETOPO_2022_v1_60s_surface`. Geographic z6 is the native-request cutoff; the
+  source covers both poles, land, and bathymetry at one arc-minute resolution.
+  NOAA cell centers are aligned to 257 endpoint posts, exact pole/dateline
+  samples and a bounded active-boundary cache prevent contour seams, and z6
+  tiles advertise no source children instead of triggering deferred retries.
+- An optional AWS Terrarium provider retains the useful branch decoder and
+  mixed-source z15 detail. Its UI and plan disclose the Web Mercator ±85.051°
+  coverage boundary and older ETOPO1 ocean source. It decodes a cached 3 × 3
+  tile halo into 257 dyadic posts so adjacent tile edges match exactly.
+- The default rendering contains zero imagery layers. Cesium composites an
+  opaque black globe with neon-green `ElevationContour` lines for positive and
+  negative elevations; interval, width, exaggeration, provider, and camera
+  presets are interactive in the retro terminal panel. Contours are suppressed
+  only on Cesium's zero-width skirt boundary so crack guards do not render as
+  false straight meridians.
+- Production output lives in `docs/wxglobe`, uses nested-path-safe copied
+  Cesium Workers/ThirdParty/Assets/Widgets plus license notices, and is linked
+  from the docs gallery with a post-fix browser screenshot. Bounded abortable
+  retries, fatal/degraded classification, provider-generation filtering, full
+  AWS composite attribution, and a NOAA→AWS-z15→NOAA browser gate are included.
+  This standalone work does not require PeerCompute networking or the chaos lab.
 
 - The current release slice makes browser-worker execution an explicit policy.
   `ComputeManager` keeps its default optional-worker/inline-fallback behavior,
@@ -55,13 +82,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `yjs-sync-response` messages without duplicate handling or false unknown-
   message warnings. After the release worker additions, the full PeerCompute
   unit suite passed `204`, skipped one, and failed zero; Multiscale passed
-  `206/206`; backend/release checks passed `21/21`.
+  `206/206`; backend/release checks passed `23/23`.
 - The final Node-24 root production build regenerated every demo and production
   config pair. A release reachability audit covered 18 generated HTML entries,
   83 reachable files, and 135 HTML/module/URL edges with zero broken
   references; the Multiscale stable worker/task graph is closed and no longer
   emits reachable source-tree imports.
-- Built-doc runtime smoke passed all eight harness demos, and a focused
+- Built-doc runtime smoke passed all nine harness demos, and a focused
   CubeChat/SneakyWoods two-page run passed media, interaction, bidirectional
   theme/directory state, presence, and movement against a test-owned relay.
 - The validated release is live from GitHub Pages commit `07e79766`. The

@@ -2,7 +2,7 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Current Status - August 21, 2026
+## Current Status - August 22, 2026
 PeerCompute currently ships as a browser-first P2P runtime plus a set of
 production-shaped demos, validation harnesses, and deployment scripts. It is no
 longer only a relay/chat experiment: the repo has usable networking, state,
@@ -58,7 +58,8 @@ runtime metadata to NetViz.
   evidence, manager/task-family telemetry, warm-delta counters, relay keepers,
   chaos-lab scenario overlays, generated relay config artifacts, Node and Go
   relay launchers, coturn integration, and systemd install scripts.
-- **Simulation and WebGPU demos**: PlanetGen procedural planets/weather,
+- **Simulation and WebGPU demos**: WXGlobe token-free Cesium terrain and
+  bathymetry contours, PlanetGen procedural planets/weather,
   Universes galaxy generation, WebGPUPhys rigid-body and MLS-MPM workbenches,
   Schrodinger atom/orbital/material console, Fano Reactor algebraic chemistry
   scaffold, and the Multiscale Ladder's WebGPU-first supergalactic-to-orbital
@@ -72,7 +73,20 @@ runtime metadata to NetViz.
 
 ### Validation Snapshot
 
-The focused 2026-08-21 repair is green without running the full chaos lab:
+Recent focused validation is green without running the full chaos lab:
+
+- WXGlobe selectively ports the useful Cesium terrain work from
+  `origin/3drtma` without its retired RTMA/GRIB pipeline. Its default NOAA
+  ETOPO 2022 provider covers both poles and the seafloor at one arc-minute,
+  while an optional public AWS Terrarium provider supplies mixed-source land
+  detail through Web Mercator z15. The default globe has no imagery layers:
+  only black terrain and neon-green elevation contours, including negative
+  bathymetric elevations. Both providers now emit 257 endpoint posts over 256
+  source intervals, align/canonicalize shared edges, stop native requests at
+  their declared LOD cap, retry boundedly, and abort retired source generations.
+  The focused browser gate reaches a real AWS z15 tile and returns to NOAA with
+  stable request counters; the full AWS composite-attribution block is exposed
+  in the UI.
 
 - StateManager namespace replacement regressions passed `8/8`, plus a
   10,000-transition adversarial stress check.
@@ -84,13 +98,13 @@ The focused 2026-08-21 repair is green without running the full chaos lab:
   bidirectional bytes.
 - PeerCompute units passed `204` with one skip and no failures; Multiscale
   model/worker-build checks passed `206/206`; backend/release checks passed
-  `21/21`.
+  `23/23`.
 - A final root production build regenerated every demo plus all production
   relay fallbacks/source pointers. The 18-entry generated-site audit reached
   83 local files and 135 HTML/module/URL edges with zero missing references;
-  all 22 demo/docs config pairs advertise production WSS, STUN, and
+  all 24 demo/docs config pairs advertise production WSS, STUN, and
   authenticated TURN UDP/TCP.
-- Built-doc runtime smoke passed all eight harness demos. The focused built-doc
+- Built-doc runtime smoke passed all nine harness demos. The focused built-doc
   CubeChat/SneakyWoods run also passed peer discovery, media, interaction, and
   bidirectional state/movement checks against a test-owned local relay.
 - The validated frontend is live from GitHub Pages commit `07e79766`, including
@@ -371,6 +385,7 @@ Dev servers:
 - `https://localhost:5175/` (Hyperborea)
 - `https://localhost:5176/` (CubeChat)
 - `https://localhost:5177/` (PlanetGen)
+- `https://localhost:5186/` (WXGlobe)
 - `https://localhost:5185/` (Multiscale Ladder)
 - `https://localhost:5178/` (Universes)
 - `https://localhost:5179/` (WebGPUPhys)
@@ -678,6 +693,10 @@ Current demos and validation surfaces:
 - **Daddy Go!**: compact multiplayer score/state validation demo with deterministic runtime checks.
 - **NetViz**: transport inspector, room attach tool, relay/debug overlay, and chaos-lab watcher.
 - **PlanetGen** and **Universes**: procedural generation / world-building demos on the same runtime stack.
+- **WXGlobe**: token-free Cesium whole-planet terrain and bathymetry, rendered
+  without tiled imagery as green equal-elevation contours over black terrain;
+  NOAA ETOPO 2022 is the pole-to-pole default and AWS Terrarium is an optional
+  higher-detail land source.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.
 - **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
 - **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.
@@ -688,6 +707,7 @@ Current demos and validation surfaces:
 ![SneakyWoods](docs/assets/sneakywoods.png)
 ![Daddy Go](docs/assets/daddygo.png)
 ![PlanetGen](docs/assets/planetgen.png)
+![WXGlobe](docs/assets/wxglobe.png)
 ![Universes](docs/assets/universes.png)
 ![Multiscale Ladder](docs/assets/multiscale.svg)
 ![NetViz](docs/assets/netviz.png)

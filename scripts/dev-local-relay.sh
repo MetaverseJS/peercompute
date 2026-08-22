@@ -159,6 +159,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/schrodinger/public"
     "$repo_root/demos/netviz/public"
     "$repo_root/demos/planetgen/public"
+    "$repo_root/demos/wxglobe/public"
     "$repo_root/demos/multiscale/public"
     "$repo_root/demos/universes/public"
     "$repo_root/demos/webgpuphys/public"
@@ -170,6 +171,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/docs/schrodinger"
     "$repo_root/docs/netviz"
     "$repo_root/docs/planetgen"
+    "$repo_root/docs/wxglobe"
     "$repo_root/docs/multiscale"
     "$repo_root/docs/universes"
     "$repo_root/docs/webgpuphys"
@@ -227,6 +229,7 @@ demo_base="https://${demo_url_host}"
 export VITE_HYPERBOREA_URL="${demo_base}:5175/"
 export VITE_CUBECHAT_URL="${demo_base}:5176/"
 export VITE_PLANETGEN_URL="${demo_base}:5177/"
+export VITE_WXGLOBE_URL="${demo_base}:5186/"
 export VITE_MULTISCALE_URL="${demo_base}:5185/"
 export VITE_UNIVERSES_URL="${demo_base}:5178/"
 export VITE_WEBGPUPHYS_TOYCHEST_URL="${demo_base}:5179/demos/toychest.html"
@@ -272,6 +275,7 @@ echo "  overview: $overview_url"
 echo "  hyperborea: https://$(to_url_host "$overview_host"):5175/"
 echo "  cubechat:   https://$(to_url_host "$overview_host"):5176/"
 echo "  planetgen:  https://$(to_url_host "$overview_host"):5177/"
+echo "  wxglobe:    https://$(to_url_host "$overview_host"):5186/"
 echo "  multiscale: https://$(to_url_host "$overview_host"):5185/"
 echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
 echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
@@ -281,11 +285,12 @@ echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,hyperborea,cubechat,planetgen,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,docs \
+"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,hyperborea,cubechat,planetgen,wxglobe,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,docs \
   "npm run dev:relay" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/wxglobe\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/multiscale\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \

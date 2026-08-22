@@ -1,0 +1,376 @@
+:root {
+  color-scheme: dark;
+  font-family: "IBM Plex Mono", "Fira Code", "Cascadia Mono", monospace;
+  --black: #000300;
+  --panel: rgba(0, 10, 3, 0.9);
+  --green: #34ff73;
+  --green-soft: #17b94d;
+  --green-dim: #0a682d;
+  --line: rgba(52, 255, 115, 0.36);
+  --error: #ff5d6c;
+  background: var(--black);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+#viewer {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--black);
+  color: var(--green);
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+#viewer {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+#viewer canvas {
+  outline: 0;
+}
+
+#viewer canvas:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -4px;
+}
+
+.scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.17;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    rgba(39, 255, 105, 0.12) 4px
+  );
+  mix-blend-mode: screen;
+}
+
+.console {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 20;
+  width: min(390px, calc(100vw - 36px));
+  max-height: calc(100vh - 68px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--green);
+  border-radius: 2px;
+  background: var(--panel);
+  box-shadow: 0 0 30px rgba(21, 255, 87, 0.12), inset 0 0 30px rgba(21, 255, 87, 0.025);
+  backdrop-filter: blur(8px);
+}
+
+.console::before,
+.console::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.console::before {
+  top: -1px;
+  right: -1px;
+  border-top: 3px solid var(--green);
+  border-right: 3px solid var(--green);
+}
+
+.console::after {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 3px solid var(--green);
+  border-left: 3px solid var(--green);
+}
+
+.console--error {
+  --green: var(--error);
+  --line: rgba(255, 93, 108, 0.4);
+}
+
+.console__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--green-soft);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(26px, 5vw, 42px);
+  line-height: 0.9;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 16px rgba(52, 255, 115, 0.5);
+}
+
+.icon-button,
+.presets button {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--green);
+  background: rgba(4, 34, 13, 0.56);
+  cursor: pointer;
+}
+
+.icon-button {
+  padding: 6px 8px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.icon-button:hover,
+.presets button:hover,
+.icon-button:focus-visible,
+.presets button:focus-visible {
+  border-color: var(--green);
+  background: rgba(52, 255, 115, 0.15);
+  outline: none;
+}
+
+.console--collapsed {
+  width: auto;
+  max-width: calc(100vw - 36px);
+}
+
+.console--collapsed .console__header {
+  padding: 0;
+  border: 0;
+}
+
+.console--collapsed .console__body {
+  display: none;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 0;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 0 0 14px;
+  padding: 1px;
+  background: var(--line);
+}
+
+.telemetry-grid div {
+  min-width: 0;
+  padding: 8px;
+  background: rgba(0, 8, 2, 0.96);
+}
+
+.telemetry-grid dt {
+  margin-bottom: 4px;
+  color: var(--green-soft);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.telemetry-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.control-block {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.control-label output {
+  color: #b7ffc9;
+}
+
+select {
+  width: 100%;
+  padding: 8px 30px 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--green);
+  background: #001b08;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--green);
+}
+
+.presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.presets button {
+  min-width: 0;
+  padding: 8px 3px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.source-note {
+  padding-top: 2px;
+  color: #71c989;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.source-note p {
+  margin: 8px 0 0;
+}
+
+.credits-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.credits-list li + li {
+  margin-top: 5px;
+}
+
+.source-note strong {
+  color: var(--green);
+}
+
+.source-note details {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--line);
+}
+
+.source-note summary {
+  color: var(--green);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+}
+
+.source-note a,
+.source-note a:visited {
+  color: #a4ffbb;
+}
+
+.readout {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  z-index: 10;
+  display: flex;
+  gap: 14px;
+  color: rgba(52, 255, 115, 0.7);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  pointer-events: none;
+}
+
+.cesium-viewer-bottom {
+  left: auto;
+  right: 8px;
+  bottom: 28px;
+}
+
+.cesium-widget-credits {
+  color: #72d98c;
+  font-family: inherit;
+  font-size: 9px;
+  text-shadow: 0 1px 2px #000;
+}
+
+.cesium-widget-credits a,
+.cesium-widget-credits a:visited {
+  color: #72d98c;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .console {
+    top: 8px;
+    left: 8px;
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 44px);
+  }
+
+  .readout {
+    left: 8px;
+    right: 8px;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 7px;
+  }
+
+  .cesium-viewer-bottom {
+    bottom: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot {
+    animation: none;
+  }
+}

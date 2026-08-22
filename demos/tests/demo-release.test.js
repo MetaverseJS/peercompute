@@ -94,6 +94,7 @@ test('docs index includes all demos and screenshots', () => {
     './fano-reactor/',
     './schrodinger/',
     './planetgen/',
+    './wxglobe/',
     './multiscale/',
     './universes/',
     './webgpuphys/'
@@ -109,6 +110,7 @@ test('docs index includes all demos and screenshots', () => {
     './assets/schrodinger.svg',
     './assets/multiscale.svg',
     './assets/planetgen.png',
+    './assets/wxglobe.png',
     './assets/webgpuphys.png'
   ];
   requiredImages.forEach((src) => {
@@ -125,6 +127,7 @@ test('docs overview keeps expected tile order', () => {
     'Universes',
     'Multiscale Ladder',
     'PlanetGen',
+    'WXGlobe',
     'NetViz',
     'Fano Reactor',
     'Schrodinger',
@@ -136,6 +139,72 @@ test('docs overview keeps expected tile order', () => {
     'Hyperborea'
   ];
   assert.deepEqual(names.slice(0, expected.length), expected, 'docs overview tile order mismatch');
+});
+
+test('wxglobe release wiring is imagery-free and excludes retired weather data', () => {
+  const rootPackage = JSON.parse(read('package.json'));
+  const demoPackage = JSON.parse(read('demos/wxglobe/package.json'));
+  const viteConfig = read('demos/wxglobe/vite.config.js');
+  const indexHtml = read('demos/wxglobe/index.html');
+  const main = read('demos/wxglobe/src/main.js');
+  const etopoTerrain = read('demos/wxglobe/src/terrain/etopo2022.js');
+  const terrariumTerrain = read('demos/wxglobe/src/terrain/terrarium.js');
+  const runtimeSmoke = read('demos/tests/runtime-smoke.mjs');
+  const devAll = read('scripts/dev-all.sh');
+  const devLocalRelay = read('scripts/dev-local-relay.sh');
+
+  assert.ok(rootPackage.workspaces.includes('demos/wxglobe'));
+  assert.equal(rootPackage.scripts['dev:wxglobe'], 'npm --prefix demos/wxglobe run dev -- --host');
+  assert.equal(rootPackage.scripts['build:wxglobe'], 'npm --prefix demos/wxglobe run build');
+  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:wxglobe'));
+  assert.match(viteConfig, /port:\s*5186/);
+  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"));
+  assert.ok(viteConfig.includes("JSON.stringify('./cesium/')"));
+  assert.equal(demoPackage.dependencies.cesium, '^1.144.0');
+  assert.equal(demoPackage.dependencies['grib-js'], undefined);
+  assert.equal(demoPackage.dependencies.netcdfjs, undefined);
+  assert.ok(main.includes('baseLayer: false'));
+  assert.ok(main.includes('createTopoMaterial'));
+  assert.ok(main.includes('providerGeneration'));
+  assert.ok(etopoTerrain.includes("ETOPO_2022_v1_60s_surface"));
+  assert.ok(etopoTerrain.includes('ETOPO2022_MAX_LEVEL = 6'));
+  assert.ok(etopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'));
+  assert.ok(terrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'));
+  assert.ok(terrariumTerrain.includes('maximumLoadedLevel'));
+  assert.ok(indexHtml.includes('ArcticDEM terrain data DEM(s) were created'));
+  assert.ok(indexHtml.includes('United States 3DEP (formerly NED)'));
+  assert.ok(indexHtml.includes('id="aws-terrain-attribution"'));
+  assert.ok(indexHtml.includes('NOAA Z6 // AWS Z15'));
+  assert.ok(runtimeSmoke.includes('Unknown runtime smoke demo(s)'), 'runtime demo filtering must fail closed on typos');
+  assert.ok(!indexHtml.includes('Weather dataset'));
+  assert.ok(!exists('demos/wxglobe/src/weatherManager.js'));
+  assert.ok(!exists('demos/wxglobe/src/weatherWorker.js'));
+  assert.ok(!exists('demos/wxglobe/src/windLayer.js'));
+  assert.ok(!exists('demos/wxglobe/wxdata_subset'));
+  assert.ok(devAll.includes('demos/wxglobe/public'));
+  assert.ok(devLocalRelay.includes('VITE_WXGLOBE_URL="${demo_base}:5186/"'));
+});
+
+test('wxglobe built docs include nested-path-safe Cesium runtime assets', () => {
+  const builtHtml = read('docs/wxglobe/index.html');
+  const requiredRuntimeAssets = [
+    'docs/wxglobe/cesium/Workers/createVerticesFromHeightmap.js',
+    'docs/wxglobe/cesium/ThirdParty/basis_transcoder.wasm',
+    'docs/wxglobe/cesium/Assets/approximateTerrainHeights.json',
+    'docs/wxglobe/cesium/Widgets/widgets.css',
+    'docs/wxglobe/cesium/LICENSE.md',
+    'docs/wxglobe/cesium/ThirdParty.json'
+  ];
+  const builtModulePath = builtHtml.match(/<script[^>]+src="\.\/(assets\/[^"?]+\.js)"/i)?.[1];
+
+  assert.ok(!builtHtml.includes('src="/cesium/'), 'wxglobe built HTML must not use a domain-root Cesium path');
+  assert.ok(!exists('docs/wxglobe/cesium/node_modules'), 'wxglobe Cesium copy must not preserve hoisted node_modules segments');
+  requiredRuntimeAssets.forEach((asset) => assert.ok(exists(asset), `wxglobe built asset missing: ${asset}`));
+  assert.ok(builtModulePath, 'wxglobe built HTML does not reference its hashed entry module');
+  const builtModule = read(`docs/wxglobe/${builtModulePath}`);
+  assert.ok(builtModule.includes('CappedHeightmapTerrainProvider'), 'wxglobe built bundle is stale: capped provider missing');
+  assert.ok(builtModule.includes('maximumLoadedLevel'), 'wxglobe built bundle is stale: successful deep-tile telemetry missing');
+  assert.ok(builtModule.includes('Terrain request aborted'), 'wxglobe built bundle is stale: abortable retry path missing');
 });
 
 test('multiscale release wiring uses fixed port and docs output', () => {

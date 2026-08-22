@@ -44,6 +44,11 @@ const demoSpecs = [
     entryCandidates: ['index.html']
   },
   {
+    name: 'wxglobe',
+    requiresRelayConfig: false,
+    entryCandidates: ['index.html']
+  },
+  {
     name: 'multiscale',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']
@@ -85,6 +90,55 @@ for (const demo of demoSpecs) {
     }
   });
 }
+
+test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const demoPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'wxglobe', 'package.json'), 'utf8'));
+  const indexHtml = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'index.html'), 'utf8');
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'vite.config.js'), 'utf8');
+  const main = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'main.js'), 'utf8');
+  const etopoTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'etopo2022.js'), 'utf8');
+  const terrariumTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'terrarium.js'), 'utf8');
+  const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
+  const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
+  const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
+
+  assert.ok(rootPackage.workspaces.includes('demos/wxglobe'), 'root workspaces missing wxglobe');
+  assert.equal(rootPackage.scripts['dev:wxglobe'], 'npm --prefix demos/wxglobe run dev -- --host');
+  assert.equal(rootPackage.scripts['build:wxglobe'], 'npm --prefix demos/wxglobe run build');
+  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:wxglobe'), 'build:demos missing wxglobe');
+  assert.match(viteConfig, /port:\s*5186/, 'wxglobe Vite config must keep port 5186');
+  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"), 'wxglobe must build to docs/wxglobe');
+  assert.ok(viteConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"), 'wxglobe Cesium base URL must be nested-path safe');
+  assert.ok(viteConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"), 'wxglobe must copy Cesium runtime assets');
+  assert.equal(demoPackage.dependencies.cesium, '^1.144.0');
+  assert.equal(demoPackage.dependencies['grib-js'], undefined, 'retired GRIB dependency must stay absent');
+  assert.equal(demoPackage.dependencies.netcdfjs, undefined, 'retired NetCDF dependency must stay absent');
+  assert.ok(main.includes('baseLayer: false'), 'wxglobe default must not add tiled imagery');
+  assert.ok(main.includes('viewer.imageryLayers.removeAll()'), 'wxglobe must enforce zero imagery layers');
+  assert.ok(etopoTerrain.includes("ETOPO_2022_v1_60s_surface"), 'wxglobe must pin the current ETOPO 2022 surface');
+  assert.ok(etopoTerrain.includes('pixelType'), 'wxglobe missing NOAA S16 BIP request');
+  assert.ok(etopoTerrain.includes('getInt16(index * Int16Array.BYTES_PER_ELEMENT, true)'), 'wxglobe missing little-endian BIP decode');
+  assert.ok(etopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'), 'wxglobe ETOPO grid must use 256 dyadic intervals');
+  assert.ok(terrariumTerrain.includes('elevation-tiles-prod.s3.amazonaws.com/terrarium'), 'wxglobe missing AWS Terrarium source');
+  assert.ok(terrariumTerrain.includes('blue / 256 - 32768'), 'wxglobe missing Terrarium height decode');
+  assert.ok(terrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'), 'wxglobe AWS grid must use endpoint posts');
+  assert.ok(main.includes('providerGeneration'), 'wxglobe source switching must reject stale provider telemetry');
+  assert.ok(indexHtml.includes('NO IMAGERY LAYER'), 'wxglobe UI must disclose the imagery-free default');
+  assert.ok(indexHtml.includes('id="aws-terrain-attribution"'), 'wxglobe must expose required AWS source attribution');
+  assert.ok(!indexHtml.includes('RTMA'), 'wxglobe UI must not retain retired RTMA controls');
+
+  [devAll, devLocalRelay].forEach((script) => {
+    assert.ok(script.includes('demos/wxglobe/public'), 'dev launcher missing wxglobe relay-config parity dir');
+    assert.ok(script.includes('docs/wxglobe'), 'dev launcher missing docs/wxglobe relay-config parity dir');
+    assert.ok(script.includes('demos/wxglobe'), 'dev launcher missing wxglobe dev command');
+    assert.ok(script.includes(':5186/'), 'dev launcher missing wxglobe port 5186');
+  });
+
+  assert.ok(docsIndex.includes('href="./wxglobe/"'), 'docs overview missing wxglobe link');
+  assert.ok(docsIndex.includes('data-demo-dir="wxglobe"'), 'docs overview missing wxglobe metadata');
+  assert.ok(docsIndex.includes('data-demo-port="5186"'), 'docs overview missing wxglobe dev port');
+});
 
 test('multiscale ladder is wired as a first-class repo demo', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
@@ -148,7 +202,10 @@ test('multiscale ladder is wired as a first-class repo demo', () => {
   assert.ok(viteConfig.includes('cosmologyExpansionTasks'), 'multiscale Vite config must emit cosmology expansion solver task entry');
   assert.ok(viteConfig.includes('molecularDynamicsTasks'), 'multiscale Vite config must emit molecular dynamics solver task entry');
   assert.ok(viteConfig.includes('peercomputeComputeWorker'), 'multiscale Vite config must emit ComputeManager worker entry');
-  assert.ok(main.includes("import { ComputeManager, StateManager } from '@peercompute'"), 'multiscale main must import PeerCompute ComputeManager and StateManager');
+  const peercomputeImport = main.match(/import\s*\{([\s\S]*?)\}\s*from\s*['"]@peercompute['"]/);
+  assert.ok(peercomputeImport, 'multiscale main must import from @peercompute');
+  assert.match(peercomputeImport[1], /\bComputeManager\b/, 'multiscale main must import PeerCompute ComputeManager');
+  assert.match(peercomputeImport[1], /\bStateManager\b/, 'multiscale main must import PeerCompute StateManager');
   assert.ok(main.includes('workerBootstrapURL'), 'multiscale main must provide a bundled ComputeManager worker URL');
   assert.ok(main.includes('new ScaleComputeOrchestrator'), 'multiscale main must use the per-scale worker orchestrator');
   assert.ok(main.includes('new StateManager'), 'multiscale main must own a StateManager for compute deltas');

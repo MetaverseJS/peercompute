@@ -619,6 +619,338 @@ Instructions: This file contains a detailed implementation log describing choice
   full-physics readiness.
 - No push was attempted.
 
+## 2026-08-22 13:36:27 AKDT - WXGlobe whole-planet Cesium terrain and bathymetry demo
+
+### Prompt
+
+- This steering sequence was received together and recorded at task intake on
+  2026-08-22 13:36:27 AKDT:
+  - `di you deploy a new gh pages build?`
+  - `I'd like you to create a new demo using cesium for a globe renderer with terrian. is there a free tile server we can use for terrain and imagery? I know there's a nice free one from amazon for terrain. make sure it inclues bathymetry as well. we want the whole planet! default rendering should be without tiled imagery use a green on black topo style map with curving lines of equal elevation.`
+  - `we might even have a published branch up on origin with a good start on this let me see.`
+  - `yes. it's 3drtma. but you can skip the rtma data since it's no longer offered.`
+  - `I bet you could pull in the whole 3drtma demo folder and it'll just work.`
+- Interpreted the last four messages as one implementation request and the
+  first as a release-state question. The existing pre-task GitHub Pages release
+  remained live, but no WXGlobe push/deploy was attempted in this task before
+  the required local clean-point commit.
+
+### Steering prompts received during the active implementation
+
+- At the exact local preview-process start time, `2026-08-22 14:48:48 AKDT`,
+  recorded the user's prompt: `is this up somewhere running locally that I can
+  see it? preferably from my tailnet`. Started the WXGlobe Vite server on
+  `0.0.0.0:5186`, verified HTTP 200 through the machine's Tailnet address, and
+  intentionally left that single preview server running for the user.
+- At the exact terminal-browser session start time, `2026-08-22 14:52:03
+  AKDT`, recorded the user's prompt: `can you just give me the URL I can't see
+  that over my SSH connection.` Replied with the direct Tailnet URL and the
+  MagicDNS URL instead of relying on the side-by-side terminal rendering.
+- At `2026-08-22 15:02:19 AKDT`, recorded the user's prompt: `can you close the
+  terminal browser split? it's messing with my bad ability to read your
+  output`. Ran `terminal-browser shutdown`; it reported `no daemon running`,
+  confirming that no Codex-owned browser split remained. Kept the explicitly
+  requested Tailnet Vite preview running and stopped the temporary docs server.
+
+### Control-plane and archaeology actions
+
+- Used the installed ICC control-plane workflow for task
+  `cesium-whole-planet-demo-20260822`. Refreshed direct repository evidence,
+  created the `implement-wxglobe` plan item, passed agent preflight, and leased
+  the non-overlapping WXGlobe, integration-test, dev-script, docs, README, and
+  plan paths to `codex-root-wxglobe`.
+- Confirmed Node `v24.18.0`, branch `ulg`, starting `HEAD`/`origin/ulg`
+  `861abd5b`, `origin/3drtma` `7f08141f`, and merge base `7a51245c`.
+- Inspected the three branch-only commits `582dd90f`, `7a689ba5`, and
+  `7f08141f`, plus the historical `demos/wxglobe` tree.
+- Created detached temporary worktree
+  `/tmp/peercompute-3drtma-audit.xs5Gg5` and tested the user's whole-folder
+  hypothesis. The old app did not build unchanged: its obsolete
+  `@peercompute` path reached the removed/missing `@libp2p/gossipsub` surface.
+  Its weather workers, generated GRIB data, data symlink, imagery controls,
+  Cesium 1.120 dependency, and PeerCompute stub were also stale relative to the
+  current tree and request.
+- Selectively retained the sound ideas instead: the folder identity,
+  Terrarium decoder/provider concept, Cesium static-runtime setup, and retro
+  terminal styling. Omitted RTMA, RAP, URMA, NOMADS, GRIB, NetCDF, wind layers,
+  local data payloads/symlinks, tiled imagery, and the obsolete PeerCompute
+  stub. Removed the temporary worktree with `git worktree remove --force` after
+  the audit.
+
+### Terrain-source research and decisions
+
+- Verified the current public US AWS Terrain Tiles Terrarium URL:
+  `https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png`.
+  Browser GET/CORS works without an account or key. The Terrarium decoder is
+  `red * 256 + green + blue / 256 - 32768` meters and the useful tile ceiling
+  is z15.
+- Recorded AWS limitations in UI and plans: direct S3 is not a guaranteed CDN
+  service, the data is a mixed-source/composite-attribution product, its global
+  bathymetry is older one-arc-minute ETOPO1, the advertised EU mirror returned
+  `403`, and Web Mercator stops at ±85.051°, so it cannot satisfy literal
+  pole-to-pole terrain alone.
+- Chose NOAA/NCEI's token-free `DEM_all` ArcGIS ImageServer as the default,
+  pinned by `mosaicRule` to `ETOPO_2022_v1_60s_surface`. Live official-service
+  probes confirmed CORS, signed 16-bit BIP output, exact-pole samples at ±90°,
+  land and negative bathymetry, one-arc-minute native resolution, CC0 terms,
+  DOI `10.25921/fd45-gt74`, and the not-for-navigation limitation.
+- Implemented Esri's documented BIP layout exactly: little-endian signed S16
+  pixel bytes followed by an optional MSB-first one-bit-per-sample validity
+  mask. Chose Geographic z6 as the first Cesium level fine enough to represent
+  a one-arc-minute source without pretending z7+ adds detail.
+
+### Implementation
+
+- Added standalone Vite/vanilla-ES-module demo `demos/wxglobe` on port `5186`
+  with Cesium `1.144.0` and `vite-plugin-static-copy` `4.1.1`.
+- Added modular terrain and style modules:
+  - `src/terrain/cappedHeightmapProvider.js` for a real Cesium
+    `TerrainProvider`-shaped adapter with explicit native availability and
+    terminal `childTileMask: 0` heightmaps;
+  - `src/terrain/terrainRequest.js` for bounded, abortable retry handling;
+  - `src/terrain/etopo2022.js` for exact NOAA URL construction, 257-by-257
+    BIP/mask decoding, half-post sampling, pole/antimeridian repair, bounded
+    shared-boundary canonicalization, pole-to-pole `GeographicTilingScheme`,
+    z6 native request cutoff, credits, and live telemetry;
+  - `src/terrain/terrarium.js` for AWS XYZ URL construction, PNG/canvas
+    decoding, a bounded promise cache, symmetric 3-by-3 halo resampling into
+    257 endpoint posts, Web Mercator z15 native request cutoff, exact composite
+    attribution, failures, and telemetry;
+  - `src/terrain/topoMaterial.js` for an opaque near-black `Color` material
+    composited with Cesium's green `ElevationContour` material while suppressing
+    contour ink on zero-width skirt texture boundaries.
+- Added `src/main.js`, `src/style.css`, and `index.html` with zero imagery
+  layers, no ion token, no geocoder/base picker, black sky/terrain, green
+  contours over positive and negative elevations, provider selection, contour
+  interval/width, vertical gain, world/Himalaya/Mariana/Alaska presets, cursor
+  elevation, source limits/credits, responsive retro controls, and an inline
+  favicon.
+- Added `window.__wxglobe.getState()` readiness/telemetry for deterministic
+  browser validation: frame count, fatal error, imagery count, stable terrain
+  provider/material identifiers, source, coverage, tile counts, height range,
+  and negative/positive sample totals.
+- Added 26 pure Node tests across `cappedHeightmapProvider.test.mjs`,
+  `etopo2022.test.mjs`, `terrainRequest.test.mjs`, `terrarium.test.mjs`, and
+  `topoMaterial.test.mjs`.
+- Wired WXGlobe into the root workspace, lockfile, `dev:wxglobe`,
+  `build:wxglobe`, `build:demos`, both dev launchers, production config
+  generation, `docs/index.html`, demo scaffold/release tests, and runtime smoke.
+  Runtime smoke now supports `RUNTIME_SMOKE_DOCS_ROOT`,
+  `RUNTIME_SMOKE_DEMOS`, strict WXGlobe readiness, optional live NOAA checks,
+  and an opt-in AWS provider switch/Mariana deep-tile check.
+- Generated `docs/wxglobe` plus the 1440x900 gallery screenshot
+  `docs/assets/wxglobe.png`. The output contains 396 files / about 13 MiB. The
+  standard Cesium Workers, ThirdParty, Assets, and Widgets trees are copied
+  byte-for-byte and `LICENSE.md` plus `ThirdParty.json` ship beside them.
+- Updated `README.md`, `demos/README.md`, `plan/plan.md`, `plan/tests.md`,
+  `demos/wxglobe/plan.md`, and new `plan/branch/3drtma.md` with source,
+  projection, resolution, licensing, attribution, validation, and explicit
+  RTMA/weather exclusions.
+
+### Files touched
+
+- Added `demos/wxglobe/{package.json,index.html,vite.config.js,plan.md}`.
+- Added `demos/wxglobe/src/{main.js,style.css}`.
+- Added `demos/wxglobe/src/terrain/{cappedHeightmapProvider.js,etopo2022.js,terrainRequest.js,terrarium.js,topoMaterial.js}`.
+- Added `demos/wxglobe/tests/{cappedHeightmapProvider.test.mjs,etopo2022.test.mjs,terrainRequest.test.mjs,terrarium.test.mjs,topoMaterial.test.mjs}`.
+- Added production `demos/wxglobe/public/relay-config.json` and
+  `relay-config-source.json` for repo release parity; the demo itself does not
+  consume PeerCompute networking.
+- Added generated `docs/wxglobe/`, `docs/assets/wxglobe.png`, and
+  `plan/branch/3drtma.md`.
+- Updated `package.json`, `package-lock.json`, `scripts/dev-all.sh`,
+  `scripts/dev-local-relay.sh`, `demos/tests/demo-ports.test.js`,
+  `demos/tests/demo-release.test.js`, `demos/tests/runtime-smoke.mjs`,
+  `docs/index.html`, `README.md`, `demos/README.md`, `plan/plan.md`,
+  `plan/tests.md`, and this log.
+
+### Commands run
+
+- Branch/source evidence: `git rev-parse origin/3drtma`, `git merge-base HEAD
+  origin/3drtma`, `git log --oneline --reverse <merge-base>..origin/3drtma`,
+  `git ls-tree`, `git show`, targeted `rg`, and a detached `git worktree` audit.
+- Dependency/install: `npm install` under Node `v24.18.0`.
+- Source syntax: `node --check demos/wxglobe/src/main.js`, `node --check
+  demos/wxglobe/vite.config.js`, and `node --check
+  demos/tests/runtime-smoke.mjs`.
+- Focused tests: `npm --prefix demos/wxglobe test`; `node --test
+  --test-name-pattern=wxglobe demos/tests/demo-ports.test.js`; `node --test
+  demos/tests/demo-release.test.js`; final combined `node --test
+  demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`; and `npm
+  run test:backend`.
+- Generation/build: `node scripts/write-prod-relay-config.mjs`, `npm run
+  build:wxglobe`, and final `npm run build`.
+- Default live browser gate: `RUNTIME_SMOKE_DEMOS=wxglobe
+  WXGLOBE_REQUIRE_LIVE_TERRAIN=1 DOCS_HOST=127.0.0.1 DOCS_PORT=43910
+  DEMO_WAIT_MS=3000 DEMO_READY_TIMEOUT_MS=45000 node
+  demos/tests/runtime-smoke.mjs`.
+- Final two-source live browser gate: `RUNTIME_SMOKE_DEMOS=wxglobe
+  WXGLOBE_REQUIRE_LIVE_TERRAIN=1 WXGLOBE_REQUIRE_AWS_TERRAIN=1
+  DOCS_HOST=127.0.0.1 DOCS_PORT=43913 DEMO_WAIT_MS=3000
+  DEMO_READY_TIMEOUT_MS=90000 node demos/tests/runtime-smoke.mjs`.
+- Full built-doc regression smoke: `DOCS_HOST=127.0.0.1 DOCS_PORT=43912
+  DEMO_WAIT_MS=3000 DEMO_READY_TIMEOUT_MS=45000 node
+  demos/tests/runtime-smoke.mjs`.
+- Used the terminal-browser skill for real interactive source switching,
+  camera controls, whole-world and Mariana visual inspection, then shut its
+  daemon down. Used an inline Playwright script with system Chrome and the
+  runtime assertions to capture the final gallery screenshot.
+- Ran a credential-redacting Node validator across every generated
+  `relay-config.json`/`relay-config-source.json` pair, `git diff --check`,
+  listener/process checks, and generated-file/path checks.
+
+### Results
+
+- PASS: WXGlobe unit suite `26/26`.
+- PASS: complete demo ports/release suite `40/40` after correcting one stale
+  Multiscale test assertion to parse the existing multiline `@peercompute`
+  import structurally.
+- PASS: backend/release suite `23/23`.
+- PASS: focused and root production builds. The root build regenerated
+  PeerCompute and all 12 demos under Node 24. Existing PeerCompute circular/
+  size, general Vite chunk-size, and PlanetGen `WebGL1Renderer` warnings remain
+  non-fatal.
+- PASS: full built-doc runtime smoke for all nine harness demos, including
+  WXGlobe.
+- PASS: focused NOAA browser gate loaded both geographic level-zero tiles with
+  no failures, zero imagery, min `-8121 m`, max `+5433 m`, `86323` negative and
+  `44692` positive samples, a rendered custom contour globe, and no browser,
+  console, or HTTP errors.
+- PASS: focused AWS provider switch flew to Mariana, loaded deeper Terrarium
+  tiles with negative and positive heights and zero failed tiles, retained zero
+  imagery layers, and exposed the z15/±85.051° boundary.
+- PASS: production config audit found 12 demos / 24 public+docs config pairs,
+  zero failures, production WSS bootstrap, STUN, authenticated TURN UDP/TCP,
+  and the production HTTPS source URL without printing credentials.
+- PASS: visual review confirmed a legible desktop whole-Earth composition and
+  detailed curved bathymetric contours around the Mariana preset. The original
+  raster-cell registration drew a false straight prime-meridian feature; the
+  corrected 257-post mesh and skirt-boundary material mask removed it. The
+  checked-in screenshot was recaptured from a complete frozen Cesium
+  post-render after that correction.
+- PASS: temporary build/docs/runtime servers and terminal-browser were stopped;
+  the detached branch worktree and temporary screenshots were removed. The one
+  explicit exception is the user-requested Tailnet preview on port `5186`,
+  which remains running intentionally. No chaos lab was run.
+
+### Final post-repair validation closure - 2026-08-22 15:07:43 AKDT
+
+- Reran `npm --prefix demos/wxglobe test` after all provider, cache, retry,
+  diagnostic, and material changes: PASS, `26/26`, 0 failed/skipped/cancelled.
+- Reran `node --test demos/tests/demo-ports.test.js
+  demos/tests/demo-release.test.js`: PASS, `40/40`. Reran `npm run
+  test:backend`: PASS, `23/23`.
+- Ran `node --check` over every WXGlobe source/config module and the runtime
+  harness, `bash -n` over both dev launchers, and `git diff --check`: all exited
+  0 with no diagnostics.
+- Ran final root `npm run build` under Node `v24.18.0`: PASS. It rebuilt
+  PeerCompute and all 12 demo workspaces, wrote the 24 production relay config
+  artifacts, emitted WXGlobe bundle `assets/index-C_bfW7KW.js`, and copied 391
+  Cesium items (389 runtime-tree files plus two legal notices). Existing
+  circular-chunk, bundle-size, and PlanetGen `WebGL1Renderer` warnings remained
+  non-fatal.
+- Ran `DOCS_HOST=127.0.0.1 DOCS_PORT=43912 DEMO_WAIT_MS=3000
+  DEMO_READY_TIMEOUT_MS=45000 node demos/tests/runtime-smoke.mjs`: PASS for all
+  nine harness demos; the test-owned HTTPS server exited and port `43912`
+  closed.
+- Ran the focused final command with `RUNTIME_SMOKE_DEMOS=wxglobe`, both live
+  terrain flags, port `43913`, and a 90-second readiness ceiling: PASS in about
+  15 seconds. It exercised the rebuilt docs bundle through current-generation
+  NOAA, a successful real AWS z15 terminal heightmap, stabilized source/request
+  counters, and a newly rendered NOAA generation. Port `43913` closed.
+- Confirmed `docs/wxglobe` contains 396 files / about 13 MiB, no focused test
+  listener remains, and only the user-requested HTTPS Vite preview listens on
+  `0.0.0.0:5186`.
+- Refreshed ICC's deterministic index (`615` files), memory (`9,600` chunks),
+  and 267-commit Git-history artifacts after the final edits. Repo-wide
+  `icc guard-diff` returned `ok: true`, with no violations, warnings, protected
+  paths, rollback risks, or deletions. Targeted WXGlobe readiness returned
+  `ready` / `93`, with zero contract gaps, stubbed paths, or external backend
+  requirements. The targeted production audit's `warn` verdict contained only
+  the intentional dirty-before-commit state and unrelated saved-task portfolio
+  status. The generic completion oracle's sole warning was that its own trace
+  file input was absent; the two executed browser gates above provide the
+  stronger direct runtime evidence for this task.
+- Independent final read-only review confirmed 396 generated files / 12,134,479
+  bytes, no symlinks or files above 50 MiB, syntax-valid 113 JavaScript and 33
+  JSON artifacts, valid headers on four WASM artifacts, byte-identical Cesium
+  runtime/notices, all 24 config pairs matching, and no remaining WXGlobe
+  release blocker.
+
+### Failed attempts and corrections
+
+- The literal historical demo build failed on obsolete PeerCompute/libp2p
+  imports, proving a wholesale folder copy was unsafe; used a selective port.
+- First implementation used nonexistent `Cesium.Color.fromArray` under Cesium
+  1.144. Replaced it with the supported `new Cesium.Color(...)` constructor and
+  added material tests.
+- The first static-copy pattern preserved the hoisted
+  `node_modules/cesium/Build/Cesium` prefix, causing Cesium worker/asset 404s
+  and an unrendered globe. Added `rename: { stripBase: 5 }`, rebuilt, and added
+  release assertions for the exact nested runtime paths and absence of a
+  nested `node_modules` directory.
+- The first focused runtime attempt timed out before those worker paths were
+  corrected. The corrected built-doc run passed.
+- The first direct Playwright command looked for an uninstalled managed
+  Chromium binary. Reused the repository's system Chrome fallback instead; no
+  browser dependency installation was needed.
+- One screenshot caught a WebGL compositing frame mid-update. It was rejected,
+  the scene was frozen only after a complete Cesium `postRender` using the same
+  GPU flags as runtime smoke, and the visually inspected replacement was
+  checked in.
+- The first terrain implementation treated each 256-pixel source raster as 256
+  Cesium endpoint posts. Adjacent source cell centers then disagreed by tens to
+  hundreds of metres and 255 intervals were not dyadically nested. Replaced it
+  with 257 posts: NOAA uses half-post-padded BIP exports plus exact geographic
+  boundary repairs, while AWS uses a cached 3-by-3 tile halo and symmetric
+  bilinear endpoint resampling.
+- Returning `undefined` above z6/z15 caused Cesium to treat the cutoff as a
+  deferred request and retry it. Replaced `CustomHeightmapTerrainProvider` with
+  the capped adapter, explicit `getTileDataAvailable`, and max-level child mask
+  zero. This caps native requests; Cesium can still create virtual upsampled
+  descendants without contacting a source.
+- The first AWS smoke predicate could pass after requesting a deep tile while
+  only a shallow tile had loaded. Added current-generation loaded-level,
+  in-flight, terminal-failure, `tilesLoaded`, direct real-z15, and stabilized
+  request-counter gates, then switched back to a newly rendered NOAA
+  generation.
+- Adversarial provider review found an evicted promise rejection that could
+  delete a newer Terrarium cache entry, aborts misclassified as failures,
+  retry telemetry that ended before the retry operation, and success paths
+  that erased terminal error detail. Added identity-guarded cache deletion,
+  abort-first classification, retry-attempt telemetry, and persistent
+  `lastTerminalError` coverage.
+- A slope-based attempt to hide Cesium skirt contours made the globe black and
+  was rejected. The final material suppresses contour ink only at the
+  zero-width `materialInput.st` tile boundary, retaining normal contours and
+  Cesium's crack-hiding skirts.
+- The initial AWS credit summarized only some sources. Replaced it with the
+  publisher's complete required direct-S3 attribution block in an accessible
+  local details panel linked from the Cesium credit control.
+- The combined ports/release test initially reported `39/40`: its existing
+  Multiscale assertion required an obsolete one-line import string although
+  current `main.js` correctly uses a multiline `@peercompute` import. Replaced
+  the brittle exact string with a structural import-block match for
+  `ComputeManager` and `StateManager`; the full suite then passed `40/40`.
+- `npm install` reported the repository's existing audit total of 41
+  vulnerabilities (5 low, 14 moderate, 19 high, 3 critical) plus native build-
+  script warnings. No broad `npm audit fix` or dependency downgrade was run.
+
+### Open and release boundary
+
+- WXGlobe depends on two public external data services at runtime. NOAA is the
+  pole-to-pole default; AWS direct S3 is optional and has no project-controlled
+  SLA. Source limits and credits are visible in the app and plans.
+- The 4.92 MiB minified Cesium application bundle (about 1.36 MiB gzip) and
+  roughly 13 MiB runtime subtree are expected for the standard Cesium browser
+  distribution; future code splitting/CDN strategy is a performance follow-up,
+  not a correctness blocker.
+- No new GitHub Pages deployment or push was made as part of this entry. A
+  local coherent commit is required first; pushing/deploying it remains an
+  explicit release action.
+- No PeerCompute networking, backend service change, RTMA replacement, or full
+  chaos-lab run was needed or claimed.
+
 ## 2026-08-21 11:56:26 AKDT - Audit whether to commit and push all local `ulg` changes
 
 ### Prompt
