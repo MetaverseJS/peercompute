@@ -35,6 +35,12 @@ MagicDNS HTTPS URL from a headset or browser joined to the same tailnet; direct
 `https://100.x.y.z` access will not match that certificate. `tailscale serve`
 is tailnet-only unless Funnel is enabled separately.
 
+For a direct development handoff without Serve, bind Vite to the node's
+Tailnet IP and use a certificate whose subject-alternative names include that
+IP. A self-signed IP-SAN certificate must be explicitly accepted or trusted by
+the headset/browser; this direct mode remains Tailnet-only and does not use
+Funnel or a reverse proxy.
+
 Production builds do not silently select a cross-origin backend. Build with
 `VITE_GEODATA_SAME_ORIGIN=true` (or
 `VITE_GEODATA_API_URL=same-origin`) behind an HTTPS reverse proxy, or set an

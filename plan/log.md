@@ -57587,3 +57587,39 @@ XR headset on the same tailnet can test the game.
   `https://login.tailscale.com/f/serve?node=nFSXDDESCN11CNTRL`. No terminal
   browser, public tunnel, HTTP endpoint, Funnel, or untrusted IP certificate
   was substituted.
+
+## 2026-08-23 20:41:02 AKDT - Direct Tailnet-IP HTTPS handoff
+
+User correction received at 2026-08-23 20:35 AKDT: Tailscale Serve was not a
+requirement; the user wanted RoadVector listening directly on the private
+Tailnet IP with HTTPS so an XR headset on that tailnet could connect.
+
+- Acknowledged the overcomplication and switched to direct binding. No Serve,
+  Funnel, public tunnel, or terminal browser was used.
+- Inspected the previous loopback Vite certificate. Its SANs covered
+  `localhost`, `127.0.0.1`, and `192.168.1.174`, but not the current Tailnet IP
+  `100.68.165.52`.
+- Attempted `tailscale cert` with certificate/key outputs under
+  `~/.local/state/peercompute/roadvector-tailnet`; the daemon rejected the
+  unprivileged request and `sudo` could not authenticate non-interactively.
+  That path was abandoned without enabling Serve or writing credentials into
+  the repository.
+- Generated a 30-day self-signed RSA certificate outside the repository with
+  SANs `IP:100.68.165.52` and
+  `DNS:shitbox.tail5c077c.ts.net`; key permissions are `0600`.
+- Created an environment-owned Vite override under
+  `~/.local/state/peercompute/roadvector-tailnet`, stopped only the preceding
+  task-owned loopback RoadVector process, and launched transient user service
+  `peercompute-roadvector-tailnet.service`. Geodata on loopback `8788` was
+  retained unchanged.
+- Verified the service is active and listens only on
+  `100.68.165.52:5188`. Direct root and same-origin catalog requests both
+  returned `200`; the presented certificate contains the exact IP and DNS
+  SANs and expires `2026-09-23T04:39:51Z`.
+- Headless Chrome loaded the exact handoff URL with certificate-error bypass
+  appropriate to this self-signed development certificate and reported
+  `isSecureContext=true`, RoadVector `ready=true`, `fatalError=null`, and OSM
+  status `current`.
+- Exact private URL handed to the user:
+  `https://100.68.165.52:5188/`. The headset/browser must accept or trust the
+  self-signed certificate before immersive WebXR can be evaluated.
