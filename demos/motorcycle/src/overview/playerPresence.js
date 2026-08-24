@@ -189,6 +189,10 @@ export class RoadvectorPresenceRuntime {
     this.#localPresence = coarseRoadvectorPresence(location, { source, mode });
   }
 
+  clearLocation() {
+    this.#localPresence = null;
+  }
+
   setMode(mode) {
     if (!this.#localPresence) return;
     this.#localPresence = Object.freeze({ ...this.#localPresence, mode });

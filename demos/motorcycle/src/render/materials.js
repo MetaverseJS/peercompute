@@ -1,80 +1,92 @@
 import { NEON_TOPO_PALETTE } from './constants.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 export function createTopoTerrainMaterial(THREE, {
-  contourSpacingMeters = 4,
-  majorContourEvery = 5,
-  contourWidth = 0.075,
   color = NEON_TOPO_PALETTE.terrain,
-  majorColor = NEON_TOPO_PALETTE.terrainMajor,
+  surfaceOpacity = 0.035,
 } = {}) {
   if (!THREE?.ShaderMaterial || !THREE?.Color) {
     throw new TypeError('A Three.js namespace with ShaderMaterial and Color is required.');
   }
-  if (!Number.isFinite(contourSpacingMeters) || contourSpacingMeters <= 0) {
-    throw new RangeError('contourSpacingMeters must be positive.');
-  }
-  if (!Number.isInteger(majorContourEvery) || majorContourEvery < 1) {
-    throw new RangeError('majorContourEvery must be a positive integer.');
+  if (!Number.isFinite(surfaceOpacity) || surfaceOpacity < 0 || surfaceOpacity > 0.2) {
+    throw new RangeError('surfaceOpacity must be between 0 and 0.2.');
   }
   const material = new THREE.ShaderMaterial({
-    name: 'motorcycle-neon-topographic-terrain',
+    name: 'motorcycle-transparent-topographic-terrain',
     uniforms: {
-      contourSpacingMeters: { value: contourSpacingMeters },
-      majorContourEvery: { value: majorContourEvery },
-      contourWidth: { value: contourWidth },
-      contourColor: { value: new THREE.Color(color) },
-      majorContourColor: { value: new THREE.Color(majorColor) },
-      baseColor: { value: new THREE.Color(0x000000) },
+      surfaceColor: { value: new THREE.Color(color) },
+      surfaceOpacity: { value: surfaceOpacity },
     },
     vertexShader: `
-      varying float vWorldHeight;
       varying vec3 vWorldNormal;
       void main() {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldHeight = worldPosition.y;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
     `,
     fragmentShader: `
-      uniform float contourSpacingMeters;
-      uniform float majorContourEvery;
-      uniform float contourWidth;
-      uniform vec3 contourColor;
-      uniform vec3 majorContourColor;
-      uniform vec3 baseColor;
-      varying float vWorldHeight;
+      uniform vec3 surfaceColor;
+      uniform float surfaceOpacity;
       varying vec3 vWorldNormal;
       void main() {
-        float level = vWorldHeight / contourSpacingMeters;
-        float nearest = abs(fract(level + 0.5) - 0.5);
-        float rawDerivativeWidth = fwidth(level);
-        float contourVariation = smoothstep(0.000001, 0.00005, rawDerivativeWidth);
-        float derivativeWidth = max(rawDerivativeWidth, 0.0001);
-        float minorLine = 1.0 - smoothstep(contourWidth * derivativeWidth,
-          (contourWidth + 1.15) * derivativeWidth, nearest);
-        float majorLevel = level / majorContourEvery;
-        float majorNearest = abs(fract(majorLevel + 0.5) - 0.5);
-        float majorLine = 1.0 - smoothstep(contourWidth * derivativeWidth * 1.8,
-          (contourWidth + 1.7) * derivativeWidth, majorNearest);
-        minorLine *= contourVariation;
-        majorLine *= contourVariation;
-        float grazing = 0.11 + 0.12 * (1.0 - abs(normalize(vWorldNormal).y));
-        vec3 neon = mix(contourColor, majorContourColor, majorLine);
-        vec3 finalColor = baseColor + neon * max(minorLine, majorLine) + contourColor * grazing;
-        gl_FragColor = vec4(finalColor, 1.0);
+        float grazing = 1.0 - abs(normalize(vWorldNormal).y);
+        float alpha = surfaceOpacity * mix(0.55, 1.0, grazing);
+        gl_FragColor = vec4(surfaceColor, alpha);
       }
     `,
     side: THREE.DoubleSide,
+    // Keep the surface visually translucent while still occluding contour
+    // strokes on the far side of hills. The NURBS lines are lifted slightly
+    // and render after this depth pre-pass.
     depthWrite: true,
-    transparent: false,
+    transparent: true,
     toneMapped: false,
+    // Bias the translucent depth surface away from the co-located contour
+    // strokes. This keeps the 6 cm geometric lift stable with the 20 km ride
+    // camera far plane instead of flickering at medium/distant ranges.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   });
-  material.extensions.derivatives = true;
   material.userData = {
-    style: 'black-neon-repeating-topographic-contours',
-    contourSpacingMeters,
-    majorContourEvery,
+    style: 'transparent-terrain-surface-under-nurbs-contours',
+    surfaceOpacity,
+    contourDepthBias: 'surface-polygon-offset-positive',
+  };
+  return material;
+}
+
+export function createNeonLineMaterial(THREE, color, {
+  category = null,
+  opacity = 0.9,
+  linewidth = 1.5,
+} = {}) {
+  if (!THREE?.AdditiveBlending) throw new TypeError('A Three.js namespace with additive blending is required.');
+  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
+    throw new RangeError('Line opacity must be between zero and one.');
+  }
+  if (!Number.isFinite(linewidth) || linewidth <= 0 || linewidth > 16) {
+    throw new RangeError('Line width must be between zero and sixteen pixels.');
+  }
+  const material = new LineMaterial({
+    color,
+    linewidth,
+    worldUnits: false,
+    transparent: true,
+    opacity,
+    depthTest: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    dashed: false,
+    alphaToCoverage: false,
+  });
+  material.toneMapped = false;
+  material.userData = {
+    category,
+    neon: true,
+    lineWidthPixels: linewidth,
+    additive: true,
   };
   return material;
 }

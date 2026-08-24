@@ -238,12 +238,18 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('peercompute.synthetic-road-traffic.snapshot.v1'));
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.road-race-course.v1'), 'RoadVector built bundle is stale: race contract missing');
   assert.ok(motorcycleModule.includes('motorcycle-contact-markers'), 'RoadVector built bundle is stale: contact rendering missing');
+  assert.ok(motorcycleModule.includes('minimal-nurbs-line-bike'), 'RoadVector built bundle is stale: minimalist NURBS bike missing');
+  assert.ok(motorcycleModule.includes('transparent-terrain-with-bounded-nurbs-contours'), 'RoadVector built bundle is stale: transparent NURBS terrain missing');
+  assert.ok(motorcycleModule.includes('motorcycle-rider-head-nurbs-line'), 'RoadVector built bundle is stale: minimalist rider missing');
   assert.ok(motorcycleModule.includes('xr-root-fallback'), 'RoadVector built bundle is stale: single-source XR UI fallback missing');
   assert.ok(motorcycleModule.includes('geolocation-denied-fallback'), 'RoadVector built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.cesium-overview-renderer.v1'), 'RoadVector built bundle is stale: Cesium overview missing');
   assert.ok(motorcycleModule.includes('CappedHeightmapTerrainProvider'), 'RoadVector built bundle is stale: Cesium terrain provider missing');
   assert.ok(motorcycleModule.includes('regional-major-roads-only'), 'RoadVector built bundle is stale: bounded major-road coverage missing');
+  assert.ok(motorcycleModule.includes('fhwa-national-highway-system'), 'RoadVector built bundle is stale: FHWA NHS layer missing');
+  assert.ok(motorcycleModule.includes('user-selected-anchor'), 'RoadVector built bundle is stale: globe click-to-start missing');
+  assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_NO_USABLE_ROAD'), 'RoadVector built bundle is stale: empty-road selection guard missing');
   assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
   assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
   assert.ok(motorcycleModule.includes('xr-standard'));
@@ -261,8 +267,21 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
     'docs/motorcycle/cesium/LICENSE.md',
     'docs/motorcycle/cesium/ThirdParty.json',
     'docs/motorcycle/licenses/NOTICE.md',
-    'docs/motorcycle/licenses/three-LICENSE.txt'
+    'docs/motorcycle/licenses/three-LICENSE.txt',
+    'docs/motorcycle/data/fhwa-nhs/2025.08.08/manifest.json',
+    'docs/motorcycle/data/fhwa-nhs/2025.08.08/source-metadata.xml',
+    'docs/motorcycle/data/fhwa-nhs/2025.08.08/tiles/5/2/9.pbf',
+    'docs/motorcycle/data/fhwa-nhs/2025.08.08/tiles/5/7/12.pbf'
   ].forEach((asset) => assert.ok(exists(asset), `real-data demo built asset missing: ${asset}`));
+  const highwayManifest = JSON.parse(read('docs/motorcycle/data/fhwa-nhs/2025.08.08/manifest.json'));
+  assert.equal(highwayManifest.schemaVersion, 'peercompute.geo.fhwa-nhs-tile-manifest.v1');
+  assert.equal(highwayManifest.source.sourceRecordCount, 492005);
+  assert.equal(highwayManifest.source.archive.dbfVersion, highwayManifest.version);
+  assert.equal(highwayManifest.source.archive.dbfActiveRecords, 492005);
+  assert.equal(highwayManifest.source.archive.dbfDeletedRecords, 0);
+  assert.equal(highwayManifest.coverage.includesAlaska, true);
+  assert.equal(highwayManifest.tileCount, 1028);
+  assert.ok(highwayManifest.totalTileBytes < 4 * 1024 * 1024);
   assert.ok(!earthHtml.includes('src="/cesium/'), 'EarthGrid built HTML must keep Cesium paths release-relative');
   assert.ok(!motorcycleHtml.includes('src="/cesium/'), 'RoadVector built HTML must keep Cesium paths release-relative');
   assert.ok(!exists('docs/motorcycle/cesium/node_modules'), 'RoadVector Cesium copy must not preserve hoisted node_modules segments');

@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xml:lang="en">
+	<Esri>
+		<CreaDate>20260625</CreaDate>
+		<CreaTime>14251500</CreaTime>
+		<ArcGISFormat>1.0</ArcGISFormat>
+		<SyncOnce>TRUE</SyncOnce>
+		<DataProperties>
+			<itemProps/></DataProperties>
+	</Esri>
+	<mdChar>
+		<CharSetCd value="004">
+		</CharSetCd>
+	</mdChar>
+	<mdHrLv>
+		<ScopeCd value="005">
+		</ScopeCd>
+	</mdHrLv>
+	<mdContact>
+		<rpIndName>Edward Starks</rpIndName>
+		<rpOrgName>Federal Highway Administration (FHWA)</rpOrgName>
+		<rpPosName>Transportation Specialist</rpPosName>
+		<rpCntInfo>
+			<cntAddress addressType="both">
+				<delPoint>1200 New Jersey Ave. SE</delPoint>
+				<city>Washington</city>
+				<adminArea>DC</adminArea>
+				<postCode>20590</postCode>
+				<country>United States</country>
+				<eMailAdd>edward.starks@dot.gov</eMailAdd>
+			</cntAddress>
+		</rpCntInfo>
+		<role>
+			<RoleCd value="007">
+			</RoleCd>
+		</role>
+	</mdContact>
+	<mdDateSt>2025-08-12</mdDateSt>
+	<distInfo>
+		<distributor>
+			<distorCont>
+				<rpOrgName>Bureau of Transportation Statistics</rpOrgName>
+				<rpPosName>NTAD Program Manager</rpPosName>
+				<rpCntInfo>
+					<cntPhone>
+						<voiceNum>none</voiceNum>
+					</cntPhone>
+					<cntAddress addressType="both">
+						<delPoint>1200 New Jersey Ave. SE</delPoint>
+						<city>Washington</city>
+						<adminArea>DC</adminArea>
+						<postCode>20590</postCode>
+						<country>US</country>
+						<eMailAdd>ntad@dot.gov</eMailAdd>
+					</cntAddress>
+				</rpCntInfo>
+				<role>
+					<RoleCd value="005">
+					</RoleCd>
+				</role>
+			</distorCont>
+			<distorOrdPrc>
+				<resFees>None. No fees are applicable for obtaining the dataset.</resFees>
+			</distorOrdPrc>
+			<distorFormat>
+				<formatName>Open Data Catalog</formatName>
+				<formatVer>1.1</formatVer>
+				<formatSpec>Hosted Downloads</formatSpec>
+				<formatInfo>An ESRI Geodatabase, ESRI shapefile, or spreadsheet.</formatInfo>
+				<fileDecmTech>ZIP</fileDecmTech>
+			</distorFormat>
+			<distorTran>
+				<onLineSrc>
+					<linkage>https://doi.org/10.21949/1530052</linkage>
+				</onLineSrc>
+			</distorTran>
+		</distributor>
+		<distributor>
+			<distorCont>
+				<rpOrgName>Bureau of Transportation Statistics</rpOrgName>
+				<rpPosName>NTAD Program Manager</rpPosName>
+				<rpCntInfo>
+					<cntPhone>
+						<voiceNum>none</voiceNum>
+					</cntPhone>
+					<cntAddress addressType="both">
+						<delPoint>1200 New Jersey Ave. SE</delPoint>
+						<city>Washington</city>
+						<adminArea>DC</adminArea>
+						<postCode>20590</postCode>
+						<country>US</country>
+						<eMailAdd>ntad@dot.gov</eMailAdd>
+					</cntAddress>
+				</rpCntInfo>
+				<role>
+					<RoleCd value="005">
+					</RoleCd>
+				</role>
+			</distorCont>
+			<distorOrdPrc>
+				<resFees>None. No fees are applicable for obtaining the dataset.</resFees>
+			</distorOrdPrc>
+			<distorFormat>
+				<formatName>ArcGIS REST Services Directory Feature Server (WFS)</formatName>
+				<formatVer>11.5</formatVer>
+				<formatSpec>https://ienccloud.us/arcgis/sdk/rest/index.html#/Feature_Service/02ss0000007v000000/</formatSpec>
+				<formatInfo>complies with OGC WFS Map Service for visualizing geospatial information</formatInfo>
+			</distorFormat>
+			<distorTran>
+				<onLineSrc>
+					<linkage>https://doi.org/10.21949/1530053</linkage>
+				</onLineSrc>
+			</distorTran>
+		</distributor>
+	</distInfo>
+	<dataIdInfo>
+		<idCitation>
+			<resTitle>National Highway System (NHS)</resTitle>
+			<date>
+				<createDate>2024-01-23</createDate>
+				<lastUpdateDate>2025-08-08</lastUpdateDate>
+			</date>
+			<citRespParty>
+				<rpOrgName>Federal Highway Administration (FHWA)</rpOrgName>
+				<role>
+					<RoleCd value="006">
+					</RoleCd>
+				</role>
+			</citRespParty>
+			<presForm>
+				<PresFormCd value="">
+				</PresFormCd>
+			</presForm>
+			<presForm>
+				<fgdcGeoform>vector digital data</fgdcGeoform>
+			</presForm>
+			<collTitle>National Transportation Atlas Database</collTitle>
+		</idCitation>
+		<idAbs>The National Highway System (NHS) dataset and its geometries was updated on August 08, 2025 from the Federal Highway Administration (FHWA) and is part of the U.S. Department of Transportation (USDOT)/Bureau of Transportation Statistics (BTS) National Transportation Atlas Database (NTAD). The National Highway System consists of roadways important to the nation's economy, defense, and mobility. The National Highway System (NHS) includes the following subsystems of roadways: Interstate - The Eisenhower Interstate System of highways, Other Principal Arterials - highways in rural and urban areas which provide access between an arterial and a major port, airport, public transportation facility, or other intermodal transportation facility, Strategic Highway Network (STRAHNET) - a network of highways which are important to the United States' strategic defense policy and which provide defense access, continuity and emergency capabilities for defense purposes, Major Strategic Highway Network Connectors - highways which provide access between major military installations and highways which are part of the Strategic Highway Network, Intermodal Connectors - highways providing access between major intermodal facilities and the other four subsystems making up the National Highway System. A specific highway route may be on more than one subsystem. A data dictionary, or other source of attribute information, is accessible at https://doi.org/10.21949/1529838</idAbs>
+		<idPurp>The dataset exists to serve the Federal Highway Administration (FHWA) needs in highway planning, policy analysis, and visualization of the NHS database. It is intended for use in understanding and managing the National Highway System, which includes roadways crucial to the nation's economy, defense, and mobility. Also, the dataset is being used by the US DOT to reflect the FHWA-approved technical correction for NHS and STRAHNET.</idPurp>
+		<idCredit>Acknowledgment of the Federal Highway Administration (FHWA) and Bureau of Transportation Statistics (BTS) [distributor].</idCredit>
+		<idStatus>
+			<ProgCd value="004">
+			</ProgCd>
+		</idStatus>
+		<idPoC>
+			<rpIndName>Edward Starks</rpIndName>
+			<rpOrgName>Federal Highway Administration (FHWA)</rpOrgName>
+			<rpPosName>Transportation Specialist</rpPosName>
+			<rpCntInfo>
+				<cntAddress addressType="both">
+					<delPoint>1200 New Jersey Ave. SE</delPoint>
+					<city>Washington</city>
+					<adminArea>DC</adminArea>
+					<postCode>20590</postCode>
+					<country>United States</country>
+					<eMailAdd>edward.starks@dot.gov</eMailAdd>
+				</cntAddress>
+			</rpCntInfo>
+			<role>
+				<RoleCd value="007">
+				</RoleCd>
+			</role>
+		</idPoC>
+		<resMaint>
+			<maintFreq>
+				<MaintFreqCd value="009">
+				</MaintFreqCd>
+			</maintFreq>
+		</resMaint>
+		<placeKeys>
+			<keyword>National</keyword>
+			<keyword>United States</keyword>
+			<keyword>USA</keyword>
+		</placeKeys>
+		<themeKeys>
+			<keyword>transportation</keyword>
+			<thesaName>
+				<resTitle>ISO 19115 Topic Category</resTitle>
+			</thesaName>
+		</themeKeys>
+		<themeKeys>
+			<keyword>NTAD</keyword>
+			<keyword>National Transportation Atlas Database</keyword>
+			<keyword>Transportation</keyword>
+			<keyword>Atlas</keyword>
+			<keyword>Database</keyword>
+			<keyword>vector</keyword>
+			<keyword>line</keyword>
+			<keyword>linear Roads</keyword>
+			<keyword>Analysis</keyword>
+			<keyword>Network</keyword>
+			<keyword>Highways</keyword>
+			<keyword>NHS</keyword>
+			<keyword>Highway</keyword>
+			<keyword>Interstate</keyword>
+		</themeKeys>
+		<searchKeys>
+			<keyword>transportation</keyword>
+			<keyword>National</keyword>
+			<keyword>United States</keyword>
+			<keyword>USA</keyword>
+			<keyword>NTAD</keyword>
+			<keyword>National Transportation Atlas Database</keyword>
+			<keyword>Transportation</keyword>
+			<keyword>Atlas</keyword>
+			<keyword>Database</keyword>
+			<keyword>vector</keyword>
+			<keyword>line</keyword>
+			<keyword>linear Roads</keyword>
+			<keyword>Analysis</keyword>
+			<keyword>Network</keyword>
+			<keyword>Highways</keyword>
+			<keyword>NHS</keyword>
+			<keyword>Highway</keyword>
+			<keyword>Interstate</keyword>
+		</searchKeys>
+		<resConst>
+			<Consts>
+				<useLimit>The NHS Version 2025.08.08 database, or any portion thereof, can be freely distributed as long as this metadata entry is included with each distribution. The original metadata entry cannot be modified or deleted from any data transfer. This NTAD dataset is a work of the United States government as defined in 17 U.S.C. § 101 and as such are not protected by any U.S. copyrights. This work is available for unrestricted public use.</useLimit>
+			</Consts>
+		</resConst>
+		<resConst>
+			<Consts>
+				<useLimit>The NHS Version 2025.08.08 database, or any portion thereof, can be freely distributed as long as this metadata entry is included with each distribution. The original metadata entry cannot be modified or deleted from any data transfer. This NTAD dataset is a work of the United States government as defined in 17 U.S.C. § 101 and as such are not protected by any U.S. copyrights. This work is available for unrestricted public use.</useLimit>
+			</Consts>
+			<LegConsts>
+				<accessConsts>
+					<RestrictCd value="">
+					</RestrictCd>
+				</accessConsts>
+			</LegConsts>
+		</resConst>
+		<aggrInfo>
+			<aggrDSName>
+				<resTitle>National Transportation Atlas Database</resTitle>
+				<date>
+					<pubDate>2025-08-08</pubDate>
+				</date>
+				<citRespParty>
+					<rpOrgName>Bureau of Transportation Statistics</rpOrgName>
+					<role>
+						<RoleCd value="006">
+						</RoleCd>
+					</role>
+				</citRespParty>
+			</aggrDSName>
+			<assocType>
+				<AscTypeCd value="002">
+				</AscTypeCd>
+			</assocType>
+		</aggrInfo>
+		<tpCat>
+			<TopicCatCd value="018">
+			</TopicCatCd>
+		</tpCat>
+		<dataExt>
+			<geoEle>
+				<GeoBndBox>
+					<exTypeCode>true</exTypeCode>
+					<westBL>-159.465967</westBL>
+					<eastBL>-65.63071</eastBL>
+					<northBL>70.206526</northBL>
+					<southBL>17.966378</southBL>
+				</GeoBndBox>
+			</geoEle>
+			<tempEle>
+				<TempExtent>
+					<exTemp>
+						<TM_Instant>
+							<tmPosition>2025-08-08</tmPosition>
+						</TM_Instant>
+					</exTemp>
+				</TempExtent>
+			</tempEle>
+		</dataExt>
+		<envirDesc>Version 6.2 (Build 9200) ; Esri ArcGIS 10.8.1.14362</envirDesc>
+	</dataIdInfo>
+	<mdMaint>
+		<resMaint>
+			<maintFreq>
+				<MaintFreqCd value="009">
+				</MaintFreqCd>
+			</maintFreq>
+		</resMaint>
+	</mdMaint>
+	<dqInfo>
+		<dqScope>
+			<scpLvl>
+				<ScopeCd value="005">
+				</ScopeCd>
+			</scpLvl>
+		</dqScope>
+		<report type="DQCompOm">
+			<measDesc>Data set is considered complete for the information presented, as described in the abstract. Users are advised to read the rest of the metadata record carefully for additional details.</measDesc>
+		</report>
+		<dataLineage>
+			<prcStep>
+				<stepDesc>An inclusive work plan is developed including a project management plan, detailed work breakdown structure, project schedule, and performance metrics. The extent of this responsibility includes the arrangement of an initial meeting to facilitate coordination and planning, addressing any emerging matters or concerns, establishing clear roles and responsibilities, and establishing a platform for inquiries and responses among FHWA, FHWA resource center, and the State DOT representative. This involves processing technical corrections to the NHS geospatial nework, including updates, additions, or removals using the latest HPMS geospatial entity or ARNOLD geospatial entity as applicable. The main tasks involve the analysis and updating of the NHS network, and the utilization of custom geospatial tools for improved efficiency, such as carrying out various edits like updating route numbers, NHS classification, and geometries. Deliverable for this task include a finalized NHS network in digital format that include all technical corrections on existing NHS designation, adding new and approved NHS segments, technical correction to STRAHNET.</stepDesc>
+			</prcStep>
+		</dataLineage>
+	</dqInfo>
+	<spatRepInfo>
+		<VectSpatRep>
+			<geometObjs>
+				<geoObjTyp>
+					<GeoObjTypCd value="003">
+					</GeoObjTypCd>
+				</geoObjTyp>
+				<geoObjCnt>491781</geoObjCnt>
+			</geometObjs>
+		</VectSpatRep>
+	</spatRepInfo>
+	<eainfo>
+		<overview>
+			<eadetcit>A data dictionary resource of attribute information is accessible at https://doi.org/10.21949/1529838</eadetcit>
+		</overview>
+	</eainfo>
+</metadata>

@@ -28,6 +28,12 @@ compatible interpreter and run `npm run dev:geodata`. Earth's Vite server is
 HTTPS on port 5187 and proxies `/healthz` plus `/api` to the loopback service on
 8788, avoiding mixed content and cross-origin coordinate disclosure.
 
+The current private Tailnet development listener is
+`https://100.68.165.52:5187/`. It binds directly to the Tailnet IP with the
+same IP-SAN self-signed development certificate as RoadVector and does not use
+Tailscale Serve or Funnel. Accept or install that certificate on the viewing
+device first; `/api` remains a same-origin proxy to loopback `8788`.
+
 Browser geolocation is user-triggered, requires a secure context, is rounded to
 four decimal places, and is retained in memory only. The local query starts at
 a 1.2 km radius and retries bounded 800 m and 500 m regions when source or

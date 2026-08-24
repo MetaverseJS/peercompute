@@ -103,7 +103,11 @@ export function selectMotorcycleSpawn(localGraph) {
       || right.edge.lengthMeters - left.edge.lengthMeters
       || left.edge.id.localeCompare(right.edge.id)
     ));
-  if (candidates.length === 0) throw new RangeError('The bounded region contains no usable motorcycle road segment.');
+  if (candidates.length === 0) {
+    const error = new RangeError('The selected region contains no usable motorcycle road. Select a drawn highway or road and try again.');
+    error.code = 'ERR_MOTORCYCLE_NO_USABLE_ROAD';
+    throw error;
+  }
   const edge = candidates[0].edge;
   const from = edge.fromNode.localPosition;
   const to = edge.toNode.localPosition;

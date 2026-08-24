@@ -158,7 +158,7 @@ function updateReady() {
   if (runtime.ready || runtime.fatalError) return;
   const terrainReady = runtime.frameCount > 0 && (runtime.terrain?.loaded ?? 0) > 0;
   const osmSettled = ['unavailable', 'off'].includes(runtime.osmStatus)
-    || (runtime.osmTelemetry?.renderedCommands ?? 0) > 0;
+    || (runtime.osmTelemetry?.loaded ?? 0) > 0;
   if (!terrainReady || !osmSettled) return;
   runtime.ready = true;
   document.documentElement.dataset.earthReady = 'true';
@@ -242,9 +242,15 @@ async function startShortbread() {
         if (telemetry.renderedCommands > 0) {
           runtime.osmStatus = telemetry.failed > 0 ? 'degraded' : 'live';
         } else if (telemetry.loaded > 0) {
-          runtime.osmStatus = 'waiting-features';
+          // Shortbread's streets layer begins at z5. A globe-scale view can
+          // therefore load valid empty low-zoom tiles. That is a settled live
+          // source state, not an endless startup failure; disclose that users
+          // must zoom for road features instead of inventing geometry.
+          runtime.osmStatus = telemetry.failed > 0 ? 'degraded' : 'live';
         }
-        elements.osmStatus.textContent = `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested}`;
+        elements.osmStatus.textContent = telemetry.renderedCommands > 0
+          ? `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested}`
+          : `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested} // ZOOM FOR ROADS`;
         updateReady();
       }
     });
@@ -255,9 +261,9 @@ async function startShortbread() {
     runtime.osmProvider = provider;
     runtime.osmLayer = runtime.viewer.imageryLayers.addImageryProvider(provider);
     runtime.osmLayer.show = elements.osmContext.checked;
-    if ((runtime.osmTelemetry?.renderedCommands ?? 0) === 0) {
+    if ((runtime.osmTelemetry?.loaded ?? 0) === 0) {
       runtime.osmStatus = 'waiting-tiles';
-      elements.osmStatus.textContent = 'SHORTBREAD WAITING FOR FIRST RENDERABLE FEATURE // ODBL';
+      elements.osmStatus.textContent = 'SHORTBREAD WAITING FOR FIRST TILE // ODBL';
     }
   } catch (error) {
     runtime.osmStatus = 'unavailable';

@@ -152,6 +152,45 @@ test('ViewRig shifts camera, XR anchor, and chase damping state through one orig
   rig.dispose();
 });
 
+test('ViewRig applies a reusable camera floor to first, damped third, and stereo XR views', () => {
+  const first = new FakeCamera('first');
+  const third = new FakeCamera('third');
+  const xr = new FakeCamera('xr');
+  const anchor = new FakeNode('anchor');
+  const rig = new ViewRig({
+    firstCamera: first,
+    thirdCamera: third,
+    xrCamera: xr,
+    xrAnchor: anchor,
+    thirdDamping: 1,
+    minimumViewY: () => 3,
+  });
+
+  rig.setMode('first');
+  let pose = rig.update({ position: [0, 0, 0], orientation: [0, 0, 0, 1] });
+  assert.deepEqual(pose.position, [0, 3, -0.2]);
+  assert.deepEqual(first.quaternion.toArray(), [0, 0, 0, 1]);
+
+  rig.setMode('third');
+  pose = rig.update({ position: [0, -10, 0], orientation: [0, 0, 0, 1], deltaTime: 0.1 });
+  assert.equal(pose.position[1], 3);
+  pose = rig.update({ position: [0, -20, 0], orientation: [0, 0, 0, 1], deltaTime: 0.1 });
+  assert.equal(pose.position[1], 3, 'the constrained chase position remains the damping state');
+
+  rig.setXRActive(true);
+  xr.position.set(8, 9, 10);
+  pose = rig.update({
+    position: [0, 0, 0],
+    orientation: [0, 0, 0, 1],
+    xrViewOffsets: [[-0.03, -1, 0], [0.03, 0.5, 0]],
+  });
+  assert.equal(pose.correction, 4);
+  assert.deepEqual(anchor.position.toArray(), [0, 4, 0]);
+  assert.deepEqual(xr.position.toArray(), [8, 9, 10], 'tracked XR camera remains untouched');
+  assert.equal(pose.eyeCount, 2);
+  rig.dispose();
+});
+
 test('terminal UI shares ray, poke, slider capture, and focus interaction semantics', () => {
   const activations = [];
   const sliderInputs = [];

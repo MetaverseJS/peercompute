@@ -8,8 +8,8 @@
     <meta http-equiv="Permissions-Policy" content="geolocation=(self), xr-spatial-tracking=(self), camera=(), microphone=()" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000300'/%3E%3Cpath d='M8 42h48M14 34l10-12 9 12 9-18 8 18' fill='none' stroke='%2334ff73' stroke-width='4'/%3E%3C/svg%3E" />
     <title>RoadVector // Particle Motorcycle</title>
-    <script type="module" crossorigin src="./assets/index-Hix4CE5B.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DM81038U.css">
+    <script type="module" crossorigin src="./assets/index-pUsf9pMm.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CaOEGIO8.css">
   </head>
   <body>
     <main id="app">
@@ -32,7 +32,7 @@
           <dl class="telemetry-grid">
             <div><dt>OSM REGION</dt><dd id="osm-status">UNREQUESTED</dd></div>
             <div><dt>TERRAIN</dt><dd id="terrain-status">UNREQUESTED</dd></div>
-            <div><dt>CESIUM GLOBE</dt><dd id="overview-status">LOADING NOAA + OSM</dd></div>
+            <div><dt>CESIUM GLOBE</dt><dd id="overview-status">LOADING NOAA + FHWA NHS + OSM</dd></div>
             <div><dt>PLAYERS</dt><dd id="player-status">CONNECTING // LOCATION PRIVATE</dd></div>
             <div><dt>PHYSICS</dt><dd id="physics-status">WAITING</dd></div>
             <div><dt>TRAFFIC</dt><dd id="traffic-status">SYNTHETIC // WAITING</dd></div>
@@ -44,7 +44,9 @@
           </dl>
 
           <section class="control-block" aria-labelledby="location-heading">
-            <h2 id="location-heading">LOCATION // IN MEMORY ONLY</h2>
+            <h2 id="location-heading">LOCATION // CLICK GLOBE TO START</h2>
+            <p>CLICK OR TAP A DRAWN ROAD ANYWHERE ON THE GLOBE. A PLAYABLE LOCAL ROAD REGION LOADS BEFORE RIDE MODE ENABLES.</p>
+            <p>ELIGIBLE USER-SELECTED LOCATIONS ARE SHARED WITH PEERS ONLY AS A COARSE 0.1° CELL AFTER LOAD SUCCESS.</p>
             <div class="button-grid button-grid--two">
               <button id="locate" type="button">USE MY LOCATION</button>
               <button id="fallback" type="button">ANCHORAGE</button>
@@ -83,18 +85,19 @@
           <section class="legend" aria-label="Scene legend">
             <span class="legend--road">REAL OSM ROAD</span>
             <span class="legend--building">OSM BUILDING</span>
-            <span class="legend--bike">PARTICLE BIKE</span>
+            <span class="legend--bike">NURBS LINE BIKE</span>
             <span class="legend--traffic">SYNTHETIC TRAFFIC</span>
             <span class="legend--race">RACE CHECKPOINT</span>
-            <span class="legend--terrain">NOAA TERRAIN</span>
+            <span class="legend--terrain">NOAA NURBS CONTOURS</span>
             <span class="legend--major-road">REGIONAL MAJOR ROAD</span>
+            <span class="legend--federal-road">FHWA NATIONAL HIGHWAY SYSTEM</span>
             <span class="legend--player">LIVE PLAYER</span>
           </section>
 
           <footer class="source-note">
             <p><strong>GAME / VISUALIZATION ONLY.</strong> Not navigation, traffic, routing, road-condition, or terrain-clearance data.</p>
             <p>Roads/buildings: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.</p>
-            <p>Globe/GIS engine: CesiumJS. Relief: NOAA/NCEI ETOPO 2022. Street traffic is deterministic application-generated simulation, never a live traffic feed.</p>
+            <p>Globe/GIS engine: CesiumJS. Relief: NOAA/NCEI ETOPO 2022. Nationwide roads: FHWA National Highway System via U.S. DOT BTS, generalized for display. Street traffic is deterministic application-generated simulation, never a live traffic feed.</p>
             <p><a href="./licenses/NOTICE.md" target="_blank" rel="noopener noreferrer">DATA + SOFTWARE NOTICES</a> // NOT FOR NAVIGATION.</p>
             <p id="provenance">SOURCE PROVENANCE UNAVAILABLE</p>
           </footer>
@@ -119,7 +122,7 @@
       </section>
 
       <output id="hud" class="hud" aria-live="polite">0.0 KM/H // GEAR N // 0 RPM</output>
-      <p class="global-attribution">GLOBE: CESIUMJS · TOPO: NOAA/NCEI ETOPO 2022 · ROADS: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OPENSTREETMAP CONTRIBUTORS</a> · LIVE PLAYERS: COARSE 0.1° PEERCOMPUTE PRESENCE</p>
+      <p class="global-attribution">GLOBE: CESIUMJS · TOPO: NOAA/NCEI ETOPO 2022 · NATIONAL NETWORK: <a href="https://www.fhwa.dot.gov/Planning/national_highway_system/" target="_blank" rel="noopener noreferrer">FHWA NHS / U.S. DOT BTS</a> · LOCAL ROADS: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OPENSTREETMAP CONTRIBUTORS</a> · LIVE PLAYERS: COARSE 0.1° PEERCOMPUTE PRESENCE</p>
       <output id="error" class="error" role="alert"></output>
     </main>
   </body>

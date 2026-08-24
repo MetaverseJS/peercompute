@@ -151,6 +151,53 @@
   comfort, and performance matrix. The direct URL is ready for the user's
   manual run, but no hardware certification is claimed.
 
+### Latest FHWA, NURBS, and terrain-safe camera evidence - 2026-08-24 AKDT
+
+- Runtime: Node `v24.18.0` on Kubuntu 24.04.
+- PASS: `npm run sync:federal-highways`. The bounded official refresh validated
+  USDOT/BTS item/layer identity, live version `2025.08.08`, all 492,005 DBF
+  rows carrying that exact version, the six-member archive allowlist, expanded
+  resource limits, and the exact 104,773,728-byte archive SHA-256
+  `b5e4969919953bf4f0cd38c1582bd9314e0c26a1e937e35ee7a2392a1e6c3069`.
+  It regenerated 1,028 tiles / 2,468,431 bytes from 464,449 simplified points;
+  the largest tile is 47,196 bytes. Two earlier bounded attempts failed on a
+  transient export timeout; the downloader was corrected to distinguish the
+  connection/header timeout from the capped five-minute archive stream and
+  retry only transient status/timeout failures. Failed scratch directories
+  were removed after the successful atomic replacement.
+- PASS: `npm run test:earth-platform:unit`. Counts are geo-core `29/29`,
+  geodata `44/44`, EarthGrid `27/27`, WXGlobe `28/28`, shared XR `22/22`,
+  particle/motorcycle physics `33/33`, traffic `12/12`, and RoadVector `64/64`
+  (`259` Node tests plus the mocked Chromium XR browser harness).
+- PASS: `npm run test:earth-platform:release`. Fresh production builds are
+  WXGlobe `index-CpLdGMun.js`, EarthGrid `index-BD3Q_QDG.js`, and RoadVector
+  `index-pUsf9pMm.js` plus `NetworkManager-Bw1A5fZg.js`; static port/release
+  checks passed `44/44`, followed by combined built HTTPS smoke for
+  `wxglobe,earth,motorcycle` on test-owned port `43947`. The browser/server
+  closed after the run.
+- PASS: `npm run test:earth-platform:live` from
+  `2026-08-24T18:48:52Z` through `18:49:08Z`: Shortbread 38,983 bytes / 515
+  streets / one building; Overpass 267,281 bytes / 172 roads / 100 buildings /
+  705 directed edges after one bounded retry; nowCOAST 101 times with the
+  latest frame current at 7.93 minutes old; ETOPO 16 finite samples from 13 to
+  19 m; and Terrarium 69,200 bytes.
+- PASS: direct private HTTPS probes returned 200 for both app roots,
+  same-origin catalogs, Cesium workers, and the FHWA manifest. Headless Chrome
+  reported `isSecureContext=true` at both origins. RoadVector loaded 1,665
+  source roads, current FHWA coverage with Alaska, 14 drawn federal commands,
+  transparent NURBS terrain, exactly 13 bike/rider curves, zero default dense
+  particles, and finite first-/third-person terrain clearances. EarthGrid
+  reached ready with NOAA and Shortbread live. The current gallery RoadVector
+  capture is the real private-source overview, not a fixture.
+- PASS: `git diff --check` and focused syntax checks. Root
+  `npm audit --omit=dev --json` remains non-clean with 21 pre-existing
+  production-tree advisories (1 critical, 12 high, 3 moderate, 5 low); no
+  broad dependency `audit fix` was attempted. The isolated geodata service's
+  prior audit remains clean.
+- NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and performance matrix. The direct HTTPS RoadVector link is ready
+  for this manual user test; automated XR is not called hardware certification.
+
 ### WXGlobe whole-planet terrain gate - 2026-08-22 AKDT
 
 - Pure Node tests cover NOAA ETOPO 2022 signed little-endian BIP decoding,
@@ -2115,3 +2162,32 @@
 - NOT RUN: a physical headset enter/exit/re-enter, controllers/hands, haptics,
   comfort, and performance matrix. The exact HTTPS URL is intentionally left
   running for that user-operated hardware gate; no certification is claimed.
+
+## FHWA highway, globe click, and NURBS-line visual gate - 2026-08-24 AKDT
+
+- The federal-highway sync gate validates the exact ArcGIS item owner/service,
+  layer geometry/SR/schema, source count/version/edit date, allowlisted ZIP
+  members, CRC/extracted-size/record count, original metadata retention, NHS
+  class domain, Alaska coverage, simplified-point count, tile count/bytes, and
+  per-tile SHA-256 before atomic replacement.
+- Geo-core tests open real generated Alaska and continental tiles, validate the
+  manifest and checksum-fail-closed path, and prove the bounded Cesium imagery
+  provider never requests outside the snapshot's z0–8 tile manifest.
+- RoadVector unit/browser tests prove Cesium terrain-first/ellipsoid-fallback
+  picking, sky rejection, rapid-selection generation ownership, roads-only
+  local loads, explicit no-usable-road failure, delayed coarse presence,
+  successful click-to-start, and click-handler/provider teardown.
+- Renderer tests require a transparent exact terrain mesh, contouring phased
+  by source elevation rather than local origin, actual finite Three.js NURBS
+  curves, deterministic curve/level/vertex caps, exactly two physical-radius
+  wheel curves, a bounded line frame/stick rider, no default dense particle or
+  contact geometry, an explicit capped debug mode, interpolation, rebasing,
+  and complete resource disposal.
+- The built browser gate must observe `minimal-nurbs-line-bike`, two wheel
+  curves, zero default particle/contact markers, the transparent terrain style,
+  positive NURBS contour output, and contour/draw-call caps alongside the
+  existing physics/traffic/race/input/provenance assertions.
+- Direct Tailnet browser evidence must use the exact private HTTPS origins,
+  report `isSecureContext`, prove same-origin geodata/Cesium assets, and leave
+  the two requested handoff services running. The physical-headset matrix
+  remains manual and must stay recorded as NOT RUN until the user exercises it.

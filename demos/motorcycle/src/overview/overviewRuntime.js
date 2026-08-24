@@ -1,6 +1,7 @@
 import {
   createEtopo2022TerrainProvider,
   createTopoOverlayMaterial,
+  loadFederalHighwayImageryProvider,
   loadShortbreadImageryProvider,
 } from '@peercompute/geo-core';
 
@@ -18,6 +19,8 @@ export const ROADVECTOR_OVERVIEW_MAXIMUM_TILE_BYTES = 1024 * 1024;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_TOTAL_BYTES = 8 * 1024 * 1024;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_VERTICES = 100_000;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES = 128;
+export const ROADVECTOR_FEDERAL_HIGHWAY_VERSION = '2025.08.08';
+export const ROADVECTOR_FEDERAL_HIGHWAY_MANIFEST_PATH = `data/fhwa-nhs/${ROADVECTOR_FEDERAL_HIGHWAY_VERSION}/manifest.json`;
 export const ROADVECTOR_OVERVIEW_MAJOR_CATEGORIES = Object.freeze([
   'motorway',
   'trunk',
@@ -79,6 +82,29 @@ function removeImageryLayer(viewer, layer) {
   viewer.imageryLayers.remove(layer, true);
 }
 
+export function pickRoadvectorGlobeLocation(Cesium, viewer, screenPosition) {
+  if (!Cesium?.Cartographic?.fromCartesian || !Cesium?.Math?.toDegrees) {
+    throw new TypeError('Cesium cartographic conversion primitives are required.');
+  }
+  if (!viewer?.camera || !viewer?.scene?.globe) throw new TypeError('A Cesium viewer is required.');
+  const ray = viewer.camera.getPickRay?.(screenPosition);
+  const cartesian = (ray ? viewer.scene.globe.pick?.(ray, viewer.scene) : null)
+    ?? viewer.camera.pickEllipsoid?.(screenPosition, viewer.scene.globe.ellipsoid)
+    ?? null;
+  if (!cartesian) return null;
+  const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+  const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+  const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)
+    || longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
+    return null;
+  }
+  return Object.freeze({
+    longitude: Math.round(longitude * 10_000) / 10_000,
+    latitude: Math.round(latitude * 10_000) / 10_000,
+  });
+}
+
 export function createRoadvectorOverviewRuntime({
   Cesium,
   container,
@@ -88,6 +114,15 @@ export function createRoadvectorOverviewRuntime({
   terrainProviderFactory = createEtopo2022TerrainProvider,
   topoMaterialFactory = createTopoOverlayMaterial,
   shortbreadProviderLoader = loadShortbreadImageryProvider,
+  federalHighwayProviderLoader = loadFederalHighwayImageryProvider,
+  federalHighwayManifestUrl = new URL(
+    ROADVECTOR_FEDERAL_HIGHWAY_MANIFEST_PATH,
+    globalThis.document?.baseURI ?? globalThis.location?.href ?? 'http://localhost/',
+  ).toString(),
+  onLocationSelected = null,
+  screenSpaceEventHandlerFactory = (canvas) => (
+    Cesium.ScreenSpaceEventHandler ? new Cesium.ScreenSpaceEventHandler(canvas) : null
+  ),
 } = {}) {
   if (!Cesium?.Cartesian3 || !Cesium?.Rectangle || !Cesium?.Color) {
     throw new TypeError('RoadVector Cesium overview requires Cesium geospatial primitives.');
@@ -119,6 +154,11 @@ export function createRoadvectorOverviewRuntime({
 
   const presenceAbort = new AbortController();
   const presence = createRoadvectorPresenceRuntime({ fetchImpl, ...presenceOptions });
+  const federalHighwayAbort = new AbortController();
+  let federalHighwayLayer = null;
+  let federalHighwayProvider = null;
+  let federalHighwayTelemetry = null;
+  let federalHighwayError = null;
   let roadAbort = null;
   let roadGeneration = 0;
   let roadLayer = null;
@@ -131,6 +171,8 @@ export function createRoadvectorOverviewRuntime({
   let locationSource = null;
   let disposed = false;
   let renderedFrames = 0;
+  let selection = Object.freeze({ status: 'idle', location: null, error: null });
+  let selectionGeneration = 0;
   let players = presence.getSnapshot();
   let peerSignature = '';
   const remoteEntities = new Map();
@@ -141,6 +183,73 @@ export function createRoadvectorOverviewRuntime({
   presence.start({ signal: presenceAbort.signal }).then((snapshot) => {
     players = snapshot;
   }).catch(() => {});
+
+  const federalHighwayReady = federalHighwayProviderLoader(Cesium, {
+    manifestUrl: federalHighwayManifestUrl,
+    fetchImpl,
+    signal: federalHighwayAbort.signal,
+    onTelemetry(telemetry) {
+      if (disposed) return;
+      federalHighwayTelemetry = Object.freeze({ ...telemetry });
+      requestRender();
+    },
+  }).then((provider) => {
+    if (disposed || federalHighwayAbort.signal.aborted) {
+      provider.destroy?.();
+      return;
+    }
+    federalHighwayProvider = provider;
+    federalHighwayLayer = viewer.imageryLayers.addImageryProvider(provider, 0);
+    requestRender();
+  }).catch((error) => {
+    if (disposed || federalHighwayAbort.signal.aborted) return;
+    federalHighwayError = error instanceof Error ? error.message : String(error);
+    requestRender();
+  });
+
+  const screenSpaceHandler = typeof onLocationSelected === 'function'
+    ? screenSpaceEventHandlerFactory(viewer.scene.canvas)
+    : null;
+  screenSpaceHandler?.setInputAction?.((event) => {
+    const generation = ++selectionGeneration;
+    const picked = pickRoadvectorGlobeLocation(Cesium, viewer, event?.position);
+    if (!picked) {
+      selection = Object.freeze({ generation, status: 'missed', location: null, clickedLocation: null, error: null });
+      return;
+    }
+    selection = Object.freeze({
+      generation,
+      status: 'loading',
+      location: picked,
+      clickedLocation: picked,
+      highwaySnap: null,
+      error: null,
+    });
+    Promise.resolve(onLocationSelected(picked, {
+      source: 'user-selected-anchor',
+      clickedLocation: picked,
+    })).then((result) => {
+      if (generation !== selectionGeneration) return;
+      selection = Object.freeze({
+        status: result ? 'playable' : 'superseded',
+        generation,
+        location: picked,
+        clickedLocation: picked,
+        highwaySnap: null,
+        error: null,
+      });
+    }).catch((error) => {
+      if (generation !== selectionGeneration) return;
+      selection = Object.freeze({
+        generation,
+        status: 'unavailable',
+        location: picked,
+        clickedLocation: picked,
+        highwaySnap: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, Cesium.ScreenSpaceEventType?.LEFT_CLICK);
 
   function requestRender() {
     if (!viewer.isDestroyed?.()) viewer.scene.requestRender?.();
@@ -220,7 +329,6 @@ export function createRoadvectorOverviewRuntime({
     location = normalizeOverviewLocation(nextLocation);
     locationSource = source;
     replaceTerrainProvider();
-    presence.setLocation(location, { source, mode });
     setLocalMarker(location);
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(
@@ -291,6 +399,18 @@ export function createRoadvectorOverviewRuntime({
       roadError = error instanceof Error ? error.message : String(error);
       return null;
     }
+  }
+
+  function publishLocation(nextLocation, { source = 'manual' } = {}) {
+    const published = normalizeOverviewLocation(nextLocation);
+    presence.setLocation(published, { source, mode });
+    players = presence.getSnapshot();
+    return players.publishingLocation;
+  }
+
+  function clearPublishedLocation() {
+    presence.clearLocation();
+    players = presence.getSnapshot();
   }
 
   function setMode(nextMode) {
@@ -366,6 +486,36 @@ export function createRoadvectorOverviewRuntime({
         renderedVertices: roadTelemetry?.renderedVertices ?? 0,
         bounds: roadBounds ? { ...roadBounds } : null,
       }),
+      federalHighways: Object.freeze({
+        status: federalHighwayError
+          ? 'unavailable'
+          : federalHighwayTelemetry?.status ?? (federalHighwayProvider ? 'loading' : 'loading'),
+        error: federalHighwayError ?? federalHighwayTelemetry?.lastError ?? null,
+        sourceId: 'fhwa-national-highway-system',
+        authority: 'Federal Highway Administration',
+        publisher: 'U.S. DOT Bureau of Transportation Statistics',
+        datasetVersion: federalHighwayTelemetry?.version ?? null,
+        sourceRecordCount: federalHighwayTelemetry?.sourceRecordCount ?? null,
+        retainedRecordCount: federalHighwayTelemetry?.retainedRecordCount ?? null,
+        availableTiles: federalHighwayTelemetry?.availableTiles ?? null,
+        loadedTiles: federalHighwayTelemetry?.loaded ?? 0,
+        responseBytes: federalHighwayTelemetry?.responseBytes ?? 0,
+        renderedRoads: federalHighwayTelemetry?.renderedRoads ?? 0,
+        renderedVertices: federalHighwayTelemetry?.renderedVertices ?? 0,
+        coverage: '50 states, District of Columbia, and Puerto Rico',
+        includesAlaska: federalHighwayTelemetry?.includesAlaska === true,
+        currentSourceSnapshot: Boolean(
+          federalHighwayProvider
+          && !federalHighwayError
+          && federalHighwayTelemetry?.version === ROADVECTOR_FEDERAL_HIGHWAY_VERSION
+          && federalHighwayTelemetry?.includesAlaska === true
+        ),
+        geometryExact: false,
+        displayOnly: true,
+        navigationGrade: false,
+        metadataPath: `data/fhwa-nhs/${ROADVECTOR_FEDERAL_HIGHWAY_VERSION}/source-metadata.xml`,
+      }),
+      selection,
       players,
       renderer: Object.freeze({
         schemaVersion: 'peercompute.roadvector.cesium-overview-renderer.v1',
@@ -396,8 +546,14 @@ export function createRoadvectorOverviewRuntime({
   async function dispose() {
     if (disposed) return;
     disposed = true;
+    screenSpaceHandler?.destroy?.();
     presenceAbort.abort();
+    federalHighwayAbort.abort();
     roadAbort?.abort();
+    removeImageryLayer(viewer, federalHighwayLayer);
+    federalHighwayProvider?.destroy?.();
+    federalHighwayLayer = null;
+    federalHighwayProvider = null;
     removeImageryLayer(viewer, roadLayer);
     roadProvider?.destroy?.();
     roadLayer = null;
@@ -410,6 +566,8 @@ export function createRoadvectorOverviewRuntime({
 
   return Object.freeze({
     setLocation,
+    publishLocation,
+    clearPublishedLocation,
     setMode,
     update,
     getStatus,

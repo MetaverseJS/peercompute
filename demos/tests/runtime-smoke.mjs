@@ -148,6 +148,11 @@ const allDemos = [
         && state.overview?.roads?.loadedTiles > 0
         && state.overview?.roads?.renderedRoads > 0
         && state.overview?.roads?.renderedVertices > 0
+        && state.overview?.federalHighways?.status === 'current'
+        && state.overview?.federalHighways?.sourceRecordCount === 492005
+        && state.overview?.federalHighways?.includesAlaska === true
+        && state.overview?.federalHighways?.loadedTiles > 0
+        && state.overview?.federalHighways?.renderedRoads > 0
         && state.overview?.renderer?.terrainTilesLoaded === true
         && state.overview?.players?.synthetic === false
         && state.locationSource === 'browser-geolocation'
@@ -163,6 +168,11 @@ const allDemos = [
         && state.game?.raceCourse?.gates?.length >= 2
         && ['ready', 'racing', 'finished'].includes(state.game?.race?.status)
         && state.renderer?.motorcycle?.componentCount === 6
+        && state.renderer?.motorcycle?.style === 'minimal-nurbs-line-bike'
+        && state.renderer?.motorcycle?.wheelCurveCount === 2
+        && state.renderer?.motorcycle?.renderedParticleCount === 0
+        && state.renderer?.terrain?.style === 'transparent-terrain-with-bounded-nurbs-contours'
+        && state.renderer?.terrain?.contours?.curveModel === 'NURBS'
         && state.renderer?.race?.renderedGateCount === state.game?.raceCourse?.gates?.length
         && !state.fatalError
       );
@@ -514,6 +524,23 @@ async function runDemo(context, demo) {
 
     if (demo.name === 'motorcycle') {
       const before = await page.evaluate(demo.verify);
+      const overviewCanvas = await page.locator('.roadvector-cesium-canvas').boundingBox();
+      if (!overviewCanvas) {
+        errors.push('[runtime] Cesium overview canvas unavailable for click-to-start.');
+      } else {
+        await page.mouse.click(
+          overviewCanvas.x + overviewCanvas.width / 2,
+          overviewCanvas.y + overviewCanvas.height / 2,
+        );
+        await page.waitForFunction((priorGeneration) => {
+          const state = window.__motorcycleDemo?.getState?.();
+          return state?.overview?.selection?.status === 'playable'
+            && state?.ready === true
+            && state?.generation > priorGeneration
+            && state?.locationSource === 'user-selected-anchor'
+            && state?.overview?.players?.publishingLocation === true;
+        }, before.generation, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      }
       await page.click('#world-mode');
       await page.waitForFunction(() => {
         const state = window.__motorcycleDemo?.getState?.();
@@ -547,6 +574,11 @@ async function runDemo(context, demo) {
         errors.push('[runtime] RoadVector did not expose OSM freshness/source provenance.');
       }
       if (after.terrain?.degraded !== false) errors.push('[runtime] motorcycle did not decode the bounded NOAA terrain fixture');
+      if (after.overview?.federalHighways?.status !== 'current'
+        || !(after.overview?.federalHighways?.renderedRoads > 0)
+        || after.overview?.federalHighways?.sourceRecordCount !== 492_005) {
+        errors.push('[runtime] official FHWA NHS nationwide layer did not load and render.');
+      }
       if (after.game?.physicsProfile?.authority !== 'deterministic-cpu') errors.push('[runtime] motorcycle physics is not CPU-authoritative');
       if (after.game?.traffic?.spawnedVehicleCount !== 14) errors.push('[runtime] synthetic traffic population mismatch');
       if (after.game?.trafficPhysics?.added !== 14) errors.push('[runtime] physical traffic cage population mismatch');
@@ -556,7 +588,32 @@ async function runDemo(context, demo) {
       if (!(after.game?.raceCourse?.gates?.length >= 2)) errors.push('[runtime] deterministic race gates missing');
       if (after.renderer?.race?.renderedGateCount !== after.game?.raceCourse?.gates?.length) errors.push('[runtime] race gate renderer mismatch');
       if (after.renderer?.motorcycle?.componentCount !== 6) errors.push('[runtime] six-component motorcycle renderer contract missing');
+      if (after.renderer?.motorcycle?.style !== 'minimal-nurbs-line-bike'
+        || after.renderer?.motorcycle?.wheelCurveCount !== 2
+        || after.renderer?.motorcycle?.renderedParticleCount !== 0
+        || after.renderer?.motorcycle?.physicsDebugEnabled !== false) {
+        errors.push('[runtime] minimalist two-wheel NURBS motorcycle contract missing.');
+      }
+      if (after.renderer?.terrain?.style !== 'transparent-terrain-with-bounded-nurbs-contours'
+        || after.renderer?.terrain?.surfaceOpacity > 0.05
+        || after.renderer?.terrain?.contours?.curveModel !== 'NURBS'
+        || !(after.renderer?.terrain?.contours?.nurbsCurveCount > 0)
+        || after.renderer?.terrain?.contours?.sampledVertexCount > 60_000
+        || after.renderer?.terrain?.contours?.drawCallCount > 4) {
+        errors.push('[runtime] transparent bounded NURBS terrain contract missing.');
+      }
+      if (after.renderer?.contacts?.renderedContactCount !== 0
+        || after.renderer?.contacts?.physicsDebugEnabled !== false) {
+        errors.push('[runtime] default renderer exposed debug-only contact geometry.');
+      }
       if (after.view?.mode !== 'first') errors.push('[runtime] first-person camera control did not persist');
+      if (!['clear', 'clamped'].includes(after.view?.terrainFloor?.status)
+        || !Number.isFinite(after.view?.terrainFloor?.minimumCameraHeightMeters)
+        || !Number.isFinite(after.view?.terrainFloor?.constrainedPosition?.[1])
+        || after.view.terrainFloor.constrainedPosition[1]
+          < after.view.terrainFloor.minimumCameraHeightMeters - 1e-6) {
+        errors.push('[runtime] camera terrain-floor constraint was not active or remained underground.');
+      }
       const suspension = after.game?.motorcycle?.suspension;
       const tires = after.game?.motorcycle?.tires;
       const finiteTelemetry = [

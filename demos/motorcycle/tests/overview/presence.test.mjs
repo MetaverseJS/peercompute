@@ -80,6 +80,9 @@ test('presence runtime uses PeerCompute capabilities and treats network failure 
   assert.equal(config.gameId, 'roadvector');
   assert.equal(config.enableScheduler, false);
   assert.equal(config.presenceCapabilitiesProvider().roadvector.longitudeCell, -149.9);
+  runtime.clearLocation();
+  assert.equal(config.presenceCapabilitiesProvider(), null);
+  assert.equal(runtime.getSnapshot().publishingLocation, false);
   await runtime.dispose();
   assert.equal(disconnected, true);
 

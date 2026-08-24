@@ -5,6 +5,7 @@ export * from './geo/localFrame.js';
 export * from './sources/catalog.js';
 export * from './sources/envelope.js';
 export * from './vector/buildings.js';
+export * from './vector/federalHighways.js';
 export * from './vector/shortbread.js';
 export * from './vector/shortbreadImagery.js';
 export * from './weather/nowcoast.js';

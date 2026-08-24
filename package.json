@@ -33,6 +33,7 @@
     "test:earth-platform:unit": "npm run test:geo-core && npm run test:geodata && npm run test:earth && npm run test:wxglobe && npm run test:xr && npm run test:xr:browser && npm run test:physics && npm run test:traffic && npm run test:motorcycle",
     "test:earth-platform:release": "npm run build:wxglobe && npm run build:earth && npm run build:motorcycle && node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js && RUNTIME_SMOKE_DEMOS=wxglobe,earth,motorcycle DOCS_HOST=127.0.0.1 DOCS_PORT=43947 DEMO_WAIT_MS=500 DEMO_READY_TIMEOUT_MS=45000 node demos/tests/runtime-smoke.mjs",
     "test:earth-platform:live": "node demos/tests/earth-live-source.mjs",
+    "sync:federal-highways": "node scripts/sync-federal-highways.mjs",
     "test:earth-platform": "npm run test:earth-platform:unit && npm run test:earth-platform:release",
     "backend": "bash scripts/pcserver.sh",
     "backend:dry-run": "bash scripts/pcserver.sh --dry-run",
@@ -104,7 +105,10 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "vite": "^6.4.1"
+    "geojson-vt": "^4.0.3",
+    "mapshaper": "^0.7.55",
+    "vite": "^6.4.1",
+    "vt-pbf": "^3.1.3"
   },
   "dependencies": {
     "@libp2p/utils": "^7.0.9",

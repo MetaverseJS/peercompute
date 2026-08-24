@@ -334,3 +334,60 @@ The direct Tailnet HTTPS handoff remains
 `https://100.68.165.52:5188/`; this architecture change does not introduce
 Tailscale Serve, Funnel, or a public endpoint. Physical headset validation
 remains a manual gate.
+
+## User Addendum - 2026-08-24 AKDT - Official U.S. Highway Overview And Globe Start
+
+- Add a clearly attributed official USDOT/FHWA nationwide highway layer to the
+  Cesium overview, covering Alaska and the United States. It must be bounded,
+  abortable, cache-aware, source-versioned, and explicit about whether its
+  geometry represents the current National Highway System or an older National
+  Highway Planning Network display product.
+- Draw the federal/national network as a distinct bright category without
+  replacing NOAA terrain, the bounded regional OSM context, or fixed-red live
+  PeerCompute players.
+- Let a user click the visible Cesium globe to choose a WGS84 start point.
+  Picking must reject sky/non-globe clicks, preserve exact selection and
+  generation ordering, start the bounded local terrain/road load, and enter
+  the ride only after that load succeeds. A failed/no-road location remains a
+  truthful overview error rather than leaving stale local geometry.
+- Treat a Cesium click as an explicit user-selected location for the existing
+  coarse 0.1-degree presence policy; do not publish automatic fallbacks.
+- Keep the generic EarthGrid GIS app available separately over direct private
+  Tailnet HTTPS on port `5187`, with its same-origin loopback geodata proxy and
+  Cesium assets verified. Do not use Tailscale Serve, Funnel, or an in-terminal
+  browser pane.
+## 2026-08-24 RoadVector visual simplification addendum
+
+- Keep the canonical local terrain, road, traffic, and motorcycle physics coordinate system at one world unit per meter. Do not hide visual scale problems by rescaling authoritative geometry.
+- Render local terrain as a very low-opacity, non-authoritative display surface overlaid by bounded glowing contour curves generated with the Three.js NURBS curve implementation. Report the effective contour interval, source/control/sample counts, and any curve/vertex omissions.
+- The normal motorcycle presentation is a minimalist line drawing: exactly two luminous NURBS wheel loops, a small bounded set of frame/fork/swingarm line segments, and a stick-figure rider with a line-and-loop silhouette. Dense rigid-component cages, collision particles, and contact markers are diagnostics, not default presentation.
+- Preserve the six-body particle-rigid simulation, collision particles, joints, tire contacts, telemetry, reset/rebase behavior, and WebXR/desktop controls underneath the simplified visuals.
+- Add deterministic renderer tests for transparent terrain material, finite/capped NURBS contour output, two wheel curves, line-only frame/rider output, default-hidden diagnostic geometry, interpolation, origin rebasing, resource disposal, and fresh built-browser rendering.
+
+## 2026-08-24 Terrain-Safe Camera And Follow-Up Audit
+
+- First-, third-, and WebXR views must never place an optical point below the
+  exact rendered local terrain. The shared view rig accepts a reusable minimum
+  view-height constraint; the RoadVector adapter samples original ENU terrain
+  coordinates after undoing the current origin offset.
+- The minimum optical clearance is 0.35 m. Queries outside the bounded local
+  grid use its nearest edge; a non-finite exact triangle sample fails safe to
+  the grid's maximum height. The constraint never lowers a view or changes its
+  horizontal position.
+- Third-person correction becomes the next damping state. Stereo XR evaluates
+  every published eye offset and raises only `xrRoot` by the largest required
+  correction; it never mutates the headset-controlled camera. Reset/rebase
+  telemetry reports the constrained coordinate space.
+
+### Follow-up requirement audit
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| Current official Alaska/U.S. highway overview | USDOT/BTS FHWA NHS `2025.08.08`; DBF version/count verification; exact archive/member/tile hashes; 1,028 bounded tiles; live/private browser rendering | PASS |
+| Click the globe to choose a ride | Cesium terrain/ellipsoid pick preserved exactly, same-coordinate generation ownership, generalized FHWA geometry excluded from the operational request, local-road fail-closed state, built browser click smoke | PASS |
+| Transparent NURBS terrain | Exact degree-one NURBS contour paths over 3.5%-opacity mesh; hard 96-level/512-curve/60,000-vertex caps and omission telemetry | PASS |
+| Minimal line motorcycle/rider | Two rational NURBS wheels, five frame strokes, six rider strokes; dense 123-particle rig hidden by default but physics-authoritative | PASS |
+| Camera cannot enter terrain | First/third/stereo-XR unit coverage, rebase-safe exact triangle sampling, built and private-browser clearance telemetry | PASS |
+| Generic GIS globe handoff | EarthGrid direct private HTTPS root/API/Cesium probes plus secure-context browser readiness at `https://100.68.165.52:5187/` | PASS |
+| RoadVector headset handoff | Direct private HTTPS at `https://100.68.165.52:5188/`; secure context and app/runtime verified | PASS (service) |
+| Physical WebXR hardware matrix | User headset run has not yet been performed | NOT RUN / no certification claim |

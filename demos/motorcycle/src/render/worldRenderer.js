@@ -63,6 +63,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     maximumBuildings = MOTORCYCLE_RENDER_LIMITS.maximumBuildings,
     maximumMotorcycleParticles = MOTORCYCLE_RENDER_LIMITS.maximumMotorcycleParticles,
     maximumContactMarkers = MOTORCYCLE_RENDER_LIMITS.maximumContactMarkers,
+    physicsDebug = false,
     terrainMaterial = {},
   } = configuration;
   const physicsWorld = configuration.physicsWorld ?? configuration.world;
@@ -83,11 +84,22 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     osmStatus: sceneData.status ?? null,
     navigationGrade: false,
   };
-  const terrainVisual = createTerrainVisual(THREE, terrain, terrainMaterial);
+  const terrainVisual = createTerrainVisual(THREE, terrain, {
+    ...terrainMaterial,
+    maximumContourLevels: MOTORCYCLE_RENDER_LIMITS.maximumTerrainContourLevels,
+    maximumNurbsCurves: MOTORCYCLE_RENDER_LIMITS.maximumTerrainNurbsCurves,
+    maximumSampledVertices: MOTORCYCLE_RENDER_LIMITS.maximumTerrainContourVertices,
+  });
   const roads = createRoadVisuals(THREE, sceneData.roadSegments, { maximumRoadSegments });
   const buildings = createBuildingVisuals(THREE, sceneData.buildings, { maximumBuildings });
-  const motorcycle = createMotorcycleVisuals(THREE, physicsWorld, rig, { maximumMotorcycleParticles });
-  const contacts = createContactVisuals(THREE, physicsWorld, { maximumContactMarkers });
+  const motorcycle = createMotorcycleVisuals(THREE, physicsWorld, rig, {
+    maximumMotorcycleParticles,
+    physicsDebug,
+  });
+  const contacts = createContactVisuals(THREE, physicsWorld, {
+    maximumContactMarkers,
+    enabled: physicsDebug,
+  });
   const traffic = createTrafficVisuals(THREE, terrain, { maximumTrafficVehicles });
   const race = createRaceVisuals(THREE, raceCourse);
   const geospatialRoot = new THREE.Group();
@@ -122,9 +134,11 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
         source: clonePlain(terrain.source ?? null),
         authoritative: terrain.source?.authoritative === true,
         derived: terrain.source?.derived === true,
-        vertexCount: terrainVisual.geometry.userData.vertexCount,
-        triangleCount: terrainVisual.geometry.userData.triangleCount,
-        style: terrainVisual.material.userData.style,
+        vertexCount: terrainVisual.userData.vertexCount,
+        triangleCount: terrainVisual.userData.triangleCount,
+        style: terrainVisual.userData.style,
+        surfaceOpacity: terrainVisual.userData.surfaceOpacity,
+        contours: clonePlain(terrainVisual.userData.contours),
       },
       roads: {
         sourceFeatureCount: Number(dataCounts.sourceRoads) || 0,
@@ -167,6 +181,10 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
         maximumMotorcycleParticles,
         maximumContactMarkers,
         maximumTrafficVehicles,
+        physicsDebug,
+        maximumTerrainContourLevels: terrainVisual.userData.contours.maximumContourLevels,
+        maximumTerrainNurbsCurves: terrainVisual.userData.contours.maximumNurbsCurves,
+        maximumTerrainContourVertices: terrainVisual.userData.contours.maximumSampledVertices,
       },
       disposal: clonePlain(disposal),
     });
@@ -180,6 +198,9 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
       if (!Number.isFinite(blend)) throw new TypeError('Renderer interpolation alpha must be finite.');
       lastInterpolationAlpha = Math.min(1, Math.max(0, blend));
       motorcycle.update(lastInterpolationAlpha);
+      // In minimalist mode this samples counts only; it never creates or
+      // updates marker geometry. Keeping it live prevents stale collision
+      // telemetry while preserving the sparse default rendering contract.
       contacts.update();
       traffic.update(trafficSnapshot);
       frameCount += 1;

@@ -22,6 +22,7 @@ import {
   ROADVECTOR_CAMERA_CONFIG,
   ROADVECTOR_SCALE_DISCLOSURE,
 } from './view/cameraConfig.js';
+import { createTerrainCameraFloor } from './view/terrainCameraFloor.js';
 import './style.css';
 
 const FALLBACK_LOCATION = Object.freeze({
@@ -34,6 +35,8 @@ const MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES = MAXIMUM_TRAFFIC_VEHICLES;
 const MAXIMUM_FRAME_DELTA_SECONDS = 0.1;
 const FIRST_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.firstOffsetMeters;
 const THIRD_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters;
+const RUNTIME_QUERY = new URLSearchParams(globalThis.location.search);
+const PHYSICS_DEBUG = RUNTIME_QUERY.get('physicsDebug') === '1';
 
 const elements = Object.freeze({
   overviewViewport: document.querySelector('#overview-viewport'),
@@ -77,8 +80,7 @@ const elements = Object.freeze({
 });
 
 function apiBaseUrl() {
-  const query = new URLSearchParams(globalThis.location.search);
-  if (query.get('geodata') === 'same-origin') return '';
+  if (RUNTIME_QUERY.get('geodata') === 'same-origin') return '';
   return configuredGeodataBaseUrl(import.meta.env);
 }
 
@@ -124,6 +126,9 @@ xrRoot.name = 'motorcycle-xr-root';
 xrRoot.add(xrCamera);
 scene.add(xrRoot);
 let activeCamera = thirdCamera;
+const terrainCameraFloor = createTerrainCameraFloor(THREE, {
+  minimumClearanceMeters: ROADVECTOR_CAMERA_CONFIG.minimumTerrainClearanceMeters,
+});
 
 const runtime = {
   ready: false,
@@ -143,6 +148,8 @@ const runtime = {
   lastControl: null,
   lastOriginRebaseView: null,
   lastInputResetView: null,
+  lastCameraTerrainFloor: terrainCameraFloor.getTelemetry(),
+  originOffset: [0, 0, 0],
   xrUiCapture: false,
   lastHudAt: 0,
   cleanup: [],
@@ -152,6 +159,10 @@ const overviewRuntime = createRoadvectorOverviewRuntime({
   Cesium,
   container: elements.overviewViewport,
   fetchImpl: globalThis.fetch,
+  onLocationSelected(location, { source, clickedLocation }) {
+    elements.regionStatus.textContent = `GLOBE SELECTED ${clickedLocation?.latitude?.toFixed?.(4) ?? location.latitude.toFixed(4)}, ${clickedLocation?.longitude?.toFixed?.(4) ?? location.longitude.toFixed(4)} // LOADING EXACT REGION`;
+    return loadLocation(location, { source });
+  },
 });
 
 function addListener(target, type, listener, options) {
@@ -280,6 +291,14 @@ const viewRig = new ViewRig({
   thirdOffset: THIRD_CAMERA_OFFSET,
   thirdLookOffset: ROADVECTOR_CAMERA_CONFIG.thirdLookOffsetMeters,
   thirdDamping: 7,
+  minimumViewY(position, { mode }) {
+    return terrainCameraFloor.minimumViewY({
+      position,
+      mode,
+      terrain: runtime.load?.terrain,
+      originOffset: runtime.originOffset,
+    });
+  },
   recenter: recenterXrViewer,
   setActiveCamera(camera, mode) {
     activeCamera = camera;
@@ -326,6 +345,7 @@ function publicState() {
         thirdPersonFovDegrees: ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees,
         thirdOffsetMeters: [...ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters],
         fogDensityPerMeter: ROADVECTOR_CAMERA_CONFIG.fogDensityPerMeter,
+        minimumTerrainClearanceMeters: ROADVECTOR_CAMERA_CONFIG.minimumTerrainClearanceMeters,
       },
       bike: runtime.game ? {
         worldUnits: runtime.game.rig.worldUnits,
@@ -387,6 +407,7 @@ function publicState() {
         position: activeCamera.position.toArray(),
         orientation: activeCamera.quaternion.toArray(),
       },
+      terrainFloor: structuredClone(runtime.lastCameraTerrainFloor),
     },
     xrPanel: xrPanel?.getStatus() ?? null,
     geodataConfigured: geodata.configured,
@@ -464,6 +485,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
   runtime.abortController?.abort();
   const abortController = new AbortController();
   runtime.abortController = abortController;
+  overviewRuntime.clearPublishedLocation();
   // Remove the prior region before any new asynchronous request begins. A
   // failed or superseded load must never leave stale geometry/provenance under
   // controls that now describe a different physical location.
@@ -499,6 +521,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       rig: game.rig,
       raceCourse: game.raceCourse,
       maximumTrafficVehicles: MAXIMUM_TRAFFIC_VEHICLES,
+      physicsDebug: PHYSICS_DEBUG,
     });
     const initial = game.getState();
     worldRenderer.update({ alpha: 0, trafficSnapshot: initial.trafficSnapshot });
@@ -510,6 +533,9 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     runtime.ready = true;
     runtime.frameCount = 0;
     runtime.lastStep = null;
+    runtime.originOffset = [0, 0, 0];
+    runtime.lastCameraTerrainFloor = terrainCameraFloor.getTelemetry();
+    overviewRuntime.publishLocation(loaded.location, { source });
     document.documentElement.dataset.motorcycleReady = 'true';
     elements.worldMode.disabled = false;
     elements.latitude.value = String(loaded.location.latitude);
@@ -522,7 +548,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     elements.provenance.textContent = `OSM ${loaded.sceneData.status.toUpperCase()} // FETCHED ${loaded.envelope.fetchedAt ?? 'UNKNOWN'} // ${loaded.sceneData.provenance.attribution}`;
     elements.trafficStatus.textContent = `${initial.traffic.spawnedVehicleCount} SYNTHETIC // ${initial.trafficPhysics.added} PHYSICAL`;
     elements.raceStatus.textContent = raceStatusText(initial.race, initial.raceCourse);
-    setPlatform('ready', 'REAL ROADS // PARTICLE BIKE');
+    setPlatform('ready', 'REAL ROADS // NURBS LINE BIKE');
     return publicState();
   } catch (error) {
     if (abortController.signal.aborted || generation !== runtime.generation) return null;
@@ -580,12 +606,20 @@ function updateHud(time) {
   const roadStatus = overview.roads.status === 'current'
     ? `${overview.roads.renderedRoads} MAJOR ROADS // ${overview.roads.selectedTiles} Z5 TILES`
     : `${overview.roads.status.toUpperCase()}${overview.roads.error ? ' // BOUNDED LOAD FAILED' : ''}`;
-  elements.overviewStatus.textContent = `${overview.relief.status.toUpperCase()} TOPO // ${roadStatus}`;
+  const federalStatus = overview.federalHighways.status === 'current'
+    ? `FHWA NHS ${overview.federalHighways.datasetVersion} // ${overview.federalHighways.sourceRecordCount.toLocaleString()} SEGMENTS`
+    : `FHWA NHS ${overview.federalHighways.status.toUpperCase()}`;
+  elements.overviewStatus.textContent = `${overview.relief.status.toUpperCase()} TOPO // ${federalStatus} // ${roadStatus}`;
   elements.playerStatus.textContent = overview.players.status === 'connected'
     ? `${overview.players.remotePlayerCount} LIVE // RED // ${overview.players.publishingLocation ? 'COARSE LOCATION SHARED' : 'LOCATION PRIVATE'}`
     : `${overview.players.status.toUpperCase()} // 0 LIVE PLAYERS`;
   if (runtime.displayMode === 'overview') {
-    elements.hud.textContent = `HEMISPHERE ≈${ROADVECTOR_SCALE_DISCLOSURE.hemisphereDiameterKilometers.toLocaleString()} KM // REGIONAL MAJOR ROADS // ${overview.players.remotePlayerCount} LIVE PLAYERS // ENTER LOCAL ${ROADVECTOR_SCALE_DISCLOSURE.localRegionDiameterMeters} M`;
+    const selectionStatus = overview.selection.status === 'loading'
+      ? 'LOADING SELECTED ROAD REGION'
+      : overview.selection.status === 'unavailable'
+        ? 'SELECT ANOTHER DRAWN ROAD'
+        : 'CLICK GLOBE TO START';
+    elements.hud.textContent = `HEMISPHERE ≈${ROADVECTOR_SCALE_DISCLOSURE.hemisphereDiameterKilometers.toLocaleString()} KM // FHWA NHS + REGIONAL OSM // ${overview.players.remotePlayerCount} LIVE PLAYERS // ${selectionStatus}`;
     return;
   }
   if (!runtime.game) return;
@@ -643,6 +677,7 @@ renderer.setAnimationLoop((time, xrFrame) => {
     if (runtime.lastStep.resetApplied) viewRig.resetPose?.({ recenter: true });
     if (runtime.lastStep.originRebase) {
       const shift = Array.from(runtime.lastStep.originRebase.shift);
+      runtime.originOffset = Array.from(runtime.lastStep.originRebase.offset);
       runtime.worldRenderer.shiftOrigin(shift);
       viewRig.shiftOrigin(shift);
       viewFrameObject.updateMatrixWorld?.(true);
@@ -669,22 +704,29 @@ renderer.setAnimationLoop((time, xrFrame) => {
     });
     const pose = chassisPose(runtime.lastStep.physicsAlpha);
     if (pose) {
-      viewRig.update({
+      const viewerPose = xrFrame?.getViewerPose?.(renderer.xr.getReferenceSpace?.() ?? null) ?? null;
+      const constrainedViewPose = viewRig.update({
         position: pose.position,
         orientation: pose.orientation,
         deltaTime: deltaSeconds,
+        xrViewOffsets: viewerPose?.views?.map((view) => [
+          view.transform.position.x,
+          view.transform.position.y,
+          view.transform.position.z,
+        ]) ?? null,
+      });
+      const viewConstraint = viewRig.getStatus().lastConstraint;
+      runtime.lastCameraTerrainFloor = Object.freeze({
+        ...terrainCameraFloor.getTelemetry(),
+        status: (viewConstraint?.correction ?? 0) > 0 ? 'clamped' : 'clear',
+        appliedCorrectionMeters: viewConstraint?.correction ?? 0,
+        constrainedPosition: Object.freeze([...(viewConstraint?.position ?? constrainedViewPose.position)]),
+        eyeCount: constrainedViewPose.eyeCount ?? null,
       });
       if (runtime.lastStep.resetApplied) {
         const mode = viewRig.getStatus().mode;
         const viewFrameObject = mode === 'xr' ? xrRoot : activeCamera;
-        const offset = mode === 'first'
-          ? FIRST_CAMERA_OFFSET
-          : mode === 'third'
-            ? THIRD_CAMERA_OFFSET
-            : [0, 0, 0];
-        const expected = new THREE.Vector3(...offset)
-          .applyQuaternion(new THREE.Quaternion().fromArray(pose.orientation))
-          .add(new THREE.Vector3().fromArray(pose.position));
+        const expected = new THREE.Vector3().fromArray(constrainedViewPose.position);
         viewFrameObject.updateMatrixWorld?.(true);
         runtime.lastInputResetView = Object.freeze({
           frameCount: runtime.frameCount,

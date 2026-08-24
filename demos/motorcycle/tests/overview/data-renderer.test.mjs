@@ -5,6 +5,7 @@ import { ShortbreadImageryProvider } from '@peercompute/geo-core';
 import {
   createRoadvectorOverviewRuntime,
   isRoadvectorOverviewCommand,
+  pickRoadvectorGlobeLocation,
 } from '../../src/overview/overviewRuntime.js';
 
 const renderedMvtFixture = Buffer.from(
@@ -201,6 +202,7 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
   let viewer = null;
   let terrainAborted = false;
   const roadProviders = [];
+  const federalProviders = [];
   const terrainProviders = [];
   const manager = {
     async initialize() {},
@@ -251,6 +253,23 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
       return provider;
     },
     topoMaterialFactory: () => ({ type: 'ElevationContour' }),
+    async federalHighwayProviderLoader(_Cesium, options) {
+      options.onTelemetry({
+        status: 'current',
+        version: '2025.08.08',
+        sourceRecordCount: 492_005,
+        retainedRecordCount: 491_545,
+        availableTiles: 1_028,
+        loaded: 4,
+        responseBytes: 8_192,
+        renderedRoads: 12,
+        renderedVertices: 80,
+        includesAlaska: true,
+      });
+      const provider = { destroyed: false, destroy() { this.destroyed = true; } };
+      federalProviders.push(provider);
+      return provider;
+    },
     async shortbreadProviderLoader(_Cesium, options) {
       assert.equal(options.minimumLevel, 5);
       assert.equal(options.maximumLevel, 5);
@@ -286,6 +305,10 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
   assert.equal(status.roads.selectedTiles, 25);
   assert.equal(status.roads.renderedRoads, 25);
   assert.equal(status.roads.renderedVertices, 50);
+  assert.equal(status.federalHighways.status, 'current');
+  assert.equal(status.federalHighways.sourceRecordCount, 492_005);
+  assert.equal(status.federalHighways.includesAlaska, true);
+  assert.equal(status.federalHighways.currentSourceSnapshot, true);
   assert.equal(status.players.remotePlayerCount, 1);
   assert.equal(status.renderer.remotePlayerColor, '#ff334f');
   assert.equal(viewer.entities.getById('roadvector-remote-player-remote').point.color.value, '#ff334f');
@@ -316,6 +339,170 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
   await runtime.dispose();
   await runtime.dispose();
   assert.equal(roadProviders[1].destroyed, true);
+  assert.equal(federalProviders[0].destroyed, true);
   assert.equal(terrainAborted, true);
   assert.equal(viewer.isDestroyed(), true);
+});
+
+test('Cesium globe picks terrain first, falls back to the ellipsoid, and rejects sky clicks', () => {
+  const Cesium = {
+    Cartographic: { fromCartesian: (value) => value },
+    Math: { toDegrees: (value) => value * 180 / Math.PI },
+  };
+  let terrainPick = { longitude: -149.9 * Math.PI / 180, latitude: 61.2 * Math.PI / 180 };
+  let ellipsoidPick = { longitude: -122.4 * Math.PI / 180, latitude: 37.8 * Math.PI / 180 };
+  const viewer = {
+    camera: {
+      getPickRay: () => ({ ray: true }),
+      pickEllipsoid: () => ellipsoidPick,
+    },
+    scene: {
+      globe: {
+        ellipsoid: {},
+        pick: () => terrainPick,
+      },
+    },
+  };
+  assert.deepEqual(pickRoadvectorGlobeLocation(Cesium, viewer, { x: 10, y: 10 }), {
+    longitude: -149.9,
+    latitude: 61.2,
+  });
+  terrainPick = null;
+  assert.deepEqual(pickRoadvectorGlobeLocation(Cesium, viewer, { x: 20, y: 20 }), {
+    longitude: -122.4,
+    latitude: 37.8,
+  });
+  ellipsoidPick = null;
+  assert.equal(pickRoadvectorGlobeLocation(Cesium, viewer, { x: 30, y: 30 }), null);
+});
+
+test('globe click selects once, delays coarse presence until publish, and tears down its handler', async () => {
+  const Cesium = createFakeCesium();
+  Cesium.Cartographic = { fromCartesian: (value) => value };
+  Cesium.Math.toDegrees = (value) => value * 180 / Math.PI;
+  Cesium.ScreenSpaceEventType = { LEFT_CLICK: 'left-click' };
+  let viewer;
+  let inputAction = null;
+  let handlerDestroyed = false;
+  const selections = [];
+  const provider = () => ({ destroy() {} });
+  const runtime = createRoadvectorOverviewRuntime({
+    Cesium,
+    container: {
+      hidden: false,
+      setAttribute() {},
+    },
+    fetchImpl: async () => new Response(JSON.stringify({ bootstrapPeers: ['/dns4/relay.example/tcp/443/wss'] })),
+    presenceOptions: {
+      networkManagerFactory: async () => ({
+        async initialize() {},
+        async connect() {},
+        async disconnect() {},
+        getConnectedPeers: () => [],
+      }),
+    },
+    viewerFactory(_Cesium, _container, options) {
+      viewer = createFakeViewer(options);
+      viewer.camera.getPickRay = () => ({ ray: true });
+      viewer.camera.pickEllipsoid = () => null;
+      viewer.scene.globe.ellipsoid = {};
+      viewer.scene.globe.pick = () => ({
+        longitude: -149.9 * Math.PI / 180,
+        latitude: 61.2 * Math.PI / 180,
+      });
+      return viewer;
+    },
+    terrainProviderFactory: () => ({ wxglobe: { abort() {} } }),
+    topoMaterialFactory: () => ({ type: 'ElevationContour' }),
+    federalHighwayProviderLoader: async () => provider(),
+    shortbreadProviderLoader: async () => provider(),
+    screenSpaceEventHandlerFactory: () => ({
+      setInputAction(callback, type) {
+        assert.equal(type, 'left-click');
+        inputAction = callback;
+      },
+      destroy() { handlerDestroyed = true; },
+    }),
+    async onLocationSelected(location, options) {
+      selections.push({ location, options });
+      return { ready: true };
+    },
+  });
+  assert.equal(typeof inputAction, 'function');
+  inputAction({ position: { x: 100, y: 100 } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(selections, [{
+    location: { longitude: -149.9, latitude: 61.2 },
+    options: {
+      source: 'user-selected-anchor',
+      clickedLocation: { longitude: -149.9, latitude: 61.2 },
+    },
+  }]);
+  assert.equal(runtime.getStatus().selection.status, 'playable');
+  assert.equal(runtime.getStatus().players.publishingLocation, false);
+  assert.equal(runtime.publishLocation(selections[0].location, selections[0].options), true);
+  assert.equal(runtime.getStatus().players.publishingLocation, true);
+  runtime.clearPublishedLocation();
+  assert.equal(runtime.getStatus().players.publishingLocation, false);
+  await runtime.dispose();
+  assert.equal(handlerDestroyed, true);
+});
+
+test('same-coordinate rapid globe selections preserve the exact pick and generation ownership', async () => {
+  const Cesium = createFakeCesium();
+  Cesium.Cartographic = { fromCartesian: (value) => value };
+  Cesium.Math.toDegrees = (value) => value * 180 / Math.PI;
+  Cesium.ScreenSpaceEventType = { LEFT_CLICK: 'left-click' };
+  let inputAction = null;
+  let resolveFirst;
+  const first = new Promise((resolve) => { resolveFirst = resolve; });
+  let calls = 0;
+  const runtime = createRoadvectorOverviewRuntime({
+    Cesium,
+    container: { hidden: false, setAttribute() {} },
+    fetchImpl: async () => new Response(JSON.stringify({ bootstrapPeers: ['/dns4/relay.example/tcp/443/wss'] })),
+    presenceOptions: {
+      networkManagerFactory: async () => ({
+        async initialize() {}, async connect() {}, async disconnect() {}, getConnectedPeers: () => [],
+      }),
+    },
+    viewerFactory(_Cesium, _container, options) {
+      const viewer = createFakeViewer(options);
+      viewer.camera.getPickRay = () => ({ ray: true });
+      viewer.camera.pickEllipsoid = () => null;
+      viewer.scene.globe.ellipsoid = {};
+      viewer.scene.globe.pick = () => ({
+        longitude: -149.9 * Math.PI / 180,
+        latitude: 61.2 * Math.PI / 180,
+      });
+      return viewer;
+    },
+    terrainProviderFactory: () => ({ wxglobe: { abort() {} } }),
+    topoMaterialFactory: () => ({ type: 'ElevationContour' }),
+    federalHighwayProviderLoader: async () => ({ destroy() {} }),
+    shortbreadProviderLoader: async () => ({ destroy() {} }),
+    screenSpaceEventHandlerFactory: () => ({
+      setInputAction(callback) { inputAction = callback; },
+      destroy() {},
+    }),
+    async onLocationSelected() {
+      calls += 1;
+      if (calls === 1) return first;
+      return { ready: true };
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  inputAction({ position: { x: 1, y: 1 } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  inputAction({ position: { x: 1, y: 1 } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(runtime.getStatus().selection.status, 'playable');
+  assert.deepEqual(runtime.getStatus().selection.location, { longitude: -149.9, latitude: 61.2 });
+  assert.deepEqual(runtime.getStatus().selection.clickedLocation, { longitude: -149.9, latitude: 61.2 });
+  assert.equal(runtime.getStatus().selection.highwaySnap, null);
+  resolveFirst(null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(runtime.getStatus().selection.status, 'playable', 'stale completion cannot clobber the newer click');
+  assert.equal(runtime.getStatus().selection.generation, 2);
+  await runtime.dispose();
 });

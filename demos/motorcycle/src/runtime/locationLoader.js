@@ -70,7 +70,7 @@ export async function loadMotorcycleLocation({
     radiusMeters = finite(radiiMeters[index], `radiiMeters[${index}]`);
     bbox = motorcycleRegionBbox(normalizedLocation, radiusMeters);
     try {
-      envelope = await geodata.osmRegion({ bbox, signal });
+      envelope = await geodata.osmRegion({ bbox, layers: ['roads'], signal });
       attempts.push(Object.freeze({ radiusMeters, bbox, status: 'loaded' }));
       break;
     } catch (error) {

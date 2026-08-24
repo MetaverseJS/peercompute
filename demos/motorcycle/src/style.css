@@ -113,6 +113,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .legend--race { color: var(--cyan); text-shadow: 0 0 8px currentColor; }
 .legend--terrain { color: var(--green); }
 .legend--major-road { color: var(--yellow); }
+.legend--federal-road { color: var(--magenta); }
 .legend--player { color: #ff334f; }
 .source-note { color: #71c989; font-size: 9px; line-height: 1.5; }
 .source-note p { margin: 7px 0 0; }

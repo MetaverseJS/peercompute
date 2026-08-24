@@ -3,6 +3,9 @@ export const MOTORCYCLE_RENDER_LIMITS = Object.freeze({
   maximumBuildings: 1_500,
   maximumMotorcycleParticles: 512,
   maximumContactMarkers: 512,
+  maximumTerrainContourLevels: 96,
+  maximumTerrainNurbsCurves: 512,
+  maximumTerrainContourVertices: 60_000,
   defaultMaximumTrafficVehicles: 64,
   absoluteMaximumTrafficVehicles: 256,
 });
@@ -31,6 +34,7 @@ export const NEON_TOPO_PALETTE = Object.freeze({
     upperFork: 0xffe74a,
     lowerFork: 0x6eff8d,
     frontWheel: 0x37f2ff,
+    rider: 0xfff36a,
     other: 0xffffff,
   }),
   traffic: Object.freeze({

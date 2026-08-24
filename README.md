@@ -75,8 +75,15 @@ runtime metadata to NetViz.
   restriction-aware synthetic traffic with collision cages, local-origin
   rebasing, and first/third-person views. It opens on a CesiumJS north-up NOAA
   topographic hemisphere, overlays a bounded regional OSM major-road window,
-  and shows validated live PeerCompute players in fixed red before the
+  adds a persistent official FHWA/U.S. DOT National Highway System overview
+  for Alaska and the United States, accepts globe clicks as bounded local ride
+  requests, and shows validated live PeerCompute players in fixed red before the
   discrete transition into the Three.js local meter-scale ride.
+  The local visual is deliberately sparse: transparent NOAA terrain with
+  bounded NURBS contours plus two glowing NURBS wheel loops, a line frame, and
+  a minimalist stick rider; dense collision particles are debug-only. A
+  rebase-aware exact-terrain camera floor keeps first-, third-, and stereo-XR
+  optical points at least 0.35 m above the rendered surface.
 - **Reusable input/WebXR toolkit**: device-independent action frames unify
   keyboard/pointer lock, multitouch, standard gamepads, `xr-standard`
   controllers, tracked hands, lifecycle-safe controller/hand models, haptics,
@@ -436,10 +443,15 @@ Dev servers:
 - `https://localhost:5184/` (Schrodinger Materials Console)
 - `https://localhost:5182/` (NetViz)
 
-Current Tailnet-only RoadVector development handoff:
-`https://100.68.165.52:5188/`. It is a direct private-IP listener with an
-IP-SAN self-signed development certificate, not Tailscale Serve or Funnel;
-the headset/browser must accept or trust that certificate first.
+Current direct Tailnet HTTPS development handoffs:
+
+- EarthGrid: `https://100.68.165.52:5187/`
+- RoadVector: `https://100.68.165.52:5188/`
+
+They are private-IP listeners with an IP-SAN self-signed development
+certificate, not Tailscale Serve or Funnel; the headset/browser must accept or
+trust that certificate first. Their geodata dependency remains loopback-only
+behind the same-origin Vite proxy.
 
 Multiplayer bot controls:
 - CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
@@ -750,10 +762,13 @@ Current demos and validation surfaces:
 - **RoadVector**: first/third-person particle motorcycle racing on real local
   OSM roads and NOAA terrain, with 3D buildings, synthetic lane-aware traffic,
   race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening CesiumJS
-  NOAA topographic hemisphere with bounded regional major roads, genuine
+  NOAA topographic hemisphere with bounded regional major roads, an official
+  versioned FHWA National Highway System layer covering Alaska and the U.S.,
+  click-to-start location selection, genuine
   remote PeerCompute players in red, and bright category rendering. Cesium
   owns global WGS84/open-data display; Three.js owns the local meter-scale
-  ride, particle physics, and XR rendering.
+  ride, particle physics, and XR rendering. Its default local presentation is
+  a transparent NURBS-contour surface and minimalist two-wheel line bike/rider.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.
 - **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
 - **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.

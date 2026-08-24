@@ -70,5 +70,6 @@ test('fails closed when no usable directed road exists', () => {
   assert.throws(() => selectMotorcycleSpawn({
     schemaVersion: 'peercompute.geo.local-road-graph.v1',
     edges: [],
-  }), /no usable motorcycle road segment/i);
+  }), (error) => error.code === 'ERR_MOTORCYCLE_NO_USABLE_ROAD'
+    && /no usable motorcycle road/i.test(error.message));
 });

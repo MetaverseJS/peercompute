@@ -105,6 +105,38 @@ The root node should exist on a domain secured with SSL enabling all executable 
   Final rebuilt/static/combined browser results are recorded in
   `plan/tests.md`; the real-headset matrix remains manual and NOT RUN.
 
+### RoadVector Federal-Highway/NURBS/Camera Snapshot - 2026-08-24 AKDT
+
+- RoadVector's Cesium overview now carries the official current USDOT/BTS
+  National Highway System snapshot from FHWA rather than pairing current
+  metadata with the obsolete 2014 NHPN vector tiles. The reproducible static
+  artifact retains the original federal metadata and derives 1,028 bounded
+  z0-z8 MVT tiles (2,468,431 bytes) from 492,005 source records / 491,545
+  retained active road records, including Alaska.
+- Globe clicks use Cesium terrain/ellipsoid picking and generation-safe request
+  ownership, and preserve the exact selected WGS84 point when requesting the
+  1,200/800/500 m local road ladder. The generalized FHWA layer remains display
+  context only. Empty-road selections stay in the
+  overview with an explicit error; coarse presence publishes only after a
+  playable load succeeds.
+- The local presentation is now sparse without changing physics scale: a 3.5%
+  transparent exact terrain mesh carries bounded exact degree-one NURBS
+  contour paths, while the bike renders two rational NURBS wheel loops, five
+  frame strokes, and six stick-rider strokes. Collision particles/contact
+  markers remain capped diagnostics behind `?physicsDebug=1`.
+- First-, damped third-, and stereo-XR camera placement now shares a terrain
+  floor. It samples the same exact terrain triangles in the immutable ENU
+  frame, remains correct after origin rebasing, keeps every eye at least 0.35 m
+  above the surface, and moves only the XR locomotion root rather than the
+  headset-tracked camera.
+- Final deterministic evidence is 259 passing Node tests plus the mocked
+  Chromium XR harness; fresh WXGlobe/EarthGrid/RoadVector builds; 44/44 static
+  release checks; combined built-browser smoke; and the bounded live-source
+  gate. Direct private HTTPS verification passed at EarthGrid
+  `https://100.68.165.52:5187/` and RoadVector
+  `https://100.68.165.52:5188/`, with same-origin APIs/Cesium assets and an
+  IP-SAN certificate. The physical-headset matrix remains manual and NOT RUN.
+
 ### Current Validation Snapshot - 2026-08-22 AKDT
 
 - WXGlobe is now a first-class standalone demo on port `5186`, selectively
@@ -978,3 +1010,28 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Ship RoadVector Cesium workers/assets/licenses beneath `docs/motorcycle`,
   keep the direct Tailnet HTTPS/same-origin geodata deployment, and validate the
   built overview before updating the retained listener.
+
+## FHWA highway, globe selection, and sparse NURBS ride snapshot - 2026-08-24 AKDT
+
+- Treat the current FHWA National Highway System layer published by U.S. DOT
+  BTS as the sole nationwide road authority. Do not mix its current metadata
+  with the unrelated 2014 National Highway Planning Network tiles.
+- Reproducibly derive a versioned, same-origin z0–8 overview artifact from the
+  validated official shapefile: retain open non-ferry NHS features, dissolve
+  only by documented NHS class, simplify for globe display, checksum every
+  output tile, retain the original metadata byte-for-byte, and fail all source,
+  size, count, class, Alaska, and freshness gates closed.
+- Keep the nationwide NHS imagery layer persistent below the replaceable
+  regional 25-tile Shortbread context. Cesium globe clicks select WGS84 points;
+  the existing bounded local OSM/NOAA transaction determines whether a ride is
+  playable before coarse presence is published.
+- Keep the local simulation at one unit per meter. Replace only its dense
+  default presentation: render a 3.5%-opacity exact terrain mesh with capped
+  source-elevation NURBS contours, and render the six-body motorcycle as two
+  rolling-radius NURBS wheel loops, five sparse frame strokes, and a six-curve
+  stick rider. Collision particles/contact markers remain behind the explicit
+  `?physicsDebug=1` diagnostic path.
+- Keep direct private Tailnet HTTPS listeners at `100.68.165.52:5187` for
+  EarthGrid and `:5188` for RoadVector, with geodata loopback-only behind each
+  same-origin proxy. Do not use Tailscale Serve, Funnel, or an in-terminal
+  browser pane.

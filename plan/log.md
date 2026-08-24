@@ -57968,3 +57968,170 @@ right basis for this kind of open data.”
   HTTPS link remains running for the user's phone/laptop/headset. Physical
   headset enter/exit/re-enter, controllers/hands, haptics, comfort, and
   performance remain explicitly NOT RUN; no hardware certification is claimed.
+
+## 2026-08-24 09:16:21 AKDT - Official U.S. highways, globe click-to-start, and EarthGrid handoff
+
+### Prompt
+
+- User requested: “at a minimum I'd like you to import the US federal highway
+  system for Alaska and the US. draw those and let the user click anywhere to
+  start in that location. just terrain and road and road data is probably fine
+  for now. also stand up the generic GIS globe app so I can look at that too.”
+
+### Intake and work started
+
+- Reviewed `plan/plan.md`, this implementation log, and the active
+  `plan/branch/earth-platform-motorcycle-xr.md` contract before editing.
+- Started ICC task `us-federal-highways-click-start-20260824`, replaced its
+  generic generated plan with six concrete source/overlay/click/browser/
+  deployment/docs items and eight evidence gates, ran clean agent preflight,
+  and opened the conflict-free `codex-root-us-highways` lease.
+- Began two read-only parallel audits: one for the exact official USDOT/FHWA
+  nationwide highway source and one for Cesium globe picking/local-world
+  lifecycle. No terminal-browser pane was opened.
+- Live official reconnaissance identified the USDOT/BTS National Highway
+  System Feature Service (`USDOT_BTS`, WGS84, Alaska/50 states/territories,
+  492,005 current segments, version date 2025-08-08) and the official USDOT/BTS
+  National Highway Planning Network vector-tile service (nationwide major
+  highway geometry including Alaska). The final source/freshness split and
+  hard runtime caps remain under audit before implementation.
+
+### Files touched so far
+
+- `plan/log.md`
+- `plan/branch/earth-platform-motorcycle-xr.md`
+
+### Commands and results so far
+
+- `icc work ... --task-id us-federal-highways-click-start-20260824` — PASS;
+  fresh work dossier created.
+- `icc agent-preflight ...` — PASS with zero failures and one historical
+  `origin/master` naming warning; worktree was clean and guard-diff found no
+  rollback risk.
+- `icc agent-session ... --fail-on-conflict` — PASS, zero conflicts.
+- Bounded Node `fetch` probes of official ArcGIS item/service metadata,
+  counts, styles, and representative PBF tiles — PASS. The current NHS layer
+  count is `492,005`, Alaska count `1,055`, Interstate-class count `73,430`;
+  the official vector tiles are CORS-enabled, 512-pixel Web Mercator tiles,
+  and expose the `National Highway Planning Network` line layer.
+
+### Open
+
+- Freeze the official display/data provenance contract, implement the bounded
+  nationwide overlay and click-to-start transaction, add deterministic and
+  browser tests, rebuild, then run EarthGrid on direct private Tailnet HTTPS.
+## 2026-08-24 09:57:15 AKDT — transparent NURBS terrain and minimalist line motorcycle follow-up
+
+- Prompt: “I think the terrain should be rendered with nurbs lines over transparent terrain geometry. and same goes for the motorcycle. we've got way too much geopmetry going on for the motorcycle right now. I think it should basically be two glowing lines for the wheels and glowing lines for the frame and maybe a very minimalist stick figure style rider.”
+- Treated this as an additive RoadVector presentation requirement, not a request to replace its meter-scale terrain, authoritative particle-rigid physics, Cesium overview, federal-highway overlay, or click-to-start work.
+- Refreshed the ICC task dossier and added the `visual-style` item/gate to `us-federal-highways-click-start-20260824`; renewed the root edit lease through the visual and final-release slice.
+- Started two read-only audits in parallel: one for bounded, genuine Three.js NURBS terrain contours and one for the smallest physics-compatible line motorcycle/rider contract.
+- Initial source finding: local physics/GIS coordinates already use meters. The visible scale/clutter problem is the default renderer: it exposes six component guide meshes, the full collision-particle cloud, contact spheres, and an opaque terrain shader. The intended fix is therefore presentation-only: keep collision geometry authoritative and available to diagnostics, but default it off; expose an intentionally sparse line rig and a faint transparent terrain surface with bounded NURBS-derived contours.
+- Files under active review: `demos/motorcycle/src/render/{constants,dynamicWorld,geometry,index,materials,staticWorld,worldRenderer}.js`, `demos/motorcycle/tests/render/world-renderer.test.mjs`, and the RoadVector branch/test/readme documentation. No visual source edit or validation result is claimed yet in this intake entry.
+
+## 2026-08-24 10:49:35 AKDT - Camera floor, final NURBS/FHWA verification, and private app status
+
+### Prompts
+
+- User asked: “can you prevent the camera from going underground?”
+- User asked: “also can you tell me where the generic GIS app is stood up at?”
+- User asked: “is the aviation data site still up too?”
+
+### Implementation
+
+- Added `demos/motorcycle/src/view/terrainCameraFloor.js` and extended
+  `demos/shared/xr/viewRig.js` with an optional minimum-view-height contract.
+  First person clamps after its rider offset; third person clamps the actual
+  damped point and retains it as the next damping state; stereo XR evaluates
+  all available eye offsets and raises only the locomotion root. RoadVector
+  samples the same exact terrain triangles after converting rebased local
+  coordinates back to the immutable source ENU frame. The minimum optical
+  clearance is 0.35 m, with nearest-grid-edge sampling and a conservative
+  terrain-maximum fallback for a non-finite exact sample.
+- Completed the local visual rewrite in
+  `demos/motorcycle/src/render/{nurbs,materials,staticWorld,dynamicWorld,worldRenderer}.js`.
+  The default terrain is a 3.5%-opacity display mesh plus exact degree-one
+  Three.js NURBS contours with hard construction/output caps and honest level,
+  curve, point, and omission telemetry. The default bike is two rational NURBS
+  wheel loops, five frame/fork/swingarm strokes, and six rider strokes. The
+  six-body/123-particle collision model is unchanged and becomes visible only
+  through explicit `?physicsDebug=1` diagnostics.
+- Completed the official FHWA/U.S. DOT source path in
+  `packages/geo-core/src/vector/federalHighways.js`,
+  `scripts/{sync-federal-highways,federal-highway-sync-support}.mjs`, and the
+  versioned `demos/motorcycle/public/data/fhwa-nhs/2025.08.08` artifact. The
+  generator validates live item/layer/schema/count/version, every active DBF
+  `VERSION`, archive members/bytes/hashes, simplification caps, tile inventory,
+  and Alaska coverage before an atomic directory replacement.
+- The first two generator refresh attempts failed on the ArcGIS Hub export's
+  transient 502/processing timeout. The initial timeout incorrectly covered
+  the entire 104 MB response stream. Split the bounded connection/header wait
+  from a five-minute archive ceiling and added capped retry of timeout,
+  429/5xx, and pending export states. The third official run succeeded. Removed
+  the three exact failed `/tmp/peercompute-fhwa-nhs-*` work directories and one
+  temporary header file; they were disposable and are not recoverable.
+- A final audit found that globe clicks were using generalized FHWA display
+  geometry to replace the exact Cesium pick by up to 100 km. Corrected
+  `demos/motorcycle/src/overview/overviewRuntime.js` and its tests so the exact
+  picked WGS84 point always defines the bounded local request. FHWA geometry
+  remains visual context only. Same-coordinate supersession still uses a
+  generation token, and an empty-road result remains an explicit overview
+  failure.
+- Updated `README.md`, `demos/motorcycle/README.md`, `plan/{plan,tests,log}.md`,
+  and `plan/branch/earth-platform-motorcycle-xr.md`. Rebuilt generated
+  `docs/{wxglobe,earth,motorcycle}` and recaptured
+  `docs/assets/motorcycle.png` headlessly from the real private service in
+  Cesium overview mode, showing current FHWA NHS, regional OSM, NOAA terrain,
+  and the exact click-to-start UI. No terminal-browser pane was opened.
+
+### Commands and exact results
+
+- `node --version` - PASS, `v24.18.0`.
+- `npm run sync:federal-highways` - PASS after the two retained failed attempts:
+  492,005 source records, 491,545 retained, 464,449 simplified points, 1,028
+  tiles / 2,468,431 bytes, largest tile 47,196 bytes, source archive
+  104,773,728 bytes with SHA-256
+  `b5e4969919953bf4f0cd38c1582bd9314e0c26a1e937e35ee7a2392a1e6c3069`.
+- `npm run test:earth-platform:unit` - PASS twice, including after the final
+  exact-click correction: 259 Node tests plus mocked Chromium XR (geo-core 29,
+  geodata 44, EarthGrid 27, WXGlobe 28, XR 22, physics 33, traffic 12,
+  RoadVector 64).
+- `npm run test:earth-platform:release` - PASS twice, including after the
+  exact-click correction. Final entries are WXGlobe `index-CpLdGMun.js`,
+  EarthGrid `index-BD3Q_QDG.js`, RoadVector `index-pUsf9pMm.js`, and
+  `NetworkManager-Bw1A5fZg.js`; static release checks passed 44/44 and combined
+  built HTTPS runtime smoke passed. Test-owned port 43947 and Chrome closed.
+- `npm run test:earth-platform:live` - PASS at 18:48:52Z-18:49:08Z:
+  Shortbread 38,983 bytes / 515 streets / one building; Overpass 267,281 bytes /
+  172 roads / 100 buildings / 705 directed edges after bounded retry; nowCOAST
+  current at 7.93 minutes; 16 ETOPO samples from 13-19 m; Terrarium 69,200
+  bytes.
+- Direct `curl -k`, certificate, and headless Chrome probes - PASS. EarthGrid
+  `https://100.68.165.52:5187/` and RoadVector
+  `https://100.68.165.52:5188/` are secure contexts; both roots, same-origin
+  catalogs, and Cesium workers return 200. The RoadVector FHWA manifest returns
+  200, current source status includes Alaska, the live local source returned
+  1,665 roads, and first/third camera-floor telemetry was finite and clear.
+  The certificate SAN contains both `100.68.165.52` and
+  `shitbox.tail5c077c.ts.net`; it expires 2026-09-23.
+- `npm audit --omit=dev --json` - FAIL (pre-existing repository risk): 21
+  production-tree advisories, comprising 1 critical, 12 high, 3 moderate, and
+  5 low. No broad `npm audit fix` was attempted; the prior isolated geodata
+  service audit remains zero.
+- Aviation status probe - root and `/healthz` at
+  `http://100.68.165.52:8787/` return 200, but the current activity and obstacle
+  routes return 404. That retained process is an old mixed-version HTTP
+  preview, cannot provide secure geolocation, and is not represented as a
+  healthy aviation release.
+
+### Remaining manual/external work
+
+- NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and performance matrix. The direct HTTPS RoadVector service stays
+  running specifically so the user can perform this test; no physical-headset
+  certification is claimed yet.
+- EarthGrid `5187`, RoadVector `5188`, and loopback geodata `8788` intentionally
+  remain running as the requested private handoff. The old aviation `8787`
+  process was left untouched because the user asked only whether it remained
+  up. No Tailscale Serve, Funnel, public tunnel, or terminal-browser process is
+  involved.

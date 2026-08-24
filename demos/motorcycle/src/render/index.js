@@ -14,8 +14,15 @@ export {
 } from './geometry.js';
 export {
   createNeonBasicMaterial,
+  createNeonLineMaterial,
   createTopoTerrainMaterial,
 } from './materials.js';
+export {
+  createNurbsCircleCurve,
+  createNurbsCircleGeometry,
+  createNurbsCurveFromPoints,
+  createTerrainNurbsContourGeometry,
+} from './nurbs.js';
 export {
   createBuildingVisuals,
   createRoadVisuals,

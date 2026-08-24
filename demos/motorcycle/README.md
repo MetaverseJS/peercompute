@@ -2,7 +2,7 @@
 
 RoadVector is a location-based motorcycle racing demo built from reusable
 PeerCompute geospatial, particle-rigid, traffic, and WebXR modules. It loads a
-bounded OpenStreetMap-derived road/building scene from `services/geodata`,
+bounded OpenStreetMap-derived road scene from `services/geodata`,
 samples NOAA ETOPO 2022 into a local ENU terrain mesh, derives a deterministic
 race course from real connected OSM node IDs, and simulates the motorcycle and
 traffic collision cages on the CPU at 120 Hz.
@@ -13,9 +13,28 @@ terrain, contours, OSM overlay, and coarse live-player markers. An official
 OSM Shortbread z5 window overlays only the regional motorway, trunk, and
 primary network. That road overlay is intentionally bounded to a center-out
 5×5 / 25-tile window rather than pretending to be complete hemisphere
-coverage. Physics remains paused until `RIDE THIS REGION` switches discretely
+coverage. A separate persistent FHWA/U.S. DOT National Highway System layer
+draws the current versioned nationwide network, including Alaska, from a
+small same-origin derived MVT snapshot with the original federal metadata
+retained. Click or tap the Cesium globe to request a local road region at that
+point; the overview stays active if no playable OSM road exists. Physics remains
+paused until `RIDE THIS REGION` switches discretely
 into the Three.js local one-unit-per-meter world. Earth-scale ECEF coordinates
 never enter the particle solver or WebXR ride scene.
+
+The local ride keeps its exact triangle terrain and six-body particle-rigid
+motorcycle for collision and dynamics, but no longer exposes that dense
+geometry by default. NOAA elevations generate bounded genuine Three.js NURBS
+contours over a 3.5%-opacity terrain surface. The visible motorcycle is exactly
+two rational NURBS wheel loops at the physical rolling radius, five sparse
+frame/fork/swingarm curves, and a six-curve stick rider. Append
+`?physicsDebug=1` to expose capped collision particles and contact markers for
+diagnostics.
+
+First-, damped third-, and stereo-XR camera placement is constrained against
+the same exact terrain triangles with 0.35 m minimum optical clearance. The
+sampler remains correct through origin rebases; XR correction raises only the
+locomotion root and never overwrites the headset-tracked camera pose.
 
 The map, race course, and traffic are for gameplay and visualization only.
 They are not navigation, live traffic, road-condition, weather-warning, or
@@ -122,6 +141,10 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
   for each selected location and reports any exhausted/degraded state. A failed
   local terrain sample becomes an explicitly labeled degraded plane; it is
   never called live relief.
+- The FHWA National Highway System overview retains the exact upstream version,
+  item/layer identity, archive/member hashes, source counts, original metadata,
+  derivation parameters, tile checksums, and Alaska coverage. It is generalized
+  display geometry and does not imply federal road ownership.
 - Backend density and response caps fail with a smaller-region instruction;
   the client retries only its fixed bounded radius ladder and never silently
   truncates a drive graph.

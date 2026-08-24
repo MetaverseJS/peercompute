@@ -8,7 +8,14 @@ import {
   createRoadRibbonGeometry,
   createTerrainGeometry,
 } from './geometry.js';
-import { createNeonBasicMaterial, createTopoTerrainMaterial } from './materials.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import {
+  createNeonBasicMaterial,
+  createNeonLineMaterial,
+  createTopoTerrainMaterial,
+} from './materials.js';
+import { createTerrainNurbsContourGeometry } from './nurbs.js';
 
 function boundedLimit(value, fallback, maximum, label) {
   const selected = value ?? fallback;
@@ -22,16 +29,71 @@ export function createTerrainVisual(THREE, terrain, materialOptions = {}) {
   const geometry = createTerrainGeometry(THREE, terrain);
   const material = createTopoTerrainMaterial(THREE, materialOptions);
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'motorcycle-real-topographic-terrain';
+  mesh.name = 'motorcycle-transparent-terrain-surface';
   mesh.receiveShadow = false;
   mesh.frustumCulled = true;
+  mesh.renderOrder = 1;
   mesh.userData = {
-    kind: 'real-terrain',
+    kind: 'transparent-real-terrain-surface',
     source: terrain.source ?? null,
     vertexCount: geometry.userData.vertexCount,
     triangleCount: geometry.userData.triangleCount,
   };
-  return mesh;
+  const contours = createTerrainNurbsContourGeometry(THREE, terrain, materialOptions);
+  const root = new THREE.Group();
+  root.name = 'motorcycle-real-topographic-terrain';
+  const contourRoot = new THREE.Group();
+  contourRoot.name = 'motorcycle-terrain-nurbs-contours';
+  const createPasses = (sourceGeometry, contourClass, color, coreWidth, haloWidth) => {
+    const position = sourceGeometry.getAttribute('position');
+    if (!position || position.count === 0) return;
+    const wideGeometry = new LineSegmentsGeometry();
+    wideGeometry.name = `motorcycle-terrain-nurbs-${contourClass}-wide-geometry`;
+    wideGeometry.setPositions(position.array);
+    const halo = new LineSegments2(
+      wideGeometry,
+      createNeonLineMaterial(THREE, color, {
+        category: `terrain-nurbs-${contourClass}-halo`,
+        opacity: contourClass === 'major' ? 0.28 : 0.16,
+        linewidth: haloWidth,
+      }),
+    );
+    halo.name = `motorcycle-terrain-nurbs-${contourClass}-halo`;
+    halo.renderOrder = 3;
+    halo.computeLineDistances();
+    const core = new LineSegments2(
+      wideGeometry,
+      createNeonLineMaterial(THREE, color, {
+        category: `terrain-nurbs-${contourClass}-core`,
+        opacity: contourClass === 'major' ? 0.96 : 0.62,
+        linewidth: coreWidth,
+      }),
+    );
+    core.name = `motorcycle-terrain-nurbs-${contourClass}-core`;
+    core.renderOrder = 4;
+    core.computeLineDistances();
+    contourRoot.add(halo, core);
+  };
+  createPasses(contours.minor, 'minor', NEON_TOPO_PALETTE.terrain, 1.0, 3.2);
+  createPasses(contours.major, 'major', NEON_TOPO_PALETTE.terrainMajor, 1.8, 5.2);
+  contours.minor.dispose();
+  contours.major.dispose();
+  contourRoot.userData = {
+    kind: 'terrain-nurbs-contours',
+    ...contours.telemetry,
+    drawCallCount: contourRoot.children.length,
+  };
+  root.add(mesh, contourRoot);
+  root.userData = {
+    kind: 'real-terrain',
+    source: terrain.source ?? null,
+    vertexCount: geometry.userData.vertexCount,
+    triangleCount: geometry.userData.triangleCount,
+    style: 'transparent-terrain-with-bounded-nurbs-contours',
+    surfaceOpacity: material.userData.surfaceOpacity,
+    contours: contourRoot.userData,
+  };
+  return root;
 }
 
 export function groupRoadSegmentsByStyle(roadSegments) {

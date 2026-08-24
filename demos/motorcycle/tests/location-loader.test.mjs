@@ -13,7 +13,8 @@ for (const retryableCode of ['REGION_RESULT_LIMIT_EXCEEDED', 'REGION_RESPONSE_LI
     const calls = [];
     const envelope = Object.freeze({ schemaVersion: 'fixture-region' });
     const geodata = {
-      async osmRegion({ bbox }) {
+      async osmRegion({ bbox, layers }) {
+        assert.deepEqual(layers, ['roads']);
         calls.push(bbox);
         if (calls.length === 1) {
           const error = new Error('dense');

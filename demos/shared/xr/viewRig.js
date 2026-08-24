@@ -76,7 +76,10 @@ export class ViewRig {
   #thirdOffset;
   #thirdLookOffset;
   #thirdDamping;
+  #minimumViewY;
   #thirdPosition = null;
+  #lastXrViewOffsets = null;
+  #lastConstraint = null;
   #events = new EventHub();
   #disposed = false;
 
@@ -92,6 +95,7 @@ export class ViewRig {
     thirdOffset = [0, 2.2, 5.2],
     thirdLookOffset = [0, 1.1, -1.5],
     thirdDamping = 8,
+    minimumViewY = () => Number.NEGATIVE_INFINITY,
     setActiveCamera = () => {},
     setXRAnchorPose = null,
     recenter = () => {},
@@ -108,6 +112,8 @@ export class ViewRig {
     this.#thirdOffset = vector3(thirdOffset);
     this.#thirdLookOffset = vector3(thirdLookOffset);
     this.#thirdDamping = Math.max(0, Number(thirdDamping) || 0);
+    if (typeof minimumViewY !== 'function') throw new TypeError('minimumViewY must be a function');
+    this.#minimumViewY = minimumViewY;
     this.#setActiveCamera = setActiveCamera;
     this.#setXRAnchorPose = setXRAnchorPose;
     this.#recenter = recenter;
@@ -188,19 +194,53 @@ export class ViewRig {
     return deepFreeze({ shift: value, status: this.getStatus() });
   }
 
-  update({ position, orientation, deltaTime = 0, lookAt = null } = {}) {
+  #constrain(position, mode) {
+    const minimum = Number(this.#minimumViewY([...position], { mode }));
+    if (minimum !== Number.NEGATIVE_INFINITY && !Number.isFinite(minimum)) {
+      throw new TypeError('minimumViewY must return a finite height or -Infinity');
+    }
+    const correction = Math.max(0, minimum - position[1]);
+    const constrained = correction > 0
+      ? [position[0], minimum, position[2]]
+      : [...position];
+    this.#lastConstraint = deepFreeze({ mode, minimumY: minimum, correction, position: constrained });
+    return constrained;
+  }
+
+  update({ position, orientation, deltaTime = 0, lookAt = null, xrViewOffsets = null } = {}) {
     this.#assertLive();
     const targetPosition = vector3(position);
     const targetOrientation = quaternion(orientation);
     if (this.#mode === 'xr') {
+      const anchorOrientation = multiplyQuaternion(targetOrientation, this.#xrOrientation);
+      if (Array.isArray(xrViewOffsets) && xrViewOffsets.length > 0) {
+        this.#lastXrViewOffsets = xrViewOffsets.map((offset) => vector3(offset));
+      }
+      const viewOffsets = this.#lastXrViewOffsets ?? [[0, 0, 0]];
+      let correction = 0;
+      for (const offset of viewOffsets) {
+        const eye = add(targetPosition, rotateVector(offset, anchorOrientation));
+        const constrainedEye = this.#constrain(eye, 'xr');
+        correction = Math.max(correction, constrainedEye[1] - eye[1]);
+      }
+      const anchorPosition = [targetPosition[0], targetPosition[1] + correction, targetPosition[2]];
+      this.#lastConstraint = deepFreeze({
+        mode: 'xr',
+        minimumY: null,
+        correction,
+        position: anchorPosition,
+        eyeCount: viewOffsets.length,
+      });
       const pose = deepFreeze({
-        position: targetPosition,
-        orientation: multiplyQuaternion(targetOrientation, this.#xrOrientation),
+        position: anchorPosition,
+        orientation: anchorOrientation,
+        eyeCount: viewOffsets.length,
+        correction,
       });
       if (this.#setXRAnchorPose) {
         this.#setXRAnchorPose(pose);
       } else if (this.#xrAnchor) {
-        setVector(this.#xrAnchor.position, targetPosition);
+        setVector(this.#xrAnchor.position, anchorPosition);
         setQuaternion(this.#xrAnchor.quaternion, pose.orientation);
         this.#xrAnchor.updateMatrixWorld?.(true);
       }
@@ -208,7 +248,10 @@ export class ViewRig {
     }
     if (this.#mode === 'first') {
       const camera = this.#cameras.first;
-      const cameraPosition = add(targetPosition, rotateVector(this.#firstOffset, targetOrientation));
+      const cameraPosition = this.#constrain(
+        add(targetPosition, rotateVector(this.#firstOffset, targetOrientation)),
+        'first',
+      );
       const cameraOrientation = multiplyQuaternion(targetOrientation, this.#firstOrientation);
       setVector(camera.position, cameraPosition);
       setQuaternion(camera.quaternion, cameraOrientation);
@@ -220,7 +263,10 @@ export class ViewRig {
     const desired = add(targetPosition, rotateVector(this.#thirdOffset, targetOrientation));
     const delta = clamp(deltaTime, 0, 1);
     const alpha = this.#thirdPosition === null ? 1 : 1 - Math.exp(-this.#thirdDamping * delta);
-    this.#thirdPosition = lerp(this.#thirdPosition ?? desired, desired, alpha);
+    this.#thirdPosition = this.#constrain(
+      lerp(this.#thirdPosition ?? desired, desired, alpha),
+      'third',
+    );
     const focus = lookAt ? vector3(lookAt) : add(targetPosition, rotateVector(this.#thirdLookOffset, targetOrientation));
     setVector(camera.position, this.#thirdPosition);
     if (typeof camera.lookAt === 'function') camera.lookAt(...focus);
@@ -235,6 +281,7 @@ export class ViewRig {
       nonXRMode: this.#nonXRMode,
       activeCamera: this.#mode,
       thirdPoseInitialized: this.#thirdPosition !== null,
+      lastConstraint: this.#lastConstraint,
     });
   }
 
