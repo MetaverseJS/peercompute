@@ -57492,3 +57492,19 @@ the user approved the preceding handoff work. Exact prompt time was
   and performance matrix remains explicitly NOT RUN and is not represented as
   hardware certification.
 - No push was attempted.
+
+### Final local closure
+
+- `git commit -m "Fix RoadVector same-origin production config"`: PASS, local
+  commit `af8ba26715aa6372e1d7218bc4f5e8fa382cbfc6`; no push.
+- Refreshed ICC index (`773` files / `448,716` lines), memory (`10,921`
+  chunks), and Git history (`270` commits). ICC `guard-diff` passed with a
+  clean worktree.
+- Recorded verified attempt
+  `20260823-roadvector-same-origin-production-fix`; Guard `True`, Dirty
+  `False`. Independent focused re-audit confirmed both production same-origin
+  forms now create a configured client and found no remaining defect in that
+  path.
+- Ended the `codex-root-same-origin-fix` lease with zero conflicts. This final
+  narrative-only closure will be committed separately so the prompt log
+  includes the actual commit and ICC results.
