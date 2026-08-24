@@ -391,3 +391,31 @@ remains a manual gate.
 | Generic GIS globe handoff | EarthGrid direct private HTTPS root/API/Cesium probes plus secure-context browser readiness at `https://100.68.165.52:5187/` | PASS |
 | RoadVector headset handoff | Direct private HTTPS at `https://100.68.165.52:5188/`; secure context and app/runtime verified | PASS (service) |
 | Physical WebXR hardware matrix | User headset run has not yet been performed | NOT RUN / no certification claim |
+
+## User Addendum - 2026-08-24 AKDT - EarthGrid Water Surfaces
+
+- Add bodies of water to the generic EarthGrid GIS demo through the existing
+  official OpenStreetMap Shortbread imagery provider. Do not add a duplicate
+  Overpass query, backend route, Cesium imagery layer, or bulk-prefetch path.
+- Render `ocean` and non-glacier `water_polygons` before buildings and roads as
+  fill-only blue `#0080ff` / `rgba(0, 128, 255, 0.5)`, with opacity exactly
+  `0.5`. “Flat” means non-extruded, non-animated, non-glowing imagery draped on
+  the authoritative terrain; it does not claim a constant-elevation physical
+  water plane.
+- Exclude `kind=glacier` and centerline-only `water_lines`. Polygonal wide
+  rivers, lakes, reservoirs, basins, docks, canals, and oceans are in scope;
+  narrow stream/ditch centerlines are not water surfaces in this tranche.
+- Keep water opt-in at the shared provider boundary so RoadVector's bounded
+  major-road overview remains road-only. Preserve one imagery layer normally
+  and two only when a NOAA weather layer is enabled.
+- Retain exact OSM/ODbL attribution and expose water source/style/count/vertex
+  telemetry. EarthGrid hard-bounds each MVT to 2 MiB, its canvas LRU to 96
+  tiles, and the provider session to 192 MiB / 4,000,000 rendered vertices;
+  the aggregate counters are explicitly session-lifetime budgets.
+- Deterministic gates must cover official layer validation, water-first draw
+  order, even-odd polygon holes, glacier omission, no water stroke/shadow,
+  exact 50% opacity, shared-provider opt-in isolation, one/two imagery counts,
+  built-bundle markers, and live Anchorage ocean/inland-water decoding.
+- Preserve the direct private HTTPS EarthGrid handoff at
+  `https://100.68.165.52:5187/` with same-origin geodata and Cesium assets. Do
+  not open an in-terminal browser or introduce Tailscale Serve/Funnel.

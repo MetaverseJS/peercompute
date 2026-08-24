@@ -7,6 +7,7 @@ import {
   createTerrariumTerrainProvider,
   ETOPO2022_MAX_LEVEL,
   TERRARIUM_MAX_LEVEL,
+  SHORTBREAD_WATER_STYLE,
   updateTopoMaterial,
   WEB_MERCATOR_MAX_LATITUDE
 } from '@peercompute/geo-core';
@@ -26,6 +27,8 @@ import {
 import './style.css';
 
 const FALLBACK_LOCATION = Object.freeze({ longitude: -149.9003, latitude: 61.2181, label: 'ANCHORAGE FALLBACK' });
+const EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES = 192 * 1024 * 1024;
+const EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES = 4_000_000;
 
 const elements = {
   console: document.querySelector('#console'),
@@ -34,6 +37,7 @@ const elements = {
   platformStatus: document.querySelector('#platform-status'),
   terrainStatus: document.querySelector('#terrain-status'),
   osmStatus: document.querySelector('#osm-status'),
+  waterStatus: document.querySelector('#water-status'),
   localStatus: document.querySelector('#local-status'),
   localProvenance: document.querySelector('#local-provenance'),
   weatherStatus: document.querySelector('#weather-status'),
@@ -73,6 +77,7 @@ const runtime = {
   osmTelemetry: null,
   osmProvider: null,
   osmLayer: null,
+  waterStatus: 'initializing',
   localStatus: geodata.configured ? 'unrequested' : 'backend-unconfigured',
   localEnvelope: null,
   localRender: null,
@@ -105,6 +110,13 @@ function publicState() {
     osmStatus: runtime.osmStatus,
     osmTelemetry: runtime.osmTelemetry ? { ...runtime.osmTelemetry } : null,
     osmVisible: Boolean(runtime.osmLayer?.show),
+    waterStatus: runtime.waterStatus,
+    waterVisible: Boolean(runtime.osmLayer?.show),
+    waterStyle: {
+      ...SHORTBREAD_WATER_STYLE,
+      sourceLayers: [...SHORTBREAD_WATER_STYLE.sourceLayers],
+      excludedKinds: [...SHORTBREAD_WATER_STYLE.excludedKinds],
+    },
     localStatus: runtime.localStatus,
     localCounts: runtime.localRender ? {
       sourceRoads: runtime.localRender.sourceRoads,
@@ -159,7 +171,8 @@ function updateReady() {
   const terrainReady = runtime.frameCount > 0 && (runtime.terrain?.loaded ?? 0) > 0;
   const osmSettled = ['unavailable', 'off'].includes(runtime.osmStatus)
     || (runtime.osmTelemetry?.loaded ?? 0) > 0;
-  if (!terrainReady || !osmSettled) return;
+  const waterSettled = ['unavailable', 'off', 'live', 'degraded'].includes(runtime.waterStatus);
+  if (!terrainReady || !osmSettled || !waterSettled) return;
   runtime.ready = true;
   document.documentElement.dataset.earthReady = 'true';
   elements.platformStatus.textContent = 'PLATFORM: READY // REAL SOURCES QUALIFIED';
@@ -234,11 +247,17 @@ function configureScene(viewer, material) {
 
 async function startShortbread() {
   runtime.osmStatus = 'connecting';
+  runtime.waterStatus = 'connecting';
   elements.osmStatus.textContent = 'SHORTBREAD CONNECTING';
+  elements.waterStatus.textContent = 'SHORTBREAD WATER CONNECTING';
   try {
     const provider = await loadShortbreadImageryProvider(Cesium, {
+      includeWater: true,
+      maximumTotalBytes: EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES,
+      maximumRenderedVertices: EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES,
       onTelemetry: (telemetry) => {
         runtime.osmTelemetry = telemetry;
+        if (telemetry.loaded > 0) runtime.waterStatus = telemetry.failed > 0 ? 'degraded' : 'live';
         if (telemetry.renderedCommands > 0) {
           runtime.osmStatus = telemetry.failed > 0 ? 'degraded' : 'live';
         } else if (telemetry.loaded > 0) {
@@ -251,6 +270,11 @@ async function startShortbread() {
         elements.osmStatus.textContent = telemetry.renderedCommands > 0
           ? `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested}`
           : `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested} // ZOOM FOR ROADS`;
+        elements.waterStatus.textContent = telemetry.waterCommands > 0
+          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.waterCommands} SURFACES // 50%`
+          : telemetry.loaded > 0
+            ? `BLUE ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 50%`
+            : 'BLUE CONNECTING // WAITING FOR FIRST TILE';
         updateReady();
       }
     });
@@ -263,11 +287,15 @@ async function startShortbread() {
     runtime.osmLayer.show = elements.osmContext.checked;
     if ((runtime.osmTelemetry?.loaded ?? 0) === 0) {
       runtime.osmStatus = 'waiting-tiles';
+      runtime.waterStatus = 'waiting-tiles';
       elements.osmStatus.textContent = 'SHORTBREAD WAITING FOR FIRST TILE // ODBL';
+      elements.waterStatus.textContent = 'SHORTBREAD WATER WAITING FOR FIRST TILE // ODBL';
     }
   } catch (error) {
     runtime.osmStatus = 'unavailable';
+    runtime.waterStatus = 'unavailable';
     elements.osmStatus.textContent = `UNAVAILABLE // ${error instanceof Error ? error.message : String(error)}`;
+    elements.waterStatus.textContent = `UNAVAILABLE // ${error instanceof Error ? error.message : String(error)}`;
   }
   updateReady();
 }
@@ -553,7 +581,7 @@ async function start() {
   });
   runtime.viewer = viewer;
   viewer.scene.canvas.setAttribute('role', 'application');
-  viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth, road, building, terrain, and weather viewer.');
+  viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth, water, road, building, terrain, and weather viewer.');
   viewer.scene.canvas.tabIndex = 0;
   configureScene(viewer, topoMaterial);
   const destroyControls = configureControls(viewer, topoMaterial);

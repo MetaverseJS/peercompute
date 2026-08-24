@@ -92,15 +92,24 @@ async function probeShortbread() {
     maximumBytes: 512 * 1024,
     expectedContentType: /json/iu
   });
-  const tileJson = validateShortbreadTileJson(JSON.parse(new TextDecoder().decode(tileJsonResponse.bytes)));
+  const tileJson = validateShortbreadTileJson(
+    JSON.parse(new TextDecoder().decode(tileJsonResponse.bytes)),
+    { requireWater: true }
+  );
   const tile = tileForCoordinate(-149.8965, 61.218, Math.min(14, tileJson.maxzoom));
   const url = formatShortbreadTileUrl(tileJson.tiles[0], tile);
   const tileResponse = await fetchBytes(url, {
     headers: { accept: 'application/vnd.mapbox-vector-tile,application/x-protobuf' },
     maximumBytes: 2 * 1024 * 1024
   });
-  const decoded = decodeShortbreadTile(tileResponse.bytes, { ...tile, maximumFeatures: 10_000 });
+  const decoded = decodeShortbreadTile(tileResponse.bytes, {
+    ...tile,
+    maximumFeatures: 10_000,
+    includeWater: true
+  });
   assert.ok(decoded.counts.streets + decoded.counts.buildings > 0, 'fixed Shortbread tile returned no streets or buildings');
+  assert.ok(decoded.counts.ocean > 0, 'fixed Shortbread tile returned no ocean polygons');
+  assert.ok(decoded.counts.waterPolygons > 0, 'fixed Shortbread tile returned no inland-water polygons');
   return {
     tile,
     bytes: tileResponse.bytes.byteLength,

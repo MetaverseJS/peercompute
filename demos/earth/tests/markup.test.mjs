@@ -12,4 +12,9 @@ test('keeps visible OSM attribution, ODbL license, derived-data, and freshness s
   assert.match(html, /id="local-provenance"/u);
   assert.match(html, /FRESHNESS NOT AVAILABLE/u);
   assert.match(html, /Not navigation, routing, warning, or live-traffic data/u);
+  assert.match(html, /id="water-status"/u);
+  assert.match(html, /OSM SHORTBREAD WATER \+ ROADS \+ BUILDINGS/u);
+  assert.match(html, /WATER \/\/ 50%/u);
+  assert.match(html, /ocean and non-glacier inland-water polygons/u);
+  assert.match(html, /flat blue terrain-draped fill at 50% opacity/u);
 });

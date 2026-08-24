@@ -32,6 +32,7 @@
           <dl class="telemetry-grid">
             <div><dt>TERRAIN</dt><dd id="terrain-status">CONNECTING</dd></div>
             <div><dt>OSM CONTEXT</dt><dd id="osm-status">CONNECTING</dd></div>
+            <div><dt>WATER</dt><dd id="water-status">CONNECTING</dd></div>
             <div><dt>LOCAL SCENE</dt><dd id="local-status">UNREQUESTED</dd></div>
             <div><dt>WEATHER</dt><dd id="weather-status">OFF</dd></div>
             <div><dt>REGION</dt><dd id="region-status">WORLD</dd></div>
@@ -60,7 +61,7 @@
           </section>
 
           <section class="control-block toggle-stack">
-            <label><input id="osm-context" type="checkbox" checked /> <span>OSM SHORTBREAD ROADS + BUILDINGS</span></label>
+            <label><input id="osm-context" type="checkbox" checked /> <span>OSM SHORTBREAD WATER + ROADS + BUILDINGS</span></label>
             <label><input id="local-scene" type="checkbox" checked /> <span>LOCAL 3D ROADS + BUILDINGS</span></label>
           </section>
 
@@ -93,6 +94,7 @@
           </div>
 
           <section class="legend" aria-label="Map legend">
+            <span class="legend__water">WATER // 50%</span>
             <span class="legend__road">ROADS</span>
             <span class="legend__building">BUILDINGS</span>
             <span class="legend__weather">WEATHER</span>
@@ -103,7 +105,7 @@
             <p><strong>DISPLAY / GAME CONTEXT ONLY.</strong> Not navigation, routing, warning, or live-traffic data.</p>
             <p id="osm-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a> // DERIVED DATABASE</p>
             <p id="local-provenance">LOCAL REGION UNREQUESTED // ODBL 1.0 DERIVED DATABASE // FRESHNESS NOT AVAILABLE</p>
-            <p>Terrain: NOAA ETOPO 2022 or AWS Open Data Terrarium. Weather: NOAA nowCOAST rendered WMS imagery.</p>
+            <p>Water: OSM Shortbread ocean and non-glacier inland-water polygons, flat blue terrain-draped fill at 50% opacity. Terrain: NOAA ETOPO 2022 or AWS Open Data Terrarium. Weather: NOAA nowCOAST rendered WMS imagery.</p>
           </footer>
         </div>
       </aside>

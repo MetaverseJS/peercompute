@@ -4,6 +4,17 @@ import { PbfReader } from 'pbf';
 export const SHORTBREAD_TILEJSON_URL = 'https://vector.openstreetmap.org/shortbread_v1/tilejson.json';
 export const SHORTBREAD_ALLOWED_ORIGIN = 'https://vector.openstreetmap.org';
 export const SHORTBREAD_MAX_ZOOM = 14;
+export const SHORTBREAD_WATER_STYLE = Object.freeze({
+  schemaVersion: 'peercompute.geo.shortbread-water-style.v1',
+  color: '#0080ff',
+  opacity: 0.5,
+  fill: 'rgba(0, 128, 255, 0.5)',
+  surface: 'flat',
+  rendering: 'flat-blue-water-surface',
+  geometry: 'non-extruded-terrain-draped-imagery',
+  sourceLayers: Object.freeze(['ocean', 'water_polygons']),
+  excludedKinds: Object.freeze(['glacier']),
+});
 
 const ROAD_STYLES = Object.freeze({
   motorway: Object.freeze({ category: 'motorway', color: '#ff31f6', width: 3.5 }),
@@ -23,8 +34,9 @@ function assertTileCoordinate(value, label) {
   return value;
 }
 
-export function validateShortbreadTileJson(payload) {
+export function validateShortbreadTileJson(payload, { requireWater = false } = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('TileJSON must be an object.');
+  if (typeof requireWater !== 'boolean') throw new TypeError('requireWater must be a boolean.');
   if (typeof payload.tilejson !== 'string') throw new TypeError('TileJSON version is missing.');
   const maxzoom = Number(payload.maxzoom);
   if (!Number.isInteger(maxzoom) || maxzoom < 0 || maxzoom > SHORTBREAD_MAX_ZOOM) {
@@ -44,6 +56,9 @@ export function validateShortbreadTileJson(payload) {
   const vectorLayerIds = new Set((payload.vector_layers ?? []).map((layer) => layer?.id).filter(Boolean));
   if (!vectorLayerIds.has('streets') || !vectorLayerIds.has('buildings')) {
     throw new TypeError('Shortbread TileJSON must advertise streets and buildings layers.');
+  }
+  if (requireWater && (!vectorLayerIds.has('ocean') || !vectorLayerIds.has('water_polygons'))) {
+    throw new TypeError('Shortbread TileJSON must advertise ocean and water_polygons layers when water is enabled.');
   }
   return Object.freeze({
     tilejson: payload.tilejson,
@@ -93,7 +108,13 @@ export function classifyShortbreadRoad(properties = {}) {
   return ROAD_STYLES.default;
 }
 
-export function decodeShortbreadTile(arrayBuffer, { x, y, z, maximumFeatures = 10_000 } = {}) {
+export function decodeShortbreadTile(arrayBuffer, {
+  x,
+  y,
+  z,
+  maximumFeatures = 10_000,
+  includeWater = false,
+} = {}) {
   assertTileCoordinate(x, 'x');
   assertTileCoordinate(y, 'y');
   assertTileCoordinate(z, 'z');
@@ -103,13 +124,25 @@ export function decodeShortbreadTile(arrayBuffer, { x, y, z, maximumFeatures = 1
   if (!Number.isInteger(maximumFeatures) || maximumFeatures < 1 || maximumFeatures > 25_000) {
     throw new RangeError('maximumFeatures must be between 1 and 25,000.');
   }
+  if (typeof includeWater !== 'boolean') throw new TypeError('includeWater must be a boolean.');
   const bytes = arrayBuffer instanceof ArrayBuffer
     ? new Uint8Array(arrayBuffer)
     : new Uint8Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength);
   const tile = new VectorTile(new PbfReader(bytes));
-  const output = { streets: [], buildings: [] };
+  const output = { ocean: [], waterPolygons: [], streets: [], buildings: [] };
+  const layers = includeWater
+    ? [
+      ['ocean', 'ocean'],
+      ['water_polygons', 'waterPolygons'],
+      ['streets', 'streets'],
+      ['buildings', 'buildings'],
+      ]
+    : [
+      ['streets', 'streets'],
+      ['buildings', 'buildings'],
+      ];
   let count = 0;
-  for (const layerName of Object.keys(output)) {
+  for (const [layerName, outputName] of layers) {
     const layer = tile.layers[layerName];
     if (!layer) continue;
     for (let index = 0; index < layer.length; index += 1) {
@@ -117,13 +150,21 @@ export function decodeShortbreadTile(arrayBuffer, { x, y, z, maximumFeatures = 1
       if (count > maximumFeatures) throw new RangeError('Shortbread tile exceeds the decoded feature cap.');
       const feature = layer.feature(index).toGeoJSON(x, y, z);
       feature.properties = { ...feature.properties, shortbreadLayer: layerName };
-      output[layerName].push(feature);
+      output[outputName].push(feature);
     }
   }
   return Object.freeze({
     schema: 'peercompute.geo.shortbread-tile.v1',
     tile: Object.freeze({ x, y, z }),
-    counts: Object.freeze({ streets: output.streets.length, buildings: output.buildings.length }),
+    counts: Object.freeze({
+      ocean: output.ocean.length,
+      waterPolygons: output.waterPolygons.length,
+      streets: output.streets.length,
+      buildings: output.buildings.length,
+    }),
+    includeWater,
+    ocean: Object.freeze(output.ocean),
+    waterPolygons: Object.freeze(output.waterPolygons),
     streets: Object.freeze(output.streets),
     buildings: Object.freeze(output.buildings)
   });
@@ -132,6 +173,36 @@ export function decodeShortbreadTile(arrayBuffer, { x, y, z, maximumFeatures = 1
 export function shortbreadDrawCommands(decoded) {
   if (!decoded?.streets || !decoded?.buildings) throw new TypeError('Decoded Shortbread tile is required.');
   const commands = [];
+  for (const feature of decoded.ocean ?? []) {
+    commands.push(Object.freeze({
+      kind: 'water',
+      category: 'ocean',
+      geometry: feature.geometry,
+      fill: SHORTBREAD_WATER_STYLE.fill,
+      stroke: null,
+      width: 0,
+      opacity: SHORTBREAD_WATER_STYLE.opacity,
+      flatSurface: true,
+      sourceLayer: 'ocean',
+      properties: feature.properties,
+    }));
+  }
+  for (const feature of decoded.waterPolygons ?? []) {
+    const sourceKind = String(feature.properties?.kind ?? '').toLowerCase();
+    if (SHORTBREAD_WATER_STYLE.excludedKinds.includes(sourceKind)) continue;
+    commands.push(Object.freeze({
+      kind: 'water',
+      category: 'inland-water',
+      geometry: feature.geometry,
+      fill: SHORTBREAD_WATER_STYLE.fill,
+      stroke: null,
+      width: 0,
+      opacity: SHORTBREAD_WATER_STYLE.opacity,
+      flatSurface: true,
+      sourceLayer: 'water_polygons',
+      properties: feature.properties,
+    }));
+  }
   for (const feature of decoded.buildings) {
     commands.push(Object.freeze({
       kind: 'building',

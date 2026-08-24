@@ -2191,3 +2191,53 @@
   report `isSecureContext`, prove same-origin geodata/Cesium assets, and leave
   the two requested handoff services running. The physical-headset matrix
   remains manual and must stay recorded as NOT RUN until the user exercises it.
+
+## EarthGrid water-surface strategy and results - 2026-08-24 AKDT
+
+### Deterministic strategy
+
+- Validate the official Shortbread origin, TileJSON contract, and Earth-only
+  requirement for both `ocean` and `water_polygons`; retain optional water at
+  the shared provider boundary so RoadVector fixtures and behavior stay
+  road-only.
+- Decode ocean and inland polygon features under the existing 10,000-feature
+  tile cap. Exclude `kind=glacier`, omit centerline `water_lines`, and assert
+  water commands precede buildings and roads.
+- Assert exact `#0080ff` / `rgba(0, 128, 255, 0.5)`, numeric opacity `0.5`,
+  flat/non-extruded terrain-draped metadata, even-odd hole fill, zero water
+  stroke/shadow, and no opacity leakage into later drawing categories.
+- Assert water telemetry, provider-session caps, opt-in isolation, visibility
+  toggle behavior, visible source/legend disclosure, one baseline imagery
+  layer, and two imagery layers only with NOAA weather.
+- Require production bundle sentinels, a built fixture with positive ocean and
+  inland-water commands/vertices, and a bounded live fixed Anchorage tile with
+  positive ocean and inland polygons. Preserve WXGlobe and RoadVector gates.
+
+### Executed results
+
+- PASS: focused syntax and water tests, `11/11`.
+- PASS: `npm run test:geo-core`, `29/29`; `npm run test:earth`, `29/29`;
+  `npm run test:motorcycle`, `64/64`; `npm run test:wxglobe`, `28/28`.
+- PASS: `npm run test:earth-platform:unit`, `261` Node tests plus the mocked
+  Chromium WebXR harness under Node `v24.18.0`.
+- PASS: `npm run test:earth-platform:release`; rebuilt WXGlobe, EarthGrid, and
+  RoadVector, copied `391` Cesium runtime/notice items per build, passed static
+  release checks `44/44`, and passed the combined deterministic built HTTPS
+  smoke. The test-owned port `43947` was closed afterward.
+- FAIL then PASS: first release smoke required exactly one ocean/inland command
+  even though Cesium correctly requested multiple fixture tiles; the assertion
+  was fixed to require positive source-category counts. The focused smoke and
+  then the full release gate passed.
+- FAIL then PASS: the first optional `npm run test:earth-platform:live` hit an
+  upstream IPv6 connect timeout. The immediate bounded retry passed at
+  `2026-08-24T20:46:31Z`: Shortbread `38,983` bytes with ocean `1`, inland
+  polygons `3`, streets `515`, and building `1`; the other live source gates
+  also passed.
+- PASS: private headless Chrome at `https://100.68.165.52:5187/` reported a
+  secure context, ready live terrain/OSM/water, `16` ocean commands / `104,580`
+  water vertices, exact blue/`0.5` style, one imagery layer, and zero page or
+  console errors. Root, same-origin catalog, and a Cesium worker returned 200;
+  the IP/DNS SAN certificate remains valid through 2026-09-23.
+- NOT APPLICABLE: no physical-headset gate is required for this EarthGrid-only
+  water layer. RoadVector's separate physical WebXR hardware matrix remains
+  NOT RUN and is not represented as certified.

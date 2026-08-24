@@ -30,14 +30,19 @@ const shortbreadTileJsonFixture = Object.freeze({
   minzoom: 0,
   maxzoom: 14,
   tiles: ['https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt'],
-  vector_layers: [{ id: 'streets' }, { id: 'buildings' }]
+  vector_layers: [
+    { id: 'ocean' },
+    { id: 'water_polygons' },
+    { id: 'streets' },
+    { id: 'buildings' }
+  ]
 });
 
-// Canonical MVT v2 fixture with one street LineString and one building
-// Polygon. An empty protobuf is valid but cannot prove that the live renderer
-// decoded or drew either required Shortbread category.
+// Canonical MVT v2 fixture with one ocean Polygon, one inland-water Polygon,
+// one street LineString, and one building Polygon. This proves the shared
+// renderer's draw order and the Earth-only water opt-in without live traffic.
 const shortbreadMvtFixture = Buffer.from(
-  'GjR4AgoHc3RyZWV0cxISCAESAgAAGAIiCAkAgCAK/j8AGgRraW5kIgoKCG1vdG9yd2F5KIAgGih4AgoJYnVpbGRpbmdzEhYIAhgDIhAJ0A/QDxrQDwAA0A/PDwAPKIAg',
+  'Gjd4AgoFb2NlYW4ogCASGggBEgIAABgDIhAJ5AHWMRoAhQ64PAAAhg4PGgRraW5kIgcKBW9jZWFuGlB4AgoOd2F0ZXJfcG9seWdvbnMogCASHAgCEgQAAAEBGAMiEAm4HOQhGgDHA5AHAADIAw8aBGtpbmQaCHdheV9hcmVhIgYKBGxha2UiAyjSCRoneAIKCWJ1aWxkaW5ncyiAIBIVCAMSABgDIg0JqiWcHhoAFxgAABgPGjV4AgoHc3RyZWV0cyiAIBITCAQSAgAAGAIiCQnWGrAcCtQKABoEa2luZCIKCghtb3RvcndheQ==',
   'base64'
 );
 
@@ -118,6 +123,13 @@ const allDemos = [
         && state.osmTelemetry?.loaded > 0
         && state.osmTelemetry?.roadCommands > 0
         && state.osmTelemetry?.buildingCommands > 0
+        && state.waterStatus === 'live'
+        && state.waterVisible === true
+        && state.osmTelemetry?.waterCommands > 0
+        && state.osmTelemetry?.waterVertices > 0
+        && state.waterStyle?.color === '#0080ff'
+        && state.waterStyle?.opacity === 0.5
+        && state.waterStyle?.surface === 'flat'
         && state.imageryLayerCount === 1
         && state.geodataConfigured === true
         && state.localVisible === false
@@ -841,6 +853,38 @@ async function runDemo(context, demo) {
       if (!(initial.osmTelemetry?.roadCommands > 0 && initial.osmTelemetry?.buildingCommands > 0)) {
         errors.push('[runtime] Earth did not render both Shortbread road and building categories.');
       }
+      if (initial.waterStatus !== 'live' || !initial.waterVisible) {
+        errors.push('[runtime] Earth did not expose its enabled water layer as live and visible.');
+      }
+      if (!(initial.osmTelemetry?.waterCommands > 0 && initial.osmTelemetry?.waterVertices > 0)) {
+        errors.push('[runtime] Earth did not decode and render Shortbread water surfaces.');
+      }
+      if (!(initial.osmTelemetry?.oceanCommands > 0) || !(initial.osmTelemetry?.inlandWaterCommands > 0)) {
+        errors.push('[runtime] Earth water fixture did not retain ocean/inland surface provenance.');
+      }
+      if (initial.waterStyle?.schemaVersion !== 'peercompute.geo.shortbread-water-style.v1'
+        || initial.waterStyle?.color !== '#0080ff'
+        || initial.waterStyle?.opacity !== 0.5
+        || initial.waterStyle?.surface !== 'flat'
+        || initial.waterStyle?.geometry !== 'non-extruded-terrain-draped-imagery') {
+        errors.push('[runtime] Earth water style is not exact flat blue at 50% opacity.');
+      }
+      if (initial.osmTelemetry?.maximumTotalBytes !== 192 * 1024 * 1024
+        || initial.osmTelemetry?.maximumRenderedVertices !== 4_000_000
+        || initial.osmTelemetry?.aggregateBudgetScope !== 'provider-session-lifetime') {
+        errors.push('[runtime] Earth water/Shortbread session budgets drifted.');
+      }
+
+      await page.click('#osm-context');
+      const hiddenWater = await page.evaluate(demo.verify);
+      if (hiddenWater.waterVisible || hiddenWater.osmVisible) {
+        errors.push('[runtime] Earth OSM context toggle did not hide the shared water/road/building layer.');
+      }
+      await page.click('#osm-context');
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.waterVisible === true && state?.osmVisible === true;
+      });
 
       await page.click('#locate');
       await page.waitForFunction(() => {

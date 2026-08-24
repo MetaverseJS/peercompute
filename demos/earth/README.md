@@ -2,9 +2,11 @@
 
 EarthGrid is the reusable, non-aviation Earth/GIS base for PeerCompute demos.
 It combines the existing NOAA/AWS elevation providers and bright parallel
-topographic rings with official OpenStreetMap Shortbread context, bounded local
-OSM roads/buildings from the geodata service, and optional time-qualified NOAA
-nowCOAST radar or satellite imagery.
+topographic rings with official OpenStreetMap Shortbread ocean and inland-water
+surfaces, roads, and buildings; bounded local OSM roads/buildings from the
+geodata service; and optional time-qualified NOAA nowCOAST radar or satellite
+imagery. Water is a non-extruded, non-animated blue terrain-draped fill with
+opacity exactly `0.5`, drawn beneath the road and building context.
 
 The display is for visualization and gameplay only. It is not a navigation,
 routing, warning, or traffic product. OpenStreetMap content and the normalized
@@ -66,6 +68,15 @@ responses are accepted only when their exact schema discriminator, source,
 status/freshness, bbox, counts, graph references, and OSM/ODbL provenance are
 coherent.
 
+EarthGrid opts into the official Shortbread `ocean` and `water_polygons`
+layers. It renders oceans plus non-glacier polygonal lakes, reservoirs, wide
+rivers, basins, docks, and canals. Glaciers are not classified as water, and
+centerline-only `water_lines` (including narrow streams) are intentionally
+outside this surface-only layer. The shared Shortbread path remains one imagery
+provider and one request stream, with a 2 MiB per-tile limit, 96-tile LRU, and
+explicit 192 MiB / 4,000,000-rendered-vertex provider-session budgets. These
+aggregate counters are lifetime session budgets, not resident-cache accounting.
+
 ## Validation
 
 ```bash
@@ -77,4 +88,5 @@ npm run test:earth-platform
 `window.__earthDemo.getState()` exposes bounded source status, actual OSM
 freshness/provenance/notes, rendered/omitted counts, chosen local radius,
 same-origin/external/unconfigured backend mode, terrain telemetry, and weather
-time for browser gates.
+time for browser gates. It also exposes `waterStatus`, `waterVisible`, exact
+water style metadata, and ocean/inland-water command and vertex telemetry.

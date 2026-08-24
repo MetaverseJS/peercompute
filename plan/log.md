@@ -58147,3 +58147,150 @@ right basis for this kind of open data.”
   and health endpoints. The aviation activity/obstacle routes remained 404,
   preserving the documented mixed-version limitation rather than overstating
   that preview's health.
+## 2026-08-24 12:31:40 AKDT - EarthGrid water bodies intake
+
+### Prompt
+
+- User requested: “I'd like you to add bodies of water to the core GIS demo.
+  render them in blue. flat surface 50% opacity”
+
+### Intake and current state
+
+- Reviewed `AGENTS.md`, `plan/plan.md`, this log, `plan/tests.md`, and the
+  active Earth platform branch contract before editing.
+- Started ICC task `earthgrid-water-layer-20260824`, replaced its generic plan
+  with source-contract, implementation, verification, and docs/release items,
+  ran agent preflight, and opened the conflict-free
+  `codex-root-earthgrid-water` lease. Root owns edits; parallel workers, if
+  used, are read-only auditors.
+- Frozen user-facing visual requirement: bounded bodies of water in the generic
+  EarthGrid GIS demo, rendered as flat blue surfaces with material opacity
+  exactly `0.5`. Source authority, geometry semantics, resource caps,
+  attribution, failure behavior, and the smallest composable Cesium seam remain
+  under audit before implementation.
+
+### Files touched so far
+
+- `plan/log.md`
+
+### Commands and results so far
+
+- ICC repository resolution and stale-artifact gate - PASS at clean commit
+  `6189dcb1`; index, memory, and Git history were current with no source drift.
+- `icc work ... --task-id earthgrid-water-layer-20260824` - PASS; focused task
+  dossier created.
+- `icc agent-preflight ...` - PASS with zero failures and one historical
+  `origin/master` naming warning; worktree was clean and rollback guard passed.
+- ICC root lease publication - PASS with zero conflicts.
+
+### Open
+
+- Select the exact water source/layer contract, implement the bounded renderer,
+  add deterministic and built-browser assertions, refresh EarthGrid's private
+  HTTPS service, update all relevant plan/readme files, and create a verified
+  local commit without pushing.
+
+## 2026-08-24 12:52:00 AKDT - EarthGrid water surfaces implemented and verified
+
+### Prompt and source decision
+
+- This entry completes the exact 2026-08-24 12:31:40 AKDT prompt: “I'd like
+  you to add bodies of water to the core GIS demo. render them in blue. flat
+  surface 50% opacity”.
+- Audited the live official Shortbread TileJSON and schema before freezing the
+  source contract. EarthGrid uses `ocean` plus non-glacier
+  `water_polygons`. It deliberately excludes `water_lines` because those are
+  centerline geometry rather than surfaces, and excludes `kind=glacier` rather
+  than presenting ice as water.
+- Interpreted “flat” as fill-only, non-extruded, non-animated, non-glowing
+  imagery draped on the authoritative Cesium terrain. A literal
+  constant-elevation physical plane would require a different tiled primitive
+  lifecycle and was not silently substituted.
+
+### Implementation
+
+- Extended the reusable Shortbread decoder and imagery provider with an
+  explicit `includeWater` opt-in. Water commands render before buildings and
+  roads as exact `#0080ff` / `rgba(0, 128, 255, 0.5)`, use even-odd polygon
+  filling, and have no stroke or shadow. The exported
+  `peercompute.geo.shortbread-water-style.v1` contract records flat,
+  non-extruded terrain-draped semantics.
+- Kept RoadVector water-disabled by default and retained one shared OSM imagery
+  provider/request stream. EarthGrid now passes explicit 192 MiB and 4,000,000
+  rendered-vertex provider-session budgets in addition to the existing 2 MiB
+  per-tile, 10,000-feature, z14, and 96-canvas LRU bounds.
+- Added EarthGrid water source/status/style/count/vertex/visibility telemetry,
+  a WATER status row and 50% legend, exact source disclosure, and an integrated
+  WATER + ROADS + BUILDINGS visibility control. Valid all-land tiles settle as
+  live with zero surfaces rather than preventing app readiness.
+- Updated deterministic MVT/TileJSON fixtures, shared/Earth tests, live source
+  probe, production artifact checks, and built-browser assertions. Rebuilt the
+  generated EarthGrid, RoadVector, and WXGlobe outputs and replaced the
+  EarthGrid gallery capture with a current private live-source frame showing
+  the blue ocean layer.
+
+### Files touched
+
+- Shared source/tests: `packages/geo-core/src/vector/shortbread.js`,
+  `packages/geo-core/src/vector/shortbreadImagery.js`, and
+  `packages/geo-core/tests/shortbread.test.mjs`.
+- EarthGrid source/tests/docs: `demos/earth/index.html`,
+  `demos/earth/src/main.js`, `demos/earth/src/style.css`,
+  `demos/earth/tests/markup.test.mjs`,
+  `demos/earth/tests/shortbreadImagery.test.mjs`, and
+  `demos/earth/README.md`.
+- Cross-demo gates: `demos/tests/runtime-smoke.mjs`,
+  `demos/tests/earth-live-source.mjs`, and
+  `demos/tests/demo-release.test.js`.
+- Project/release docs: `README.md`, `docs/index.html`,
+  `docs/assets/earth.png`, this log, `plan/plan.md`, `plan/tests.md`, and
+  `plan/branch/earth-platform-motorcycle-xr.md`.
+- Generated outputs: the current hashed assets and entry HTML under
+  `docs/earth/**` and `docs/motorcycle/**`; WXGlobe rebuilt byte-identically.
+
+### Commands and results
+
+- Changed-source `node --check` commands - PASS.
+- Focused water/markup suite - PASS `11/11`.
+- `npm run test:geo-core` - PASS `29/29`.
+- `npm run test:earth` - PASS `29/29`.
+- `npm run test:motorcycle` - PASS `64/64`; shared provider default isolation
+  did not change RoadVector.
+- `npm run test:wxglobe` - PASS `28/28`.
+- `npm run test:earth-platform:unit` - PASS: `261` Node tests plus mocked
+  Chromium XR on Node `v24.18.0`.
+- First `npm run test:earth-platform:release` - FAIL only because the new smoke
+  expected exactly one ocean and one inland command while Cesium correctly
+  fetched multiple fixture tiles. Changed the assertion to require positive
+  source-category counts. Focused built smoke then passed.
+- Final `npm run test:earth-platform:release` - PASS: WXGlobe, EarthGrid, and
+  RoadVector production builds; `391` Cesium runtime/notice items per build;
+  static release checks `44/44`; combined built HTTPS browser smoke PASS; owned
+  port `43947` closed.
+- First `npm run test:earth-platform:live` - FAIL with an upstream IPv6 connect
+  timeout. Immediate bounded retry - PASS at `20:46:31Z`: Shortbread `38,983`
+  bytes with ocean `1`, inland-water polygons `3`, streets `515`, and building
+  `1`; Overpass, current nowCOAST, NOAA ETOPO, and AWS Terrarium also passed.
+- Direct `curl -k`/TLS checks - PASS: EarthGrid root, same-origin catalog, and
+  Cesium worker returned 200; certificate SAN contains `100.68.165.52` and
+  `shitbox.tail5c077c.ts.net`, valid through 2026-09-23.
+- Direct private headless Chrome at `https://100.68.165.52:5187/` - PASS:
+  secure context, ready, live terrain/OSM/water, one imagery layer, exact
+  blue/0.5 flat style, `16` ocean commands / `104,580` water vertices, and zero
+  page or console errors. Screenshot inspected before replacing the gallery
+  artifact.
+
+### Remaining boundaries and runtime state
+
+- Narrow stream/ditch centerlines are not part of this polygon-surface slice;
+  polygonal wide rivers remain included. This is a documented source boundary,
+  not an unreported load failure.
+- The 192 MiB / 4,000,000-vertex aggregate limits are provider-session lifetime
+  budgets, not resident-LRU counters; telemetry names that scope explicitly.
+- The requested private handoff stays running at
+  `https://100.68.165.52:5187/`; RoadVector `:5188` and loopback geodata `:8788`
+  remain intentionally available. No Tailscale Serve, Funnel, public tunnel,
+  or terminal-browser pane was started.
+- ICC source/implementation/verification items and five evidence gates are
+  verified. Final index/guard/attempt/commit closure follows this entry; no
+  push is authorized.

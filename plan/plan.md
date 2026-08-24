@@ -1035,3 +1035,24 @@ The root node should exist on a domain secured with SSL enabling all executable 
   EarthGrid and `:5188` for RoadVector, with geodata loopback-only behind each
   same-origin proxy. Do not use Tailscale Serve, Funnel, or an in-terminal
   browser pane.
+
+## EarthGrid water-surface snapshot - 2026-08-24 AKDT
+
+- The generic EarthGrid GIS demo now opts into the official OSM Shortbread
+  `ocean` and `water_polygons` layers through its existing Cesium imagery
+  provider. It draws fill-only blue surfaces at exact opacity `0.5` before
+  buildings and roads, while RoadVector remains water-disabled by default.
+- “Flat” is implemented as non-extruded, non-animated, non-glowing imagery
+  draped on NOAA/AWS terrain. Glaciers and centerline-only `water_lines` are
+  excluded so the layer does not mislabel ice or lines as water surfaces.
+- EarthGrid exposes exact style, ocean/inland command counts, rendered water
+  vertices, visibility, source status, and lifetime-session budget telemetry.
+  The existing 2 MiB per-tile and 96-canvas LRU limits are joined by explicit
+  192 MiB / 4,000,000-rendered-vertex session budgets.
+- The single shared OSM imagery layer remains one layer normally and two with
+  NOAA weather. Existing visible OSM/ODbL attribution covers the new geometry;
+  no duplicate backend route or provider was introduced.
+- The implementation and generated EarthGrid artifact are verified through
+  focused shared/Earth tests, the 261-test Earth-platform unit gate, static
+  release checks, combined built-browser smoke, a current live Anchorage MVT,
+  and the direct private HTTPS origin `https://100.68.165.52:5187/`.

@@ -5,6 +5,7 @@ import {
   formatShortbreadTileUrl,
   shortbreadDrawCommands,
   SHORTBREAD_TILEJSON_URL,
+  SHORTBREAD_WATER_STYLE,
   validateShortbreadTileJson,
 } from './shortbread.js';
 
@@ -95,15 +96,18 @@ export function renderShortbreadCommands(context, commands, tile) {
   context.lineJoin = 'round';
   for (const command of commands) {
     traceGeometry(context, command.geometry, tile);
-    context.shadowBlur = command.kind === 'road' ? 8 : 5;
-    context.shadowColor = command.stroke;
-    context.strokeStyle = command.stroke;
-    context.lineWidth = command.width;
+    const hasStroke = typeof command.stroke === 'string' && command.stroke.length > 0 && command.width > 0;
+    context.shadowBlur = command.kind === 'road' ? 8 : command.kind === 'building' ? 5 : 0;
+    context.shadowColor = hasStroke ? command.stroke : 'transparent';
     if (command.fill) {
       context.fillStyle = command.fill;
       context.fill('evenodd');
     }
-    context.stroke();
+    if (hasStroke) {
+      context.strokeStyle = command.stroke;
+      context.lineWidth = command.width;
+      context.stroke();
+    }
   }
   context.shadowBlur = 0;
 }
@@ -122,6 +126,7 @@ export class ShortbreadImageryProvider {
     rectangle,
     allowedTileKeys = null,
     commandFilter = null,
+    includeWater = false,
     onTelemetry = () => {},
   }) {
     if (!Cesium?.WebMercatorTilingScheme || !Cesium?.Event || !Cesium?.Credit) {
@@ -133,8 +138,9 @@ export class ShortbreadImageryProvider {
     if (allowedTileKeys !== null && typeof allowedTileKeys?.[Symbol.iterator] !== 'function') {
       throw new TypeError('Shortbread allowedTileKeys must be iterable or null.');
     }
+    if (typeof includeWater !== 'boolean') throw new TypeError('Shortbread includeWater must be a boolean.');
     this.Cesium = Cesium;
-    this.tileJson = validateShortbreadTileJson(tileJson);
+    this.tileJson = validateShortbreadTileJson(tileJson, { requireWater: includeWater });
     this.fetchImpl = fetchImpl;
     this.canvasFactory = canvasFactory;
     this.maximumCachedTiles = positiveSafeInteger(maximumCachedTiles, 'maximumCachedTiles');
@@ -150,6 +156,7 @@ export class ShortbreadImageryProvider {
       throw new RangeError('Shortbread imagery zoom bounds must be integers inside the TileJSON range.');
     }
     this.commandFilter = commandFilter;
+    this.includeWater = includeWater;
     this.allowedTileKeys = allowedTileKeys === null
       ? null
       : new Set([...allowedTileKeys].map((key) => String(key)));
@@ -166,6 +173,10 @@ export class ShortbreadImageryProvider {
     this.renderedCommands = 0;
     this.roadCommands = 0;
     this.buildingCommands = 0;
+    this.waterCommands = 0;
+    this.oceanCommands = 0;
+    this.inlandWaterCommands = 0;
+    this.waterVertices = 0;
     this.emptyTiles = 0;
     this.filteredTileRequests = 0;
     this.transparentCanvas = null;
@@ -198,12 +209,19 @@ export class ShortbreadImageryProvider {
       maximumTileBytes: this.maximumTileBytes,
       maximumTotalBytes: this.maximumTotalBytes,
       maximumRenderedVertices: this.maximumRenderedVertices,
+      aggregateBudgetScope: 'provider-session-lifetime',
       minimumLevel: this.minimumZoom,
       maximumLevel: this.maximumZoom,
       renderedCommands: this.renderedCommands,
       renderedVertices: this.renderedVertices,
       roadCommands: this.roadCommands,
       buildingCommands: this.buildingCommands,
+      waterEnabled: this.includeWater,
+      waterCommands: this.waterCommands,
+      oceanCommands: this.oceanCommands,
+      inlandWaterCommands: this.inlandWaterCommands,
+      waterVertices: this.waterVertices,
+      waterStyle: this.includeWater ? SHORTBREAD_WATER_STYLE : null,
       emptyTiles: this.emptyTiles,
       filteredTileRequests: this.filteredTileRequests,
       lastError,
@@ -259,9 +277,19 @@ export class ShortbreadImageryProvider {
         throw error;
       }
       this.responseBytes += bytes.byteLength;
-      const decoded = decodeShortbreadTile(bytes, { x, y, z: level });
+      const decoded = decodeShortbreadTile(bytes, {
+        x,
+        y,
+        z: level,
+        includeWater: this.includeWater,
+      });
       let commands = shortbreadDrawCommands(decoded);
       if (this.commandFilter) commands = commands.filter(this.commandFilter);
+      const waterCommands = commands.filter((command) => command.kind === 'water');
+      const tileWaterVertices = waterCommands.reduce(
+        (total, command) => total + coordinatePositionCount(command.geometry?.coordinates),
+        0,
+      );
       const tileVertices = commands.reduce(
         (total, command) => total + coordinatePositionCount(command.geometry?.coordinates),
         0,
@@ -282,6 +310,10 @@ export class ShortbreadImageryProvider {
       this.renderedCommands += commands.length;
       this.roadCommands += commands.filter((command) => command.kind === 'road').length;
       this.buildingCommands += commands.filter((command) => command.kind === 'building').length;
+      this.waterCommands += waterCommands.length;
+      this.oceanCommands += waterCommands.filter((command) => command.category === 'ocean').length;
+      this.inlandWaterCommands += waterCommands.filter((command) => command.category === 'inland-water').length;
+      this.waterVertices += tileWaterVertices;
       if (commands.length === 0) this.emptyTiles += 1;
       this.#remember(key, canvas);
       this.#telemetry();

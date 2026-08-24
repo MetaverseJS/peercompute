@@ -66,9 +66,11 @@ runtime metadata to NetViz.
   proxy physics stack.
 - **Reusable Earth/GIS platform**: `packages/geo-core`, the bounded Fastify
   `services/geodata` service, and EarthGrid combine NOAA/AWS terrain,
-  bathymetry contours, official OSM Shortbread context, local OSM roads and 3D
-  buildings, directed road graphs, NOAA nowCOAST weather descriptors,
-  provenance, cache/freshness state, and privacy-preserving location startup.
+  bathymetry contours, official OSM Shortbread ocean and non-glacier inland
+  water rendered as flat blue 50%-opacity surfaces, road/building context,
+  local OSM roads and 3D buildings, directed road graphs, NOAA nowCOAST weather
+  descriptors, provenance, cache/freshness state, and privacy-preserving
+  location startup.
 - **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
@@ -113,11 +115,13 @@ Recent focused validation is green without running the full chaos lab:
   stable request counters; the full AWS composite-attribution block is exposed
   in the UI.
 
-- EarthGrid's deterministic browser gate loads rendered Shortbread road and
-  building commands, a bounded normalized OSM scene, source building heights,
-  NOAA relief and time-qualified radar, then proves dense-region narrowing,
-  stale status retention, scope-failure clearing/recovery, generation-race
-  suppression, permissioned geolocation, and a disclosed denial fallback.
+- EarthGrid's deterministic browser gate loads rendered Shortbread ocean,
+  inland-water, road, and building commands; proves the exact flat-blue
+  50%-opacity water style without adding another imagery layer; loads a bounded
+  normalized OSM scene, source building heights, NOAA relief and time-qualified
+  radar; then proves dense-region narrowing, stale status retention,
+  scope-failure clearing/recovery, generation-race suppression, permissioned
+  geolocation, and a disclosed denial fallback.
 - RoadVector's focused gates cover particle inertia, gyroscopic integration,
   translational and rotational CCD, suspension sag/landing, material-dependent
   grip and braking, real traffic impulse, race timing/gates, lane/restriction
@@ -756,9 +760,9 @@ Current demos and validation surfaces:
   NOAA ETOPO 2022 is the pole-to-pole default and AWS Terrarium is an optional
   higher-detail land source.
 - **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with the same
-  black/neon terrain rings, real OSM streets/buildings, bounded local 3D scene
-  data, source freshness/provenance, user location, and optional NOAA radar or
-  satellite imagery.
+  black/neon terrain rings, flat blue 50%-opacity OSM water surfaces, real OSM
+  streets/buildings, bounded local 3D scene data, source freshness/provenance,
+  user location, and optional NOAA radar or satellite imagery.
 - **RoadVector**: first/third-person particle motorcycle racing on real local
   OSM roads and NOAA terrain, with 3D buildings, synthetic lane-aware traffic,
   race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening CesiumJS
