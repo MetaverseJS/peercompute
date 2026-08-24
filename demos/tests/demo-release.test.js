@@ -241,6 +241,8 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('xr-root-fallback'), 'RoadVector built bundle is stale: single-source XR UI fallback missing');
   assert.ok(motorcycleModule.includes('geolocation-denied-fallback'), 'RoadVector built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
+  assert.ok(motorcycleModule.includes('peercompute.roadvector.cesium-overview-renderer.v1'), 'RoadVector built bundle is stale: Cesium overview missing');
+  assert.ok(motorcycleModule.includes('CappedHeightmapTerrainProvider'), 'RoadVector built bundle is stale: Cesium terrain provider missing');
   assert.ok(motorcycleModule.includes('regional-major-roads-only'), 'RoadVector built bundle is stale: bounded major-road coverage missing');
   assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
   assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
@@ -252,10 +254,18 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
     'docs/earth/cesium/Widgets/widgets.css',
     'docs/earth/cesium/LICENSE.md',
     'docs/earth/cesium/ThirdParty.json',
+    'docs/motorcycle/cesium/Workers/createVerticesFromHeightmap.js',
+    'docs/motorcycle/cesium/ThirdParty/basis_transcoder.wasm',
+    'docs/motorcycle/cesium/Assets/approximateTerrainHeights.json',
+    'docs/motorcycle/cesium/Widgets/widgets.css',
+    'docs/motorcycle/cesium/LICENSE.md',
+    'docs/motorcycle/cesium/ThirdParty.json',
     'docs/motorcycle/licenses/NOTICE.md',
     'docs/motorcycle/licenses/three-LICENSE.txt'
   ].forEach((asset) => assert.ok(exists(asset), `real-data demo built asset missing: ${asset}`));
   assert.ok(!earthHtml.includes('src="/cesium/'), 'EarthGrid built HTML must keep Cesium paths release-relative');
+  assert.ok(!motorcycleHtml.includes('src="/cesium/'), 'RoadVector built HTML must keep Cesium paths release-relative');
+  assert.ok(!exists('docs/motorcycle/cesium/node_modules'), 'RoadVector Cesium copy must not preserve hoisted node_modules segments');
   assert.ok(exists('docs/assets/earth.png'));
   assert.ok(exists('docs/assets/motorcycle.png'));
 });

@@ -57844,3 +57844,127 @@ split, or `open` command was used.
 - The `codex-root-roadvector-overview` lease will be ended immediately after
   this append-only closure commit. The physical headset matrix remains the only
   manual NOT RUN item; the user now has the exact live URL needed to perform it.
+
+## 2026-08-24 08:33:42 AKDT - Cesium-first RoadVector architecture pivot intake
+
+User prompt received at approximately 2026-08-24 08:32 AKDT: RoadVector should
+use Cesium because it is the appropriate basis for this open geospatial data.
+
+- Accepted the architectural pivot. Cesium will own RoadVector's global globe,
+  terrain, camera, and open-data overlay layer. The deterministic motorcycle
+  simulation remains in its independent local ENU meter frame and Three.js/WebXR
+  renderer so ECEF coordinates do not enter the CPU-authoritative physics.
+- Read the ICC control-plane skill, reviewed `plan/plan.md`, this log, and the
+  branch contract, then created durable ICC task
+  `roadvector-cesium-foundation-20260824`. Artifact freshness was clean at local
+  commit `e2499fd1723d2ab570c5863cb1839ac2cac2b6d8`.
+- ICC agent preflight passed 6 checks with no failures and one historical
+  `origin/master` warning. Published a conflict-free root edit lease over the
+  RoadVector, geo-core, Earth compatibility, release-test, docs, and plan paths.
+- Started two bounded read-only audits: one for the Cesium/Three/physics/XR
+  lifecycle boundary and one for build assets, runtime fixtures, and release
+  migration coverage. No browser pane, terminal split, persistent server, or
+  runtime process was opened.
+- Initial live-source inspection confirmed the intended seam already exists:
+  EarthGrid and WXGlobe use Cesium 1.144 with the shared NOAA/AWS terrain and
+  contour contracts; RoadVector currently uses a custom Three hemisphere but a
+  separate local ride scene. The working migration is therefore a Cesium
+  overview canvas plus the existing local Three/WebXR canvas, switched
+  explicitly at the overview-to-ride boundary.
+- Files touched so far for this prompt: `plan/log.md` only. Commands run:
+  ICC assistant status/status/task/work/preflight/session, Git status, exact
+  plan/source inspection, and dependency/build-config inspection. Tests have
+  not run yet. Open implementation details being verified are reusable
+  Shortbread imagery placement, Cesium lifecycle/render caps, player entity
+  updates, and production Cesium asset copying for RoadVector.
+
+## 2026-08-24 09:03:11 AKDT - Cesium-first RoadVector implementation and live handoff
+
+User prompts received 2026-08-24 at approximately 08:32 AKDT: “hmm are we
+still using cesium?” followed by “we should be using cesium I think. it's the
+right basis for this kind of open data.”
+
+- Kept the architecture deliberately dual-renderer. CesiumJS 1.144 now owns
+  RoadVector's opening WGS84 hemisphere, geospatial camera, token-free NOAA
+  ETOPO terrain, black/neon contour material, bounded official OSM Shortbread
+  overlay, attribution, and coarse real-player points. The existing Three.js
+  renderer remains the sole local ENU meter-space motorcycle/traffic/race/
+  building/particle/WebXR renderer. No ECEF value is passed into physics.
+- Replaced `demos/motorcycle/src/overview/overviewRuntime.js` with a
+  manual-loop Cesium Viewer (`useDefaultRenderLoop:false`, `baseLayer:false`),
+  retired the custom `globeRenderer.js`, `reliefLoader.js`, and
+  `shortbreadRoadWindow.js`, and reduced `globeMath.js` to location/tile-window
+  work. `main.js`, `index.html`, and `style.css` now use sibling Cesium overview
+  and Three ride containers; only the active container is visible/interactive.
+  Pointer lock and held inputs clear on overview entry; location replacement is
+  rejected during immersive XR.
+- Extracted EarthGrid's bounded browser reader and Cesium Shortbread imagery
+  provider into `packages/geo-core/src/client/http.js` and
+  `packages/geo-core/src/vector/shortbreadImagery.js`; EarthGrid now re-exports
+  the shared implementations. The provider accepts an exact z/x/y allowlist,
+  level range, rectangle, command filter, LRU size, per-tile/aggregate byte
+  limits, rendered-vertex cap, telemetry, and abortable destruction.
+- Preserved RoadVector's explicit z5 5×5 / 25-tile regional policy. Only
+  motorway/trunk/primary commands render; caps remain 1 MiB per tile, 8 MiB
+  aggregate, and 100,000 vertices. Replaced the old vacuous MVT fixture with a
+  motorway-tagged tile and required positive road/vertex counts.
+- Added a `maximumTileRequests` control to the shared ETOPO provider. The
+  overview creates a fresh 128-unique-tile terrain generation for every
+  selected location and aborts the replaced generation, avoiding a permanent
+  cross-location budget poison. Tests cover admitted-key retry, new-key
+  rejection/telemetry, default-unlimited compatibility, real Cesium rectangle
+  candidate sets at Anchorage/dateline/both poles, provider replacement, and
+  idempotent disposal.
+- Remote PeerCompute presence is rendered through Cesium in fixed red. Points
+  sit 50 km above the ellipsoid and remain depth-tested, so a peer on the far
+  side of Earth cannot appear through the globe. Actual post-render events, not
+  animation-loop attempts, count Cesium frames.
+- Added `cesium ^1.144.0` and `vite-plugin-static-copy ^4.1.1` to RoadVector,
+  updated `package-lock.json`, and mirrored Earth/WX production copying for
+  Workers, ThirdParty, Assets, Widgets, `LICENSE.md`, and `ThirdParty.json`.
+  Updated RoadVector notices, demo/root READMEs, branch contract, plan, tests,
+  runtime/static gates, and generated `docs/{wxglobe,earth,motorcycle}` outputs.
+  Refreshed `docs/assets/motorcycle.png` from the exact live Tailnet Cesium
+  frame. `npm install --package-lock-only --ignore-scripts` reported the
+  repository's existing aggregate 41 audit findings; no broad dependency
+  mutation or audit-fix was attempted.
+- First failure: `npm run test:motorcycle` and `npm run test:earth` failed
+  module instantiation because the extracted imagery file imported
+  `OSM_ATTRIBUTION_HTML` from `vector/shortbread.js`; its canonical definition
+  is `sources/catalog.js`. Correcting that import restored Earth `27/27` and
+  all but one RoadVector test. Second failure: the fake relay-config Response
+  lacked `application/json`, so the real bounded loader correctly rejected it
+  and remote count stayed zero. Adding the truthful content type closed the
+  Cesium overview test. These failed attempts were not counted as passes.
+- PASS commands: changed-file `node --check`; `npm run test:geo-core` `23/23`;
+  `npm run test:earth` `27/27`; `npm run test:wxglobe` `28/28`; focused
+  RoadVector overview `7/7`; `npm run test:motorcycle` `53/53`; and
+  `npm run test:earth-platform:unit` (`241` Node tests plus mocked Chromium XR:
+  geodata `44`, XR `21`, physics `33`, traffic `12`, in addition to the counts
+  above).
+- PASS: `npm run test:earth-platform:release` rebuilt all three Cesium demos,
+  copied 391 Cesium runtime/notice items per build, passed static tests `44/44`,
+  and passed combined built HTTPS smoke for `wxglobe,earth,motorcycle` on
+  test-owned port 43947. After the horizon-occlusion follow-up, final
+  RoadVector build `index-Hix4CE5B.js` / `NetworkManager-TWI5FZR3.js`, static
+  `44/44`, focused built smoke on 43971, source syntax, focused overview `7/7`,
+  and `git diff --check` all passed. Test-owned servers/browsers closed.
+- NETWORK-DEPENDENT FAILURE: the optional
+  `npm run test:earth-platform:live` gate received HTTP 504 from public
+  `overpass-api.de` after bounded retry. The exact application path was then
+  proven independently against the retained local geodata plus real NOAA,
+  Shortbread, and PeerCompute presence rather than mislabeling the 504.
+- Restarted only `peercompute-roadvector-tailnet.service`. Direct probes at
+  `https://100.68.165.52:5188/` returned 200 for the root, same-origin catalog,
+  Cesium `createVerticesFromHeightmap.js`, and
+  `approximateTerrainHeights.json`. A real two-context Chrome run reported
+  secure contexts, CesiumJS `1.144.0`, physics frame zero, 22/21 actual Cesium
+  frames, 2/2 live capped NOAA terrain tiles, all 25 Shortbread tiles totaling
+  3,553,031 bytes, 217 major roads / 527 vertices, and one genuine remote peer
+  in fixed red at coarse 0.1° precision in each context. Console/page-error
+  arrays were empty.
+- Closed the old accidental terminal-browser split process (PID 1896183 and
+  its owned Electron children) and did not open another pane. The exact private
+  HTTPS link remains running for the user's phone/laptop/headset. Physical
+  headset enter/exit/re-enter, controllers/hands, haptics, comfort, and
+  performance remain explicitly NOT RUN; no hardware certification is claimed.

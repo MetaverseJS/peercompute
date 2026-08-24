@@ -299,3 +299,38 @@ The earlier requirement-audit row saying the handoff is blocked on Tailscale
 Serve is historical and superseded by this direct private-IP mode. A physical
 headset enter/exit/controller/hand/haptics/comfort/performance run remains a
 manual NOT RUN gate until the user exercises this URL.
+
+## User Addendum - 2026-08-24 AKDT - Cesium-First RoadVector Overview
+
+This addendum supersedes the custom Three.js hemisphere implementation while
+preserving the local ride contract:
+
+- CesiumJS owns the WGS84 hemisphere, camera, terrain, contour material,
+  official Shortbread road overlay, attribution, and coarse real-player
+  markers. RoadVector ships the same release-relative Cesium workers, assets,
+  Apache license, and third-party manifest as EarthGrid and WXGlobe.
+- Three.js remains the only local ENU meter-scale motorcycle, traffic,
+  building, race, particle/contact, and WebXR renderer. The mode transition is
+  discrete; Cesium ECEF coordinates never enter the deterministic physics
+  buffers.
+- The Cesium loop is application-owned (`useDefaultRenderLoop:false`) and runs
+  only in overview mode. Entering the ride hides/inerts the Cesium canvas;
+  returning to the overview hides/inerts the Three canvas and clears pointer
+  lock/held inputs. Location changes are rejected during an active XR session.
+- NOAA ETOPO uses the shared capped heightmap provider with a fresh
+  128-unique-tile session budget per selected location. Replacing a location
+  aborts the prior terrain generation. The z5 Shortbread overlay remains an
+  explicit center-out 5×5 allowlist with 1 MiB per tile, 8 MiB aggregate,
+  100,000 rendered vertices, and motorway/trunk/primary-only filtering.
+- RoadVector must report actual Cesium post-render frames, terrain/road budget
+  telemetry, regional-not-global road coverage, fixed-red remote players, and
+  the explicit WGS84-to-local-meter scale transition through its public state.
+- Release gates require RoadVector Cesium runtime assets/notices, no root-only
+  asset URLs, a nonblank rendered major-road fixture, terrain generation reset,
+  imagery abort/disposal, polar/dateline tile bounds, and a built-browser smoke
+  with physics still paused in overview mode.
+
+The direct Tailnet HTTPS handoff remains
+`https://100.68.165.52:5188/`; this architecture change does not introduce
+Tailscale Serve, Funnel, or a public endpoint. Physical headset validation
+remains a manual gate.

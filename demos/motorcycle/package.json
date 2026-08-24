@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@peercompute/geo-core": "*",
+    "cesium": "^1.144.0",
     "three": "^0.182.0"
   },
   "devDependencies": {
-    "vite": "^6.4.1"
+    "vite": "^6.4.1",
+    "vite-plugin-static-copy": "^4.1.1"
   }
 }

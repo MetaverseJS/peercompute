@@ -16,12 +16,20 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #app, #viewport { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+html, body, #app, #overview-viewport, #viewport { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { color: var(--green); background: var(--black); }
 button, input, output { font: inherit; }
 a, a:visited { color: #b5ffc8; }
 
-#viewport { position: absolute; inset: 0; background: #000; }
+#overview-viewport, #viewport { position: absolute; inset: 0; background: #000; }
+#overview-viewport[hidden], #viewport[hidden] { display: none !important; }
+#overview-viewport .cesium-viewer,
+#overview-viewport .cesium-viewer-cesiumWidgetContainer,
+#overview-viewport .cesium-widget,
+#overview-viewport .cesium-widget canvas { width: 100%; height: 100%; }
+#overview-viewport .cesium-viewer-bottom { bottom: 27px; }
+#overview-viewport .cesium-credit-textContainer { color: #79c98e; font: 7px/1.3 "IBM Plex Mono", "Fira Code", monospace; }
+#overview-viewport .cesium-credit-logoContainer { filter: saturate(.4) hue-rotate(62deg); }
 #viewport canvas { display: block; width: 100%; height: 100%; outline: 0; }
 #viewport:focus-visible, #viewport canvas:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
 

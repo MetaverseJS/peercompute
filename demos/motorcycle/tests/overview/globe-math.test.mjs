@@ -1,41 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as Cesium from 'cesium';
 
 import {
   centeredOverviewTiles,
-  overviewCameraPose,
+  overviewTileWindowBounds,
   slippyTileForLocation,
-  wgs84ToOverviewCartesian,
 } from '../../src/overview/globeMath.js';
 import {
   ROADVECTOR_CAMERA_CONFIG,
   ROADVECTOR_SCALE_DISCLOSURE,
 } from '../../src/view/cameraConfig.js';
 
-test('hemisphere projection and north-up camera are finite at cardinal locations', () => {
-  assert.deepEqual(wgs84ToOverviewCartesian(0, 0, 10), [0, 0, 10]);
-  const east = wgs84ToOverviewCartesian(90, 0, 10);
-  assert.ok(Math.abs(east[0] - 10) < 1e-9);
-  assert.ok(Math.abs(east[1]) < 1e-9);
-  assert.ok(Math.abs(east[2]) < 1e-9);
-  const pose = overviewCameraPose({ longitude: -149.9, latitude: 61.2 });
-  assert.ok([...pose.position, ...pose.up, ...pose.target].every(Number.isFinite));
-  assert.ok(Math.abs(Math.hypot(...pose.up) - 1) < 1e-9);
-  assert.ok(Math.abs(pose.position.reduce((sum, value, index) => sum + value * pose.up[index], 0)) < 1e-9,
-    'camera north vector must remain tangent to the globe');
+function rectangleCandidateCount(location) {
+  const bounds = overviewTileWindowBounds(location);
+  const rectangle = Cesium.Rectangle.fromDegrees(
+    bounds.west,
+    bounds.south,
+    bounds.east,
+    bounds.north,
+  );
+  const scheme = new Cesium.WebMercatorTilingScheme();
+  const northWest = scheme.positionToTileXY(Cesium.Rectangle.northwest(rectangle), bounds.zoom);
+  const southEast = scheme.positionToTileXY(Cesium.Rectangle.southeast(rectangle), bounds.zoom);
+  const count = 2 ** bounds.zoom;
+  const columns = ((southEast.x - northWest.x) % count + count) % count + 1;
+  const rows = southEast.y - northWest.y + 1;
+  return columns * rows;
+}
+
+test('z5 road selection and Cesium rectangle stay center-out and bounded to the same tiles', () => {
+  for (const location of [
+    { longitude: -149.9, latitude: 61.2 },
+    { longitude: 179.99, latitude: 61.2 },
+    { longitude: 0, latitude: 89.9 },
+    { longitude: 0, latitude: -89.9 },
+  ]) {
+    const center = slippyTileForLocation(location.longitude, location.latitude, 5);
+    const tiles = centeredOverviewTiles(location);
+    const bounds = overviewTileWindowBounds(location);
+    assert.deepEqual({ x: tiles[0].x, y: tiles[0].y, z: tiles[0].z }, center);
+    assert.ok(tiles.length <= 25);
+    assert.equal(bounds.selectedTiles, tiles.length);
+    assert.equal(rectangleCandidateCount(location), tiles.length);
+    assert.ok(tiles.every((tile) => tile.x >= 0 && tile.x < 32 && tile.y >= 0 && tile.y < 32));
+    assert.ok(tiles.every((tile, index) => index === 0 || tile.distance >= tiles[index - 1].distance));
+  }
+  assert.equal(overviewTileWindowBounds({ longitude: 179.99, latitude: 61.2 }).crossesAntimeridian, true);
 });
 
-test('z5 road selection wraps longitude, stays center-out, and never exceeds 25 tiles', () => {
-  const center = slippyTileForLocation(179.99, 61.2, 5);
-  const tiles = centeredOverviewTiles({ longitude: 179.99, latitude: 61.2 });
-  assert.equal(tiles.length, 25);
-  assert.deepEqual({ x: tiles[0].x, y: tiles[0].y, z: tiles[0].z }, center);
-  assert.ok(tiles.every((tile) => tile.x >= 0 && tile.x < 32 && tile.y >= 0 && tile.y < 32));
-  assert.ok(tiles.some((tile) => tile.x === 0), 'dateline tile window must wrap instead of escaping the pyramid');
-  assert.ok(tiles.every((tile, index) => index === 0 || tile.distance >= tiles[index - 1].distance));
-});
-
-test('local scale config stays metric while the overview transition is explicit', () => {
+test('local scale stays metric behind a discrete Cesium-to-ride transition', () => {
   assert.equal(ROADVECTOR_SCALE_DISCLOSURE.worldUnits, 'meters');
   assert.equal(ROADVECTOR_SCALE_DISCLOSURE.transition, 'discrete-overview-to-local');
   assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees, 60);

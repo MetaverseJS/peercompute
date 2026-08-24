@@ -2045,3 +2045,73 @@
   blocked binding `:5185` to `0.0.0.0`). Refresh recommendation remained
   evidence-only: all scientific/material/EOS/SPH/phase flags false and
   `scientificRuntimeReady = false`.
+
+### RoadVector Cesium migration strategy - 2026-08-24 AKDT
+
+- Unit-test the shared Shortbread Cesium provider with an explicit z5 allowlist,
+  one-MiB tile and eight-MiB aggregate limits, a 100,000-vertex cap, major-road
+  filtering, transparent rejected tiles, cache bounds, and abortable teardown.
+  The fixture must encode a real motorway property and prove positive rendered
+  road/vertex counts so a blank layer cannot pass.
+- Test RoadVector's Cesium adapter with a token-free/no-base-layer Viewer,
+  application-owned render loop, north-up selected-location camera, WGS84
+  player entities, fixed-red remote markers, explicit overview/ride mode,
+  per-location terrain replacement, imagery destruction, and idempotent
+  teardown.
+- Use the real Cesium WebMercator tiling scheme to prove the selected rectangle
+  maps to the same center-out allowlist at Anchorage, the antimeridian, and both
+  polar limits. Preserve the independent one-unit-per-meter local scale test.
+- Preserve EarthGrid and WXGlobe consumers after extracting shared browser HTTP
+  and imagery code. Add capped ETOPO tests proving admitted-key retry,
+  first-unseen-key rejection, telemetry, and unlimited default compatibility.
+- Build RoadVector and require release-relative Cesium Workers, ThirdParty,
+  Assets, Widgets, `LICENSE.md`, and `ThirdParty.json`. The deterministic built
+  browser gate must observe a real Cesium post-render frame, loaded capped NOAA
+  terrain, positive filtered road/vertex rendering, physics frame zero in the
+  overview, and the existing local ride/control/collision/reset/rebase gates.
+- After deterministic gates pass, restart only the retained direct Tailnet
+  listener and verify `https://100.68.165.52:5188/`, one Cesium worker/asset,
+  and the same-origin geodata catalog. No terminal-browser pane is permitted.
+
+### Executed RoadVector Cesium migration evidence - 2026-08-24 AKDT
+
+- PASS: `npm run test:earth-platform:unit`. It completed `241` Node tests plus
+  the mocked Chromium XR harness: geo-core `23/23`, geodata `44/44`, EarthGrid
+  `27/27`, WXGlobe `28/28`, shared XR `21/21`, particle/motorcycle physics
+  `33/33`, traffic `12/12`, and RoadVector `53/53`.
+- PASS: `npm run test:earth-platform:release`. It rebuilt WXGlobe, EarthGrid,
+  and RoadVector; copied `391` Cesium runtime/notice items per Cesium build;
+  passed static port/release checks `44/44`; and passed the combined
+  deterministic built-browser smoke on test-owned HTTPS port `43947` with all
+  listeners removed afterward. The final RoadVector entry was rebuilt again as
+  `index-Hix4CE5B.js` plus `NetworkManager-TWI5FZR3.js` after the marker
+  horizon-occlusion assertion; focused static checks `44/44` and built smoke on
+  `43971` passed.
+- PASS: exact direct Tailnet browser proof at
+  `https://100.68.165.52:5188/` in two independent Chrome contexts. Both were
+  secure contexts, used CesiumJS `1.144.0`, retained physics frame `0`, loaded
+  two capped NOAA terrain tiles, loaded all `25` allowlisted Shortbread tiles
+  (`3,553,031` bytes), rendered `217` major roads / `527` vertices, and
+  discovered/rendered the other genuine PeerCompute peer in fixed red at only
+  `0.1°` location precision. There were no page or console errors.
+- PASS: direct HTTP/TLS probes returned 200 for the private root, same-origin
+  geodata catalog, Cesium heightmap worker, and Cesium terrain metadata. The
+  retained transient Tailnet service was cleanly restarted and stayed active;
+  no Tailscale Serve/Funnel/public listener was introduced.
+- PASS: final focused overview `7/7`, changed-source syntax checks, and
+  `git diff --check`. The refreshed 1440×900 RoadVector gallery image shows the
+  actual Cesium globe and a real red peer marker.
+- FIXED DURING GATING: the first extracted imagery import used the attribution
+  constant's old re-export path and failed module instantiation; the corrected
+  shared source import restored Earth/RoadVector. The first fake presence test
+  omitted JSON content type and truthfully stayed unavailable; the fixture now
+  satisfies the real bounded config contract. Terrain budgeting was changed
+  from a persistent lifetime cap to a fresh abortable 128-tile budget per
+  selected location.
+- NETWORK-DEPENDENT FAILURE: `npm run test:earth-platform:live` reached the
+  unrelated public Overpass dependency but received HTTP 504 after its bounded
+  retry policy. This does not contradict the successful direct live RoadVector
+  NOAA/Shortbread/geodata/presence proof and was not hidden or relabeled.
+- NOT RUN: a physical headset enter/exit/re-enter, controllers/hands, haptics,
+  comfort, and performance matrix. The exact HTTPS URL is intentionally left
+  running for that user-operated hardware gate; no certification is claimed.

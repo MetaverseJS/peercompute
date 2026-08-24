@@ -1,5 +1,3 @@
-export const EARTH_RADIUS_METERS = 6_371_008.8;
-export const OVERVIEW_GLOBE_RADIUS = 10;
 export const OVERVIEW_ROAD_ZOOM = 5;
 export const OVERVIEW_TILE_WINDOW_SIZE = 5;
 
@@ -18,46 +16,6 @@ export function normalizeOverviewLocation(location) {
   return Object.freeze({ longitude, latitude, label: String(location.label ?? '').trim() || null });
 }
 
-export function wgs84ToOverviewCartesian(longitude, latitude, radius = OVERVIEW_GLOBE_RADIUS) {
-  const location = normalizeOverviewLocation({ longitude, latitude });
-  const safeRadius = finiteNumber(radius, 'Overview radius');
-  if (!(safeRadius > 0)) throw new RangeError('Overview radius must be positive.');
-  const lon = location.longitude * Math.PI / 180;
-  const lat = location.latitude * Math.PI / 180;
-  const cosLatitude = Math.cos(lat);
-  return Object.freeze([
-    safeRadius * cosLatitude * Math.sin(lon),
-    safeRadius * Math.sin(lat),
-    safeRadius * cosLatitude * Math.cos(lon),
-  ]);
-}
-
-export function overviewNorthVector(longitude, latitude) {
-  const location = normalizeOverviewLocation({ longitude, latitude });
-  const lon = location.longitude * Math.PI / 180;
-  const lat = location.latitude * Math.PI / 180;
-  return Object.freeze([
-    -Math.sin(lat) * Math.sin(lon),
-    Math.cos(lat),
-    -Math.sin(lat) * Math.cos(lon),
-  ]);
-}
-
-export function overviewCameraPose(location, {
-  radius = OVERVIEW_GLOBE_RADIUS,
-  distanceMultiplier = 2.55,
-} = {}) {
-  const normalized = normalizeOverviewLocation(location);
-  const surface = wgs84ToOverviewCartesian(normalized.longitude, normalized.latitude, radius);
-  const length = Math.hypot(...surface);
-  const position = surface.map((value) => value / length * radius * distanceMultiplier);
-  return Object.freeze({
-    position: Object.freeze(position),
-    up: overviewNorthVector(normalized.longitude, normalized.latitude),
-    target: Object.freeze([0, 0, 0]),
-  });
-}
-
 export function slippyTileForLocation(longitude, latitude, zoom = OVERVIEW_ROAD_ZOOM) {
   const location = normalizeOverviewLocation({ longitude, latitude });
   if (!Number.isInteger(zoom) || zoom < 0 || zoom > 22) throw new RangeError('Tile zoom is outside the supported range.');
@@ -69,6 +27,44 @@ export function slippyTileForLocation(longitude, latitude, zoom = OVERVIEW_ROAD_
     (1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * count,
   )));
   return Object.freeze({ x, y, z: zoom });
+}
+
+function tileLongitude(x, zoom) {
+  return x / (2 ** zoom) * 360 - 180;
+}
+
+function tileLatitude(y, zoom) {
+  return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / (2 ** zoom)))) * 180 / Math.PI;
+}
+
+function wrapLongitude(longitude) {
+  if (longitude === 180) return 180;
+  return ((longitude + 180) % 360 + 360) % 360 - 180;
+}
+
+export function overviewTileWindowBounds(location, {
+  zoom = OVERVIEW_ROAD_ZOOM,
+  windowSize = OVERVIEW_TILE_WINDOW_SIZE,
+} = {}) {
+  const tiles = centeredOverviewTiles(location, { zoom, windowSize });
+  const center = slippyTileForLocation(location.longitude, location.latitude, zoom);
+  const radius = Math.floor(windowSize / 2);
+  const count = 2 ** zoom;
+  const northY = Math.max(0, center.y - radius);
+  const southY = Math.min(count, center.y + radius + 1);
+  // Cesium maps exact rectangle edges inclusively. Move every edge a
+  // sub-millimetre angular distance into the selected window so a nominal
+  // 5×5 rectangle cannot gain a neighbor at ordinary, wrapped, or polar bounds.
+  const edgeInsetDegrees = 1e-9;
+  return Object.freeze({
+    west: wrapLongitude(tileLongitude(center.x - radius, zoom) + edgeInsetDegrees),
+    south: tileLatitude(southY, zoom) + edgeInsetDegrees,
+    east: wrapLongitude(tileLongitude(center.x + radius + 1, zoom) - edgeInsetDegrees),
+    north: tileLatitude(northY, zoom) - edgeInsetDegrees,
+    zoom,
+    selectedTiles: tiles.length,
+    crossesAntimeridian: center.x - radius < 0 || center.x + radius >= count,
+  });
 }
 
 export function centeredOverviewTiles(location, {

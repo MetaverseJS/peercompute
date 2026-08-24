@@ -308,7 +308,8 @@ export function createEtopo2022TerrainProvider(
     onTelemetry = () => {},
     retryAttempts = 3,
     retryDelayMs = 180,
-    boundaryCacheSize = 131_072
+    boundaryCacheSize = 131_072,
+    maximumTileRequests = Number.MAX_SAFE_INTEGER
   } = {}
 ) {
   if (!Cesium?.GeographicTilingScheme || !Cesium?.Math) {
@@ -320,12 +321,16 @@ export function createEtopo2022TerrainProvider(
   if (!Number.isInteger(boundaryCacheSize) || boundaryCacheSize < tileSize * 4) {
     throw new RangeError('boundaryCacheSize must retain at least four terrain-grid edges.');
   }
+  if (!Number.isSafeInteger(maximumTileRequests) || maximumTileRequests < 1) {
+    throw new RangeError('maximumTileRequests must be a positive safe integer.');
+  }
 
   const tilingScheme = new Cesium.GeographicTilingScheme();
   const abortController = new AbortController();
   const datelineCache = new Map();
   const poleCache = new Map();
   const boundaryVertexCache = new Map();
+  const requestedTileKeys = new Set();
   const telemetry = {
     source: 'noaa-etopo2022',
     requested: 0,
@@ -346,7 +351,10 @@ export function createEtopo2022TerrainProvider(
     lastTile: null,
     lastLoadedTile: null,
     lastError: null,
-    lastTerminalError: null
+    lastTerminalError: null,
+    maximumTileRequests,
+    uniqueTileRequests: 0,
+    requestLimitExceeded: false
   };
 
   const emit = () => onTelemetry({ ...telemetry });
@@ -376,6 +384,20 @@ export function createEtopo2022TerrainProvider(
     return poleCache.get(key);
   };
   const callback = (x, y, level) => {
+    const tileKey = `${level}/${x}/${y}`;
+    if (!requestedTileKeys.has(tileKey) && requestedTileKeys.size >= maximumTileRequests) {
+      const error = new RangeError(`ETOPO 2022 terrain exceeds the ${maximumTileRequests}-tile session cap.`);
+      error.code = 'ERR_ETOPO_TILE_REQUEST_CAP';
+      telemetry.failed += 1;
+      telemetry.terminalFailures += 1;
+      telemetry.requestLimitExceeded = true;
+      telemetry.lastError = error.message;
+      telemetry.lastTerminalError = error.message;
+      emit();
+      return Promise.reject(error);
+    }
+    requestedTileKeys.add(tileKey);
+    telemetry.uniqueTileRequests = requestedTileKeys.size;
     const rectangle = tilingScheme.tileXYToRectangle(x, y, level);
     const bounds = {
       west: Cesium.Math.toDegrees(rectangle.west),
@@ -499,6 +521,8 @@ export function createEtopo2022TerrainProvider(
     telemetry,
     snapshot: () => ({ ...telemetry }),
     boundaryVertexCacheSize: () => boundaryVertexCache.size,
+    maximumTileRequests,
+    requestedTileCount: () => requestedTileKeys.size,
     abort: () => abortController.abort()
   };
   return provider;

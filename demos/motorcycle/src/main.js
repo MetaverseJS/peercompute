@@ -1,3 +1,5 @@
+import * as Cesium from 'cesium';
+import 'cesium/Build/Cesium/Widgets/widgets.css';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
@@ -34,6 +36,7 @@ const FIRST_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.firstOffsetMeters;
 const THIRD_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters;
 
 const elements = Object.freeze({
+  overviewViewport: document.querySelector('#overview-viewport'),
   viewport: document.querySelector('#viewport'),
   console: document.querySelector('#console'),
   toggleConsole: document.querySelector('#toggle-console'),
@@ -90,14 +93,12 @@ scene.fog = new THREE.FogExp2(0x000300, ROADVECTOR_CAMERA_CONFIG.fogDensityPerMe
 scene.add(new THREE.HemisphereLight(0x7aff9a, 0x001105, 1.1));
 scene.add(new THREE.DirectionalLight(0xffffff, 0.45));
 
-const overviewScene = new THREE.Scene();
-overviewScene.background = new THREE.Color(0x000207);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
 renderer.setSize(globalThis.innerWidth, globalThis.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
+renderer.domElement.classList.add('roadvector-ride-canvas');
 elements.viewport.append(renderer.domElement);
 
 const firstCamera = new THREE.PerspectiveCamera(
@@ -117,12 +118,6 @@ const xrCamera = new THREE.PerspectiveCamera(
   globalThis.innerWidth / globalThis.innerHeight,
   ROADVECTOR_CAMERA_CONFIG.nearMeters,
   ROADVECTOR_CAMERA_CONFIG.farMeters,
-);
-const overviewCamera = new THREE.PerspectiveCamera(
-  46,
-  globalThis.innerWidth / globalThis.innerHeight,
-  0.1,
-  100,
 );
 const xrRoot = new THREE.Group();
 xrRoot.name = 'motorcycle-xr-root';
@@ -154,9 +149,8 @@ const runtime = {
 };
 
 const overviewRuntime = createRoadvectorOverviewRuntime({
-  THREE,
-  scene: overviewScene,
-  camera: overviewCamera,
+  Cesium,
+  container: elements.overviewViewport,
   fetchImpl: globalThis.fetch,
 });
 
@@ -184,8 +178,16 @@ function setPlatform(status, message) {
 function setDisplayMode(mode) {
   if (!['overview', 'ride'].includes(mode)) throw new RangeError('Display mode must be overview or ride.');
   if (mode === 'ride' && !runtime.ready) return false;
+  if (mode === 'overview' && inputRuntime.sessions?.getStatus().presenting) return false;
+  if (mode === 'overview') {
+    if (globalThis.document?.pointerLockElement) globalThis.document.exitPointerLock?.();
+    inputRuntime.clearControls();
+  }
   runtime.displayMode = mode;
   overviewRuntime.setMode(mode);
+  elements.viewport.hidden = mode === 'overview';
+  elements.viewport.inert = mode === 'overview';
+  elements.viewport.setAttribute('aria-hidden', String(mode === 'overview'));
   document.documentElement.dataset.roadvectorMode = mode;
   elements.worldMode.textContent = mode === 'overview' ? 'RIDE THIS REGION' : 'GLOBE OVERVIEW';
   elements.worldMode.disabled = mode === 'overview' && !runtime.ready;
@@ -426,6 +428,7 @@ globalThis.__motorcycleDemo = {
   },
   get gameRuntime() { return runtime.game; },
   get renderer() { return renderer; },
+  get cesiumViewer() { return overviewRuntime.viewer; },
   get scene() { return scene; },
 };
 
@@ -448,7 +451,10 @@ function teardownWorld({ clearLoad = false } = {}) {
 }
 
 async function loadLocation(location, { source = 'manual' } = {}) {
-  setDisplayMode('overview');
+  if (inputRuntime.sessions?.getStatus().presenting) {
+    throw new Error('Exit immersive XR before changing the RoadVector location.');
+  }
+  if (!setDisplayMode('overview')) throw new Error('RoadVector could not enter the Cesium overview.');
   void overviewRuntime.setLocation(location, { source }).catch(() => {});
   if (!geodata.configured) {
     throw new Error('The geodata backend is not configured in this build. Start the Earth stack or configure VITE_GEODATA_API_URL.');
@@ -698,7 +704,7 @@ renderer.setAnimationLoop((time, xrFrame) => {
   }
 
   updateHud(time);
-  if (runtime.displayMode === 'overview') renderer.render(overviewScene, overviewCamera);
+  if (runtime.displayMode === 'overview') overviewRuntime.render();
   else renderer.render(scene, activeCamera);
 });
 
@@ -706,10 +712,11 @@ function resize() {
   const width = globalThis.innerWidth;
   const height = globalThis.innerHeight;
   renderer.setSize(width, height);
-  for (const camera of [firstCamera, thirdCamera, xrCamera, overviewCamera]) {
+  for (const camera of [firstCamera, thirdCamera, xrCamera]) {
     camera.aspect = width / Math.max(1, height);
     camera.updateProjectionMatrix();
   }
+  overviewRuntime.resize();
 }
 
 addListener(globalThis, 'resize', resize);

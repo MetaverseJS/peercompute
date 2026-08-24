@@ -156,8 +156,10 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
 
 test('earth and motorcycle are first-class real-data demos with a shared backend', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const motorcyclePackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'motorcycle', 'package.json'), 'utf8'));
   const earthConfig = fs.readFileSync(path.join(demosRoot, 'earth', 'vite.config.js'), 'utf8');
   const motorcycleConfig = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'vite.config.js'), 'utf8');
+  const motorcycleHtml = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'index.html'), 'utf8');
   const motorcycleMain = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'src', 'main.js'), 'utf8');
   const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
@@ -175,7 +177,14 @@ test('earth and motorcycle are first-class real-data demos with a shared backend
   assert.match(motorcycleConfig, /port:\s*5188/);
   assert.ok(earthConfig.includes("path.resolve(docsRoot, 'earth')"));
   assert.ok(motorcycleConfig.includes("path.resolve(docsRoot, 'motorcycle')"));
+  assert.equal(motorcyclePackage.dependencies.cesium, '^1.144.0');
+  assert.equal(motorcyclePackage.devDependencies['vite-plugin-static-copy'], '^4.1.1');
+  assert.ok(motorcycleConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"));
+  assert.ok(motorcycleConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"));
   assert.ok(motorcycleConfig.includes("'/api'"), 'motorcycle dev server must proxy the geodata API');
+  assert.ok(motorcycleHtml.includes('id="overview-viewport"'));
+  assert.ok(motorcycleMain.includes("import * as Cesium from 'cesium'"));
+  assert.ok(motorcycleMain.includes('createRoadvectorOverviewRuntime'));
   assert.ok(motorcycleMain.includes('createMotorcycleGameRuntime'));
   assert.ok(motorcycleMain.includes('createMotorcycleWorldRenderer'));
   assert.ok(motorcycleMain.includes('createMotorcycleInputRuntime'));

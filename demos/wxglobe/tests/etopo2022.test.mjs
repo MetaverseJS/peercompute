@@ -243,3 +243,47 @@ test('ETOPO 2022 provider preserves a terminal root diagnostic after a sibling s
   assert.equal(snapshot.lastTerminalError, 'west root fixture failed');
   assert.equal(snapshot.lastError, 'west root fixture failed');
 });
+
+test('ETOPO 2022 provider enforces an explicit unique-tile session budget without blocking retries', async () => {
+  let fetchCount = 0;
+  const provider = createEtopo2022TerrainProvider(Cesium, {
+    maxLevel: 1,
+    tileSize: 3,
+    boundaryCacheSize: 16,
+    maximumTileRequests: 1,
+    retryAttempts: 1,
+    fetchHeightmap: async () => {
+      fetchCount += 1;
+      return new Float32Array([-3, -2, -1, 0, 1, 2, 3, 4, 5]);
+    },
+    fetchSamples: async (points) => new Float32Array(points.length).fill(0),
+  });
+
+  await provider.requestTileGeometry(0, 0, 0);
+  await provider.requestTileGeometry(0, 0, 0);
+  await assert.rejects(
+    provider.requestTileGeometry(0, 0, 1),
+    (error) => error?.code === 'ERR_ETOPO_TILE_REQUEST_CAP',
+  );
+
+  assert.equal(fetchCount, 2, 'an admitted tile may be requested again without consuming a second budget slot');
+  assert.equal(provider.wxglobe.maximumTileRequests, 1);
+  assert.equal(provider.wxglobe.requestedTileCount(), 1);
+  assert.equal(provider.wxglobe.telemetry.uniqueTileRequests, 1);
+  assert.equal(provider.wxglobe.telemetry.requestLimitExceeded, true);
+});
+
+test('ETOPO 2022 provider keeps the shared default effectively unlimited', async () => {
+  const provider = createEtopo2022TerrainProvider(Cesium, {
+    maxLevel: 1,
+    tileSize: 3,
+    boundaryCacheSize: 16,
+    retryAttempts: 1,
+    fetchHeightmap: async () => new Float32Array([-3, -2, -1, 0, 1, 2, 3, 4, 5]),
+    fetchSamples: async (points) => new Float32Array(points.length).fill(0),
+  });
+  await provider.requestTileGeometry(0, 0, 0);
+  await provider.requestTileGeometry(0, 0, 1);
+  assert.equal(provider.wxglobe.maximumTileRequests, Number.MAX_SAFE_INTEGER);
+  assert.equal(provider.wxglobe.telemetry.requestLimitExceeded, false);
+});

@@ -37,7 +37,7 @@ const shortbreadTileJsonFixture = Object.freeze({
 // Polygon. An empty protobuf is valid but cannot prove that the live renderer
 // decoded or drew either required Shortbread category.
 const shortbreadMvtFixture = Buffer.from(
-  'Gh8KB3N0cmVldHMSDwgBGAIiCQmACIAgCoAwACiAIHgCGigKCWJ1aWxkaW5ncxIWCAIYAyIQCYAQgBAagBAAAIAQ/w8ADyiAIHgC',
+  'GjR4AgoHc3RyZWV0cxISCAESAgAAGAIiCAkAgCAK/j8AGgRraW5kIgoKCG1vdG9yd2F5KIAgGih4AgoJYnVpbGRpbmdzEhYIAhgDIhAJ0A/QDxrQDwAA0A/PDwAPKIAg',
   'base64'
 );
 
@@ -138,9 +138,17 @@ const allDemos = [
         state?.ready
         && state.frameCount === 0
         && state.displayMode === 'overview'
+        && state.overview?.engine === 'CesiumJS'
+        && state.overview?.renderingBasis === 'cesium-globe'
+        && state.overview?.renderedFrames > 0
         && state.overview?.relief?.status === 'current'
+        && state.overview?.relief?.providerType === 'CappedHeightmapTerrainProvider'
         && state.overview?.roads?.status === 'current'
         && state.overview?.roads?.selectedTiles === 25
+        && state.overview?.roads?.loadedTiles > 0
+        && state.overview?.roads?.renderedRoads > 0
+        && state.overview?.roads?.renderedVertices > 0
+        && state.overview?.renderer?.terrainTilesLoaded === true
         && state.overview?.players?.synthetic === false
         && state.locationSource === 'browser-geolocation'
         && state.scene?.counts?.sourceRoads > 0

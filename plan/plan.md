@@ -960,3 +960,21 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `gpuResidentLaneLeaseIdentity` without mutating the submitted payload.
 - [x] Keep identity authority with `ComputeManager`/`GpuResidentLaneManager`;
   downstream ULG code may validate and bind this identity but may not invent it.
+
+## RoadVector Cesium Foundation Snapshot - 2026-08-24 AKDT
+
+- Replace the custom Three.js hemisphere with a CesiumJS 1.144 overview while
+  retaining the proven local Three/WebXR/particle-physics scene unchanged.
+- Reuse `packages/geo-core` for bounded browser fetches, the NOAA ETOPO capped
+  terrain provider, contour material, Shortbread MVT decoding, and a shared
+  configurable Cesium imagery provider rather than duplicating EarthGrid code.
+- Keep global and local coordinates explicit: Cesium WGS84/ECEF for overview;
+  east/up/south local meters for terrain, motorcycle, traffic, race, buildings,
+  cameras, and XR. The selected longitude/latitude is the only bridge.
+- Preserve the 25-tile z5 regional major-road policy, byte/vertex caps,
+  published OSM attribution, and fixed-red validated PeerCompute presence.
+  Scope NOAA's 128-unique-tile budget to each selected location and abort
+  replaced terrain/imagery generations.
+- Ship RoadVector Cesium workers/assets/licenses beneath `docs/motorcycle`,
+  keep the direct Tailnet HTTPS/same-origin geodata deployment, and validate the
+  built overview before updating the retained listener.

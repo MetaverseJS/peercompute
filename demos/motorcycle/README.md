@@ -7,13 +7,15 @@ samples NOAA ETOPO 2022 into a local ENU terrain mesh, derives a deterministic
 race course from real connected OSM node IDs, and simulates the motorcycle and
 traffic collision cages on the CPU at 120 Hz.
 
-Startup is a separate north-up hemisphere overview centered on the permitted
-browser location. NOAA ETOPO supplies the real topographic relief and contours;
-an official OSM Shortbread z5 window overlays only the regional motorway,
-trunk, and primary network. That road overlay is intentionally bounded to a
-center-out 5×5 / 25-tile window rather than pretending to be complete
-hemisphere coverage. Physics remains paused until `RIDE THIS REGION` switches
-discretely into the local one-unit-per-meter world.
+Startup is a separate CesiumJS north-up hemisphere overview centered on the
+permitted browser location. Cesium owns the WGS84 globe, camera, NOAA ETOPO
+terrain, contours, OSM overlay, and coarse live-player markers. An official
+OSM Shortbread z5 window overlays only the regional motorway, trunk, and
+primary network. That road overlay is intentionally bounded to a center-out
+5×5 / 25-tile window rather than pretending to be complete hemisphere
+coverage. Physics remains paused until `RIDE THIS REGION` switches discretely
+into the Three.js local one-unit-per-meter world. Earth-scale ECEF coordinates
+never enter the particle solver or WebXR ride scene.
 
 The map, race course, and traffic are for gameplay and visualization only.
 They are not navigation, live traffic, road-condition, weather-warning, or
@@ -116,8 +118,10 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
 - Roads/buildings retain `© OpenStreetMap contributors`, ODbL 1.0, source base
   time, fetched/freshness/cache state, and derived-database notice.
 - Terrain retains NOAA/NCEI ETOPO 2022 attribution and not-for-navigation
-  limitations. A failed terrain sample becomes an explicitly labeled degraded
-  plane; it is never called live relief.
+  limitations. The Cesium overview uses a fresh 128-unique-tile terrain budget
+  for each selected location and reports any exhausted/degraded state. A failed
+  local terrain sample becomes an explicitly labeled degraded plane; it is
+  never called live relief.
 - Backend density and response caps fail with a smaller-region instruction;
   the client retries only its fixed bounded radius ladder and never silently
   truncates a drive graph.
@@ -140,9 +144,10 @@ race gates/timing, lane/restriction semantics, controls, render topology,
 origin rebasing, resets, and disposal. The mocked Chromium WebXR gate uses
 real Three r182 raycasting and mesh transforms while faking only the browser XR
 system/session/input boundaries. Overview tests additionally cover north-up
-projection, tile wrapping/caps, ETOPO decoding, major-road filtering, metric
-camera/gate scale, coarse-location privacy, stale/capped presence, fixed-red
-rendering, and nonfatal relay failure.
+Cesium camera placement, polar/dateline tile wrapping, explicit terrain/road
+budgets, ETOPO decoding, major-road filtering, metric camera/gate scale,
+coarse-location privacy, stale/capped presence, fixed-red rendering, and
+nonfatal relay failure.
 
 A real headset enter/exit/re-enter, hand/controller, haptics, comfort, and
 performance pass remains a manual hardware gate. Do not represent the mocked

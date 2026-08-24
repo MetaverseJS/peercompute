@@ -144,6 +144,14 @@ export function createMotorcycleInputRuntime({
     clearVirtualControl() {
       input.removeSource('virtual-test-control');
     },
+    clearControls() {
+      assertLive();
+      keyboard.clear();
+      gamepad.clear();
+      touch.clear();
+      webxr?.clear();
+      input.clearAllSources();
+    },
     requestPointerLock(options) {
       assertLive();
       return keyboard.requestPointerLock(options);
