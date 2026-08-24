@@ -29,6 +29,8 @@ export const RACE_LIMITS = Object.freeze({
   defaultCheckpointSpacingMeters: 125,
   defaultGateWidthMeters: 14,
   defaultGateHeightMeters: 7,
+  defaultGateVisualWidthMeters: 8,
+  defaultGateVisualHeightMeters: 4.2,
   defaultSpawnBackMeters: 8,
 });
 

@@ -90,6 +90,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .coordinate-grid input { width: 100%; padding: 8px; }
 .coordinate-grid button { height: 34px; }
 #region-status { display: block; margin-top: 7px; color: #9dfab4; font-size: 8px; line-height: 1.4; }
+.world-mode { width: 100%; padding: 11px; border-color: var(--yellow); color: var(--yellow); background: rgba(64, 51, 0, .45); text-shadow: 0 0 8px currentColor; }
+.world-mode:hover, .world-mode:focus-visible { border-color: #fff69b; background: rgba(255, 231, 74, .15); }
+.scale-disclosure { display: block; margin-top: 7px; color: #9dfab4; font-size: 8px; line-height: 1.45; }
 .toggle { display: flex; align-items: center; gap: 7px; margin-top: 8px; font-size: 9px; letter-spacing: .06em; }
 .toggle input { accent-color: var(--green); }
 
@@ -101,6 +104,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .legend--traffic { color: var(--orange); }
 .legend--race { color: var(--cyan); text-shadow: 0 0 8px currentColor; }
 .legend--terrain { color: var(--green); }
+.legend--major-road { color: var(--yellow); }
+.legend--player { color: #ff334f; }
 .source-note { color: #71c989; font-size: 9px; line-height: 1.5; }
 .source-note p { margin: 7px 0 0; }
 .source-note strong { color: #b5ffc8; }
@@ -117,10 +122,27 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-size: 10px;
   letter-spacing: .1em;
 }
+.global-attribution {
+  position: fixed;
+  z-index: 11;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  max-width: min(720px, calc(100vw - 24px));
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid rgba(52, 255, 115, .24);
+  color: #79c98e;
+  background: rgba(0, 8, 2, .72);
+  font-size: 7px;
+  letter-spacing: .06em;
+  pointer-events: auto;
+}
+.global-attribution a { color: #b5ffc8; }
 .error { position: fixed; z-index: 35; left: 50%; top: 14px; transform: translateX(-50%); max-width: min(700px, 90vw); padding: 9px; color: var(--error); background: rgba(20, 0, 2, .92); font-size: 10px; pointer-events: none; }
 .error:empty { display: none; }
 
 #touch-controls { display: none; position: fixed; inset: 0; z-index: 15; pointer-events: none; }
+#touch-controls.touch-controls--hidden { display: none !important; }
 .touch-axis, .touch-buttons { pointer-events: auto; user-select: none; -webkit-user-select: none; }
 .touch-axis {
   position: absolute;
@@ -150,6 +172,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .console { max-height: 52vh; }
   .desktop-help { display: none; }
   .hud { top: auto; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
+  .global-attribution { bottom: max(66px, calc(env(safe-area-inset-bottom) + 58px)); }
 }
 
 @media (max-width: 620px) {

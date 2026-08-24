@@ -285,7 +285,15 @@ export class MotorcycleController {
     const speed = vecLength(chassis.linearVelocity);
     const forwardSpeed = vecDot(chassis.linearVelocity, forward);
     const speedSteeringScale = 1 / (1 + Math.abs(forwardSpeed) * 0.055);
-    const steeringTarget = control.steer * this.config.steeringAngle * clamp(speedSteeringScale, 0.28, 1);
+    // The action contract is rider-centric (-left, +right). This rig faces
+    // local +Z, so its rider-right axis is local -X. Positive rotation about
+    // +Y points the fork toward local +X (rider-left); convert the normalized
+    // action once at the actuator boundary instead of reversing every input
+    // adapter independently.
+    const physicalSteer = -control.steer;
+    const steeringTarget = physicalSteer
+      * this.config.steeringAngle
+      * clamp(speedSteeringScale, 0.28, 1);
     this.world.setJointMotor(this.rig.jointIds.steering, {
       enabled: true,
       targetPosition: steeringTarget,
@@ -295,7 +303,7 @@ export class MotorcycleController {
 
     const globalUp = vec3([0, 1, 0]);
     const leanAngle = Math.atan2(vecDot(vecCross(globalUp, up), forward), vecDot(globalUp, up));
-    const targetLean = -control.steer
+    const targetLean = -physicalSteer
       * this.config.maxLean
       * clamp(Math.abs(forwardSpeed) / 12, 0, 1);
     let leanTorque = 0;
@@ -385,7 +393,11 @@ export class MotorcycleController {
     const isRear = contact.bodyA.id === this.rig.bodyIds.rearWheel;
     const isFront = contact.bodyA.id === this.rig.bodyIds.frontWheel;
     if (!isRear && !isFront) return null;
-    const kinematics = wheelKinematics(contact.bodyA, contact, this.rig.wheelRadius);
+    const kinematics = wheelKinematics(
+      contact.bodyA,
+      contact,
+      this.rig.rollingRadiusMeters ?? (this.rig.wheelRadius + this.rig.tireRadius),
+    );
     const longitudinalFalloff = Math.exp(
       -Math.pow(Math.abs(kinematics.longitudinalSlip) / this.config.tireSlipFalloff, 2),
     );

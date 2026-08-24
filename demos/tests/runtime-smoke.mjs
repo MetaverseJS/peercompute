@@ -136,11 +136,15 @@ const allDemos = [
       const state = window.__motorcycleDemo?.getState?.();
       return Boolean(
         state?.ready
-        && state.frameCount > 0
-        && state.locationSource === 'anchorage-fallback'
+        && state.frameCount === 0
+        && state.displayMode === 'overview'
+        && state.overview?.relief?.status === 'current'
+        && state.overview?.roads?.status === 'current'
+        && state.overview?.roads?.selectedTiles === 25
+        && state.overview?.players?.synthetic === false
+        && state.locationSource === 'browser-geolocation'
         && state.scene?.counts?.sourceRoads > 0
         && state.game?.motorcycle?.componentCount === 6
-        && state.game?.physics?.bodyCount >= 9
         && state.game?.physics?.overflows?.overflowed === false
         && state.game?.traffic?.spawnedVehicleCount > 0
         && state.game?.traffic?.graph?.laneCoverage
@@ -298,7 +302,11 @@ async function runDemo(context, demo) {
   const weatherControl = { expired: false };
   let expectedHttpConsoleErrors = 0;
 
-  if (demo.name === 'earth' || demo.name === 'motorcycle') {
+  if (
+    demo.name === 'earth'
+    || demo.name === 'motorcycle'
+    || (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_LIVE_TERRAIN !== '1')
+  ) {
     await page.route('**/api/v1/geo/osm?**', async (route) => {
       const url = new URL(route.request().url());
       osmControl.requestCount += 1;
@@ -498,6 +506,11 @@ async function runDemo(context, demo) {
 
     if (demo.name === 'motorcycle') {
       const before = await page.evaluate(demo.verify);
+      await page.click('#world-mode');
+      await page.waitForFunction(() => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.displayMode === 'ride' && state.frameCount > 0;
+      });
       await page.evaluate(() => window.__motorcycleDemo.runScenario('accelerate'));
       await page.waitForTimeout(750);
       await page.evaluate(() => window.__motorcycleDemo.clearControlFrame());
@@ -506,8 +519,16 @@ async function runDemo(context, demo) {
       await page.click('#locate');
       await page.waitForFunction(() => {
         const state = window.__motorcycleDemo?.getState?.();
-        return state?.ready && state.locationSource === 'browser-geolocation' && state.frameCount > 0;
+        return state?.ready
+          && state.locationSource === 'browser-geolocation'
+          && state.displayMode === 'overview'
+          && state.overview?.locationSource === 'browser-geolocation';
       }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      await page.click('#world-mode');
+      await page.waitForFunction(() => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.displayMode === 'ride' && state.frameCount > 0;
+      });
       const after = await page.evaluate(demo.verify);
       if (!(after.frameCount > 0)) errors.push('[runtime] motorcycle animation did not advance');
       if (after.locationSource !== 'browser-geolocation') errors.push('[runtime] motorcycle did not accept permissioned geolocation');
@@ -544,7 +565,7 @@ async function runDemo(context, demo) {
       if (!/OpenStreetMap contributors/i.test(provenanceText ?? '')) {
         errors.push('[runtime] visible RoadVector OpenStreetMap attribution was missing.');
       }
-      if (!(after.frameCount < before.frameCount || after.locationSource !== before.locationSource)) {
+      if (!(after.generation > before.generation)) {
         errors.push('[runtime] geolocation reload did not replace the prior world generation');
       }
 
@@ -557,10 +578,19 @@ async function runDemo(context, demo) {
       }
 
       await page.keyboard.down('KeyW');
+      await page.keyboard.down('KeyD');
+      await page.waitForFunction(() => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.lastControl?.steer > 0.9
+          && state?.game?.motorcycle?.steeringTarget < 0;
+      });
+      await page.keyboard.up('KeyD');
       await page.keyboard.down('KeyA');
       await page.waitForFunction(() => {
-        const control = window.__motorcycleDemo?.getState?.().lastControl;
-        return control?.throttle > 0.9 && control?.steer < -0.9;
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.lastControl?.throttle > 0.9
+          && state?.lastControl?.steer < -0.9
+          && state?.game?.motorcycle?.steeringTarget > 0;
       });
       await page.keyboard.up('KeyA');
       await page.keyboard.up('KeyW');

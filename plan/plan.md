@@ -76,6 +76,35 @@ The root node should exist on a domain secured with SSL enabling all executable 
   A coherent local `Add EarthGrid and RoadVector platform` commit records the
   slice; it has not been pushed.
 
+### RoadVector Hemisphere/Presence Follow-up Snapshot - 2026-08-23 AKDT
+
+- Correct the shared rider-centric steering boundary so `A`/negative means a
+  physical left turn and `D`/positive means a physical right turn across
+  desktop, pointer, touch, gamepad, and XR inputs. Keep normalized adapter
+  semantics unchanged and prove the actuator/lean sign in physics and built
+  browser tests.
+- Start RoadVector in a separate north-up hemisphere scene using bounded NOAA
+  ETOPO relief and an official Shortbread z5 5×5 regional major-road window.
+  Pause the local particle simulation until `RIDE THIS REGION`; make the
+  12,742 km overview-to-2,400 m local-to-one-meter transition explicit.
+- Integrate genuine PeerCompute player presence. Publish only a coarse 0.1°
+  cell after permitted browser/manual location selection, never publish the
+  automatic fallback, render verified remote peers in fixed red, cap at 64,
+  expire after 15 seconds, and keep relay/source failure nonfatal.
+- Preserve metric world geometry while correcting perception: 60° third-person
+  FOV, 4.8 m chase distance, lighter fog, an 8 m × 4.2 m portal separate from
+  the 14 m × 7 m crossing corridor, and full tire rolling radius in wheel
+  kinematics.
+- Retain the direct Tailnet-only HTTPS listener at
+  `https://100.68.165.52:5188/` with same-origin loopback geodata. This is the
+  user-selected IP-SAN development-certificate handoff and does not use
+  Tailscale Serve or Funnel.
+- Deterministic implementation evidence is now 241 Node tests plus the mocked
+  Chromium XR harness: geo-core 23, geodata 44, EarthGrid 27, WXGlobe 26,
+  shared XR 21, particle/motorcycle physics 33, traffic 12, and RoadVector 55.
+  Final rebuilt/static/combined browser results are recorded in
+  `plan/tests.md`; the real-headset matrix remains manual and NOT RUN.
+
 ### Current Validation Snapshot - 2026-08-22 AKDT
 
 - WXGlobe is now a first-class standalone demo on port `5186`, selectively

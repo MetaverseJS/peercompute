@@ -351,6 +351,26 @@ test('bounded lean assist applies torque and reset restores the six-body snapsho
   game.dispose();
 });
 
+test('rider-right input turns the physical fork and lean target right', () => {
+  const game = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+  });
+  const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+  chassis.linearVelocity[2] = 8;
+  game.stepFrame(1 / 120, { sequence: 1, steer: 1 });
+  const right = game.controller.getTelemetry();
+  assert.ok(right.steeringTarget < 0, 'positive rider-right action maps to negative +Y rig hinge rotation');
+  assert.ok(right.targetLean > 0, 'positive rider-right action requests rider-right lean');
+  assert.equal(game.rig.worldUnits, 'meters');
+  assert.ok(Math.abs(game.rig.rollingRadiusMeters - 0.412) < 1e-9);
+  assert.ok(Math.abs(game.rig.wheelOuterDiameterMeters - 0.824) < 1e-9);
+  game.stepFrame(1 / 120, { sequence: 2, steer: -1 });
+  const left = game.controller.getTelemetry();
+  assert.ok(left.steeringTarget > 0);
+  assert.ok(left.targetLean < 0);
+  game.dispose();
+});
+
 test('wheel contacts with rigid traffic remain generic body collisions', () => {
   const game = createMotorcyclePhysics({
     worldOptions: { gravity: [0, 0, 0], maxParticles: 1_024 },

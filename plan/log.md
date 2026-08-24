@@ -57623,3 +57623,185 @@ Tailnet IP with HTTPS so an XR headset on that tailnet could connect.
 - Exact private URL handed to the user:
   `https://100.68.165.52:5188/`. The headset/browser must accept or trust the
   self-signed certificate before immersive WebXR can be evaluated.
+
+## 2026-08-23 21:27:58 AKDT - RoadVector steering, scale, and hemisphere overview intake
+
+User prompt received at 2026-08-23 21:26 AKDT: desktop left/right steering is
+reversed; the scene scale feels wrong; RoadVector should open on a topo-styled
+view of the user's hemisphere with major road systems and other players shown
+in red.
+
+- Confirmed that this extends the existing RoadVector goal and preserves the
+  direct private Tailnet HTTPS handoff. Tailscale Serve is not being introduced.
+- Re-read the ICC control-plane instructions, resumed durable task
+  `peercompute-earth-platform-motorcycle-xr-20260823`, reviewed its current
+  status/source drift, and refreshed the ICC index, memory, and Git history.
+  Refresh indexed 773 files / 448,859 lines at local HEAD `405d38da`.
+- Ran ICC multi-agent preflight as agent
+  `codex-root-roadvector-overview` across `demos/motorcycle`,
+  `demos/shared/xr`, `packages/geo-core`, `plan`, `README.md`, and `docs`:
+  PASS (6 checks, 0 failures, 1 unrelated warning because this checkout has no
+  `origin/master` ref). Published a conflict-free edit lease for those paths.
+- Started two bounded read-only audits: one for the normalized steering sign and
+  physical/render scale, and one for a bounded official-OSM hemisphere renderer
+  plus truthful PeerCompute player-presence integration. No terminal browser or
+  split pane was opened.
+- Initial source inspection confirmed the current keyboard contract maps
+  `A/Left -> steer -1` and `D/Right -> steer +1`, while the controller applies
+  the sign directly to its Y-axis steering hinge. The physical turn-direction
+  regression is not currently asserted; investigation remains in progress.
+- Files touched so far: `plan/log.md` only. No application behavior, runtime
+  process, certificate, or generated artifact has changed yet.
+- Commands run: ICC `assistant-status`, `task-show`, `source-drift`, `index`,
+  `build-memory`, `build-git-history`, `agent-preflight`, `agent-session`, Git
+  status/history, and bounded `rg`/`sed` source inspection. Tests have not run
+  yet for this prompt.
+- Open design questions being resolved from live source rather than assumed:
+  which normalized steering sign matches the +Z vehicle frame; which camera or
+  geometry choice creates the scale mismatch; how to bound low-zoom Shortbread
+  requests; and how to display actual remote player presence without relabeling
+  deterministic traffic or fixtures as live players.
+
+## 2026-08-23 22:13:10 AKDT - RoadVector hemisphere/steering implementation and release proof
+
+Prompt context: completion of the user request received at 2026-08-23 21:26
+AKDT to correct reversed desktop steering, repair perceived scale, start on a
+topographic hemisphere around the viewer, show major roads, and show other real
+players in red. The direct private Tailnet HTTPS handoff selected by the user
+remained in scope; no Tailscale Serve, Funnel, public tunnel, terminal-browser
+split, or `open` command was used.
+
+### Diagnosis and implementation narrative
+
+- The read-only steering audit proved all adapters already shared the correct
+  rider-centric contract (`A/left=-1`, `D/right=+1`). The +Z-facing rig's
+  positive Y-axis hinge rotated toward local +X, which is rider-left after the
+  view-axis correction. Reversing desktop keys alone would have broken pointer,
+  touch, gamepad, and XR consistency, so
+  `demos/shared/physics/vehicle/motorcycleController.js` now converts the sign
+  once at the actuator boundary and derives lean from the converted sign.
+- The local ENU world was already metric. The scale audit instead found a 67°
+  / 6.4 m chase view, dense 0.0022 fog, 14 m × 7 m visual gates, tire kinematics
+  using only the wheel centerline radius, and traffic collision spheres
+  extending about 0.96 m beyond reported/rendered dimensions. The fix keeps
+  one unit per meter: a reusable camera config uses a 60° chase view at
+  `[0,2.1,-4.8]` with 0.0009 fog; visual gates are 8 m × 4.2 m while the
+  forgiving 14 m × 7 m gameplay crossing corridor remains; wheel telemetry and
+  slip use the full 0.412 m rolling radius; traffic particle centers are inset
+  so their outer cage exactly matches each reported vehicle box.
+- Added a separate Three.js overview scene/camera rather than interpolating
+  planet units into local float physics. `demos/motorcycle/src/overview/`
+  provides WGS84 projection/north-up camera math, one bounded 257×129 global
+  NOAA ETOPO BIP load, a center-out official Shortbread z5 5×5 loader, capped
+  HTTP readers, topographic globe/contour/graticule rendering, real-player
+  presence, and a generation-safe runtime coordinator. Only motorway/trunk/
+  primary geometry is rendered; at most 25 tiles, 1 MiB per tile, 8 MiB total,
+  four concurrent loads, and 100,000 vertices are accepted. Coverage is labeled
+  `regional-major-roads-only`, never complete hemisphere coverage.
+- RoadVector now requests browser location permission on startup as explicitly
+  required by this prompt, centers the hemisphere on the permitted fix, loads
+  the local ride asynchronously, and keeps physics paused at frame zero until
+  `RIDE THIS REGION`. Denial/unavailability remains a visibly disclosed
+  Anchorage fallback. The fallback is never broadcast.
+- Real player markers use a dynamically loaded PeerCompute `NetworkManager`
+  with the existing official relay-config source. Capabilities contain only a
+  0.1° coarse cell for browser/manual/API locations. Incoming entries are
+  schema/age/range/grid validated, capped at 64, dropped after 15 seconds, and
+  rendered fixed red. Networking failure is nonfatal and never substitutes the
+  14 orange/cyan/magenta synthetic traffic vehicles as live peers.
+- `demos/motorcycle/index.html` and `style.css` now expose hemisphere/player
+  telemetry, the explicit `12,742 KM -> 2,400 M -> 1 UNIT = 1 METER` transition,
+  the overview/ride control, major-road and red-player legend categories, and
+  always-visible NOAA/OSM/presence attribution. Public state exposes the mode,
+  generation, exact bounded overview telemetry, camera/bike scale, and presence
+  privacy state.
+
+### Files touched
+
+- Application/source: `demos/motorcycle/{index.html,package.json,README.md}`;
+  `demos/motorcycle/src/{main.js,style.css}`;
+  `src/overview/{globeMath.js,globeRenderer.js,http.js,overviewRuntime.js,playerPresence.js,reliefLoader.js,shortbreadRoadWindow.js}`;
+  `src/view/cameraConfig.js`; `src/race/{constants.js,course.js}`;
+  `src/runtime/trafficPhysics.js`; and
+  `demos/motorcycle/public/relay-config-source.json`.
+- Shared physics: `demos/shared/physics/vehicle/{motorcycleController.js,motorcycleRig.js}`.
+- Tests: `demos/motorcycle/tests/overview/{data-renderer.test.mjs,globe-math.test.mjs,presence.test.mjs}`;
+  `tests/{runtime-game.test.mjs,runtime-input.test.mjs}`;
+  `tests/race/course.test.mjs`;
+  `demos/shared/physics/vehicle/tests/motorcycle.test.js`; and
+  `demos/tests/{demo-release.test.js,runtime-smoke.mjs}`.
+- Generated/release: `docs/motorcycle/**` and the refreshed real live-player
+  gallery frame `docs/assets/motorcycle.png`.
+- Documentation/control: `README.md`, `demos/motorcycle/README.md`,
+  `plan/{plan.md,tests.md,log.md}`, and
+  `plan/branch/earth-platform-motorcycle-xr.md`. `AGENTS.md` already contained
+  the permanent no-terminal-split/Tailnet-link rule from the preceding prompt
+  and did not need another duplicate edit.
+
+### Commands, results, and corrected failures
+
+- Node runtime was already `v24.18.0`. An early non-login-shell attempt to run
+  `nvm use 24` reported that `nvm` was unavailable; no downgrade or reinstall
+  occurred because the active runtime was the required Node 24.
+- Focused deterministic steering simulations and an exact live browser probe
+  proved the pre-fix defect (`D/+1` turned left). Post-fix live proof reported
+  `D/+1 -> steeringTarget -0.5194` with positive right-lean target; `A/-1`
+  produced the mirrored physical target.
+- `npm --prefix demos/motorcycle test`: PASS `55/55`, including projection,
+  road/relief caps, privacy/stale/fixed-red presence, metric camera/gate scale,
+  outer traffic-cage dimensions, steering/lean sign, race, rendering, input,
+  game lifecycle, terrain, and XR panel tests.
+- `npm run test:physics`: PASS `33/33` inside the aggregate unit run.
+- `npm run test:earth-platform:unit`: PASS `241` Node tests plus the mocked
+  Chromium XR harness (geo-core 23, geodata 44, EarthGrid 27, WXGlobe 26,
+  shared XR 21, physics 33, traffic 12, RoadVector 55).
+- `npm run build:motorcycle`: PASS. Final generated entries are
+  `index-BJ47J1jP.js`, `index-BL_s4HRR.css`, and dynamically split
+  `NetworkManager-BwEpE1-w.js`.
+- First aggregate `npm run test:earth-platform:release` attempt: FAIL during
+  WXGlobe readiness because the deterministic runner left WXGlobe dependent on
+  slow live NOAA. The existing NOAA fixture is now installed for ordinary
+  WXGlobe release smoke, while `WXGLOBE_REQUIRE_LIVE_TERRAIN=1` explicitly
+  bypasses it so the real bathymetry gate is not masked. Focused WXGlobe smoke
+  on port 43962 then passed.
+- Next built RoadVector smoke: FAIL only on an obsolete assertion that expected
+  a repeated geolocation load to change its source label. Auto startup makes
+  both loads correctly `browser-geolocation`; public state now exposes the
+  world generation and the smoke asserts that it increments. Focused
+  RoadVector build/static/smoke on port 43963 then passed.
+- Final `npm run test:earth-platform:release`: PASS. It rebuilt WXGlobe,
+  EarthGrid, and RoadVector; static port/release tests passed `44/44`; combined
+  built browser smoke passed for all three on test-owned HTTPS port 43947 and
+  removed the runner/browser afterward. Vite emitted only its existing large
+  Cesium bundle advisory, not a failure.
+- An initial ad-hoc visual script accidentally evaluated `document` in the
+  Node caller and failed before asserting the page; the corrected Playwright
+  evaluation ran entirely in page context. A first two-client probe at a new
+  uncached OSM coordinate also encountered a truthfully surfaced temporary
+  upstream-unavailable response; the final proof used the already verified
+  Anchorage region rather than weakening source handling.
+- Exact direct live two-context proof against
+  `https://100.68.165.52:5188/`: PASS with no page/console errors. Both contexts
+  reported `isSecureContext=true`, `browser-geolocation`, overview mode,
+  physics frame 0, one 70,451-byte 257×129 ETOPO globe, 25 Shortbread tiles /
+  3,553,031 bytes / 217 major roads / 527 vertices, and one genuine remote
+  PeerCompute player. Only coarse `[-149.9,61.2]` at 0.1° was published and the
+  fixed-red policy was present. The browser contexts closed cleanly.
+
+### Runtime handoff, cleanup, and open manual gate
+
+- Retained intentionally for the user's headset test: user service
+  `peercompute-roadvector-tailnet.service` on only `100.68.165.52:5188` (PID
+  1918266 at verification) and the same-origin proxied geodata backend on only
+  `127.0.0.1:8788` (PID 1783811). Root and catalog both returned HTTP 200.
+  These are the requested preview, not disposable test servers.
+- Ports 43947, 43962, and 43963 and all test-owned Chrome contexts were closed.
+  No existing unrelated process or listener was interrupted.
+- The exact handoff remains `https://100.68.165.52:5188/`. Its self-signed
+  environment-owned certificate has the private IP SAN and must be accepted or
+  trusted on the headset. A physical XR enter/exit/re-enter, controllers/hands,
+  haptics, comfort, and performance matrix is still NOT RUN and awaits the
+  user's hardware; no certification claim is made.
+- Remaining local closure after this entry: final syntax/diff checks, ICC
+  index/attempt/guard refresh and lease close, then one coherent local commit.
+  No push is authorized or attempted.

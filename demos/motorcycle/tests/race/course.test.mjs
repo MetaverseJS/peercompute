@@ -73,6 +73,10 @@ test('ordered gates expose stable local/WGS84 headings, corridors, and bright re
     assert.equal(gate.positionWgs84.length, 2);
     assert.equal(gate.crossing.direction, 'forward-only');
     assert.ok(gate.crossing.widthMeters > 0);
+    assert.equal(gate.crossing.widthMeters, 14, 'forgiving gameplay corridor remains independent');
+    assert.equal(gate.render.widthMeters, 8, 'visual portal is bounded to the real-road scale');
+    assert.equal(gate.render.heightMeters, 4.2);
+    assert.ok(gate.render.widthMeters < gate.crossing.widthMeters);
     assert.ok(gate.render.emissiveIntensity >= 4);
     assert.match(gate.render.color, /^#[0-9A-F]{6}$/u);
     assert.equal(gate.render.leftPostBaseLocal.length, 3);

@@ -186,6 +186,10 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   assert.ok(indexHtml.includes('id="aws-terrain-attribution"'));
   assert.ok(indexHtml.includes('NOAA Z6 // AWS Z15'));
   assert.ok(runtimeSmoke.includes('Unknown runtime smoke demo(s)'), 'runtime demo filtering must fail closed on typos');
+  assert.ok(
+    runtimeSmoke.includes("demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_LIVE_TERRAIN !== '1'"),
+    'the deterministic release smoke must fixture WXGlobe terrain without masking its explicit live gate',
+  );
   assert.ok(!indexHtml.includes('Weather dataset'));
   assert.ok(!exists('demos/wxglobe/src/weatherManager.js'));
   assert.ok(!exists('demos/wxglobe/src/weatherWorker.js'));
@@ -236,6 +240,10 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('motorcycle-contact-markers'), 'RoadVector built bundle is stale: contact rendering missing');
   assert.ok(motorcycleModule.includes('xr-root-fallback'), 'RoadVector built bundle is stale: single-source XR UI fallback missing');
   assert.ok(motorcycleModule.includes('geolocation-denied-fallback'), 'RoadVector built bundle is stale: denied-location fallback missing');
+  assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
+  assert.ok(motorcycleModule.includes('regional-major-roads-only'), 'RoadVector built bundle is stale: bounded major-road coverage missing');
+  assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
+  assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
   assert.ok(motorcycleModule.includes('xr-standard'));
   [
     'docs/earth/cesium/Workers/createVerticesFromHeightmap.js',

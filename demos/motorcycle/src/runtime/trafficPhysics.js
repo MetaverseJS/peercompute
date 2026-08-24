@@ -1,6 +1,7 @@
 import { createBoxParticleCloud } from '../../../shared/physics/particle-rigid/index.js';
 
 const TRAFFIC_BODY_PREFIX = 'traffic-body:';
+const TRAFFIC_PARTICLE_RADIUS_METERS = 0.48;
 
 function finiteOriginOffset(originOffset = [0, 0, 0]) {
   if ((!Array.isArray(originOffset) && !ArrayBuffer.isView(originOffset)) || originOffset.length < 3) {
@@ -32,13 +33,21 @@ function bodyId(vehicleId) {
   return `${TRAFFIC_BODY_PREFIX}${vehicleId}`;
 }
 
-function trafficCloud(vehicle) {
+export function createTrafficCollisionCloud(vehicle) {
   const [length, width, height] = vehicle.dimensionsMeters;
+  const radius = TRAFFIC_PARTICLE_RADIUS_METERS;
+  const particleCenterHalfExtents = [width, height, length].map((dimension) => dimension / 2 - radius);
+  if (!particleCenterHalfExtents.every((extent) => Number.isFinite(extent) && extent > 0)) {
+    throw new RangeError('Traffic dimensions must contain the collision particle radius.');
+  }
   return createBoxParticleCloud({
-    halfExtents: [width / 2, height / 2, length / 2],
+    // createBoxParticleCloud treats halfExtents as particle-center bounds.
+    // Inset them by the particle radius so the collision cage outer surface
+    // matches the reported/rendered vehicle dimensions exactly.
+    halfExtents: particleCenterHalfExtents,
     // Kinematic traffic needs a collision cage, not a dense mass sample. A
     // coarse shell keeps real player impacts while bounding CPU contact work.
-    radius: 0.48,
+    radius,
     spacing: 1.7,
     shell: true,
     tag: `synthetic-traffic:${vehicle.kind}`,
@@ -67,7 +76,7 @@ export function addTrafficPhysicsBodies(world, trafficSnapshot, terrain, {
       position: pose.position,
       orientation: pose.orientation,
       mass: 1_200,
-      particleCloud: trafficCloud(vehicle),
+      particleCloud: createTrafficCollisionCloud(vehicle),
       material: { friction: 0.72, restitution: 0.04, rollingFriction: 0.01 },
       collisionGroup: 2,
       collisionMask: 0x7fffffff,

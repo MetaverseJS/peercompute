@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-motorcycle-ready="false">
+<html lang="en" data-motorcycle-ready="false" data-roadvector-mode="overview">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -8,8 +8,8 @@
     <meta http-equiv="Permissions-Policy" content="geolocation=(self), xr-spatial-tracking=(self), camera=(), microphone=()" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000300'/%3E%3Cpath d='M8 42h48M14 34l10-12 9 12 9-18 8 18' fill='none' stroke='%2334ff73' stroke-width='4'/%3E%3C/svg%3E" />
     <title>RoadVector // Particle Motorcycle</title>
-    <script type="module" crossorigin src="./assets/index-R_rjvp_J.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Cc89UeuG.css">
+    <script type="module" crossorigin src="./assets/index-BJ47J1jP.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BL_s4HRR.css">
   </head>
   <body>
     <main id="app">
@@ -31,6 +31,8 @@
           <dl class="telemetry-grid">
             <div><dt>OSM REGION</dt><dd id="osm-status">UNREQUESTED</dd></div>
             <div><dt>TERRAIN</dt><dd id="terrain-status">UNREQUESTED</dd></div>
+            <div><dt>HEMISPHERE</dt><dd id="overview-status">LOADING NOAA + OSM</dd></div>
+            <div><dt>PLAYERS</dt><dd id="player-status">CONNECTING // LOCATION PRIVATE</dd></div>
             <div><dt>PHYSICS</dt><dd id="physics-status">WAITING</dd></div>
             <div><dt>TRAFFIC</dt><dd id="traffic-status">SYNTHETIC // WAITING</dd></div>
             <div><dt>RACE</dt><dd id="race-status">WAITING FOR REAL ROAD COURSE</dd></div>
@@ -52,6 +54,12 @@
               <button id="go-location" type="button">LOAD</button>
             </div>
             <output id="region-status">NO REGION LOADED</output>
+          </section>
+
+          <section class="control-block">
+            <h2>SCALE // HEMISPHERE → LOCAL METERS</h2>
+            <button id="world-mode" class="world-mode" type="button" disabled>RIDE THIS REGION</button>
+            <output class="scale-disclosure">HEMISPHERE ≈12,742 KM // LOCAL REGION 2,400 M // 1 UNIT = 1 METER</output>
           </section>
 
           <section class="control-block">
@@ -78,6 +86,8 @@
             <span class="legend--traffic">SYNTHETIC TRAFFIC</span>
             <span class="legend--race">RACE CHECKPOINT</span>
             <span class="legend--terrain">NOAA TERRAIN</span>
+            <span class="legend--major-road">REGIONAL MAJOR ROAD</span>
+            <span class="legend--player">LIVE PLAYER</span>
           </section>
 
           <footer class="source-note">
@@ -108,6 +118,7 @@
       </section>
 
       <output id="hud" class="hud" aria-live="polite">0.0 KM/H // GEAR N // 0 RPM</output>
+      <p class="global-attribution">TOPO: NOAA/NCEI ETOPO 2022 · ROADS: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OPENSTREETMAP CONTRIBUTORS</a> · LIVE PLAYERS: COARSE 0.1° PEERCOMPUTE PRESENCE</p>
       <output id="error" class="error" role="alert"></output>
     </main>
   </body>

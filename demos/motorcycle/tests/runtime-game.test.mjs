@@ -6,7 +6,7 @@ import { parseAndSnapBbox } from '../../../services/geodata/src/osm/bbox.js';
 import { normalizeOverpassRegion } from '../../../services/geodata/src/osm/normalize.js';
 import { createOverpassFixture } from '../../../services/geodata/test/fixture.js';
 import { createMotorcycleGameRuntime } from '../src/runtime/gameRuntime.js';
-import { trafficPose } from '../src/runtime/trafficPhysics.js';
+import { createTrafficCollisionCloud, trafficPose } from '../src/runtime/trafficPhysics.js';
 import { createMotorcycleSceneData } from '../src/world/sceneData.js';
 import { createDerivedFlatTerrainGrid } from '../src/world/terrainGrid.js';
 
@@ -211,6 +211,29 @@ test('traffic WGS84 heading is converted to the local east/up/south physics fram
   assert.ok(northbound.position.every(Number.isFinite));
   assert.ok(Math.abs(northbound.orientation[1] - 1) < 1e-9);
   assert.ok(Math.abs(northbound.orientation[3]) < 1e-9);
+});
+
+test('traffic particle cages preserve the reported outer vehicle dimensions', () => {
+  const dimensionsMeters = [4.3, 1.8, 1.45];
+  const cloud = createTrafficCollisionCloud({
+    kind: 'commuter',
+    dimensionsMeters,
+  });
+  const expectedHalfExtents = [
+    dimensionsMeters[1] / 2,
+    dimensionsMeters[2] / 2,
+    dimensionsMeters[0] / 2,
+  ];
+  for (let axis = 0; axis < 3; axis += 1) {
+    let outerExtent = 0;
+    for (let index = 0; index < cloud.radii.length; index += 1) {
+      outerExtent = Math.max(
+        outerExtent,
+        Math.abs(cloud.positions[index * 3 + axis]) + cloud.radii[index],
+      );
+    }
+    assert.ok(Math.abs(outerExtent - expectedHalfExtents[axis]) < 1e-6);
+  }
 });
 
 test('queues one-shot shift edges across zero-substep frames and applies reset atomically', () => {

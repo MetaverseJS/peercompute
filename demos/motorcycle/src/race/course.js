@@ -254,6 +254,18 @@ function normalizeOptions(options) {
     'gateHeightMeters',
     50,
   );
+  const gateVisualWidthMeters = positiveNumber(
+    options.gateVisualWidthMeters,
+    RACE_LIMITS.defaultGateVisualWidthMeters,
+    'gateVisualWidthMeters',
+    gateWidthMeters,
+  );
+  const gateVisualHeightMeters = positiveNumber(
+    options.gateVisualHeightMeters,
+    RACE_LIMITS.defaultGateVisualHeightMeters,
+    'gateVisualHeightMeters',
+    gateHeightMeters,
+  );
   const spawnBackMeters = nonNegativeNumber(
     options.spawnBackMeters,
     RACE_LIMITS.defaultSpawnBackMeters,
@@ -286,6 +298,8 @@ function normalizeOptions(options) {
     checkpointSpacingMeters,
     gateWidthMeters,
     gateHeightMeters,
+    gateVisualWidthMeters,
+    gateVisualHeightMeters,
     spawnBackMeters,
     spawnHeightMeters: positiveNumber(options.spawnHeightMeters, 0.9, 'spawnHeightMeters', 10),
     gateCount,
@@ -840,6 +854,7 @@ function offsetLocal(position, direction, amount, vertical = 0) {
 function createGates(graph, selected, config, courseId, gateCount) {
   const distances = gateDistanceLayout(selected, gateCount);
   const halfWidthMeters = config.gateWidthMeters / 2;
+  const visualHalfWidthMeters = config.gateVisualWidthMeters / 2;
   return Object.freeze(distances.map((distance, index) => {
     const sample = sampleRoute(graph, selected, distance.sourceRouteDistanceMeters);
     const isStart = index === 0;
@@ -848,8 +863,8 @@ function createGates(graph, selected, config, courseId, gateCount) {
     const color = isStart
       ? RACE_GATE_COLORS.startFinish
       : isOpenFinish ? RACE_GATE_COLORS.finish : RACE_GATE_COLORS.checkpoint;
-    const leftBase = offsetLocal(sample.localPosition, sample.rightLocal, -halfWidthMeters);
-    const rightBase = offsetLocal(sample.localPosition, sample.rightLocal, halfWidthMeters);
+    const leftBase = offsetLocal(sample.localPosition, sample.rightLocal, -visualHalfWidthMeters);
+    const rightBase = offsetLocal(sample.localPosition, sample.rightLocal, visualHalfWidthMeters);
     return deepFreeze({
       id: `${courseId}/gate/${index}`,
       order: index,
@@ -881,12 +896,14 @@ function createGates(graph, selected, config, courseId, gateCount) {
         colorCategory: isStart ? 'race-start-finish' : isOpenFinish ? 'race-finish' : 'race-checkpoint',
         emissiveIntensity: 4,
         postRadiusMeters: 0.12,
+        widthMeters: config.gateVisualWidthMeters,
+        heightMeters: config.gateVisualHeightMeters,
         leftPostBaseLocal: leftBase,
-        leftPostTopLocal: offsetLocal(leftBase, [0, 0, 0], 0, config.gateHeightMeters),
+        leftPostTopLocal: offsetLocal(leftBase, [0, 0, 0], 0, config.gateVisualHeightMeters),
         rightPostBaseLocal: rightBase,
-        rightPostTopLocal: offsetLocal(rightBase, [0, 0, 0], 0, config.gateHeightMeters),
-        bannerLeftLocal: offsetLocal(leftBase, [0, 0, 0], 0, config.gateHeightMeters),
-        bannerRightLocal: offsetLocal(rightBase, [0, 0, 0], 0, config.gateHeightMeters),
+        rightPostTopLocal: offsetLocal(rightBase, [0, 0, 0], 0, config.gateVisualHeightMeters),
+        bannerLeftLocal: offsetLocal(leftBase, [0, 0, 0], 0, config.gateVisualHeightMeters),
+        bannerRightLocal: offsetLocal(rightBase, [0, 0, 0], 0, config.gateVisualHeightMeters),
       },
     });
   }));

@@ -75,6 +75,18 @@ test('motorcycle input runtime merges keyboard, touch, and virtual controls', as
   assert.equal(throttle.listenerCount(), 0);
 });
 
+test('desktop action semantics remain A left negative and D right positive', async () => {
+  const windowTarget = new FakeEventTarget();
+  const runtime = createMotorcycleInputRuntime({ eventTarget: windowTarget, getGamepads: () => [] });
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'KeyD' }));
+  assert.equal(runtime.poll().control.steer, 1);
+  windowTarget.dispatchEvent(fakeEvent('keyup', { code: 'KeyD' }));
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'KeyA' }));
+  assert.equal(runtime.poll().control.steer, -1);
+  windowTarget.dispatchEvent(fakeEvent('keyup', { code: 'KeyA' }));
+  await runtime.dispose();
+});
+
 test('motorcycle input runtime reports WebXR unavailable without a renderer XR bridge', async () => {
   const runtime = createMotorcycleInputRuntime({
     eventTarget: new FakeEventTarget(),

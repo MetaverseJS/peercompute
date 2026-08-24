@@ -262,3 +262,40 @@ physics. The reusable XR package:
 The implementation and deterministic/live software gates are complete. The
 manual physical-headset matrix and Tailnet HTTPS publication remain explicit
 external handoff items; neither is silently counted as a pass.
+
+## User Addendum - 2026-08-23 AKDT - Hemisphere Start, Steering, Scale, And Presence
+
+This addendum supersedes the earlier RoadVector startup and remote-handoff
+assumptions where they conflict:
+
+- RoadVector opens in a separate north-up hemisphere overview centered on the
+  permitted browser location. Startup may request browser location permission
+  for this explicitly requested behavior; denial or an unavailable API uses the
+  disclosed Anchorage fallback and never labels it as a device fix.
+- The hemisphere uses one bounded NOAA ETOPO global relief request and a
+  center-out official OSM Shortbread z5 5×5 window for regional motorway,
+  trunk, and primary roads. It must disclose that the road overlay is regional,
+  not complete hemisphere coverage. Physics stays paused until the user enters
+  the independent local meter-scale scene.
+- Real RoadVector peers use PeerCompute presence, not synthetic traffic. Only a
+  coarse 0.1° cell from a permitted browser/manual location may be published;
+  the automatic fallback is never published. Remote markers are fixed red,
+  capped at 64, expire after 15 seconds, and disappear nonfatally on network
+  failure.
+- Normalized input remains rider-centric (`-1` left, `+1` right). The vehicle
+  actuator converts that contract once into the rig's local hinge convention;
+  desktop `A` turns left and `D` turns right, with matching lean direction.
+- Local world data remains one unit per meter. The chase view uses a 60° FOV,
+  a 4.8 m rear / 2.1 m up offset, and lighter metric fog. The forgiving 14 m ×
+  7 m checkpoint crossing corridor is separate from the 8 m × 4.2 m visual
+  portal. Wheel kinematics use the full rolling radius including tire radius.
+- The verified user-selected remote handoff is direct Tailnet HTTPS at
+  `https://100.68.165.52:5188/`, with same-origin API proxying and an
+  environment-owned IP-SAN self-signed development certificate. It does not
+  use Tailscale Serve, Funnel, or a public tunnel; the headset/browser must
+  accept or trust the certificate.
+
+The earlier requirement-audit row saying the handoff is blocked on Tailscale
+Serve is historical and superseded by this direct private-IP mode. A physical
+headset enter/exit/controller/hand/haptics/comfort/performance run remains a
+manual NOT RUN gate until the user exercises this URL.

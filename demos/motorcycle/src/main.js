@@ -8,6 +8,7 @@ import {
 } from '@peercompute/geo-core';
 import { ViewRig } from '../../shared/xr/index.js';
 import { createMotorcycleInputRuntime } from './input/runtimeInput.js';
+import { createRoadvectorOverviewRuntime } from './overview/overviewRuntime.js';
 import {
   createMotorcycleWorldRenderer,
   disposeThreeObject,
@@ -15,6 +16,10 @@ import {
 import { createMotorcycleGameRuntime } from './runtime/gameRuntime.js';
 import { loadMotorcycleLocation } from './runtime/locationLoader.js';
 import { createMotorcycleXrPanel } from './runtime/xrPanel.js';
+import {
+  ROADVECTOR_CAMERA_CONFIG,
+  ROADVECTOR_SCALE_DISCLOSURE,
+} from './view/cameraConfig.js';
 import './style.css';
 
 const FALLBACK_LOCATION = Object.freeze({
@@ -25,8 +30,8 @@ const FALLBACK_LOCATION = Object.freeze({
 const MAXIMUM_TRAFFIC_VEHICLES = 14;
 const MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES = MAXIMUM_TRAFFIC_VEHICLES;
 const MAXIMUM_FRAME_DELTA_SECONDS = 0.1;
-const FIRST_CAMERA_OFFSET = Object.freeze([0, 1.36, 0.12]);
-const THIRD_CAMERA_OFFSET = Object.freeze([0, 2.7, -6.4]);
+const FIRST_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.firstOffsetMeters;
+const THIRD_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters;
 
 const elements = Object.freeze({
   viewport: document.querySelector('#viewport'),
@@ -35,6 +40,8 @@ const elements = Object.freeze({
   platformStatus: document.querySelector('#platform-status'),
   osmStatus: document.querySelector('#osm-status'),
   terrainStatus: document.querySelector('#terrain-status'),
+  overviewStatus: document.querySelector('#overview-status'),
+  playerStatus: document.querySelector('#player-status'),
   physicsStatus: document.querySelector('#physics-status'),
   trafficStatus: document.querySelector('#traffic-status'),
   raceStatus: document.querySelector('#race-status'),
@@ -49,6 +56,7 @@ const elements = Object.freeze({
   goLocation: document.querySelector('#go-location'),
   regionStatus: document.querySelector('#region-status'),
   cameraToggle: document.querySelector('#camera-toggle'),
+  worldMode: document.querySelector('#world-mode'),
   resetBike: document.querySelector('#reset-bike'),
   enterXr: document.querySelector('#enter-xr'),
   leanAssist: document.querySelector('#lean-assist'),
@@ -78,9 +86,12 @@ const geodata = new GeodataClient({
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000300);
-scene.fog = new THREE.FogExp2(0x000300, 0.0022);
+scene.fog = new THREE.FogExp2(0x000300, ROADVECTOR_CAMERA_CONFIG.fogDensityPerMeter);
 scene.add(new THREE.HemisphereLight(0x7aff9a, 0x001105, 1.1));
 scene.add(new THREE.DirectionalLight(0xffffff, 0.45));
+
+const overviewScene = new THREE.Scene();
+overviewScene.background = new THREE.Color(0x000207);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
@@ -89,9 +100,30 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
 elements.viewport.append(renderer.domElement);
 
-const firstCamera = new THREE.PerspectiveCamera(72, globalThis.innerWidth / globalThis.innerHeight, 0.05, 20_000);
-const thirdCamera = new THREE.PerspectiveCamera(67, globalThis.innerWidth / globalThis.innerHeight, 0.05, 20_000);
-const xrCamera = new THREE.PerspectiveCamera(72, globalThis.innerWidth / globalThis.innerHeight, 0.05, 20_000);
+const firstCamera = new THREE.PerspectiveCamera(
+  ROADVECTOR_CAMERA_CONFIG.firstPersonFovDegrees,
+  globalThis.innerWidth / globalThis.innerHeight,
+  ROADVECTOR_CAMERA_CONFIG.nearMeters,
+  ROADVECTOR_CAMERA_CONFIG.farMeters,
+);
+const thirdCamera = new THREE.PerspectiveCamera(
+  ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees,
+  globalThis.innerWidth / globalThis.innerHeight,
+  ROADVECTOR_CAMERA_CONFIG.nearMeters,
+  ROADVECTOR_CAMERA_CONFIG.farMeters,
+);
+const xrCamera = new THREE.PerspectiveCamera(
+  ROADVECTOR_CAMERA_CONFIG.xrFallbackFovDegrees,
+  globalThis.innerWidth / globalThis.innerHeight,
+  ROADVECTOR_CAMERA_CONFIG.nearMeters,
+  ROADVECTOR_CAMERA_CONFIG.farMeters,
+);
+const overviewCamera = new THREE.PerspectiveCamera(
+  46,
+  globalThis.innerWidth / globalThis.innerHeight,
+  0.1,
+  100,
+);
 const xrRoot = new THREE.Group();
 xrRoot.name = 'motorcycle-xr-root';
 xrRoot.add(xrCamera);
@@ -100,6 +132,7 @@ let activeCamera = thirdCamera;
 
 const runtime = {
   ready: false,
+  displayMode: 'overview',
   disposed: false,
   fatalError: null,
   frameCount: 0,
@@ -120,6 +153,13 @@ const runtime = {
   cleanup: [],
 };
 
+const overviewRuntime = createRoadvectorOverviewRuntime({
+  THREE,
+  scene: overviewScene,
+  camera: overviewCamera,
+  fetchImpl: globalThis.fetch,
+});
+
 function addListener(target, type, listener, options) {
   target.addEventListener(type, listener, options);
   const cleanup = () => target.removeEventListener(type, listener, options);
@@ -139,6 +179,20 @@ function setError(error = null) {
 
 function setPlatform(status, message) {
   elements.platformStatus.textContent = `${status.toUpperCase()} // ${message}`;
+}
+
+function setDisplayMode(mode) {
+  if (!['overview', 'ride'].includes(mode)) throw new RangeError('Display mode must be overview or ride.');
+  if (mode === 'ride' && !runtime.ready) return false;
+  runtime.displayMode = mode;
+  overviewRuntime.setMode(mode);
+  document.documentElement.dataset.roadvectorMode = mode;
+  elements.worldMode.textContent = mode === 'overview' ? 'RIDE THIS REGION' : 'GLOBE OVERVIEW';
+  elements.worldMode.disabled = mode === 'overview' && !runtime.ready;
+  elements.cameraToggle.disabled = mode === 'overview';
+  elements.resetBike.disabled = mode === 'overview';
+  elements.touchSteer.closest('#touch-controls')?.classList.toggle('touch-controls--hidden', mode === 'overview');
+  return true;
 }
 
 function setLeanAssist(enabled) {
@@ -222,7 +276,7 @@ const viewRig = new ViewRig({
   firstOrientation: [0, 1, 0, 0],
   xrOrientation: [0, 1, 0, 0],
   thirdOffset: THIRD_CAMERA_OFFSET,
-  thirdLookOffset: [0, 0.9, 1.2],
+  thirdLookOffset: ROADVECTOR_CAMERA_CONFIG.thirdLookOffsetMeters,
   thirdDamping: 7,
   recenter: recenterXrViewer,
   setActiveCamera(camera, mode) {
@@ -260,6 +314,23 @@ function publicState() {
     disposed: runtime.disposed,
     fatalError: runtime.fatalError,
     frameCount: runtime.frameCount,
+    generation: runtime.generation,
+    displayMode: runtime.displayMode,
+    overview: overviewRuntime.getStatus(),
+    scale: {
+      ...ROADVECTOR_SCALE_DISCLOSURE,
+      camera: {
+        firstPersonFovDegrees: ROADVECTOR_CAMERA_CONFIG.firstPersonFovDegrees,
+        thirdPersonFovDegrees: ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees,
+        thirdOffsetMeters: [...ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters],
+        fogDensityPerMeter: ROADVECTOR_CAMERA_CONFIG.fogDensityPerMeter,
+      },
+      bike: runtime.game ? {
+        worldUnits: runtime.game.rig.worldUnits,
+        wheelbaseMeters: runtime.game.rig.wheelbaseMeters,
+        wheelOuterDiameterMeters: runtime.game.rig.wheelOuterDiameterMeters,
+      } : null,
+    },
     location: runtime.location ? { ...runtime.location } : null,
     locationSource: runtime.locationSource,
     locationNotice: runtime.locationNotice,
@@ -330,6 +401,9 @@ globalThis.__motorcycleDemo = {
     viewRig.setMode(mode);
   },
   toggleCamera: () => viewRig.toggle(),
+  setDisplayMode,
+  enterRide: () => setDisplayMode('ride'),
+  showOverview: () => setDisplayMode('overview'),
   requestPointerLock: (options) => inputRuntime.requestPointerLock(options),
   loadLocation: (location) => loadLocation(location, { source: 'api' }),
   runScenario(name) {
@@ -374,6 +448,8 @@ function teardownWorld({ clearLoad = false } = {}) {
 }
 
 async function loadLocation(location, { source = 'manual' } = {}) {
+  setDisplayMode('overview');
+  void overviewRuntime.setLocation(location, { source }).catch(() => {});
   if (!geodata.configured) {
     throw new Error('The geodata backend is not configured in this build. Start the Earth stack or configure VITE_GEODATA_API_URL.');
   }
@@ -429,6 +505,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     runtime.frameCount = 0;
     runtime.lastStep = null;
     document.documentElement.dataset.motorcycleReady = 'true';
+    elements.worldMode.disabled = false;
     elements.latitude.value = String(loaded.location.latitude);
     elements.longitude.value = String(loaded.location.longitude);
     elements.osmStatus.textContent = `${loaded.sceneData.status.toUpperCase()} // ${loaded.sceneData.counts.sourceRoads} ROADS`;
@@ -491,8 +568,21 @@ function chassisPose(alpha) {
 }
 
 function updateHud(time) {
-  if (!runtime.game || time - runtime.lastHudAt < 80) return;
+  if (time - runtime.lastHudAt < 80) return;
   runtime.lastHudAt = time;
+  const overview = overviewRuntime.getStatus();
+  const roadStatus = overview.roads.status === 'current'
+    ? `${overview.roads.renderedRoads} MAJOR ROADS // ${overview.roads.selectedTiles} Z5 TILES`
+    : `${overview.roads.status.toUpperCase()}${overview.roads.error ? ' // BOUNDED LOAD FAILED' : ''}`;
+  elements.overviewStatus.textContent = `${overview.relief.status.toUpperCase()} TOPO // ${roadStatus}`;
+  elements.playerStatus.textContent = overview.players.status === 'connected'
+    ? `${overview.players.remotePlayerCount} LIVE // RED // ${overview.players.publishingLocation ? 'COARSE LOCATION SHARED' : 'LOCATION PRIVATE'}`
+    : `${overview.players.status.toUpperCase()} // 0 LIVE PLAYERS`;
+  if (runtime.displayMode === 'overview') {
+    elements.hud.textContent = `HEMISPHERE ≈${ROADVECTOR_SCALE_DISCLOSURE.hemisphereDiameterKilometers.toLocaleString()} KM // REGIONAL MAJOR ROADS // ${overview.players.remotePlayerCount} LIVE PLAYERS // ENTER LOCAL ${ROADVECTOR_SCALE_DISCLOSURE.localRegionDiameterMeters} M`;
+    return;
+  }
+  if (!runtime.game) return;
   const state = runtime.game.getState();
   const bike = state.motorcycle;
   const speedKph = Math.abs(bike.forwardSpeed) * 3.6;
@@ -523,7 +613,10 @@ renderer.setAnimationLoop((time, xrFrame) => {
     ? 0
     : Math.min(MAXIMUM_FRAME_DELTA_SECONDS, Math.max(0, (time - previousTime) / 1_000));
   previousTime = time;
-  const xrUi = xrPanel?.update() ?? { captureGameplay: false };
+  overviewRuntime.update(time);
+  const xrUi = runtime.displayMode === 'ride'
+    ? (xrPanel?.update() ?? { captureGameplay: false })
+    : { captureGameplay: false };
   runtime.xrUiCapture = xrUi.captureGameplay;
   inputRuntime.setUiContextActive(runtime.xrUiCapture);
   const actionFrame = inputRuntime.poll({
@@ -535,7 +628,7 @@ renderer.setAnimationLoop((time, xrFrame) => {
   runtime.lastControl = control;
   viewRig.consumeControlFrame(control);
 
-  if (runtime.game && deltaSeconds > 0) {
+  if (runtime.displayMode === 'ride' && runtime.game && deltaSeconds > 0) {
     const viewModeBeforeStep = viewRig.getStatus().mode;
     const viewFrameObject = viewModeBeforeStep === 'xr' ? xrRoot : activeCamera;
     viewFrameObject.updateMatrixWorld?.(true);
@@ -605,14 +698,15 @@ renderer.setAnimationLoop((time, xrFrame) => {
   }
 
   updateHud(time);
-  renderer.render(scene, activeCamera);
+  if (runtime.displayMode === 'overview') renderer.render(overviewScene, overviewCamera);
+  else renderer.render(scene, activeCamera);
 });
 
 function resize() {
   const width = globalThis.innerWidth;
   const height = globalThis.innerHeight;
   renderer.setSize(width, height);
-  for (const camera of [firstCamera, thirdCamera, xrCamera]) {
+  for (const camera of [firstCamera, thirdCamera, xrCamera, overviewCamera]) {
     camera.aspect = width / Math.max(1, height);
     camera.updateProjectionMatrix();
   }
@@ -631,12 +725,18 @@ addListener(elements.goLocation, 'click', () => loadLocation({
   longitude: elements.longitude.value,
 }, { source: 'manual' }).catch(() => {}));
 addListener(elements.cameraToggle, 'click', () => viewRig.toggle());
+addListener(elements.worldMode, 'click', () => {
+  setDisplayMode(runtime.displayMode === 'overview' ? 'ride' : 'overview');
+});
 addListener(elements.resetBike, 'click', resetBike);
 addListener(elements.leanAssist, 'change', () => setLeanAssist(elements.leanAssist.checked));
 addListener(elements.enterXr, 'click', async () => {
   try {
     if (inputRuntime.sessions?.getStatus().presenting) await inputRuntime.exitXR();
-    else await inputRuntime.enterXR();
+    else {
+      if (!setDisplayMode('ride')) throw new Error('Load a local ride region before entering XR.');
+      await inputRuntime.enterXR();
+    }
   } catch (error) {
     setError(error);
     elements.xrStatus.textContent = `ERROR // ${userMessage(error)}`;
@@ -658,6 +758,7 @@ async function dispose() {
   xrPanel?.dispose();
   viewRig.dispose();
   await inputRuntime.dispose();
+  await overviewRuntime.dispose();
   teardownWorld();
   scene.remove(xrRoot);
   renderer.dispose();
@@ -671,10 +772,15 @@ probeXR().catch(() => {
 });
 
 if (geodata.configured) {
-  loadLocation(FALLBACK_LOCATION, { source: 'anchorage-fallback' }).catch(() => {});
+  // RoadVector now opens on the viewer's hemisphere. The browser permission
+  // boundary still controls whether a device position is available; denial or
+  // an unavailable API falls back to the explicitly labeled Anchorage view.
+  locateUserOrFallback().catch(() => {});
 } else {
   elements.osmStatus.textContent = 'BACKEND UNCONFIGURED';
   elements.terrainStatus.textContent = 'WAITING FOR REGION';
   elements.regionStatus.textContent = 'START THE GEODATA + MOTORCYCLE STACK';
   setPlatform('unavailable', 'GEODATA BACKEND NOT CONFIGURED');
 }
+
+setDisplayMode('overview');

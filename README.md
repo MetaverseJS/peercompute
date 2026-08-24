@@ -73,7 +73,10 @@ runtime metadata to NetViz.
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
   restriction-aware synthetic traffic with collision cages, local-origin
-  rebasing, and first/third-person views.
+  rebasing, and first/third-person views. It opens on a north-up NOAA
+  topographic hemisphere, overlays a bounded regional OSM major-road window,
+  and shows validated live PeerCompute players in fixed red before the
+  discrete transition into the local meter-scale ride.
 - **Reusable input/WebXR toolkit**: device-independent action frames unify
   keyboard/pointer lock, multitouch, standard gamepads, `xr-standard`
   controllers, tracked hands, lifecycle-safe controller/hand models, haptics,
@@ -112,9 +115,11 @@ Recent focused validation is green without running the full chaos lab:
   translational and rotational CCD, suspension sag/landing, material-dependent
   grip and braking, real traffic impulse, race timing/gates, lane/restriction
   traffic semantics, all desktop/mobile/gamepad controls, origin rebasing,
-  renderer topology, and reset/disposal. The mocked WebXR browser gate uses
-  real Three r182 raycasting and mesh transforms; real-headset validation is
-  still explicitly a manual hardware gate rather than an inferred pass.
+  renderer topology, corrected rider-centric steering, metric scene scale,
+  hemisphere projection/road caps, privacy-bounded real-player presence, and
+  reset/disposal. The mocked WebXR browser gate uses real Three r182 raycasting
+  and mesh transforms; real-headset validation is still explicitly a manual
+  hardware gate rather than an inferred pass.
 
 - StateManager namespace replacement regressions passed `8/8`, plus a
   10,000-transition adversarial stress check.
@@ -431,6 +436,11 @@ Dev servers:
 - `https://localhost:5184/` (Schrodinger Materials Console)
 - `https://localhost:5182/` (NetViz)
 
+Current Tailnet-only RoadVector development handoff:
+`https://100.68.165.52:5188/`. It is a direct private-IP listener with an
+IP-SAN self-signed development certificate, not Tailscale Serve or Funnel;
+the headset/browser must accept or trust that certificate first.
+
 Multiplayer bot controls:
 - CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
 - `Add Bots` spawns hidden same-origin browser peers that join the current room/password and drive themselves through the shared Quake-style bot bridge/runtime.
@@ -739,8 +749,9 @@ Current demos and validation surfaces:
   satellite imagery.
 - **RoadVector**: first/third-person particle motorcycle racing on real local
   OSM roads and NOAA terrain, with 3D buildings, synthetic lane-aware traffic,
-  race gates/timing, desktop/mobile/gamepad/WebXR controls, and bright category
-  rendering.
+  race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening NOAA
+  topographic hemisphere with bounded regional major roads, genuine remote
+  PeerCompute players in red, and bright category rendering.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.
 - **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
 - **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.

@@ -7,6 +7,14 @@ samples NOAA ETOPO 2022 into a local ENU terrain mesh, derives a deterministic
 race course from real connected OSM node IDs, and simulates the motorcycle and
 traffic collision cages on the CPU at 120 Hz.
 
+Startup is a separate north-up hemisphere overview centered on the permitted
+browser location. NOAA ETOPO supplies the real topographic relief and contours;
+an official OSM Shortbread z5 window overlays only the regional motorway,
+trunk, and primary network. That road overlay is intentionally bounded to a
+center-out 5×5 / 25-tile window rather than pretending to be complete
+hemisphere coverage. Physics remains paused until `RIDE THIS REGION` switches
+discretely into the local one-unit-per-meter world.
+
 The map, race course, and traffic are for gameplay and visualization only.
 They are not navigation, live traffic, road-condition, weather-warning, or
 terrain-clearance products. Traffic is deterministic application-generated
@@ -23,23 +31,19 @@ npm run dev:geodata:public
 npm run dev:motorcycle
 ```
 
-RoadVector listens on `https://localhost:5188` and proxies `/api` to the
-loopback geodata service on port `8788`. Browser geolocation and immersive
-WebXR require a trusted HTTPS origin. For a remote handoff, put the app behind
-a verified Tailscale HTTPS origin and keep the API same-origin through the Vite
-or reverse-proxy route.
+RoadVector normally listens on `https://localhost:5188` and proxies `/api` to
+the loopback geodata service on port `8788`. The current direct Tailnet-only
+development handoff is:
 
-Tailscale's trusted certificate is issued for the node's MagicDNS
-`<node>.<tailnet>.ts.net` hostname, not its `100.x` Tailnet IP address. Use the
-MagicDNS HTTPS URL from a headset or browser joined to the same tailnet; direct
-`https://100.x.y.z` access will not match that certificate. `tailscale serve`
-is tailnet-only unless Funnel is enabled separately.
+```text
+https://100.68.165.52:5188/
+```
 
-For a direct development handoff without Serve, bind Vite to the node's
-Tailnet IP and use a certificate whose subject-alternative names include that
-IP. A self-signed IP-SAN certificate must be explicitly accepted or trusted by
-the headset/browser; this direct mode remains Tailnet-only and does not use
-Funnel or a reverse proxy.
+It binds directly to the private Tailnet IP and uses an environment-owned
+self-signed certificate with that IP in its SAN. It does not use Tailscale
+Serve, Funnel, or a public tunnel. Accept or install that development
+certificate on the headset/browser before testing geolocation or immersive
+WebXR. The same-origin `/api` proxy keeps the geodata service on loopback.
 
 Production builds do not silently select a cross-origin backend. Build with
 `VITE_GEODATA_SAME_ORIGIN=true` (or
@@ -48,7 +52,7 @@ explicit HTTPS API origin and configure matching `GEODATA_CORS_ORIGINS`.
 
 ## Controls
 
-- Desktop: `W`/up throttle, `A`/`D` steer, space front brake, `S`/down rear
+- Desktop: `W`/up throttle, `A` turns left, `D` turns right, space front brake, `S`/down rear
   brake, `Q`/`E` shift, `C` camera, `H` recenter, and `R` reset. Clicking the
   viewport requests pointer lock; lock loss clears held controls.
 - Mobile: independent Pointer Event steering, throttle, front/rear brake,
@@ -82,6 +86,8 @@ pressed.
   lean-assist torque.
 - Race: a bounded deterministic course derived from the local directed road
   graph, ordered gates, laps/splits/timer/reset, and bright checkpoint visuals.
+  The forgiving 14 m crossing corridor is independent of the correctly scaled
+  8 m × 4.2 m visual portal.
 - Traffic: lane-aware, restriction-aware, seeded synthetic vehicles. All 14
   default vehicles have bounded kinematic particle collision cages; this is
   not a live traffic feed.
@@ -99,8 +105,14 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
 - Exact device coordinates remain in browser memory only. Requests are
   quantized and expanded to a bounded region before reaching the backend; the
   service does not log exact query coordinates.
-- Permission denial loads a visibly disclosed Anchorage fallback rather than
-  claiming it is the device location.
+- Startup requests browser location permission so the opening hemisphere is
+  the viewer's own. Permission denial loads a visibly disclosed Anchorage
+  fallback rather than claiming it is the device location.
+- Real RoadVector peers are shown only in the overview, always in red. Presence
+  publishes at most a coarse 0.1° cell for a permitted browser/manual location,
+  never publishes the automatic fallback, retains no exact coordinates, caps
+  remote markers at 64, and removes entries after 15 seconds. Peer networking
+  failure is nonfatal and never substitutes synthetic traffic as a player.
 - Roads/buildings retain `© OpenStreetMap contributors`, ODbL 1.0, source base
   time, fetched/freshness/cache state, and derived-database notice.
 - Terrain retains NOAA/NCEI ETOPO 2022 attribution and not-for-navigation
@@ -127,7 +139,10 @@ two-metre landing, grip-dependent acceleration/braking, real traffic impulse,
 race gates/timing, lane/restriction semantics, controls, render topology,
 origin rebasing, resets, and disposal. The mocked Chromium WebXR gate uses
 real Three r182 raycasting and mesh transforms while faking only the browser XR
-system/session/input boundaries.
+system/session/input boundaries. Overview tests additionally cover north-up
+projection, tile wrapping/caps, ETOPO decoding, major-road filtering, metric
+camera/gate scale, coarse-location privacy, stale/capped presence, fixed-red
+rendering, and nonfatal relay failure.
 
 A real headset enter/exit/re-enter, hand/controller, haptics, comfort, and
 performance pass remains a manual hardware gate. Do not represent the mocked

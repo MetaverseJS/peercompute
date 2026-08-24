@@ -50,6 +50,13 @@
   particle wheel/suspension telemetry, traffic collision, reset/rebase, stale
   async request suppression, and failure recovery. A real-headset gate remains
   manual and must record headset/browser/runtime details.
+- RoadVector overview tests cover north-up WGS84 projection, hemisphere camera
+  orientation, z5 dateline/pole tile selection and 25-tile caps, bounded ETOPO
+  decoding, Shortbread major-road filtering/byte/vertex bounds, discrete
+  overview-to-meter-scale transition, and paused physics before entry. Presence
+  tests prove fallback privacy, 0.1° quantization, stale/invalid/capped peer
+  rejection, fixed-red rendering, nonfatal relay failure, and a genuine
+  two-browser PeerCompute discovery check on the private Tailnet candidate.
 - Release tests must add the two workspaces/ports/build outputs/gallery cards,
   prove nested-path assets and Cesium notices, traverse generated imports, and
   leave all test browsers/servers/temporary directories stopped. The full
@@ -98,6 +105,51 @@
   node's HTTPS certificate feature is not enabled. The loopback candidate is
   verified, but no Tailnet URL is valid until the one-time Serve admin action
   is completed and the exact HTTPS origin is re-probed.
+
+### Latest RoadVector hemisphere/presence evidence - 2026-08-23 AKDT
+
+- Runtime: Node `v24.18.0` on Kubuntu 24.04.
+- PASS: `npm run test:earth-platform:unit`. It completed `241` Node tests plus
+  the mocked Chromium XR harness: geo-core `23/23`, geodata `44/44`, EarthGrid
+  `27/27`, WXGlobe `26/26`, shared XR `21/21`, particle/motorcycle physics
+  `33/33`, synthetic traffic `12/12`, and RoadVector `55/55`.
+- PASS: `npm run test:earth-platform:release`. It rebuilt WXGlobe
+  `index-C2CjCt9q.js`, EarthGrid `index-DNakLoHI.js`, and RoadVector
+  `index-BJ47J1jP.js` plus `NetworkManager-BwEpE1-w.js`; static port/release
+  checks passed `44/44`; the combined deterministic built-browser smoke for
+  all three demos passed on test-owned HTTPS port `43947`, which closed during
+  cleanup.
+- The built RoadVector smoke proves startup browser geolocation, paused
+  hemisphere mode, current bounded relief/road fixtures, the explicit ride
+  transition, `D/+1 -> physical steering target < 0` and `A/-1 -> target > 0`,
+  metric source state, real-road game load, physical traffic impact, controls,
+  reset/rebase, failure clearing, generation replacement, and denial fallback.
+- PASS: exact direct Tailnet live proof at
+  `https://100.68.165.52:5188/` with two independent Chrome contexts. Both
+  reported `isSecureContext=true`, auto-selected `browser-geolocation`, stayed
+  in overview with physics frame `0`, decoded one `257×129` / `70,451`-byte
+  live ETOPO hemisphere, loaded the bounded 25-tile / `3,553,031`-byte
+  Shortbread window (`217` major roads / `527` vertices), and discovered the
+  other genuine PeerCompute peer. Each published only coarse
+  `[-149.9, 61.2]` at `0.1°`; each rendered one fixed-red remote marker; console
+  and page-error arrays were empty. The refreshed gallery capture is
+  `docs/assets/motorcycle.png`.
+- FIXED DURING GATING: the aggregate release smoke originally left WXGlobe on
+  live NOAA and timed out in `connecting`; the ordinary release now installs
+  the existing deterministic NOAA fixture for WXGlobe while the explicit
+  `WXGLOBE_REQUIRE_LIVE_TERRAIN=1` path still reaches real NOAA. Auto-location
+  then exposed an obsolete smoke assertion that compared source labels; the
+  corrected test proves the actual world-generation counter advances. Both
+  failed attempts were followed by focused passes and the final aggregate pass.
+- SUPERSEDES the historical Serve blocker above: the user explicitly selected
+  direct private-IP HTTPS. The retained service listens only on Tailnet IP
+  `100.68.165.52:5188`, proxies `/api` to loopback `8788`, and uses an
+  environment-owned IP-SAN self-signed development certificate. No Serve,
+  Funnel, public tunnel, or terminal-browser pane is involved. A headset must
+  accept or trust that certificate.
+- NOT RUN: a physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and performance matrix. The direct URL is ready for the user's
+  manual run, but no hardware certification is claimed.
 
 ### WXGlobe whole-planet terrain gate - 2026-08-22 AKDT
 
