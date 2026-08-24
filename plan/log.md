@@ -57428,3 +57428,67 @@ Open:
   root is a `Y.Map`; arbitrary non-Y.Map values at namespace roots remain a
   pre-existing invariant/edge case outside this repair.
 - No push was attempted.
+
+## 2026-08-23 19:14:52 AKDT - RoadVector production same-origin contract correction
+
+Prompt context: automatic continuation of the 2026-08-23 EarthGrid,
+RoadVector, geodata, particle-physics, traffic, and reusable WebXR goal after
+the user approved the preceding handoff work. Exact prompt time was
+2026-08-23 19:03 AKDT; this correction was recorded at
+2026-08-23 19:14:52 AKDT (-0800).
+
+### Evidence and correction
+
+- Re-audited the committed objective against live source and found one
+  surviving software contract defect: `demos/motorcycle/README.md` documented
+  `VITE_GEODATA_SAME_ORIGIN=true` and
+  `VITE_GEODATA_API_URL=same-origin`, but the shared
+  `packages/geo-core/src/client/geodata.js` helper ignored the boolean and
+  returned the sentinel as a literal URL.
+- Updated the shared helper to parse explicit boolean values, honor either
+  documented same-origin production form, preserve dev same-origin and
+  explicit HTTPS-origin behavior, and reject ambiguous or malformed
+  configuration. The `GeodataClient` boundary also accepts the same-origin
+  sentinel defensively.
+- Added `packages/geo-core/tests/geodataClient.test.mjs` covering unconfigured,
+  boolean same-origin, sentinel same-origin, explicit origin, ambiguous mode,
+  malformed boolean, and direct client-boundary behavior.
+- Rebuilt the generated RoadVector artifact. Its current entry is
+  `docs/motorcycle/assets/index-R_rjvp_J.js`; the superseded
+  `index-B3OmRJK9.js` was removed by Vite.
+- Updated `plan/plan.md`, `plan/tests.md`, and the branch requirement audit with
+  the corrected `229`-test evidence and production configuration result.
+
+### Commands and results
+
+- ICC `agent-preflight` for the shared client, RoadVector, tests, README, and
+  plan paths: PASS with no conflicts; only the repository's absent
+  `origin/master` comparison produced a warning. Opened the non-overlapping
+  `codex-root-same-origin-fix` lease.
+- `node --check packages/geo-core/src/client/geodata.js` and the new test:
+  PASS.
+- `npm run test:geo-core`: PASS `23/23`.
+- `npm run test:motorcycle`: PASS `44/44`.
+- `npm run test:earth-platform:unit`: PASS `229` Node tests plus the mocked
+  Chromium XR harness (geo-core `23`, geodata `44`, EarthGrid `27`, WXGlobe
+  `26`, shared XR `21`, physics `32`, traffic `12`, RoadVector `44`).
+- `npm run test:earth-platform:release`: PASS; rebuilt all three demos, passed
+  static release `44/44`, and passed the combined built-browser smoke for
+  WXGlobe, EarthGrid, and RoadVector. Test port `43947` closed during runner
+  cleanup.
+- `git diff --check`: PASS before documentation updates; final diff/ICC gates
+  remain to run after this narrative entry.
+
+### Remaining external gates
+
+- RoadVector, the future MagicDNS host routing, its same-origin API proxy, and
+  geodata CORS for `https://shitbox.tail5c077c.ts.net` all return/allow `200`
+  locally. Tailscale remains online but `serve status` is `{}` and
+  `CertDomains` is empty, so no trusted remote URL can be claimed until the
+  Tailnet administrator enables Serve/HTTPS.
+- No physical headset, XR controller, ADB device, OpenXR runtime, Monado,
+  SteamVR, ALVR, or WiVRn is available on this host. The automated XR gate is
+  green, but the real enter/exit/re-enter, hand/controller, haptics, comfort,
+  and performance matrix remains explicitly NOT RUN and is not represented as
+  hardware certification.
+- No push was attempted.

@@ -246,7 +246,7 @@ physics. The reusable XR package:
 
 | Requirement | Actual evidence | Status |
 | --- | --- | --- |
-| Reusable generic GIS/backend foundation | `packages/geo-core` plus bounded `services/geodata`; canonical catalog, exact-origin CORS, resource caps, cache/coalescing, source/license/freshness envelopes; geodata `44/44` | PASS |
+| Reusable generic GIS/backend foundation | `packages/geo-core` plus bounded `services/geodata`; canonical catalog, exact-origin CORS, resource caps, cache/coalescing, source/license/freshness envelopes, and verified production same-origin selection; geo-core `23/23`, geodata `44/44` | PASS |
 | Preserve WXGlobe | Compatibility re-exports, WXGlobe `26/26`, fresh `docs/wxglobe`, and built runtime smoke in the aggregate release command | PASS |
 | EarthGrid real-data viewer | NOAA/AWS terrain, Shortbread context, local OSM roads/buildings, cadence-qualified nowCOAST, geolocation/fallback, provenance; Earth `27/27`, built and live gates | PASS |
 | Particle motorcycle physics | Six components, joints/suspension, gyro, tire/surface grip, swept translational/rotational CCD, deterministic snapshots at 120 Hz/12 iterations; physics `32/32` | PASS |

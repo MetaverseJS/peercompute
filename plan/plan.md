@@ -65,7 +65,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
   haptics, session cleanup, first/third/XR view transforms, and terminal-style
   in-scene controls. Automated Three r182 mocked-browser XR passes; a physical
   headset run remains explicitly manual and is not represented as completed.
-- Final deterministic evidence is `226` passing Node tests plus the mocked XR
+- Final deterministic evidence is `229` passing Node tests plus the mocked XR
   browser harness; fresh WXGlobe/EarthGrid/RoadVector builds; `44/44` static
   release checks; a three-demo built-browser smoke; and a bounded live-source
   gate covering Shortbread, Overpass, nowCOAST, ETOPO, and Terrarium.

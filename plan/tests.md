@@ -59,8 +59,8 @@
 ### Latest executed Earth platform evidence - 2026-08-23 AKDT
 
 - Runtime: Node `v24.18.0` on Kubuntu 24.04.
-- PASS: `npm run test:earth-platform:unit`. It completed `226` Node tests plus
-  the mocked Chromium XR harness: geo-core `20/20`, geodata `44/44`, EarthGrid
+- PASS: `npm run test:earth-platform:unit`. It completed `229` Node tests plus
+  the mocked Chromium XR harness: geo-core `23/23`, geodata `44/44`, EarthGrid
   `27/27`, preserved WXGlobe `26/26`, shared XR `21/21`, particle/motorcycle
   physics `32/32`, synthetic traffic `12/12`, and RoadVector `44/44`.
 - PASS: `npm run test:earth-platform:release`. It rebuilt WXGlobe, EarthGrid,
@@ -68,7 +68,7 @@
   combined built-doc browser smoke for `wxglobe,earth,motorcycle` on test-owned
   HTTPS port `43947`. The runner removed its browser/server state afterward.
 - Current built entries are WXGlobe `index-C2CjCt9q.js`, EarthGrid
-  `index-DNakLoHI.js`, and RoadVector `index-B3OmRJK9.js`. Cesium runtime and
+  `index-DNakLoHI.js`, and RoadVector `index-R_rjvp_J.js`. Cesium runtime and
   third-party notices are present beneath both Cesium demo outputs.
 - PASS: `npm run test:earth-platform:live` at
   `2026-08-24T02:52:01Z`–`02:52:05Z`. The bounded gate decoded a `38,983`-byte
@@ -87,8 +87,9 @@
 - FIXED DURING GATING: malformed deterministic error fixtures, stale generated
   bundles, a direct origin-rebase test that bypassed runtime coordination,
   response-cap retry classification, fixed-date weather expiry, transient
-  public Overpass connect failure (bounded retry), and fixture-only gallery
-  captures. Failed attempts were discarded and are recorded in `plan/log.md`.
+  public Overpass connect failure (bounded retry), fixture-only gallery
+  captures, and RoadVector's documented production same-origin environment
+  modes. Failed attempts were discarded and are recorded in `plan/log.md`.
 - NOT RUN: a physical headset enter/exit/re-enter, controller/hand/haptics,
   comfort, and performance pass. Automated XR is not physical-headset
   certification. Full chaos-lab and unrelated multiplayer matrices were not

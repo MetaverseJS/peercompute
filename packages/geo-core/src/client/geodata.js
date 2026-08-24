@@ -9,8 +9,9 @@ function clientError(code, message) {
 
 function normalizeBaseUrl(value, locationLike = globalThis.location) {
   if (value === null) return null;
-  if (value === undefined || value === '') return '';
-  const url = new URL(value, locationLike?.href ?? 'https://localhost/');
+  const normalized = value === undefined ? '' : String(value).trim();
+  if (normalized === '' || normalized.toLowerCase() === 'same-origin') return '';
+  const url = new URL(normalized, locationLike?.href ?? 'https://localhost/');
   if (url.username || url.password || url.search || url.hash) {
     throw new TypeError('Geodata API URL may not contain credentials, query, or fragment.');
   }
@@ -20,6 +21,14 @@ function normalizeBaseUrl(value, locationLike = globalThis.location) {
     throw new TypeError('HTTPS pages require an HTTPS or same-origin geodata API.');
   }
   return url.toString().replace(/\/$/, '');
+}
+
+function explicitBoolean(value, label) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === '') return false;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new TypeError(`${label} must be an explicit boolean.`);
 }
 
 async function readJsonBounded(response, maximumBytes) {
@@ -193,6 +202,11 @@ export class GeodataClient {
 
 export function configuredGeodataBaseUrl(env = import.meta.env) {
   const explicit = String(env?.VITE_GEODATA_API_URL ?? '').trim();
-  if (explicit) return explicit;
-  return env?.DEV ? '' : null;
+  const sameOrigin = explicitBoolean(env?.VITE_GEODATA_SAME_ORIGIN, 'VITE_GEODATA_SAME_ORIGIN');
+  if (explicit && sameOrigin && explicit.toLowerCase() !== 'same-origin') {
+    throw new TypeError('Choose either VITE_GEODATA_API_URL or VITE_GEODATA_SAME_ORIGIN, not both.');
+  }
+  if (explicit) return explicit.toLowerCase() === 'same-origin' ? '' : explicit;
+  if (sameOrigin || env?.DEV === true) return '';
+  return null;
 }
