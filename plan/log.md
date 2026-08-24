@@ -57561,3 +57561,29 @@ checked only whether the external completion state had changed.
   `enabled`; attach/start a physical XR headset/runtime when hardware
   certification is desired. The retained candidate can then be published and
   verified without rebuilding.
+
+## 2026-08-23 20:13:40 AKDT - Tailnet-only HTTPS clarification
+
+User clarification received at 2026-08-23 20:12 AKDT: the requested handoff is
+local to the user's Tailscale network, with a trusted HTTPS certificate, so an
+XR headset on the same tailnet can test the game.
+
+- Rechecked live Tailscale state: the node is online at Tailnet IPv4
+  `100.68.165.52`; MagicDNS resolves `shitbox.tail5c077c.ts.net` to that exact
+  address; Serve remains `{}` and `CertDomains` remains `null`.
+- Confirmed from the installed Tailscale CLI and current official Tailscale
+  documentation that Serve is tailnet-only by default and automatically
+  terminates HTTPS using a certificate for the MagicDNS FQDN. The trusted
+  certificate is not issued to the `100.x` IP literal.
+- Clarified `demos/motorcycle/README.md`: headset/browser clients on the same
+  tailnet must open the MagicDNS HTTPS hostname; direct
+  `https://100.x.y.z` does not match the certificate. Funnel is neither needed
+  nor enabled.
+- Exact intended private URL after the one-time admin enablement is
+  `https://shitbox.tail5c077c.ts.net/`; Tailscale Serve will terminate TLS on
+  `443` and proxy to the already healthy self-signed RoadVector listener at
+  `https+insecure://127.0.0.1:5188`.
+- The required Tailnet admin action is still
+  `https://login.tailscale.com/f/serve?node=nFSXDDESCN11CNTRL`. No terminal
+  browser, public tunnel, HTTP endpoint, Funnel, or untrusted IP certificate
+  was substituted.

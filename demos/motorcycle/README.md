@@ -29,6 +29,12 @@ WebXR require a trusted HTTPS origin. For a remote handoff, put the app behind
 a verified Tailscale HTTPS origin and keep the API same-origin through the Vite
 or reverse-proxy route.
 
+Tailscale's trusted certificate is issued for the node's MagicDNS
+`<node>.<tailnet>.ts.net` hostname, not its `100.x` Tailnet IP address. Use the
+MagicDNS HTTPS URL from a headset or browser joined to the same tailnet; direct
+`https://100.x.y.z` access will not match that certificate. `tailscale serve`
+is tailnet-only unless Funnel is enabled separately.
+
 Production builds do not silently select a cross-origin backend. Build with
 `VITE_GEODATA_SAME_ORIGIN=true` (or
 `VITE_GEODATA_API_URL=same-origin`) behind an HTTPS reverse proxy, or set an
