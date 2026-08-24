@@ -6,7 +6,11 @@ topographic rings with official OpenStreetMap Shortbread ocean and inland-water
 surfaces, roads, and buildings; bounded local OSM roads/buildings from the
 geodata service; and optional time-qualified NOAA nowCOAST radar or satellite
 imagery. Water is a non-extruded, non-animated blue terrain-draped fill with
-opacity exactly `0.5`, drawn beneath the road and building context.
+opacity exactly `0.5`, drawn beneath the road and building context. Every valid
+water-polygon ring also has an exact `#24cfff` degree-one NURBS shoreline; the
+same blue is used for terrain contours at or below the active provider's
+native zero-height reference. Tile compositing is water fill, shoreline,
+buildings, then roads, so roads always take precedence over water at overlaps.
 
 The display is for visualization and gameplay only. It is not a navigation,
 routing, warning, or traffic product. OpenStreetMap content and the normalized
@@ -77,6 +81,22 @@ provider and one request stream, with a 2 MiB per-tile limit, 96-tile LRU, and
 explicit 192 MiB / 4,000,000-rendered-vertex provider-session budgets. These
 aggregate counters are lifetime session budgets, not resident-cache accounting.
 
+The shoreline renderer preserves every source vertex with unit-weight,
+open-clamped degree-one NURBS fragments. It suppresses synthetic MVT tile-edge
+closure segments instead of drawing a glowing tile grid, retains holes and
+multipart bodies, never downsamples, and rejects a tile before canvas mutation
+if its 4,096-ring, 8,192-curve, 65,536-source-point, or 131,072-sampled-vertex
+hard limit is exceeded. Telemetry exposes open/closed curves, clipped segments,
+fully clipped rings, cap rejections, and zero source deviation.
+
+Shortbread does not publish numeric lake/river/ocean elevations. The NURBS line
+therefore means an exact source water boundary draped on the terrain, not a
+measured per-body elevation isocontour. Likewise, the submerged contour shader
+uses `height <= 0` in the active terrain provider's native reference. NOAA
+ETOPO 2022 supplies EGM2008 heights; the optional Terrarium provider retains
+its provider-native reference. EarthGrid does not mislabel both as universal
+MSL or claim that elevated inland-lake beds are water-masked.
+
 ## Validation
 
 ```bash
@@ -89,4 +109,6 @@ npm run test:earth-platform
 freshness/provenance/notes, rendered/omitted counts, chosen local radius,
 same-origin/external/unconfigured backend mode, terrain telemetry, and weather
 time for browser gates. It also exposes `waterStatus`, `waterVisible`, exact
-water style metadata, and ocean/inland-water command and vertex telemetry.
+water style metadata, NURBS ring/curve/control/sample/cap telemetry, the
+source-native-zero terrain-contour contract, and ocean/inland-water command and
+vertex telemetry.

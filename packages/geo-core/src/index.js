@@ -8,6 +8,7 @@ export * from './vector/buildings.js';
 export * from './vector/federalHighways.js';
 export * from './vector/shortbread.js';
 export * from './vector/shortbreadImagery.js';
+export * from './vector/waterNurbs.js';
 export * from './weather/nowcoast.js';
 export * from './terrain/cappedHeightmapProvider.js';
 export * from './terrain/etopo2022.js';

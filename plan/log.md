@@ -58315,3 +58315,174 @@ right basis for this kind of open data.”
   recorded above and in the durable task plan.
 - `git add -A && git commit -m "Add EarthGrid water surfaces"` - PASS. Local
   coherent implementation/release commit `79e65fc7` created; nothing pushed.
+
+## 2026-08-24 14:18:36 AKDT - EarthGrid NURBS shoreline and submerged-contour refinement (prompt intake)
+
+Prompt: “alright a couple tweaks. outline all the bodies of water with a
+bright blue nurbs line that follows the terrain contour at water level. all
+terrain contours belowthe water line should be the same color.”
+
+### Actions and decisions at intake
+
+- Re-entered ICC with durable task
+  `earthgrid-water-nurbs-contours-20260824`, replaced its generic plan with a
+  four-item source/implementation/verification/release plan, passed Codex edit
+  enforcement, and opened the non-overlapping root lease
+  `codex-root-earthgrid-water-nurbs` over geo-core, EarthGrid, shared gates,
+  generated EarthGrid assets, and project documentation.
+- Inspected Cesium `ElevationContourMaterial`, `GlobeFS`, the shared
+  `topoMaterial` seam, and the existing Shortbread water renderer. Cesium
+  explicitly supplies terrain elevation as `materialInput.height`, so an
+  Earth-only composite contour material can select blue at or below a numeric
+  waterline without changing RoadVector or WXGlobe defaults.
+- Froze the truthful source interpretation: every decoded ocean/non-glacier
+  water-polygon ring will receive a bounded pure-ES-module rational B-spline
+  outline, and Cesium will terrain-drape that outline. Shortbread publishes no
+  per-feature inland-water elevation, so the outline will not claim a numeric
+  lake/river level. The intake initially proposed `0 m MSL`; the subsequent
+  source/material audit corrected this to the active terrain provider's native
+  zero-height reference because NOAA ETOPO is EGM2008 and Terrarium remains
+  provider-native.
+- Chose not to add Three.js to `packages/geo-core`; the sampler is a
+  deterministic, capped rational B-spline implementation shared by the vector
+  renderer. Final audit selected exact degree-one NURBS for both internal rings
+  and tile-edge fragments so no smoothing can displace an authoritative source
+  shoreline.
+
+### Files inspected / commands run
+
+- Read `plan/plan.md`, `plan/log.md`, `plan/tests.md`, and
+  `plan/branch/earth-platform-motorcycle-xr.md`.
+- Inspected `packages/geo-core/src/terrain/topoMaterial.js`,
+  `packages/geo-core/src/vector/shortbread.js`,
+  `packages/geo-core/src/vector/shortbreadImagery.js`, EarthGrid integration,
+  and Cesium's installed elevation-contour/globe shader sources.
+- Ran focused `rg` source searches confirming that Cesium globe fragments set
+  `materialInput.height = v_height` and that `ElevationContourMaterial` uses
+  that height directly.
+
+### Results / failures / open questions
+
+- ICC edit preflight and lease: PASS with zero path conflicts.
+- First ICC plan write failed because evidence gates require the five-field
+  `item_id|gate_id|status|description|command` shape; the corrected plan write
+  passed. Initial enforcement check also correctly failed before the context
+  stamp existed; instructions were read, the required stamp was recorded, and
+  the enforced edit check then passed.
+- No source implementation or validation result is claimed in this intake.
+  Remaining work is the bounded sampler/material implementation, deterministic
+  and browser coverage, regenerated EarthGrid output, exact private HTTPS
+  proof, documentation evidence, ICC closure, and a coherent local commit.
+
+## 2026-08-24 14:43:34 AKDT - Road precedence over water (prompt intake)
+
+Prompt: “btw roads should take prescidence over water bodies. draw them over
+the water bodies.”
+
+- Confirmed that the existing blue 50%-opacity fill was already ordered before
+  buildings and roads, but the newly added NURBS shoreline halo/core was drawn
+  in a final pass and could cover road pixels at bridges, causeways, or shore
+  crossings.
+- Chose the explicit compositing order `water fill -> water NURBS outline ->
+  buildings -> roads`, keeping every road stroke above all water ink without
+  adding a second provider/layer or changing source data.
+- Implementation/test/docs updates and the already-planned aggregate release
+  rerun remain in progress; no validation result is claimed in this intake.
+
+## 2026-08-24 14:49:42 AKDT - EarthGrid NURBS waterline and road precedence complete
+
+### Implementation and audit pivots
+
+- Added `packages/geo-core/src/vector/waterNurbs.js`, a dependency-free,
+  unit-weight degree-one NURBS shoreline implementation. It preserves every
+  finite source point and polygon hole/MultiPolygon ring, suppresses synthetic
+  same-edge tile-clip segments, leaves split fragments open with butt caps, and
+  reports exact ring/curve/source/sample/clip/cap telemetry with zero source
+  deviation.
+- Added one consolidated translucent halo plus a `#24cfff` core shoreline to
+  EarthGrid's existing Shortbread canvas. Invalid or over-cap tiles now fail
+  before canvas mutation. Hard per-tile limits are 4,096 rings, 8,192 curves,
+  65,536 source points, and 131,072 sampled vertices, inside the existing
+  provider-session byte/vertex budgets.
+- Reordered the complete tile painter to `water fill -> water NURBS outline ->
+  buildings -> roads`. A deterministic recording-canvas assertion locks the
+  corresponding stroke order, so roads remain visually authoritative over
+  bridges, causeways, shore crossings, and all other water overlaps.
+- Replaced the initial two-mask Cesium material draft with one shared white
+  `ElevationContour` alpha mask and separate above/submerged colors. This
+  avoids duplicate derivative work. Terrain contours at or below the active
+  source's native zero use the same `#24cfff`; contours above remain green.
+  The UI/public contract explicitly says `terrain-source-native-zero` and does
+  not invent numeric inland-water elevations or a universal MSL datum.
+- Kept the new water path Earth-only. RoadVector still filters road commands
+  and WXGlobe retains its separate imagery-free contour material.
+
+### Files touched
+
+- Shared implementation/tests: `packages/geo-core/src/index.js`,
+  `packages/geo-core/src/vector/shortbread.js`,
+  `packages/geo-core/src/vector/shortbreadImagery.js`,
+  `packages/geo-core/src/vector/waterNurbs.js`,
+  `packages/geo-core/src/terrain/topoMaterial.js`, and the corresponding
+  `packages/geo-core/tests/{shortbread,topoOverlay,waterNurbs}.test.mjs` files.
+- EarthGrid integration/tests/docs: `demos/earth/index.html`,
+  `demos/earth/src/main.js`, `demos/earth/src/style.css`,
+  `demos/earth/src/layers/shortbreadImagery.js`,
+  `demos/earth/tests/{markup,shortbreadImagery}.test.mjs`, and
+  `demos/earth/README.md`.
+- Shared release/docs: `demos/tests/{runtime-smoke,demo-release}.js`/`.mjs`,
+  `README.md`, `plan/{plan,tests,log}.md`,
+  `plan/branch/earth-platform-motorcycle-xr.md`, the regenerated
+  `docs/earth/**`, and the refreshed live-source `docs/assets/earth.png`.
+
+### Commands, results, and failures
+
+- Node `v24.18.0`; `git diff --check` - PASS before final documentation.
+- Initial focused run - FAIL `2/16` because pre-existing expectations still
+  assumed zero water strokes and style schema v1. Updated those tests to the
+  approved v2 shoreline contract; no implementation weakening was made.
+- Focused NURBS/material/Shortbread/markup tests - PASS `22/22`; the final
+  road-order subset passed `18/18` after the follow-up prompt.
+- `npm run test:geo-core` - PASS `37/37`; `npm run test:earth` - PASS `31/31`;
+  `npm run test:motorcycle` - PASS `64/64`; `npm run test:wxglobe` - PASS
+  `28/28`.
+- `npm run test:earth-platform:unit` - PASS: `271` Node tests plus the mocked
+  Chromium WebXR harness.
+- `npm run test:earth-platform:live` - PASS at
+  `2026-08-24T22:41:21Z`–`22:41:23Z`: Shortbread `38,983` bytes with ocean `1`,
+  inland polygons `3`, streets `515`, and building `1`; bounded Overpass,
+  current nowCOAST, NOAA ETOPO, and AWS Terrarium checks also passed.
+- `npm run test:earth-platform:release` - PASS after the road-order change:
+  WXGlobe, EarthGrid, and RoadVector rebuilt; `391` Cesium runtime/notice items
+  copied per Cesium demo; static checks `44/44`; combined built HTTPS browser
+  smoke PASS; owned port `43947` closed by the harness.
+- Strengthened the road-precedence implementation after review so the renderer
+  explicitly performs category passes and does not trust caller/decoder array
+  order. The regression deliberately supplies the road before the building and
+  still observes shoreline halo/core, building, then road strokes. Focused
+  `18/18`, EarthGrid `31/31`, RoadVector `64/64`, and the full release gate all
+  passed again; the final Earth bundle is `index-BYZSuJCb.js`.
+- Direct private headless Chrome at `https://100.68.165.52:5187/` - PASS with
+  certificate errors explicitly ignored for the documented self-signed
+  development certificate: secure context, ready/live terrain/OSM/water, one
+  imagery layer, `8,231` NURBS fragments / `104,483` sampled vertices, `265`
+  suppressed boundary segments, zero omissions/cap rejections, matching
+  shoreline/submerged `#24cfff`, and zero page/console errors. The refreshed
+  1440×900 gallery frame was visually inspected.
+- The first post-release gallery capture occurred during the Cesium world
+  camera flight and produced a mostly blank transient frame despite valid app
+  telemetry. It was not retained. The replacement explicitly selected WORLD,
+  waited for `frameCount > 120` and `tilesLoaded === true`, then was visually
+  inspected with the full contour globe present.
+- A strict system-CA `curl` probe correctly rejected the private listener's
+  self-signed certificate. This is the documented direct-IP development
+  boundary; the certificate must be accepted or installed on the viewing
+  device. No Tailscale Serve, Funnel, public tunnel, or terminal-browser pane
+  was introduced.
+
+### Remaining closure
+
+- Refresh ICC index/memory/Git history, pass the scoped guard, record the
+  verified durable attempt, end the root lease, and create the coherent local
+  commit. The requested private EarthGrid/RoadVector/geodata services remain
+  intentionally running; no physical-headset certification is claimed.

@@ -116,7 +116,27 @@ function publicState() {
       ...SHORTBREAD_WATER_STYLE,
       sourceLayers: [...SHORTBREAD_WATER_STYLE.sourceLayers],
       excludedKinds: [...SHORTBREAD_WATER_STYLE.excludedKinds],
+      outline: {
+        ...SHORTBREAD_WATER_STYLE.outline,
+        colorComponents: [...SHORTBREAD_WATER_STYLE.outline.colorComponents],
+      },
+      submergedContours: {
+        ...SHORTBREAD_WATER_STYLE.submergedContours,
+        colorComponents: [...SHORTBREAD_WATER_STYLE.submergedContours.colorComponents],
+      },
     },
+    terrainContourStyle: viewer?.scene?.globe?.material?.wxglobe
+      ? {
+        ...viewer.scene.globe.material.wxglobe,
+        contourColor: [...viewer.scene.globe.material.wxglobe.contourColor],
+        submergedContours: viewer.scene.globe.material.wxglobe.submergedContours
+          ? {
+            ...viewer.scene.globe.material.wxglobe.submergedContours,
+            color: [...viewer.scene.globe.material.wxglobe.submergedContours.color],
+          }
+          : null,
+      }
+      : null,
     localStatus: runtime.localStatus,
     localCounts: runtime.localRender ? {
       sourceRoads: runtime.localRender.sourceRoads,
@@ -271,9 +291,9 @@ async function startShortbread() {
           ? `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested}`
           : `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested} // ZOOM FOR ROADS`;
         elements.waterStatus.textContent = telemetry.waterCommands > 0
-          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.waterCommands} SURFACES // 50%`
+          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.waterCommands} SURFACES // ${telemetry.waterNurbs?.curveCount ?? 0} NURBS EDGES`
           : telemetry.loaded > 0
-            ? `BLUE ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 50%`
+            ? `BLUE ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 0 NURBS EDGES`
             : 'BLUE CONNECTING // WAITING FOR FIRST TILE';
         updateReady();
       }
@@ -561,7 +581,12 @@ async function start() {
   const initialGeneration = 1;
   runtime.terrainGeneration = initialGeneration;
   const terrainProvider = createTerrainProvider(runtime.terrainSource, initialGeneration);
-  const topoMaterial = createTopoOverlayMaterial(Cesium);
+  const topoMaterial = createTopoOverlayMaterial(Cesium, {
+    submergedContourColor: [...SHORTBREAD_WATER_STYLE.submergedContours.colorComponents],
+    waterLineElevationMeters: SHORTBREAD_WATER_STYLE.submergedContours.waterLineElevationMeters,
+    waterLineVerticalDatum: SHORTBREAD_WATER_STYLE.submergedContours.verticalDatum,
+    waterLineReference: SHORTBREAD_WATER_STYLE.submergedContours.waterLineReference,
+  });
   const viewer = new Cesium.Viewer('viewer', {
     terrainProvider,
     baseLayer: false,

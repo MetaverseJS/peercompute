@@ -5,7 +5,7 @@ export const SHORTBREAD_TILEJSON_URL = 'https://vector.openstreetmap.org/shortbr
 export const SHORTBREAD_ALLOWED_ORIGIN = 'https://vector.openstreetmap.org';
 export const SHORTBREAD_MAX_ZOOM = 14;
 export const SHORTBREAD_WATER_STYLE = Object.freeze({
-  schemaVersion: 'peercompute.geo.shortbread-water-style.v1',
+  schemaVersion: 'peercompute.geo.shortbread-water-style.v2',
   color: '#0080ff',
   opacity: 0.5,
   fill: 'rgba(0, 128, 255, 0.5)',
@@ -14,6 +14,30 @@ export const SHORTBREAD_WATER_STYLE = Object.freeze({
   geometry: 'non-extruded-terrain-draped-imagery',
   sourceLayers: Object.freeze(['ocean', 'water_polygons']),
   excludedKinds: Object.freeze(['glacier']),
+  outline: Object.freeze({
+    schemaVersion: 'peercompute.geo.shortbread-water-nurbs-outline.v1',
+    color: '#24cfff',
+    colorComponents: Object.freeze([36 / 255, 207 / 255, 1, 1]),
+    halo: 'rgba(36, 207, 255, 0.32)',
+    haloWidthPixels: 4.5,
+    coreWidthPixels: 1.5,
+    glowPixels: 7,
+    curveModel: 'NURBS',
+    degree: 1,
+    knotModel: 'open-clamped-uniform-per-fragment',
+    boundaryModel: 'exact-source-water-boundary-terrain-draped',
+    topologyPolicy: 'exact-degree-one-nurbs-polyline',
+    maximumSourceDeviationPixels: 0,
+    elevationModel: 'source-elevation-not-published',
+  }),
+  submergedContours: Object.freeze({
+    color: '#24cfff',
+    colorComponents: Object.freeze([36 / 255, 207 / 255, 1, 1]),
+    waterLineElevationMeters: 0,
+    verticalDatum: 'terrain-source-native',
+    waterLineReference: 'terrain-source-native-zero',
+    comparison: 'at-or-below',
+  }),
 });
 
 const ROAD_STYLES = Object.freeze({
@@ -183,6 +207,7 @@ export function shortbreadDrawCommands(decoded) {
       width: 0,
       opacity: SHORTBREAD_WATER_STYLE.opacity,
       flatSurface: true,
+      nurbsOutline: true,
       sourceLayer: 'ocean',
       properties: feature.properties,
     }));
@@ -199,6 +224,7 @@ export function shortbreadDrawCommands(decoded) {
       width: 0,
       opacity: SHORTBREAD_WATER_STYLE.opacity,
       flatSurface: true,
+      nurbsOutline: true,
       sourceLayer: 'water_polygons',
       properties: feature.properties,
     }));

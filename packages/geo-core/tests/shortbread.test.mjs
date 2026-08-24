@@ -62,7 +62,18 @@ test('road classification and draw commands retain category colors', () => {
   assert.equal(commands[0].fill, 'rgba(0, 128, 255, 0.5)');
   assert.equal(commands[0].opacity, 0.5);
   assert.equal(commands[0].flatSurface, true);
+  assert.equal(commands[0].nurbsOutline, true);
   assert.equal(commands[3].category, 'primary');
+  assert.equal(SHORTBREAD_WATER_STYLE.schemaVersion, 'peercompute.geo.shortbread-water-style.v2');
+  assert.equal(SHORTBREAD_WATER_STYLE.outline.color, '#24cfff');
+  assert.equal(SHORTBREAD_WATER_STYLE.outline.curveModel, 'NURBS');
+  assert.equal(SHORTBREAD_WATER_STYLE.outline.boundaryModel, 'exact-source-water-boundary-terrain-draped');
+  assert.equal(SHORTBREAD_WATER_STYLE.outline.maximumSourceDeviationPixels, 0);
+  assert.equal(SHORTBREAD_WATER_STYLE.outline.elevationModel, 'source-elevation-not-published');
+  assert.equal(SHORTBREAD_WATER_STYLE.submergedContours.color, SHORTBREAD_WATER_STYLE.outline.color);
+  assert.equal(SHORTBREAD_WATER_STYLE.submergedContours.waterLineElevationMeters, 0);
+  assert.equal(SHORTBREAD_WATER_STYLE.submergedContours.verticalDatum, 'terrain-source-native');
+  assert.equal(SHORTBREAD_WATER_STYLE.submergedContours.waterLineReference, 'terrain-source-native-zero');
   assert.deepEqual(SHORTBREAD_WATER_STYLE.sourceLayers, ['ocean', 'water_polygons']);
   assert.deepEqual(SHORTBREAD_WATER_STYLE.excludedKinds, ['glacier']);
 });

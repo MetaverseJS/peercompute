@@ -419,3 +419,29 @@ remains a manual gate.
 - Preserve the direct private HTTPS EarthGrid handoff at
   `https://100.68.165.52:5187/` with same-origin geodata and Cesium assets. Do
   not open an in-terminal browser or introduce Tailscale Serve/Funnel.
+
+## User Addendum - 2026-08-24 AKDT - NURBS Shorelines And Submerged Contours
+
+- Outline every valid `ocean` and non-glacier `water_polygons` ring with an
+  exact bright-blue `#24cfff` NURBS path. Use unit-weight degree-one,
+  open-clamped fragments so the displayed boundary has zero source-coordinate
+  deviation; holes and multipart bodies remain independent paths.
+- Do not draw synthetic MVT clipping edges. Suppress segments whose endpoints
+  share one tile/outside boundary, split the remaining shoreline into open
+  butt-capped fragments, and keep fully clipped tile boxes outline-free.
+- Never downsample or partially omit a body. Reject invalid or over-cap tiles
+  before canvas mutation; hard bounds are 4,096 rings, 8,192 curve fragments,
+  65,536 source points, and 131,072 sampled vertices per tile, with cap/error
+  telemetry.
+- Use the exact shoreline blue for every terrain contour where Cesium's active
+  source height is `<= 0`. The threshold is
+  `terrain-source-native-zero`: ETOPO 2022 is EGM2008 height and Terrarium
+  remains provider-native. Do not call this a universal MSL datum.
+- Shortbread supplies water boundaries but no numeric inland-water elevation.
+  Describe the outline as exact source geometry terrain-draped by Cesium, not
+  a measured lake/river isocontour or a source water mask.
+- Keep the shared provider water opt-in Earth-only. RoadVector's road-filtered
+  overview and WXGlobe's imagery-free contour material must not change.
+- Composite each tile in the strict order `water fill -> water NURBS outline ->
+  buildings -> roads`. Road strokes take precedence over every water pixel at
+  bridges, causeways, shoreline crossings, and overlapping source geometry.

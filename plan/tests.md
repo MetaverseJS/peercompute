@@ -2241,3 +2241,64 @@
 - NOT APPLICABLE: no physical-headset gate is required for this EarthGrid-only
   water layer. RoadVector's separate physical WebXR hardware matrix remains
   NOT RUN and is not represented as certified.
+
+## EarthGrid NURBS shoreline and submerged-contour strategy - 2026-08-24 AKDT
+
+- Pure geometry tests must prove exact unit-weight degree-one NURBS output,
+  closed internal rings, independent polygon holes and MultiPolygon parts,
+  zero source deviation, finite coordinates, deterministic source/sample
+  counts, and no downsampling.
+- Tile-seam tests must suppress same-edge clipping segments, retain two or more
+  disjoint open fragments without an invented closing chord, use butt caps,
+  and turn a fully boundary-clipped tile box into zero shoreline curves without
+  treating it as a source omission.
+- Cap tests must exercise stable ring, per-ring point, aggregate point, curve,
+  and sample error codes. The provider gate must reject before creating or
+  mutating a canvas and expose the error code plus cap-rejected tile count.
+- Canvas tests must preserve the 50%-opacity even-odd water fill, draw one
+  consolidated translucent halo and one `#24cfff` core path, restore drawing
+  state, and prove the ordered stroke stack is shoreline halo, shoreline core,
+  building outline, then road—with roads last and visually authoritative at
+  every overlap. RoadVector's default
+  water-disabled command filter remains unchanged.
+- Cesium material tests must use one `ElevationContour` alpha mask and select
+  green/`#24cfff` diffuse color by `materialInput.height <= 0`, keep transparent
+  gaps and skirt guards, update spacing/width without reconstruction, expose
+  `terrain-source-native-zero`, and leave default consumers unchanged.
+- Built and private-browser gates must require positive NURBS curves/sampled
+  vertices, zero source deviation, exact shoreline/submerged color equality,
+  the source-native-zero threshold, one baseline imagery layer, live terrain,
+  and zero page/console errors.
+
+### Executed evidence so far
+
+- PASS: focused NURBS/material/Shortbread/Earth markup suite `22/22`.
+- PASS: geo-core `37/37`, EarthGrid `31/31`, RoadVector `64/64`, and WXGlobe
+  `28/28` on Node `v24.18.0`.
+- PASS: `npm run test:earth-platform:unit`, now `271` Node tests plus the mocked
+  Chromium XR harness.
+- PASS: fresh EarthGrid production build, static release `44/44`, and focused
+  built EarthGrid browser smoke on test-owned HTTPS port `43952`; the port
+  closed after teardown.
+- PASS: bounded live-source gate at `2026-08-24T22:41:21Z`–`22:41:23Z`, with
+  the fixed `38,983`-byte Anchorage Shortbread tile retaining ocean `1`, inland
+  polygons `3`, streets `515`, and building `1` alongside current Overpass,
+  nowCOAST, ETOPO, and Terrarium checks.
+- PASS: direct private HTTPS browser at `https://100.68.165.52:5187/` reported
+  secure/ready/live state, one imagery layer, `8,231` NURBS fragments / `104,483`
+  sampled vertices across the loaded view, `265` suppressed tile-boundary
+  segments, zero omitted source points/cap rejections, exact matching
+  `#24cfff` shoreline/submerged colors, source-native-zero threshold, and zero
+  page/console errors.
+- PASS: final `npm run test:earth-platform:release` after the road-precedence
+  change rebuilt WXGlobe, EarthGrid, and RoadVector, copied `391` Cesium
+  runtime/notice items per Cesium build, passed static release checks `44/44`,
+  and passed the combined deterministic built HTTPS browser smoke. The harness
+  closed its owned port `43947`.
+- PASS: the post-build direct private HTTPS browser reproduced the exact v2
+  water style with `8,231` NURBS fragments / `104,483` sampled vertices, `265`
+  suppressed boundary segments, zero omissions/cap rejections, matching
+  shoreline/submerged `#24cfff`, one imagery layer, and zero page/console
+  errors. The new gallery capture was inspected.
+- PENDING only at this checkpoint: ICC refresh/guard/attempt closure and the
+  coherent local commit; implementation and release gates are complete.

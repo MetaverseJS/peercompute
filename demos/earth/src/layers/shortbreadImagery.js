@@ -1,5 +1,6 @@
 export {
   loadShortbreadImageryProvider,
+  prepareWaterNurbsOutlines,
   projectLonLatToTilePixel,
   renderShortbreadCommands,
   ShortbreadImageryProvider,

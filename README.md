@@ -67,7 +67,9 @@ runtime metadata to NetViz.
 - **Reusable Earth/GIS platform**: `packages/geo-core`, the bounded Fastify
   `services/geodata` service, and EarthGrid combine NOAA/AWS terrain,
   bathymetry contours, official OSM Shortbread ocean and non-glacier inland
-  water rendered as flat blue 50%-opacity surfaces, road/building context,
+  water rendered as flat blue 50%-opacity surfaces with exact bright-blue
+  degree-one NURBS shorelines, source-native-zero submerged contours,
+  road/building context composited with roads above all water ink,
   local OSM roads and 3D buildings, directed road graphs, NOAA nowCOAST weather
   descriptors, provenance, cache/freshness state, and privacy-preserving
   location startup.
@@ -117,7 +119,9 @@ Recent focused validation is green without running the full chaos lab:
 
 - EarthGrid's deterministic browser gate loads rendered Shortbread ocean,
   inland-water, road, and building commands; proves the exact flat-blue
-  50%-opacity water style without adding another imagery layer; loads a bounded
+  50%-opacity water style, exact seam-safe NURBS shoreline, and matching
+  source-native-zero submerged terrain contours without adding another imagery
+  layer; loads a bounded
   normalized OSM scene, source building heights, NOAA relief and time-qualified
   radar; then proves dense-region narrowing, stale status retention,
   scope-failure clearing/recovery, generation-race suppression, permissioned

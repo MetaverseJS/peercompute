@@ -8,6 +8,7 @@ import {
   SHORTBREAD_WATER_STYLE,
   validateShortbreadTileJson,
 } from './shortbread.js';
+import { buildWaterNurbsOutlines, WATER_NURBS_LIMITS } from './waterNurbs.js';
 
 const TILE_SIZE = 512;
 const DEFAULT_MAXIMUM_TILE_BYTES = 2 * 1024 * 1024;
@@ -87,29 +88,94 @@ function traceGeometry(context, geometry, tile) {
   }
 }
 
-export function renderShortbreadCommands(context, commands, tile) {
+export function prepareWaterNurbsOutlines(commands, tile, limits = {}) {
+  const rings = [];
+  for (const command of commands) {
+    if (command.kind !== 'water' || command.nurbsOutline === false) continue;
+    for (const line of coordinatesToLines(command.geometry)) {
+      if (!Array.isArray(line)) continue;
+      rings.push(line.map((position) => projectLonLatToTilePixel(position, tile)));
+    }
+  }
+  const outlines = buildWaterNurbsOutlines(rings, { tileSize: tile.size, ...limits });
+  if (outlines.invalidRingCount > 0) {
+    const error = new TypeError(`Shortbread water tile contains ${outlines.invalidRingCount} invalid shoreline ring(s).`);
+    error.code = 'ERR_SHORTBREAD_WATER_NURBS_INVALID_RING';
+    throw error;
+  }
+  return outlines;
+}
+
+function renderWaterNurbsOutlines(context, outlines) {
+  if (outlines.curveCount === 0) return;
+  context.beginPath();
+  context.lineCap = 'butt';
+  for (const curve of outlines.curves) {
+    const first = curve.points[0];
+    context.moveTo(first[0], first[1]);
+    for (let index = 1; index < curve.points.length; index += 1) {
+      const point = curve.points[index];
+      context.lineTo(point[0], point[1]);
+    }
+    if (curve.closed) context.closePath();
+  }
+  context.shadowColor = SHORTBREAD_WATER_STYLE.outline.color;
+  context.shadowBlur = SHORTBREAD_WATER_STYLE.outline.glowPixels;
+  context.strokeStyle = SHORTBREAD_WATER_STYLE.outline.halo;
+  context.lineWidth = SHORTBREAD_WATER_STYLE.outline.haloWidthPixels;
+  context.stroke();
+  context.shadowBlur = 2;
+  context.strokeStyle = SHORTBREAD_WATER_STYLE.outline.color;
+  context.lineWidth = SHORTBREAD_WATER_STYLE.outline.coreWidthPixels;
+  context.stroke();
+  context.lineCap = 'round';
+}
+
+function renderCommand(context, command, tile) {
+  traceGeometry(context, command.geometry, tile);
+  const hasStroke = typeof command.stroke === 'string' && command.stroke.length > 0 && command.width > 0;
+  context.shadowBlur = command.kind === 'road' ? 8 : command.kind === 'building' ? 5 : 0;
+  context.shadowColor = hasStroke ? command.stroke : 'transparent';
+  if (command.fill) {
+    context.fillStyle = command.fill;
+    context.fill('evenodd');
+  }
+  if (hasStroke) {
+    context.strokeStyle = command.stroke;
+    context.lineWidth = command.width;
+    context.stroke();
+  }
+}
+
+export function renderShortbreadCommands(context, commands, tile, { waterOutlines = null } = {}) {
   if (!context || typeof context.beginPath !== 'function') {
     throw new TypeError('A 2D canvas context is required.');
   }
+  const outlines = waterOutlines ?? prepareWaterNurbsOutlines(commands, tile);
   context.clearRect(0, 0, tile.size, tile.size);
   context.lineCap = 'round';
   context.lineJoin = 'round';
   for (const command of commands) {
-    traceGeometry(context, command.geometry, tile);
-    const hasStroke = typeof command.stroke === 'string' && command.stroke.length > 0 && command.width > 0;
-    context.shadowBlur = command.kind === 'road' ? 8 : command.kind === 'building' ? 5 : 0;
-    context.shadowColor = hasStroke ? command.stroke : 'transparent';
-    if (command.fill) {
-      context.fillStyle = command.fill;
-      context.fill('evenodd');
-    }
-    if (hasStroke) {
-      context.strokeStyle = command.stroke;
-      context.lineWidth = command.width;
-      context.stroke();
-    }
+    if (command.kind === 'water') renderCommand(context, command, tile);
+  }
+  // Cesium drapes this rasterized, NURBS-sampled source boundary over terrain.
+  // It is intentionally part of the water pass: buildings and, most
+  // importantly, roads render afterward and therefore win every overlap.
+  renderWaterNurbsOutlines(context, outlines);
+  for (const command of commands) {
+    if (command.kind === 'building') renderCommand(context, command, tile);
+  }
+  for (const command of commands) {
+    if (!['water', 'building', 'road'].includes(command.kind)) renderCommand(context, command, tile);
+  }
+  // Do not rely on decoder/input ordering for this invariant: roads are always
+  // the final category so they remain legible over water and buildings.
+  for (const command of commands) {
+    if (command.kind === 'road') renderCommand(context, command, tile);
   }
   context.shadowBlur = 0;
+  context.shadowColor = 'transparent';
+  return outlines;
 }
 
 export class ShortbreadImageryProvider {
@@ -127,6 +193,7 @@ export class ShortbreadImageryProvider {
     allowedTileKeys = null,
     commandFilter = null,
     includeWater = false,
+    waterNurbsLimits = null,
     onTelemetry = () => {},
   }) {
     if (!Cesium?.WebMercatorTilingScheme || !Cesium?.Event || !Cesium?.Credit) {
@@ -139,6 +206,9 @@ export class ShortbreadImageryProvider {
       throw new TypeError('Shortbread allowedTileKeys must be iterable or null.');
     }
     if (typeof includeWater !== 'boolean') throw new TypeError('Shortbread includeWater must be a boolean.');
+    if (waterNurbsLimits !== null && (!waterNurbsLimits || typeof waterNurbsLimits !== 'object' || Array.isArray(waterNurbsLimits))) {
+      throw new TypeError('Shortbread waterNurbsLimits must be an object or null.');
+    }
     this.Cesium = Cesium;
     this.tileJson = validateShortbreadTileJson(tileJson, { requireWater: includeWater });
     this.fetchImpl = fetchImpl;
@@ -157,6 +227,18 @@ export class ShortbreadImageryProvider {
     }
     this.commandFilter = commandFilter;
     this.includeWater = includeWater;
+    this.waterNurbsLimits = { ...WATER_NURBS_LIMITS };
+    for (const [key, value] of Object.entries(waterNurbsLimits ?? {})) {
+      if (!(key in WATER_NURBS_LIMITS)) throw new TypeError(`Unknown water NURBS limit ${key}.`);
+      const valid = key === 'tileEdgeEpsilonPixels'
+        ? Number.isFinite(value) && value >= 0
+        : Number.isSafeInteger(value) && value >= 1;
+      if (!valid || value > WATER_NURBS_LIMITS[key]) {
+        throw new RangeError(`${key} cannot exceed the hard water NURBS limit.`);
+      }
+      this.waterNurbsLimits[key] = value;
+    }
+    Object.freeze(this.waterNurbsLimits);
     this.allowedTileKeys = allowedTileKeys === null
       ? null
       : new Set([...allowedTileKeys].map((key) => String(key)));
@@ -177,9 +259,23 @@ export class ShortbreadImageryProvider {
     this.oceanCommands = 0;
     this.inlandWaterCommands = 0;
     this.waterVertices = 0;
+    this.waterNurbsSourceRingCount = 0;
+    this.waterNurbsValidRingCount = 0;
+    this.waterNurbsFullyClippedRingCount = 0;
+    this.waterNurbsCurveCount = 0;
+    this.waterNurbsOpenCurveCount = 0;
+    this.waterNurbsClosedCurveCount = 0;
+    this.waterNurbsSourceControlPointCount = 0;
+    this.waterNurbsControlPointCount = 0;
+    this.waterNurbsSampledVertexCount = 0;
+    this.waterNurbsSuppressedBoundarySegmentCount = 0;
+    this.waterNurbsOmittedSourcePointCount = 0;
+    this.waterNurbsCapRejectedTileCount = 0;
     this.emptyTiles = 0;
     this.filteredTileRequests = 0;
     this.transparentCanvas = null;
+    this.lastError = null;
+    this.lastErrorCode = null;
     this._tilingScheme = new Cesium.WebMercatorTilingScheme();
     this._rectangle = rectangle ?? this._tilingScheme.rectangle;
     this._errorEvent = new Cesium.Event();
@@ -198,7 +294,7 @@ export class ShortbreadImageryProvider {
   get proxy() { return undefined; }
   get hasAlphaChannel() { return true; }
 
-  getTelemetry(lastError = null) {
+  getTelemetry() {
     return Object.freeze({
       requested: this.requested,
       loaded: this.loaded,
@@ -221,15 +317,44 @@ export class ShortbreadImageryProvider {
       oceanCommands: this.oceanCommands,
       inlandWaterCommands: this.inlandWaterCommands,
       waterVertices: this.waterVertices,
+      waterNurbs: this.includeWater ? Object.freeze({
+        schemaVersion: 'peercompute.geo.water-nurbs-outlines.v1',
+        curveModel: 'NURBS',
+        degree: 1,
+        knotModel: 'open-clamped-uniform-per-fragment',
+        topologyPolicy: 'exact-degree-one-nurbs-polyline',
+        maximumSourceDeviationPixels: 0,
+        boundaryModel: 'exact-source-water-boundary-terrain-draped',
+        elevationModel: 'source-elevation-not-published',
+        sourceRingCount: this.waterNurbsSourceRingCount,
+        validRingCount: this.waterNurbsValidRingCount,
+        fullyClippedRingCount: this.waterNurbsFullyClippedRingCount,
+        curveCount: this.waterNurbsCurveCount,
+        openCurveCount: this.waterNurbsOpenCurveCount,
+        closedCurveCount: this.waterNurbsClosedCurveCount,
+        sourceControlPointCount: this.waterNurbsSourceControlPointCount,
+        controlPointCount: this.waterNurbsControlPointCount,
+        sampledVertexCount: this.waterNurbsSampledVertexCount,
+        suppressedBoundarySegmentCount: this.waterNurbsSuppressedBoundarySegmentCount,
+        omittedSourcePointCount: this.waterNurbsOmittedSourcePointCount,
+        capped: this.waterNurbsOmittedSourcePointCount > 0,
+        capRejectedTileCount: this.waterNurbsCapRejectedTileCount,
+        limits: this.waterNurbsLimits,
+      }) : null,
       waterStyle: this.includeWater ? SHORTBREAD_WATER_STYLE : null,
       emptyTiles: this.emptyTiles,
       filteredTileRequests: this.filteredTileRequests,
-      lastError,
+      lastError: this.lastError,
+      lastErrorCode: this.lastErrorCode,
     });
   }
 
-  #telemetry(lastError = null) {
-    this.onTelemetry(this.getTelemetry(lastError));
+  #telemetry(error = null) {
+    if (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      this.lastErrorCode = typeof error?.code === 'string' ? error.code : null;
+    }
+    this.onTelemetry(this.getTelemetry());
   }
 
   #remember(key, canvas) {
@@ -290,10 +415,16 @@ export class ShortbreadImageryProvider {
         (total, command) => total + coordinatePositionCount(command.geometry?.coordinates),
         0,
       );
+      const waterOutlines = prepareWaterNurbsOutlines(commands, {
+        x,
+        y,
+        z: level,
+        size: TILE_SIZE,
+      }, this.waterNurbsLimits);
       const tileVertices = commands.reduce(
         (total, command) => total + coordinatePositionCount(command.geometry?.coordinates),
         0,
-      );
+      ) + waterOutlines.sampledVertexCount;
       if (tileVertices > this.maximumRenderedVertices - this.renderedVertices) {
         const error = new RangeError(`Shortbread imagery exceeds the ${this.maximumRenderedVertices}-vertex cap.`);
         error.code = 'ERR_SHORTBREAD_VERTEX_CAP';
@@ -305,7 +436,7 @@ export class ShortbreadImageryProvider {
       canvas.height = TILE_SIZE;
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Shortbread canvas has no 2D context.');
-      renderShortbreadCommands(context, commands, { x, y, z: level, size: TILE_SIZE });
+      renderShortbreadCommands(context, commands, { x, y, z: level, size: TILE_SIZE }, { waterOutlines });
       this.loaded += 1;
       this.renderedCommands += commands.length;
       this.roadCommands += commands.filter((command) => command.kind === 'road').length;
@@ -314,6 +445,17 @@ export class ShortbreadImageryProvider {
       this.oceanCommands += waterCommands.filter((command) => command.category === 'ocean').length;
       this.inlandWaterCommands += waterCommands.filter((command) => command.category === 'inland-water').length;
       this.waterVertices += tileWaterVertices;
+      this.waterNurbsSourceRingCount += waterOutlines.sourceRingCount;
+      this.waterNurbsValidRingCount += waterOutlines.validRingCount;
+      this.waterNurbsFullyClippedRingCount += waterOutlines.fullyClippedRingCount;
+      this.waterNurbsCurveCount += waterOutlines.curveCount;
+      this.waterNurbsOpenCurveCount += waterOutlines.openCurveCount;
+      this.waterNurbsClosedCurveCount += waterOutlines.closedCurveCount;
+      this.waterNurbsSourceControlPointCount += waterOutlines.sourceControlPointCount;
+      this.waterNurbsControlPointCount += waterOutlines.controlPointCount;
+      this.waterNurbsSampledVertexCount += waterOutlines.sampledVertexCount;
+      this.waterNurbsSuppressedBoundarySegmentCount += waterOutlines.suppressedBoundarySegmentCount;
+      this.waterNurbsOmittedSourcePointCount += waterOutlines.omittedSourcePointCount;
       if (commands.length === 0) this.emptyTiles += 1;
       this.#remember(key, canvas);
       this.#telemetry();
@@ -321,7 +463,11 @@ export class ShortbreadImageryProvider {
     })().catch((error) => {
       if (error?.name !== 'AbortError') {
         this.failed += 1;
-        this.#telemetry(error instanceof Error ? error.message : String(error));
+        if (String(error?.code ?? '').startsWith('ERR_SHORTBREAD_WATER_NURBS_')
+          && String(error.code).endsWith('_CAP')) {
+          this.waterNurbsCapRejectedTileCount += 1;
+        }
+        this.#telemetry(error);
         this._errorEvent.raiseEvent(error);
       }
       throw error;

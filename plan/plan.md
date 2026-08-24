@@ -1056,3 +1056,30 @@ The root node should exist on a domain secured with SSL enabling all executable 
   focused shared/Earth tests, the 261-test Earth-platform unit gate, static
   release checks, combined built-browser smoke, a current live Anchorage MVT,
   and the direct private HTTPS origin `https://100.68.165.52:5187/`.
+
+## EarthGrid NURBS-waterline refinement snapshot - 2026-08-24 AKDT
+
+- Preserve the existing 50%-opacity Shortbread water fill and add an exact
+  `#24cfff` NURBS outline around every valid ocean/non-glacier water polygon
+  ring. Use unit-weight degree-one open-clamped fragments so the display has
+  zero source-coordinate deviation; do not smooth an authoritative boundary.
+- Suppress same-edge MVT clipping segments and keep the remaining fragments
+  open with butt caps so tile seams never become fake glowing shorelines.
+  Preserve holes/multipart bodies and reject an over-cap/invalid tile before
+  canvas mutation rather than silently omitting a body.
+- Keep the renderer bounded at 4,096 rings, 8,192 curve fragments, 65,536
+  source points, and 131,072 sampled vertices per tile, inside EarthGrid's
+  existing 4,000,000-vertex provider-session budget. Expose exact topology,
+  source/sample counts, clipped segments, cap rejections, and zero-deviation
+  telemetry.
+- Keep road meaning legible over water: composite water fill first, the NURBS
+  halo/core second, buildings third, and roads last so road strokes take
+  precedence at every overlap.
+- Color every Cesium terrain contour at or below the active terrain source's
+  native zero-height reference with the exact shoreline blue. Use one shared
+  elevation-contour alpha mask plus above-/below-water colors; retain green
+  above zero and leave RoadVector/WXGlobe defaults unchanged.
+- Do not claim a numeric per-body water elevation: Shortbread publishes a
+  boundary, not an elevation. NOAA ETOPO uses EGM2008 heights and Terrarium is
+  provider-native, so the common shader threshold is explicitly
+  `terrain-source-native-zero`, not universal MSL or an inland-water mask.

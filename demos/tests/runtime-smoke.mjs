@@ -127,9 +127,15 @@ const allDemos = [
         && state.waterVisible === true
         && state.osmTelemetry?.waterCommands > 0
         && state.osmTelemetry?.waterVertices > 0
+        && state.osmTelemetry?.waterNurbs?.curveCount > 0
+        && state.osmTelemetry?.waterNurbs?.sampledVertexCount > 0
         && state.waterStyle?.color === '#0080ff'
         && state.waterStyle?.opacity === 0.5
         && state.waterStyle?.surface === 'flat'
+        && state.waterStyle?.outline?.color === '#24cfff'
+        && state.waterStyle?.outline?.curveModel === 'NURBS'
+        && state.terrainContourStyle?.submergedContours?.waterLineElevationMeters === 0
+        && state.terrainContourStyle?.submergedContours?.color?.[0] === 36 / 255
         && state.imageryLayerCount === 1
         && state.geodataConfigured === true
         && state.localVisible === false
@@ -862,12 +868,30 @@ async function runDemo(context, demo) {
       if (!(initial.osmTelemetry?.oceanCommands > 0) || !(initial.osmTelemetry?.inlandWaterCommands > 0)) {
         errors.push('[runtime] Earth water fixture did not retain ocean/inland surface provenance.');
       }
-      if (initial.waterStyle?.schemaVersion !== 'peercompute.geo.shortbread-water-style.v1'
+      if (initial.waterStyle?.schemaVersion !== 'peercompute.geo.shortbread-water-style.v2'
         || initial.waterStyle?.color !== '#0080ff'
         || initial.waterStyle?.opacity !== 0.5
         || initial.waterStyle?.surface !== 'flat'
         || initial.waterStyle?.geometry !== 'non-extruded-terrain-draped-imagery') {
         errors.push('[runtime] Earth water style is not exact flat blue at 50% opacity.');
+      }
+      if (initial.waterStyle?.outline?.color !== '#24cfff'
+        || initial.waterStyle?.outline?.curveModel !== 'NURBS'
+        || initial.waterStyle?.outline?.topologyPolicy !== 'exact-degree-one-nurbs-polyline'
+        || initial.waterStyle?.outline?.maximumSourceDeviationPixels !== 0
+        || initial.osmTelemetry?.waterNurbs?.degree !== 1
+        || !(initial.osmTelemetry?.waterNurbs?.curveCount > 0)
+        || !(initial.osmTelemetry?.waterNurbs?.sampledVertexCount > 0)) {
+        errors.push('[runtime] Earth exact bright-blue NURBS shoreline contract is missing.');
+      }
+      if (initial.waterStyle?.submergedContours?.color !== initial.waterStyle?.outline?.color
+        || initial.waterStyle?.submergedContours?.waterLineElevationMeters !== 0
+        || initial.waterStyle?.submergedContours?.waterLineReference !== 'terrain-source-native-zero'
+        || initial.terrainContourStyle?.submergedContours?.waterLineElevationMeters !== 0
+        || initial.terrainContourStyle?.submergedContours?.waterLineReference !== 'terrain-source-native-zero'
+        || initial.terrainContourStyle?.submergedContours?.color?.join(',')
+          !== initial.waterStyle?.submergedContours?.colorComponents?.join(',')) {
+        errors.push('[runtime] Earth submerged terrain contours do not share the shoreline blue at source-native zero.');
       }
       if (initial.osmTelemetry?.maximumTotalBytes !== 192 * 1024 * 1024
         || initial.osmTelemetry?.maximumRenderedVertices !== 4_000_000

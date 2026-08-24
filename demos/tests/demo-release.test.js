@@ -233,9 +233,13 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(earthModule.includes('peercompute.geo.osm-region.v1'));
   assert.ok(earthModule.includes('OpenStreetMap'));
   assert.ok(earthModule.includes('renderedCommands'), 'EarthGrid built bundle is stale: rendered MVT command proof missing');
-  assert.ok(earthModule.includes('peercompute.geo.shortbread-water-style.v1'), 'EarthGrid built bundle is stale: water style contract missing');
+  assert.ok(earthModule.includes('peercompute.geo.shortbread-water-style.v2'), 'EarthGrid built bundle is stale: water style contract missing');
   assert.ok(earthModule.includes('flat-blue-water-surface'), 'EarthGrid built bundle is stale: flat blue water rendering missing');
   assert.ok(earthModule.includes('rgba(0, 128, 255, 0.5)'), 'EarthGrid built bundle is stale: exact 50% water fill missing');
+  assert.ok(earthModule.includes('peercompute.geo.water-nurbs-outlines.v1'), 'EarthGrid built bundle is stale: NURBS shoreline contract missing');
+  assert.ok(earthModule.includes('exact-degree-one-nurbs-polyline'), 'EarthGrid built bundle is stale: exact shoreline topology policy missing');
+  assert.ok(earthModule.includes('EarthGridWaterlineTopoOverlayMaterial'), 'EarthGrid built bundle is stale: submerged contour material missing');
+  assert.ok(earthModule.includes('terrain-source-native-zero'), 'EarthGrid built bundle is stale: truthful waterline reference missing');
   assert.ok(earthHtml.includes('WATER // 50%'), 'EarthGrid built HTML is stale: water legend missing');
   assert.ok(earthModule.includes('geolocation-denied-fallback'), 'EarthGrid built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.game-runtime-state.v1'));
