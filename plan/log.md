@@ -58135,3 +58135,15 @@ right basis for this kind of open data.”
   process was left untouched because the user asked only whether it remained
   up. No Tailscale Serve, Funnel, public tunnel, or terminal-browser process is
   involved.
+
+### Clean point - 2026-08-24 11:00:40 AKDT
+
+- `git add -A && git commit -m "Add FHWA overview and NURBS RoadVector"` -
+  PASS. Local commit `8c7d1c2b` records the coherent implementation, generated
+  highway/build outputs, deterministic/live evidence, and release documents.
+  Nothing was pushed.
+- Post-commit service probes still returned 200 for EarthGrid `5187`,
+  RoadVector `5188`, its same-origin catalog, and the retained aviation root
+  and health endpoints. The aviation activity/obstacle routes remained 404,
+  preserving the documented mixed-version limitation rather than overstating
+  that preview's health.
