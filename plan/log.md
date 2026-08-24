@@ -58486,3 +58486,24 @@ the water bodies.”
   verified durable attempt, end the root lease, and create the coherent local
   commit. The requested private EarthGrid/RoadVector/geodata services remain
   intentionally running; no physical-headset certification is claimed.
+
+### Clean point - 2026-08-24 14:59:05 AKDT
+
+- ICC index refresh - PASS with `798` indexed files and source fingerprint
+  current to the authored worktree; long memory rebuilt to `11,426` chunks.
+- Full-tree ICC guard - expected FAIL only because the three production builds
+  replaced content-hashed generated bundles. After staging, Git recognized all
+  five old/new generated pairs as `77%`–`99%` renames. Scoped guard excluding
+  `docs` - PASS with zero violations or warnings across authored source,
+  tests, README, and plan files.
+- ICC commit-intent enforcement initially rejected the stale pre-edit stamp.
+  Re-ran current status, architecture summary, symbol pack, durable task, and
+  project-relationship evidence; refreshed the stamp; commit-intent check then
+  passed.
+- `git diff --cached --check` - PASS.
+- `git commit -m "Add EarthGrid NURBS waterlines"` - PASS. Coherent local
+  implementation/release commit `d5bebe32` created; nothing was pushed.
+- This final documentation closure is recorded separately so the append-only
+  log can name the implementation commit. Final ICC task/attempt/lease and
+  post-commit artifact freshness checks follow; no source or generated bundle
+  changes remain.

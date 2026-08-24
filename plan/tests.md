@@ -2300,5 +2300,11 @@
   suppressed boundary segments, zero omissions/cap rejections, matching
   shoreline/submerged `#24cfff`, one imagery layer, and zero page/console
   errors. The new gallery capture was inspected.
-- PENDING only at this checkpoint: ICC refresh/guard/attempt closure and the
-  coherent local commit; implementation and release gates are complete.
+- PASS: ICC indexed `798` files and rebuilt `11,426` memory chunks; the scoped
+  authored-source guard passed with zero violations or warnings. The full-tree
+  guard's only failure was content-hashed generated bundle replacement, which
+  Git recognized as five `77%`–`99%` renames after staging.
+- PASS: coherent local implementation/release commit `d5bebe32` (`Add
+  EarthGrid NURBS waterlines`) was created without a push. Final task-attempt
+  and lease closure are control-plane-only operations after this evidence
+  block.
