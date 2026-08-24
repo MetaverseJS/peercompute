@@ -95,6 +95,8 @@ test('docs index includes all demos and screenshots', () => {
     './schrodinger/',
     './planetgen/',
     './wxglobe/',
+    './earth/',
+    './motorcycle/',
     './multiscale/',
     './universes/',
     './webgpuphys/'
@@ -111,6 +113,8 @@ test('docs index includes all demos and screenshots', () => {
     './assets/multiscale.svg',
     './assets/planetgen.png',
     './assets/wxglobe.png',
+    './assets/earth.png',
+    './assets/motorcycle.png',
     './assets/webgpuphys.png'
   ];
   requiredImages.forEach((src) => {
@@ -128,6 +132,8 @@ test('docs overview keeps expected tile order', () => {
     'Multiscale Ladder',
     'PlanetGen',
     'WXGlobe',
+    'EarthGrid',
+    'RoadVector',
     'NetViz',
     'Fano Reactor',
     'Schrodinger',
@@ -149,6 +155,8 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   const main = read('demos/wxglobe/src/main.js');
   const etopoTerrain = read('demos/wxglobe/src/terrain/etopo2022.js');
   const terrariumTerrain = read('demos/wxglobe/src/terrain/terrarium.js');
+  const sharedEtopoTerrain = read('packages/geo-core/src/terrain/etopo2022.js');
+  const sharedTerrariumTerrain = read('packages/geo-core/src/terrain/terrarium.js');
   const runtimeSmoke = read('demos/tests/runtime-smoke.mjs');
   const devAll = read('scripts/dev-all.sh');
   const devLocalRelay = read('scripts/dev-local-relay.sh');
@@ -166,11 +174,13 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   assert.ok(main.includes('baseLayer: false'));
   assert.ok(main.includes('createTopoMaterial'));
   assert.ok(main.includes('providerGeneration'));
-  assert.ok(etopoTerrain.includes("ETOPO_2022_v1_60s_surface"));
-  assert.ok(etopoTerrain.includes('ETOPO2022_MAX_LEVEL = 6'));
-  assert.ok(etopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'));
-  assert.ok(terrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'));
-  assert.ok(terrariumTerrain.includes('maximumLoadedLevel'));
+  assert.ok(etopoTerrain.includes('@peercompute/geo-core/terrain/etopo2022'));
+  assert.ok(terrariumTerrain.includes('@peercompute/geo-core/terrain/terrarium'));
+  assert.ok(sharedEtopoTerrain.includes("ETOPO_2022_v1_60s_surface"));
+  assert.ok(sharedEtopoTerrain.includes('ETOPO2022_MAX_LEVEL = 6'));
+  assert.ok(sharedEtopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'));
+  assert.ok(sharedTerrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'));
+  assert.ok(sharedTerrariumTerrain.includes('maximumLoadedLevel'));
   assert.ok(indexHtml.includes('ArcticDEM terrain data DEM(s) were created'));
   assert.ok(indexHtml.includes('United States 3DEP (formerly NED)'));
   assert.ok(indexHtml.includes('id="aws-terrain-attribution"'));
@@ -205,6 +215,41 @@ test('wxglobe built docs include nested-path-safe Cesium runtime assets', () => 
   assert.ok(builtModule.includes('CappedHeightmapTerrainProvider'), 'wxglobe built bundle is stale: capped provider missing');
   assert.ok(builtModule.includes('maximumLoadedLevel'), 'wxglobe built bundle is stale: successful deep-tile telemetry missing');
   assert.ok(builtModule.includes('Terrain request aborted'), 'wxglobe built bundle is stale: abortable retry path missing');
+});
+
+test('earth and motorcycle production artifacts carry their real-data runtime contracts', () => {
+  const earthHtml = read('docs/earth/index.html');
+  const motorcycleHtml = read('docs/motorcycle/index.html');
+  const earthModulePath = earthHtml.match(/<script[^>]+src="\.\/(assets\/[^"?]+\.js)"/i)?.[1];
+  const motorcycleModulePath = motorcycleHtml.match(/<script[^>]+src="\.\/(assets\/[^"?]+\.js)"/i)?.[1];
+  assert.ok(earthModulePath, 'EarthGrid built HTML does not reference its hashed entry module');
+  assert.ok(motorcycleModulePath, 'RoadVector built HTML does not reference its hashed entry module');
+  const earthModule = read(`docs/earth/${earthModulePath}`);
+  const motorcycleModule = read(`docs/motorcycle/${motorcycleModulePath}`);
+  assert.ok(earthModule.includes('peercompute.geo.osm-region.v1'));
+  assert.ok(earthModule.includes('OpenStreetMap'));
+  assert.ok(earthModule.includes('renderedCommands'), 'EarthGrid built bundle is stale: rendered MVT command proof missing');
+  assert.ok(earthModule.includes('geolocation-denied-fallback'), 'EarthGrid built bundle is stale: denied-location fallback missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.game-runtime-state.v1'));
+  assert.ok(motorcycleModule.includes('peercompute.synthetic-road-traffic.snapshot.v1'));
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.road-race-course.v1'), 'RoadVector built bundle is stale: race contract missing');
+  assert.ok(motorcycleModule.includes('motorcycle-contact-markers'), 'RoadVector built bundle is stale: contact rendering missing');
+  assert.ok(motorcycleModule.includes('xr-root-fallback'), 'RoadVector built bundle is stale: single-source XR UI fallback missing');
+  assert.ok(motorcycleModule.includes('geolocation-denied-fallback'), 'RoadVector built bundle is stale: denied-location fallback missing');
+  assert.ok(motorcycleModule.includes('xr-standard'));
+  [
+    'docs/earth/cesium/Workers/createVerticesFromHeightmap.js',
+    'docs/earth/cesium/ThirdParty/basis_transcoder.wasm',
+    'docs/earth/cesium/Assets/approximateTerrainHeights.json',
+    'docs/earth/cesium/Widgets/widgets.css',
+    'docs/earth/cesium/LICENSE.md',
+    'docs/earth/cesium/ThirdParty.json',
+    'docs/motorcycle/licenses/NOTICE.md',
+    'docs/motorcycle/licenses/three-LICENSE.txt'
+  ].forEach((asset) => assert.ok(exists(asset), `real-data demo built asset missing: ${asset}`));
+  assert.ok(!earthHtml.includes('src="/cesium/'), 'EarthGrid built HTML must keep Cesium paths release-relative');
+  assert.ok(exists('docs/assets/earth.png'));
+  assert.ok(exists('docs/assets/motorcycle.png'));
 });
 
 test('multiscale release wiring uses fixed port and docs output', () => {
@@ -284,5 +329,10 @@ test('root README includes relay config instructions', () => {
   assert.ok(readme.includes('Fano Reactor'), 'README missing Fano Reactor mention');
   assert.ok(readme.includes('Schrodinger Materials Console'), 'README missing Schrodinger demo mention');
   assert.ok(readme.includes('Multiscale Ladder'), 'README missing Multiscale Ladder mention');
+  assert.ok(readme.includes('EarthGrid'), 'README missing EarthGrid demo/backend documentation');
+  assert.ok(readme.includes('RoadVector'), 'README missing RoadVector documentation');
+  assert.ok(readme.includes('services/geodata'), 'README missing generic geodata service documentation');
+  assert.ok(readme.includes('WebXR toolkit'), 'README missing reusable WebXR toolkit documentation');
+  assert.ok(exists('demos/motorcycle/README.md'), 'RoadVector operational README missing');
   assert.ok(readme.includes('scripts/pcserver.sh'), 'README missing pcserver backend instructions');
 });

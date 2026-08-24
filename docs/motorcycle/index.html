@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-motorcycle-ready="false">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000300" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="geolocation=(self), xr-spatial-tracking=(self), camera=(), microphone=()" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000300'/%3E%3Cpath d='M8 42h48M14 34l10-12 9 12 9-18 8 18' fill='none' stroke='%2334ff73' stroke-width='4'/%3E%3C/svg%3E" />
+    <title>RoadVector // Particle Motorcycle</title>
+    <script type="module" crossorigin src="./assets/index-B3OmRJK9.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Cc89UeuG.css">
+  </head>
+  <body>
+    <main id="app">
+      <div id="viewport" tabindex="0" aria-label="Particle motorcycle simulation"></div>
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <aside id="console" class="console" aria-label="RoadVector controls">
+        <header class="console__header">
+          <div>
+            <p class="eyebrow">PEERCOMPUTE // REAL ROADS + PARTICLE PHYSICS</p>
+            <h1>ROADVECTOR</h1>
+          </div>
+          <button id="toggle-console" class="compact" type="button" aria-expanded="true">HIDE</button>
+        </header>
+
+        <div id="console-body">
+          <p class="status-line"><span class="status-dot" aria-hidden="true"></span><span id="platform-status" role="status" aria-live="polite">INITIALIZING</span></p>
+
+          <dl class="telemetry-grid">
+            <div><dt>OSM REGION</dt><dd id="osm-status">UNREQUESTED</dd></div>
+            <div><dt>TERRAIN</dt><dd id="terrain-status">UNREQUESTED</dd></div>
+            <div><dt>PHYSICS</dt><dd id="physics-status">WAITING</dd></div>
+            <div><dt>TRAFFIC</dt><dd id="traffic-status">SYNTHETIC // WAITING</dd></div>
+            <div><dt>RACE</dt><dd id="race-status">WAITING FOR REAL ROAD COURSE</dd></div>
+            <div><dt>SPEED</dt><dd id="speed">0.0 KM/H</dd></div>
+            <div><dt>GEAR / RPM</dt><dd id="powertrain">N // 0</dd></div>
+            <div><dt>CAMERA</dt><dd id="camera-status">THIRD PERSON</dd></div>
+            <div><dt>WEBXR</dt><dd id="xr-status">CHECKING</dd></div>
+          </dl>
+
+          <section class="control-block" aria-labelledby="location-heading">
+            <h2 id="location-heading">LOCATION // IN MEMORY ONLY</h2>
+            <div class="button-grid button-grid--two">
+              <button id="locate" type="button">USE MY LOCATION</button>
+              <button id="fallback" type="button">ANCHORAGE</button>
+            </div>
+            <div class="coordinate-grid">
+              <label>LAT <input id="latitude" inputmode="decimal" type="number" min="-90" max="90" step="0.0001" value="61.2181" /></label>
+              <label>LON <input id="longitude" inputmode="decimal" type="number" min="-180" max="180" step="0.0001" value="-149.9003" /></label>
+              <button id="go-location" type="button">LOAD</button>
+            </div>
+            <output id="region-status">NO REGION LOADED</output>
+          </section>
+
+          <section class="control-block">
+            <h2>RIDE</h2>
+            <div class="button-grid button-grid--three">
+              <button id="camera-toggle" type="button">1ST / 3RD</button>
+              <button id="reset-bike" type="button">RESET</button>
+              <button id="enter-xr" type="button" disabled>ENTER XR</button>
+            </div>
+            <label class="toggle"><input id="lean-assist" type="checkbox" checked /> LEAN ASSIST // PHYSICS TORQUE</label>
+          </section>
+
+          <section class="control-block desktop-help" aria-label="Desktop controls">
+            <h2>DESKTOP / GAMEPAD</h2>
+            <p>W/↑ THROTTLE · A/D STEER · SPACE FRONT BRAKE · S/↓ REAR BRAKE</p>
+            <p>Q/E SHIFT · C CAMERA · H RECENTER · R RESET · CLICK VIEW FOR POINTER LOCK</p>
+            <p>STANDARD GAMEPAD + MOBILE + WEBXR CONTROLLERS/HANDS SUPPORTED</p>
+          </section>
+
+          <section class="legend" aria-label="Scene legend">
+            <span class="legend--road">REAL OSM ROAD</span>
+            <span class="legend--building">OSM BUILDING</span>
+            <span class="legend--bike">PARTICLE BIKE</span>
+            <span class="legend--traffic">SYNTHETIC TRAFFIC</span>
+            <span class="legend--race">RACE CHECKPOINT</span>
+            <span class="legend--terrain">NOAA TERRAIN</span>
+          </section>
+
+          <footer class="source-note">
+            <p><strong>GAME / VISUALIZATION ONLY.</strong> Not navigation, traffic, routing, road-condition, or terrain-clearance data.</p>
+            <p>Roads/buildings: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.</p>
+            <p>Relief: NOAA/NCEI ETOPO 2022. Street traffic is deterministic application-generated simulation, never a live traffic feed.</p>
+            <p><a href="./licenses/NOTICE.md" target="_blank" rel="noopener noreferrer">DATA + SOFTWARE NOTICES</a> // NOT FOR NAVIGATION.</p>
+            <p id="provenance">SOURCE PROVENANCE UNAVAILABLE</p>
+          </footer>
+        </div>
+      </aside>
+
+      <section id="touch-controls" aria-label="Mobile motorcycle controls">
+        <div id="touch-steer" class="touch-axis"><span>STEER</span><i aria-hidden="true"></i></div>
+        <div id="touch-throttle" class="touch-axis touch-axis--vertical"><span>THROTTLE</span><i aria-hidden="true"></i></div>
+        <div class="touch-buttons touch-buttons--left">
+          <button id="touch-shift-down" type="button">− GEAR</button>
+          <button id="touch-rear-brake" type="button">REAR BRAKE</button>
+        </div>
+        <div class="touch-buttons touch-buttons--right">
+          <button id="touch-front-brake" type="button">FRONT BRAKE</button>
+          <button id="touch-shift-up" type="button">GEAR +</button>
+        </div>
+        <div class="touch-buttons touch-buttons--center">
+          <button id="touch-camera" type="button">VIEW</button>
+          <button id="touch-reset" type="button">RESET</button>
+        </div>
+      </section>
+
+      <output id="hud" class="hud" aria-live="polite">0.0 KM/H // GEAR N // 0 RPM</output>
+      <output id="error" class="error" role="alert"></output>
+    </main>
+  </body>
+</html>

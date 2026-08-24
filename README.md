@@ -2,7 +2,7 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Current Status - August 22, 2026
+## Current Status - August 23, 2026
 PeerCompute currently ships as a browser-first P2P runtime plus a set of
 production-shaped demos, validation harnesses, and deployment scripts. It is no
 longer only a relay/chat experiment: the repo has usable networking, state,
@@ -64,6 +64,21 @@ runtime metadata to NetViz.
   Schrodinger atom/orbital/material console, Fano Reactor algebraic chemistry
   scaffold, and the Multiscale Ladder's WebGPU-first supergalactic-to-orbital
   proxy physics stack.
+- **Reusable Earth/GIS platform**: `packages/geo-core`, the bounded Fastify
+  `services/geodata` service, and EarthGrid combine NOAA/AWS terrain,
+  bathymetry contours, official OSM Shortbread context, local OSM roads and 3D
+  buildings, directed road graphs, NOAA nowCOAST weather descriptors,
+  provenance, cache/freshness state, and privacy-preserving location startup.
+- **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
+  120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
+  dynamics, a race course derived from real connected OSM ways, lane- and
+  restriction-aware synthetic traffic with collision cages, local-origin
+  rebasing, and first/third-person views.
+- **Reusable input/WebXR toolkit**: device-independent action frames unify
+  keyboard/pointer lock, multitouch, standard gamepads, `xr-standard`
+  controllers, tracked hands, lifecycle-safe controller/hand models, haptics,
+  first/third/XR view rigs, and ray-driven terminal panels without coupling the
+  shared package to one game or one Three.js copy.
 - **Multiscale/ULG integration**: runtime packets, warm deltas, NetViz metadata,
   render/readback/frame-budget telemetry, law-graph consistency reports, ULG
   runtime manifests, ULG WebGPU execution deltas, qgrid/qmat WebGPU workers,
@@ -87,6 +102,19 @@ Recent focused validation is green without running the full chaos lab:
   The focused browser gate reaches a real AWS z15 tile and returns to NOAA with
   stable request counters; the full AWS composite-attribution block is exposed
   in the UI.
+
+- EarthGrid's deterministic browser gate loads rendered Shortbread road and
+  building commands, a bounded normalized OSM scene, source building heights,
+  NOAA relief and time-qualified radar, then proves dense-region narrowing,
+  stale status retention, scope-failure clearing/recovery, generation-race
+  suppression, permissioned geolocation, and a disclosed denial fallback.
+- RoadVector's focused gates cover particle inertia, gyroscopic integration,
+  translational and rotational CCD, suspension sag/landing, material-dependent
+  grip and braking, real traffic impulse, race timing/gates, lane/restriction
+  traffic semantics, all desktop/mobile/gamepad controls, origin rebasing,
+  renderer topology, and reset/disposal. The mocked WebXR browser gate uses
+  real Three r182 raycasting and mesh transforms; real-headset validation is
+  still explicitly a manual hardware gate rather than an inferred pass.
 
 - StateManager namespace replacement regressions passed `8/8`, plus a
   10,000-transition adversarial stress check.
@@ -171,6 +199,12 @@ modes.
 - **Compute observability** with manager task stats, per-runtime/task-family buckets, worker resize history, deterministic `peercompute.compute.task-packet.v0` hashes, `peercompute.compute.remote-task-envelope.v0` signer metadata, verification for remote dispatch, `peercompute.compute.worker-utilization.v0` per-worker/inline utilization telemetry, `peercompute.compute.task-placement.v0` requested-vs-actual placement telemetry, compact NodeKernel redundant-placement replica reports, and scoped persistent Multiscale remote-peer reliability history for future peer/cluster scheduling contracts.
 - **Cross-demo observability** through NetViz telemetry, attach-session discovery, runtime metadata inspection, RTC path diagnostics, and transport/signaling/media-path truth.
 - **Playable demo surfaces** including CubeChat, Hyperborea, SneakyWoods, Daddy Go!, NetViz, PlanetGen, the Multiscale Ladder, Universes, WebGPUPhys, the Fano Reactor scaffold, and the Schrodinger materials console.
+- **EarthGrid + generic geodata** for non-aviation real-data Earth/GIS apps,
+  including terrain/weather/OSM context and bounded local road/building/graph
+  envelopes with exact provenance and resource caps.
+- **RoadVector + reusable game foundations** for real-road motorcycle racing,
+  particle-rigid vehicle physics, deterministic synthetic traffic, normalized
+  desktop/mobile/WebXR input, and reusable terminal XR UI/view components.
 - **Multiscale ULG runtime manifest and state-delta worker** in the Multiscale Ladder: packets now expose a WebGPU-only `peercompute.ulg.runtime-manifest.v0` for the Schrodinger/material base layer, including carrier/state-channel declarations, Hamiltonian and quantum-state provenance, derived material closure metadata, canonical WGSL pass capsules, invariant checks, `multiscale-ulg-runtime` warm deltas, and `getUlgRuntime()` / `getUlgRuntimeDeltas()` browser APIs. A manifest-triggered `ulg-runtime` solver runs the pass DAG through worker-local WebGPU buffers via the shared `ComputeManager`, publishes `peercompute.ulg.webgpu-execution-result.v0` / `peercompute.ulg.webgpu-execution-delta.v0`, emits `peercompute.ulg.webgpu-state-delta.v0` channel updates for the reduced ULG state lane, exposes `ulg exec` readouts plus `getUlgRuntimeExecution()` / `getUlgRuntimeStateDelta()`, and reports blocked WebGPU availability instead of falling back to CPU. The molecular WebGPU MD worker now consumes those reduced state deltas as shader source terms in the staged neighbor-list integrate pass and exposes the `molecular ulg` readout row, while keeping the calibrated-science boundary explicit. The focused v0.4 regression compares the same base MD state with and without a ULG delta, proving the uncoupled packet stays inactive while the coupled packet carries temperature, charge, source-delta, contract-audit, and handoff fields.
 - **ULG simulation artifact operator-summary handoff** in the Multiscale Ladder: PeerCompute now preserves ULG `peercompute.ulg.edge-message-summary.v0`, `peercompute.ulg.field-observer-summary.v0`, and `peercompute.ulg.field-closure-sample-summary.v0` evidence from `peercompute.ulg.simulation-artifact.v0` compact deltas through artifact summaries, Multiscale packet aggregates, ULG spec-contract handoffs, the magnetar affordance, and the `ulg sim edge` / `ulg sim field` / `ulg sim closure` readout rows. These edge pass/count/residual, field-observer topology, and closure-table sample bound fields are runtime/operator evidence only; CPU-reference `carrier-toy` artifacts still keep scientific runtime, SPH/material, EOS/material-property, phase-change, and full-physics readiness false.
 - **Quantum orbital WebGPU field/magnetic-response handoff** in the Multiscale Ladder: the `quantum-orbital-grid` worker now consumes the demo electric-field and magnetic-field environment boundaries in its WGSL wavefunction-evolution reducer. It emits `peercompute.multiscale.quantum-orbital-grid.field-response-webgpu.v0` with bounded field-energy, dipole, polarizability, and Stark-shift proxy telemetry, plus `peercompute.multiscale.quantum-orbital-grid.magnetic-response-webgpu.v0` with reduced Zeeman energy, magnetic moment projection, spin/orbital projection, and Larmor-frequency proxy telemetry. Those fields propagate through orbital packets/closures, MD quantum coupling, runtime summaries, visual smoke, and the `quantum evolve` / `molecular quantum` readouts. This remains a screened-hydrogenic Stark/Zeeman proxy, not calibrated many-electron electromagnetic response.
@@ -386,6 +420,8 @@ Dev servers:
 - `https://localhost:5176/` (CubeChat)
 - `https://localhost:5177/` (PlanetGen)
 - `https://localhost:5186/` (WXGlobe)
+- `https://localhost:5187/` (EarthGrid; geodata service on loopback `8788`)
+- `https://localhost:5188/` (RoadVector; geodata service on loopback `8788`)
 - `https://localhost:5185/` (Multiscale Ladder)
 - `https://localhost:5178/` (Universes)
 - `https://localhost:5179/` (WebGPUPhys)
@@ -697,6 +733,14 @@ Current demos and validation surfaces:
   without tiled imagery as green equal-elevation contours over black terrain;
   NOAA ETOPO 2022 is the pole-to-pole default and AWS Terrarium is an optional
   higher-detail land source.
+- **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with the same
+  black/neon terrain rings, real OSM streets/buildings, bounded local 3D scene
+  data, source freshness/provenance, user location, and optional NOAA radar or
+  satellite imagery.
+- **RoadVector**: first/third-person particle motorcycle racing on real local
+  OSM roads and NOAA terrain, with 3D buildings, synthetic lane-aware traffic,
+  race gates/timing, desktop/mobile/gamepad/WebXR controls, and bright category
+  rendering.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.
 - **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
 - **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.
@@ -708,6 +752,8 @@ Current demos and validation surfaces:
 ![Daddy Go](docs/assets/daddygo.png)
 ![PlanetGen](docs/assets/planetgen.png)
 ![WXGlobe](docs/assets/wxglobe.png)
+![EarthGrid](docs/assets/earth.png)
+![RoadVector](docs/assets/motorcycle.png)
 ![Universes](docs/assets/universes.png)
 ![Multiscale Ladder](docs/assets/multiscale.svg)
 ![NetViz](docs/assets/netviz.png)
@@ -977,6 +1023,7 @@ npm run test:backend
 node --test demos/tests/demo-ports.test.js
 
 # Demo/model gates
+npm run test:earth-platform
 npm --prefix demos/planetgen test
 npm --prefix demos/multiscale test
 npm --prefix demos/schrodinger test
@@ -987,6 +1034,12 @@ npm --prefix demos/webgpuphys run test:ppf-contact
 # Build and browser smoke gates
 npm run build:all
 npm run test:runtime
+
+# Deterministic built EarthGrid/RoadVector/WXGlobe release gate
+npm run test:earth-platform:release
+
+# Optional bounded live-source contract gate (uses public upstream networks)
+npm run test:earth-platform:live
 
 # Multiplayer/local-infra gates
 npm --prefix net-chaos-lab run test:behavior
@@ -1027,18 +1080,27 @@ docs/
 demos/
 ├── cubechat/
 ├── daddygo/
+├── earth/
 ├── fano-reactor/
 ├── hyperborea/
 ├── multiscale/
+├── motorcycle/
 ├── netviz/
 ├── sneakywoods/
 ├── shared/
+│   ├── physics/
+│   ├── traffic/
+│   ├── xr/
 │   ├── peercomputeBotBridge.js
 │   └── peercomputeBots.js
 ├── schrodinger/
 ├── universes/
 ├── planetgen/
 └── webgpuphys/
+packages/
+└── geo-core/
+services/
+└── geodata/
 net-chaos-lab/
 ├── agent/
 │   ├── player-behavior-harness.mjs

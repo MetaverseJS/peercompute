@@ -180,11 +180,14 @@ if [[ "${DEV_STRICT_PORT:-1}" != "0" ]]; then
 fi
 
 echo "Dev servers (HTTPS):"
+echo "  geodata:   http://127.0.0.1:8788/ (proxied by Earth/RoadVector)"
 echo "  relay: dynamic WSS (check relay logs for address)"
 echo "  hyperborea: https://$(to_url_host "$overview_host"):5175/"
 echo "  cubechat:   https://$(to_url_host "$overview_host"):5176/"
 echo "  planetgen:  https://$(to_url_host "$overview_host"):5177/"
 echo "  wxglobe:    https://$(to_url_host "$overview_host"):5186/"
+echo "  earthgrid:  https://$(to_url_host "$overview_host"):5187/"
+echo "  roadvector: https://$(to_url_host "$overview_host"):5188/"
 echo "  multiscale: https://$(to_url_host "$overview_host"):5185/"
 echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
 echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
@@ -194,12 +197,15 @@ echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,hyperborea,cubechat,planetgen,wxglobe,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz \
   "npm run dev:relay" \
+  "GEODATA_ALLOW_PUBLIC_OVERPASS=1 npm --prefix \"$repo_root/services/geodata\" start" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/wxglobe\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/earth\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/motorcycle\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/multiscale\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \

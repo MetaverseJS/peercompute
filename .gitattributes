@@ -1,0 +1,4 @@
+# Vite/Cesium/Three production bundles and copied runtime assets preserve
+# upstream whitespace verbatim; source files remain under the normal checks.
+docs/*/assets/** -whitespace
+docs/*/cesium/** -whitespace

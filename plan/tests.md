@@ -1,5 +1,103 @@
 ## PeerCompute Test Strategy
 
+### Earth platform, geodata, motorcycle, and WebXR gate - 2026-08-23 AKDT
+
+- `services/geodata` pure/inject tests must cover strict bbox latitude/order/
+  axis/area/dateline bounds, deterministic injection-safe Overpass queries,
+  fixed URL validation, redirect/content-type/body/timeout/abort limits,
+  semaphore admission, identical-request coalescing, LRU/error eviction,
+  visible stale-if-error, exact-origin CORS, rate limiting, ETag/304, security
+  headers, and secret-/coordinate-free public health/errors.
+- OSM fixture tests must distinguish shared-node junctions from coordinate-only
+  crossings; cover `oneway=yes/-1`, roundabout and motorway implications,
+  motorcycle/motor-vehicle/vehicle/access hierarchy, surface, bridge, tunnel,
+  layer, lane and mph/kmh normalization, restriction relations, multipolygon
+  holes/parts, and every reported/derived/clamped building-height path. Graph
+  or topology caps fail the region; they never silently produce a partial
+  drivable graph.
+- `packages/geo-core` keeps all existing WXGlobe terrain/material tests green
+  and adds Shortbread MVT decode/projection/style/tile-boundary/LRU tests,
+  local ENU/rebase math, source envelopes, building style normalization, and
+  nowCOAST capabilities/time descriptor cases.
+- Earth browser tests use deterministic source fixtures plus explicit bounded
+  live opt-ins. They require a current rendered terrain frame, roads,
+  buildings, visible OSM/terrain/weather attribution, geolocation success and
+  denial fallback, generation-safe aborts, stale-scope teardown, and truthful
+  degraded states. One opt-in live gate covers Shortbread TileJSON/tile, a tiny
+  Overpass bbox, nowCOAST capabilities, and NOAA/AWS terrain.
+- Particle-rigid tests cover particle-cloud COM/full inertia tensor and
+  parallel-axis math, inverse-inertia rotation, contact velocity/torque
+  regressions, surfaced grid overflow, hinge/prismatic/spring limits,
+  suspension sag/travel, gyroscopic wheel behavior, Coulomb/tire friction
+  ellipse, acceleration/braking/grip/breakaway, swept collision/two-metre
+  landing, finite
+  state, snapshot/reset, fixed-step accumulation, and duplicate long-run CPU
+  state hashes.
+- Motorcycle road tests cover the exact rendered flat/slope/center-spike and
+  projected triangle-seam surfaces, local
+  ENU origin-rebase continuity, OSM road graph placement, traffic one-way/lane
+  behavior, seeded traffic determinism, traffic impulse transfer, first/third
+  person camera state, and the normalized control frame.
+- WebXR/input tests mock sessions, input sources, live gamepads, controller
+  addition/removal, handedness, `xr-standard` axes/buttons, target-ray vs grip,
+  select/squeeze edges, held actions, session enter/exit/restoration, DOM-
+  overlay absence/presence, layer opt-in, in-scene ray/poke UI, and idempotent
+  teardown. Desktop and multi-touch adapters must produce the same normalized
+  actions as XR.
+- Motorcycle browser smoke covers keyboard, pointer lock, mocked mobile
+  multi-touch, mocked normalized XR controllers, first/third-person switching,
+  geolocation permission/denial, real-road region load, visible attribution,
+  particle wheel/suspension telemetry, traffic collision, reset/rebase, stale
+  async request suppression, and failure recovery. A real-headset gate remains
+  manual and must record headset/browser/runtime details.
+- Release tests must add the two workspaces/ports/build outputs/gallery cards,
+  prove nested-path assets and Cesium notices, traverse generated imports, and
+  leave all test browsers/servers/temporary directories stopped. The full
+  chaos lab is not a substitute for these focused deterministic and real-data
+  gates.
+
+### Latest executed Earth platform evidence - 2026-08-23 AKDT
+
+- Runtime: Node `v24.18.0` on Kubuntu 24.04.
+- PASS: `npm run test:earth-platform:unit`. It completed `226` Node tests plus
+  the mocked Chromium XR harness: geo-core `20/20`, geodata `44/44`, EarthGrid
+  `27/27`, preserved WXGlobe `26/26`, shared XR `21/21`, particle/motorcycle
+  physics `32/32`, synthetic traffic `12/12`, and RoadVector `44/44`.
+- PASS: `npm run test:earth-platform:release`. It rebuilt WXGlobe, EarthGrid,
+  and RoadVector; passed static port/release checks `44/44`; then passed the
+  combined built-doc browser smoke for `wxglobe,earth,motorcycle` on test-owned
+  HTTPS port `43947`. The runner removed its browser/server state afterward.
+- Current built entries are WXGlobe `index-C2CjCt9q.js`, EarthGrid
+  `index-DNakLoHI.js`, and RoadVector `index-B3OmRJK9.js`. Cesium runtime and
+  third-party notices are present beneath both Cesium demo outputs.
+- PASS: `npm run test:earth-platform:live` at
+  `2026-08-24T02:52:01Z`–`02:52:05Z`. The bounded gate decoded a `38,983`-byte
+  Shortbread z14 tile (`515` streets, `1` building); normalized a
+  `267,281`-byte tiny Overpass response (`172` roads, `100` buildings, `705`
+  directed edges, first attempt); accepted `132` nowCOAST times with a current
+  latest frame aged `7.08` minutes; decoded `16` finite ETOPO samples from
+  `13`–`19` m; and fetched a `69,200`-byte AWS Terrarium tile.
+- PASS: live, headless gallery captures use the real local service rather than
+  committed fixtures. EarthGrid shows NOAA/Shortbread/nowCOAST live plus
+  `1,500` rendered local roads and buildings; RoadVector shows a current
+  `1,665`-road / `1,894`-building source region, capped visibly to `5,000` road
+  segments and `1,500` buildings.
+- PASS: `npm audit --prefix services/geodata --omit=dev` reported zero
+  vulnerabilities. `git diff --check` and focused syntax checks passed.
+- FIXED DURING GATING: malformed deterministic error fixtures, stale generated
+  bundles, a direct origin-rebase test that bypassed runtime coordination,
+  response-cap retry classification, fixed-date weather expiry, transient
+  public Overpass connect failure (bounded retry), and fixture-only gallery
+  captures. Failed attempts were discarded and are recorded in `plan/log.md`.
+- NOT RUN: a physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and performance pass. Automated XR is not physical-headset
+  certification. Full chaos-lab and unrelated multiplayer matrices were not
+  required for this focused slice.
+- EXTERNAL HANDOFF BLOCKER: Tailscale reports no Serve configuration and this
+  node's HTTPS certificate feature is not enabled. The loopback candidate is
+  verified, but no Tailnet URL is valid until the one-time Serve admin action
+  is completed and the exact HTTPS origin is re-probed.
+
 ### WXGlobe whole-planet terrain gate - 2026-08-22 AKDT
 
 - Pure Node tests cover NOAA ETOPO 2022 signed little-endian BIP decoding,

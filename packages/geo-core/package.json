@@ -1,0 +1,22 @@
+{
+  "name": "@peercompute/geo-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./client/*": "./src/client/*.js",
+    "./terrain/*": "./src/terrain/*.js",
+    "./geo/*": "./src/geo/*.js",
+    "./sources/*": "./src/sources/*.js",
+    "./vector/*": "./src/vector/*.js",
+    "./weather/*": "./src/weather/*.js"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "pbf": "^5.1.2"
+  }
+}

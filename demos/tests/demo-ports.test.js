@@ -49,6 +49,16 @@ const demoSpecs = [
     entryCandidates: ['index.html']
   },
   {
+    name: 'earth',
+    requiresRelayConfig: false,
+    entryCandidates: ['index.html']
+  },
+  {
+    name: 'motorcycle',
+    requiresRelayConfig: false,
+    entryCandidates: ['index.html']
+  },
+  {
     name: 'multiscale',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']
@@ -99,6 +109,8 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   const main = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'main.js'), 'utf8');
   const etopoTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'etopo2022.js'), 'utf8');
   const terrariumTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'terrarium.js'), 'utf8');
+  const sharedEtopoTerrain = fs.readFileSync(path.join(repoRoot, 'packages', 'geo-core', 'src', 'terrain', 'etopo2022.js'), 'utf8');
+  const sharedTerrariumTerrain = fs.readFileSync(path.join(repoRoot, 'packages', 'geo-core', 'src', 'terrain', 'terrarium.js'), 'utf8');
   const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
   const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
@@ -116,13 +128,15 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   assert.equal(demoPackage.dependencies.netcdfjs, undefined, 'retired NetCDF dependency must stay absent');
   assert.ok(main.includes('baseLayer: false'), 'wxglobe default must not add tiled imagery');
   assert.ok(main.includes('viewer.imageryLayers.removeAll()'), 'wxglobe must enforce zero imagery layers');
-  assert.ok(etopoTerrain.includes("ETOPO_2022_v1_60s_surface"), 'wxglobe must pin the current ETOPO 2022 surface');
-  assert.ok(etopoTerrain.includes('pixelType'), 'wxglobe missing NOAA S16 BIP request');
-  assert.ok(etopoTerrain.includes('getInt16(index * Int16Array.BYTES_PER_ELEMENT, true)'), 'wxglobe missing little-endian BIP decode');
-  assert.ok(etopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'), 'wxglobe ETOPO grid must use 256 dyadic intervals');
-  assert.ok(terrariumTerrain.includes('elevation-tiles-prod.s3.amazonaws.com/terrarium'), 'wxglobe missing AWS Terrarium source');
-  assert.ok(terrariumTerrain.includes('blue / 256 - 32768'), 'wxglobe missing Terrarium height decode');
-  assert.ok(terrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'), 'wxglobe AWS grid must use endpoint posts');
+  assert.ok(etopoTerrain.includes('@peercompute/geo-core/terrain/etopo2022'), 'wxglobe must consume shared ETOPO terrain');
+  assert.ok(terrariumTerrain.includes('@peercompute/geo-core/terrain/terrarium'), 'wxglobe must consume shared Terrarium terrain');
+  assert.ok(sharedEtopoTerrain.includes("ETOPO_2022_v1_60s_surface"), 'shared terrain must pin the current ETOPO 2022 surface');
+  assert.ok(sharedEtopoTerrain.includes('pixelType'), 'shared terrain missing NOAA S16 BIP request');
+  assert.ok(sharedEtopoTerrain.includes('getInt16(index * Int16Array.BYTES_PER_ELEMENT, true)'), 'shared terrain missing little-endian BIP decode');
+  assert.ok(sharedEtopoTerrain.includes('ETOPO2022_TILE_SIZE = 257'), 'shared ETOPO grid must use 256 dyadic intervals');
+  assert.ok(sharedTerrariumTerrain.includes('elevation-tiles-prod.s3.amazonaws.com/terrarium'), 'shared terrain missing AWS Terrarium source');
+  assert.ok(sharedTerrariumTerrain.includes('blue / 256 - 32768'), 'shared terrain missing Terrarium height decode');
+  assert.ok(sharedTerrariumTerrain.includes('TERRARIUM_GRID_SIZE = TERRARIUM_TILE_SIZE + 1'), 'shared AWS grid must use endpoint posts');
   assert.ok(main.includes('providerGeneration'), 'wxglobe source switching must reject stale provider telemetry');
   assert.ok(indexHtml.includes('NO IMAGERY LAYER'), 'wxglobe UI must disclose the imagery-free default');
   assert.ok(indexHtml.includes('id="aws-terrain-attribution"'), 'wxglobe must expose required AWS source attribution');
@@ -138,6 +152,45 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   assert.ok(docsIndex.includes('href="./wxglobe/"'), 'docs overview missing wxglobe link');
   assert.ok(docsIndex.includes('data-demo-dir="wxglobe"'), 'docs overview missing wxglobe metadata');
   assert.ok(docsIndex.includes('data-demo-port="5186"'), 'docs overview missing wxglobe dev port');
+});
+
+test('earth and motorcycle are first-class real-data demos with a shared backend', () => {
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const earthConfig = fs.readFileSync(path.join(demosRoot, 'earth', 'vite.config.js'), 'utf8');
+  const motorcycleConfig = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'vite.config.js'), 'utf8');
+  const motorcycleMain = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'src', 'main.js'), 'utf8');
+  const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
+  const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
+  const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
+
+  assert.ok(rootPackage.workspaces.includes('packages/geo-core'));
+  assert.ok(rootPackage.workspaces.includes('services/geodata'));
+  assert.ok(rootPackage.workspaces.includes('demos/earth'));
+  assert.ok(rootPackage.workspaces.includes('demos/motorcycle'));
+  assert.equal(rootPackage.scripts['dev:earth'], 'npm --prefix demos/earth run dev -- --host');
+  assert.equal(rootPackage.scripts['dev:motorcycle'], 'npm --prefix demos/motorcycle run dev -- --host');
+  assert.equal(rootPackage.scripts['build:earth'], 'npm --prefix demos/earth run build');
+  assert.equal(rootPackage.scripts['build:motorcycle'], 'npm --prefix demos/motorcycle run build');
+  assert.match(earthConfig, /port:\s*5187/);
+  assert.match(motorcycleConfig, /port:\s*5188/);
+  assert.ok(earthConfig.includes("path.resolve(docsRoot, 'earth')"));
+  assert.ok(motorcycleConfig.includes("path.resolve(docsRoot, 'motorcycle')"));
+  assert.ok(motorcycleConfig.includes("'/api'"), 'motorcycle dev server must proxy the geodata API');
+  assert.ok(motorcycleMain.includes('createMotorcycleGameRuntime'));
+  assert.ok(motorcycleMain.includes('createMotorcycleWorldRenderer'));
+  assert.ok(motorcycleMain.includes('createMotorcycleInputRuntime'));
+  assert.ok(motorcycleMain.includes('createMotorcycleXrPanel'));
+  [devAll, devLocalRelay].forEach((script) => {
+    assert.ok(script.includes('services/geodata'));
+    assert.ok(script.includes('demos/earth'));
+    assert.ok(script.includes('demos/motorcycle'));
+    assert.ok(script.includes(':5187/'));
+    assert.ok(script.includes(':5188/'));
+  });
+  assert.ok(docsIndex.includes('href="./earth/"'));
+  assert.ok(docsIndex.includes('data-demo-port="5187"'));
+  assert.ok(docsIndex.includes('href="./motorcycle/"'));
+  assert.ok(docsIndex.includes('data-demo-port="5188"'));
 });
 
 test('multiscale ladder is wired as a first-class repo demo', () => {

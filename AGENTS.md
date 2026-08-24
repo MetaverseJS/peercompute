@@ -39,3 +39,9 @@ Make periodic local git commits when a coherent clean point is reached. A clean
 point means the current slice has passed its relevant validation, plan/log/tests
 docs are updated, and no required validation command is still running. Keep
 commits local unless explicitly told to push.
+
+Never open an in-terminal browser split or pane for visual handoff; it obscures
+the user's terminal. Run browser validation headlessly. When the user should
+inspect a demo, expose it on a Tailscale-reachable HTTPS address, verify that
+exact link, and paste the link so it can be opened from a phone or laptop.
+Close any accidental terminal-browser split immediately.

@@ -2,6 +2,354 @@ Instructions: This file contains a detailed implementation log describing choice
 
 ## Implementation Log
 
+## 2026-08-23 14:37:27 AKDT - No in-terminal visual handoff panes
+
+### Prompt
+
+- User said: “yo, close the in terminal browser split. I literally can't see
+  anything there. if you want me to see something paste a tailscale reachable
+  https link so I can look at it from my phone or laptop. record this as a
+  permanent best practice in the AGENTS.md file”.
+
+### Actions
+
+- Immediately shut down the `terminal-browser` daemon and its visible split;
+  the command reported one open browser closed.
+- Rechecked the session after shutdown: `terminal-browser` reported no running
+  daemon and `terminal-browser ls --all --json` returned an empty `browsers`
+  array. Forced a tmux client repaint so no stale split image remained.
+- Appended a permanent repository instruction to `AGENTS.md`: never use an
+  in-terminal browser split for visual handoff, run browser validation
+  headlessly, and provide a verified Tailscale-reachable HTTPS link when the
+  user should inspect a demo from another device.
+- Renewed the ICC root integration lease with `AGENTS.md` included in its
+  non-overlapping edit scope.
+
+### Files Touched
+
+- `AGENTS.md`
+- `plan/log.md`
+
+### Commands Run And Results
+
+- `terminal-browser shutdown` — PASS; daemon stopped and the visible split was
+  removed.
+- `terminal-browser ls --all --json` — PASS; zero terminal-browser instances or
+  tabs remained for this terminal session.
+- `tmux refresh-client -S` — PASS; repainted the terminal after teardown.
+- `icc assistant-status --repo peercompute --format markdown` — PASS; resumed
+  the durable Earth/motorcycle/XR task and confirmed zero active-agent lease
+  conflicts (ICC source artifacts remain stale until the final planned refresh).
+- `icc agent-session ... --path-prefix AGENTS.md ... --fail-on-conflict` —
+  PASS; zero conflicts.
+
+### Open
+
+- Continue the active Earth/backend/motorcycle/WebXR implementation without
+  opening a visible terminal-browser pane. The eventual visual handoff must use
+  a separately verified Tailscale-reachable HTTPS URL.
+
+## 2026-08-23 18:54:28 AKDT - EarthGrid, geodata, RoadVector, and reusable XR software release closure
+
+### Prompt
+
+- Completed the user’s 2026-08-23 13:51:30 AKDT request for a reusable
+  real-data Earth/GIS base, generic backend, real-road particle motorcycle
+  race, traffic, desktop/mobile/WebXR control, and reusable WebXR I/O/UI.
+- Continued to honor the 2026-08-23 14:37:27 AKDT addition: no in-terminal
+  browser pane was opened for the remaining work; visual checks were headless,
+  and any user handoff must be an exact verified Tailscale HTTPS URL.
+
+### Final implementation
+
+- Extracted the proven WXGlobe terrain/request/material modules into
+  `packages/geo-core`, retaining the old WXGlobe import paths as thin
+  compatibility re-exports. Added exact bbox/local-frame math, source and
+  catalog contracts, OSM Shortbread MVT decode/style/cache logic, building
+  height normalization, and nowCOAST descriptors plus cadence freshness.
+- Implemented `services/geodata` as a bounded Node-24 Fastify service with
+  secret-free health, a canonical source/layer catalog, exact-origin CORS,
+  fixed and abortable Overpass transport, raw and normalized byte caps,
+  semaphore admission, coalesced TTL/LRU caching, ETags/compression, visible
+  stale-on-error, and exact ODbL provenance. OSM normalization preserves way,
+  relation, and ordered node IDs; graph edges obey oneway/motorway/roundabout,
+  access specificity, lanes, structure/layer/surface/speed, and supported turn
+  restrictions without claiming navigation authority.
+- Implemented EarthGrid in `demos/earth`: NOAA ETOPO and AWS Terrarium terrain,
+  parallel-ring rendering, global Shortbread roads/buildings, capped local OSM
+  3D roads/buildings, current/expired nowCOAST handling, user-triggered
+  in-memory geolocation, disclosed Anchorage fallback, fixed 1200/800/500 m
+  density/response retry, source freshness/cache/license UI, teardown, and
+  generation-safe failure recovery.
+- Implemented reusable deterministic particle-rigid physics and motorcycle
+  packages under `demos/shared/physics`: full inertia, 120 Hz fixed stepping,
+  12 solver iterations, gyro integration, swept translational and rotational
+  particle CCD, surfaced spatial-hash caps, constraints, hard suspension
+  travel, terrain/surface grip, tire slip/friction ellipse, six-component bike,
+  snapshots/reset, and finite telemetry. Corrected suspension geometry and set
+  bounded parking damping to `3500`; 20-second neutral and two-metre landing
+  gates now pass without limit escape or overflow.
+- Implemented reusable deterministic synthetic traffic in
+  `demos/shared/traffic`: exact graph connectivity, lanes, turn restrictions,
+  fixed-step seeded routing, bounded vehicles/work, WGS84 interpolation, and
+  explicit synthetic/non-live/non-navigation provenance.
+- Implemented reusable `demos/shared/xr`: application-defined immutable action
+  frames; keyboard/pointer-lock, multitouch, standard gamepad, and
+  `xr-standard` controller/hand sources; copied edge state; lifecycle cleanup;
+  haptics; controller/grip/hand registry; first/third/XR view rig; and
+  terminal-style in-scene controls with real Three r182 ray interaction.
+- Implemented RoadVector in `demos/motorcycle`: real OSM local scene and NOAA
+  terrain, six-body particle bike, deterministic graph-derived race gates/laps/
+  timer, 14 lane/restriction-aware synthetic vehicles with 14 physical
+  particle cages, traffic impulse, desktop/mobile/gamepad/XR controls, first/
+  third/tracked-head views, contact/checkpoint visuals, boundary handling,
+  atomic world/camera/XR origin rebasing, failure recovery, and exact public
+  OSM freshness/cache/provenance state.
+- Added root workspaces, ports `5187`/`5188`/`8788`, dev scripts, default-off
+  external browser opening, gallery cards, production builds, third-party
+  notices, RoadVector operational README, deterministic/live browser gates,
+  and a requirement-by-requirement branch audit. Refreshed gallery captures
+  headlessly from real local service data rather than silently using fixtures.
+
+### Files touched
+
+- Existing root/integration files: `.gitattributes`, `AGENTS.md`, `README.md`,
+  `package.json`, `package-lock.json`, `docs/index.html`, `scripts/dev-all.sh`,
+  `scripts/dev-local-relay.sh`, `demos/tests/demo-ports.test.js`,
+  `demos/tests/demo-release.test.js`, `demos/tests/runtime-smoke.mjs`,
+  `demos/wxglobe/package.json`, and
+  `demos/wxglobe/src/terrain/{cappedHeightmapProvider,etopo2022,terrainRequest,terrarium,topoMaterial}.js`.
+- Complete new source/test/package trees: `packages/geo-core/**`,
+  `services/geodata/**`, `demos/earth/**`, `demos/motorcycle/**`,
+  `demos/shared/physics/**`, `demos/shared/traffic/**`, and
+  `demos/shared/xr/**`.
+- New shared gates/fixtures: `demos/tests/earth-live-source.mjs`,
+  `demos/tests/xr-browser-smoke.mjs`, and `demos/tests/fixtures/**`.
+- Generated release/visual trees: `docs/wxglobe/**`, `docs/earth/**`,
+  `docs/motorcycle/**`, `docs/assets/earth.png`, and
+  `docs/assets/motorcycle.png` (`795` current files across the three generated
+  demo directories, including Cesium runtime/license assets).
+- Planning/evidence: `plan/plan.md`, `plan/tests.md`, `plan/log.md`, and
+  `plan/branch/earth-platform-motorcycle-xr.md`.
+
+### Final commands and results
+
+- `node --version` — PASS, `v24.18.0`; Node was never downgraded.
+- `npm run test:earth-platform:unit` — PASS: geo-core `20/20`, geodata
+  `44/44`, EarthGrid `27/27`, retained WXGlobe `26/26`, shared XR `21/21`,
+  mocked Chromium XR harness PASS, physics `32/32`, traffic `12/12`, and
+  RoadVector `44/44` (`226` Node tests plus the browser harness).
+- `npm run test:earth-platform:release` — PASS: rebuilt WXGlobe, EarthGrid, and
+  RoadVector; static release/port suite `44/44`; combined built-doc HTTPS
+  runtime smoke for `wxglobe,earth,motorcycle` PASS on test-owned port `43947`.
+  Current entries are WXGlobe `index-C2CjCt9q.js`, EarthGrid
+  `index-DNakLoHI.js`, and RoadVector `index-B3OmRJK9.js`.
+- `npm run test:earth-platform:live` — PASS at
+  `2026-08-24T02:52:01Z`–`02:52:05Z`: Shortbread `38,983` bytes / `515`
+  streets / `1` building; tiny Overpass `267,281` bytes / `172` roads / `100`
+  buildings / `705` directed edges / attempt 1; nowCOAST `132` frames with a
+  current latest frame aged `7.08` minutes; ETOPO `16` finite samples from
+  `13`–`19` m; Terrarium `69,200` bytes.
+- `npm audit --prefix services/geodata --omit=dev` — PASS, zero
+  vulnerabilities.
+- `git diff --check` plus focused `node --check` commands — PASS.
+  `.gitattributes` disables whitespace diagnostics only for generated Vite
+  bundles and copied Cesium runtime assets, which preserve upstream shader/SVG
+  whitespace; source and test files remain under normal whitespace checks.
+- Headless Playwright against the live loopback stack — PASS: RoadVector
+  current source region contained `1,665` roads, `1,894` buildings, and `8,240`
+  graph edges; the capped renderer disclosed `5,000` road segments and `1,500`
+  buildings with zero browser errors. EarthGrid disclosed `local-live`, `1,500`
+  roads/buildings, NOAA live, Shortbread live, and radar live.
+- ICC `index --jobs 0`, `build-memory`, and `build-git-history` — PASS:
+  `772` indexed files, `448,419` lines, `10,917` memory chunks, and `268`
+  commits indexed. The scoped guard excluding the five intentional WXGlobe
+  re-export shells passed with zero violations/warnings. The first broad guard
+  failed only because it counted `1,145` deleted implementation lines moved
+  into `packages/geo-core`; WXGlobe `26/26`, fresh build, and runtime smoke
+  independently prove that extraction rather than functional rollback.
+- Scoped ICC production audit found no shell/Python leakage or release-class
+  problem. Its WARN is limited to one symbol-free indexed asset, other saved
+  repository tasks, and the not-yet-created coherent commit.
+
+### Failed attempts and corrections
+
+- The first live/public Overpass path returned a provider/user-agent error;
+  added the required identifying user agent. A later optional live run hit one
+  Undici connect timeout after the relation-query change; added at most one
+  retry for retryable connect/429/5xx failures while retaining the tiny bbox.
+- Earth’s initial deterministic dense-error fixture omitted the canonical
+  common envelope, so strict validation correctly produced
+  `ERR_GEODATA_SCHEMA`; replaced it with the real public error contract.
+- A fixed nowCOAST timestamp aged out while the test was running; changed the
+  fixture to one cadence-aligned generated timestamp and added a distinct
+  expired-frame assertion.
+- An origin-rebase smoke originally mutated `world.shiftOrigin` directly and
+  therefore bypassed the runtime transaction being tested; changed it to move
+  the complete bike frame past the threshold and let the runtime rebase all
+  consumers. A later arbitrary-frame camera check was made atomic.
+- Several intermediate production bundles and the first RoadVector/Earth
+  screenshots were stale or fixture-backed. Rebuilt after source freeze and
+  recaptured both images headlessly against the live service. Earth’s first
+  live capture was taken before its heavy local scene/camera settled; the
+  successful capture waited for live data and used a deterministic camera
+  preset.
+- Full generic ICC readiness/production scoring included unrelated old saved
+  tasks and fallback markers in other demos; used path-scoped audits and kept
+  disclosed Anchorage/flat-terrain fallbacks explicit instead of weakening
+  their truth labels.
+
+### Cleanup, commit, and open external gates
+
+- All test-owned Chromium instances, temporary HTTPS servers, ports
+  `43947`–`43951`, and the temporary Earth `5187` process were stopped. No
+  terminal-browser pane was opened after the permanent `AGENTS.md` rule.
+- An intentional loopback handoff candidate remains at RoadVector `5188` and
+  same-origin geodata `8788`; it is not advertised as remotely reachable.
+  `tailscale serve status --json` is still `{}`. Running
+  `tailscale serve --bg --yes https+insecure://127.0.0.1:5188` is blocked by
+  the one-time Tailnet admin action at
+  `https://login.tailscale.com/f/serve?node=nFSXDDESCN11CNTRL`. After the user
+  enables it, the exact MagicDNS HTTPS page/API/secure-context/geolocation path
+  must be reverified before a link is handed off.
+- NOT RUN: real headset enter/exit/re-enter, controller/hand/haptics, comfort,
+  and performance matrix. Automated mocked XR is not represented as physical
+  headset certification.
+- ICC durable plan is reconciled to `6/7` verified with only remote release
+  handoff pending. `git commit -m "Add EarthGrid and RoadVector platform"`
+  created the coherent local checkpoint covering all `580` changed files;
+  final artifact refresh/lease closure follows this log update. No push is
+  authorized or attempted.
+
+## 2026-08-23 13:51:30 AKDT - Real-data Earth platform, motorcycle game, and reusable WebXR toolkit
+
+### Prompt
+
+- User requested: “good job. I'd like you to make yet another demo. I'd like
+  you to make another demo that can be used as a base for other earth based
+  apps that use real data. keep the styling and the terrain and the weather
+  imports. add open street map data, maybe even buildings! perhaps we can work
+  on the server to be more of a generic back end for this kind of thing as
+  well. then once you've done that. I'd like you to make a motorcycle game demo
+  styled in the same way that allows a user to race a motorcycle around on real
+  roads near their physical location. use my dnynamics physics demo code as an
+  example to construct the motorcycle out of particle based components for
+  realistic physics. this game should support mobile, desktop, and webxr play
+  using the controllers. you should have some traffic on the streets. keep
+  everything in the topo style parallel rings rendering style with very bright
+  colors for different categories of objects in the world. construct a webxr ui
+  toolkit while building this out so we can reuse it. so when you're done, we
+  should have a generic (non aviation specific google earth like interface that
+  allows us to view GIS and weather data, a back end that supports that (which
+  is an extension of what you have built for the weather briefing app), a 1st
+  and 3rd person motorcycle game that uses those well abstracted components, a
+  webxr io library we can use for other webxr games.”
+- During the same active goal, the user asked for status and then asked for the
+  existing preview link again. Reverified the retained WXGlobe server and sent
+  the live Tailnet URL; the server returned HTTP 200 over HTTPS with the local
+  development certificate.
+
+### Actions And Architecture
+
+- Read the installed `icc-control-plane` skill and resolved the registered
+  repository as `peercompute`.
+- Created durable ICC task
+  `peercompute-earth-platform-motorcycle-xr-20260823`, then replaced its generic
+  plan with seven explicit end-state items: source-contract audit, generic
+  geodata backend, Earth platform, particle vehicle physics, WebXR toolkit,
+  motorcycle game, and full release gates.
+- Confirmed ICC index, memory, architecture, and Git history were current at
+  commit `6276c4e`; ran `status`, `project-relationships`,
+  `architecture-summary`, `pack-symbols`, and `task-show`; stamped and passed
+  the Codex edit-intent enforcement gate.
+- Ran ICC agent preflight and published non-overlapping root, particle-physics,
+  geodata, WebXR, and synthetic-traffic leases. A later preflight reported the
+  same-task physics lease as a conflict despite reporting no overlapping path;
+  the agent-session conflict check remained zero and both edit scopes stayed
+  disjoint.
+- Inspected the current WXGlobe terrain/material/runtime contract, root Vite
+  workspace/build/dev/release harness, WebGPUPhys particle-composed rigid-body
+  engine, existing PlanetGen/Universes/Hyperborea WebXR input code, and shared
+  demo modules.
+- Added `packages/geo-core`: the proven WXGlobe terrain providers/material now
+  live behind reusable package exports, while WXGlobe keeps compatibility
+  re-exports. Added bounded bbox/local-frame math, source catalog/envelopes,
+  OSM Shortbread MVT decode/styles, building-height provenance, nowCOAST
+  descriptors/time parsing, and a transparent topo overlay material that
+  preserves GIS imagery between contour rings.
+- Added `services/geodata`: Node 24 Fastify service with secret-free health,
+  canonical source catalog, exact-origin CORS, bounded/coalesced OSM adapter,
+  strict Overpass transport, deterministic roads/buildings/motorcycle graph,
+  ODbL provenance, rate/concurrency/body/result caps, ETags, gzip, and verified
+  stale-on-error caching. Production now requires a controlled Overpass URL;
+  the public instance is development/test-only.
+- Added the EarthGrid demo at `demos/earth`: NOAA/AWS terrain, bright topo
+  rings, official global Shortbread roads/buildings, bounded local OSM 3D
+  roads/buildings, optional live nowCOAST radar/satellite, user-triggered and
+  in-memory-only geolocation, source provenance, dense-region narrowing, and
+  nested-path-safe Cesium build output under `docs/earth`.
+- Added the reusable `demos/shared/xr` toolkit: device-independent action
+  frames, keyboard/pointer, standard gamepad, multitouch, `xr-standard` input,
+  controller/hand registry, session lifecycle, haptics, first/third/XR view
+  rig, and reusable terminal-style in-scene controls.
+- Fixed integration defects found by real-browser testing: detached
+  `Window.fetch` caused Chromium `Illegal invocation`; local roads/building
+  heights were reading the wrong nested backend fields; an opaque WX material
+  hid OSM imagery; the initial dense Anchorage region exceeded the client
+  response cap. Added strict envelope validation, stream caps, exact nested
+  adapters, a transparent contour material, and bounded 1200/800/500 m retry.
+- Started the leased reusable particle-rigid motorcycle solver and deterministic
+  OSM road-graph traffic implementation; both remain in progress.
+
+### Commands Run So Far
+
+- ICC CLI/MCP: `status --check-staleness`, `project-relationships`,
+  `architecture-summary`, `pack-symbols`, `task-show`, `task-plan`,
+  `agent-enforcement` stamp/check, `agent-preflight`, and `agent-session`.
+- Repository discovery: focused `rg`, `rg --files`, `sed`, `wc`, `git status`,
+  `ss`, `ps`, `tailscale status --json`, and bounded `curl` probes.
+- Preview verification: HTTPS HEAD requests to loopback, Tailnet IP, and
+  MagicDNS port `5186` returned HTTP 200 when using the development CA bypass;
+  strict certificate verification correctly reports that the local certificate
+  does not cover the Tailnet names.
+- Dependency/workspace: `node -v`, repeated `npm install --ignore-scripts`, and
+  standalone service install. Node remained `v24.18.0`. The aggregate root
+  audit still reports 41 pre-existing/transitive findings; the isolated
+  production geodata service audit reports zero.
+- Focused tests: geo-core `19/19`, retained WXGlobe `26/26`, geodata `40/40`,
+  Earth `12/12`, and WebXR `14/14` pass. Syntax checks pass.
+- Real source/runtime probes: a bounded Anchorage request returned 1,630 OSM
+  road ways, 1,850 buildings, 3,705 graph nodes, and 7,623 directed motorcycle
+  edges. A headless Chromium Earth run rendered 1,500 local roads plus 1,500
+  buildings with no page errors; a forced dense first request retried once at
+  800 m and rendered 1,059 roads plus 960 buildings.
+- Earth production builds succeeded with nested Cesium runtime assets. Live
+  NOAA terrain, official Shortbread, and nowCOAST radar were exercised.
+
+### Files Touched So Far
+
+- `AGENTS.md`
+- `package.json`, `package-lock.json`
+- `packages/geo-core/**`
+- `services/geodata/**`
+- `demos/wxglobe/package.json` and its five terrain compatibility modules
+- `demos/earth/**`
+- `demos/shared/xr/**`
+- `demos/shared/physics/**` (active leased worker)
+- `docs/earth/**`
+- `plan/branch/earth-platform-motorcycle-xr.md`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+### Open
+
+- Finish and independently validate the particle-rigid motorcycle components,
+  deterministic traffic, motorcycle game runtime, mobile/desktop/WebXR
+  integration, first/third-person views, gallery/dev/build wiring, docs, and
+  production browser gates.
+- Rebuild/reindex ICC artifacts, run final guard/readiness/completion audits,
+  close all test servers, and create a coherent local commit. The goal remains
+  active and no completion claim has been made.
+
 ## 2026-06-17 17:05:02 AKDT - Local hot-buffer refresh from remote resident-stage admission
 
 ### Prompt
@@ -618,6 +966,55 @@ Instructions: This file contains a detailed implementation log describing choice
   closure regeneration, material/EOS/SPH/phase scientific validation, or
   full-physics readiness.
 - No push was attempted.
+
+## 2026-08-23 17:03 AKDT — Remove terminal-browser obstruction and make HTTPS handoff policy permanent
+
+### Prompt
+
+- User asked to close the in-terminal browser split because it obscured the
+  working terminal, requested that future visual handoffs use a verified
+  Tailscale-reachable HTTPS link, and asked for this to become a permanent
+  `AGENTS.md` best practice.
+
+### Actions
+
+- Read the installed terminal-browser shutdown instructions without opening or
+  rendering another browser.
+- Confirmed `terminal-browser ls --all --json` reported no registered live
+  browser, then inspected tmux panes and the remaining process environment to
+  identify the orphaned session associated with the visible split:
+  `terminal-browser-1385890-1` / PID `1386166` / tmux pane `%1`.
+- Sent `SIGTERM` only to that stale browser process, verified it exited, and
+  forced a tmux client redraw with `tmux refresh-client -S`.
+- Ran `terminal-browser shutdown`; it confirmed no daemon remained.
+- Verified no process matching the stale browser session remained and that tmux
+  contained no browser split pane.
+- Confirmed `AGENTS.md` now permanently requires headless browser validation,
+  forbids in-terminal browser splits/panes for visual handoff, requires an exact
+  verified Tailscale HTTPS link when user inspection is useful, and requires an
+  accidental split to be closed immediately.
+
+### Files Touched
+
+- `AGENTS.md`
+- `plan/log.md`
+
+### Commands And Results
+
+- `terminal-browser ls --all --json` — PASS; no registered browser remained.
+- `tmux list-panes -a ...` — PASS; no browser split pane remained.
+- `terminal-browser shutdown` — PASS; reported `no daemon running`.
+- Targeted `kill -TERM 1386166` — PASS; reported `target browser stopped`.
+- Focused process/session recheck — PASS; no matching stale browser process.
+- `tmux refresh-client -S` — completed to clear/redraw the terminal surface.
+
+### Failures And Open Questions
+
+- The browser backend had become orphaned and was not discoverable through
+  `terminal-browser ls`, so a targeted process-environment check was required.
+- No demo link was handed off in this prompt. Any later visual handoff remains
+  gated on a verified Tailscale-reachable HTTPS origin; plain HTTP or an
+  unverified URL is not acceptable.
 
 ## 2026-08-22 13:36:27 AKDT - WXGlobe whole-planet Cesium terrain and bathymetry demo
 

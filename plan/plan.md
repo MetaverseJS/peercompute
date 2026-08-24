@@ -14,6 +14,68 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+### Active Earth Platform And Motorcycle Roadmap - 2026-08-23 AKDT
+
+- Build `services/geodata`, a bounded generic real-data service for source
+  catalog/provenance plus local OpenStreetMap roads, buildings, and directed
+  road graphs. Use fixed upstreams, exact-origin CORS, strict bbox/body/feature
+  caps, coalesced caching, and explicit stale/unavailable states; do not create
+  a universal upstream proxy.
+- Extract the proven WXGlobe terrain/projection/material contracts into a
+  reusable `packages/geo-core` surface while keeping WXGlobe and all current
+  tests compatible.
+- Add `demos/earth`, a non-aviation Cesium Earth/GIS viewer with the current
+  NOAA/AWS terrain and parallel-ring style, official OSM Shortbread roads and
+  buildings, bounded local scene data, NOAA weather imagery descriptors,
+  visible provenance, geolocation, and manual fallback.
+- Add deterministic CPU-authoritative particle-rigid and motorcycle packages,
+  based on the useful rigid particle-cloud idea in WebGPUPhys Dynamics but
+  correcting its contact, torque, inertia, gyro, friction, capacity, joint,
+  road-collider, and determinism gaps.
+- Add a reusable WebXR input/UI package plus normalized desktop, mobile,
+  gamepad, and XR adapters. DOM overlay and XR layers remain optional; target
+  rays, grip models, handedness, `xr-standard`, state-edge detection, session
+  cleanup, and an in-scene UI fallback are required.
+- Add `demos/motorcycle`, a first/third-person location-based motorcycle game
+  over real OSM roads and real terrain with particle-component suspension,
+  wheels, tire grip, bright topo rendering, buildings, deterministic synthetic
+  traffic, desktop/mobile/WebXR play, and truthful telemetry/source status.
+- The exact architecture, safety/privacy/source contracts, hard limits, and
+  completion gates live in
+  `plan/branch/earth-platform-motorcycle-xr.md`. Keep the full end state active
+  until the backend, both demos, all reusable packages, production builds,
+  browser gates, and final completion audit are proven.
+
+### Earth Platform Implementation Snapshot - 2026-08-23 AKDT
+
+- `packages/geo-core`, `services/geodata`, `demos/earth`,
+  `demos/motorcycle`, `demos/shared/{physics,traffic,xr}`, and their production
+  outputs are implemented. WXGlobe consumes the shared terrain modules through
+  compatibility exports and retains its existing imagery-free behavior.
+- EarthGrid combines bounded NOAA/AWS terrain, official OSM Shortbread context,
+  capped local OSM roads/buildings, cadence-qualified nowCOAST imagery,
+  in-memory geolocation/fallback, and exact freshness/license provenance.
+- RoadVector runs a deterministic 120 Hz/12-iteration six-body particle bike,
+  hard suspension travel, tire/surface grip, translational/rotational CCD,
+  deterministic race gates/laps, lane/restriction-aware synthetic traffic with
+  14 physical collision cages, origin rebasing, and normalized desktop/mobile/
+  gamepad/WebXR input over real OSM roads and bounded NOAA terrain.
+- The reusable XR layer now owns application-defined actions, pointer lock,
+  multitouch, gamepad and `xr-standard` snapshots, controller/hand lifecycle,
+  haptics, session cleanup, first/third/XR view transforms, and terminal-style
+  in-scene controls. Automated Three r182 mocked-browser XR passes; a physical
+  headset run remains explicitly manual and is not represented as completed.
+- Final deterministic evidence is `226` passing Node tests plus the mocked XR
+  browser harness; fresh WXGlobe/EarthGrid/RoadVector builds; `44/44` static
+  release checks; a three-demo built-browser smoke; and a bounded live-source
+  gate covering Shortbread, Overpass, nowCOAST, ETOPO, and Terrarium.
+- Software implementation and local release evidence are complete. The remote
+  handoff remains externally blocked until Tailscale Serve is enabled for this
+  node; the verified loopback RoadVector/geodata candidate is intentionally
+  retained only for that handoff and no insecure HTTP URL will be advertised.
+  A coherent local `Add EarthGrid and RoadVector platform` commit records the
+  slice; it has not been pushed.
+
 ### Current Validation Snapshot - 2026-08-22 AKDT
 
 - WXGlobe is now a first-class standalone demo on port `5186`, selectively
