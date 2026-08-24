@@ -57535,3 +57535,29 @@ external gates.
   at `https://login.tailscale.com/f/serve?node=nFSXDDESCN11CNTRL`; a physical
   headset/runtime must be attached and started before the manual XR matrix can
   run.
+
+## 2026-08-23 19:22:06 AKDT - External completion gate recheck 3 / blocked closure
+
+Prompt context: third consecutive automatic continuation of the active
+EarthGrid/RoadVector goal, received at 2026-08-23 19:21 AKDT. This turn again
+checked only whether the external completion state had changed.
+
+- `tailscale serve status --json` remained `{}`; the online MagicDNS node still
+  reported `CertDomains: null`. Trusted remote HTTPS publication is impossible
+  until the Tailnet administrator enables Serve/certificate support.
+- The verified loopback candidate still returned RoadVector root `200` and
+  same-origin catalog `200`, confirming the blocker is not an application or
+  backend failure.
+- ADB, USB, and OpenXR-manifest checks again found no attached physical headset,
+  controller, or usable XR runtime. The hardware-only manual gate cannot run
+  without an external device/runtime state change.
+- This is the third consecutive goal turn with the same two external blockers.
+  All safe local implementation, audit, build, unit, browser, live-source,
+  artifact, documentation, ICC, and commit work is already complete. Per the
+  persistent-goal blocked-audit contract, the goal is now marked blocked rather
+  than left falsely active.
+- Resumption actions: enable Serve at
+  `https://login.tailscale.com/f/serve?node=nFSXDDESCN11CNTRL`, then reply
+  `enabled`; attach/start a physical XR headset/runtime when hardware
+  certification is desired. The retained candidate can then be published and
+  verified without rebuilding.
