@@ -68,12 +68,26 @@ export class DeterministicSpatialHash {
       const radius = Math.max(0, entry.radius ?? 0);
       const samples = entry.sweptPositions
         ?? [entry.previousPosition ?? entry.position, entry.position];
-      const minX = this.#coordinate(Math.min(...samples.map((sample) => sample[0])) - radius);
-      const minY = this.#coordinate(Math.min(...samples.map((sample) => sample[1])) - radius);
-      const minZ = this.#coordinate(Math.min(...samples.map((sample) => sample[2])) - radius);
-      const maxX = this.#coordinate(Math.max(...samples.map((sample) => sample[0])) + radius);
-      const maxY = this.#coordinate(Math.max(...samples.map((sample) => sample[1])) + radius);
-      const maxZ = this.#coordinate(Math.max(...samples.map((sample) => sample[2])) + radius);
+      let minimumX = Infinity;
+      let minimumY = Infinity;
+      let minimumZ = Infinity;
+      let maximumX = -Infinity;
+      let maximumY = -Infinity;
+      let maximumZ = -Infinity;
+      for (const sample of samples) {
+        minimumX = Math.min(minimumX, sample[0]);
+        minimumY = Math.min(minimumY, sample[1]);
+        minimumZ = Math.min(minimumZ, sample[2]);
+        maximumX = Math.max(maximumX, sample[0]);
+        maximumY = Math.max(maximumY, sample[1]);
+        maximumZ = Math.max(maximumZ, sample[2]);
+      }
+      const minX = this.#coordinate(minimumX - radius);
+      const minY = this.#coordinate(minimumY - radius);
+      const minZ = this.#coordinate(minimumZ - radius);
+      const maxX = this.#coordinate(maximumX + radius);
+      const maxY = this.#coordinate(maximumY + radius);
+      const maxZ = this.#coordinate(maximumZ + radius);
       for (let x = minX; x <= maxX; x += 1) {
         for (let y = minY; y <= maxY; y += 1) {
           for (let z = minZ; z <= maxZ; z += 1) {
@@ -86,7 +100,6 @@ export class DeterministicSpatialHash {
     }
 
     for (const cell of this.cells.values()) {
-      cell.entries.sort(compareEntry);
       this.diagnostics.maximumOccupancy = Math.max(
         this.diagnostics.maximumOccupancy,
         cell.entries.length,
@@ -101,7 +114,10 @@ export class DeterministicSpatialHash {
     return this.diagnostics;
   }
 
-  candidatePairs() {
+  candidatePairs(pairFilter = null) {
+    if (pairFilter !== null && typeof pairFilter !== 'function') {
+      throw new TypeError('pairFilter must be a function or null');
+    }
     const unique = new Map();
     const cells = [...this.cells.values()].sort(compareCell);
     for (const cell of cells) {
@@ -111,6 +127,7 @@ export class DeterministicSpatialHash {
           const a = entries[left];
           const b = entries[right];
           if (a.bodyId === b.bodyId) continue;
+          if (pairFilter && !pairFilter(a, b)) continue;
           const pairKey = String(a.key) < String(b.key)
             ? `${a.key}|${b.key}`
             : `${b.key}|${a.key}`;

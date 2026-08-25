@@ -16,3 +16,12 @@
   and source hashes in that directory's `manifest.json`.
 - Simulated street traffic is application-generated, synthetic, and is not a
   live traffic feed.
+- “Akira Bike” by Ryanwill679, distributed through Sketchfab under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). RoadVector's
+  derivative converts the source to glTF, simplifies its mesh, compresses and
+  limits textures, and calibrates scale/orientation for the physics chassis.
+  The model is presentation-only; it supplies no collision or dynamics
+  authority. See `../models/akira-bike/ATTRIBUTION.md` and `LICENSE.txt` for
+  the retained attribution, source link, license text, hashes, and change
+  notice. Third-party fictional designs, names, and marks remain the property
+  of their respective owners; no affiliation or endorsement is claimed.

@@ -65,6 +65,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     maximumContactMarkers = MOTORCYCLE_RENDER_LIMITS.maximumContactMarkers,
     physicsDebug = false,
     terrainMaterial = {},
+    motorcycleModelInstance,
   } = configuration;
   const physicsWorld = configuration.physicsWorld ?? configuration.world;
   if (typeof scene?.add !== 'function' || typeof scene?.remove !== 'function') {
@@ -95,6 +96,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
   const motorcycle = createMotorcycleVisuals(THREE, physicsWorld, rig, {
     maximumMotorcycleParticles,
     physicsDebug,
+    modelInstance: motorcycleModelInstance,
   });
   const contacts = createContactVisuals(THREE, physicsWorld, {
     maximumContactMarkers,
@@ -192,19 +194,30 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
 
   const publicApi = {
     root,
-    update({ alpha = 0, trafficSnapshot = null } = {}) {
+    update({
+      alpha = 0,
+      trafficSnapshot = null,
+      interpolatedTransforms = null,
+      collectTelemetry = true,
+    } = {}) {
       if (disposed) throw new Error('Cannot update a disposed motorcycle world renderer.');
       const blend = Number(alpha);
       if (!Number.isFinite(blend)) throw new TypeError('Renderer interpolation alpha must be finite.');
+      if (typeof collectTelemetry !== 'boolean') {
+        throw new TypeError('Renderer collectTelemetry must be boolean.');
+      }
       lastInterpolationAlpha = Math.min(1, Math.max(0, blend));
-      motorcycle.update(lastInterpolationAlpha);
+      motorcycle.update(lastInterpolationAlpha, interpolatedTransforms);
       // In minimalist mode this samples counts only; it never creates or
       // updates marker geometry. Keeping it live prevents stale collision
       // telemetry while preserving the sparse default rendering contract.
       contacts.update();
       traffic.update(trafficSnapshot);
       frameCount += 1;
-      return telemetry();
+      // The animation loop does not consume the deep immutable status tree.
+      // Avoid cloning/freezing it at frame rate; diagnostics retain the prior
+      // return contract by default and may opt into the lightweight counter.
+      return collectTelemetry ? telemetry() : frameCount;
     },
     getTelemetry: telemetry,
     getStatus: telemetry,
@@ -223,6 +236,11 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     dispose() {
       if (disposed) return false;
       scene.remove(root);
+      // Model instances share GPU resources owned by the application-level
+      // model resource. Detach/release before the generic world disposer walks
+      // this location snapshot, then dispose the shared resource only at app
+      // shutdown.
+      motorcycle.releaseModel();
       disposal = disposeThreeObject(root);
       root.clear();
       disposed = true;

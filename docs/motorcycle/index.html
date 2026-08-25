@@ -8,7 +8,7 @@
     <meta http-equiv="Permissions-Policy" content="geolocation=(self), xr-spatial-tracking=(self), camera=(), microphone=()" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000300'/%3E%3Cpath d='M8 42h48M14 34l10-12 9 12 9-18 8 18' fill='none' stroke='%2334ff73' stroke-width='4'/%3E%3C/svg%3E" />
     <title>RoadVector // Particle Motorcycle</title>
-    <script type="module" crossorigin src="./assets/index-DZrCkEOv.js"></script>
+    <script type="module" crossorigin src="./assets/index-DV7PV_gp.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CaOEGIO8.css">
   </head>
   <body>
@@ -79,15 +79,15 @@
 
           <section class="control-block desktop-help" aria-label="Desktop controls">
             <h2>DESKTOP / GAMEPAD</h2>
-            <p>W/↑ THROTTLE · A/D STEER · SPACE FRONT BRAKE · S/↓ REAR BRAKE</p>
-            <p>Q/E SHIFT · C CAMERA · H RECENTER · R RESET · CLICK VIEW FOR POINTER LOCK</p>
+            <p>W/↑ THROTTLE · A/D STEER · S SERVICE BRAKE · SPACE FRONT · ↓ REAR</p>
+            <p>AUTO SHIFT · Q/E MANUAL SHIFT · C CAMERA · H RECENTER · R RESET</p>
             <p>STANDARD GAMEPAD + MOBILE + WEBXR CONTROLLERS/HANDS SUPPORTED</p>
           </section>
 
           <section class="legend" aria-label="Scene legend">
             <span class="legend--road">REAL OSM ROAD</span>
             <span class="legend--building">OSM BUILDING</span>
-            <span class="legend--bike">NURBS LINE BIKE</span>
+            <span class="legend--bike">LICENSED OPTIMIZED AKIRA BIKE</span>
             <span class="legend--traffic">SYNTHETIC TRAFFIC</span>
             <span class="legend--race">RACE CHECKPOINT</span>
             <span class="legend--terrain">TERRARIUM TOPO CONTOURS</span>
@@ -101,6 +101,7 @@
             <p>Roads/buildings: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.</p>
             <p>Globe/GIS engine: CesiumJS. Relief: AWS Terrain Tiles in Terrarium encoding. Nationwide roads: FHWA National Highway System via U.S. DOT BTS, generalized for display. Street traffic is deterministic application-generated simulation, never a live traffic feed.</p>
             <p>Cache: bounded OSM Shortbread and AWS Terrarium bytes use a local-only PeerCompute StateManager artifact tier plus the same-origin geodata backend. Artifact bytes never enter the replicated Yjs document.</p>
+            <p>Bike model: <a href="https://sketchfab.com/3d-models/akira-bike-a5b1dc49808b40a9b94f9a4a3073d548" target="_blank" rel="noopener noreferrer">“Akira Bike” by Ryanwill679</a>, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>. Modified for RoadVector: conversion, simplification, texture compression, scale, and orientation. Presentation only; the six-body particle rig remains authoritative.</p>
             <p><a href="./licenses/NOTICE.md" target="_blank" rel="noopener noreferrer">DATA + SOFTWARE NOTICES</a> // NOT FOR NAVIGATION.</p>
             <p id="provenance">SOURCE PROVENANCE UNAVAILABLE</p>
           </footer>

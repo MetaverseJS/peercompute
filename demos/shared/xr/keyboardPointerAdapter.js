@@ -120,7 +120,8 @@ export class KeyboardPointerAdapter {
       listen(this.#documentTarget, 'pointerlockchange', () => this.#onPointerLockChange()),
       listen(this.#documentTarget, 'visibilitychange', () => this.clear()),
     );
-    this.#pointerLocked = this.#documentTarget?.pointerLockElement === this.#pointerTarget;
+    this.#pointerLocked = Boolean(this.#pointerTarget)
+      && this.#documentTarget?.pointerLockElement === this.#pointerTarget;
     this.#publish();
     return this;
   }
@@ -234,7 +235,8 @@ export class KeyboardPointerAdapter {
   }
 
   #onPointerLockChange() {
-    const locked = this.#documentTarget?.pointerLockElement === this.#pointerTarget;
+    const locked = Boolean(this.#pointerTarget)
+      && this.#documentTarget?.pointerLockElement === this.#pointerTarget;
     if (locked === this.#pointerLocked) return;
     this.#pointerLocked = locked;
     if (locked) {
@@ -284,7 +286,8 @@ export class KeyboardPointerAdapter {
     this.#resetPointerState();
     this.#pointerLocked = false;
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
-    if (this.#documentTarget?.pointerLockElement === this.#pointerTarget) {
+    if (this.#pointerTarget
+      && this.#documentTarget?.pointerLockElement === this.#pointerTarget) {
       this.#documentTarget.exitPointerLock?.();
     }
     this.#input.removeSource(this.#sourceId);

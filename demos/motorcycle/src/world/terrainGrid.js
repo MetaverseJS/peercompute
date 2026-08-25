@@ -90,6 +90,99 @@ function triangleSurfaceSample(positions, first, second, third, x, z) {
   });
 }
 
+function surfaceBin(value, minimum, maximum, count) {
+  if (maximum <= minimum) return 0;
+  return Math.min(count - 1, Math.max(0, Math.floor(
+    ((value - minimum) / (maximum - minimum)) * count,
+  )));
+}
+
+function createLocalSurfaceIndex(positions, columns, rows, localBounds) {
+  const binColumns = columns - 1;
+  const binRows = rows - 1;
+  const bins = Array.from({ length: binColumns * binRows }, () => []);
+  const triangleCount = binColumns * binRows * 2;
+  const triangles = new Uint32Array(triangleCount * 3);
+  // Match the renderer's tolerance so a float-rounded edge is indexed in both
+  // neighboring bins instead of falling through a microscopic crack.
+  const epsilon = 1e-4;
+  let triangleId = 0;
+  let referenceCount = 0;
+  let maximumCandidatesPerBin = 0;
+
+  const addTriangle = (first, second, third) => {
+    const triangleOffset = triangleId * 3;
+    triangles[triangleOffset] = first;
+    triangles[triangleOffset + 1] = second;
+    triangles[triangleOffset + 2] = third;
+    const firstOffset = first * 3;
+    const secondOffset = second * 3;
+    const thirdOffset = third * 3;
+    const minimumX = Math.min(
+      positions[firstOffset], positions[secondOffset], positions[thirdOffset],
+    ) - epsilon;
+    const maximumX = Math.max(
+      positions[firstOffset], positions[secondOffset], positions[thirdOffset],
+    ) + epsilon;
+    const minimumZ = Math.min(
+      positions[firstOffset + 2], positions[secondOffset + 2], positions[thirdOffset + 2],
+    ) - epsilon;
+    const maximumZ = Math.max(
+      positions[firstOffset + 2], positions[secondOffset + 2], positions[thirdOffset + 2],
+    ) + epsilon;
+    const firstColumn = surfaceBin(
+      minimumX, localBounds.minX, localBounds.maxX, binColumns,
+    );
+    const lastColumn = surfaceBin(
+      maximumX, localBounds.minX, localBounds.maxX, binColumns,
+    );
+    const firstRow = surfaceBin(
+      minimumZ, localBounds.minZ, localBounds.maxZ, binRows,
+    );
+    const lastRow = surfaceBin(
+      maximumZ, localBounds.minZ, localBounds.maxZ, binRows,
+    );
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      for (let column = firstColumn; column <= lastColumn; column += 1) {
+        const bin = bins[row * binColumns + column];
+        bin.push(triangleId);
+        referenceCount += 1;
+        maximumCandidatesPerBin = Math.max(maximumCandidatesPerBin, bin.length);
+      }
+    }
+    triangleId += 1;
+  };
+
+  // Renderer index order is part of shared-edge determinism: the first exact
+  // triangle wins when a query lies on a diagonal or cell boundary.
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let column = 0; column < columns - 1; column += 1) {
+      const a = row * columns + column;
+      const b = a + 1;
+      const c = a + columns;
+      const d = c + 1;
+      addTriangle(a, b, c);
+      addTriangle(b, d, c);
+    }
+  }
+
+  return Object.freeze({
+    bins: Object.freeze(bins.map((bin) => Object.freeze(bin))),
+    triangles,
+    telemetry: Object.freeze({
+      schemaVersion: 'peercompute.geo.local-surface-index.v1',
+      coordinateModel: 'local-xz-triangle-aabb-grid',
+      rendererTriangleOrder: true,
+      geodeticInversionPerQuery: false,
+      binColumns,
+      binRows,
+      triangleCount,
+      referenceCount,
+      maximumCandidatesPerBin,
+    }),
+  });
+}
+
 export function createTerrainGrid({
   bbox,
   width = MOTORCYCLE_TERRAIN_GRID_SIZE,
@@ -150,6 +243,10 @@ export function createTerrainGrid({
     }
   }
 
+  const localSurfaceIndex = createLocalSurfaceIndex(
+    positions, columns, rows, localBounds,
+  );
+
   const sampleRawHeight = (longitude, latitude) => {
     const column = ((longitude - west) / (east - west)) * (columns - 1);
     const row = ((north - latitude) / (north - south)) * (rows - 1);
@@ -159,33 +256,36 @@ export function createTerrainGrid({
     x >= localBounds.minX && x <= localBounds.maxX
     && z >= localBounds.minZ && z <= localBounds.maxZ
   );
+  let cachedSurfaceX = Number.NaN;
+  let cachedSurfaceZ = Number.NaN;
+  let cachedSurface = null;
   const sampleLocalSurface = (x, z) => {
-    if (!containsLocal(x, z)) return null;
-    const geodetic = frame.fromLocal([x, 0, z]);
-    const fractionalColumn = ((geodetic.longitude - west) / (east - west)) * (columns - 1);
-    const fractionalRow = ((north - geodetic.latitude) / (north - south)) * (rows - 1);
-    const estimatedColumn = Math.min(columns - 2, Math.max(0, Math.floor(fractionalColumn)));
-    const estimatedRow = Math.min(rows - 2, Math.max(0, Math.floor(fractionalRow)));
-    // Height changes slightly perturb projected ENU X/Z, so inverting a query
-    // at y=0 can identify an adjacent grid cell. Search the bounded 3x3
-    // neighborhood in renderer index order and keep the lowest triangle id on
-    // shared edges. Physics and rendering still use the exact same triangles.
-    const minimumRow = Math.max(0, estimatedRow - 1);
-    const maximumRow = Math.min(rows - 2, estimatedRow + 1);
-    const minimumColumn = Math.max(0, estimatedColumn - 1);
-    const maximumColumn = Math.min(columns - 2, estimatedColumn + 1);
-    for (let row = minimumRow; row <= maximumRow; row += 1) {
-      for (let column = minimumColumn; column <= maximumColumn; column += 1) {
-        const a = row * columns + column;
-        const b = a + 1;
-        const c = a + columns;
-        const d = c + 1;
-        const first = triangleSurfaceSample(positions, a, b, c, x, z);
-        if (first) return first;
-        const second = triangleSurfaceSample(positions, b, d, c, x, z);
-        if (second) return second;
+    if (x === cachedSurfaceX && z === cachedSurfaceZ) return cachedSurface;
+    cachedSurfaceX = x;
+    cachedSurfaceZ = z;
+    if (!containsLocal(x, z)) {
+      cachedSurface = null;
+      return null;
+    }
+    const column = surfaceBin(x, localBounds.minX, localBounds.maxX, columns - 1);
+    const row = surfaceBin(z, localBounds.minZ, localBounds.maxZ, rows - 1);
+    const candidates = localSurfaceIndex.bins[row * (columns - 1) + column];
+    for (const triangleId of candidates) {
+      const triangleOffset = triangleId * 3;
+      const sample = triangleSurfaceSample(
+        positions,
+        localSurfaceIndex.triangles[triangleOffset],
+        localSurfaceIndex.triangles[triangleOffset + 1],
+        localSurfaceIndex.triangles[triangleOffset + 2],
+        x,
+        z,
+      );
+      if (sample) {
+        cachedSurface = sample;
+        return sample;
       }
     }
+    cachedSurface = null;
     return null;
   };
   const sampleLocalHeight = (x, z) => sampleLocalSurface(x, z)?.height ?? Number.NaN;
@@ -206,6 +306,7 @@ export function createTerrainGrid({
     origin,
     frame,
     localBounds: Object.freeze(localBounds),
+    surfaceIndex: localSurfaceIndex.telemetry,
     referenceHeight,
     normalStep,
     source: Object.freeze({

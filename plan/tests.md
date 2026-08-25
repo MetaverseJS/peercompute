@@ -2506,3 +2506,91 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
   comfort, and headset performance remain manual hardware gates. No physical
   WebXR certification is claimed.
+
+## RoadVector model, controls, and performance strategy - 2026-08-25 AKDT
+
+- Asset admission must verify the official Sketchfab download archive before
+  extraction, reject traversal/oversized members, preserve the CC BY 4.0
+  notice, and produce a deterministic optimized derivative. Tests inspect its
+  bytes, triangle/draw-call/texture caps, scale/orientation contract, attribution
+  sentinel, and absence of runtime requests to Sketchfab/CDN origins.
+- Model integration tests keep physics and visuals separate: the six simulated
+  bodies, tire particles, suspension travel, wheel contacts, traffic impulses,
+  and deterministic hashes remain unchanged while the chassis visual tracks
+  interpolated physical transforms and disposes every GPU resource.
+- Controller tests cover keyboard A/D and W/S semantics, symmetric steering,
+  speed-aware steer/lean bounds, rate limiting, neutral recovery, braking that
+  cannot create reverse drive, parking/reset equilibrium, low/high-speed turns,
+  acceleration/braking, and identical duplicate-run state hashes. Gamepad,
+  touch, and XR normalized signs remain regression-covered.
+- Performance tests target measured work rather than loosening physics: exact
+  terrain-surface lookup parity, cached inverse inertia correctness, broadphase
+  pair equivalence, CCD/contact preservation, determinism, finite state, and
+  bounded allocation/resource telemetry. The fixed 120 Hz/twelve-iteration
+  contract and physical traffic cages stay asserted.
+- Browser acceptance uses actual foreground Playwright keyboard holds and a
+  repeatable route/scenario. Record frame count, mean/p50/p95/p99/max frame
+  duration, long-frame counts, physics substeps/dropped time, speed, lean,
+  steering, slip, contact/overflow state, and before/after CPU hot spots.
+- Final gates: focused suites, full physics/traffic/RoadVector unit suites,
+  static release assertions, rebuilt RoadVector docs, deterministic built
+  browser smoke, private Tailnet HTTPS drive, zero page/console errors, and
+  explicit NOT RUN physical-headset evidence when hardware is unavailable.
+
+## RoadVector model, controls, and performance executed evidence - 2026-08-25 AKDT
+
+- PASS: model admission/resource tests `7/7`; the GLB validator reports zero
+  errors. Manifest, exact bytes/SHA-256, CC BY records, runtime-relative paths,
+  local Meshopt/KTX2 decoders, wheelbase/orientation calibration, caps, shared
+  handles, and one-owner disposal are executable contracts.
+- PASS: particle-rigid `23/23`; full physics `41/41`; RoadVector `75/75`; XR
+  `23/23` plus mocked Chromium. These cover tensor-cache invalidation, pre-cap
+  pair pruning, CCD/determinism, fixed-step input filters, compatible 8/20 m/s
+  physical turns, nine-second full throttle, service stopping, parking, default
+  no-mouse-steer, optional pointer lock, model lifecycle, terrain parity, and
+  actual chassis pose following.
+- PASS: identical fourteen-traffic fixed-step benchmark improved from 15.9164
+  to 5.4705 ms/step (`65.63%`, `2.91x`) with unchanged hash `c8e0778d`, twelve
+  contacts, and zero overflow. Terrain sampler parity benchmark improved from
+  333.394 to 100.680 ms per 100,000 queries (`3.31x`).
+- PASS: foreground keyboard-drive follow-up over straight/right/left/service-
+  brake segments rendered 387 frames in 9.574 seconds (`24.74 ms/frame`
+  aggregate). Segment means were 27.80, 22.29, 23.01, and 23.71 ms versus the
+  intake's 58.84 ms mean; state remained finite with zero capacity overflow.
+- PASS: model-integrated production build, static release `17/17`, and built
+  RoadVector runtime smoke on owned port `43976` (closed after teardown). Smoke
+  proves the 7.5 MB hash-verified model, six-body authority separation, keyboard
+  steering/service-brake path, terrain/race/traffic, generation failure/race,
+  source cache, and camera/rebase contracts.
+- PASS: exact private `https://100.68.165.52:5188/` headless Chromium reached
+  ready in 2.796 seconds with permissioned location, secure context, verified
+  model SHA, real terrain/roads, no fatal/console/page error, pointer lock off,
+  and no physics overflow during W+D/S input.
+- NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and headset frame timing remain manual hardware gates.
+- PASS follow-up: focused model/particle/renderer tests `39/39`, including the
+  single-pass material policy, offscreen-gate culling, shuffled swept-cell
+  equivalence, exact candidate-pair ordering, and existing CCD/cap coverage.
+  Full physics is now `42/42`; RoadVector remains `75/75`; static release remains
+  `17/17` after the final rebuild.
+- PASS follow-up built gate: `RUNTIME_SMOKE_DEMOS=motorcycle DOCS_HOST=127.0.0.1
+  DOCS_PORT=43977 DEMO_WAIT_MS=500 DEMO_READY_TIMEOUT_MS=45000 node
+  demos/tests/runtime-smoke.mjs`; the owned listener closed after the pass. The
+  gate requires runtime transmission maximum `0`, no transmission prepass,
+  race-gate culling, model authority separation, real data, and zero overflow.
+- PASS foreground keyboard drive through the live private source app: `526`
+  rAF intervals over `9003.2 ms`, mean `17.116 ms`, p50 `16.7`, p95 `16.8`,
+  p99 `33.3`, max `33.4`; ending renderer state was `42` calls / `164,922`
+  triangles / `1,074` lines with no fatal error or capacity overflow.
+- PASS audit hardening: the vehicle suite now includes a paired parked
+  baseline/rebased run that shifts the live parking anchor, advances both for
+  one second, and bounds force/velocity/world-position divergence. The model
+  fixture uses actual `THREE.DoubleSide` glass, requires `forceSinglePass`,
+  zero two-pass transparent materials, one maximum alpha pass, zero
+  transmission prepass, and strict numeric grounding metadata/equation checks.
+- PASS final post-audit gates on Node `v24.18.0`: focused model plus vehicle
+  `26/26`; full physics `43/43`; RoadVector `75/75`; static release `17/17`;
+  rebuilt `RUNTIME_SMOKE_DEMOS=motorcycle` on owned port `43978`. The browser
+  gate requires positive forced-single-pass material count, zero two-pass
+  transparent count, the grounding offset, model/physics authority separation,
+  and all existing ride/data/overflow contracts.

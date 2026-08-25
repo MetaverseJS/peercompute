@@ -1,4 +1,5 @@
 import {
+  bodyInverseInertiaWorld,
   bodyInertiaWorld,
   bodyWorldPoint,
 } from './bodyMath.js';
@@ -232,6 +233,8 @@ function shiftSnapshot(snapshot, shift) {
 }
 
 export class ParticleRigidWorld {
+  #collisionExclusionsByBody = new Map();
+
   constructor(options = {}) {
     this.options = normalizeWorldOptions(options);
     this.fixedDt = this.options.fixedDt;
@@ -326,6 +329,7 @@ export class ParticleRigidWorld {
       kinematicTarget: null,
       sleeping: false,
     };
+    if (body.motionType === 'dynamic') bodyInverseInertiaWorld(body);
     this.bodies.set(id, body);
     this.bodyOrder = [...this.bodies.values()].sort(ID_COMPARE);
     this.totalParticleCount += cloud.count;
@@ -471,15 +475,28 @@ export class ParticleRigidWorld {
     this.getBody(bodyIdA);
     this.getBody(bodyIdB);
     if (bodyIdA === bodyIdB) throw new Error('a body cannot be paired with itself');
-    const key = [bodyIdA, bodyIdB].sort().join('|');
-    if (enabled) this.collisionExclusions.delete(key);
-    else this.collisionExclusions.add(key);
+    const first = bodyIdA < bodyIdB ? bodyIdA : bodyIdB;
+    const second = bodyIdA < bodyIdB ? bodyIdB : bodyIdA;
+    const key = `${first}|${second}`;
+    const exclusions = this.#collisionExclusionsByBody.get(first);
+    if (enabled) {
+      this.collisionExclusions.delete(key);
+      if (!exclusions) return;
+      exclusions.delete(second);
+      if (exclusions.size === 0) this.#collisionExclusionsByBody.delete(first);
+      return;
+    }
+    this.collisionExclusions.add(key);
+    if (exclusions) exclusions.add(second);
+    else this.#collisionExclusionsByBody.set(first, new Set([second]));
   }
 
   #bodiesCanCollide(bodyA, bodyB) {
-    if (this.collisionExclusions.has([bodyA.id, bodyB.id].sort().join('|'))) return false;
     if ((bodyA.collisionGroup & bodyB.collisionMask) === 0
       || (bodyB.collisionGroup & bodyA.collisionMask) === 0) return false;
+    const first = bodyA.id < bodyB.id ? bodyA.id : bodyB.id;
+    const second = bodyA.id < bodyB.id ? bodyB.id : bodyA.id;
+    if (this.#collisionExclusionsByBody.get(first)?.has(second)) return false;
     for (const joint of this.jointOrder) {
       if (joint.collideConnected) continue;
       if ((joint.bodyA === bodyA.id && joint.bodyB === bodyB.id)
@@ -487,6 +504,10 @@ export class ParticleRigidWorld {
     }
     return true;
   }
+
+  #broadphasePairAllowed = (entryA, entryB) => (
+    this.#bodiesCanCollide(entryA.body, entryB.body)
+  );
 
   #integrateBodies(dt) {
     for (const body of this.bodyOrder) {
@@ -579,8 +600,7 @@ export class ParticleRigidWorld {
   #particleContacts(entries) {
     this.spatialHash.build(entries);
     const contacts = [];
-    for (const [entryA, entryB] of this.spatialHash.candidatePairs()) {
-      if (!this.#bodiesCanCollide(entryA.body, entryB.body)) continue;
+    for (const [entryA, entryB] of this.spatialHash.candidatePairs(this.#broadphasePairAllowed)) {
       const delta = vecSub(entryA.position, entryB.position);
       const distance = vecLength(delta);
       const totalRadius = entryA.radius + entryB.radius;
@@ -1056,6 +1076,7 @@ export class ParticleRigidWorld {
     this.contactModifiers = [];
     this.originShiftListeners = [];
     this.collisionExclusions.clear();
+    this.#collisionExclusionsByBody.clear();
     this.spatialHash.clear();
     this.disposed = true;
   }

@@ -1230,3 +1230,82 @@ The root node should exist on a domain secured with SSL enabling all executable 
   Serve/Funnel: WXGlobe `https://100.68.165.52:5186/`, EarthGrid
   `https://100.68.165.52:5187/`, and RoadVector
   `https://100.68.165.52:5188/`; geodata stays on loopback `127.0.0.1:8788`.
+
+## RoadVector licensed model, controls, and performance snapshot - 2026-08-25 AKDT
+
+- Replace only RoadVector's presentation mesh with the user-selected
+  Sketchfab “Akira Bike” asset. Keep the existing six-body particle rigid-body
+  motorcycle, wheel contacts, suspension, tire forces, traffic collision,
+  origin rebasing, and fixed-step simulation authoritative; the visual must
+  follow physics and may not substitute animation or kinematic motion.
+- Acquire the asset only through Sketchfab's authenticated official download.
+  Preserve the published CC BY 4.0 attribution to Ryanwill679/TrashCG, link the
+  source and license, identify the optimized derivative, and never hotlink or
+  extract protected viewer/CDN resources.
+- Treat the source model as an offline build input. Produce one bounded runtime
+  derivative with explicit triangle, draw-call, texture-byte, download-byte,
+  orientation, scale, and attribution telemetry; do not ship the 29 original
+  high-resolution textures unexamined.
+- Improve keyboard riding through the physics controller: stable parking and
+  reset, speed-aware steering/lean authority, progressive throttle and brake,
+  recoverable counter-steer behavior, and an intentional transmission policy.
+  Input semantics stay normalized and desktop, gamepad, touch, and XR mappings
+  must remain consistent at the actuator boundary.
+- Optimize measured simulation hot paths without reducing the 120 Hz fixed
+  step, twelve solver iterations, particle contacts, suspension bodies, traffic
+  collision, or terrain parity. Performance work must preserve deterministic
+  state hashes and scenario outcomes.
+- Validate with focused physics/terrain/render tests, repeatable real keyboard
+  drives in the browser, foreground frame and CPU profiles, built RoadVector
+  smoke, generated-artifact checks, and private Tailnet HTTPS. Physical-headset
+  comfort/performance remains a separately recorded manual gate.
+
+## RoadVector licensed model, controls, and performance result - 2026-08-25 AKDT
+
+- COMPLETE: the user-provided official Sketchfab archive was traversal-audited,
+  test-extracted, and retained outside the runtime artifact. The locally served
+  derivative is a hash-verified 7,508,640-byte GLB with 58,870 triangles,
+  fifteen authored material/draw primitives, and twenty-two embedded KTX2
+  textures capped at 1024 px. CC BY 4.0 attribution, original/derived hashes,
+  calibration, optimization changes, and limitations ship beside it.
+- COMPLETE: the model is attached only to the interpolated chassis transform.
+  It explicitly reports no collision authority; all six rigid components,
+  particle contacts, suspension constraints, tire forces, CCD, traffic impacts,
+  rebasing, and reset remain physical. The source is unrigged, so independent
+  visible wheel/suspension articulation is a disclosed limitation.
+- COMPLETE: keyboard mouse drift/pointer lock is disabled by default, A/D keep
+  rider-centric signs, S is a balanced service brake, and dedicated front/rear
+  inputs remain. Fixed-step actuator filters, one compatible curvature/lean
+  target, traction/front-load torque limiting, lower engine braking, automatic
+  shift hysteresis, and force/torque-only parking support replace the unstable
+  direct full-authority response without pose or velocity correction.
+- COMPLETE: exact local-XZ terrain indexing, one shared interpolation snapshot,
+  lazy render telemetry, mutation-safe inverse-inertia caching, and mask/joint/
+  exclusion pruning before spatial pair-key capacity reduce the measured hot
+  path while preserving 120 Hz, twelve iterations, physical traffic, and exact
+  deterministic hashes.
+- VERIFIED: physics `41/41`, RoadVector `75/75`, XR `23/23` plus mocked browser,
+  model/terrain/render focused `21/21`, static release `17/17`, rebuilt built-doc
+  RoadVector smoke, and exact private Tailnet HTTPS all pass. Physical-headset
+  comfort/performance remains NOT RUN; no hardware certification is claimed.
+- FOLLOW-UP COMPLETE: the spatial hash now preserves its globally sorted
+  insertion order without sorting every cell again and computes swept bounds in
+  one scalar pass. The model resource converts its single authored transmission
+  material to one-pass alpha presentation, and race beams use ordinary frustum
+  culling. Deterministic cell/pair ordering and material/culling policy are
+  regression-tested; no solver, body, contact, or traffic authority changed.
+- LATEST VERIFIED: physics `42/42`, RoadVector `75/75`, focused model plus
+  particle plus renderer `39/39`, static release `17/17`, and built RoadVector
+  smoke on owned port `43977` pass. A foreground W/D/A/S keyboard drive sampled
+  `526` frames / `9.003 s` at `17.12 ms` mean, `16.7 ms` p50, `16.8 ms` p95,
+  `33.3 ms` p99, and `33.4 ms` max; the final view reported `42` calls,
+  `164,922` triangles, and zero physics overflow.
+- AUDIT HARDENED: the parking spring anchor now participates in origin rebases;
+  a twin-run regression preserves parked force, velocity, and world position.
+  Transparent model materials explicitly set Three.js `forceSinglePass`, with
+  the authored double-sided glass fixture proving there is no hidden second
+  alpha pass. A manifest-enforced `-0.12573690675938365 m` visual-only grounding
+  offset aligns the model minimum with the physical `-1.042 m` tire-bottom
+  midpoint while preserving the correct `1.67 m` wheelbase and all six-body
+  authority. Final physics is `43/43`; RoadVector `75/75`; static release
+  `17/17`; rebuilt browser smoke passes on closed owned port `43978`.

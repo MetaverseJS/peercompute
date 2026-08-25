@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -6,11 +7,63 @@ import {
   createParticleRigidWorld,
   createPlaneSurfaceCollider,
 } from '../../particle-rigid/index.js';
+import { bodyWorldVector } from '../../particle-rigid/bodyMath.js';
 import {
   createMotorcyclePhysics,
   createMotorcycleRig,
   normalizeControlFrame,
 } from '../index.js';
+
+const FIXED_DT = 1 / 120;
+
+function degrees(radians) {
+  return radians * 180 / Math.PI;
+}
+
+function clampedAcos(value) {
+  return Math.acos(Math.min(1, Math.max(-1, value)));
+}
+
+function snapshotHash(snapshot) {
+  return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+}
+
+function createRoadBike(id) {
+  const game = createMotorcyclePhysics({
+    worldOptions: { solverIterations: 12, maxParticles: 512 },
+    rigOptions: { id },
+  });
+  game.world.addSurfaceCollider(createPlaneSurfaceCollider({ friction: 1.05 }));
+  return game;
+}
+
+function settleBike(game, steps = 120) {
+  for (let step = 0; step < steps; step += 1) {
+    game.stepFrame(FIXED_DT, { sequence: step });
+  }
+}
+
+function setBikeForwardSpeed(game, speed) {
+  const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+  const forward = bodyWorldVector(chassis, [0, 0, 1]);
+  for (const bodyId of game.rig.bodyIdList) {
+    game.world.getBody(bodyId).linearVelocity.set(forward.map((value) => value * speed));
+  }
+  for (const bodyId of [game.rig.bodyIds.rearWheel, game.rig.bodyIds.frontWheel]) {
+    const wheel = game.world.getBody(bodyId);
+    const axle = bodyWorldVector(wheel, [1, 0, 0]);
+    wheel.angularVelocity.set(
+      axle.map((value) => value * speed / game.rig.rollingRadiusMeters),
+    );
+  }
+}
+
+function finiteSnapshot(snapshot) {
+  return snapshot.bodies.every((state) => (
+    [...state.position, ...state.orientation, ...state.linearVelocity, ...state.angularVelocity]
+      .every(Number.isFinite)
+  ));
+}
 
 test('ControlFrame normalization clamps analogs and preserves one-shot actions', () => {
   const control = normalizeControlFrame({
@@ -40,6 +93,99 @@ test('ControlFrame normalization clamps analogs and preserves one-shot actions',
     recenter: true,
   });
   assert.equal(Object.isFrozen(control), true);
+});
+
+test('fixed-step steering, throttle, and brake actuators follow an exact deterministic trace', () => {
+  const game = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+  });
+  const trace = [];
+  let firstActuation = null;
+  for (let step = 0; step < 80; step += 1) {
+    game.stepFrame(FIXED_DT, {
+      sequence: step,
+      steer: 1,
+      throttle: 1,
+      frontBrake: 1,
+      rearBrake: 0.6,
+    });
+    if (step === 0) firstActuation = game.controller.getTelemetry();
+    if ([0, 11, 47, 79].includes(step)) {
+      trace.push([step + 1, game.controller.getTelemetry().actuators]);
+    }
+  }
+  for (let step = 0; step < 40; step += 1) {
+    game.stepFrame(FIXED_DT, { sequence: 80 + step });
+    if ([0, 9, 29, 39].includes(step)) {
+      trace.push([81 + step, game.controller.getTelemetry().actuators]);
+    }
+  }
+  assert.deepEqual(trace, [
+    [1, {
+      steer: 0.02083333395421505,
+      throttle: 0.01250000111758709,
+      frontBrake: 0.0833333358168602,
+      rearBrake: 0.0833333358168602,
+      handbrake: 0,
+    }],
+    [12, {
+      steer: 0.2499999701976776,
+      throttle: 0.15000002086162567,
+      frontBrake: 0.9999998807907104,
+      rearBrake: 0.6000000238418579,
+      handbrake: 0,
+    }],
+    [48, {
+      steer: 0.9999995827674866,
+      throttle: 0.599999725818634,
+      frontBrake: 1,
+      rearBrake: 0.6000000238418579,
+      handbrake: 0,
+    }],
+    [80, {
+      steer: 1,
+      throttle: 0.9999993443489075,
+      frontBrake: 1,
+      rearBrake: 0.6000000238418579,
+      handbrake: 0,
+    }],
+    [81, {
+      steer: 0.9666666388511658,
+      throttle: 0.9749993681907654,
+      frontBrake: 0.8999999761581421,
+      rearBrake: 0.5,
+      handbrake: 0,
+    }],
+    [90, {
+      steer: 0.6666663885116577,
+      throttle: 0.7499995827674866,
+      frontBrake: 0,
+      rearBrake: 0,
+      handbrake: 0,
+    }],
+    [110, {
+      steer: 0,
+      throttle: 0.2499997317790985,
+      frontBrake: 0,
+      rearBrake: 0,
+      handbrake: 0,
+    }],
+    [120, {
+      steer: 0,
+      throttle: 0,
+      frontBrake: 0,
+      rearBrake: 0,
+      handbrake: 0,
+    }],
+  ]);
+  assert.equal(firstActuation.steeringSpeedBlend, 0);
+  assert.equal(firstActuation.desiredLateralAcceleration, 0);
+  assert.equal(firstActuation.targetLean, 0);
+  assert.ok(Math.abs(
+    firstActuation.steeringTarget + firstActuation.actuators.steer * 0.42,
+  ) <= 1e-8, 'low speed uses direct physical fork steering without synthetic lean');
+  assert.equal(game.controller.getTelemetry().controls.steer, 0, 'raw normalized action remains unchanged');
+  game.dispose();
 });
 
 test('motorcycle rig is six particle-cloud rigid components with physical joints', () => {
@@ -369,6 +515,281 @@ test('rider-right input turns the physical fork and lean target right', () => {
   assert.ok(left.steeringTarget > 0);
   assert.ok(left.targetLean < 0);
   game.dispose();
+});
+
+test('unified curvature produces stable physical right turns at 8 and 20 metres per second', () => {
+  const runTurn = (initialSpeed) => {
+    const game = createRoadBike(`right-turn-${initialSpeed}`);
+    settleBike(game);
+    setBikeForwardSpeed(game, initialSpeed);
+    const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+    const initialPosition = [...chassis.position];
+    const initialForward = bodyWorldVector(chassis, [0, 0, 1]);
+    const initialRight = bodyWorldVector(chassis, [-1, 0, 0]);
+    const initialYaw = Math.atan2(initialForward[0], initialForward[2]);
+    let maximumTiltDegrees = 0;
+    let maximumLateralSlip = 0;
+    for (let step = 0; step < 120; step += 1) {
+      game.stepFrame(FIXED_DT, {
+        sequence: 120 + step,
+        steer: 1,
+        throttle: 0.5,
+      });
+      const telemetry = game.controller.getTelemetry();
+      const up = bodyWorldVector(chassis, [0, 1, 0]);
+      maximumTiltDegrees = Math.max(maximumTiltDegrees, degrees(clampedAcos(up[1])));
+      maximumLateralSlip = Math.max(
+        maximumLateralSlip,
+        Math.abs(telemetry.tires.front.lateralSlip),
+        Math.abs(telemetry.tires.rear.lateralSlip),
+      );
+    }
+    const telemetry = game.controller.getTelemetry();
+    const forward = bodyWorldVector(chassis, [0, 0, 1]);
+    const yawDelta = Math.atan2(
+      Math.sin(Math.atan2(forward[0], forward[2]) - initialYaw),
+      Math.cos(Math.atan2(forward[0], forward[2]) - initialYaw),
+    );
+    const displacement = chassis.position.map((value, axis) => value - initialPosition[axis]);
+    const rightDisplacement = displacement.reduce(
+      (sum, value, axis) => sum + value * initialRight[axis],
+      0,
+    );
+    const expectedFork = -Math.atan(
+      game.rig.wheelbaseMeters * telemetry.desiredLateralAcceleration
+        / (telemetry.forwardSpeed * telemetry.forwardSpeed),
+    );
+    const result = {
+      yawRightDegrees: -degrees(yawDelta),
+      rightDisplacement,
+      forwardSpeed: telemetry.forwardSpeed,
+      maximumTiltDegrees,
+      maximumLateralSlip,
+      desiredLateralAcceleration: telemetry.desiredLateralAcceleration,
+      steeringTarget: telemetry.steeringTarget,
+      expectedFork,
+      targetLean: telemetry.targetLean,
+      overflowed: game.world.getTelemetry().overflows.overflowed,
+    };
+    game.dispose();
+    return result;
+  };
+
+  const medium = runTurn(8);
+  const high = runTurn(20);
+  assert.ok(medium.yawRightDegrees >= 18 && medium.yawRightDegrees <= 28, JSON.stringify(medium));
+  assert.ok(medium.rightDisplacement >= 1.1 && medium.rightDisplacement <= 1.8, JSON.stringify(medium));
+  assert.ok(medium.forwardSpeed >= 7.2 && medium.forwardSpeed <= 8.5, JSON.stringify(medium));
+  assert.ok(medium.maximumTiltDegrees >= 13 && medium.maximumTiltDegrees <= 20, JSON.stringify(medium));
+  assert.ok(medium.maximumLateralSlip <= 0.2, JSON.stringify(medium));
+
+  assert.ok(high.yawRightDegrees >= 10 && high.yawRightDegrees <= 19, JSON.stringify(high));
+  assert.ok(high.rightDisplacement >= 1 && high.rightDisplacement <= 1.7, JSON.stringify(high));
+  assert.ok(high.forwardSpeed >= 17.2 && high.forwardSpeed <= 19.2, JSON.stringify(high));
+  assert.ok(high.maximumTiltDegrees >= 11 && high.maximumTiltDegrees <= 18, JSON.stringify(high));
+  assert.ok(high.maximumLateralSlip <= 0.2, JSON.stringify(high));
+  assert.ok(high.yawRightDegrees < medium.yawRightDegrees);
+
+  for (const result of [medium, high]) {
+    assert.equal(result.desiredLateralAcceleration, 4.5);
+    assert.ok(Math.abs(result.steeringTarget - result.expectedFork) <= 1e-6, JSON.stringify(result));
+    assert.ok(Math.abs(result.targetLean - Math.atan(4.5 / 9.81)) <= 1e-6);
+    assert.equal(result.overflowed, false);
+  }
+});
+
+test('full keyboard throttle remains upright and deterministically shifts during a nine-second run', () => {
+  const run = (id) => {
+    const game = createRoadBike(id);
+    settleBike(game);
+    const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+    const initialPosition = [...chassis.position];
+    let maximumTiltDegrees = 0;
+    let maximumRearSlip = 0;
+    let minimumDriveTorqueScale = 1;
+    let minimumDriveSlipScale = 1;
+    let minimumDriveFrontLoadScale = 1;
+    for (let step = 0; step < 1_080; step += 1) {
+      game.stepFrame(FIXED_DT, { sequence: 120 + step, throttle: 1 });
+      const telemetry = game.controller.getTelemetry();
+      const up = bodyWorldVector(chassis, [0, 1, 0]);
+      maximumTiltDegrees = Math.max(maximumTiltDegrees, degrees(clampedAcos(up[1])));
+      maximumRearSlip = Math.max(maximumRearSlip, Math.abs(telemetry.tires.rear.longitudinalSlip));
+      minimumDriveTorqueScale = Math.min(minimumDriveTorqueScale, telemetry.driveTorqueScale);
+      minimumDriveSlipScale = Math.min(minimumDriveSlipScale, telemetry.driveSlipScale);
+      minimumDriveFrontLoadScale = Math.min(
+        minimumDriveFrontLoadScale,
+        telemetry.driveFrontLoadScale,
+      );
+    }
+    const telemetry = game.controller.getTelemetry();
+    const snapshot = game.world.getSnapshot();
+    const result = {
+      forwardSpeed: telemetry.forwardSpeed,
+      speed: telemetry.speed,
+      distance: chassis.position[2] - initialPosition[2],
+      upY: bodyWorldVector(chassis, [0, 1, 0])[1],
+      maximumTiltDegrees,
+      maximumRearSlip,
+      minimumDriveTorqueScale,
+      minimumDriveSlipScale,
+      minimumDriveFrontLoadScale,
+      gear: telemetry.gear,
+      automaticShiftCount: telemetry.automaticShiftCount,
+      engineRpm: telemetry.engineRpm,
+      overflowed: game.world.getTelemetry().overflows.overflowed,
+      finite: finiteSnapshot(snapshot),
+      hash: snapshotHash(snapshot),
+    };
+    game.dispose();
+    return result;
+  };
+  const first = run('full-throttle-deterministic');
+  const second = run('full-throttle-deterministic');
+  assert.deepEqual(second, first);
+  assert.ok(first.forwardSpeed >= 14.5 && first.forwardSpeed <= 16.5, JSON.stringify(first));
+  assert.ok(first.distance >= 78 && first.distance <= 92, JSON.stringify(first));
+  assert.ok(first.upY >= 0.995, JSON.stringify(first));
+  assert.ok(first.maximumTiltDegrees <= 3, JSON.stringify(first));
+  assert.ok(first.maximumRearSlip <= 0.7, JSON.stringify(first));
+  assert.ok(first.minimumDriveTorqueScale <= 0.3, 'slip/front-load limiter must actively intervene');
+  assert.ok(first.minimumDriveSlipScale < 1, 'rear-slip limiter must actively intervene');
+  assert.ok(first.minimumDriveFrontLoadScale <= 0.3, 'front-load limiter must actively intervene');
+  assert.equal(first.gear, 2);
+  assert.equal(first.automaticShiftCount, 1);
+  assert.equal(first.overflowed, false);
+  assert.equal(first.finite, true);
+  assert.match(first.hash, /^[0-9a-f]{64}$/);
+});
+
+test('balanced service braking stops from 8 metres per second and remains physically upright', () => {
+  const game = createRoadBike('service-brake-stop');
+  settleBike(game);
+  setBikeForwardSpeed(game, 8);
+  const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+  const initialPosition = [...chassis.position];
+  let stopStep = null;
+  let stopDistance = null;
+  let maximumTiltDegrees = 0;
+  for (let step = 0; step < 240; step += 1) {
+    game.stepFrame(FIXED_DT, {
+      sequence: 120 + step,
+      frontBrake: 1,
+      rearBrake: 0.6,
+    });
+    const telemetry = game.controller.getTelemetry();
+    maximumTiltDegrees = Math.max(
+      maximumTiltDegrees,
+      degrees(clampedAcos(bodyWorldVector(chassis, [0, 1, 0])[1])),
+    );
+    if (stopStep === null && telemetry.speed < 0.25) {
+      stopStep = step + 1;
+      const displacement = chassis.position.map((value, axis) => value - initialPosition[axis]);
+      stopDistance = Math.hypot(displacement[0], displacement[2]);
+    }
+  }
+  assert.ok(stopStep !== null);
+  assert.ok(stopStep / 120 >= 0.95 && stopStep / 120 <= 1.2, `stop=${stopStep / 120}s`);
+  assert.ok(stopDistance >= 4.1 && stopDistance <= 4.9, `distance=${stopDistance}`);
+  assert.ok(maximumTiltDegrees <= 4, `tilt=${maximumTiltDegrees}`);
+  assert.ok(game.controller.getTelemetry().parkingHoldForceNewtons > 0);
+  assert.equal(game.world.getTelemetry().overflows.overflowed, false);
+  game.dispose();
+});
+
+test('rider-foot parking forces hold through steering and dedicated brakes, then release on launch', () => {
+  const cases = [
+    ['steer', { steer: 1 }, 0.05, 2.5],
+    ['front-brake', { frontBrake: 1 }, 0.02, 0.5],
+    ['rear-brake', { rearBrake: 1 }, 0.02, 0.6],
+  ];
+  for (const [name, control, maximumDrift, maximumTilt] of cases) {
+    const game = createRoadBike(`parking-${name}`);
+    settleBike(game, 240);
+    const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+    const initialPosition = [...chassis.position];
+    let observedHoldForce = false;
+    let maximumTiltDegrees = 0;
+    for (let step = 0; step < 240; step += 1) {
+      game.stepFrame(FIXED_DT, { sequence: 240 + step, ...control });
+      const telemetry = game.controller.getTelemetry();
+      observedHoldForce ||= telemetry.parkingHoldForceNewtons > 0;
+      maximumTiltDegrees = Math.max(
+        maximumTiltDegrees,
+        degrees(clampedAcos(bodyWorldVector(chassis, [0, 1, 0])[1])),
+      );
+    }
+    const drift = Math.hypot(
+      chassis.position[0] - initialPosition[0],
+      chassis.position[2] - initialPosition[2],
+    );
+    assert.ok(drift <= maximumDrift, `${name} drift=${drift}`);
+    assert.ok(maximumTiltDegrees <= maximumTilt, `${name} tilt=${maximumTiltDegrees}`);
+    assert.equal(observedHoldForce, true);
+    game.stepFrame(FIXED_DT, { sequence: 480, throttle: 1, ...control });
+    assert.equal(game.controller.getTelemetry().parkingHoldForceNewtons, 0);
+    assert.equal(game.world.getTelemetry().overflows.overflowed, false);
+    game.dispose();
+  }
+});
+
+test('rider-foot parking anchor remains continuous across an origin rebase', () => {
+  const baseline = createRoadBike('parking-rebase-baseline');
+  const shifted = createRoadBike('parking-rebase-shifted');
+  settleBike(baseline, 240);
+  settleBike(shifted, 240);
+
+  const shift = [10, 0, -4];
+  const anchorBefore = [...shifted.controller.parkingAnchor];
+  const shiftedChassis = shifted.world.getBody(shifted.rig.bodyIds.chassis);
+  const relativeBefore = [
+    shiftedChassis.position[0] - anchorBefore[0],
+    shiftedChassis.position[2] - anchorBefore[1],
+  ];
+  shifted.world.shiftOrigin(shift);
+
+  assert.deepEqual(shifted.controller.parkingAnchor, [
+    Math.fround(anchorBefore[0] - shift[0]),
+    Math.fround(anchorBefore[1] - shift[2]),
+  ]);
+  assert.ok(Math.abs(
+    shiftedChassis.position[0] - shifted.controller.parkingAnchor[0] - relativeBefore[0]
+  ) < 2e-6);
+  assert.ok(Math.abs(
+    shiftedChassis.position[2] - shifted.controller.parkingAnchor[1] - relativeBefore[1]
+  ) < 2e-6);
+
+  let maximumShiftedForce = 0;
+  let maximumBaselineForce = 0;
+  for (let step = 0; step < 120; step += 1) {
+    const control = { sequence: 240 + step };
+    baseline.stepFrame(FIXED_DT, control);
+    shifted.stepFrame(FIXED_DT, control);
+    maximumBaselineForce = Math.max(
+      maximumBaselineForce,
+      baseline.controller.getTelemetry().parkingHoldForceNewtons,
+    );
+    maximumShiftedForce = Math.max(
+      maximumShiftedForce,
+      shifted.controller.getTelemetry().parkingHoldForceNewtons,
+    );
+  }
+
+  const baselineChassis = baseline.world.getBody(baseline.rig.bodyIds.chassis);
+  assert.ok(Math.abs(shiftedChassis.position[0] + shift[0] - baselineChassis.position[0]) < 2e-4);
+  assert.ok(Math.abs(shiftedChassis.position[1] + shift[1] - baselineChassis.position[1]) < 2e-4);
+  assert.ok(Math.abs(shiftedChassis.position[2] + shift[2] - baselineChassis.position[2]) < 2e-4);
+  for (let axis = 0; axis < 3; axis += 1) {
+    assert.ok(Math.abs(
+      shiftedChassis.linearVelocity[axis] - baselineChassis.linearVelocity[axis]
+    ) < 2e-4);
+  }
+  assert.ok(maximumShiftedForce < shifted.controller.config.parkingMaximumForce * 0.25);
+  assert.ok(Math.abs(maximumShiftedForce - maximumBaselineForce) < 2);
+  assert.equal(shifted.world.getTelemetry().overflows.overflowed, false);
+
+  baseline.dispose();
+  shifted.dispose();
 });
 
 test('wheel contacts with rigid traffic remain generic body collisions', () => {

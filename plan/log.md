@@ -58911,3 +58911,338 @@ Prompt: “can you give me the link to the aviation globe?”
   `CappedHeightmapTerrainProvider`, positive loaded real terrain, zero imagery,
   no fatal error, and zero page/console errors. The direct private listener is
   intentionally left running for the user.
+
+## 2026-08-25 13:20:01 AKDT - RoadVector model, controls, and performance intake
+
+Prompt handled at `2026-08-25 13:20:01 AKDT`: “I'd like you to work on the
+motorcycle game now. performance is pretty bad and controls suck. I'd like you
+to replace the motorcycle model with a free akira style motorcycle model you
+can download it from here: https://sketchfab.com/3d-models/akira-bike-a5b1dc49808b40a9b94f9a4a3073d548
+I'd like you to spend some time driving the motorcycle around with the keyboard
+and improve the controls/behavior. it should remain physics based though don't
+take a shortcut”
+
+### Intake, licensing, and measured baseline
+
+- Started ICC task `roadvector-akira-controls-performance-20260825` with six
+  durable items covering contract/baseline, licensed model intake, measured
+  performance, physics controls, model integration, and browser/release proof.
+  The clean starting commit was `4319b47f`; Node is `v24.18.0`.
+- Verified through the official Sketchfab page/API that model UID
+  `a5b1dc49808b40a9b94f9a4a3073d548`, “Akira Bike,” is downloadable under CC BY
+  4.0 by Ryanwill679/TrashCG. Commercial reuse is permitted with attribution.
+  The official download requires authenticated Sketchfab access; protected
+  viewer/CDN extraction and hotlinking are explicitly excluded. A user-authored
+  official archive download began during this intake and remains unmodified
+  until its ZIP central directory is complete and validated.
+- Source metadata reports roughly 60,018 vertices, 116,416 triangles, fifteen
+  materials, 29 textures, and no animation/rig/morph targets. The published
+  texture set is too heavy for direct runtime use, so the implementation will
+  create a bounded optimized derivative and retain the exact source/license
+  notice and change disclosure.
+- Drove the current private RoadVector build with real foreground Playwright
+  keyboard holds at 1280x720. A repeatable 10.6-second sample rendered 181
+  frames: mean 58.84 ms, p50 50 ms, p95 83.4 ms, p99 100 ms, max 116.7 ms;
+  all frames exceeded 20 ms and 159 exceeded 33.34 ms. The fixed-step runtime
+  repeatedly used four substeps and dropped 16.7-66.7 ms.
+- Physics behavior validates the control complaint. Reset followed by 300 ms of
+  neutral state already reported 3.50 m/s. W for two seconds reached 8.02 m/s;
+  four seconds reached 18.03 m/s at 9,054 rpm while still in first gear. A
+  half-second W+D input produced +0.707 rad lean; two seconds of W+A reached
+  -1.116 rad. Releasing steer crossed through -0.233 rad, and one second of
+  front brake produced -6.93 m/s forward velocity while total speed remained
+  11.87 m/s. No overflow occurred, but the bike is unstable and slides/reverses
+  under ordinary desktop inputs.
+- A foreground CPU profile identified `ecefToGeodetic`, terrain triangle
+  sampling, spatial-hash build/pair generation, repeated world inverse-inertia
+  rotation, and particle-contact generation as the dominant self-time. The
+  next implementation phase will optimize those exact operations while keeping
+  120 Hz, twelve iterations, the six-body suspension rig, physical tires,
+  traffic cages, terrain parity, CCD, and deterministic hashes.
+
+### Files and commands so far
+
+- Reviewed RoadVector main/render/runtime/terrain modules and the shared
+  particle-rigid body, world, spatial hash, motorcycle controller/rig, and
+  focused tests. No game source was edited during intake.
+- Ran Node/version/worktree/ICC intake, official Sketchfab metadata and download
+  probes, terminal-browser snapshots, private HTTPS RoadVector state queries,
+  real-keyboard Playwright drive loops, and a foreground Chromium CPU profile.
+  The temporary browser/TLS relay remains active only while the authenticated
+  model download completes and will be stopped before handoff.
+
+### Open
+
+- Validate and safely extract the completed official archive; preserve license
+  and provenance; optimize/integrate the visual; implement and regression-test
+  physics/performance/control changes; repeat the same browser drive/profile;
+  rebuild and run release/private HTTPS gates; update this narrative and ICC;
+  shut temporary processes; create a coherent local commit without pushing.
+
+## 2026-08-25 13:27:04 AKDT - User-provided model archive confirmed
+
+Prompt: “I've put the model in the motorcycle directory”
+
+- Located `demos/motorcycle/akira_bike.zip` at 43,520,175 bytes with SHA-256
+  `b39ed00351d94c1b4ac697df76d57616bb7823d3fe258044da6a77cf6f3971fa`.
+  `unzip -t` passed all 29 members; an explicit member-name audit found no
+  absolute, parent-traversal, or backslash paths. The archive expands to
+  45,902,211 bytes and contains `scene.gltf`, `scene.bin`, 25 image files, and
+  Sketchfab's original `license.txt` attribution.
+- Extracted a working copy to `/tmp/roadvector-akira.XeQnjc` for offline
+  inspection and optimization. The user-provided repository archive remains
+  untouched while the derivative is built and verified.
+
+## 2026-08-25 14:01:16 AKDT - RoadVector licensed model, physics controls, and performance result
+
+Prompts completed: the 13:20:01 RoadVector model/control/performance request and
+the 13:27:04 confirmation that the archive was placed in the motorcycle demo.
+
+### Implementation narrative
+
+- Validated the supplied 43,520,175-byte official Sketchfab ZIP, its 29 safe
+  members, source geometry/textures, and retained CC BY 4.0 record. The archive
+  remains untouched and is locally excluded from Git/runtime distribution.
+  The optimized derivative at
+  `demos/motorcycle/public/models/akira-bike/model.glb` is 7,508,640 bytes with
+  SHA-256 `95a6453bce76ea3764550089ddbc002edd50ebd0fa0804fb837ef18ae3b0dfe7`,
+  58,870 triangles, fifteen material/draw primitives, and twenty-two embedded
+  KTX2 textures capped at 1024 px. The manifest, CC license/attribution, local
+  Basis transcoder/notices, calibration, exact hashes, and limitations ship
+  alongside it. The uploader-provided license may not clear every underlying
+  fictional design or trademark; the UI/notices claim no endorsement.
+- Added a bounded GLTF/KTX2/Meshopt resource owner in
+  `demos/motorcycle/src/render/motorcycleModel.js`. It verifies manifest bytes
+  and SHA-256 before parsing, shares immutable GPU assets across reload handles,
+  disposes them once at application shutdown, and reports exact caps/status.
+  `dynamicWorld.js`, `worldRenderer.js`, and `main.js` attach a model handle only
+  to the interpolated chassis pose and release it safely per local-world reload.
+  It never replaces the six rigid bodies, wheel particles, suspension, tire
+  contacts, CCD, or traffic collisions. The source asset is unrigged, so visible
+  wheels cannot independently follow the physical wheel/suspension bodies; this
+  remains a disclosed presentation limitation.
+- Reworked the shared physical controller without pose/velocity correction.
+  A/D remain normalized rider signs; S now produces front `1.0` plus rear `0.6`
+  service braking while space/down remain dedicated. Default mouse steering is
+  disabled so accumulated pointer movement cannot bias keyboard input. Fixed-
+  step filters drive steering/throttle/brakes; one 4.5 m/s² bounded lateral-
+  acceleration request derives compatible fork and lean targets; drive torque
+  responds to rear slip/front load; automatic shifts use hysteresis/cooldown;
+  parking support stays bounded forces/torques through steer/brake input.
+- Optimized measured CPU hotspots. `terrainGrid.js` builds one exact local-XZ
+  triangle AABB index and one-entry height/normal cache instead of per-query
+  ECEF/geodetic inversion. The animation loop builds one interpolation snapshot
+  for renderer/camera and skips unconsumed deep telemetry clones. Particle-rigid
+  inverse inertia now uses mutation-aware scratch caching, and broadphase masks,
+  joints, and exclusions prune before allocating pair keys/capacity. Fixed
+  120 Hz, twelve solver iterations, physical traffic, contacts, CCD, and public
+  APIs remain unchanged.
+- Corrected a shared pointer-lock truth bug found by the first built smoke:
+  a keyboard-only adapter compared a null document lock to its null target and
+  reported `pointerLocked:true`. The adapter now requires a real pointer target,
+  with a focused null/null regression; the release smoke was rerun instead of
+  weakening its assertion.
+
+### Measured behavior and performance
+
+- Fixed-step physical probes: D at 8 m/s produced 23.193° right yaw, 1.410 m
+  right displacement, 7.976 m/s forward, 15.616° maximum tilt, and 0.1183
+  lateral slip; at 20 m/s it produced 13.885°, 1.421 m, 18.098 m/s, 13.783°,
+  and 0.1430. Nine seconds of W reached 15.931 m/s over 84.515 m, stayed within
+  1.437° tilt, shifted once, had no overflow, and duplicated hash
+  `287011cc0f8e6963252bb217d15a5acfe311d0c2793e2ab9bc79e20a4cfd98db`.
+  S stopped from 8 m/s in 1.0833 seconds / 4.6079 m; force-based parked steer
+  drift was 0.04434 m with 1.865° tilt.
+- Identical Node 24 fourteen-traffic particle benchmark: baseline median
+  1,909.962 ms / 15.9164 ms-step; final 656.465 ms / 5.4705 ms-step, a 65.63%
+  reduction / 2.91x throughput. Final hash stayed `c8e0778d`, contacts stayed
+  twelve, and candidate overflow stayed zero. Exact triangle sampling improved
+  from 333.394 to 100.680 ms per 100,000 queries (3.31x).
+- Repeated real foreground keyboard driving at 1280x720 after integration.
+  Straight/right/left/service-brake segments rendered 144/91/88/64 frames in
+  4.003/2.029/2.025/1.518 seconds. Means were 27.80/22.29/23.01/23.71 ms;
+  aggregate was 24.74 ms over 387 frames, versus the 58.84 ms intake mean.
+  The run remained finite with no capacity overflow. A current private headless
+  W+D/S pass reached ready in 2.796 seconds and exposed no page/console error.
+
+### Files touched
+
+- Model/runtime: `demos/motorcycle/public/models/akira-bike/**`,
+  `src/render/motorcycleModel.js`, `src/render/{dynamicWorld,worldRenderer}.js`,
+  `src/main.js`, and model/world-renderer tests.
+- Controls/physics/performance: `demos/motorcycle/src/input/runtimeInput.js`,
+  its test, shared vehicle controller/test, particle-rigid bodyMath/spatialHash/
+  world and tests, `world/terrainGrid.js` and its test, plus shared XR keyboard
+  adapter/test.
+- Release/docs: RoadVector `index.html`, README, public notices,
+  `demos/tests/{demo-release.test.js,runtime-smoke.mjs}`, root README, these plan
+  files, and regenerated `docs/motorcycle/**`.
+
+### Commands, results, and failures
+
+- Node `v24.18.0`. `npm run test:physics` PASS `41/41`; RoadVector package PASS
+  `75/75`; `npm run test:xr` PASS `23/23`; mocked XR browser PASS; focused
+  model/renderer/terrain PASS `21/21`; focused input/shared-adapter PASS `15/15`.
+- `npm run build:motorcycle` PASS; 2,321 modules and 391 Cesium runtime/notice
+  items copied. Vite retained its known large-entry warning (6.354 MB minified,
+  1.763 MB gzip) but emitted the current hashed artifact and the separate 7.5 MB
+  model. Static release PASS `17/17`.
+- First built smoke on owned port `43975` correctly failed only on the false
+  null/null pointer-lock telemetry. After the shared fix/rebuild, focused built
+  smoke on `43976` PASS; both owned ports closed after teardown.
+- Exact private `https://100.68.165.52:5188/` probe PASS: secure context,
+  permissioned browser location, current real data, verified model digest,
+  default pointer lock off, deterministic CPU 120 Hz/12 iterations, zero
+  overflow/fatal/page/console error. Curl returned HTTP 200 for root, manifest,
+  and all 7,508,640 model bytes.
+- An initial shell invocation found `nvm` unavailable in the non-login shell;
+  direct `node --version` proved the required `v24.18.0`, so no downgrade or
+  reinstall occurred. A standalone Playwright launch initially lacked its
+  package-managed headless shell; rerunning with the installed
+  `/bin/google-chrome` completed the private proof. No browser dependency was
+  downloaded.
+- `node --check` and `git diff --check` PASS. Physical headset enter/exit/
+  re-enter, controllers/hands/haptics, comfort, and headset timing remain NOT
+  RUN; no physical WebXR certification is claimed.
+
+## 2026-08-25 14:18:00 AKDT - RoadVector final measured hot-path close
+
+Prompt continued from `2026-08-25 13:20:01 AKDT`: replace the RoadVector bike
+with the user-supplied free Akira-style model, drive it with the keyboard, and
+improve performance and physical controls without taking a physics shortcut.
+
+### Actions and decisions
+
+- Reprofiled the integrated live ride with fourteen physical traffic cages.
+  The remaining CPU leader was redundant sorting: `DeterministicSpatialHash`
+  globally sorted entries and then re-sorted every cell containing those same
+  insertion-ordered entries. Removed only the second sort and replaced six
+  allocation-heavy `map`/spread swept-bound reductions with one scalar pass.
+  Added a shuffled multi-sample regression proving identical cells,
+  diagnostics, and candidate-pair order.
+- A controlled live renderer audit showed the single authored glass material's
+  `transmission=1` forced a complete 58,870-triangle transmission prepass. The
+  verified model resource now sets that one value to zero while retaining its
+  authored `0.25` opacity as alpha transparency, disables depth writes for the
+  transparent material, and publishes a frozen single-pass policy. Opaque
+  authored materials and the underlying GLB are untouched.
+- Enabled ordinary Three.js frustum culling on race-gate beams instead of
+  forcing all thirty beams in the inspected course to render off-camera. Added
+  renderer telemetry and an exact twelve-beam fixture assertion.
+- Rebuilt `docs/motorcycle`; the current entry is
+  `assets/index-CCP054Dl.js`. Retained the prior tracked hashed bundles as
+  inactive files because ICC rollback policy rejects generated-file deletions;
+  `docs/motorcycle/index.html` references only the current bundle.
+- Used the existing terminal-browser Chromium and real CDP keyboard down/up
+  events for W, D, A, and S in ride mode. The nine-second final route sampled
+  526 rAF intervals: mean `17.116 ms`, p50 `16.7`, p95 `16.8`, p99 `33.3`, and
+  max `33.4`. The ending view reported 42 calls, 164,922 triangles, 1,074 lines,
+  one disabled transmission material, enabled gate culling, no fatal error,
+  and zero physics-capacity overflow. The intake mean was `58.84 ms` (~17 FPS).
+- Verified the direct IP listener and all 7,508,640 model bytes return HTTP 200
+  when the environment-owned IP-SAN development certificate is trusted. A
+  standard client correctly rejects it as self-signed. Attempted to obtain a
+  CA-trusted MagicDNS certificate with `tailscale cert` (not Tailscale Serve),
+  but local Tailscale policy denied certificate access and requires a one-time
+  operator/root action. No certificate or service state changed; the active
+  `https://100.68.165.52:5188/` handoff remains self-signed and must be trusted
+  on the headset/browser.
+
+### Files touched
+
+- Final hot path: `demos/shared/physics/particle-rigid/spatialHash.js` and its
+  mass/hash test; `demos/motorcycle/src/render/{motorcycleModel,raceVisuals}.js`
+  and model/world-renderer tests.
+- Gates/docs: `demos/tests/{runtime-smoke.mjs,demo-release.test.js}`, RoadVector
+  and root READMEs, branch/plan/test/log files, and rebuilt
+  `docs/motorcycle/**`.
+
+### Commands and results
+
+- Node `v24.18.0`. Syntax checks PASS. Focused model/particle/renderer command
+  PASS `39/39`; full `npm run test:physics` PASS `42/42`; RoadVector PASS
+  `75/75`.
+- `npm run build:motorcycle` PASS: 2,321 modules and 391 Cesium items; expected
+  6.354 MB entry-chunk warning retained. `node --test
+  demos/tests/demo-release.test.js` PASS `17/17`.
+- Built smoke PASS on owned `127.0.0.1:43977`, and the listener was closed after
+  teardown. Its assertions include the hash-verified model, zero runtime
+  transmission, no transmission prepass, gate culling, keyboard/service-brake
+  behavior, six-body authority, real data, and zero overflow.
+- Traffic PASS `12/12`; XR PASS `23/23`; mocked Chromium WebXR PASS. Final
+  `git diff --check` and the scoped ICC guard PASS with zero blocking risks.
+- Shut down the terminal-browser daemon and exact localhost TLS relay, removed
+  the 117 MiB temporary profile/extraction/screenshots, and verified no owned
+  test listener remains on `5193` or `43977`. The user-facing RoadVector
+  listener on private `5188` and loopback-only geodata on `8788` remain active
+  intentionally for headset testing.
+- Physical headset enter/exit/re-enter, hands/controllers/haptics, comfort, and
+  headset frame timing remain NOT RUN. No hardware certification is claimed.
+
+## 2026-08-25 14:35:25 AKDT - RoadVector final audit hardening and rebuilt release
+
+Prompt continued from `2026-08-25 13:20:01 AKDT` and `13:27:04 AKDT`: replace
+the bike with the supplied Akira-style asset, improve real keyboard behavior
+and performance, and retain a physics-based motorcycle.
+
+### Audit findings and fixes
+
+- The blocker-only code audit found that the active rider-foot parking anchor
+  did not join the physics origin-shift transaction. A parked rebase could
+  therefore saturate the 4,000 N hold force and kick the chassis. Updated
+  `demos/shared/physics/vehicle/motorcycleController.js` to shift the X/Z anchor
+  with the reset snapshot, and added a paired baseline/rebased one-second
+  regression in its vehicle test. The final run preserves relative position,
+  velocity, force, finite state, and zero overflow without pose or velocity
+  correction.
+- The authored glass is glTF double-sided and transparent. Disabling
+  transmission removed its full-model prepass, but Three.js could still draw a
+  double-sided transparent material twice unless `forceSinglePass` was set.
+  Updated `motorcycleModel.js` to force every runtime alpha material to one
+  pass, publish exact forced/two-pass counts, and retain opacity with no
+  transmission/depth writes. The fixture now uses `THREE.DoubleSide`, and unit,
+  static, and built-browser gates require the true one-pass contract.
+- The correct 1.67 m model wheelbase left the visible model minimum 0.1257369 m
+  above the physics tire-bottom midpoint. Added a manifest-driven
+  `-0.12573690675938365 m` presentation-only Y offset, placing the calibrated
+  minimum exactly at `-1.042 m` while leaving the six-body rig, 0.412 m rolling
+  radius, poses, contacts, and collisions unchanged. Manifest validation now
+  requires strict numeric finite bounds/offset/radius/bottom fields and both
+  grounding equations; numeric strings, nonfinite values, or mismatches reject
+  before creating the Three transform. Attribution and RoadVector/root docs
+  disclose the visual-only grounding change.
+
+### Files touched in this follow-up
+
+- Physics: `demos/shared/physics/vehicle/motorcycleController.js` and
+  `tests/motorcycle.test.js`.
+- Model/gates: `demos/motorcycle/src/render/motorcycleModel.js`, its test,
+  model `manifest.json`/`ATTRIBUTION.md`, `demos/tests/runtime-smoke.mjs`, and
+  `demos/tests/demo-release.test.js`.
+- Release/docs: RoadVector/root READMEs, branch/plan/tests/log, and regenerated
+  `docs/motorcycle/**`. Older tracked hashed bundles were restored as inactive
+  files; `docs/motorcycle/index.html` references only the current artifacts.
+
+### Commands, results, failures, and remaining manual gate
+
+- The first focused shell command attempted `nvm use 24` and failed because
+  `nvm` is not installed in that non-interactive shell. Direct `node -v` proved
+  the required `v24.18.0`; no dependency reinstall or downgrade was needed.
+- PASS: targeted model plus vehicle `26/26`; model-only follow-up `7/7`; syntax
+  checks and `git diff --check`.
+- PASS: `npm run test:physics` `43/43`; `npm --prefix demos/motorcycle test`
+  `75/75`.
+- PASS: `npm run build:motorcycle` with 2,321 modules and 391 Cesium items. The
+  expected 6.356 MB entry warning remains. Current docs entry is
+  `assets/index-DV7PV_gp.js` with `NetworkManager-BbsQTH5T.js`.
+- PASS: `node --test demos/tests/demo-release.test.js` `17/17`; focused built
+  smoke on owned `127.0.0.1:43978`; the listener closed after completion.
+- PASS: independent final code audit reports no remaining blocker. Direct
+  private `https://100.68.165.52:5188/` and all 7.5 MB model bytes remain live;
+  loopback geodata remains on `127.0.0.1:8788`. The IP certificate is
+  self-signed and must be explicitly trusted; Tailscale operator access for a
+  CA-issued MagicDNS certificate is unavailable, and no Serve/Funnel is used.
+- NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and headset frame timing. No hardware certification is claimed.
+- Open at this exact checkpoint: final ICC refresh/gates and the required local
+  coherent commit; nothing will be pushed.

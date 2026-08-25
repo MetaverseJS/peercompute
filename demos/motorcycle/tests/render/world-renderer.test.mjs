@@ -137,6 +137,7 @@ function makeSceneData() {
 function makePhysics() {
   let offset = 0;
   let particleTransformCalls = 0;
+  let interpolatedTransformCalls = 0;
   let contactCount = 2;
   const bodyIdList = Object.values(BODY_IDS);
   const particles = bodyIdList.flatMap((bodyId, bodyIndex) => [0, 1].map((particleIndex) => ({
@@ -174,10 +175,14 @@ function makePhysics() {
     getParticleTransformCallCount() {
       return particleTransformCalls;
     },
+    getInterpolatedTransformCallCount() {
+      return interpolatedTransformCalls;
+    },
     setContactCount(value) {
       contactCount = value;
     },
     getInterpolatedTransforms(alpha) {
+      interpolatedTransformCalls += 1;
       return bodyIdList.map((id, index) => ({
         id,
         position: [index + offset + alpha, 2, index * 0.25],
@@ -193,6 +198,44 @@ function makePhysics() {
     },
     getContacts() {
       return contacts.slice(0, contactCount).map((contact) => ({ ...contact, point: [...contact.point] }));
+    },
+  };
+}
+
+function makeModelInstance() {
+  const root = new THREE.Group();
+  root.name = 'test-licensed-motorcycle-model';
+  const geometry = new THREE.BoxGeometry(1.67, 0.72, 0.58);
+  const material = new THREE.MeshBasicMaterial({ color: 0xff3131 });
+  root.add(new THREE.Mesh(geometry, material));
+  let released = false;
+  let releaseCount = 0;
+  return {
+    root,
+    geometry,
+    material,
+    get releaseCount() { return releaseCount; },
+    getTelemetry() {
+      return {
+        schemaVersion: 'peercompute.motorcycle.model-instance.telemetry.v1',
+        id: 'test-model-instance',
+        released,
+        attached: Boolean(root.parent),
+        visible: root.visible,
+        assetId: 'akira-bike-ryanwill679-optimized-v1',
+        physicsAuthority: 'six-body-particle-rigid',
+        collisionAuthority: false,
+        sharedResources: true,
+        targetWheelbaseMeters: 1.67,
+      };
+    },
+    release() {
+      if (released) return false;
+      root.removeFromParent();
+      root.clear();
+      released = true;
+      releaseCount += 1;
+      return true;
     },
   };
 }
@@ -400,10 +443,11 @@ test('flat terrain stays transparent without inventing checkerboard contour curv
   flat.major.dispose();
 });
 
-test('world renderer uses transparent NURBS terrain and a minimalist line motorcycle by default', () => {
+test('world renderer uses transparent NURBS terrain and a licensed optimized motorcycle model', () => {
   const scene = new THREE.Scene();
   const terrain = makeTerrain();
   const physics = makePhysics();
+  const modelInstance = makeModelInstance();
   const renderer = createMotorcycleWorldRenderer({
     THREE,
     scene,
@@ -417,6 +461,7 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
     maximumMotorcycleParticles: 5,
     maximumContactMarkers: 1,
     maximumTrafficVehicles: 2,
+    motorcycleModelInstance: modelInstance,
   });
   assert.equal(renderer.root.parent, scene);
   const initial = renderer.getTelemetry();
@@ -438,12 +483,12 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
   assert.equal(initial.motorcycle.renderedParticleCount, 0);
   assert.equal(initial.motorcycle.rendererCapOmittedCount, 0);
   assert.equal(initial.motorcycle.debugDisabledOmittedCount, 12);
-  assert.equal(initial.motorcycle.style, 'minimal-nurbs-line-bike');
-  assert.equal(initial.motorcycle.wheelCurveCount, 2);
-  assert.equal(initial.motorcycle.frameCurveCount, 5);
-  assert.equal(initial.motorcycle.riderCurveCount, 6);
+  assert.equal(initial.motorcycle.style, 'licensed-optimized-akira-model');
+  assert.equal(initial.motorcycle.physicsAuthority, 'six-body-particle-rigid');
+  assert.equal(initial.motorcycle.collisionAuthority, false);
+  assert.equal(initial.motorcycle.model.assetId, 'akira-bike-ryanwill679-optimized-v1');
+  assert.equal(initial.motorcycle.model.sharedResources, true);
   assert.equal(initial.motorcycle.physicsDebugEnabled, false);
-  assert.ok(Math.abs(initial.motorcycle.rollingRadiusMeters - 0.412) < 1e-12);
   assert.equal(initial.contacts.sourceContactCount, 2);
   assert.equal(initial.contacts.renderedContactCount, 0);
   assert.equal(initial.contacts.rendererCapOmittedCount, 0);
@@ -455,18 +500,26 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
   assert.equal(initial.race.gateCount, 4);
   assert.equal(initial.race.renderedGateCount, 4);
   assert.equal(initial.race.navigationGrade, false);
-  assert.equal(
-    renderer.root.getObjectByName('motorcycle-race-gates').children.length,
-    4,
-  );
+  assert.equal(initial.race.offscreenGateCulling, true);
+  const raceGateRoot = renderer.root.getObjectByName('motorcycle-race-gates');
+  assert.equal(raceGateRoot.children.length, 4);
+  let raceBeamCount = 0;
+  raceGateRoot.traverse((object) => {
+    if (!object.isMesh) return;
+    raceBeamCount += 1;
+    assert.equal(object.frustumCulled, true);
+  });
+  assert.equal(raceBeamCount, 12);
 
   const roadColors = [];
   renderer.root.getObjectByName('motorcycle-osm-road-ribbons').traverse((object) => {
     if (object.isMesh) roadColors.push(object.material.color.getHex());
   });
   assert.equal(new Set(roadColors).size, 2, 'rendered road categories retain distinct neon colors');
-  const lineBike = renderer.root.getObjectByName('motorcycle-minimal-nurbs-line-bike');
-  assert.ok(lineBike);
+  const modelBike = renderer.root.getObjectByName('motorcycle-licensed-model-bike');
+  assert.ok(modelBike);
+  assert.ok(modelBike.getObjectByName('test-licensed-motorcycle-model'));
+  assert.equal(renderer.root.getObjectByName('motorcycle-minimal-nurbs-line-bike'), undefined);
   assert.equal(renderer.root.getObjectByName('motorcycle-debug-particle-clouds'), undefined);
   assert.equal(renderer.root.getObjectByName('motorcycle-contact-marker-instances'), undefined);
   const terrainRoot = renderer.root.getObjectByName('motorcycle-real-topographic-terrain');
@@ -477,24 +530,30 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
     terrainRoot.getObjectByName('motorcycle-transparent-terrain-surface').material.polygonOffset,
     true,
   );
-  const wheels = [];
-  lineBike.traverse((object) => {
-    if (object.name?.endsWith('-nurbs-wheel-line')) wheels.push(object);
-    assert.equal(/BoxGeometry|SphereGeometry|TorusGeometry/u.test(object.geometry?.type ?? ''), false);
-  });
-  assert.equal(wheels.length, 2);
-  assert.ok(wheels.every((wheel) => wheel.userData.curveModel === 'NURBS'));
-  const beforePosition = renderer.root.getObjectByName('motorcycle-line-body-chassis').position.clone();
+  const beforePosition = renderer.root
+    .getObjectByName('motorcycle-physics-body-chassis-model-pose').position.clone();
   const particleCallsAfterConstruction = physics.getParticleTransformCallCount();
+  const interpolationCallsAfterConstruction = physics.getInterpolatedTransformCallCount();
   physics.setOffset(5);
   physics.setContactCount(0);
-  const updated = renderer.update({ alpha: 0.5, trafficSnapshot: trafficSnapshot(3) });
-  const afterPosition = renderer.root.getObjectByName('motorcycle-line-body-chassis').position.clone();
-  assert.ok(afterPosition.x - beforePosition.x > 5.49, 'line rig follows interpolated physics');
+  const interpolatedTransforms = physics.getInterpolatedTransforms(0.5);
+  const updated = renderer.update({
+    alpha: 0.5,
+    trafficSnapshot: trafficSnapshot(3),
+    interpolatedTransforms,
+  });
+  const afterPosition = renderer.root
+    .getObjectByName('motorcycle-physics-body-chassis-model-pose').position.clone();
+  assert.ok(afterPosition.x - beforePosition.x > 5.49, 'model pose follows interpolated chassis physics');
   assert.equal(
     physics.getParticleTransformCallCount(),
     particleCallsAfterConstruction,
     'default line rendering does not sample dense collision particles each frame',
+  );
+  assert.equal(
+    physics.getInterpolatedTransformCallCount(),
+    interpolationCallsAfterConstruction + 1,
+    'a caller-provided interpolation snapshot is reused instead of rebuilt',
   );
   assert.equal(updated.frameCount, 1);
   assert.equal(updated.motorcycle.renderedParticleCount, 0);
@@ -509,6 +568,13 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
   assert.equal(updated.traffic.synthetic, true);
   assert.equal(updated.traffic.liveTraffic, false);
   assert.equal(updated.traffic.provenance.geometrySource, 'OpenStreetMap-derived directed road geometry');
+  assert.equal(renderer.update({
+    alpha: 0.5,
+    interpolatedTransforms,
+    trafficSnapshot: trafficSnapshot(3),
+    collectTelemetry: false,
+  }), 2);
+  assert.throws(() => renderer.update({ collectTelemetry: 'yes' }), /collectTelemetry/u);
   const trafficMeshes = renderer.root.getObjectByName('motorcycle-synthetic-traffic').children;
   assert.equal(trafficMeshes.reduce((sum, mesh) => sum + mesh.count, 0), 2);
   assert.equal(new Set(trafficMeshes.filter((mesh) => mesh.count > 0).map((mesh) => mesh.material.color.getHex())).size, 2);
@@ -536,9 +602,9 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
     'race gates share the rebased geospatial root',
   );
   assert.equal(
-    renderer.root.getObjectByName('motorcycle-minimal-nurbs-line-bike').position.x,
+    renderer.root.getObjectByName('motorcycle-licensed-model-bike').position.x,
     0,
-    'line motorcycle transforms are already shifted by the physics authority',
+    'model transforms are already shifted by the physics authority',
   );
 
   assert.throws(
@@ -547,10 +613,14 @@ test('world renderer uses transparent NURBS terrain and a minimalist line motorc
   );
   const watchedGeometry = renderer.root.getObjectByName('motorcycle-transparent-terrain-surface').geometry;
   let disposedGeometry = false;
+  let disposedModelGeometry = false;
   watchedGeometry.addEventListener('dispose', () => { disposedGeometry = true; });
+  modelInstance.geometry.addEventListener('dispose', () => { disposedModelGeometry = true; });
   assert.equal(renderer.dispose(), true);
   assert.equal(renderer.root.parent, null);
   assert.equal(disposedGeometry, true);
+  assert.equal(disposedModelGeometry, false, 'location disposal leaves shared model assets to their owner');
+  assert.equal(modelInstance.releaseCount, 1);
   assert.equal(renderer.getTelemetry().disposed, true);
   assert.equal(renderer.getTelemetry().disposal.geometries > 0, true);
   assert.equal(renderer.dispose(), false);
@@ -575,6 +645,7 @@ test('renderer hard-clamps terrain work even when material options request large
       maximumNurbsCurves: 4_096,
       maximumSampledVertices: 500_000,
     },
+    motorcycleModelInstance: makeModelInstance(),
   });
   const status = renderer.getTelemetry();
   assert.equal(status.terrain.contours.maximumContourLevels, 96);
@@ -586,7 +657,7 @@ test('renderer hard-clamps terrain work even when material options request large
   renderer.dispose();
 });
 
-test('renderer consumes the real six-body particle motorcycle as a sparse line visualization', () => {
+test('renderer consumes the real six-body particle motorcycle as chassis-driven model presentation', () => {
   const game = createMotorcyclePhysics({
     worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
     rigOptions: { id: 'render-contract-bike' },
@@ -600,14 +671,16 @@ test('renderer consumes the real six-body particle motorcycle as a sparse line v
     rig: game.rig,
     raceCourse: makeRaceCourse(),
     maximumTrafficVehicles: 0,
+    motorcycleModelInstance: makeModelInstance(),
   });
   const initial = renderer.getTelemetry().motorcycle;
   assert.equal(initial.componentCount, 6);
-  assert.equal(initial.bodyTransformCount, 6);
+  assert.equal(initial.bodyTransformCount, 1);
   assert.ok(initial.sourceParticleCount > 50);
   assert.equal(initial.renderedParticleCount, 0);
-  assert.equal(initial.wheelCurveCount, 2);
-  assert.equal(initial.style, 'minimal-nurbs-line-bike');
+  assert.equal(initial.poseBodyId, game.rig.bodyIds.chassis);
+  assert.equal(initial.style, 'licensed-optimized-akira-model');
+  assert.equal(initial.physicsAuthority, 'six-body-particle-rigid');
   assert.equal(renderer.getTelemetry().contacts.sourceContactCount, 0);
   game.stepFrame(1 / 120, { sequence: 1, throttle: 0.2 });
   const updated = renderer.update({ alpha: 0.25 });
@@ -617,7 +690,7 @@ test('renderer consumes the real six-body particle motorcycle as a sparse line v
   game.dispose();
 });
 
-test('physics debug mode remains explicit, capped, and separate from the default line bike', () => {
+test('physics debug mode remains explicit, capped, and separate from the licensed model', () => {
   const scene = new THREE.Scene();
   const physics = makePhysics();
   const renderer = createMotorcycleWorldRenderer({
@@ -632,6 +705,7 @@ test('physics debug mode remains explicit, capped, and separate from the default
     maximumMotorcycleParticles: 5,
     maximumContactMarkers: 1,
     maximumTrafficVehicles: 0,
+    motorcycleModelInstance: makeModelInstance(),
   });
   const status = renderer.getTelemetry();
   assert.equal(status.motorcycle.physicsDebugEnabled, true);

@@ -3,10 +3,7 @@ import {
   NEON_TOPO_PALETTE,
   trafficCategoryColor,
 } from './constants.js';
-import { Line2 } from 'three/addons/lines/Line2.js';
-import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { createNeonBasicMaterial, createNeonLineMaterial } from './materials.js';
-import { createNurbsCircleCurve, createNurbsCurveFromPoints } from './nurbs.js';
+import { createNeonBasicMaterial } from './materials.js';
 
 const TRAFFIC_SNAPSHOT_SCHEMA = 'peercompute.synthetic-road-traffic.snapshot.v1';
 const KNOWN_TRAFFIC_CATEGORIES = Object.freeze([
@@ -44,195 +41,45 @@ function matrixFromParticle(THREE, matrix, particle) {
   );
 }
 
-function sampledCurveGeometry(curve, sampleSegments, name) {
-  const sampled = curve.getPoints(sampleSegments);
-  const geometry = new LineGeometry();
-  geometry.name = `${name}-geometry`;
-  geometry.setPositions(sampled.flatMap((point) => [point.x, point.y, point.z]));
-  geometry.userData = {
-    ...curve.userData,
-    sampledPointCount: sampled.length,
-  };
-  return geometry;
-}
-
-function createGlowingCurve(THREE, curve, {
-  name,
-  color,
-  category,
-  sampleSegments = 32,
-  coreWidth = 2,
-  haloWidth = 5,
-} = {}) {
-  const geometry = sampledCurveGeometry(curve, sampleSegments, name);
-  const root = new THREE.Group();
-  root.name = name;
-  root.userData = {
-    kind: 'minimal-nurbs-line',
-    category,
-    curveModel: 'NURBS',
-    degree: curve.userData.degree,
-    controlPointCount: curve.userData.controlPointCount,
-    sampledPointCount: geometry.userData.sampledPointCount,
-  };
-  const halo = new Line2(
-    geometry,
-    createNeonLineMaterial(THREE, color, {
-      category: `${category}-halo`,
-      opacity: 0.24,
-      linewidth: haloWidth,
-    }),
-  );
-  halo.name = `${name}-halo`;
-  halo.computeLineDistances();
-  halo.renderOrder = 32;
-  const core = new Line2(
-    geometry,
-    createNeonLineMaterial(THREE, color, {
-      category: `${category}-core`,
-      opacity: 0.96,
-      linewidth: coreWidth,
-    }),
-  );
-  core.name = `${name}-core`;
-  core.computeLineDistances();
-  core.renderOrder = 33;
-  root.add(halo, core);
-  return root;
-}
-
 function createBodyGroup(THREE, root, bodyGroups, bodyId, component) {
   const group = new THREE.Group();
-  group.name = `motorcycle-line-body-${component}`;
-  group.userData = { kind: 'motorcycle-line-body', component, bodyId };
+  group.name = `motorcycle-physics-body-${component}`;
+  group.userData = { kind: 'motorcycle-physics-body-pose', component, bodyId };
   bodyGroups.set(bodyId, group);
   root.add(group);
   return group;
 }
 
-function addStroke(THREE, parent, points, options) {
-  const curve = createNurbsCurveFromPoints(THREE, points);
-  const stroke = createGlowingCurve(THREE, curve, options);
-  parent.add(stroke);
-  return stroke;
-}
-
-function createMinimalLineBike(THREE, rig) {
+function createLicensedModelBike(THREE, rig, modelInstance) {
+  if (!modelInstance?.root?.isObject3D
+      || typeof modelInstance.getTelemetry !== 'function'
+      || typeof modelInstance.release !== 'function') {
+    throw new TypeError('Motorcycle renderer requires a licensed model instance handle.');
+  }
+  if (modelInstance.root.parent) {
+    throw new Error('Motorcycle model instance must be unattached before renderer ownership begins.');
+  }
   const root = new THREE.Group();
-  root.name = 'motorcycle-minimal-nurbs-line-bike';
+  root.name = 'motorcycle-licensed-model-bike';
   root.userData = {
-    kind: 'minimal-nurbs-line-bike',
+    ...root.userData,
     worldUnits: rig.worldUnits ?? 'meters',
+    physicsAuthority: 'six-body-particle-rigid',
+    collisionAuthority: false,
   };
   const bodyGroups = new Map();
-  const groups = {};
-  for (const [component, bodyId] of Object.entries(rig.bodyIds)) {
-    groups[component] = createBodyGroup(THREE, root, bodyGroups, bodyId, component);
-  }
-
-  const rollingRadius = Number(
-    rig.rollingRadiusMeters ?? ((rig.wheelRadius ?? 0.34) + (rig.tireRadius ?? 0.072)),
+  const chassis = createBodyGroup(
+    THREE,
+    root,
+    bodyGroups,
+    rig.bodyIds.chassis,
+    'chassis-model-pose',
   );
-  if (!Number.isFinite(rollingRadius) || rollingRadius <= 0) {
-    throw new RangeError('Motorcycle rolling radius must be positive.');
-  }
-  const wheelCurves = [];
-  for (const [component, color] of [
-    ['rearWheel', NEON_TOPO_PALETTE.motorcycle.rearWheel],
-    ['frontWheel', NEON_TOPO_PALETTE.motorcycle.frontWheel],
-  ]) {
-    const wheel = createGlowingCurve(THREE, createNurbsCircleCurve(THREE, rollingRadius, { plane: 'yz' }), {
-      name: `motorcycle-${component}-nurbs-wheel-line`,
-      category: `motorcycle-${component}-wheel-line`,
-      color,
-      sampleSegments: 64,
-      coreWidth: 2.2,
-      haloWidth: 6,
-    });
-    groups[component].add(wheel);
-    wheelCurves.push(wheel);
-  }
-
-  const frameStrokes = [
-    addStroke(THREE, groups.chassis, [
-      [0, -0.26, -0.44], [0, -0.19, 0.08], [0, 0.02, 0.48],
-      [0, 0.18, -0.26], [0, -0.26, -0.44],
-    ], {
-      name: 'motorcycle-frame-main-nurbs-line',
-      category: 'motorcycle-frame',
-      color: NEON_TOPO_PALETTE.motorcycle.chassis,
-      sampleSegments: 32,
-    }),
-    addStroke(THREE, groups.rearSwingarm, [
-      [0, -0.3, -0.34], [0, -0.08, -0.12], [0, 0.06, 0.06],
-    ], {
-      name: 'motorcycle-rear-swingarm-nurbs-line',
-      category: 'motorcycle-frame',
-      color: NEON_TOPO_PALETTE.motorcycle.rearSwingarm,
-      sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.upperFork, [
-      [-0.31, 0.24, -0.02], [0, 0.28, -0.03], [0.31, 0.24, -0.02],
-    ], {
-      name: 'motorcycle-handlebar-nurbs-line',
-      category: 'motorcycle-frame',
-      color: NEON_TOPO_PALETTE.motorcycle.upperFork,
-      sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.lowerFork, [
-      [-0.075, 0.22, -0.05], [-0.075, -0.04, 0.05], [-0.075, -0.28, 0.17],
-    ], {
-      name: 'motorcycle-left-fork-nurbs-line',
-      category: 'motorcycle-frame',
-      color: NEON_TOPO_PALETTE.motorcycle.lowerFork,
-      sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.lowerFork, [
-      [0.075, 0.22, -0.05], [0.075, -0.04, 0.05], [0.075, -0.28, 0.17],
-    ], {
-      name: 'motorcycle-right-fork-nurbs-line',
-      category: 'motorcycle-frame',
-      color: NEON_TOPO_PALETTE.motorcycle.lowerFork,
-      sampleSegments: 16,
-    }),
-  ];
-
-  const riderColor = NEON_TOPO_PALETTE.motorcycle.rider;
-  const riderStrokes = [
-    addStroke(THREE, groups.chassis, [[0, 0.2, -0.14], [0, 0.5, -0.04], [0, 0.78, 0.1]], {
-      name: 'motorcycle-rider-spine-nurbs-line', category: 'motorcycle-rider', color: riderColor, sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.chassis, [[0, 0.66, 0.05], [-0.18, 0.5, 0.3], [-0.28, 0.31, 0.47]], {
-      name: 'motorcycle-rider-left-arm-nurbs-line', category: 'motorcycle-rider', color: riderColor, sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.chassis, [[0, 0.66, 0.05], [0.18, 0.5, 0.3], [0.28, 0.31, 0.47]], {
-      name: 'motorcycle-rider-right-arm-nurbs-line', category: 'motorcycle-rider', color: riderColor, sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.chassis, [[0, 0.22, -0.12], [-0.14, -0.02, -0.12], [-0.18, -0.24, 0.02]], {
-      name: 'motorcycle-rider-left-leg-nurbs-line', category: 'motorcycle-rider', color: riderColor, sampleSegments: 16,
-    }),
-    addStroke(THREE, groups.chassis, [[0, 0.22, -0.12], [0.14, -0.02, -0.12], [0.18, -0.24, 0.02]], {
-      name: 'motorcycle-rider-right-leg-nurbs-line', category: 'motorcycle-rider', color: riderColor, sampleSegments: 16,
-    }),
-  ];
-  const head = createGlowingCurve(THREE, createNurbsCircleCurve(THREE, 0.13, { plane: 'xy' }), {
-    name: 'motorcycle-rider-head-nurbs-line',
-    category: 'motorcycle-rider',
-    color: riderColor,
-    sampleSegments: 40,
-    coreWidth: 1.7,
-    haloWidth: 4.2,
-  });
-  head.position.set(0, 0.97, 0.1);
-  groups.chassis.add(head);
-  riderStrokes.push(head);
+  chassis.add(modelInstance.root);
   return {
     root,
     bodyGroups,
-    wheelCurves,
-    frameStrokes,
-    riderStrokes,
-    rollingRadius,
+    modelInstance,
   };
 }
 
@@ -279,6 +126,7 @@ function createDebugParticleClouds(THREE, physicsWorld, bodyIds, initialParticle
 export function createMotorcycleVisuals(THREE, physicsWorld, rig, {
   maximumMotorcycleParticles = MOTORCYCLE_RENDER_LIMITS.maximumMotorcycleParticles,
   physicsDebug = false,
+  modelInstance,
 } = {}) {
   if (typeof physicsWorld?.getInterpolatedTransforms !== 'function'
     || typeof physicsWorld?.getParticleTransforms !== 'function') {
@@ -297,18 +145,21 @@ export function createMotorcycleVisuals(THREE, physicsWorld, rig, {
   const initialParticles = physicsWorld.getParticleTransforms(0)
     .filter((particle) => bodyIds.has(particle.bodyId));
   const sourceParticleCount = initialParticles.length;
-  const minimal = createMinimalLineBike(THREE, rig);
-  const root = minimal.root;
+  const presentation = createLicensedModelBike(THREE, rig, modelInstance);
+  const root = presentation.root;
   const debug = createDebugParticleClouds(THREE, physicsWorld, bodyIds, initialParticles, physicsDebug ? limit : 0);
   if (physicsDebug) root.add(debug.root);
   let lastRenderedParticleCount = 0;
   let invalidParticleCount = 0;
-  const update = (alpha = 0) => {
+  const update = (alpha = 0, interpolatedTransforms = null) => {
     const blend = Math.min(1, Math.max(0, Number(alpha)));
     if (!Number.isFinite(blend)) throw new TypeError('Motorcycle interpolation alpha must be finite.');
-    const transforms = physicsWorld.getInterpolatedTransforms(blend);
+    if (interpolatedTransforms !== null && !Array.isArray(interpolatedTransforms)) {
+      throw new TypeError('Motorcycle interpolated transforms must be an array when provided.');
+    }
+    const transforms = interpolatedTransforms ?? physicsWorld.getInterpolatedTransforms(blend);
     for (const transform of transforms) {
-      const group = minimal.bodyGroups.get(transform.id);
+      const group = presentation.bodyGroups.get(transform.id);
       if (!group) continue;
       group.position.fromArray(finiteVector(transform.position, 3, `${transform.id}.position`));
       group.quaternion.fromArray(finiteVector(transform.orientation, 4, `${transform.id}.orientation`));
@@ -320,7 +171,7 @@ export function createMotorcycleVisuals(THREE, physicsWorld, rig, {
   };
   update(0);
   root.userData = {
-    kind: 'minimal-nurbs-line-bike',
+    kind: 'licensed-optimized-model-bike',
     componentCount: rig.bodyIdList.length,
     sourceParticleCount,
     rendererCapOmittedCount: physicsDebug ? Math.max(0, sourceParticleCount - debug.selected.length) : 0,
@@ -329,7 +180,12 @@ export function createMotorcycleVisuals(THREE, physicsWorld, rig, {
   return {
     root,
     update,
+    releaseModel() {
+      modelInstance.root.removeFromParent();
+      return modelInstance.release();
+    },
     getTelemetry() {
+      const model = modelInstance.getTelemetry();
       return {
         componentCount: rig.bodyIdList.length,
         sourceParticleCount,
@@ -337,13 +193,12 @@ export function createMotorcycleVisuals(THREE, physicsWorld, rig, {
         rendererCapOmittedCount: physicsDebug ? Math.max(0, sourceParticleCount - debug.selected.length) : 0,
         debugDisabledOmittedCount: physicsDebug ? 0 : sourceParticleCount,
         invalidOmittedCount: invalidParticleCount,
-        bodyTransformCount: minimal.bodyGroups.size,
-        style: 'minimal-nurbs-line-bike',
-        wheelCurveCount: minimal.wheelCurves.length,
-        frameCurveCount: minimal.frameStrokes.length,
-        riderCurveCount: minimal.riderStrokes.length,
-        nurbsCurveCount: minimal.wheelCurves.length + minimal.frameStrokes.length + minimal.riderStrokes.length,
-        rollingRadiusMeters: minimal.rollingRadius,
+        bodyTransformCount: presentation.bodyGroups.size,
+        poseBodyId: rig.bodyIds.chassis,
+        style: 'licensed-optimized-akira-model',
+        physicsAuthority: 'six-body-particle-rigid',
+        collisionAuthority: false,
+        model,
         worldUnits: rig.worldUnits ?? 'meters',
         physicsDebugEnabled: physicsDebug,
       };

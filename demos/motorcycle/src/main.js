@@ -17,6 +17,7 @@ import {
   createMotorcycleWorldRenderer,
   disposeThreeObject,
 } from './render/index.js';
+import { createMotorcycleModelResource } from './render/motorcycleModel.js';
 import { createMotorcycleGameRuntime } from './runtime/gameRuntime.js';
 import { loadMotorcycleLocation } from './runtime/locationLoader.js';
 import { createMotorcycleXrPanel } from './runtime/xrPanel.js';
@@ -164,6 +165,9 @@ const runtime = {
   cachedGeoFetch: null,
   sourceCacheTelemetry: null,
   sourceCacheError: null,
+  motorcycleModelResource: null,
+  motorcycleModelPreload: null,
+  motorcycleModelPreloadError: null,
   xrUiCapture: false,
   lastHudAt: 0,
   cleanup: [],
@@ -239,6 +243,19 @@ function initializeSourceCaches() {
 }
 
 initializeSourceCaches();
+
+runtime.motorcycleModelResource = createMotorcycleModelResource({
+  THREE,
+  renderer,
+  assetBaseUrl: new URL('./models/akira-bike/', document.baseURI).href,
+});
+// Start the bounded, hash-verified presentation load while Cesium and the
+// regional sources initialize. Location loads acquire a shared-resource model
+// handle below; the six-body particle rig remains the sole physics authority.
+runtime.motorcycleModelPreload = runtime.motorcycleModelResource.preload().catch((error) => {
+  runtime.motorcycleModelPreloadError = userMessage(error);
+  return null;
+});
 
 const overviewRuntime = createRoadvectorOverviewRuntime({
   Cesium,
@@ -424,6 +441,7 @@ function publicState() {
     displayMode: runtime.displayMode,
     overview: overviewRuntime.getStatus(),
     sourceCache: sourceCacheSnapshot(),
+    modelAsset: runtime.motorcycleModelResource?.getTelemetry?.() ?? null,
     scale: {
       ...ROADVECTOR_SCALE_DISCLOSURE,
       camera: {
@@ -582,6 +600,9 @@ async function loadLocation(location, { source = 'manual' } = {}) {
   elements.terrainStatus.textContent = 'LOADING AWS TERRARIUM';
   elements.regionStatus.textContent = `REQUESTED ${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`;
 
+  let pendingGame = null;
+  let pendingWorldRenderer = null;
+  let pendingModelInstance = null;
   try {
     const loaded = await loadMotorcycleLocation({
       geodata,
@@ -590,32 +611,41 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       fetchImpl: sourceFetch,
     });
     if (generation !== runtime.generation || abortController.signal.aborted) return null;
+    pendingModelInstance = await runtime.motorcycleModelResource.createInstance();
+    if (generation !== runtime.generation || abortController.signal.aborted) {
+      pendingModelInstance.release();
+      return null;
+    }
     teardownWorld();
-    const game = createMotorcycleGameRuntime({
+    pendingGame = createMotorcycleGameRuntime({
       terrain: loaded.terrain,
       sceneData: loaded.sceneData,
       trafficVehicleCount: MAXIMUM_TRAFFIC_VEHICLES,
       maximumPhysicalTrafficVehicles: MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES,
       controllerOptions: { leanAssist: elements.leanAssist.checked },
     });
-    const worldRenderer = createMotorcycleWorldRenderer({
+    pendingWorldRenderer = createMotorcycleWorldRenderer({
       THREE,
       scene,
       terrain: loaded.terrain,
       sceneData: loaded.sceneData,
-      world: game.world,
-      rig: game.rig,
-      raceCourse: game.raceCourse,
+      world: pendingGame.world,
+      rig: pendingGame.rig,
+      raceCourse: pendingGame.raceCourse,
       maximumTrafficVehicles: MAXIMUM_TRAFFIC_VEHICLES,
       physicsDebug: PHYSICS_DEBUG,
+      motorcycleModelInstance: pendingModelInstance,
     });
-    const initial = game.getState();
-    worldRenderer.update({ alpha: 0, trafficSnapshot: initial.trafficSnapshot });
+    const initial = pendingGame.getState();
+    pendingWorldRenderer.update({ alpha: 0, trafficSnapshot: initial.trafficSnapshot });
     runtime.load = loaded;
     runtime.location = loaded.location;
     runtime.locationSource = source;
-    runtime.game = game;
-    runtime.worldRenderer = worldRenderer;
+    runtime.game = pendingGame;
+    runtime.worldRenderer = pendingWorldRenderer;
+    pendingGame = null;
+    pendingWorldRenderer = null;
+    pendingModelInstance = null;
     runtime.ready = true;
     runtime.frameCount = 0;
     runtime.lastStep = null;
@@ -634,9 +664,12 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     elements.provenance.textContent = `OSM ${loaded.sceneData.status.toUpperCase()} // FETCHED ${loaded.envelope.fetchedAt ?? 'UNKNOWN'} // ${loaded.sceneData.provenance.attribution}`;
     elements.trafficStatus.textContent = `${initial.traffic.spawnedVehicleCount} SYNTHETIC // ${initial.trafficPhysics.added} PHYSICAL`;
     elements.raceStatus.textContent = raceStatusText(initial.race, initial.raceCourse);
-    setPlatform('ready', 'REAL ROADS // NURBS LINE BIKE');
+    setPlatform('ready', 'REAL ROADS // LICENSED OPTIMIZED MODEL // PHYSICS RIG');
     return publicState();
   } catch (error) {
+    pendingWorldRenderer?.dispose();
+    if (!pendingWorldRenderer) pendingModelInstance?.release();
+    pendingGame?.dispose();
     if (abortController.signal.aborted || generation !== runtime.generation) return null;
     teardownWorld({ clearLoad: true });
     setError(error);
@@ -676,13 +709,6 @@ async function locateUserOrFallback() {
     }
     return state;
   }
-}
-
-function chassisPose(alpha) {
-  if (!runtime.game) return null;
-  const chassisId = runtime.game.rig.bodyIds.chassis;
-  return runtime.game.world.getInterpolatedTransforms(alpha)
-    .find((transform) => transform.id === chassisId) ?? null;
 }
 
 function updateHud(time) {
@@ -784,11 +810,18 @@ renderer.setAnimationLoop((time, xrFrame) => {
       });
     }
     if (runtime.lastStep.boundaryReset) viewRig.resetPose?.({ recenter: true });
+    const interpolatedTransforms = runtime.game.world.getInterpolatedTransforms(
+      runtime.lastStep.physicsAlpha,
+    );
     runtime.worldRenderer.update({
       alpha: runtime.lastStep.physicsAlpha,
       trafficSnapshot: runtime.lastStep.trafficSnapshot,
+      interpolatedTransforms,
+      collectTelemetry: false,
     });
-    const pose = chassisPose(runtime.lastStep.physicsAlpha);
+    const pose = interpolatedTransforms.find(
+      (transform) => transform.id === runtime.game.rig.bodyIds.chassis,
+    ) ?? null;
     if (pose) {
       const viewerPose = xrFrame?.getViewerPose?.(renderer.xr.getReferenceSpace?.() ?? null) ?? null;
       const constrainedViewPose = viewRig.update({
@@ -897,6 +930,7 @@ async function dispose() {
   await runtime.cachedGeoFetch?.destroy?.();
   await runtime.sourceCacheManager?.destroy?.();
   teardownWorld();
+  runtime.motorcycleModelResource?.dispose?.();
   scene.remove(xrRoot);
   renderer.dispose();
 }

@@ -621,3 +621,81 @@ WXGlobe's NOAA compatibility gate.
   `44/44` plus combined browser smoke, private EarthGrid paired-line frame,
   RoadVector 25/25-tile frame, backend ETag/304, and private WXGlobe readiness
   all pass. Physical-headset validation remains explicitly NOT RUN.
+
+## User Addendum - 2026-08-25 AKDT - RoadVector Akira-Style Visual And Ride Feel
+
+- Replace RoadVector's minimalist motorcycle presentation with the specific
+  downloadable Sketchfab “Akira Bike” model selected by the user, subject to
+  the model's official download and CC BY 4.0 attribution requirements.
+- The imported model is presentation only. The existing multi-body particle
+  motorcycle, suspension constraints, tire/contact model, collision response,
+  and fixed-step solver remain the source of motion; no animation, scripted
+  path, raycast vehicle, or kinematic shortcut may replace them.
+- Optimize the model before shipping and disclose runtime triangle, material,
+  draw-call, texture-memory, asset-byte, scale, and orientation bounds. Default
+  rendering must not reintroduce the old duplicate halo/core passes or debug
+  particle/contact geometry.
+- Improve keyboard control and physical behavior through measured driving:
+  progressive power/brakes, bounded speed-aware counter-steer and lean, stable
+  release/recovery, sane reset/parking behavior, and an intentional gearbox.
+  Preserve normalized input signs and cross-device actuator consistency.
+- Improve foreground performance at the measured CPU bottlenecks while keeping
+  the 120 Hz/twelve-iteration physics contract, physical traffic and terrain
+  contacts, deterministic ordering, and bounded resource/error telemetry.
+- Release evidence includes licensed-asset provenance, focused deterministic
+  physics tests, before/after foreground keyboard-drive profiles, rebuilt
+  browser smoke, private HTTPS proof, and an explicit physical-headset status.
+
+## Implementation Result - 2026-08-25 AKDT - RoadVector Licensed Visual, Controls, And Performance
+
+- The runtime now ships a locally packaged optimized derivative of “Akira
+  Bike” by Ryanwill679 under CC BY 4.0. Its bounded manifest records 7,508,640
+  bytes, 58,870 triangles, fifteen material draws, twenty-two KTX2 textures,
+  exact hashes, scale/orientation, and all modification/limitation disclosures.
+  The model has no physics/collision authority and follows only the physical
+  chassis; the six-body simulation and debug geometry contract are preserved.
+- The desktop path now uses deterministic fixed-step actuator filtering and a
+  single lateral-acceleration request for compatible fork/lean targets. S is a
+  balanced service brake, dedicated brakes remain, default mouse steering no
+  longer biases A/D, traction/load limiting is physical, automatic shift has
+  hysteresis, and low-speed parking remains bounded forces/torques.
+- Exact 8 and 20 m/s right-turn probes produce 23.19° and 13.88° physical right
+  yaw with 0.118/0.143 lateral slip. Nine seconds of W stays upright (1.44° max
+  tilt), reaches 15.93 m/s, shifts once, and replays byte-identically. S stops
+  an 8 m/s bike in 1.083 seconds / 4.608 m.
+- Terrain/simulation/render hot paths were optimized without reducing the
+  120 Hz/twelve-iteration/traffic/contact contract. The identical physics
+  benchmark is 65.63% faster with unchanged state hash; the foreground browser
+  route improves from a 58.84 ms intake mean to 24.74 ms aggregate.
+- Physics `41/41`, RoadVector `75/75`, XR `23/23` plus mocked browser, static
+  release `17/17`, built-doc runtime smoke, and current private Tailnet HTTPS
+  all pass. Physical-headset comfort/performance is explicitly NOT RUN.
+- The final measured follow-up removes redundant per-cell broadphase sorting,
+  disables the one glass transmission prepass while preserving alpha, and
+  enables race-gate frustum culling. The final live keyboard drive averaged
+  `17.12 ms` over `526` frames with p95 `16.8 ms`; its ending view submitted
+  `42` calls / `164,922` triangles with zero physics overflow. Physics now passes
+  `42/42`; RoadVector remains `75/75`; the rebuilt smoke and static `17/17`
+  release gate pass. None of these presentation/ordering optimizations changes
+  the six-body, 120 Hz, twelve-iteration authority contract.
+
+## Audit Hardening Result - 2026-08-25 AKDT - Rebase, One-Pass Alpha, And Grounding
+
+- COMPLETE: the active rider-foot parking anchor now shifts in the same local
+  coordinate frame as every rigid body and reset snapshot. A paired baseline/
+  rebased one-second regression proves no force saturation, velocity kick, or
+  physical-position discontinuity while parked.
+- COMPLETE: verified model loading forces every alpha-transparent material to
+  one Three.js pass. The actual authored double-sided glass keeps its opacity,
+  disables transmission/depth writes, sets `forceSinglePass`, and reports zero
+  two-pass transparent materials; opaque authored materials remain unchanged.
+- COMPLETE: a manifest-validated `-0.12573690675938365 m` presentation-only Y
+  offset aligns the calibrated model minimum exactly with the authoritative
+  `-1.042 m` physics tire-bottom midpoint. Wheelbase stays `1.67 m`; physics
+  poses, rolling radius, particles, contacts, and collision authority do not
+  change. Numeric-string/nonfinite offsets and inconsistent grounding equations
+  fail before Three.js receives the model.
+- VERIFIED: final physics `43/43`, RoadVector `75/75`, model `7/7`, static
+  release `17/17`, and rebuilt RoadVector browser smoke on owned port `43978`
+  pass. Independent blocker-only source audit is clean. Physical-headset
+  comfort/performance remains NOT RUN.

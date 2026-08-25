@@ -21,7 +21,7 @@ function makeBeam(THREE, fromValue, toValue, radius, material, name) {
   mesh.name = name;
   mesh.position.copy(from).add(to).multiplyScalar(0.5);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  mesh.frustumCulled = false;
+  mesh.frustumCulled = true;
   return mesh;
 }
 
@@ -130,6 +130,7 @@ export function createRaceVisuals(THREE, raceCourse) {
     source: raceCourse.source,
     provenance: raceCourse.provenance,
     navigationGrade: false,
+    offscreenGateCulling: true,
   });
   return Object.freeze({ root, telemetry });
 }

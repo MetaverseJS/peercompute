@@ -23,13 +23,32 @@ into the Three.js local one-unit-per-meter world. Earth-scale ECEF coordinates
 never enter the particle solver or WebXR ride scene.
 
 The local ride keeps its exact triangle terrain and six-body particle-rigid
-motorcycle for collision and dynamics, but no longer exposes that dense
-geometry by default. Terrarium elevations generate bounded genuine Three.js
-NURBS contours over a 3.5%-opacity terrain surface. The visible motorcycle is exactly
-two rational NURBS wheel loops at the physical rolling radius, five sparse
-frame/fork/swingarm curves, and a six-curve stick rider. Append
+motorcycle for collision and dynamics. Terrarium elevations generate bounded
+genuine Three.js NURBS contours over a 3.5%-opacity terrain surface. The visible
+bike is an optimized derivative of [“Akira Bike” by Ryanwill679 on
+Sketchfab](https://sketchfab.com/3d-models/akira-bike-a5b1dc49808b40a9b94f9a4a3073d548),
+used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The local
+7.5 MB GLB is bounded to 58,870 triangles, 15 authored material draws, and 22
+KTX2 textures at no more than 1024 px. It is chassis-relative presentation
+only: the original model is unrigged, so its visible wheels do not articulate,
+and it never supplies collision or dynamics authority. The six physical bodies,
+suspension, wheels, tire contacts, and forces remain authoritative. Append
 `?physicsDebug=1` to expose capped collision particles and contact markers for
-diagnostics.
+diagnostics. Full attribution and modification details are packaged in
+`public/models/akira-bike/ATTRIBUTION.md`.
+
+A manifest-driven 0.12573690675938365 m presentation-only downward offset puts
+the calibrated model minimum at the six-body rig's -1.042 m tire-bottom
+midpoint. This corrects the apparent hover without rescaling the correct 1.67 m
+wheelbase or changing any physics pose, contact, collision, or force.
+
+The one authored glass material is presented as ordinary alpha transparency at
+runtime. Its glTF transmission value is disabled after verified loading so
+Three.js does not redraw the complete 58,870-triangle model for a transmission
+prepass. Runtime alpha materials also set Three.js `forceSinglePass`, including
+the authored double-sided glass, so they cannot fall back to two transparent
+draws. Race-gate beams use normal frustum culling; neither optimization changes
+the physics world or the asset's authored opaque materials.
 
 First-, damped third-, and stereo-XR camera placement is constrained against
 the same exact terrain triangles with 0.35 m minimum optical clearance. The
@@ -82,9 +101,13 @@ explicit HTTPS API origin and configure matching `GEODATA_CORS_ORIGINS`.
 
 ## Controls
 
-- Desktop: `W`/up throttle, `A` turns left, `D` turns right, space front brake, `S`/down rear
-  brake, `Q`/`E` shift, `C` camera, `H` recenter, and `R` reset. Clicking the
-  viewport requests pointer lock; lock loss clears held controls.
+- Desktop: `W`/up throttle, `A` turns left, `D` turns right, `S` applies the
+  service brake (front plus rear), space applies front brake only, down applies
+  rear brake only, `Q`/`E` manually shift, `C` changes camera, `H` recenters,
+  and `R` resets. Automatic shifting is enabled by default. Mouse steering and
+  pointer lock are off by default so pointer drift cannot bias A/D; an embedding
+  app may explicitly opt into mouse steering, in which case lock loss clears
+  held controls.
 - Mobile: independent Pointer Event steering, throttle, front/rear brake,
   shift, view, and reset controls support simultaneous touches.
 - Standard gamepad: left axis steering, triggers for throttle/brake, and
@@ -110,10 +133,12 @@ pressed.
 - Deterministic CPU world: fixed 1/120 s, 12 solver iterations, stable IDs,
   surfaced capacity limits, swept translational and rotational particle CCD,
   gyroscopic angular integration, hard suspension travel, and snapshot reset.
-- Motorcycle dynamics: engine/reaction torque, separate brakes, steering
-  constraint, suspension springs/dampers, bounded rider-foot parking support,
-  tire slip plus friction ellipse, surface material grip, and optional physical
-  lean-assist torque.
+- Motorcycle dynamics: engine/reaction torque, separate and service braking,
+  one deterministic filtered actuator state per fixed step, a common
+  curvature/lateral-acceleration target for fork and lean, automatic shifting,
+  steering constraint, suspension springs/dampers, bounded force-based
+  rider-foot parking support, tire slip plus friction ellipse, surface material
+  grip, and optional physical lean-assist torque.
 - Race: a bounded deterministic course derived from the local directed road
   graph, ordered gates, laps/splits/timer/reset, and bright checkpoint visuals.
   The forgiving 14 m crossing corridor is independent of the correctly scaled
@@ -187,3 +212,9 @@ nonfatal relay failure.
 A real headset enter/exit/re-enter, hand/controller, haptics, comfort, and
 performance pass remains a manual hardware gate. Do not represent the mocked
 browser gate as physical-headset certification.
+
+The final foreground keyboard route sampled 526 animation frames over 9.003
+seconds: 17.12 ms mean, 16.7 ms p50, 16.8 ms p95, 33.3 ms p99, and 33.4 ms
+maximum. Its ending chase view submitted 42 render calls and 164,922 triangles,
+with zero physics-capacity overflow. This is a machine/browser measurement, not
+a headset performance certification.

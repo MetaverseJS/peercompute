@@ -87,6 +87,29 @@ test('desktop action semantics remain A left negative and D right positive', asy
   await runtime.dispose();
 });
 
+test('S is a balanced service brake while dedicated front and rear controls remain available', async () => {
+  const windowTarget = new FakeEventTarget();
+  const runtime = createMotorcycleInputRuntime({ eventTarget: windowTarget, getGamepads: () => [] });
+
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'KeyS' }));
+  const service = runtime.poll().control;
+  assert.equal(service.frontBrake, 1);
+  assert.equal(service.rearBrake, 0.6);
+
+  windowTarget.dispatchEvent(fakeEvent('keyup', { code: 'KeyS' }));
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'Space' }));
+  const front = runtime.poll().control;
+  assert.equal(front.frontBrake, 1);
+  assert.equal(front.rearBrake, 0);
+
+  windowTarget.dispatchEvent(fakeEvent('keyup', { code: 'Space' }));
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'ArrowDown' }));
+  const rear = runtime.poll().control;
+  assert.equal(rear.frontBrake, 0);
+  assert.equal(rear.rearBrake, 1);
+  await runtime.dispose();
+});
+
 test('motorcycle input runtime reports WebXR unavailable without a renderer XR bridge', async () => {
   const runtime = createMotorcycleInputRuntime({
     eventTarget: new FakeEventTarget(),
@@ -98,12 +121,43 @@ test('motorcycle input runtime reports WebXR unavailable without a renderer XR b
   await runtime.dispose();
 });
 
-test('motorcycle pointer controls request lock from a primary canvas gesture and expose lifecycle status', async () => {
+test('mouse steering is disabled by default and cannot bias desktop keyboard steering', async () => {
+  const documentTarget = new FakePointerLockDocument();
+  const pointerTarget = new FakePointerLockElement(documentTarget);
+  const windowTarget = new FakeEventTarget();
+  const runtime = createMotorcycleInputRuntime({
+    eventTarget: windowTarget,
+    pointerTarget,
+    getGamepads: () => [],
+  });
+  windowTarget.dispatchEvent(fakeEvent('keydown', { code: 'KeyD' }));
+  pointerTarget.dispatchEvent(fakeEvent('pointerdown', {
+    pointerId: 5,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: 20,
+    clientY: 30,
+  }));
+  pointerTarget.dispatchEvent(fakeEvent('pointermove', {
+    pointerId: 5,
+    pointerType: 'mouse',
+    movementX: -240,
+    clientX: -220,
+    clientY: 30,
+  }));
+  assert.equal(pointerTarget.pointerLockRequests.length, 0);
+  assert.equal(runtime.getStatus().keyboard.pointerLocked, false);
+  assert.equal(runtime.poll().control.steer, 1);
+  await runtime.dispose();
+});
+
+test('opt-in motorcycle pointer controls request lock and expose lifecycle status', async () => {
   const documentTarget = new FakePointerLockDocument();
   const pointerTarget = new FakePointerLockElement(documentTarget);
   const runtime = createMotorcycleInputRuntime({
     eventTarget: new FakeEventTarget(),
     pointerTarget,
+    mouseSteering: true,
     getGamepads: () => [],
   });
   pointerTarget.dispatchEvent(fakeEvent('pointerdown', {

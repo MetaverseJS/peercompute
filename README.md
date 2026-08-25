@@ -92,9 +92,13 @@ runtime metadata to NetViz.
   for Alaska and the United States, accepts globe clicks as bounded local ride
   requests, and shows validated live PeerCompute players in fixed red before the
   discrete transition into the Three.js local meter-scale ride.
-  The local visual is deliberately sparse: transparent Terrarium terrain with
-  bounded NURBS contours plus two solid-color NURBS wheel loops, a line frame, and
-  a minimalist stick rider; dense collision particles are debug-only. A
+  The local visual combines transparent Terrarium terrain with bounded NURBS
+  contours and a bounded 7.5 MB CC BY 4.0 optimized “Akira Bike” presentation
+  model by Ryanwill679; the model has no collision authority and the unchanged
+  six-body particle rig remains authoritative. Runtime glass uses a one-pass
+  alpha policy with forced one-pass transparency instead of a full-model
+  transmission prepass, an exact presentation-only tire-grounding offset, off-camera race
+  gates are culled, and dense collision particles remain debug-only. A
   rebase-aware exact-terrain camera floor keeps first-, third-, and stereo-XR
   optical points at least 0.35 m above the rendered surface.
 - **Reusable input/WebXR toolkit**: device-independent action frames unify
@@ -472,6 +476,12 @@ certificate, not Tailscale Serve or Funnel; the headset/browser must accept or
 trust that certificate first. EarthGrid and RoadVector keep their geodata
 dependency loopback-only behind the same-origin Vite proxy.
 
+The Tailscale-issued trusted-certificate form of the same direct listener would
+be `https://shitbox.tail5c077c.ts.net:5188/`, but issuing that certificate
+requires the local Tailscale operator/root permission. It is not currently
+installed; the active IP listener above remains the self-signed development
+handoff.
+
 Multiplayer bot controls:
 - CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
 - `Add Bots` spawns hidden same-origin browser peers that join the current room/password and drive themselves through the shared Quake-style bot bridge/runtime.
@@ -801,7 +811,8 @@ Current demos and validation surfaces:
   remote PeerCompute players in red, and bright category rendering. Cesium
   owns global WGS84/open-data display; Three.js owns the local meter-scale
   ride, particle physics, and XR rendering. Its default local presentation is
-  a transparent NURBS-contour surface and minimalist two-wheel line bike/rider.
+  a transparent NURBS-contour surface and a hash-verified, locally packaged,
+  optimized CC BY 4.0 motorcycle model attached to the physical chassis.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.
 - **WebGPUPhys**: physics and compute-oriented demos that exercise render-coupled compute pipelines.
 - **Fano Reactor**: early chemistry demo scaffold for the sedenion/Fano-plane branch.

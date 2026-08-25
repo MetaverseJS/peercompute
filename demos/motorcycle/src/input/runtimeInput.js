@@ -1,5 +1,6 @@
 import {
   ActionInput,
+  DEFAULT_KEYBOARD_BINDINGS,
   KeyboardPointerAdapter,
   MultiTouchAdapter,
   StandardGamepadAdapter,
@@ -8,6 +9,17 @@ import {
   XRSessionLifecycle,
 } from '../../../shared/xr/index.js';
 import { createMotorcycleXrInputMapper } from './xrMotorcycleMapping.js';
+
+const ROADVECTOR_KEYBOARD_BINDINGS = Object.freeze({
+  ...DEFAULT_KEYBOARD_BINDINGS,
+  // S is the approachable desktop service brake. Keep ArrowDown as a
+  // dedicated rear-brake input and Space as a dedicated front-brake input.
+  KeyS: Object.freeze({ action: 'rearBrake', value: 0.6 }),
+});
+
+const ROADVECTOR_SERVICE_BRAKE_BINDINGS = Object.freeze({
+  KeyS: Object.freeze({ action: 'frontBrake', value: 1 }),
+});
 
 function liveEventTarget(candidate, label) {
   if (!candidate?.addEventListener || !candidate?.removeEventListener) {
@@ -32,6 +44,7 @@ function normalizeTouchControl(control, index) {
 export function createMotorcycleInputRuntime({
   eventTarget = globalThis.window,
   pointerTarget = null,
+  mouseSteering = false,
   getGamepads = () => globalThis.navigator?.getGamepads?.() ?? [],
   touchControls = [],
   rendererXR = null,
@@ -67,8 +80,15 @@ export function createMotorcycleInputRuntime({
   const keyboard = new KeyboardPointerAdapter({
     input,
     target,
-    pointerTarget,
-    pointerLock: true,
+    pointerTarget: mouseSteering ? pointerTarget : null,
+    pointerLock: Boolean(mouseSteering),
+    bindings: ROADVECTOR_KEYBOARD_BINDINGS,
+  });
+  const serviceBrakeKeyboard = new KeyboardPointerAdapter({
+    input,
+    target,
+    sourceId: 'keyboard-service-brake',
+    bindings: ROADVECTOR_SERVICE_BRAKE_BINDINGS,
   });
   const gamepad = new StandardGamepadAdapter({
     input,
@@ -147,6 +167,7 @@ export function createMotorcycleInputRuntime({
     clearControls() {
       assertLive();
       keyboard.clear();
+      serviceBrakeKeyboard.clear();
       gamepad.clear();
       touch.clear();
       webxr?.clear();
@@ -195,6 +216,7 @@ export function createMotorcycleInputRuntime({
       touch.dispose();
       gamepad.dispose();
       keyboard.dispose();
+      serviceBrakeKeyboard.dispose();
       input.dispose();
       disposed = true;
     },

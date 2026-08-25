@@ -25,6 +25,9 @@ function addSphere(world, id, options = {}) {
     motionType: options.motionType ?? 'dynamic',
     particleCloud: sphereCloud(options.radius ?? 0.2),
     material: options.material,
+    collisionGroup: options.collisionGroup,
+    collisionMask: options.collisionMask,
+    groups: options.groups,
   });
 }
 
@@ -190,6 +193,58 @@ test('swept particle CCD follows a rotating particle arc instead of its endpoint
   assert.ok(contact.normalImpulse > 0);
   assert.equal(world.getTelemetry().overflows.overflowed, false);
   assert.ok([...world.getBody('arc-target').linearVelocity].every(Number.isFinite));
+});
+
+test('excluded and masked pairs are pruned before the cap without losing deterministic CCD', () => {
+  const makeWorld = () => {
+    const world = createParticleRigidWorld({
+      gravity: [0, 0, 0],
+      fixedDt: 1 / 120,
+      solverIterations: 12,
+      maxCandidatePairs: 1,
+      maxLinearSpeed: 200,
+    });
+    addSphere(world, '00-excluded-a', {
+      position: [0, 0, 0],
+      motionType: 'static',
+      collisionGroup: 1,
+      collisionMask: 1,
+    });
+    addSphere(world, '01-excluded-b', {
+      position: [0, 0, 0],
+      motionType: 'static',
+      collisionGroup: 1,
+      collisionMask: 1,
+    });
+    addSphere(world, '10-pusher', {
+      position: [-0.6, 0, 0],
+      motionType: 'kinematic',
+      collisionGroup: 2,
+      collisionMask: 4,
+    });
+    addSphere(world, '11-target', {
+      position: [0, 0, 0],
+      collisionGroup: 4,
+      collisionMask: 2,
+    });
+    world.setBodiesCollide('00-excluded-a', '01-excluded-b', false);
+    world.setKinematicTarget('10-pusher', { position: [0.6, 0, 0] });
+    return world;
+  };
+
+  const first = makeWorld();
+  const second = makeWorld();
+  first.stepFrame(1 / 120);
+  second.stepFrame(1 / 120);
+  const contact = first.getContacts().find((candidate) => candidate.type === 'particle');
+  assert.ok(contact, 'allowed swept pair was starved by earlier excluded pairs');
+  assert.deepEqual([contact.bodyA, contact.bodyB], ['10-pusher', '11-target']);
+  assert.equal(contact.metadata.swept, true);
+  assert.ok(contact.metadata.toi > 0 && contact.metadata.toi < 1);
+  assert.ok(first.getBody('11-target').linearVelocity[0] > 0);
+  assert.equal(first.getTelemetry().overflows.candidatePairs, 0);
+  assert.deepEqual(first.getSnapshot(), second.getSnapshot());
+  assert.deepEqual(first.getContacts(), second.getContacts());
 });
 
 test('snapshot JSON round-trip restores state and deterministic replay is byte-stable', () => {

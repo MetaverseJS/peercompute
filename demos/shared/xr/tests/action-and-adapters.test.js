@@ -146,6 +146,25 @@ test('keyboard and desktop pointer drag publish combined controls and fully clea
   assert.equal(input.getStatus().sources.length, 0);
 });
 
+test('keyboard-only input never mistakes two null pointer-lock references for an active lock', () => {
+  const input = new ActionInput();
+  const keys = new FakeEventTarget();
+  const documentTarget = new FakePointerLockDocument();
+  const adapter = new KeyboardPointerAdapter({
+    input,
+    target: keys,
+    pointerTarget: null,
+    documentTarget,
+  });
+  assert.equal(adapter.getStatus().pointerLocked, false);
+  assert.equal(adapter.requestPointerLock(), false);
+  documentTarget.setPointerLock(null);
+  assert.equal(adapter.getStatus().pointerLocked, false);
+  adapter.dispose();
+  assert.equal(documentTarget.exitCalls, 0);
+  input.dispose();
+});
+
 test('pointer lock is gesture-opt-in, accumulates relative movement, and resets every lifecycle edge', async () => {
   const passiveInput = new ActionInput();
   const passiveKeys = new FakeEventTarget();

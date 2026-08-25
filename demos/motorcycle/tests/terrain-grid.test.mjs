@@ -25,6 +25,12 @@ test('builds a finite WGS84-to-local real-height grid and render-mesh sampler', 
   assert.ok(Math.abs(terrain.sampleRawHeight(-149.9, 61.22) - 111) < 1e-6);
   assert.ok(Math.abs(terrain.sampleLocalHeight(0, 0)) < 0.05);
   assert.ok(terrain.sampleLocalNormal(0, 0).every(Number.isFinite));
+  assert.equal(terrain.surfaceIndex.schemaVersion, 'peercompute.geo.local-surface-index.v1');
+  assert.equal(terrain.surfaceIndex.coordinateModel, 'local-xz-triangle-aabb-grid');
+  assert.equal(terrain.surfaceIndex.geodeticInversionPerQuery, false);
+  assert.equal(terrain.surfaceIndex.triangleCount, 8);
+  assert.ok(terrain.surfaceIndex.referenceCount >= terrain.surfaceIndex.triangleCount);
+  assert.ok(terrain.surfaceIndex.maximumCandidatesPerBin > 0);
   assert.equal(terrain.source.authoritative, true);
   assert.equal(terrain.source.operationalUse, false);
 });
@@ -66,6 +72,13 @@ test('physics terrain samples the exact rendered triangle plane, including a cen
   });
   assert.equal(sample.hit, true);
   assert.ok(Math.abs(terrain.sampleLocalHeight(center[0], center[2]) - center[1]) < 1e-4);
+  assert.strictEqual(
+    terrain.sampleLocalSurface(center[0], center[2]),
+    terrain.sampleLocalSurface(center[0], center[2]),
+    'identical height/normal queries reuse the exact immutable surface sample',
+  );
+  assert.equal(terrain.sampleLocalSurface(terrain.localBounds.maxX + 1, center[2]), null);
+  assert.equal(terrain.sampleLocalSurface(terrain.localBounds.maxX + 1, center[2]), null);
 });
 
 test('elevated mesh edges and diagonal seams resolve through neighboring projected cells', () => {

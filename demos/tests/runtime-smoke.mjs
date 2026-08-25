@@ -239,12 +239,26 @@ const allDemos = [
         && state.game?.raceCourse?.gates?.length >= 2
         && ['ready', 'racing', 'finished'].includes(state.game?.race?.status)
         && state.renderer?.motorcycle?.componentCount === 6
-        && state.renderer?.motorcycle?.style === 'minimal-nurbs-line-bike'
-        && state.renderer?.motorcycle?.wheelCurveCount === 2
+        && state.renderer?.motorcycle?.style === 'licensed-optimized-akira-model'
+        && state.renderer?.motorcycle?.physicsAuthority === 'six-body-particle-rigid'
+        && state.renderer?.motorcycle?.collisionAuthority === false
+        && state.renderer?.motorcycle?.model?.assetId === 'akira-bike-ryanwill679-optimized-v1'
         && state.renderer?.motorcycle?.renderedParticleCount === 0
+        && state.modelAsset?.status === 'ready'
+        && state.modelAsset?.verification?.sha256 === true
+        && state.modelAsset?.model?.triangleCount === 58870
+        && state.modelAsset?.model?.drawCallUpperBound === 15
+        && state.modelAsset?.model?.textureCount === 22
+        && state.modelAsset?.materialPolicy?.maximumRuntimeTransmission === 0
+        && state.modelAsset?.materialPolicy?.transmissionPrepass === false
+        && state.modelAsset?.materialPolicy?.forceSinglePassMaterialCount > 0
+        && state.modelAsset?.materialPolicy?.twoPassTransparentMaterialCount === 0
+        && state.modelAsset?.materialPolicy?.maximumRuntimeTransparentPasses === 1
+        && state.modelAsset?.calibration?.presentationGroundingOffsetMeters?.[1] < -0.12
         && state.renderer?.terrain?.style === 'transparent-terrain-with-bounded-nurbs-contours'
         && state.renderer?.terrain?.contours?.curveModel === 'NURBS'
         && state.renderer?.race?.renderedGateCount === state.game?.raceCourse?.gates?.length
+        && state.renderer?.race?.offscreenGateCulling === true
         && !state.fatalError
       );
     },
@@ -714,12 +728,30 @@ async function runDemo(context, demo) {
       if (after.game?.raceCourse?.source?.data !== 'real OSM road graph') errors.push('[runtime] real-road race provenance missing');
       if (!(after.game?.raceCourse?.gates?.length >= 2)) errors.push('[runtime] deterministic race gates missing');
       if (after.renderer?.race?.renderedGateCount !== after.game?.raceCourse?.gates?.length) errors.push('[runtime] race gate renderer mismatch');
+      if (after.renderer?.race?.offscreenGateCulling !== true) errors.push('[runtime] offscreen race-gate culling is disabled');
       if (after.renderer?.motorcycle?.componentCount !== 6) errors.push('[runtime] six-component motorcycle renderer contract missing');
-      if (after.renderer?.motorcycle?.style !== 'minimal-nurbs-line-bike'
-        || after.renderer?.motorcycle?.wheelCurveCount !== 2
+      if (after.renderer?.motorcycle?.style !== 'licensed-optimized-akira-model'
+        || after.renderer?.motorcycle?.physicsAuthority !== 'six-body-particle-rigid'
+        || after.renderer?.motorcycle?.collisionAuthority !== false
+        || after.renderer?.motorcycle?.model?.assetId !== 'akira-bike-ryanwill679-optimized-v1'
         || after.renderer?.motorcycle?.renderedParticleCount !== 0
         || after.renderer?.motorcycle?.physicsDebugEnabled !== false) {
-        errors.push('[runtime] minimalist two-wheel NURBS motorcycle contract missing.');
+        errors.push('[runtime] licensed optimized presentation/model physics-authority contract missing.');
+      }
+      if (after.modelAsset?.status !== 'ready'
+        || after.modelAsset?.verification?.sha256 !== true
+        || after.modelAsset?.model?.triangleCount !== 58_870
+        || after.modelAsset?.model?.drawCallUpperBound !== 15
+        || after.modelAsset?.model?.textureCount !== 22
+        || after.modelAsset?.model?.physicsAuthority !== 'six-body-particle-rigid'
+        || after.modelAsset?.model?.collisionAuthority !== false
+        || after.modelAsset?.materialPolicy?.maximumRuntimeTransmission !== 0
+        || after.modelAsset?.materialPolicy?.transmissionPrepass !== false
+        || !(after.modelAsset?.materialPolicy?.forceSinglePassMaterialCount > 0)
+        || after.modelAsset?.materialPolicy?.twoPassTransparentMaterialCount !== 0
+        || after.modelAsset?.materialPolicy?.maximumRuntimeTransparentPasses !== 1
+        || !(after.modelAsset?.calibration?.presentationGroundingOffsetMeters?.[1] < -0.12)) {
+        errors.push('[runtime] bounded hash-verified RoadVector model resource contract missing.');
       }
       if (after.renderer?.terrain?.style !== 'transparent-terrain-with-bounded-nurbs-contours'
         || after.renderer?.terrain?.surfaceOpacity > 0.05
@@ -786,6 +818,14 @@ async function runDemo(context, demo) {
       });
       await page.keyboard.up('KeyA');
       await page.keyboard.up('KeyW');
+      await page.keyboard.down('KeyS');
+      await page.waitForFunction(() => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.lastControl?.frontBrake === 1
+          && Math.abs((state?.lastControl?.rearBrake ?? 0) - 0.6) < 1e-6
+          && (state?.game?.motorcycle?.actuators?.frontBrake ?? 0) > 0;
+      });
+      await page.keyboard.up('KeyS');
 
       await page.evaluate(() => {
         for (const target of [document.querySelector('#touch-steer'), document.querySelector('#touch-throttle')]) {
@@ -847,16 +887,21 @@ async function runDemo(context, demo) {
 
       const motorcycleCanvas = await page.locator('#viewport canvas').boundingBox();
       if (!motorcycleCanvas) {
-        errors.push('[runtime] motorcycle canvas bounds unavailable for pointer-lock gesture');
+        errors.push('[runtime] motorcycle canvas bounds unavailable for desktop input probe');
       } else {
         await page.mouse.click(
           motorcycleCanvas.x + motorcycleCanvas.width - 30,
           motorcycleCanvas.y + motorcycleCanvas.height / 2,
         );
+        await page.mouse.move(
+          motorcycleCanvas.x + 30,
+          motorcycleCanvas.y + motorcycleCanvas.height / 2,
+        );
       }
-      await page.waitForFunction(() => window.__motorcycleDemo?.getState?.().input?.keyboard?.pointerLocked === true);
-      await page.evaluate(() => document.exitPointerLock());
-      await page.waitForFunction(() => window.__motorcycleDemo?.getState?.().input?.keyboard?.pointerLocked === false);
+      await page.waitForTimeout(150);
+      if (await page.evaluate(() => window.__motorcycleDemo?.getState?.().input?.keyboard?.pointerLocked !== false)) {
+        errors.push('[runtime] default desktop input unexpectedly captured pointer lock.');
+      }
 
       await page.evaluate(() => {
         Object.defineProperty(navigator, 'getGamepads', {
