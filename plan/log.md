@@ -59246,3 +59246,21 @@ and performance, and retain a physics-based motorcycle.
   comfort, and headset frame timing. No hardware certification is claimed.
 - Open at this exact checkpoint: final ICC refresh/gates and the required local
   coherent commit; nothing will be pushed.
+
+## 2026-08-25 14:37:57 AKDT - RoadVector local clean-point commit
+
+- Created local implementation/release commit `99779eec57f8` (`feat(motorcycle):
+  improve physics ride and add licensed model`) after the final source audit,
+  physics/RoadVector suites, production rebuild, static gate, built-browser
+  smoke, private listener probe, diff check, and ICC guard passed.
+- The implementation commit contains the exact model/license/decoder assets,
+  physics/controller/performance source and regressions, current generated
+  RoadVector artifact, and documentation/evidence available at that checkpoint.
+  The user-provided `demos/motorcycle/akira_bike.zip` remains locally ignored,
+  untracked, unchanged, and absent from the generated runtime.
+- This follow-up records the commit result required by repository policy. It
+  will be committed locally as a documentation-only closure after ICC plan/
+  attempt reconciliation. No commit is pushed.
+- Remaining limitation is unchanged: physical-headset enter/exit/re-enter,
+  hands/controllers/haptics, comfort, and frame timing are NOT RUN. The private
+  URL uses a self-signed IP certificate that must be trusted explicitly.

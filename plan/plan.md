@@ -1309,3 +1309,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
   midpoint while preserving the correct `1.67 m` wheelbase and all six-body
   authority. Final physics is `43/43`; RoadVector `75/75`; static release
   `17/17`; rebuilt browser smoke passes on closed owned port `43978`.
+- LOCAL CLEAN POINT: validated implementation and generated release are in
+  commit `99779eec57f8`; the only subsequent repository change is this durable
+  commit/ICC closure record. Nothing is pushed, and physical-headset testing
+  remains an explicit manual gate rather than an implementation blocker.
