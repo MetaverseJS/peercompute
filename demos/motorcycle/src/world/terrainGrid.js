@@ -1,12 +1,16 @@
 import {
   createLocalEnuFrame,
-  fetchEtopo2022Heightmap,
-  formatEtopo2022ExportUrl,
-  padEtopo2022BoundsForVertexGrid,
+  fetchTerrariumHeightmap,
+  formatTerrariumTileUrl,
+  TERRARIUM_TILE_SIZE,
+  TERRARIUM_URL_TEMPLATE,
+  WEB_MERCATOR_MAX_LATITUDE,
 } from '@peercompute/geo-core';
 
 export const MOTORCYCLE_TERRAIN_GRID_SIZE = 65;
-export const MOTORCYCLE_TERRAIN_SOURCE_ID = 'noaa-etopo2022';
+export const MOTORCYCLE_TERRAIN_SOURCE_ID = 'aws-terrarium';
+export const MOTORCYCLE_TERRAIN_TILE_ZOOM = 12;
+export const MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES = 9;
 
 function finite(value, label) {
   const number = Number(value);
@@ -221,28 +225,125 @@ export function createTerrainGrid({
   });
 }
 
-export async function loadEtopoTerrainGrid({
+function terrariumGlobalPixel(longitude, latitude, zoom) {
+  const tileCount = 2 ** zoom;
+  const worldSize = tileCount * TERRARIUM_TILE_SIZE;
+  const clampedLatitude = Math.max(
+    -WEB_MERCATOR_MAX_LATITUDE,
+    Math.min(WEB_MERCATOR_MAX_LATITUDE, latitude),
+  );
+  const latitudeRadians = clampedLatitude * Math.PI / 180;
+  return Object.freeze({
+    x: ((longitude + 180) / 360) * worldSize - 0.5,
+    y: (1 - Math.log(Math.tan(latitudeRadians) + 1 / Math.cos(latitudeRadians)) / Math.PI)
+      / 2 * worldSize - 0.5,
+    tileCount,
+    worldSize,
+  });
+}
+
+function terrariumPixelAddress(x, y, { tileCount, worldSize }) {
+  const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+  const clampedY = Math.max(0, Math.min(worldSize - 1, y));
+  const pixelX = Math.floor(wrappedX);
+  const pixelY = Math.floor(clampedY);
+  const tileX = Math.floor(pixelX / TERRARIUM_TILE_SIZE) % tileCount;
+  const tileY = Math.min(tileCount - 1, Math.floor(pixelY / TERRARIUM_TILE_SIZE));
+  return Object.freeze({
+    key: `${tileX}/${tileY}`,
+    tileX,
+    tileY,
+    column: pixelX % TERRARIUM_TILE_SIZE,
+    row: pixelY % TERRARIUM_TILE_SIZE,
+  });
+}
+
+/**
+ * Loads a small, bounded AWS Terrarium tile set and resamples it onto the
+ * exact WGS84 vertex grid consumed by both the RoadVector renderer and
+ * collision surface. The half-pixel convention matches the shared Cesium
+ * Terrarium provider, so local and overview relief use the same source posts.
+ */
+export async function loadTerrariumTerrainGrid({
   bbox,
   width = MOTORCYCLE_TERRAIN_GRID_SIZE,
   height = MOTORCYCLE_TERRAIN_GRID_SIZE,
+  zoom = MOTORCYCLE_TERRAIN_TILE_ZOOM,
   fetchImpl = globalThis.fetch,
+  fetchHeightmap = fetchTerrariumHeightmap,
   signal,
   clock = () => new Date(),
 } = {}) {
   const normalizedBbox = normalizeBbox(bbox);
   const columns = gridDimension(width, 'Terrain width');
   const rows = gridDimension(height, 'Terrain height');
+  if (!Number.isInteger(zoom) || zoom < 0 || zoom > 15) {
+    throw new RangeError('Terrain zoom must be an integer between zero and 15.');
+  }
+  if (typeof fetchHeightmap !== 'function') throw new TypeError('A Terrarium heightmap loader is required.');
   const [south, west, north, east] = normalizedBbox;
-  const padded = padEtopo2022BoundsForVertexGrid(
-    { west, south, east, north },
-    { width: columns, height: rows },
-  );
-  const url = formatEtopo2022ExportUrl(padded, { width: columns, height: rows });
-  const heights = await fetchEtopo2022Heightmap(url, {
-    fetchImpl,
-    width: columns,
-    height: rows,
-    signal,
+  const samples = [];
+  const addresses = new Map();
+  for (let row = 0; row < rows; row += 1) {
+    const latitude = north - (row / (rows - 1)) * (north - south);
+    for (let column = 0; column < columns; column += 1) {
+      const longitude = west + (column / (columns - 1)) * (east - west);
+      const pixel = terrariumGlobalPixel(longitude, latitude, zoom);
+      const x0 = Math.floor(pixel.x);
+      const y0 = Math.floor(pixel.y);
+      const corners = [
+        terrariumPixelAddress(x0, y0, pixel),
+        terrariumPixelAddress(x0 + 1, y0, pixel),
+        terrariumPixelAddress(x0, y0 + 1, pixel),
+        terrariumPixelAddress(x0 + 1, y0 + 1, pixel),
+      ];
+      for (const address of corners) addresses.set(address.key, address);
+      samples.push(Object.freeze({
+        xWeight: pixel.x - x0,
+        yWeight: pixel.y - y0,
+        corners,
+      }));
+    }
+  }
+  if (addresses.size > MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES) {
+    const error = new RangeError(
+      `RoadVector terrain requires ${addresses.size} Terrarium tiles, exceeding the ${MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES}-tile cap.`,
+    );
+    error.code = 'ERR_MOTORCYCLE_TERRAIN_TILE_CAP';
+    throw error;
+  }
+
+  const tiles = new Map();
+  await Promise.all([...addresses.values()].map(async ({ key, tileX, tileY }) => {
+    const url = formatTerrariumTileUrl(tileX, tileY, zoom);
+    const result = await fetchHeightmap(url, { fetchImpl, signal });
+    const tileHeights = ArrayBuffer.isView(result)
+      ? result
+      : result?.heights ?? result?.buffer ?? result;
+    const tileWidth = result?.width ?? TERRARIUM_TILE_SIZE;
+    const tileHeight = result?.height ?? TERRARIUM_TILE_SIZE;
+    if (!ArrayBuffer.isView(tileHeights)
+      || tileWidth !== TERRARIUM_TILE_SIZE
+      || tileHeight !== TERRARIUM_TILE_SIZE
+      || tileHeights.length !== TERRARIUM_TILE_SIZE * TERRARIUM_TILE_SIZE) {
+      throw new RangeError(`Terrarium tile ${zoom}/${tileX}/${tileY} has an invalid sample grid.`);
+    }
+    tiles.set(key, tileHeights);
+  }));
+
+  const sampleCorner = ({ key, column, row }) => {
+    const tile = tiles.get(key);
+    if (!tile) throw new Error(`Terrarium tile ${key} was not loaded.`);
+    return tile[row * TERRARIUM_TILE_SIZE + column];
+  };
+  const heights = Float32Array.from(samples, ({ xWeight, yWeight, corners }) => {
+    const northWest = sampleCorner(corners[0]);
+    const northEast = sampleCorner(corners[1]);
+    const southWest = sampleCorner(corners[2]);
+    const southEast = sampleCorner(corners[3]);
+    const northValue = northWest + (northEast - northWest) * xWeight;
+    const southValue = southWest + (southEast - southWest) * xWeight;
+    return northValue + (southValue - northValue) * yWeight;
   });
   return createTerrainGrid({
     bbox: normalizedBbox,
@@ -254,7 +355,8 @@ export async function loadEtopoTerrainGrid({
       authoritative: true,
       derived: false,
       fetchedAt: clock().toISOString(),
-      url,
+      url: TERRARIUM_URL_TEMPLATE,
+      attribution: 'AWS Terrain Tiles (Terrarium elevation encoding; source registry attribution required)',
     },
   });
 }

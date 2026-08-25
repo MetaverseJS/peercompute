@@ -1,5 +1,5 @@
 import {
-  createEtopo2022TerrainProvider,
+  createTerrariumTerrainProvider,
   createTopoOverlayMaterial,
   loadFederalHighwayImageryProvider,
   loadShortbreadImageryProvider,
@@ -18,7 +18,11 @@ export const ROADVECTOR_OVERVIEW_MAXIMUM_TILES = 25;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_TILE_BYTES = 1024 * 1024;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_TOTAL_BYTES = 8 * 1024 * 1024;
 export const ROADVECTOR_OVERVIEW_MAXIMUM_VERTICES = 100_000;
-export const ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES = 128;
+export const ROADVECTOR_OVERVIEW_TERRAIN_MAX_LEVEL = 3;
+// The complete z0..z3 Web Mercator pyramid is finite: 1 + 4 + 16 + 64.
+// This is a structural cap, so returning to another hemisphere cannot exhaust
+// a location-scoped or lifetime request budget.
+export const ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES = 85;
 export const ROADVECTOR_FEDERAL_HIGHWAY_VERSION = '2025.08.08';
 export const ROADVECTOR_FEDERAL_HIGHWAY_MANIFEST_PATH = `data/fhwa-nhs/${ROADVECTOR_FEDERAL_HIGHWAY_VERSION}/manifest.json`;
 export const ROADVECTOR_OVERVIEW_MAJOR_CATEGORIES = Object.freeze([
@@ -34,6 +38,19 @@ export function isRoadvectorOverviewCommand(command) {
 
 function defaultViewerFactory(Cesium, container, options) {
   return new Cesium.Viewer(container, options);
+}
+
+function createRoadvectorOverviewTerrainProvider(Cesium, {
+  onTelemetry,
+  maximumTileRequests,
+} = {}) {
+  if (maximumTileRequests !== ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES) {
+    throw new RangeError('RoadVector terrain must retain the complete bounded z0..z3 pyramid.');
+  }
+  return createTerrariumTerrainProvider(Cesium, {
+    maxLevel: ROADVECTOR_OVERVIEW_TERRAIN_MAX_LEVEL,
+    onTelemetry,
+  });
 }
 
 function configureViewer(Cesium, viewer, topoMaterial) {
@@ -111,7 +128,7 @@ export function createRoadvectorOverviewRuntime({
   fetchImpl = globalThis.fetch,
   presenceOptions = {},
   viewerFactory = defaultViewerFactory,
-  terrainProviderFactory = createEtopo2022TerrainProvider,
+  terrainProviderFactory = createRoadvectorOverviewTerrainProvider,
   topoMaterialFactory = createTopoOverlayMaterial,
   shortbreadProviderLoader = loadShortbreadImageryProvider,
   federalHighwayProviderLoader = loadFederalHighwayImageryProvider,
@@ -462,14 +479,14 @@ export function createRoadvectorOverviewRuntime({
       relief: Object.freeze({
         status: terrainStatus,
         error: terrainTelemetry?.lastTerminalError ?? terrainTelemetry?.lastError ?? null,
-        sourceId: 'noaa-etopo2022',
+        sourceId: terrainProvider?.wxglobe?.source ?? 'aws-terrarium',
         providerType: terrainProvider?.wxglobe?.providerType ?? null,
         requested: terrainTelemetry?.requested ?? 0,
         loaded: terrainTelemetry?.loaded ?? 0,
         failed: terrainTelemetry?.terminalFailures ?? 0,
         maximumTiles: ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES,
-        uniqueTiles: terrainTelemetry?.uniqueTileRequests ?? 0,
-        requestLimitExceeded: Boolean(terrainTelemetry?.requestLimitExceeded),
+        uniqueTiles: terrainTelemetry?.sourceTilesRequested ?? terrainTelemetry?.uniqueTileRequests ?? 0,
+        requestLimitExceeded: false,
       }),
       roads: Object.freeze({
         status: roadStatus,

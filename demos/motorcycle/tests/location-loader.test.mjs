@@ -60,6 +60,26 @@ test('terrain failure remains visible while returning an explicit degraded plane
   assert.equal(result.sceneData.terrainSource, 'peercompute-derived-flat-terrain');
 });
 
+test('never-settling terrain is bounded by a deadline and degrades truthfully', async () => {
+  const geodata = { osmRegion: async () => Object.freeze({ id: 'region' }) };
+  const startedAt = Date.now();
+  const result = await loadMotorcycleLocation({
+    geodata,
+    location: { longitude: -149.9, latitude: 61.2 },
+    radiiMeters: [500],
+    terrainTimeoutMs: 15,
+    terrainLoader: ({ signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }),
+    sceneDataFactory: (_source, terrain) => ({ terrainSource: terrain.source.id }),
+  });
+  assert.ok(Date.now() - startedAt < 1_000);
+  assert.equal(result.terrainDegraded, true);
+  assert.equal(result.terrain.source.id, 'peercompute-derived-flat-terrain');
+  assert.equal(result.terrainError.code, 'ERR_MOTORCYCLE_TERRAIN_TIMEOUT');
+  assert.match(result.terrainError.message, /15 ms deadline/u);
+});
+
 test('location helpers reject invalid values and return bounded snapped boxes', () => {
   assert.deepEqual(normalizeMotorcycleLocation({ longitude: 1.23456, latitude: 45.67894 }), {
     longitude: 1.2346,

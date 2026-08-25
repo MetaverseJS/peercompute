@@ -237,12 +237,13 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
       return viewer;
     },
     terrainProviderFactory(_Cesium, { onTelemetry, maximumTileRequests }) {
-      assert.equal(maximumTileRequests, 128);
-      onTelemetry({ requested: 2, loaded: 1, terminalFailures: 0, uniqueTileRequests: 2 });
+      assert.equal(maximumTileRequests, 85);
+      onTelemetry({ requested: 2, loaded: 1, terminalFailures: 0, sourceTilesRequested: 2 });
       const provider = {
         aborted: false,
         wxglobe: {
           providerType: 'CappedHeightmapTerrainProvider',
+          source: 'aws-terrarium',
           abort() {
             provider.aborted = true;
             terrainAborted = true;
@@ -301,6 +302,9 @@ test('Cesium overview owns terrain, roads, camera, mode, players, and teardown',
   assert.equal(status.renderingBasis, 'cesium-globe');
   assert.equal(status.relief.status, 'current');
   assert.equal(status.relief.providerType, 'CappedHeightmapTerrainProvider');
+  assert.equal(status.relief.sourceId, 'aws-terrarium');
+  assert.equal(status.relief.maximumTiles, 85);
+  assert.equal(status.relief.uniqueTiles, 2);
   assert.equal(status.roads.status, 'current');
   assert.equal(status.roads.selectedTiles, 25);
   assert.equal(status.roads.renderedRoads, 25);

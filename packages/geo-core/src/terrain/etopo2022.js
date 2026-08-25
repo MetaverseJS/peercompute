@@ -306,6 +306,7 @@ export function createEtopo2022TerrainProvider(
     fetchHeightmap = fetchEtopo2022Heightmap,
     fetchSamples = fetchEtopo2022Samples,
     onTelemetry = () => {},
+    onHeightmap,
     retryAttempts = 3,
     retryDelayMs = 180,
     boundaryCacheSize = 131_072,
@@ -510,7 +511,8 @@ export function createEtopo2022TerrainProvider(
     height: tileSize,
     tilingScheme,
     credit: new Cesium.Credit(ETOPO2022_CREDIT_HTML),
-    callback
+    callback,
+    onHeightmap
   });
 
   provider.wxglobe = {

@@ -247,6 +247,7 @@ export function createTerrariumTerrainProvider(
     urlTemplate = TERRARIUM_URL_TEMPLATE,
     fetchHeightmap = fetchTerrariumHeightmap,
     onTelemetry = () => {},
+    onHeightmap,
     retryAttempts = 3,
     retryDelayMs = 180
   } = {}
@@ -369,7 +370,8 @@ export function createTerrariumTerrainProvider(
     height: gridSize,
     tilingScheme: new Cesium.WebMercatorTilingScheme(),
     credit: new Cesium.Credit(TERRARIUM_CREDIT_HTML),
-    callback
+    callback,
+    onHeightmap
   });
 
   provider.wxglobe = {

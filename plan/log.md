@@ -58507,3 +58507,208 @@ the water bodies.”
   log can name the implementation commit. Final ICC task/attempt/lease and
   post-commit artifact freshness checks follow; no source or generated bundle
   changes remain.
+
+## 2026-08-24 15:17:07 AKDT - EarthGrid geometry-first rendering (prompt intake)
+
+Prompt: “alright I don't really like the glow textures at all. I'd prefer we
+draw everything with actual geometry/nurbs/wireframes. that goes for everything
+including roads. bright glow should be a function of the contour line we are
+representing not painted onto the ground texture.”
+
+### Intake actions and interpretation
+
+- Treated this as an EarthGrid renderer-pipeline replacement, not a palette
+  tweak: OSM water, roads, buildings, and topographic contour presentation must
+  stop depending on rasterized glow canvas ink. Brightness belongs to bounded
+  geometry/line materials on the represented curve itself.
+- Re-entered ICC through durable task
+  `earthgrid-vector-geometry-rendering-20260824`, confirmed the clean/current
+  repository state on Node `v24.18.0`, passed agent preflight, opened the
+  conflict-free `codex-root-earthgrid-vector-geometry` lease over geo-core,
+  EarthGrid, shared gates, generated EarthGrid assets, and documentation, then
+  refreshed the required edit-context stamp.
+- Began a bounded architecture audit before implementation. The current
+  Shortbread provider decodes real vector tiles but rasterizes commands to a
+  512-pixel canvas consumed as Cesium imagery; the replacement must retain the
+  same source limits, attribution, generation cancellation, and road-over-water
+  ordering while emitting Cesium geometry/primitives instead.
+
+### Files touched so far
+
+- `plan/log.md`
+
+### Commands/results so far
+
+- `git status --short`, `node --version` - PASS; clean worktree, Node
+  `v24.18.0`.
+- ICC status/work dossier - PASS; cached index/memory/Git history current,
+  new task ready at score `93`.
+- ICC agent preflight - PASS (`6/6` checks, only the repository's historical
+  missing `origin/master` warning).
+- Root lease and enforced edit-context stamp - PASS with zero conflicts.
+
+### Open
+
+- Freeze the exact Cesium primitive/NURBS topology, camera/tile lifecycle,
+  performance caps, terrain-contour extraction approach, and truthful visual
+  semantics; implement and verify them; rebuild/private-browser inspect; update
+  plans/readmes; refresh ICC; and commit locally without pushing.
+
+## 2026-08-24 18:31:00 AKDT - RoadVector live startup repair
+
+Prompt: “k also fyi roadvector doesn't seem to be working”
+
+### Diagnosis and implementation
+
+- Verified that the direct private HTTPS listener, `/api/v1/catalog`, Cesium
+  worker assets, FHWA manifest, Shortbread TileJSON, and loopback geodata
+  service were healthy. A real headless load of
+  `https://100.68.165.52:5188/` nevertheless remained `ready:false`: two NOAA
+  ETOPO root requests never settled, so Cesium requested zero installed FHWA
+  and Shortbread imagery tiles, while the local ride loader waited forever on
+  the same uncapped upstream.
+- Proved causality in the live page by replacing only the terrain provider with
+  AWS Terrarium: Shortbread advanced to `25/25`, FHWA rendered, and the globe
+  became interactive immediately. Replaced the RoadVector overview source with
+  a structurally bounded complete z0–z3 Terrarium pyramid (85 possible tiles).
+- Added a local Terrarium grid loader that resamples at most nine z12 source
+  tiles into the exact 65×65 WGS84/ENU render-and-collision mesh. Added a
+  10-second local terrain deadline; a source failure or timeout now reaches the
+  existing truthfully labeled derived-plane fallback instead of freezing.
+- Updated RoadVector source/UI/README provenance from NOAA to AWS Terrain Tiles
+  and added a deterministic 256×256 Terrarium PNG fixture to built browser
+  smoke. The first smoke attempt exposed a truncated PNG fixture and failed
+  with `The source image could not be decoded`; the complete verified bytes
+  replaced it before the successful rerun.
+
+### Files touched
+
+- `demos/motorcycle/src/overview/overviewRuntime.js`
+- `demos/motorcycle/src/world/terrainGrid.js`
+- `demos/motorcycle/src/runtime/locationLoader.js`
+- `demos/motorcycle/src/main.js`
+- `demos/motorcycle/index.html`
+- `demos/motorcycle/tests/overview/data-renderer.test.mjs`
+- `demos/motorcycle/tests/terrain-grid.test.mjs`
+- `demos/motorcycle/tests/location-loader.test.mjs`
+- `demos/motorcycle/README.md`
+- `demos/tests/runtime-smoke.mjs`
+- `README.md`
+- `plan/log.md`, `plan/tests.md`, and
+  `plan/branch/earth-platform-motorcycle-xr.md`
+- generated `docs/motorcycle/**`
+
+### Commands and results
+
+- ICC resume/status plus RoadVector path-scoped `agent-preflight` - PASS `6/6`;
+  root lease renewed with zero conflicts (dirty-worktree and missing
+  `origin/master` remain warnings only).
+- Live service/curl probes - PASS: private root, same-origin catalog, and Cesium
+  worker each HTTP `200`; RoadVector and geodata listeners remained scoped to
+  Tailnet `:5188` and loopback `:8788` respectively.
+- Focused syntax plus location/terrain/overview tests - PASS `16/16`.
+- `npm --prefix demos/motorcycle test` - PASS `66/66` on Node `v24.18.0`.
+- `npm run build:motorcycle` - PASS; fresh production entry
+  `docs/motorcycle/assets/index-Chn87yLq.js`.
+- First built smoke on `43972` - FAIL during fixture hardening: malformed
+  deterministic PNG caused Terrarium decode failure and a readiness timeout;
+  the port closed cleanly.
+- `RUNTIME_SMOKE_DEMOS=motorcycle DOCS_HOST=127.0.0.1 DOCS_PORT=43973
+  DEMO_WAIT_MS=500 DEMO_READY_TIMEOUT_MS=45000 node
+  demos/tests/runtime-smoke.mjs` - PASS; port closed.
+- Exact private browser proof - PASS in about 4.5 seconds with secure context,
+  zero page/console errors, live non-degraded Terrarium terrain, current FHWA
+  and OSM roads, 1,665 local roads, six motorcycle components, 14 synthetic /
+  14 physical traffic vehicles, finite physics, and no overflow. Ride mode
+  advanced frames and the deterministic traffic-impact scenario produced
+  impulse `1257.861...`, remained finite, and did not overflow.
+
+### Remaining scope
+
+- The direct Tailnet HTTPS RoadVector and loopback geodata services remain
+  intentionally running for headset testing. The certificate is the existing
+  private IP-SAN development certificate; no Tailscale Serve/Funnel or
+  terminal-browser pane was introduced. Physical-headset certification remains
+  explicitly not run.
+
+## 2026-08-24 19:04:58 AKDT - EarthGrid actual-buffer closure and shared release
+
+Prompt completed: “alright I don't really like the glow textures at all. I'd
+prefer we draw everything with actual geometry/nurbs/wireframes. that goes for
+everything including roads. bright glow should be a function of the contour
+line we are representing not painted onto the ground texture.” Prompt intake
+was recorded at `2026-08-24 15:17:07 AKDT`; this entry records the completed
+implementation and the RoadVector reliability follow-through requested at
+`2026-08-24 18:31:00 AKDT`.
+
+### Implemented approach
+
+- Replaced EarthGrid's raster Shortbread/globe-material presentation with
+  immutable public Cesium `1.144.0` buffer geometry. Water uses triangulated
+  50%-opacity blue polygons; shorelines, building footprints, roads, and
+  marching-grid terrain isocontours use one solid buffer-line pass. Exact
+  degree-one NURBS semantics preserve authoritative line vertices; no canvas,
+  blur, halo, bloom, duplicate line pass, or private renderer probe remains in
+  the normal GIS base.
+- Rejected the first public ground-entity prototype after a real Cesium run:
+  the root-ocean entity stayed in worker creation for more than 40 seconds and
+  provided no supported per-primitive readiness surface. The replacement uses
+  exact-capacity synchronous buffer collections, bounded RHUMB/curved-surface
+  tessellation, public `postRender` readiness, revision-level render-error
+  recovery, atomic replacement, and terminal failure telemetry.
+- Enforced water/road precedence geometrically. Indexed point and exact segment
+  queries find the highest active flat water display level crossed by every
+  global or local road chord—including narrow bodies whose endpoints lie
+  outside the polygon—before the road category offset is applied. Local
+  geometry stays hidden until its water revision matches the qualified global
+  revision.
+- Reproduced a second startup blocker with the real Shortbread z0 tile: the
+  51,921-byte tile contains a world ocean with 1,167 rings / 20,403 points, and
+  monolithic Cesium triangulation exceeded 90 seconds and roughly 1.68 GiB RSS.
+  Added pre-Cesium topology caps and a truthful zoom-below-5 `viewDeferred`
+  revision. The whole-world view retains real terrain contours with zero fake
+  vector/GPU work; regional movement loads and presents detailed buffers.
+- Updated the built browser gate to prove both scales. A first aggregate run
+  exposed a transient terrain-height reconciliation race after the camera
+  flight; the gate now waits for public `camera.moveEnd`, zero terrain
+  in-flight work, and the bounded 150 ms vector refresh before accepting the
+  regional revision. Two focused repeats and the final combined release gate
+  passed.
+
+### Files touched
+
+- Shared geometry/terrain: `packages/geo-core/src/index.js`,
+  `packages/geo-core/src/vector/shortbreadGeometry.js`,
+  `packages/geo-core/src/terrain/{terrainNurbs,cappedHeightmapProvider,etopo2022,terrarium}.js`,
+  and focused geo-core tests.
+- EarthGrid runtime/tests/docs: `demos/earth/src/main.js`,
+  `demos/earth/src/layers/{geometryStyle,shortbreadGeometry,terrainGeometry,localOsm}.js`,
+  `demos/earth/{index.html,README.md,style.css,package.json}`, and Earth tests.
+- Shared release and documentation: `demos/tests/{runtime-smoke.mjs,demo-release.test.js,demo-ports.test.js}`,
+  Cesium package pins/lockfile, `README.md`, `plan/{plan,tests,log}.md`, the
+  branch brief, and regenerated `docs/{earth,motorcycle,wxglobe}/**`.
+
+### Final commands, results, failures, and operational state
+
+- Node `v24.18.0` for root validation. Focused/full component evidence: geo-core
+  `65/65`, EarthGrid `48/48`, RoadVector `66/66`; syntax and diff checks passed.
+- `npm run test:earth-platform:unit` - PASS `318/318` Node tests plus the mocked
+  Chromium RoadVector WebXR harness; zero failures/skips/cancellations. The
+  delegated verification shell selected Node `v24.19.0`, still Node 24 LTS.
+- Focused built EarthGrid browser smoke - PASS twice on owned ports `43977` and
+  `43978`; both ports closed. Earlier `43974` failed against the obsolete
+  whole-world-positive-buffer assertion, and the first post-correction
+  aggregate run exposed the transient height-refresh sampling race described
+  above; neither failure was hidden or weakened into a timeout increase.
+- Final `npm run test:earth-platform:release` - PASS: WXGlobe, EarthGrid, and
+  RoadVector rebuilt; Cesium assets copied; static checks `44/44`; combined
+  deterministic built HTTPS browser smoke passed on owned port `43947`, which
+  closed after teardown.
+- Direct private probes remained HTTP `200` for RoadVector root and same-origin
+  catalog at `https://100.68.165.52:5188/` and EarthGrid root at
+  `https://100.68.165.52:5187/`. Only the intended Tailnet listeners `5187` /
+  `5188` and loopback geodata `8788` remain; all smoke ports are closed. No
+  Tailscale Serve/Funnel or terminal-browser pane was used.
+- Physical headset validation remains NOT RUN and is not claimed. ICC final
+  reindex/gates, lease closure, diff staging, and the coherent local commit are
+  the remaining control-plane/clean-point actions after this log entry.

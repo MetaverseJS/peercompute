@@ -6,7 +6,8 @@ export function createCappedHeightmapTerrainProvider(
     height,
     tilingScheme,
     credit,
-    maximumLevel
+    maximumLevel,
+    onHeightmap
   }
 ) {
   if (
@@ -18,6 +19,9 @@ export function createCappedHeightmapTerrainProvider(
     throw new TypeError('Cesium terrain-provider primitives are required.');
   }
   if (typeof callback !== 'function') throw new TypeError('A heightmap callback is required.');
+  if (onHeightmap !== undefined && typeof onHeightmap !== 'function') {
+    throw new TypeError('onHeightmap must be a function when provided.');
+  }
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2) {
     throw new RangeError('Heightmap width and height must be integers greater than one.');
   }
@@ -85,12 +89,32 @@ export function createCappedHeightmapTerrainProvider(
         if (!ArrayBuffer.isView(typedBuffer) || typedBuffer.length !== width * height) {
           throw new RangeError(`Terrain tile must contain exactly ${width * height} typed height samples.`);
         }
-        return new Cesium.HeightmapTerrainData({
+        const terrainData = new Cesium.HeightmapTerrainData({
           buffer: typedBuffer,
           width,
           height,
           childTileMask: level < maximumLevel ? 15 : 0
         });
+        if (onHeightmap) {
+          try {
+            const observation = onHeightmap(Object.freeze({
+              x,
+              y,
+              level,
+              width,
+              height,
+              heights: typedBuffer,
+              tilingScheme
+            }));
+            if (observation && typeof observation.then === 'function') {
+              Promise.resolve(observation).catch(() => {});
+            }
+          } catch {
+            // Heightmap observers are diagnostic/rendering sidecars and must
+            // never turn valid source terrain into a failed Cesium request.
+          }
+        }
+        return terrainData;
       });
     }
   };

@@ -39,8 +39,9 @@ const shortbreadTileJsonFixture = Object.freeze({
 });
 
 // Canonical MVT v2 fixture with one ocean Polygon, one inland-water Polygon,
-// one street LineString, and one building Polygon. This proves the shared
-// renderer's draw order and the Earth-only water opt-in without live traffic.
+// one street LineString, and one building Polygon. Earth converts these into
+// actual Cesium buffer geometry; the legacy shared imagery provider remains a
+// separately tested RoadVector compatibility seam.
 const shortbreadMvtFixture = Buffer.from(
   'Gjd4AgoFb2NlYW4ogCASGggBEgIAABgDIhAJ5AHWMRoAhQ64PAAAhg4PGgRraW5kIgcKBW9jZWFuGlB4AgoOd2F0ZXJfcG9seWdvbnMogCASHAgCEgQAAAEBGAMiEAm4HOQhGgDHA5AHAADIAw8aBGtpbmQaCHdheV9hcmVhIgYKBGxha2UiAyjSCRoneAIKCWJ1aWxkaW5ncyiAIBIVCAMSABgDIg0JqiWcHhoAFxgAABgPGjV4AgoHc3RyZWV0cyiAIBITCAQSAgAAGAIiCQnWGrAcCtQKABoEa2luZCIKCghtb3RvcndheQ==',
   'base64'
@@ -62,6 +63,13 @@ const expiredNowCoastCapabilitiesFixture = `<?xml version="1.0"?>
 const transparentPngFixture = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+9tQYAAAAAElFTkSuQmCC',
   'base64'
+);
+// 256x256 Terrarium-encoded vertical relief ranging from roughly -1,200 m to
+// +900 m. The deterministic source crosses provider-native zero and multiple
+// 500 m contour levels while remaining a valid, bounded PNG tile.
+const terrariumPngFixture = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAACXBIWXMAAAABAAAAAQBPJcTWAAADCElEQVR4nO3csQ2EAAwEQSy5QPqhecpwsDMVELy1xwfM9z6QtdcPAJccAGn7zPUjwB0FIM0BkGYCkaYApCkAaQpAmgMgzQQiTQFIcwCkmUCkKQBpCkCaApDmAEgzgUhTANIcAGkmEGkKQJoCkKYApDkA0kwg0hSAtBUAykwg0kwg0hSANAUgzQGQZgKRpgCkOQDSTCDSFIA0BSBNAUhzAKSZQKQpAGkOgDQTiDQFIE0BSFMA0hwAaSYQaQpAmgMgzQQiTQFIUwDSfBuUNBOINBOINAUgzQGQZgKRpgCkKQBpCkCaAyDNBCJNAUhzAKSZQKQpAGkKQJoCkOYASDOBSFMA0hwAaSYQaQpAmgKQpgCkOQDSTCDSFIA0B0DajglEmAKQ5iWYNAUgzQGQZgKRpgCkOQDSTCDSFIA0BSBNAUhzAKSZQKQpAGkOgDQTiDQFIE0BSFMA0hwAaSYQaQpAmgMgzQQiTQFIUwDSFIC0FQDKTCDSTCDSHABpJhBpCkCaApCmAKQ5ANJMINIUgDQHQJoJRJoCkKYApCkAaQ6ANBOINAUgzQGQZgKRpgCkKQBpCkCaAyDNBCJNAUhzAKSZQKT5OC5pCkCadwDSHABpJhBpCkCaAyDNBCJNAUhTANIUgDQHQJoJRJoCkOYASDOBSFMA0hSANAUgzQGQZgKRpgCkOQDSTCDSFIA0BSBNAUhzAKTtmECEKQBpDoA0/wKRpgCkKQBpCkCaAyDNBCJNAUhzAKSZQKQpAGkKQJoCkOYASDOBSFMA0hwAaSYQaQpAmgKQpgCkOQDSTCDSFIA0B0CaCUSaApDm47ikKQBpDoA0L8GkKQBpDoA0E4g0BSBNAUhTANIcAGkmEGkKQJoDIM0EIk0BSFMA0hSANAdAmglEmgKQ5gBIM4FIUwDSFIA0BSDNAZBmApG2fv+UmUCkmUCkKQBpCkCaApDmAEgzgUhTANIcAGkmEGkKQJoCkKYApDkA0kwg0hSANAdAmglEmgKQpgCkKQBpDoA0E4g0BSDNAZBmApGmAKT9l10FMNUdyDIAAAAASUVORK5CYII=',
+  'base64',
 );
 
 function createAnchorageOverpassFixture() {
@@ -121,22 +129,52 @@ const allDemos = [
         && state.terrain?.loaded > 0
         && state.osmStatus === 'live'
         && state.osmTelemetry?.loaded > 0
-        && state.osmTelemetry?.roadCommands > 0
-        && state.osmTelemetry?.buildingCommands > 0
+        && state.osmTelemetry?.renderingModel === 'actual-cesium-buffer-geometry'
+        && state.osmTelemetry?.renderer === 'cesium-buffer-geometry'
+        && state.osmTelemetry?.rasterPainted === false
+        && state.osmTelemetry?.glow === false
+        && state.osmTelemetry?.cpuGeometryValidated === true
+        && state.osmTelemetry?.viewDeferred === true
+        && state.osmTelemetry?.broadViewDeferral?.active === true
+        && state.osmTelemetry?.broadViewDeferral?.minimumGeometryZoom === 5
+        && state.osmTelemetry?.broadViewDeferral?.selectedZoom < 5
+        && state.osmTelemetry?.broadViewDeferral?.deferredTileCount > 0
+        && state.osmTelemetry?.broadViewDeferral?.deferredCommandCount > 0
+        && state.osmTelemetry?.settledEmpty === true
+        && state.osmTelemetry?.gpuSubmittedFrame === false
+        && state.osmTelemetry?.gpuPresentedFrame === false
+        && state.osmTelemetry?.renderReady === false
+        && state.osmTelemetry?.currentRevisionRenderFailed === false
+        && state.osmTelemetry?.workerGeometryJobs === 0
+        && state.osmTelemetry?.geometry?.cesiumEntityCount === 0
+        && state.osmTelemetry?.geometry?.bufferPrimitiveCount === 0
+        && state.osmTelemetry?.geometry?.roadCurveCount === 0
+        && state.osmTelemetry?.geometry?.buildingWireframeCount === 0
         && state.waterStatus === 'live'
         && state.waterVisible === true
-        && state.osmTelemetry?.waterCommands > 0
-        && state.osmTelemetry?.waterVertices > 0
-        && state.osmTelemetry?.waterNurbs?.curveCount > 0
-        && state.osmTelemetry?.waterNurbs?.sampledVertexCount > 0
+        && state.osmTelemetry?.geometry?.waterSurfaceCount === 0
+        && state.osmTelemetry?.geometry?.vertexCount === 0
+        && state.osmTelemetry?.waterNurbs?.curveCount === 0
+        && state.osmTelemetry?.linePassesPerCurve === 1
         && state.waterStyle?.color === '#0080ff'
         && state.waterStyle?.opacity === 0.5
-        && state.waterStyle?.surface === 'flat'
+        && state.waterStyle?.surface === 'flat-cesium-buffer-polygon'
+        && state.waterStyle?.ocean?.elevationMeters === 0
+        && state.waterStyle?.ocean?.reference === 'terrain-source-native-zero'
+        && state.waterStyle?.inland?.reference === 'bounded-terrain-sample-median-or-zero-fallback'
         && state.waterStyle?.outline?.color === '#24cfff'
         && state.waterStyle?.outline?.curveModel === 'NURBS'
-        && state.terrainContourStyle?.submergedContours?.waterLineElevationMeters === 0
-        && state.terrainContourStyle?.submergedContours?.color?.[0] === 36 / 255
-        && state.imageryLayerCount === 1
+        && state.terrainContourStyle?.waterLineElevationMeters === 0
+        && state.terrainContourStyle?.atOrBelowWaterColor === '#24cfff'
+        && state.terrainContourStyle?.atOrBelowWaterPathCount > 0
+        && state.terrainContourStyle?.aboveWaterPathCount > 0
+        && state.terrainContourStyle?.renderer === 'actual-cesium-buffer-geometry'
+        && state.terrainContourStyle?.cpuGeometryValidated === true
+        && state.terrainContourStyle?.gpuSubmittedFrame === true
+        && state.terrainContourStyle?.renderReady === true
+        && state.imageryLayerCount === 0
+        && state.dataSourceCount === 0
+        && state.scenePrimitiveCount >= 2
         && state.geodataConfigured === true
         && state.localVisible === false
         && state.weatherStatus === 'off'
@@ -161,6 +199,8 @@ const allDemos = [
         && state.overview?.renderedFrames > 0
         && state.overview?.relief?.status === 'current'
         && state.overview?.relief?.providerType === 'CappedHeightmapTerrainProvider'
+        && state.overview?.relief?.sourceId === 'aws-terrarium'
+        && state.overview?.relief?.maximumTiles === 85
         && state.overview?.roads?.status === 'current'
         && state.overview?.roads?.selectedTiles === 25
         && state.overview?.roads?.loadedTiles > 0
@@ -429,7 +469,7 @@ async function runDemo(context, demo) {
           status: 200,
           contentType: 'application/json; charset=utf-8',
           body: JSON.stringify({
-            samples: points.map((_, index) => ({ locationId: index, value: 35 + index }))
+            samples: points.map((_, index) => ({ locationId: index, value: 0 }))
           })
         });
         return;
@@ -441,11 +481,24 @@ async function runDemo(context, demo) {
       for (let row = 0; row < height; row += 1) {
         for (let column = 0; column < width; column += 1) {
           const index = row * width + column;
-          const elevation = Math.round(35 + Math.sin(column / 7) * 8 + Math.cos(row / 9) * 5);
+          const east = width > 1 ? column / (width - 1) : 0;
+          const south = height > 1 ? row / (height - 1) : 0;
+          // Cross source-native zero and several 500 m levels so the
+          // deterministic browser gate proves both blue submerged and green
+          // positive actual contour geometry. Shared edges remain finite and
+          // are canonicalized by the provider's normal boundary cache.
+          const elevation = Math.round(-1_200 + 2_400 * (east * 0.65 + south * 0.35));
           body.writeInt16LE(elevation, index * Int16Array.BYTES_PER_ELEMENT);
         }
       }
       await route.fulfill({ status: 200, contentType: 'application/octet-stream', body });
+    });
+    await page.route('https://elevation-tiles-prod.s3.amazonaws.com/terrarium/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: terrariumPngFixture,
+      });
     });
     await page.route('https://nowcoast.noaa.gov/**', async (route) => {
       const url = new URL(route.request().url());
@@ -591,7 +644,9 @@ async function runDemo(context, demo) {
       if (!after.osmSource?.staleAt || !/OpenStreetMap/i.test(after.osmSource?.provenance?.source ?? '')) {
         errors.push('[runtime] RoadVector did not expose OSM freshness/source provenance.');
       }
-      if (after.terrain?.degraded !== false) errors.push('[runtime] motorcycle did not decode the bounded NOAA terrain fixture');
+      if (after.terrain?.degraded !== false || after.terrain?.source?.id !== 'aws-terrarium') {
+        errors.push('[runtime] motorcycle did not decode the bounded AWS Terrarium fixture');
+      }
       if (after.overview?.federalHighways?.status !== 'current'
         || !(after.overview?.federalHighways?.renderedRoads > 0)
         || after.overview?.federalHighways?.sourceRecordCount !== 492_005) {
@@ -853,51 +908,218 @@ async function runDemo(context, demo) {
     }
 
     if (demo.name === 'earth') {
+      const worldOverview = await page.evaluate(demo.verify);
+      if (worldOverview.osmTelemetry?.viewDeferred !== true
+        || worldOverview.osmTelemetry?.broadViewDeferral?.active !== true
+        || worldOverview.osmTelemetry?.broadViewDeferral?.minimumGeometryZoom !== 5
+        || !(worldOverview.osmTelemetry?.broadViewDeferral?.selectedZoom < 5)
+        || !(worldOverview.osmTelemetry?.broadViewDeferral?.deferredTileCount > 0)
+        || worldOverview.osmTelemetry?.settledEmpty !== true
+        || worldOverview.osmTelemetry?.gpuSubmittedFrame !== false
+        || worldOverview.osmTelemetry?.gpuPresentedFrame !== false
+        || worldOverview.osmTelemetry?.renderReady !== false
+        || worldOverview.osmTelemetry?.geometry?.bufferPrimitiveCount !== 0
+        || worldOverview.osmPresentedRevision !== null
+        || !Number.isInteger(worldOverview.osmQualifiedRevision)) {
+        errors.push('[runtime] Earth broad globe did not defer unsafe low-zoom Shortbread geometry truthfully.');
+      }
+
+      await page.evaluate(async () => {
+        const demoApi = window.__earthDemo;
+        const cameraSettled = new Promise((resolve) => {
+          const remove = demoApi.viewer.camera.moveEnd.addEventListener(() => {
+            remove();
+            resolve();
+          });
+        });
+        await Promise.all([
+          demoApi.setLocation({ longitude: -149.895, latitude: 61.2205 }),
+          cameraSettled,
+        ]);
+      });
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.terrain?.inFlight === 0 && state.terrain?.activeRetries === 0;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      // The final successful heightmap schedules one bounded 150 ms vector
+      // height reconciliation. Wait past that public debounce before accepting
+      // the revision so the gate cannot sample a transient pre-refresh frame.
+      await page.waitForTimeout(250);
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.ready === true
+          && state.osmTelemetry?.viewDeferred === false
+          && state.osmTelemetry?.selection?.selectedZoom >= 5
+          && state.osmTelemetry?.gpuSubmittedFrame === true
+          && state.osmTelemetry?.gpuPresentedFrame === true
+          && state.osmTelemetry?.renderReady === true
+          && state.osmTelemetry?.geometry?.roadCurveCount > 0
+          && state.osmTelemetry?.geometry?.buildingWireframeCount > 0
+          && state.osmTelemetry?.geometry?.waterSurfaceCount > 0
+          && state.localStatus === 'local-live'
+          && state.localVisible === true
+          && state.localWaterRevision === state.osmQualifiedRevision;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
       const initial = await page.evaluate(demo.verify);
+      const earthCanvasPng = await page.locator('#viewer canvas').first().screenshot();
+      const earthPixels = await page.evaluate(async (encodedPng) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${encodedPng}`;
+        await image.decode();
+        const sample = document.createElement('canvas');
+        sample.width = 320;
+        sample.height = 200;
+        const context = sample.getContext('2d', { willReadFrequently: true });
+        context.drawImage(image, 0, 0, sample.width, sample.height);
+        const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+        let blue = 0;
+        let green = 0;
+        let nonBlack = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          const red = pixels[index];
+          const greenChannel = pixels[index + 1];
+          const blueChannel = pixels[index + 2];
+          if (red + greenChannel + blueChannel > 30) nonBlack += 1;
+          if (blueChannel > 90 && greenChannel > 30 && blueChannel > greenChannel * 1.05) blue += 1;
+          if (greenChannel > 100 && greenChannel > blueChannel * 1.1 && greenChannel > red * 1.5) green += 1;
+        }
+        return { blue, green, nonBlack, width: sample.width, height: sample.height };
+      }, earthCanvasPng.toString('base64'));
+      if (earthPixels.blue < 100 || earthPixels.green < 100 || earthPixels.nonBlack < 500) {
+        errors.push(`[runtime] Earth buffer geometry is not visibly blue/green on the rendered canvas: ${JSON.stringify(earthPixels)}`);
+      }
       if (initial.geodataConfigured !== true) errors.push('[runtime] Earth did not select the same-origin geodata API.');
       if (!(initial.osmTelemetry?.loaded > 0)) errors.push('[runtime] Earth did not decode a Shortbread tile.');
-      if (!(initial.osmTelemetry?.roadCommands > 0 && initial.osmTelemetry?.buildingCommands > 0)) {
-        errors.push('[runtime] Earth did not render both Shortbread road and building categories.');
+      if (!(initial.osmTelemetry?.geometry?.roadCurveCount > 0
+        && initial.osmTelemetry?.geometry?.buildingWireframeCount > 0)) {
+        errors.push('[runtime] Earth did not render actual Shortbread road and building-wire geometry.');
       }
       if (initial.waterStatus !== 'live' || !initial.waterVisible) {
-        errors.push('[runtime] Earth did not expose its enabled water layer as live and visible.');
+        errors.push(`[runtime] Earth did not expose its enabled water layer as live and visible: ${JSON.stringify({
+          waterStatus: initial.waterStatus,
+          waterVisible: initial.waterVisible,
+          osmStatus: initial.osmStatus,
+          osmVisible: initial.osmVisible,
+        })}`);
       }
-      if (!(initial.osmTelemetry?.waterCommands > 0 && initial.osmTelemetry?.waterVertices > 0)) {
-        errors.push('[runtime] Earth did not decode and render Shortbread water surfaces.');
+      if (!(initial.osmTelemetry?.geometry?.waterSurfaceCount >= 2
+        && initial.osmTelemetry?.geometry?.vertexCount > 0)) {
+        errors.push('[runtime] Earth did not decode and render actual Shortbread water polygon geometry.');
       }
-      if (!(initial.osmTelemetry?.oceanCommands > 0) || !(initial.osmTelemetry?.inlandWaterCommands > 0)) {
-        errors.push('[runtime] Earth water fixture did not retain ocean/inland surface provenance.');
-      }
-      if (initial.waterStyle?.schemaVersion !== 'peercompute.geo.shortbread-water-style.v2'
+      if (initial.waterStyle?.schemaVersion !== 'peercompute.earthgrid.water-buffer-geometry.v2'
         || initial.waterStyle?.color !== '#0080ff'
         || initial.waterStyle?.opacity !== 0.5
-        || initial.waterStyle?.surface !== 'flat'
-        || initial.waterStyle?.geometry !== 'non-extruded-terrain-draped-imagery') {
-        errors.push('[runtime] Earth water style is not exact flat blue at 50% opacity.');
+        || initial.waterStyle?.surface !== 'flat-cesium-buffer-polygon'
+        || initial.waterStyle?.sourcePublishesWaterElevation !== false
+        || initial.waterStyle?.ocean?.elevationMeters !== 0
+        || initial.waterStyle?.ocean?.reference !== 'terrain-source-native-zero'
+        || initial.waterStyle?.inland?.reference !== 'bounded-terrain-sample-median-or-zero-fallback'
+        || initial.waterStyle?.inland?.maximumSamplesPerBody !== 32
+        || initial.osmTelemetry?.heightResolution?.waterSurfaceModel
+          !== 'flat-per-tile-polygon-fragment-ocean-zero-inland-bounded-median-or-zero-fallback'
+        || initial.osmTelemetry?.rasterPainted !== false
+        || initial.osmTelemetry?.canvasCount !== 0) {
+        errors.push('[runtime] Earth water is not exact blue 50%-opacity buffer geometry.');
       }
       if (initial.waterStyle?.outline?.color !== '#24cfff'
         || initial.waterStyle?.outline?.curveModel !== 'NURBS'
         || initial.waterStyle?.outline?.topologyPolicy !== 'exact-degree-one-nurbs-polyline'
         || initial.waterStyle?.outline?.maximumSourceDeviationPixels !== 0
+        || initial.waterStyle?.outline?.linePassesPerPath !== 1
+        || initial.waterStyle?.outline?.glow !== false
         || initial.osmTelemetry?.waterNurbs?.degree !== 1
-        || !(initial.osmTelemetry?.waterNurbs?.curveCount > 0)
-        || !(initial.osmTelemetry?.waterNurbs?.sampledVertexCount > 0)) {
-        errors.push('[runtime] Earth exact bright-blue NURBS shoreline contract is missing.');
+        || !(initial.osmTelemetry?.waterNurbs?.curveCount > 0)) {
+        errors.push('[runtime] Earth exact one-pass bright-blue NURBS shoreline geometry is missing.');
       }
-      if (initial.waterStyle?.submergedContours?.color !== initial.waterStyle?.outline?.color
-        || initial.waterStyle?.submergedContours?.waterLineElevationMeters !== 0
-        || initial.waterStyle?.submergedContours?.waterLineReference !== 'terrain-source-native-zero'
-        || initial.terrainContourStyle?.submergedContours?.waterLineElevationMeters !== 0
-        || initial.terrainContourStyle?.submergedContours?.waterLineReference !== 'terrain-source-native-zero'
-        || initial.terrainContourStyle?.submergedContours?.color?.join(',')
-          !== initial.waterStyle?.submergedContours?.colorComponents?.join(',')) {
-        errors.push('[runtime] Earth submerged terrain contours do not share the shoreline blue at source-native zero.');
+      if (initial.terrainContourStyle?.waterLineElevationMeters !== 0
+        || initial.terrainContourStyle?.waterLineReference !== 'terrain-source-native-zero'
+        || initial.terrainContourStyle?.atOrBelowWaterColor !== initial.waterStyle?.outline?.color
+        || initial.terrainContourStyle?.renderer !== 'actual-cesium-buffer-geometry'
+        || initial.terrainContourStyle?.geometryType !== 'cesium-buffer-polyline'
+        || initial.terrainContourStyle?.workerGeometryJobs !== 0
+        || initial.terrainContourStyle?.cpuGeometryValidated !== true
+        || initial.terrainContourStyle?.gpuSubmittedFrame !== true
+        || initial.terrainContourStyle?.renderReady !== true
+        || initial.terrainContourStyle?.rasterPainted !== false
+        || initial.terrainContourStyle?.glow !== false
+        || initial.terrainContourStyle?.linePassesPerPath !== 1
+        || !(initial.terrainContourStyle?.atOrBelowWaterPathCount > 0)
+        || !(initial.terrainContourStyle?.aboveWaterPathCount > 0)) {
+        errors.push('[runtime] Earth actual terrain contours do not preserve blue submerged and green positive geometry.');
       }
-      if (initial.osmTelemetry?.maximumTotalBytes !== 192 * 1024 * 1024
-        || initial.osmTelemetry?.maximumRenderedVertices !== 4_000_000
-        || initial.osmTelemetry?.aggregateBudgetScope !== 'provider-session-lifetime') {
+      if (initial.osmTelemetry?.limits?.maximumTotalBytes !== 192 * 1024 * 1024
+        || initial.osmTelemetry?.limits?.maximumActiveVertices !== 4_000_000
+        || initial.osmTelemetry?.aggregateBudgetScope !== 'layer-session-lifetime') {
         errors.push('[runtime] Earth water/Shortbread session budgets drifted.');
       }
+      if (initial.osmTelemetry?.renderingModel !== 'actual-cesium-buffer-geometry'
+        || initial.osmTelemetry?.renderer !== 'cesium-buffer-geometry'
+        || initial.osmTelemetry?.materialModel !== 'Cesium.BufferPolygonMaterial/Cesium.BufferPolylineMaterial(Color)'
+        || initial.osmTelemetry?.clampToGround !== false
+        || initial.osmTelemetry?.usesCesiumZIndex !== false
+        || initial.osmTelemetry?.workerGeometryJobs !== 0
+        || initial.osmTelemetry?.cpuGeometryValidated !== true
+        || initial.osmTelemetry?.gpuSubmittedFrame !== true
+        || initial.osmTelemetry?.gpuPresentedFrame !== true
+        || initial.osmTelemetry?.renderReady !== true
+        || initial.osmTelemetry?.currentRevisionRenderFailed !== false
+        || initial.osmTelemetry?.glow !== false
+        || initial.osmTelemetry?.bloom !== false
+        || initial.osmTelemetry?.duplicateLinePass !== false
+        || initial.osmTelemetry?.linePassesPerCurve !== 1
+        || initial.osmTelemetry?.roadsTopmost !== true
+        || initial.osmTelemetry?.categoryElevationOffsetsMeters?.road
+          <= initial.osmTelemetry?.categoryElevationOffsetsMeters?.waterSurface
+        || initial.osmTelemetry?.geometry?.cesiumEntityCount !== 0
+        || !(initial.osmTelemetry?.geometry?.bufferPrimitiveCount > 0)
+        || !(initial.osmTelemetry?.geometry?.bufferVertexCount > 0)
+        || initial.imageryLayerCount !== 0
+        || initial.dataSourceCount !== 0
+        || !(initial.scenePrimitiveCount >= 2)) {
+        errors.push(`[runtime] Earth actual-geometry/no-glow/road-precedence contract drifted: ${JSON.stringify({
+          renderingModel: initial.osmTelemetry?.renderingModel,
+          renderer: initial.osmTelemetry?.renderer,
+          materialModel: initial.osmTelemetry?.materialModel,
+          clampToGround: initial.osmTelemetry?.clampToGround,
+          usesCesiumZIndex: initial.osmTelemetry?.usesCesiumZIndex,
+          workerGeometryJobs: initial.osmTelemetry?.workerGeometryJobs,
+          cpuGeometryValidated: initial.osmTelemetry?.cpuGeometryValidated,
+          gpuSubmittedFrame: initial.osmTelemetry?.gpuSubmittedFrame,
+          gpuPresentedFrame: initial.osmTelemetry?.gpuPresentedFrame,
+          renderReady: initial.osmTelemetry?.renderReady,
+          currentRevisionRenderFailed: initial.osmTelemetry?.currentRevisionRenderFailed,
+          glow: initial.osmTelemetry?.glow,
+          bloom: initial.osmTelemetry?.bloom,
+          duplicateLinePass: initial.osmTelemetry?.duplicateLinePass,
+          linePassesPerCurve: initial.osmTelemetry?.linePassesPerCurve,
+          roadsTopmost: initial.osmTelemetry?.roadsTopmost,
+          offsets: initial.osmTelemetry?.categoryElevationOffsetsMeters,
+          geometry: initial.osmTelemetry?.geometry,
+          imageryLayerCount: initial.imageryLayerCount,
+          dataSourceCount: initial.dataSourceCount,
+          scenePrimitiveCount: initial.scenePrimitiveCount,
+        })}`);
+      }
+
+      const renderErrorState = await page.evaluate(() => {
+        const demoApi = window.__earthDemo;
+        demoApi.viewer.scene.renderError.raiseEvent(
+          demoApi.viewer.scene,
+          new Error('deterministic recoverable render error'),
+        );
+        return demoApi.getState();
+      });
+      if (renderErrorState.ready !== false
+        || renderErrorState.sceneRenderError !== 'deterministic recoverable render error') {
+        errors.push('[runtime] Earth did not invalidate readiness on a public Cesium render error.');
+      }
+      await page.waitForFunction((previousCount) => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.ready === true
+          && state.sceneRenderError === null
+          && state.sceneRenderErrorCount === previousCount + 1
+          && state.lastSceneRenderError === 'deterministic recoverable render error';
+      }, initial.sceneRenderErrorCount ?? 0, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
 
       await page.click('#osm-context');
       const hiddenWater = await page.evaluate(demo.verify);
@@ -917,7 +1139,21 @@ async function runDemo(context, demo) {
           && state.localStatus === 'local-live'
           && state.localVisible
           && state.localCounts?.renderedRoads > 0
-          && state.localCounts?.renderedBuildings > 0;
+          && state.localCounts?.renderedBuildings > 0
+          && state.localGeometry?.renderer === 'actual-cesium-buffer-geometry'
+          && state.localGeometry?.cpuGeometryValidated === true
+          && state.localGeometry?.gpuSubmittedFrame === true
+          && state.localGeometry?.renderReady === true
+          && state.localGeometry?.waterHeightResolverProvided === true
+          && state.localGeometry?.waterHeightAlongSegmentResolverProvided === true
+          && state.localGeometry?.absoluteRoadOverInlandWaterGuaranteed === true
+          && Number.isInteger(state.osmQualifiedRevision)
+          && (state.osmTelemetry?.settledEmpty === true
+            ? state.osmTelemetry.gpuSubmittedFrame === false
+              && state.osmTelemetry.gpuPresentedFrame === false
+              && state.osmPresentedRevision === null
+            : state.osmPresentedRevision === state.osmQualifiedRevision)
+          && state.localWaterRevision === state.osmQualifiedRevision;
       }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
       const located = await page.evaluate(demo.verify);
       if (located.localSource?.status !== 'current') errors.push('[runtime] Earth local source status/provenance was not retained.');
@@ -927,7 +1163,7 @@ async function runDemo(context, demo) {
       await page.waitForFunction(() => window.__earthDemo?.getState?.().weatherStatus === 'live');
       const weather = await page.evaluate(demo.verify);
       if (weather.weather?.time !== nowCoastFrameTime) errors.push('[runtime] Earth did not retain the selected NOAA frame time.');
-      if (weather.imageryLayerCount !== 2) errors.push('[runtime] Earth NOAA weather layer was not attached.');
+      if (weather.imageryLayerCount !== 1) errors.push('[runtime] Earth NOAA weather was not the sole imagery layer.');
 
       weatherControl.expired = true;
       await page.evaluate(async () => {
@@ -936,7 +1172,7 @@ async function runDemo(context, demo) {
       });
       await page.waitForFunction(() => window.__earthDemo?.getState?.().weatherStatus === 'unavailable');
       const expiredWeather = await page.evaluate(demo.verify);
-      if (expiredWeather.weather !== null || expiredWeather.imageryLayerCount !== 1) {
+      if (expiredWeather.weather !== null || expiredWeather.imageryLayerCount !== 0) {
         errors.push('[runtime] Earth rendered an expired NOAA frame.');
       }
       weatherControl.expired = false;
@@ -963,6 +1199,12 @@ async function runDemo(context, demo) {
       await page.waitForFunction(() => window.__earthDemo?.getState?.().localStatus === 'stale');
       await page.uncheck('#local-scene');
       await page.check('#local-scene');
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.localStatus === 'stale'
+          && state.localSource?.status === 'stale'
+          && state.localVisible === true;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
       const stale = await page.evaluate(demo.verify);
       if (stale.localStatus !== 'stale' || stale.localSource?.status !== 'stale') {
         errors.push('[runtime] Earth relabeled a retained stale envelope as live after toggling the layer.');

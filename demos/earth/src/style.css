@@ -100,7 +100,7 @@ input[type="checkbox"] { accent-color: var(--green); }
 .presets button { min-width: 0; padding: 8px 3px; font-size: 8px; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 9px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 8px; letter-spacing: .1em; }
-.legend span::before { content: ""; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; box-shadow: 0 0 6px currentColor; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; }
 .legend__water { color: var(--water-line); }
 .legend .legend__water::before { height: 6px; border: 1px solid var(--water-line); background: rgba(0,128,255,.5); opacity: 1; }
 .legend__road { color: var(--yellow); }

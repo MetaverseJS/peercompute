@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   createDerivedFlatTerrainGrid,
   createTerrainGrid,
+  loadTerrariumTerrainGrid,
+  MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES,
 } from '../src/world/terrainGrid.js';
 import { createRoadTerrainSurface } from '../src/world/roadSurfaceCollider.js';
 
@@ -118,6 +120,34 @@ test('derived flat fallback is explicit and produces a bounded physics surface',
   assert.equal(sample.hit, true);
   assert.equal(surface.metadata.derivedTerrain, true);
   assert.equal(surface.metadata.operationalUse, false);
+});
+
+test('loads a bounded Terrarium tile set into the exact local render/collision grid', async () => {
+  const requests = [];
+  const terrain = await loadTerrariumTerrainGrid({
+    bbox: BBOX,
+    width: 5,
+    height: 5,
+    fetchHeightmap: async (url) => {
+      requests.push(url);
+      const heights = Float32Array.from(
+        { length: 256 * 256 },
+        (_, index) => Math.floor(index / 256) * 0.5 + (index % 256) * 0.25,
+      );
+      return { heights, width: 256, height: 256 };
+    },
+    clock: () => new Date('2026-08-24T18:00:00.000Z'),
+  });
+  assert.ok(requests.length > 0);
+  assert.ok(requests.length <= MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES);
+  assert.ok(requests.every((url) => /^https:\/\/elevation-tiles-prod\.s3\.amazonaws\.com\/terrarium\/12\//u.test(url)));
+  assert.equal(terrain.source.id, 'aws-terrarium');
+  assert.equal(terrain.source.derived, false);
+  assert.equal(terrain.source.fetchedAt, '2026-08-24T18:00:00.000Z');
+  assert.equal(terrain.heights.length, 25);
+  assert.ok([...terrain.heights].every(Number.isFinite));
+  assert.ok(Math.max(...terrain.heights) > Math.min(...terrain.heights));
+  assert.ok(Number.isFinite(terrain.sampleLocalHeight(0, 0)));
 });
 
 test('rejects malformed grids instead of inventing source geometry', () => {

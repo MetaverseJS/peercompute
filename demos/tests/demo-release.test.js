@@ -168,7 +168,7 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   assert.match(viteConfig, /port:\s*5186/);
   assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"));
   assert.ok(viteConfig.includes("JSON.stringify('./cesium/')"));
-  assert.equal(demoPackage.dependencies.cesium, '^1.144.0');
+  assert.equal(demoPackage.dependencies.cesium, '1.144.0');
   assert.equal(demoPackage.dependencies['grib-js'], undefined);
   assert.equal(demoPackage.dependencies.netcdfjs, undefined);
   assert.ok(main.includes('baseLayer: false'));
@@ -232,14 +232,21 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   const motorcycleModule = read(`docs/motorcycle/${motorcycleModulePath}`);
   assert.ok(earthModule.includes('peercompute.geo.osm-region.v1'));
   assert.ok(earthModule.includes('OpenStreetMap'));
-  assert.ok(earthModule.includes('renderedCommands'), 'EarthGrid built bundle is stale: rendered MVT command proof missing');
-  assert.ok(earthModule.includes('peercompute.geo.shortbread-water-style.v2'), 'EarthGrid built bundle is stale: water style contract missing');
-  assert.ok(earthModule.includes('flat-blue-water-surface'), 'EarthGrid built bundle is stale: flat blue water rendering missing');
-  assert.ok(earthModule.includes('rgba(0, 128, 255, 0.5)'), 'EarthGrid built bundle is stale: exact 50% water fill missing');
+  assert.ok(earthModule.includes('peercompute.earthgrid.actual-geometry-style.v2'), 'EarthGrid built bundle is stale: buffer-geometry style contract missing');
+  assert.ok(earthModule.includes('peercompute.geo.shortbread-geometry-telemetry.v1'), 'EarthGrid built bundle is stale: Shortbread geometry lifecycle missing');
+  assert.ok(earthModule.includes('peercompute.earthgrid.water-buffer-geometry.v2'), 'EarthGrid built bundle is stale: water buffer-geometry contract missing');
+  assert.ok(earthModule.includes('flat-cesium-buffer-polygon'), 'EarthGrid built bundle is stale: flat water buffer polygon missing');
+  assert.ok(earthModule.includes('bounded-terrain-sample-median-or-zero-fallback'), 'EarthGrid built bundle is stale: truthful inland-water level model missing');
+  assert.ok(earthModule.includes('#0080ff'), 'EarthGrid built bundle is stale: exact blue water color missing');
   assert.ok(earthModule.includes('peercompute.geo.water-nurbs-outlines.v1'), 'EarthGrid built bundle is stale: NURBS shoreline contract missing');
   assert.ok(earthModule.includes('exact-degree-one-nurbs-polyline'), 'EarthGrid built bundle is stale: exact shoreline topology policy missing');
-  assert.ok(earthModule.includes('EarthGridWaterlineTopoOverlayMaterial'), 'EarthGrid built bundle is stale: submerged contour material missing');
+  assert.ok(earthModule.includes('peercompute.earthgrid.terrain-nurbs-geometry.v1'), 'EarthGrid built bundle is stale: terrain contour geometry missing');
+  assert.ok(earthModule.includes('actual-cesium-buffer-geometry'), 'EarthGrid built bundle is stale: Cesium buffer renderer missing');
+  assert.ok(earthModule.includes('Cesium.BufferPolygonCollection/BufferPolylineCollection'), 'EarthGrid built bundle is stale: buffer backend marker missing');
+  assert.ok(earthModule.includes('explicit-geodetic-heights'), 'EarthGrid built bundle is stale: physical ordering contract missing');
+  assert.ok(earthModule.includes('solid-unlit-color'), 'EarthGrid built bundle is stale: solid one-pass line material missing');
   assert.ok(earthModule.includes('terrain-source-native-zero'), 'EarthGrid built bundle is stale: truthful waterline reference missing');
+  assert.ok(!earthModule.includes('EarthGridWaterlineTopoOverlayMaterial'), 'EarthGrid must not retain the painted terrain shader');
   assert.ok(earthHtml.includes('WATER // 50%'), 'EarthGrid built HTML is stale: water legend missing');
   assert.ok(earthModule.includes('geolocation-denied-fallback'), 'EarthGrid built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.game-runtime-state.v1'));
@@ -254,12 +261,15 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.cesium-overview-renderer.v1'), 'RoadVector built bundle is stale: Cesium overview missing');
   assert.ok(motorcycleModule.includes('CappedHeightmapTerrainProvider'), 'RoadVector built bundle is stale: Cesium terrain provider missing');
+  assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_TERRAIN_TIMEOUT'), 'RoadVector built bundle is stale: bounded terrain deadline missing');
+  assert.ok(motorcycleModule.includes('aws-terrarium'), 'RoadVector built bundle is stale: reliable Terrarium terrain source missing');
   assert.ok(motorcycleModule.includes('regional-major-roads-only'), 'RoadVector built bundle is stale: bounded major-road coverage missing');
   assert.ok(motorcycleModule.includes('fhwa-national-highway-system'), 'RoadVector built bundle is stale: FHWA NHS layer missing');
   assert.ok(motorcycleModule.includes('user-selected-anchor'), 'RoadVector built bundle is stale: globe click-to-start missing');
   assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_NO_USABLE_ROAD'), 'RoadVector built bundle is stale: empty-road selection guard missing');
   assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
   assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
+  assert.ok(motorcycleHtml.includes('AWS TERRAIN TILES'), 'RoadVector built HTML is stale: Terrarium attribution missing');
   assert.ok(motorcycleModule.includes('xr-standard'));
   [
     'docs/earth/cesium/Workers/createVerticesFromHeightmap.js',

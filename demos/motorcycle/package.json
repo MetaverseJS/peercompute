@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@peercompute/geo-core": "*",
-    "cesium": "^1.144.0",
+    "cesium": "1.144.0",
     "three": "^0.182.0"
   },
   "devDependencies": {

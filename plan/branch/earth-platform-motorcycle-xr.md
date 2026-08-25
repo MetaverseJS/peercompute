@@ -445,3 +445,131 @@ remains a manual gate.
 - Composite each tile in the strict order `water fill -> water NURBS outline ->
   buildings -> roads`. Road strokes take precedence over every water pixel at
   bridges, causeways, shoreline crossings, and overlapping source geometry.
+
+## User Addendum - 2026-08-24 AKDT - Actual GIS Geometry, Not Painted Glow
+
+This addendum supersedes EarthGrid's Shortbread canvas-compositing and
+elevation-contour globe-material presentation. It does not change RoadVector's
+separate local Three/WebXR renderer or WXGlobe's compatibility contract.
+
+- EarthGrid must render ordinary GIS context as actual Cesium geometry. Water
+  is a terrain-clamped ground polygon at exactly 50% blue opacity; shorelines,
+  terrain contours, building footprints, and roads are ground polyline
+  geometry. The normal GIS base creates no canvas tile, imagery texture,
+  `PolylineGlow` material, blur, bloom, depth-fail glow, or duplicate halo
+  pass.
+- A source road, shoreline, building ring, or terrain isocontour is represented
+  by exactly one solid unlit line geometry. Its brightness, width, and color
+  belong to that represented line. Exact source paths use unit-weight
+  degree-one NURBS semantics so authoritative points are not rounded or moved
+  before Cesium consumes the sampled polyline.
+- Ground ordering is public and deterministic rather than dependent on decode
+  order: terrain contours `zIndex=0`, water surfaces `10`, shoreline NURBS
+  `20`, building wires `30`, global Shortbread roads `40`, and bounded local
+  OSM roads above the global context. Roads therefore take precedence over
+  every water fill or boundary at bridges, causeways, and crossings.
+- The globe keeps its real NOAA/AWS terrain mesh but removes the painted
+  elevation-contour material. Its front face is 3.5%-opaque black and its back
+  face is transparent. Successful provider height grids drive bounded
+  marching-triangle contour extraction; source-native levels at or below zero
+  are `#24cfff`, positive levels remain green, and all paths are clamped back
+  to the same Cesium terrain.
+- Shortbread selection is owned by an explicit camera/move-end vector-tile
+  scheduler, never by an invisible imagery-provider shim. Selection is
+  antimeridian-aware, lowers LOD until no more than 24 tiles are active, uses
+  at most six concurrent requests, retains at most 96 decoded tiles, and keeps
+  the existing 2 MiB tile, 10,000-feature, 192 MiB session, and 4,000,000
+  active-vertex bounds. Replaced generations abort and cannot leave stale
+  geometry.
+- NOAA nowCOAST radar/satellite remains an optional raster imagery layer
+  because the upstream weather product is raster. It is off by default, is
+  not a synthetic glow texture, and is the only permitted EarthGrid imagery
+  layer in this slice: zero imagery layers normally and one while current
+  weather is enabled.
+- Keep the legacy shared `ShortbreadImageryProvider` and default topo material
+  for existing RoadVector/WXGlobe consumers until those demos are separately
+  migrated. EarthGrid itself must report `rasterPainted:false`, `glow:false`,
+  actual polygon/polyline/NURBS counts, cap failures, category z-indices, and
+  source/lifecycle status through its public browser state.
+
+## Implementation Correction - 2026-08-24 AKDT - Cesium Buffer Geometry
+
+This correction supersedes the ground-clamping, ground-primitive, and
+`zIndex` implementation details in the preceding addendum. Cesium's public
+ground entity path proved unable to compile the root ocean plus concurrent
+terrain generations within a bounded startup, and its worker readiness could
+not be observed without private APIs. The user-facing actual-geometry and
+road-precedence requirements remain unchanged.
+
+- Pin Cesium to exact `1.144.0` because the selected
+  `BufferPolygonCollection` / `BufferPolylineCollection` API is experimental
+  and outside Cesium's normal deprecation guarantee. Use immutable,
+  exact-capacity snapshots; never inspect private renderer state.
+- Render water as triangulated, geodetically subdivided buffer polygons and
+  every shoreline, building ring, road, and terrain contour as one solid
+  buffer polyline. Low-zoom paths and polygon interiors must be subdivided on
+  the curved ellipsoid so sparse WGS84 geometry cannot become a chord hidden
+  inside the globe. All generated vertices and triangles remain inside the
+  published active caps.
+- Replace `zIndex` with an explicit physical-height contract. Terrain contours
+  retain their source elevation plus `0.25 m`; oceans are flat at source-native
+  zero plus `0.5 m`; inland bodies use one bounded terrain-sample median plus
+  `0.5 m`, falling back visibly to zero; shorelines reuse the matching body
+  level plus `0.75 m`; building wires use sampled terrain plus `1 m`; global
+  roads use the greater of sampled terrain, zero, and every crossed water-body
+  level plus `2 m`; local roads use sampled terrain plus `4 m`. Category
+  submission order is stable but never substitutes for the height proof.
+- Buffer readiness means exact CPU buffer counts followed by a successful
+  public Cesium `scene.postRender` for the current immutable revision. A public
+  `scene.renderError` while that revision awaits presentation invalidates the
+  revision; the app transiently revokes readiness and may recover only after a
+  later fully qualified frame. An unrelated error after presentation is not
+  retroactively attributed to the already-presented layer revision. No worker
+  count or private render-context inspection is allowed.
+- The ordinary EarthGrid base has zero imagery layers. Time-qualified NOAA
+  nowCOAST remains the sole optional source-raster overlay. The public contract
+  must report ocean and bounded-median inland display-height modes separately;
+  it must not claim that Shortbread publishes measured water elevations.
+
+## RoadVector Terrain Reliability Addendum - 2026-08-24 AKDT
+
+This addendum replaces RoadVector's NOAA-specific terrain startup contract; it
+does not change EarthGrid's independently selectable terrain sources or
+WXGlobe's NOAA compatibility gate.
+
+- RoadVector's Cesium hemisphere and local ride use AWS Terrain Tiles in
+  Terrarium encoding. The overview is fixed to the complete z0–z3 Web Mercator
+  pyramid, a structural maximum of 85 tiles rather than an exhaustible session
+  counter. Location changes replace and abort the prior terrain generation.
+- A local region resamples at most nine z12 Terrarium tiles onto the exact
+  bounded WGS84/ENU grid shared by visual triangles and physics collision.
+  Source provenance, fetch time, attribution, and non-operational-use status
+  remain public.
+- Local terrain has a 10-second deadline. Timeout or source failure must reach
+  the explicitly non-authoritative derived-plane fallback; it may never leave
+  the app indefinitely loading. Caller cancellation remains an abort and must
+  not be relabeled as source degradation.
+- Cesium road/highway imagery is not considered current until terrain allows
+  its installed providers to request and render. Built smoke must observe
+  current Terrarium, current bounded Shortbread roads, and the versioned FHWA
+  NHS layer before enabling the ride transition.
+
+## EarthGrid Broad-View Buffer Safety Addendum - 2026-08-24 AKDT
+
+- Detailed Shortbread buffer geometry starts at zoom 5. A camera rectangle
+  selecting a lower zoom must settle as an explicit `viewDeferred` revision:
+  source commands and deferred counts are retained, but no Cesium polygon or
+  polyline buffer and no GPU submission may be invented.
+- Every polygon must pass source-ring and source-point preflight caps before
+  `Cesium.PolygonGeometry.createGeometry`. In particular, the z0 world-ocean
+  polygon with continent holes may never enter a monolithic synchronous
+  triangulation path; a regional camera movement retries through the ordinary
+  bounded scheduler.
+- Built smoke must prove both scales: ready transparent terrain plus actual
+  blue/green terrain contours at the whole-world view, followed by a regional
+  zoom with presented water, shoreline, building-wire, and road buffers.
+- Local-road precedence is an exact point-and-segment contract. Every
+  densified road chord queries the active water index for the maximum
+  intersected display height, including narrow bodies whose endpoints are
+  outside the polygon, before applying the local-road offset. Matched global
+  and local revisions are required before local geometry becomes visible.

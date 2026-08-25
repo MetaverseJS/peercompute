@@ -66,25 +66,30 @@ runtime metadata to NetViz.
   proxy physics stack.
 - **Reusable Earth/GIS platform**: `packages/geo-core`, the bounded Fastify
   `services/geodata` service, and EarthGrid combine NOAA/AWS terrain,
-  bathymetry contours, official OSM Shortbread ocean and non-glacier inland
-  water rendered as flat blue 50%-opacity surfaces with exact bright-blue
-  degree-one NURBS shorelines, source-native-zero submerged contours,
-  road/building context composited with roads above all water ink,
-  local OSM roads and 3D buildings, directed road graphs, NOAA nowCOAST weather
+  actual degree-one NURBS elevation contours, official OSM Shortbread ocean and
+  non-glacier inland water rendered as blue 50%-opacity Cesium buffer polygons,
+  exact bright-blue degree-one NURBS shoreline geometry, source-native-zero
+  submerged contour geometry, building footprint wires, and solid road curves
+  with bounded curved-ellipsoid tessellation plus sampled/source heights and
+  indexed active-water floors that place global and local roads above every
+  rendered water category,
+  local OSM roads and terrain-sampled building-footprint wireframes, directed road graphs, NOAA nowCOAST weather
   descriptors, provenance, cache/freshness state, and privacy-preserving
-  location startup.
+  location startup. Its ordinary GIS base has zero imagery layers and no
+  canvas-painted map, texture glow, blur, bloom, halo, or duplicate line pass;
+  optional source-raster NOAA weather is the sole imagery overlay.
 - **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
   restriction-aware synthetic traffic with collision cages, local-origin
-  rebasing, and first/third-person views. It opens on a CesiumJS north-up NOAA
+  rebasing, and first/third-person views. It opens on a CesiumJS north-up AWS
   topographic hemisphere, overlays a bounded regional OSM major-road window,
   adds a persistent official FHWA/U.S. DOT National Highway System overview
   for Alaska and the United States, accepts globe clicks as bounded local ride
   requests, and shows validated live PeerCompute players in fixed red before the
   discrete transition into the Three.js local meter-scale ride.
-  The local visual is deliberately sparse: transparent NOAA terrain with
-  bounded NURBS contours plus two glowing NURBS wheel loops, a line frame, and
+  The local visual is deliberately sparse: transparent Terrarium terrain with
+  bounded NURBS contours plus two solid-color NURBS wheel loops, a line frame, and
   a minimalist stick rider; dense collision particles are debug-only. A
   rebase-aware exact-terrain camera floor keeps first-, third-, and stereo-XR
   optical points at least 0.35 m above the rendered surface.
@@ -117,11 +122,12 @@ Recent focused validation is green without running the full chaos lab:
   stable request counters; the full AWS composite-attribution block is exposed
   in the UI.
 
-- EarthGrid's deterministic browser gate loads rendered Shortbread ocean,
-  inland-water, road, and building commands; proves the exact flat-blue
-  50%-opacity water style, exact seam-safe NURBS shoreline, and matching
-  source-native-zero submerged terrain contours without adding another imagery
-  layer; loads a bounded
+- EarthGrid's deterministic browser gate loads actual Cesium Shortbread ocean,
+  inland-water, road, and building buffer geometry; proves exact 50%-opacity
+  polygons, seam-safe degree-one NURBS shorelines, solid road-over-water
+  physical ordering, successful post-render buffer submission, and matching
+  source-native-zero terrain NURBS contours with zero baseline imagery layers;
+  loads a bounded
   normalized OSM scene, source building heights, NOAA relief and time-qualified
   radar; then proves dense-region narrowing, stale status retention,
   scope-failure clearing/recovery, generation-race suppression, permissioned
@@ -764,13 +770,19 @@ Current demos and validation surfaces:
   NOAA ETOPO 2022 is the pole-to-pole default and AWS Terrarium is an optional
   higher-detail land source.
 - **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with the same
-  black/neon terrain rings, flat blue 50%-opacity OSM water surfaces, real OSM
-  streets/buildings, bounded local 3D scene data, source freshness/provenance,
-  user location, and optional NOAA radar or satellite imagery.
+  transparent black terrain, actual blue/green NURBS contour geometry, blue
+  50%-opacity OSM buffer polygons, exact NURBS shorelines, wireframe buildings,
+  solid OSM roads above water through explicit sampled-height offsets, bounded
+  local scene data, source
+  freshness/provenance, user location, and optional NOAA radar or satellite
+  source imagery. The normal base is geometry-only, without painted GIS
+  textures or glow effects. The whole-world camera keeps real terrain contours
+  but defers detailed Shortbread buffers until zoom 5, preventing an unbounded
+  global-ocean triangulation while reporting the deferral explicitly.
 - **RoadVector**: first/third-person particle motorcycle racing on real local
-  OSM roads and NOAA terrain, with 3D buildings, synthetic lane-aware traffic,
+  OSM roads and AWS Terrarium terrain, with source building geometry, synthetic lane-aware traffic,
   race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening CesiumJS
-  NOAA topographic hemisphere with bounded regional major roads, an official
+  Terrarium topographic hemisphere with bounded regional major roads, an official
   versioned FHWA National Highway System layer covering Alaska and the U.S.,
   click-to-start location selection, genuine
   remote PeerCompute players in red, and bright category rendering. Cesium

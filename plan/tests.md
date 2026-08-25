@@ -2308,3 +2308,128 @@
   EarthGrid NURBS waterlines`) was created without a push. Final task-attempt
   and lease closure are control-plane-only operations after this evidence
   block.
+
+## EarthGrid actual-geometry rendering strategy - 2026-08-24 AKDT
+
+- Pure terrain tests must extract deterministic finite degree-one NURBS paths
+  from the same triangular height grid Cesium receives; cover flat grids,
+  crossings above and below source-native zero, saddle/diagonal cases,
+  adaptive level spacing, hard curve/vertex limits, and observer error
+  isolation. No private Cesium terrain tile is a test or runtime dependency.
+- Pure Shortbread geometry tests must scramble decoded category order and still
+  produce water polygons at `zIndex=10`, shoreline paths at `20`, building
+  wires at `30`, and roads at `40`. Cover water holes and multipart bodies,
+  tile-edge shoreline suppression, exact 50% blue, one solid unlit line per
+  path, `ArcType.RHUMB`, and absence of canvas/glow/halo/depth-fail materials.
+- Scheduler tests must cover world, ordinary, antimeridian, and polar view
+  rectangles; LOD reduction to 24 or fewer active tiles; six-request
+  concurrency; coalescing; 96-entry LRU; stale abort; atomic replacement;
+  2 MiB response, 10,000-feature, 192 MiB session, and 4,000,000 active-vertex
+  failures. No transparent imagery-provider scheduler is permitted.
+- Earth integration tests must require supported Cesium ground polygons and
+  polylines, zero normal imagery layers, positive geometry/data-source counts,
+  real source attribution, visibility teardown/recovery, source-generation
+  isolation, transparent globe settings, and local roads ordered above global
+  context. Weather alone changes imagery count from zero to one and back.
+- Deterministic built-browser terrain fixtures must span negative and positive
+  elevations across several contour intervals. Smoke must observe at least one
+  blue at-or-below-zero contour and one green positive contour, positive
+  water/shoreline/building/road geometry, roads above water, `glow:false`,
+  `rasterPainted:false`, finite counts, and zero page/console errors.
+- Preserve the full RoadVector and WXGlobe suites because their legacy shared
+  imagery/material consumers are intentionally not migrated by this
+  EarthGrid-only request. Keep the optional bounded live-source gate and direct
+  private HTTPS proof separate from deterministic fixture CI.
+
+## EarthGrid buffer-geometry verification correction - 2026-08-24 AKDT
+
+This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
+
+- Shortbread unit tests must build actual Cesium `1.144.0` buffer snapshots and
+  compare exact primitive, vertex, triangle, hole, and byte counts. Scrambled
+  source commands must still submit water, shoreline, building, then road
+  categories, with one solid Color pass and no raster, glow, halo, bloom,
+  depth-fail material, worker job, or entity.
+- Curved-world regressions must inspect the packed Cartesian buffers, not only
+  WGS84 endpoints: a road crossing an elevated inland water polygon must have
+  every tessellated crossing point physically above the water mesh, and
+  representative polygon triangle centroids and low-zoom RHUMB midpoints must
+  remain at their declared ellipsoid height within tolerance.
+- Water/road overlap work must use bounded tile-space candidate indexing and a
+  hard intersection-operation limit with a stable fail-closed code. Adversarial
+  dense fixtures must exercise that cap. The synchronous active-water sampler
+  used by local roads must use active tile/index candidates rather than scan
+  every loaded body for every local vertex.
+- Local rendering tests must prove densification and exact-capacity buffer
+  counts, sampled terrain heights, matched active-water floors, road clearance,
+  hidden-layer refresh behavior, valid settled-empty snapshots, teardown, and
+  public post-render/render-error state transitions.
+- Application readiness tests must reject fetch failure, active-vertex or
+  operation-cap rejection, stale generations, and current-revision render
+  errors. An enabled unavailable Shortbread source may never yield
+  `READY // REAL SOURCES QUALIFIED`; an explicitly hidden optional layer may
+  settle without inventing geometry.
+- Built-browser smoke must require zero base imagery layers, positive water,
+  shoreline, building, road, submerged-contour, and positive-contour buffer
+  counts; exact CPU validation; a successful public post-render for every
+  current revision; no current render error; visible blue and green pixels;
+  local active-water road-floor wiring; and zero page/console errors. NOAA
+  weather alone changes imagery from zero to one and back.
+- Retain the complete geo-core, EarthGrid, WXGlobe, and RoadVector suites plus
+  the deterministic combined production build/static/browser release gate.
+  Run the bounded live-source gate separately, then inspect the direct Tailnet
+  HTTPS EarthGrid with a headless browser and a fresh screenshot; do not use an
+  in-terminal browser pane.
+
+## RoadVector terrain-startup regression evidence - 2026-08-24 AKDT
+
+- The overview test must prove the selected terrain source is AWS Terrarium,
+  that the complete z0–z3 pyramid is structurally capped to 85 possible tiles,
+  and that replacing a selected location aborts the old provider generation.
+- The local terrain test must resample a finite Terrarium source into the same
+  bounded WGS84/ENU triangle grid used by rendering and collision, never fetch
+  more than nine z12 source tiles, and retain exact source provenance.
+- The location-loader test must inject a terrain request that never settles and
+  prove the configured deadline returns an explicitly derived fallback without
+  hanging. Caller abort remains distinct from a source deadline.
+- Deterministic built smoke intercepts both NOAA and AWS upstreams. Its
+  Terrarium PNG is exactly 256×256, crosses provider-native zero and several
+  contour intervals, and must yield current overview terrain, current FHWA and
+  OSM road layers, non-degraded local relief, ride-mode frames, normalized
+  inputs, finite camera/rebase/reset state, and a positive physical synthetic
+  traffic impulse.
+- Executed evidence: focused terrain/location/overview `16/16` PASS;
+  `npm --prefix demos/motorcycle test` `66/66` PASS; production build PASS;
+  focused production smoke on port `43973` PASS with teardown. Exact private
+  `https://100.68.165.52:5188/` browser proof reached current real sources in
+  about 4.5 seconds and completed ride/impact checks with zero browser errors.
+
+## EarthGrid actual-buffer executed evidence - 2026-08-24 AKDT
+
+- Geo-core `65/65`, EarthGrid `48/48`, and RoadVector `66/66` pass. The
+  aggregate unit command passes `318/318` Node tests plus the mocked Chromium
+  WebXR browser harness with zero failures, skips, or cancellations.
+- Real z0 topology regression proves detailed Shortbread geometry is deferred
+  below zoom 5 before any Cesium polygon allocation. Telemetry must retain the
+  deferred tile/command/source-position counts, report `settledEmpty:true`,
+  keep all GPU presentation flags false, and retry on a regional camera move.
+- Curved-world water/road tests prove a road remains above an intersected water
+  mesh at submitted midpoints, exact segment sampling catches narrow bodies
+  with outside endpoints, holes/antimeridian cases remain correct, and both
+  per-call and shared lifetime intersection caps fail closed with stable codes.
+- Local integration proves matched global/local water revisions, point and
+  segment sampler availability, valid-empty snapshots without fabricated GPU
+  work, hidden-layer lifecycle, atomic failure retention, and scene-error
+  recovery.
+- Built EarthGrid smoke proves the safe whole-world deferred revision first,
+  then flies to Anchorage and requires presented water, shoreline NURBS,
+  building-wire, road, and blue/green terrain-contour buffers. It waits for the
+  public camera end and the final bounded height reconciliation before taking
+  the detailed snapshot. Focused repeats on `43977` and `43978` pass and close.
+- Final `npm run test:earth-platform:release` passes: all three Cesium demos
+  rebuild, static release checks pass `44/44`, and combined WXGlobe/EarthGrid/
+  RoadVector deterministic browser smoke passes on and closes port `43947`.
+- Exact private RoadVector root/catalog and EarthGrid root probes return `200`
+  at `https://100.68.165.52:5188/` and
+  `https://100.68.165.52:5187/`. Physical-headset validation is explicitly
+  NOT RUN; no headset/WebXR certification claim is made.

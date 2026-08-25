@@ -3,19 +3,26 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 import {
   createEtopo2022TerrainProvider,
-  createTopoOverlayMaterial,
   createTerrariumTerrainProvider,
   ETOPO2022_MAX_LEVEL,
   TERRARIUM_MAX_LEVEL,
-  SHORTBREAD_WATER_STYLE,
-  updateTopoMaterial,
   WEB_MERCATOR_MAX_LATITUDE
 } from '@peercompute/geo-core';
 
 import { GeodataClient, resolveEarthGeodataBaseUrl } from './api.js';
+import {
+  assertBufferGeometrySupport,
+  configureTransparentTerrainGlobe,
+  EARTH_GEOMETRY_STYLE,
+} from './layers/geometryStyle.js';
 import { renderLocalOsmRegion } from './layers/localOsm.js';
 import { createNowCoastLayer } from './layers/nowcoast.js';
-import { loadShortbreadImageryProvider } from './layers/shortbreadImagery.js';
+import {
+  loadShortbreadGeometryLayer,
+  shortbreadGeometryPresentation,
+  SHORTBREAD_GEOMETRY_DETAIL_MINIMUM_ZOOM,
+} from './layers/shortbreadGeometry.js';
+import { TerrainNurbsGeometryLayer } from './layers/terrainGeometry.js';
 import {
   formatLocalProvenance,
   LOCAL_REGION_RADII_METERS,
@@ -29,6 +36,8 @@ import './style.css';
 const FALLBACK_LOCATION = Object.freeze({ longitude: -149.9003, latitude: 61.2181, label: 'ANCHORAGE FALLBACK' });
 const EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES = 192 * 1024 * 1024;
 const EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES = 4_000_000;
+const EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS = 150;
+const EARTH_SCENE_RENDER_RECOVERY_LIMIT = 3;
 
 const elements = {
   console: document.querySelector('#console'),
@@ -67,20 +76,30 @@ const geodata = new GeodataClient({ baseUrl: geodataBaseUrl });
 const runtime = {
   ready: false,
   fatalError: null,
+  sceneRenderError: null,
+  lastSceneRenderError: null,
+  sceneRenderErrorCount: 0,
+  sceneRenderErrorFrame: -1,
+  sceneRenderConsecutiveFailures: 0,
+  sceneRenderRecoveryAttempts: 0,
   frameCount: 0,
   viewer: null,
-  terrainSource: 'noaa-etopo2022',
+  terrainSource: 'aws-terrarium',
   terrainStatus: 'initializing',
   terrainGeneration: 0,
   terrain: null,
   osmStatus: 'initializing',
   osmTelemetry: null,
-  osmProvider: null,
-  osmLayer: null,
+  osmQualifiedRevision: null,
+  osmPresentedRevision: null,
+  osmGeometry: null,
   waterStatus: 'initializing',
+  terrainContours: null,
+  vectorHeightRefreshTimer: null,
   localStatus: geodata.configured ? 'unrequested' : 'backend-unconfigured',
   localEnvelope: null,
   localRender: null,
+  localWaterRevision: null,
   localRadiusMeters: LOCAL_REGION_RADII_METERS[0],
   localGeneration: 0,
   localAbortController: null,
@@ -98,9 +117,17 @@ const runtime = {
 
 function publicState() {
   const viewer = runtime.viewer;
+  const terrainContourStyle = runtime.terrainContours?.getTelemetry?.() ?? null;
+  const localGeometry = runtime.localRender?.getTelemetry?.() ?? null;
+  const waterHeightResolution = runtime.osmTelemetry?.heightResolution ?? null;
   return {
     ready: runtime.ready,
     fatalError: runtime.fatalError,
+    sceneRenderError: runtime.sceneRenderError,
+    lastSceneRenderError: runtime.lastSceneRenderError,
+    sceneRenderErrorCount: runtime.sceneRenderErrorCount,
+    sceneRenderConsecutiveFailures: runtime.sceneRenderConsecutiveFailures,
+    sceneRenderRecoveryAttempts: runtime.sceneRenderRecoveryAttempts,
     frameCount: runtime.frameCount,
     terrainSource: runtime.terrainSource,
     terrainStatus: runtime.terrainStatus,
@@ -109,34 +136,54 @@ function publicState() {
     terrainProviderType: viewer?.terrainProvider?.wxglobe?.providerType ?? null,
     osmStatus: runtime.osmStatus,
     osmTelemetry: runtime.osmTelemetry ? { ...runtime.osmTelemetry } : null,
-    osmVisible: Boolean(runtime.osmLayer?.show),
+    osmQualifiedRevision: runtime.osmQualifiedRevision,
+    osmPresentedRevision: runtime.osmPresentedRevision,
+    osmVisible: Boolean(runtime.osmGeometry?.show),
     waterStatus: runtime.waterStatus,
-    waterVisible: Boolean(runtime.osmLayer?.show),
+    waterVisible: Boolean(runtime.osmGeometry?.show),
     waterStyle: {
-      ...SHORTBREAD_WATER_STYLE,
-      sourceLayers: [...SHORTBREAD_WATER_STYLE.sourceLayers],
-      excludedKinds: [...SHORTBREAD_WATER_STYLE.excludedKinds],
-      outline: {
-        ...SHORTBREAD_WATER_STYLE.outline,
-        colorComponents: [...SHORTBREAD_WATER_STYLE.outline.colorComponents],
+      schemaVersion: 'peercompute.earthgrid.water-buffer-geometry.v2',
+      color: EARTH_GEOMETRY_STYLE.colors.waterSurface,
+      opacity: 0.5,
+      surface: 'flat-cesium-buffer-polygon',
+      sourcePublishesWaterElevation: false,
+      waterLevelModel: waterHeightResolution?.waterSurfaceModel
+        ?? 'ocean-native-zero-inland-bounded-terrain-median-or-zero-fallback',
+      ocean: {
+        elevationMeters: 0,
+        reference: 'terrain-source-native-zero',
+        renderedBodyCount: waterHeightResolution?.oceanWaterBodyCount ?? 0,
       },
-      submergedContours: {
-        ...SHORTBREAD_WATER_STYLE.submergedContours,
-        colorComponents: [...SHORTBREAD_WATER_STYLE.submergedContours.colorComponents],
+      inland: {
+        reference: 'bounded-terrain-sample-median-or-zero-fallback',
+        maximumSamplesPerBody: waterHeightResolution?.maximumWaterLevelSamplesPerBody ?? 32,
+        derivedBodyCount: waterHeightResolution?.derivedInlandWaterBodyCount ?? 0,
+        fallbackBodyCount: waterHeightResolution?.fallbackInlandWaterBodyCount ?? 0,
+        crossTileIdentity: waterHeightResolution?.crossTileWaterBodyIdentity
+          ?? 'unavailable-in-shortbread-draw-commands',
+      },
+      elevationOffsetMeters: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.waterSurfaces,
+      rasterPainted: false,
+      outline: {
+        color: EARTH_GEOMETRY_STYLE.colors.shoreline,
+        curveModel: 'NURBS',
+        degree: 1,
+        geometry: 'degree-one-nurbs-buffer-polyline',
+        elevationOffsetMeters: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelines,
+        topologyPolicy: 'exact-degree-one-nurbs-polyline',
+        maximumSourceDeviationPixels: 0,
+        linePassesPerPath: 1,
+        glow: false,
       },
     },
-    terrainContourStyle: viewer?.scene?.globe?.material?.wxglobe
-      ? {
-        ...viewer.scene.globe.material.wxglobe,
-        contourColor: [...viewer.scene.globe.material.wxglobe.contourColor],
-        submergedContours: viewer.scene.globe.material.wxglobe.submergedContours
-          ? {
-            ...viewer.scene.globe.material.wxglobe.submergedContours,
-            color: [...viewer.scene.globe.material.wxglobe.submergedContours.color],
-          }
-          : null,
-      }
-      : null,
+    geometryStyle: {
+      ...EARTH_GEOMETRY_STYLE,
+      terrainSurface: { ...EARTH_GEOMETRY_STYLE.terrainSurface },
+      colors: { ...EARTH_GEOMETRY_STYLE.colors },
+      categoryOrder: [...EARTH_GEOMETRY_STYLE.categoryOrder],
+      heightOffsetsMeters: { ...EARTH_GEOMETRY_STYLE.heightOffsetsMeters },
+    },
+    terrainContourStyle,
     localStatus: runtime.localStatus,
     localCounts: runtime.localRender ? {
       sourceRoads: runtime.localRender.sourceRoads,
@@ -146,6 +193,8 @@ function publicState() {
       displayOmitted: runtime.localRender.displayOmitted
     } : null,
     localVisible: Boolean(runtime.localRender?.dataSource?.show),
+    localGeometry,
+    localWaterRevision: runtime.localWaterRevision,
     localRadiusMeters: runtime.localRadiusMeters,
     localSource: localSourceSnapshot(runtime.localEnvelope),
     weatherStatus: runtime.weatherStatus,
@@ -160,6 +209,8 @@ function publicState() {
     geodataConfigured: geodata.configured,
     geodataTransport: !geodata.configured ? 'unconfigured' : geodataBaseUrl === '' ? 'same-origin' : 'external-origin',
     imageryLayerCount: viewer?.imageryLayers.length ?? 0,
+    dataSourceCount: viewer?.dataSources?.length ?? 0,
+    scenePrimitiveCount: viewer?.scene?.primitives?.length ?? 0,
     contourSpacing: runtime.contourSpacing,
     contourWidth: runtime.contourWidth,
     tilesLoaded: viewer?.scene?.globe?.tilesLoaded ?? false
@@ -186,16 +237,87 @@ function updateReadout() {
   elements.readout.textContent = `FRAME ${runtime.frameCount.toLocaleString()} // SOURCES ${activeSources} // ${runtime.locationSource ?? 'WORLD'}`;
 }
 
+function recordSceneRenderError(sceneOrError, possibleError) {
+  const value = possibleError ?? sceneOrError;
+  runtime.sceneRenderError = value instanceof Error ? value.message : String(value ?? 'Cesium render failed.');
+  runtime.lastSceneRenderError = runtime.sceneRenderError;
+  runtime.sceneRenderErrorCount += 1;
+  runtime.sceneRenderErrorFrame = runtime.frameCount;
+  runtime.sceneRenderConsecutiveFailures += 1;
+  runtime.ready = false;
+  document.documentElement.dataset.earthReady = 'false';
+  elements.platformStatus.textContent = `PLATFORM: RENDER ERROR // ${runtime.sceneRenderError}`;
+  elements.platformStatus.setAttribute('role', 'alert');
+  elements.console.classList.add('console--error');
+  if (runtime.sceneRenderConsecutiveFailures <= EARTH_SCENE_RENDER_RECOVERY_LIMIT) {
+    const recoveryErrorCount = runtime.sceneRenderErrorCount;
+    runtime.sceneRenderRecoveryAttempts += 1;
+    requestAnimationFrame(() => {
+      if (!runtime.viewer || runtime.viewer.isDestroyed()) return;
+      if (runtime.sceneRenderErrorCount !== recoveryErrorCount || runtime.sceneRenderError === null) return;
+      runtime.viewer.useDefaultRenderLoop = true;
+    });
+  } else {
+    runtime.fatalError = `Cesium rendering failed repeatedly: ${runtime.sceneRenderError}`;
+  }
+}
+
 function updateReady() {
-  if (runtime.ready || runtime.fatalError) return;
+  if (runtime.fatalError) {
+    runtime.ready = false;
+    document.documentElement.dataset.earthReady = 'false';
+    return;
+  }
   const terrainReady = runtime.frameCount > 0 && (runtime.terrain?.loaded ?? 0) > 0;
-  const osmSettled = ['unavailable', 'off'].includes(runtime.osmStatus)
-    || (runtime.osmTelemetry?.loaded ?? 0) > 0;
-  const waterSettled = ['unavailable', 'off', 'live', 'degraded'].includes(runtime.waterStatus);
-  if (!terrainReady || !osmSettled || !waterSettled) return;
-  runtime.ready = true;
-  document.documentElement.dataset.earthReady = 'true';
-  elements.platformStatus.textContent = 'PLATFORM: READY // REAL SOURCES QUALIFIED';
+  const contourTelemetry = runtime.terrainContours?.getTelemetry?.();
+  const contourReady = (contourTelemetry?.activePathCount ?? 0) > 0
+    && contourTelemetry?.cpuGeometryValidated === true
+    && contourTelemetry?.gpuSubmittedFrame === true
+    && contourTelemetry?.renderReady === true;
+  const osmPresentation = shortbreadGeometryPresentation(runtime.osmTelemetry);
+  const osmSettled = (!elements.osmContext.checked)
+    || ((runtime.osmTelemetry?.loaded ?? 0) > 0
+      && (runtime.osmTelemetry?.cpuGeometryValidated === true
+        || runtime.osmTelemetry?.readiness?.bufferCountsExact === true)
+      && osmPresentation.geometrySettled);
+  const waterSettled = !elements.osmContext.checked
+    || ['live', 'degraded'].includes(runtime.waterStatus);
+  const sourcesReady = terrainReady && contourReady && osmSettled && waterSettled;
+  if (sourcesReady
+    && runtime.sceneRenderError !== null
+    && runtime.frameCount > runtime.sceneRenderErrorFrame) {
+    runtime.sceneRenderError = null;
+    runtime.sceneRenderConsecutiveFailures = 0;
+    elements.platformStatus.removeAttribute('role');
+    elements.console.classList.remove('console--error');
+  }
+  const ready = sourcesReady && runtime.sceneRenderError === null;
+  runtime.ready = ready;
+  document.documentElement.dataset.earthReady = String(ready);
+  elements.platformStatus.textContent = ready
+    ? 'PLATFORM: READY // REAL SOURCES QUALIFIED'
+    : 'PLATFORM: RENDERING // VALIDATING BUFFER GEOMETRY';
+}
+
+function scheduleVectorHeightRefresh() {
+  if (runtime.vectorHeightRefreshTimer !== null) {
+    clearTimeout(runtime.vectorHeightRefreshTimer);
+  }
+  runtime.vectorHeightRefreshTimer = setTimeout(() => {
+    runtime.vectorHeightRefreshTimer = null;
+    try {
+      runtime.osmGeometry?.refreshHeights?.();
+      if (!elements.osmContext.checked && elements.localScene.checked) {
+        runtime.localRender?.refreshHeights?.();
+      }
+    } catch (error) {
+      runtime.fatalError = error instanceof Error ? error.message : String(error);
+      elements.platformStatus.textContent = `PLATFORM: GEOMETRY ERROR // ${runtime.fatalError}`;
+      elements.platformStatus.setAttribute('role', 'alert');
+      elements.console.classList.add('console--error');
+    }
+    runtime.viewer?.scene?.requestRender?.();
+  }, EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS);
 }
 
 function updateTerrainTelemetry(telemetry, generation) {
@@ -214,7 +336,14 @@ function updateTerrainTelemetry(telemetry, generation) {
 }
 
 function createTerrainProvider(source, generation) {
-  const options = { onTelemetry: (telemetry) => updateTerrainTelemetry(telemetry, generation) };
+  const options = {
+    onTelemetry: (telemetry) => updateTerrainTelemetry(telemetry, generation),
+    onHeightmap: (heightmap) => {
+      if (generation !== runtime.terrainGeneration) return;
+      runtime.terrainContours?.acceptHeightmap(heightmap);
+      scheduleVectorHeightRefresh();
+    },
+  };
   const provider = source === 'noaa-etopo2022'
     ? createEtopo2022TerrainProvider(Cesium, options)
     : createTerrariumTerrainProvider(Cesium, options);
@@ -225,9 +354,12 @@ function createTerrainProvider(source, generation) {
 function setTerrainSource(source) {
   if (!terrainMetadata[source]) throw new RangeError(`Unknown terrain source ${source}.`);
   const viewer = runtime.viewer;
+  if (runtime.vectorHeightRefreshTimer !== null) {
+    clearTimeout(runtime.vectorHeightRefreshTimer);
+    runtime.vectorHeightRefreshTimer = null;
+  }
   const generation = runtime.terrainGeneration + 1;
   const previous = viewer.terrainProvider;
-  const provider = createTerrainProvider(source, generation);
   runtime.terrainGeneration = generation;
   runtime.terrainSource = source;
   runtime.terrainStatus = 'connecting';
@@ -238,18 +370,24 @@ function setTerrainSource(source) {
   elements.terrainSource.value = source;
   elements.terrainMode.textContent = terrainMetadata[source].mode;
   elements.terrainStatus.textContent = `${source === 'noaa-etopo2022' ? 'NOAA' : 'AWS'} CONNECTING`;
+  runtime.terrainContours?.destroy();
+  runtime.terrainContours = new TerrainNurbsGeometryLayer(Cesium, {
+    viewer,
+    contourSpacingMeters: runtime.contourSpacing,
+    lineWidthPixels: runtime.contourWidth,
+  });
+  const provider = createTerrainProvider(source, generation);
   viewer.terrainProvider = provider;
   previous?.wxglobe?.abort?.();
   viewer.scene.requestRender();
 }
 
-function configureScene(viewer, material) {
+function configureScene(viewer) {
   viewer.imageryLayers.removeAll();
   const { scene } = viewer;
+  assertBufferGeometrySupport(Cesium, scene);
   scene.backgroundColor = Cesium.Color.BLACK;
-  scene.globe.baseColor = Cesium.Color.BLACK;
-  scene.globe.material = material;
-  scene.globe.depthTestAgainstTerrain = true;
+  configureTransparentTerrainGlobe(Cesium, scene);
   scene.globe.showGroundAtmosphere = false;
   scene.globe.enableLighting = false;
   scene.globe.maximumScreenSpaceError = 2;
@@ -271,41 +409,74 @@ async function startShortbread() {
   elements.osmStatus.textContent = 'SHORTBREAD CONNECTING';
   elements.waterStatus.textContent = 'SHORTBREAD WATER CONNECTING';
   try {
-    const provider = await loadShortbreadImageryProvider(Cesium, {
-      includeWater: true,
+    const layer = await loadShortbreadGeometryLayer(Cesium, {
+      viewer: runtime.viewer,
       maximumTotalBytes: EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES,
-      maximumRenderedVertices: EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES,
+      maximumActiveVertices: EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES,
+      minimumGeometryZoom: SHORTBREAD_GEOMETRY_DETAIL_MINIMUM_ZOOM,
+      heightResolver: (longitude, latitude) => runtime.terrainContours?.sampleHeight(longitude, latitude),
+      categoryElevationOffsetsMeters: {
+        waterSurface: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.waterSurfaces,
+        shoreline: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelines,
+        building: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.buildingWires,
+        road: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.globalRoads,
+      },
       onTelemetry: (telemetry) => {
         runtime.osmTelemetry = telemetry;
-        if (telemetry.loaded > 0) runtime.waterStatus = telemetry.failed > 0 ? 'degraded' : 'live';
-        if (telemetry.renderedCommands > 0) {
-          runtime.osmStatus = telemetry.failed > 0 ? 'degraded' : 'live';
-        } else if (telemetry.loaded > 0) {
-          // Shortbread's streets layer begins at z5. A globe-scale view can
-          // therefore load valid empty low-zoom tiles. That is a settled live
-          // source state, not an endless startup failure; disclose that users
-          // must zoom for road features instead of inventing geometry.
-          runtime.osmStatus = telemetry.failed > 0 ? 'degraded' : 'live';
+        const presentation = shortbreadGeometryPresentation(telemetry);
+        if (!presentation.geometrySettled && elements.osmContext.checked) {
+          runtime.osmQualifiedRevision = null;
+          runtime.osmPresentedRevision = null;
+          runtime.localWaterRevision = null;
+          if (runtime.localRender) runtime.localRender.dataSource.show = false;
+          if (runtime.localRender && elements.localScene.checked) {
+            runtime.localStatus = presentation.terminalFailure ? 'unavailable' : 'rendering';
+            elements.localStatus.textContent = presentation.terminalFailure
+              ? 'MATCHED WATER GEOMETRY UNAVAILABLE'
+              : 'WAITING FOR MATCHED WATER GEOMETRY';
+          }
         }
-        elements.osmStatus.textContent = telemetry.renderedCommands > 0
-          ? `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested}`
+        runtime.osmStatus = presentation.status;
+        runtime.waterStatus = presentation.status;
+        if (runtime.osmGeometry) {
+          runtime.osmGeometry.show = elements.osmContext.checked && !presentation.terminalFailure;
+        }
+        elements.osmStatus.textContent = telemetry.broadViewDeferral?.active
+          ? `SHORTBREAD VIEW DEFERRED // ZOOM TO Z${telemetry.broadViewDeferral.minimumGeometryZoom} FOR BUFFER GEOMETRY`
+          : telemetry.geometry?.roadCurveCount > 0
+          ? `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.geometry.roadCurveCount} ROAD CURVES // ${telemetry.loaded}/${telemetry.requested}`
           : `SHORTBREAD ${runtime.osmStatus.toUpperCase()} // ${telemetry.loaded}/${telemetry.requested} // ZOOM FOR ROADS`;
-        elements.waterStatus.textContent = telemetry.waterCommands > 0
-          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.waterCommands} SURFACES // ${telemetry.waterNurbs?.curveCount ?? 0} NURBS EDGES`
+        elements.waterStatus.textContent = telemetry.broadViewDeferral?.active
+          ? `BLUE VIEW DEFERRED // ZOOM TO Z${telemetry.broadViewDeferral.minimumGeometryZoom} FOR WATER SURFACES`
+          : telemetry.geometry?.waterSurfaceCount > 0
+          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.geometry.waterSurfaceCount} SURFACES // ${telemetry.geometry.shorelineCurveCount} NURBS EDGES`
           : telemetry.loaded > 0
             ? `BLUE ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 0 NURBS EDGES`
             : 'BLUE CONNECTING // WAITING FOR FIRST TILE';
+        if (presentation.geometrySettled
+          && Number.isInteger(presentation.qualifiedRevision)
+          && presentation.qualifiedRevision !== runtime.osmQualifiedRevision) {
+          runtime.osmQualifiedRevision = presentation.qualifiedRevision;
+          runtime.osmPresentedRevision = presentation.presentedRevision;
+          if (runtime.localRender && elements.localScene.checked) {
+            const installed = runtime.localRender.refreshHeights?.() === true;
+            if (installed) {
+              runtime.localWaterRevision = presentation.qualifiedRevision;
+            }
+            updateLocalGeometryStatus(runtime.localRender.getTelemetry(), runtime.localGeneration);
+          }
+        }
         updateReady();
       }
     });
     if (!runtime.viewer || runtime.viewer.isDestroyed()) {
-      provider.destroy();
+      layer.destroy();
       return;
     }
-    runtime.osmProvider = provider;
-    runtime.osmLayer = runtime.viewer.imageryLayers.addImageryProvider(provider);
-    runtime.osmLayer.show = elements.osmContext.checked;
-    if ((runtime.osmTelemetry?.loaded ?? 0) === 0) {
+    runtime.osmGeometry = layer;
+    const presentation = shortbreadGeometryPresentation(runtime.osmTelemetry);
+    runtime.osmGeometry.show = elements.osmContext.checked && !presentation.terminalFailure;
+    if ((runtime.osmTelemetry?.loaded ?? 0) === 0 && presentation.status === 'connecting') {
       runtime.osmStatus = 'waiting-tiles';
       runtime.waterStatus = 'waiting-tiles';
       elements.osmStatus.textContent = 'SHORTBREAD WAITING FOR FIRST TILE // ODBL';
@@ -322,8 +493,82 @@ async function startShortbread() {
 
 function setOsmVisibility(visible) {
   elements.osmContext.checked = visible;
-  if (runtime.osmLayer) runtime.osmLayer.show = visible;
+  if (runtime.osmGeometry) {
+    const presentation = shortbreadGeometryPresentation(runtime.osmTelemetry);
+    runtime.osmGeometry.show = visible && !presentation.terminalFailure;
+    if (visible && !presentation.geometrySettled) {
+      runtime.osmQualifiedRevision = null;
+      runtime.osmPresentedRevision = null;
+      runtime.localWaterRevision = null;
+      if (runtime.localRender?.dataSource) runtime.localRender.dataSource.show = false;
+    }
+    runtime.osmTelemetry = runtime.osmGeometry.getTelemetry();
+  }
+  if (runtime.localRender) {
+    updateLocalGeometryStatus(runtime.localRender.getTelemetry(), runtime.localGeneration);
+  }
+  updateReady();
   runtime.viewer?.scene?.requestRender();
+}
+
+function updateLocalGeometryStatus(telemetry, generation) {
+  if (generation !== runtime.localGeneration) return;
+  if (!elements.localScene.checked) {
+    const presentation = localScenePresentation({
+      enabled: false,
+      envelope: runtime.localEnvelope,
+      render: runtime.localRender,
+    });
+    runtime.localStatus = presentation.status;
+    elements.localStatus.textContent = presentation.statusText;
+    elements.localProvenance.textContent = presentation.provenanceText;
+    updateReady();
+    return;
+  }
+  if (telemetry?.lastError) {
+    if (runtime.localRender?.dataSource) runtime.localRender.dataSource.show = false;
+    runtime.localStatus = 'unavailable';
+    elements.localStatus.textContent = `GEOMETRY UNAVAILABLE // ${telemetry.lastError}`;
+    elements.localProvenance.textContent = `LOCAL REGION GEOMETRY ERROR // ${telemetry.lifecycleReason ?? 'UNKNOWN'}`;
+    updateReady();
+    return;
+  }
+  const osmPresentation = shortbreadGeometryPresentation(runtime.osmTelemetry);
+  if (elements.osmContext.checked && osmPresentation.terminalFailure) {
+    if (runtime.localRender?.dataSource) runtime.localRender.dataSource.show = false;
+    runtime.localStatus = 'unavailable';
+    elements.localStatus.textContent = 'MATCHED WATER GEOMETRY UNAVAILABLE';
+    elements.localProvenance.textContent = 'LOCAL REGION HIDDEN // GLOBAL WATER GEOMETRY UNAVAILABLE';
+    updateReady();
+    return;
+  }
+  if (elements.osmContext.checked
+    && (!Number.isInteger(runtime.localWaterRevision)
+      || runtime.localWaterRevision !== runtime.osmQualifiedRevision)) {
+    if (runtime.localRender?.dataSource) runtime.localRender.dataSource.show = false;
+    runtime.localStatus = 'rendering';
+    elements.localStatus.textContent = 'WAITING FOR MATCHED WATER GEOMETRY';
+    updateReady();
+    return;
+  }
+  const localGeometrySettled = telemetry?.settledEmpty === true
+    || (telemetry?.renderReady === true && telemetry?.gpuSubmittedFrame === true);
+  if (!localGeometrySettled) {
+    if (runtime.localRender?.dataSource) runtime.localRender.dataSource.show = true;
+    runtime.localStatus = 'rendering';
+    elements.localStatus.textContent = 'VALIDATING BUFFER GEOMETRY';
+    updateReady();
+    return;
+  }
+  const presentation = localScenePresentation({
+    enabled: elements.localScene.checked,
+    envelope: runtime.localEnvelope,
+    render: runtime.localRender,
+  });
+  runtime.localStatus = presentation.status;
+  elements.localStatus.textContent = presentation.statusText;
+  elements.localProvenance.textContent = presentation.provenanceText;
+  updateReady();
 }
 
 async function loadLocalRegion() {
@@ -333,6 +578,7 @@ async function loadLocalRegion() {
   runtime.localAbortController = new AbortController();
   runtime.localRender?.destroy();
   runtime.localRender = null;
+  runtime.localWaterRevision = null;
   runtime.localEnvelope = null;
   if (!elements.localScene.checked) {
     runtime.localStatus = 'off';
@@ -371,19 +617,39 @@ async function loadLocalRegion() {
     runtime.localRadiusMeters = result.radiusMeters;
     runtime.bbox = [...result.bbox];
     runtime.localEnvelope = result.envelope;
-    runtime.localRender = renderLocalOsmRegion(Cesium, runtime.viewer, result.envelope);
-    runtime.localRender.dataSource.show = elements.localScene.checked;
-    const presentation = localScenePresentation({
-      enabled: elements.localScene.checked,
-      envelope: runtime.localEnvelope,
-      render: runtime.localRender
+    runtime.localStatus = 'rendering';
+    const osmPresentation = shortbreadGeometryPresentation(runtime.osmTelemetry);
+    const installedWaterRevision = osmPresentation.geometrySettled
+      ? osmPresentation.qualifiedRevision
+      : null;
+    runtime.localRender = renderLocalOsmRegion(Cesium, runtime.viewer, result.envelope, {
+      sampleHeight: (longitude, latitude) => runtime.terrainContours?.sampleHeight(longitude, latitude),
+      sampleWaterHeight: (longitude, latitude) => (
+        runtime.osmGeometry?.sampleWaterSurfaceHeight?.(longitude, latitude)
+      ),
+      sampleWaterHeightAlongSegment: (
+        longitude1,
+        latitude1,
+        longitude2,
+        latitude2,
+      ) => runtime.osmGeometry?.sampleMaximumWaterSurfaceHeightAlongSegment?.(
+        longitude1,
+        latitude1,
+        longitude2,
+        latitude2,
+      ),
+      onTelemetry: (telemetry) => updateLocalGeometryStatus(telemetry, generation),
     });
-    runtime.localStatus = presentation.status;
-    elements.localStatus.textContent = presentation.statusText;
-    elements.localProvenance.textContent = presentation.provenanceText;
+    runtime.localWaterRevision = Number.isInteger(installedWaterRevision)
+      ? installedWaterRevision
+      : null;
+    runtime.localRender.dataSource.show = elements.localScene.checked
+      && (!elements.osmContext.checked || Number.isInteger(runtime.localWaterRevision));
+    updateLocalGeometryStatus(runtime.localRender.getTelemetry(), generation);
     runtime.viewer.scene.requestRender();
   } catch (error) {
     if (error?.name === 'AbortError' || generation !== runtime.localGeneration) return;
+    runtime.localWaterRevision = null;
     runtime.localStatus = 'unavailable';
     elements.localStatus.textContent = `UNAVAILABLE // ${error instanceof Error ? error.message : String(error)}`;
     elements.localProvenance.textContent = `LOCAL REGION ERROR // ${error?.code ?? 'UNKNOWN'}`;
@@ -478,7 +744,7 @@ function requestBrowserLocation() {
   });
 }
 
-function configureControls(viewer, topoMaterial) {
+function configureControls(viewer) {
   elements.toggleConsole.addEventListener('click', () => {
     const collapsed = elements.console.classList.toggle('console--collapsed');
     elements.toggleConsole.textContent = collapsed ? 'SHOW' : 'HIDE';
@@ -490,27 +756,32 @@ function configureControls(viewer, topoMaterial) {
   elements.localScene.addEventListener('change', () => {
     if (runtime.localRender) {
       runtime.localRender.dataSource.show = elements.localScene.checked;
-      const presentation = localScenePresentation({
-        enabled: elements.localScene.checked,
-        envelope: runtime.localEnvelope,
-        render: runtime.localRender
-      });
-      runtime.localStatus = presentation.status;
-      elements.localStatus.textContent = presentation.statusText;
-      elements.localProvenance.textContent = presentation.provenanceText;
+      if (elements.localScene.checked) {
+        updateLocalGeometryStatus(runtime.localRender.getTelemetry(), runtime.localGeneration);
+      } else {
+        const presentation = localScenePresentation({
+          enabled: false,
+          envelope: runtime.localEnvelope,
+          render: runtime.localRender
+        });
+        runtime.localStatus = presentation.status;
+        elements.localStatus.textContent = presentation.statusText;
+        elements.localProvenance.textContent = presentation.provenanceText;
+        updateReady();
+      }
       viewer.scene.requestRender();
     } else loadLocalRegion();
   });
   elements.weatherLayer.addEventListener('change', () => setWeatherLayer(elements.weatherLayer.value));
   elements.contourSpacing.addEventListener('input', () => {
     runtime.contourSpacing = Number(elements.contourSpacing.value);
-    updateTopoMaterial(topoMaterial, { contourSpacing: runtime.contourSpacing });
+    runtime.terrainContours?.setStyle({ contourSpacingMeters: runtime.contourSpacing });
     elements.contourSpacingValue.textContent = `${runtime.contourSpacing.toLocaleString()} M`;
     viewer.scene.requestRender();
   });
   elements.lineWidth.addEventListener('input', () => {
     runtime.contourWidth = Number(elements.lineWidth.value);
-    updateTopoMaterial(topoMaterial, { contourWidth: runtime.contourWidth });
+    runtime.terrainContours?.setStyle({ lineWidthPixels: runtime.contourWidth });
     elements.lineWidthValue.textContent = `${runtime.contourWidth.toFixed(2).replace(/0$/, '')} PX`;
     viewer.scene.requestRender();
   });
@@ -580,15 +851,7 @@ function configureControls(viewer, topoMaterial) {
 async function start() {
   const initialGeneration = 1;
   runtime.terrainGeneration = initialGeneration;
-  const terrainProvider = createTerrainProvider(runtime.terrainSource, initialGeneration);
-  const topoMaterial = createTopoOverlayMaterial(Cesium, {
-    submergedContourColor: [...SHORTBREAD_WATER_STYLE.submergedContours.colorComponents],
-    waterLineElevationMeters: SHORTBREAD_WATER_STYLE.submergedContours.waterLineElevationMeters,
-    waterLineVerticalDatum: SHORTBREAD_WATER_STYLE.submergedContours.verticalDatum,
-    waterLineReference: SHORTBREAD_WATER_STYLE.submergedContours.waterLineReference,
-  });
   const viewer = new Cesium.Viewer('viewer', {
-    terrainProvider,
     baseLayer: false,
     baseLayerPicker: false,
     geocoder: false,
@@ -602,14 +865,23 @@ async function start() {
     selectionIndicator: false,
     infoBox: false,
     scene3DOnly: true,
-    requestRenderMode: false
+    requestRenderMode: false,
+    showRenderLoopErrors: false
   });
   runtime.viewer = viewer;
   viewer.scene.canvas.setAttribute('role', 'application');
-  viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth, water, road, building, terrain, and weather viewer.');
+  viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth with actual water, road, building-wire, and terrain-contour geometry plus optional source weather imagery.');
   viewer.scene.canvas.tabIndex = 0;
-  configureScene(viewer, topoMaterial);
-  const destroyControls = configureControls(viewer, topoMaterial);
+  configureScene(viewer);
+  const removeRenderError = viewer.scene.renderError.addEventListener(recordSceneRenderError);
+  runtime.cleanup.push(removeRenderError);
+  runtime.terrainContours = new TerrainNurbsGeometryLayer(Cesium, {
+    viewer,
+    contourSpacingMeters: runtime.contourSpacing,
+    lineWidthPixels: runtime.contourWidth,
+  });
+  viewer.terrainProvider = createTerrainProvider(runtime.terrainSource, initialGeneration);
+  const destroyControls = configureControls(viewer);
   runtime.cleanup.push(destroyControls);
   const removePostRender = viewer.scene.postRender.addEventListener(() => {
     runtime.frameCount += 1;
@@ -625,9 +897,14 @@ function destroy() {
   runtime.weatherGeneration += 1;
   runtime.localAbortController?.abort();
   runtime.weatherAbortController?.abort();
+  if (runtime.vectorHeightRefreshTimer !== null) {
+    clearTimeout(runtime.vectorHeightRefreshTimer);
+    runtime.vectorHeightRefreshTimer = null;
+  }
   runtime.localRender?.destroy();
   runtime.weather?.destroy();
-  runtime.osmProvider?.destroy();
+  runtime.osmGeometry?.destroy();
+  runtime.terrainContours?.destroy();
   for (const cleanup of runtime.cleanup.splice(0)) cleanup?.();
   const viewer = runtime.viewer;
   viewer?.terrainProvider?.wxglobe?.abort?.();

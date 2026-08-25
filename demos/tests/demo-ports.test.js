@@ -123,7 +123,7 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"), 'wxglobe must build to docs/wxglobe');
   assert.ok(viteConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"), 'wxglobe Cesium base URL must be nested-path safe');
   assert.ok(viteConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"), 'wxglobe must copy Cesium runtime assets');
-  assert.equal(demoPackage.dependencies.cesium, '^1.144.0');
+  assert.equal(demoPackage.dependencies.cesium, '1.144.0');
   assert.equal(demoPackage.dependencies['grib-js'], undefined, 'retired GRIB dependency must stay absent');
   assert.equal(demoPackage.dependencies.netcdfjs, undefined, 'retired NetCDF dependency must stay absent');
   assert.ok(main.includes('baseLayer: false'), 'wxglobe default must not add tiled imagery');
@@ -156,6 +156,7 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
 
 test('earth and motorcycle are first-class real-data demos with a shared backend', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const earthPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'earth', 'package.json'), 'utf8'));
   const motorcyclePackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'motorcycle', 'package.json'), 'utf8'));
   const earthConfig = fs.readFileSync(path.join(demosRoot, 'earth', 'vite.config.js'), 'utf8');
   const motorcycleConfig = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'vite.config.js'), 'utf8');
@@ -177,7 +178,8 @@ test('earth and motorcycle are first-class real-data demos with a shared backend
   assert.match(motorcycleConfig, /port:\s*5188/);
   assert.ok(earthConfig.includes("path.resolve(docsRoot, 'earth')"));
   assert.ok(motorcycleConfig.includes("path.resolve(docsRoot, 'motorcycle')"));
-  assert.equal(motorcyclePackage.dependencies.cesium, '^1.144.0');
+  assert.equal(earthPackage.dependencies.cesium, '1.144.0');
+  assert.equal(motorcyclePackage.dependencies.cesium, '1.144.0');
   assert.equal(motorcyclePackage.devDependencies['vite-plugin-static-copy'], '^4.1.1');
   assert.ok(motorcycleConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"));
   assert.ok(motorcycleConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"));

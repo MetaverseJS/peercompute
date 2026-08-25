@@ -59,7 +59,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
   hard suspension travel, tire/surface grip, translational/rotational CCD,
   deterministic race gates/laps, lane/restriction-aware synthetic traffic with
   14 physical collision cages, origin rebasing, and normalized desktop/mobile/
-  gamepad/WebXR input over real OSM roads and bounded NOAA terrain.
+  gamepad/WebXR input over real OSM roads and bounded AWS Terrarium terrain.
 - The reusable XR layer now owns application-defined actions, pointer lock,
   multitouch, gamepad and `xr-standard` snapshots, controller/hand lifecycle,
   haptics, session cleanup, first/third/XR view transforms, and terminal-style
@@ -83,8 +83,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
   desktop, pointer, touch, gamepad, and XR inputs. Keep normalized adapter
   semantics unchanged and prove the actuator/lean sign in physics and built
   browser tests.
-- Start RoadVector in a separate north-up hemisphere scene using bounded NOAA
-  ETOPO relief and an official Shortbread z5 5×5 regional major-road window.
+- Start RoadVector in a separate north-up hemisphere scene using bounded AWS
+  Terrarium relief and an official Shortbread z5 5×5 regional major-road window.
   Pause the local particle simulation until `RIDE THIS REGION`; make the
   12,742 km overview-to-2,400 m local-to-one-meter transition explicit.
 - Integrate genuine PeerCompute player presence. Publish only a coarse 0.1°
@@ -136,6 +136,42 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `https://100.68.165.52:5187/` and RoadVector
   `https://100.68.165.52:5188/`, with same-origin APIs/Cesium assets and an
   IP-SAN certificate. The physical-headset matrix remains manual and NOT RUN.
+
+### RoadVector Terrain Reliability Snapshot - 2026-08-24 AKDT
+
+- A private-browser diagnosis proved RoadVector itself, its HTTPS listener,
+  geodata API, FHWA artifact, and Shortbread source were healthy; indefinite
+  NOAA ETOPO root requests were preventing Cesium imagery requests and the
+  local ride load from settling.
+- RoadVector now uses AWS Terrarium for both scales. The overview is limited to
+  the complete z0–z3 pyramid (85 possible tiles), and the local render/physics
+  grid resamples no more than nine z12 source tiles. Local source work has a
+  10-second deadline and truthfully degrades to the existing derived plane on
+  timeout or source failure.
+- Current evidence: RoadVector `66/66`, production build, focused built-browser
+  smoke, and exact private HTTPS browser/ride/traffic-impact checks all pass.
+  The live app reached current terrain/FHWA/OSM state in roughly 4.5 seconds
+  with no browser error; no Tailscale Serve/Funnel was introduced.
+
+### EarthGrid Buffer-Geometry Completion Snapshot - 2026-08-24 AKDT
+
+- EarthGrid emits immutable Cesium `BufferPolygonCollection` and
+  `BufferPolylineCollection` snapshots for water, exact degree-one shoreline
+  NURBS, building wires, roads, and terrain contours. The ordinary base has
+  zero imagery layers and no canvas-painted glow/halo path; current NOAA
+  weather is the only optional raster layer.
+- Road precedence is physical. Global and local road segments use bounded
+  point and exact segment queries against the active water index, resolve the
+  maximum crossed flat display level, and apply a larger radial offset before
+  packing curved-world geometry.
+- Whole-world Shortbread detail is explicitly deferred below zoom 5. That
+  settled revision publishes deferred source counts with zero submitted GPU
+  buffers, while a regional camera atomically replaces it with presented
+  detailed geometry. Pre-Cesium ring/point caps prevent the global z0 ocean
+  topology from becoming an unbounded synchronous triangulation.
+- Readiness distinguishes deliberate empty/deferred revisions, detailed
+  post-render presentation, terminal source/cap failures, and transient scene
+  errors. No private Cesium render state is inspected.
 
 ### Current Validation Snapshot - 2026-08-22 AKDT
 
@@ -1083,3 +1119,57 @@ The root node should exist on a domain secured with SSL enabling all executable 
   boundary, not an elevation. NOAA ETOPO uses EGM2008 heights and Terrarium is
   provider-native, so the common shader threshold is explicitly
   `terrain-source-native-zero`, not universal MSL or an inland-water mask.
+
+## EarthGrid actual-geometry rendering snapshot - 2026-08-24 AKDT
+
+- Replace EarthGrid's rasterized Shortbread canvas and painted globe contour
+  shader with bounded public Cesium ground geometry. Preserve RoadVector's
+  shared imagery-provider consumer and WXGlobe's material independently.
+- Use exact solid linework with no texture glow: terrain isocontours,
+  degree-one shoreline NURBS, building footprint wires, and road paths each
+  receive one geometry pass. Water alone remains a 50%-opacity blue ground
+  polygon; optional NOAA weather remains source raster imagery.
+- Enforce category precedence with ground `zIndex`: contours `0`, water `10`,
+  shoreline `20`, building wires `30`, global roads `40`, and local roads
+  higher. Decode order can never put water above a road.
+- Feed successful canonical NOAA/AWS height grids into bounded contour
+  extraction instead of inspecting private Cesium terrain tiles or duplicating
+  source requests. Anchor levels at source-native zero, use blue below/at zero
+  and green above, and retain exact degree-one path telemetry.
+- Give the vector layer an explicit antimeridian-aware camera selector,
+  concurrency/cache/body/feature/vertex limits, generation cancellation,
+  atomic tile replacement, visible attribution, and fail-closed capability
+  checks. The ordinary EarthGrid base must have zero imagery layers.
+
+## EarthGrid Cesium buffer-geometry correction snapshot - 2026-08-24 AKDT
+
+- The public-ground-geometry prototype was rejected after a real Cesium run:
+  one large root-ocean entity remained in worker creation for more than 40
+  seconds, concurrent terrain generations accumulated, and its only
+  per-primitive readiness probe was private. EarthGrid now uses Cesium
+  `1.144.0` buffer collections pinned exactly in every Cesium demo manifest.
+- Shortbread water is synchronous triangulated `BufferPolygonCollection`
+  geometry. Shorelines, building footprint wires, global and local roads, and
+  terrain isocontours are exact-capacity `BufferPolylineCollection` geometry.
+  The normal base has zero imagery layers and all geometry reports one solid
+  Color pass, `rasterPainted:false`, and `glow:false`.
+- Curved-world correctness is explicit: RHUMB polylines and flat water polygon
+  interiors are geodetically subdivided before packing so low-zoom WGS84
+  features never become hidden straight-ECEF chords. Every generated vertex
+  and triangle participates in the hard active caps.
+- Rendering precedence is physical rather than a nonexistent Buffer `zIndex`:
+  sampled/source heights receive increasing category offsets, and both global
+  and local road crossings clamp their base to the highest matching active
+  water-body display level before the road offset is applied.
+- Oceans remain source-native zero. Each inland polygon derives one bounded
+  median from available terrain samples and its shoreline shares that flat
+  display level; unresolved bodies disclose a zero fallback until the next
+  atomic height refresh. This remains display geometry, not a claim that
+  Shortbread publishes measured lake or river elevation.
+- A current immutable revision is ready only after exact CPU buffer counts and
+  the next successful public `scene.postRender`. A public `scene.renderError`
+  while that revision awaits presentation, cap rejection, fetch failure, or a
+  stale generation keeps it unready. The app transiently revokes readiness on
+  a later scene error and recovers only after a later fully qualified frame;
+  an unrelated post-presentation error is not retroactively assigned to an
+  already-presented layer revision.

@@ -2,11 +2,12 @@ import { bboxFromCenter, snapBboxOutward } from '@peercompute/geo-core';
 
 import {
   createDerivedFlatTerrainGrid,
-  loadEtopoTerrainGrid,
+  loadTerrariumTerrainGrid,
 } from '../world/terrainGrid.js';
 import { createMotorcycleSceneData } from '../world/sceneData.js';
 
 export const MOTORCYCLE_REGION_RADII_METERS = Object.freeze([1_200, 800, 500]);
+export const MOTORCYCLE_TERRAIN_TIMEOUT_MS = 10_000;
 
 const DENSITY_ERROR_CODES = new Set([
   'REGION_RESULT_LIMIT_EXCEEDED',
@@ -45,8 +46,9 @@ export function motorcycleRegionBbox(location, radiusMeters) {
 
 /**
  * Loads one bounded OSM region, narrowing only for declared density limits.
- * NOAA terrain failure produces an explicitly non-authoritative degraded plane
- * so the game remains inspectable without misrepresenting relief provenance.
+ * Terrarium terrain failure or timeout produces an explicitly
+ * non-authoritative degraded plane so the game remains inspectable without
+ * misrepresenting relief provenance.
  */
 export async function loadMotorcycleLocation({
   geodata,
@@ -54,7 +56,8 @@ export async function loadMotorcycleLocation({
   radiiMeters = MOTORCYCLE_REGION_RADII_METERS,
   fetchImpl = globalThis.fetch,
   signal,
-  terrainLoader = loadEtopoTerrainGrid,
+  terrainLoader = loadTerrariumTerrainGrid,
+  terrainTimeoutMs = MOTORCYCLE_TERRAIN_TIMEOUT_MS,
   sceneDataFactory = createMotorcycleSceneData,
 } = {}) {
   if (!geodata?.osmRegion) throw new TypeError('A GeodataClient-compatible source is required.');
@@ -62,6 +65,9 @@ export async function loadMotorcycleLocation({
     throw new TypeError('radiiMeters must be a non-empty array.');
   }
   const normalizedLocation = normalizeMotorcycleLocation(location);
+  if (!Number.isSafeInteger(terrainTimeoutMs) || terrainTimeoutMs < 1) {
+    throw new RangeError('terrainTimeoutMs must be a positive safe integer.');
+  }
   const attempts = [];
   let envelope = null;
   let bbox = null;
@@ -91,15 +97,32 @@ export async function loadMotorcycleLocation({
 
   let terrain;
   let terrainError = null;
+  const terrainTimeoutController = new AbortController();
+  let terrainTimedOut = false;
+  const terrainTimeoutId = setTimeout(() => {
+    terrainTimedOut = true;
+    const error = new Error(`RoadVector terrain exceeded its ${terrainTimeoutMs} ms deadline.`);
+    error.code = 'ERR_MOTORCYCLE_TERRAIN_TIMEOUT';
+    terrainTimeoutController.abort(error);
+  }, terrainTimeoutMs);
+  const terrainSignal = signal
+    ? AbortSignal.any([signal, terrainTimeoutController.signal])
+    : terrainTimeoutController.signal;
   try {
-    terrain = await terrainLoader({ bbox, fetchImpl, signal });
+    terrain = await terrainLoader({ bbox, fetchImpl, signal: terrainSignal });
   } catch (error) {
-    if (abortError(error)) throw error;
+    if (signal?.aborted || (abortError(error) && !terrainTimedOut)) throw error;
     terrainError = Object.freeze({
-      code: error?.code ?? 'ERR_NOAA_TERRAIN',
-      message: error?.message ?? String(error),
+      code: terrainTimedOut
+        ? 'ERR_MOTORCYCLE_TERRAIN_TIMEOUT'
+        : error?.code ?? 'ERR_TERRARIUM_TERRAIN',
+      message: terrainTimedOut
+        ? `RoadVector terrain exceeded its ${terrainTimeoutMs} ms deadline.`
+        : error?.message ?? String(error),
     });
     terrain = createDerivedFlatTerrainGrid({ bbox });
+  } finally {
+    clearTimeout(terrainTimeoutId);
   }
   const sceneData = sceneDataFactory(envelope, terrain);
   return Object.freeze({

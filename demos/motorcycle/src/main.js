@@ -491,9 +491,9 @@ async function loadLocation(location, { source = 'manual' } = {}) {
   // controls that now describe a different physical location.
   teardownWorld({ clearLoad: true });
   setError();
-  setPlatform('loading', 'OSM ROADS + NOAA TERRAIN');
+  setPlatform('loading', 'OSM ROADS + AWS TERRARIUM');
   elements.osmStatus.textContent = 'LOADING BOUNDED REGION';
-  elements.terrainStatus.textContent = 'LOADING NOAA ETOPO 2022';
+  elements.terrainStatus.textContent = 'LOADING AWS TERRARIUM';
   elements.regionStatus.textContent = `REQUESTED ${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`;
 
   try {
@@ -542,8 +542,8 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     elements.longitude.value = String(loaded.location.longitude);
     elements.osmStatus.textContent = `${loaded.sceneData.status.toUpperCase()} // ${loaded.sceneData.counts.sourceRoads} ROADS`;
     elements.terrainStatus.textContent = loaded.terrainDegraded
-      ? `DEGRADED PLANE // ${loaded.terrainError?.message ?? 'NOAA UNAVAILABLE'}`
-      : `NOAA LIVE // ${loaded.terrain.width}×${loaded.terrain.height}`;
+      ? `DEGRADED PLANE // ${loaded.terrainError?.message ?? 'TERRARIUM UNAVAILABLE'}`
+      : `AWS TERRARIUM LIVE // ${loaded.terrain.width}×${loaded.terrain.height}`;
     elements.regionStatus.textContent = `${loaded.radiusMeters} M RADIUS // ${loaded.sceneData.counts.renderedRoadSegments} ROAD SEGMENTS // ${loaded.sceneData.counts.renderedBuildings} BUILDINGS`;
     elements.provenance.textContent = `OSM ${loaded.sceneData.status.toUpperCase()} // FETCHED ${loaded.envelope.fetchedAt ?? 'UNKNOWN'} // ${loaded.sceneData.provenance.attribution}`;
     elements.trafficStatus.textContent = `${initial.traffic.spawnedVehicleCount} SYNTHETIC // ${initial.trafficPhysics.added} PHYSICAL`;

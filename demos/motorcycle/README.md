@@ -2,14 +2,14 @@
 
 RoadVector is a location-based motorcycle racing demo built from reusable
 PeerCompute geospatial, particle-rigid, traffic, and WebXR modules. It loads a
-bounded OpenStreetMap-derived road scene from `services/geodata`,
-samples NOAA ETOPO 2022 into a local ENU terrain mesh, derives a deterministic
+bounded OpenStreetMap-derived road scene from `services/geodata`, samples AWS
+Terrarium elevation tiles into a local ENU terrain mesh, derives a deterministic
 race course from real connected OSM node IDs, and simulates the motorcycle and
 traffic collision cages on the CPU at 120 Hz.
 
 Startup is a separate CesiumJS north-up hemisphere overview centered on the
-permitted browser location. Cesium owns the WGS84 globe, camera, NOAA ETOPO
-terrain, contours, OSM overlay, and coarse live-player markers. An official
+permitted browser location. Cesium owns the WGS84 globe, camera, bounded AWS
+Terrarium terrain, contours, OSM overlay, and coarse live-player markers. An official
 OSM Shortbread z5 window overlays only the regional motorway, trunk, and
 primary network. That road overlay is intentionally bounded to a center-out
 5×5 / 25-tile window rather than pretending to be complete hemisphere
@@ -24,8 +24,8 @@ never enter the particle solver or WebXR ride scene.
 
 The local ride keeps its exact triangle terrain and six-body particle-rigid
 motorcycle for collision and dynamics, but no longer exposes that dense
-geometry by default. NOAA elevations generate bounded genuine Three.js NURBS
-contours over a 3.5%-opacity terrain surface. The visible motorcycle is exactly
+geometry by default. Terrarium elevations generate bounded genuine Three.js
+NURBS contours over a 3.5%-opacity terrain surface. The visible motorcycle is exactly
 two rational NURBS wheel loops at the physical rolling radius, five sparse
 frame/fork/swingarm curves, and a six-curve stick rider. Append
 `?physicsDebug=1` to expose capped collision particles and contact markers for
@@ -136,11 +136,12 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
   failure is nonfatal and never substitutes synthetic traffic as a player.
 - Roads/buildings retain `© OpenStreetMap contributors`, ODbL 1.0, source base
   time, fetched/freshness/cache state, and derived-database notice.
-- Terrain retains NOAA/NCEI ETOPO 2022 attribution and not-for-navigation
-  limitations. The Cesium overview uses a fresh 128-unique-tile terrain budget
-  for each selected location and reports any exhausted/degraded state. A failed
-  local terrain sample becomes an explicitly labeled degraded plane; it is
-  never called live relief.
+- Terrain retains AWS Terrain Tiles registry attribution and not-for-navigation
+  limitations. The Cesium overview is structurally limited to the complete
+  z0–z3 Web Mercator pyramid (85 possible tiles), so moving between locations
+  cannot exhaust a session counter. Local relief loads at most nine z12 source
+  tiles and has a 10-second deadline. A failed or timed-out local sample becomes
+  an explicitly labeled degraded plane; it is never called live relief.
 - The FHWA National Highway System overview retains the exact upstream version,
   item/layer identity, archive/member hashes, source counts, original metadata,
   derivation parameters, tile checksums, and Alaska coverage. It is generalized
@@ -168,7 +169,7 @@ origin rebasing, resets, and disposal. The mocked Chromium WebXR gate uses
 real Three r182 raycasting and mesh transforms while faking only the browser XR
 system/session/input boundaries. Overview tests additionally cover north-up
 Cesium camera placement, polar/dateline tile wrapping, explicit terrain/road
-budgets, ETOPO decoding, major-road filtering, metric camera/gate scale,
+budgets, Terrarium decoding/resampling, major-road filtering, metric camera/gate scale,
 coarse-location privacy, stale/capped presence, fixed-red rendering, and
 nonfatal relay failure.
 

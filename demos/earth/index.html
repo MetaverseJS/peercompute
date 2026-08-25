@@ -53,16 +53,16 @@
           </section>
 
           <section class="control-block">
-            <label class="control-label" for="terrain-source"><span>TERRAIN SOURCE</span><output id="terrain-mode">POLE-TO-POLE</output></label>
+            <label class="control-label" for="terrain-source"><span>TERRAIN SOURCE</span><output id="terrain-mode">DETAIL ±85°</output></label>
             <select id="terrain-source">
               <option value="noaa-etopo2022">NOAA ETOPO 2022 // GLOBAL</option>
-              <option value="aws-terrarium">AWS TERRARIUM // DETAIL ±85°</option>
+              <option value="aws-terrarium" selected>AWS TERRARIUM // DETAIL ±85° // DEFAULT</option>
             </select>
           </section>
 
           <section class="control-block toggle-stack">
-            <label><input id="osm-context" type="checkbox" checked /> <span>OSM SHORTBREAD WATER + ROADS + BUILDINGS</span></label>
-            <label><input id="local-scene" type="checkbox" checked /> <span>LOCAL 3D ROADS + BUILDINGS</span></label>
+            <label><input id="osm-context" type="checkbox" checked /> <span>OSM ACTUAL GEOMETRY // WATER + ROADS + BUILDINGS</span></label>
+            <label><input id="local-scene" type="checkbox" checked /> <span>LOCAL ROAD + BUILDING GEOMETRY</span></label>
           </section>
 
           <section class="control-block">
@@ -94,18 +94,18 @@
           </div>
 
           <section class="legend" aria-label="Map legend">
-            <span class="legend__water">WATER // 50% + NURBS EDGE</span>
-            <span class="legend__road">ROADS</span>
-            <span class="legend__building">BUILDINGS</span>
-            <span class="legend__weather">WEATHER</span>
-            <span class="legend__terrain">TERRAIN</span>
+            <span class="legend__water">WATER // 50% BUFFER POLYGON</span>
+            <span class="legend__road">ROADS // SOLID LINES</span>
+            <span class="legend__building">BUILDING WIRES</span>
+            <span class="legend__weather">WEATHER // SOURCE RASTER</span>
+            <span class="legend__terrain">TERRAIN // NURBS CONTOURS</span>
           </section>
 
           <footer class="source-note">
             <p><strong>DISPLAY / GAME CONTEXT ONLY.</strong> Not navigation, routing, warning, or live-traffic data.</p>
             <p id="osm-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a> // DERIVED DATABASE</p>
             <p id="local-provenance">LOCAL REGION UNREQUESTED // ODBL 1.0 DERIVED DATABASE // FRESHNESS NOT AVAILABLE</p>
-            <p>Water: OSM Shortbread ocean and non-glacier inland-water polygons, flat blue terrain-draped fill at 50% opacity, plus a bright-blue bounded NURBS shoreline. Shortbread does not publish numeric inland-water elevations. Terrain contours at or below the active terrain source's native 0 m reference use the same shoreline blue. Terrain: NOAA ETOPO 2022 or AWS Open Data Terrarium. Weather: NOAA nowCOAST rendered WMS imagery.</p>
+            <p>Geometry: OSM Shortbread ocean and non-glacier inland-water flat Cesium buffer polygons at 50% opacity, exact degree-one NURBS shoreline buffer lines, building wires, and solid road lines. Oceans use source-native zero; each inland polygon uses a bounded median of available terrain samples, with an explicit zero fallback until refresh. Road crossings are raised above the matched water level. Detailed Shortbread buffers begin at zoom 5; the whole-world camera truthfully defers them instead of triangulating the global ocean as one unbounded polygon. Terrain contours remain visible actual buffer-line geometry: source-native elevations at or below zero use shoreline blue and positive elevations use green. The base uses no painted GIS canvas, texture glow, blur, bloom, or halo pass. Shortbread publishes boundaries but no measured water elevation, so every water height remains display-only. Terrain: NOAA ETOPO 2022 or AWS Open Data Terrarium. Optional weather is NOAA nowCOAST source raster imagery.</p>
           </footer>
         </div>
       </aside>
