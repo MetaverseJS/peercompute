@@ -31,6 +31,7 @@
             <div><dt>OSM REGION</dt><dd id="osm-status">UNREQUESTED</dd></div>
             <div><dt>TERRAIN</dt><dd id="terrain-status">UNREQUESTED</dd></div>
             <div><dt>CESIUM GLOBE</dt><dd id="overview-status">LOADING AWS TERRAIN + FHWA NHS + OSM</dd></div>
+            <div><dt>SOURCE CACHE</dt><dd id="cache-status">INITIALIZING // LOCAL DEVICE + BACKEND</dd></div>
             <div><dt>PLAYERS</dt><dd id="player-status">CONNECTING // LOCATION PRIVATE</dd></div>
             <div><dt>PHYSICS</dt><dd id="physics-status">WAITING</dd></div>
             <div><dt>TRAFFIC</dt><dd id="traffic-status">SYNTHETIC // WAITING</dd></div>
@@ -45,6 +46,7 @@
             <h2 id="location-heading">LOCATION // CLICK GLOBE TO START</h2>
             <p>CLICK OR TAP A DRAWN ROAD ANYWHERE ON THE GLOBE. A PLAYABLE LOCAL ROAD REGION LOADS BEFORE RIDE MODE ENABLES.</p>
             <p>ELIGIBLE USER-SELECTED LOCATIONS ARE SHARED WITH PEERS ONLY AS A COARSE 0.1° CELL AFTER LOAD SUCCESS.</p>
+            <p>BOUNDED ROAD-TILE + TERRAIN BYTES STAY IN A LOCAL-ONLY STATE MANAGER CACHE; THEY ARE NOT REPLICATED TO PEERS.</p>
             <div class="button-grid button-grid--two">
               <button id="locate" type="button">USE MY LOCATION</button>
               <button id="fallback" type="button">ANCHORAGE</button>
@@ -96,6 +98,7 @@
             <p><strong>GAME / VISUALIZATION ONLY.</strong> Not navigation, traffic, routing, road-condition, or terrain-clearance data.</p>
             <p>Roads/buildings: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> // <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a>.</p>
             <p>Globe/GIS engine: CesiumJS. Relief: AWS Terrain Tiles in Terrarium encoding. Nationwide roads: FHWA National Highway System via U.S. DOT BTS, generalized for display. Street traffic is deterministic application-generated simulation, never a live traffic feed.</p>
+            <p>Cache: bounded OSM Shortbread and AWS Terrarium bytes use a local-only PeerCompute StateManager artifact tier plus the same-origin geodata backend. Artifact bytes never enter the replicated Yjs document.</p>
             <p><a href="./licenses/NOTICE.md" target="_blank" rel="noopener noreferrer">DATA + SOFTWARE NOTICES</a> // NOT FOR NAVIGATION.</p>
             <p id="provenance">SOURCE PROVENANCE UNAVAILABLE</p>
           </footer>

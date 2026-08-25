@@ -10,6 +10,9 @@ warning service.
 - `GET /healthz`
 - `GET /api/v1/catalog`
 - `GET /api/v1/geo/osm?bbox=s,w,n,e&layers=roads,buildings&vehicle=motorcycle`
+- `GET /api/v1/cache/osm-shortbread/tilejson`
+- `GET /api/v1/cache/osm-shortbread/:z/:x/:y.mvt`
+- `GET /api/v1/cache/aws-terrarium/:z/:x/:y.png`
 
 The catalog is generated in the canonical `@peercompute/geo-core` source order
 used by EarthGrid. Its `data.sources` entries have exact source-ID parity, and
@@ -29,6 +32,29 @@ capped at 8 MiB by default. A response that reaches an upstream element/category
 bound or exceeds the complete serialized-response bound fails with HTTP `422`
 and asks the client to request a smaller region. The service never slices,
 truncates, paginates, or caches a partial normalized region.
+
+## Bounded source caching
+
+The OSM region cache is limited to 128 entries and 128 MiB, with an 8 MiB
+entry bound. Shortbread and Terrarium share a separate 512-entry, 128 MiB
+cache: TileJSON and PNG responses are capped at 512 KiB and MVT responses at
+2 MiB. Shortbread admission also caps selected decoded features at 25,000 and
+coordinate positions at 1,000,000 per tile. Identical misses are coalesced and
+pending loads reserve capacity before fetching.
+
+Verified bytes retain strong SHA-256 ETags and support `If-None-Match`/`304`.
+Shortbread is fresh for five minutes with a 24-hour stale-on-error bound;
+Terrarium is fresh for seven days with a 30-day stale-on-error bound. Fixed
+source routes have a 360-request-per-minute client budget. An Overpass cold
+fill makes at most two attempts under one 25-second deadline, with one 150 ms
+backoff, and retries only transport failures or HTTP 408, 429, and 5xx
+responses. Schema, size, truncation, redirect, and other 4xx failures are not
+retried.
+
+Source hosts and paths are compiled into the service. Cache routes reject
+query parameters and never accept a caller-provided URL or host. NOAA ETOPO
+and nowCOAST remain browser-direct catalog sources; this service does not
+provide an arbitrary NOAA or general-purpose proxy.
 
 ## Configuration
 

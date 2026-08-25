@@ -4,6 +4,7 @@ import { PbfReader } from 'pbf';
 export const SHORTBREAD_TILEJSON_URL = 'https://vector.openstreetmap.org/shortbread_v1/tilejson.json';
 export const SHORTBREAD_ALLOWED_ORIGIN = 'https://vector.openstreetmap.org';
 export const SHORTBREAD_MAX_ZOOM = 14;
+export const SHORTBREAD_MAXIMUM_FEATURES_PER_TILE = 25_000;
 export const SHORTBREAD_WATER_STYLE = Object.freeze({
   schemaVersion: 'peercompute.geo.shortbread-water-style.v2',
   color: '#0080ff',
@@ -136,7 +137,7 @@ export function decodeShortbreadTile(arrayBuffer, {
   x,
   y,
   z,
-  maximumFeatures = 10_000,
+  maximumFeatures = SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
   includeWater = false,
 } = {}) {
   assertTileCoordinate(x, 'x');
@@ -145,7 +146,9 @@ export function decodeShortbreadTile(arrayBuffer, {
   if (!(arrayBuffer instanceof ArrayBuffer) && !ArrayBuffer.isView(arrayBuffer)) {
     throw new TypeError('Shortbread tile must be an ArrayBuffer or typed-array view.');
   }
-  if (!Number.isInteger(maximumFeatures) || maximumFeatures < 1 || maximumFeatures > 25_000) {
+  if (!Number.isInteger(maximumFeatures)
+    || maximumFeatures < 1
+    || maximumFeatures > SHORTBREAD_MAXIMUM_FEATURES_PER_TILE) {
     throw new RangeError('maximumFeatures must be between 1 and 25,000.');
   }
   if (typeof includeWater !== 'boolean') throw new TypeError('includeWater must be a boolean.');

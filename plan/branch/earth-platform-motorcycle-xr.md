@@ -573,3 +573,51 @@ WXGlobe's NOAA compatibility gate.
   intersected display height, including narrow bodies whose endpoints are
   outside the polygon, before applying the local-road offset. Matched global
   and local revisions are required before local geometry becomes visible.
+
+## User Addendum - 2026-08-25 AKDT - Land-Side Shoreline Pair And Shared Caches
+
+- Every rendered blue water boundary receives a separate green companion curve
+  immediately on its land side. It is actual buffer/NURBS geometry with one
+  solid color pass, not an outline material, texture, bloom, duplicated halo,
+  or source-boundary claim. Ocean/lake outer rings and land-island holes must
+  choose opposite offset directions correctly.
+- Preserve exact blue source geometry, suppress synthetic vector-tile closure
+  edges for both curves, keep open fragments open, bound sharp-corner miters,
+  and report the companion's source/curve/control/tessellated vertex counts and
+  display-derived offset policy.
+- Cache validated road and terrain artifacts locally through PeerCompute
+  `StateManager` and at the loopback geodata backend. Large or precise payloads
+  remain local/backend-only and must not be replicated over Yjs or presence.
+- Both cache tiers require hard entry/byte/session bounds, deterministic keys,
+  source-specific TTL/stale policy, coalescing, integrity/content validation,
+  abort isolation, eviction/clear lifecycle, and public hit/miss/stale/error
+  telemetry. Backend source routing is fixed/allowlisted; clients cannot supply
+  arbitrary proxy URLs.
+- EarthGrid and RoadVector use same-origin cached source routes when available,
+  with a truthful direct-source fallback for static hosting. Cache hits may not
+  weaken attribution, freshness, source-status, request caps, or generated
+  geometry caps.
+
+## Implementation Result - 2026-08-25 AKDT - Land Pair, Cache Tiers, And Performance
+
+- COMPLETE: every rendered blue shoreline has one distinct green land-side
+  curve. The final private Anchorage frame reports `175` blue plus `175` green
+  curves, zero unpaired curves, actual Cesium buffers, one solid pass per
+  curve, and no raster paint, glow, halo, or duplicate line pass.
+- COMPLETE: StateManager owns local-only memory/IndexedDB road and terrain
+  artifact caches outside Yjs. The backend owns independent byte-bounded
+  Shortbread/Terrarium and normalized-region caches behind fixed same-origin
+  routes. NOAA ETOPO stays direct and every source retains its real authority,
+  license, freshness, and degraded state.
+- COMPLETE: the shared Shortbread feature hard limit is 25,000 after the
+  official Alaska z5 tile demonstrated 12,848 selected features. Backend,
+  local cache validator, EarthGrid buffers, and RoadVector imagery share that
+  bound; 25,001 rejects without weakening byte, coordinate, or vertex caps.
+- COMPLETE: request-render mode, bounded z10 Terrarium detail, relaxed
+  screen-space error, terrain-burst reconciliation, and warm cache reuse reduce
+  EarthGrid churn while retaining progressive real terrain and truthful
+  telemetry. Detailed Shortbread geometry is still deferred at broad views.
+- VERIFIED: aggregate unit `349/349` plus mocked WebXR, release build/static
+  `44/44` plus combined browser smoke, private EarthGrid paired-line frame,
+  RoadVector 25/25-tile frame, backend ETag/304, and private WXGlobe readiness
+  all pass. Physical-headset validation remains explicitly NOT RUN.

@@ -63,6 +63,12 @@ export {
   StateManager
 } from './stateManager/StateManager.js';
 export { DataState } from './stateManager/DataState.js';
+export {
+  LOCAL_ARTIFACT_CACHE_DATABASE,
+  LOCAL_ARTIFACT_CACHE_SCHEMA,
+  LOCAL_ARTIFACT_CACHE_STORE,
+  LocalArtifactCache
+} from './stateManager/LocalArtifactCache.js';
 export { NetworkManager } from './networkManager/NetworkManager.js';
 export {
   ComputeManager,

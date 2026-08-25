@@ -2409,6 +2409,7 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Geo-core `65/65`, EarthGrid `48/48`, and RoadVector `66/66` pass. The
   aggregate unit command passes `318/318` Node tests plus the mocked Chromium
   WebXR browser harness with zero failures, skips, or cancellations.
+
 - Real z0 topology regression proves detailed Shortbread geometry is deferred
   below zoom 5 before any Cesium polygon allocation. Telemetry must retain the
   deferred tile/command/source-position counts, report `settledEmpty:true`,
@@ -2433,3 +2434,75 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   at `https://100.68.165.52:5188/` and
   `https://100.68.165.52:5187/`. Physical-headset validation is explicitly
   NOT RUN; no headset/WebXR certification claim is made.
+
+## EarthGrid land companion and StateManager/backend cache strategy - 2026-08-25 AKDT
+
+- Geometry units must prove outer-ring and hole land-side orientation, open
+  tile-edge fragments, antimeridian continuity, bounded miters/offsets, exact
+  degree-one NURBS metadata, one solid pass per represented curve, and full
+  source/generated vertex accounting. Scrambled input ordering must still keep
+  roads physically above water and both shoreline members.
+- StateManager cache units must cover local-only/non-replicated storage,
+  schema/content-type/byte validation, fresh hit, stale-on-error, request
+  coalescing, subscriber abort isolation, deterministic LRU/byte eviction,
+  IndexedDB recovery/fallback, namespace clearing, and truthful statistics.
+- Geodata service tests must cover allowlisted Shortbread/Terrarium cache keys,
+  coordinate/zoom/dimension validation, upstream timeouts and size caps,
+  exact response bytes/content types/ETags, fresh/coalesced/stale states,
+  byte-cap eviction, and rejection of arbitrary upstream URLs. NOAA ETOPO stays
+  a bounded direct-source path and must not be mislabeled as backend-cached.
+- EarthGrid and RoadVector browser smokes must prove cold backend/local misses,
+  warm cache hits without duplicate upstream calls, unchanged source
+  attribution/readiness, a positive green land-companion count beside blue
+  shoreline curves, finite bounded geometry, and zero page/console errors.
+- Record cold/warm load timing and cache byte/entry telemetry. Run focused
+  suites first, then the complete backend/unit/build/static/browser release
+  gates; keep live-source and physical-headset checks explicitly separate.
+
+## EarthGrid land companion and cache executed evidence - 2026-08-25 AKDT
+
+- PASS: land-side topology/buffer coverage plus shared source-consumer boundary
+  tests. Final geo-core is `80/80`; exact 25,000-feature input succeeds and
+  25,001 fails through decoder, legacy imagery, local-cache validation, and
+  EarthGrid buffer geometry. The 2 MiB/coordinate/vertex limits are unchanged.
+- PASS: PeerCompute StateManager/DataState/local artifact tests `214/214` and
+  the focused local-cache slice `19/19`. Tests prove the artifact tier never
+  touches Yjs, persists locally when IndexedDB exists, falls back to memory,
+  coalesces loads, isolates subscriber abort, reserves bytes, evicts by bounded
+  LRU, validates cold records, and degrades cache-admission failure to a direct
+  bounded request.
+- PASS: geodata `60/60`. Fixed routes preserve validated Shortbread/Terrarium
+  bytes, media types, SHA-256 ETags, bodyless 304s, hit/miss/coalesced/stale
+  state, bounded retries, stale-on-error, reservation accounting, exact source
+  attribution, SSRF resistance, request-rate/concurrency limits, and cache
+  health telemetry. A live cached `5/4/7.mvt` probe returned 833,903 bytes and
+  then a matching bodyless `304` cache hit.
+- PASS: `npm run test:earth-platform:unit` on Node `v24.18.0`: `349/349`
+  Node tests—geo-core `80`, geodata `60`, EarthGrid `48`, WXGlobe `28`, XR
+  `22`, physics `33`, traffic `12`, RoadVector `66`—plus the mocked Chromium
+  RoadVector WebXR harness; zero failures, skips, or cancellations.
+- PASS: `npm run test:earth-platform:release`: WXGlobe, EarthGrid, and
+  RoadVector rebuilt with 391 Cesium runtime/notice items per build; static
+  release checks passed `44/44`; combined deterministic built HTTPS browser
+  smoke passed and closed owned port `43947`. Its same-context warm reloads
+  prove positive StateManager road/terrain hits with no duplicate fixed-route
+  backend request and `yjsReplicated:false`.
+- PASS: optional `npm run test:earth-platform:live` completed in 14.1 seconds:
+  current Shortbread ocean/water/508-road/one-building tile, bounded Overpass
+  172-road/100-building/705-edge region on its second allowed attempt, current
+  nowCOAST frame aged 4.88 minutes, finite NOAA ETOPO samples, and a valid
+  69,200-byte AWS Terrarium tile.
+- PASS: exact private EarthGrid browser proof reached `ready`/`local-live` with
+  1,522 road curves, 164 water surfaces, 175 blue shorelines, exactly 175 green
+  land companions, a satisfied pair invariant, and zero console/page errors.
+  The inspected 1440x900 gallery capture is the current real-source frame.
+- PASS: exact private RoadVector browser proof reached ready in 12.195 seconds
+  with all 25/25 z5 context tiles, 217 major roads, five current Terrarium
+  overview tiles, current FHWA geometry, 1,620 local roads, secure context,
+  zero failed responses, and zero console/page errors.
+- PASS: direct WXGlobe private HTTPS proof reports secure context, ready,
+  `CappedHeightmapTerrainProvider`, positive loaded terrain, zero imagery, no
+  fatal error, and zero browser errors at `https://100.68.165.52:5186/`.
+- NOT RUN: physical headset enter/exit/re-enter, controller/hand/haptics,
+  comfort, and headset performance remain manual hardware gates. No physical
+  WebXR certification is claimed.

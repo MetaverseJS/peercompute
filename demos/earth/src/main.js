@@ -2,12 +2,16 @@ import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 import {
+  createCachedGeoFetch,
   createEtopo2022TerrainProvider,
   createTerrariumTerrainProvider,
   ETOPO2022_MAX_LEVEL,
-  TERRARIUM_MAX_LEVEL,
+  fetchEtopo2022Heightmap,
+  fetchEtopo2022Samples,
+  fetchTerrariumHeightmap,
   WEB_MERCATOR_MAX_LATITUDE
 } from '@peercompute/geo-core';
+import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 
 import { GeodataClient, resolveEarthGeodataBaseUrl } from './api.js';
 import {
@@ -36,8 +40,11 @@ import './style.css';
 const FALLBACK_LOCATION = Object.freeze({ longitude: -149.9003, latitude: 61.2181, label: 'ANCHORAGE FALLBACK' });
 const EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES = 192 * 1024 * 1024;
 const EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES = 4_000_000;
-const EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS = 150;
+const EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS = 750;
 const EARTH_SCENE_RENDER_RECOVERY_LIMIT = 3;
+const EARTH_ROAD_SOURCE_CACHE_MAXIMUM_BYTES = 32 * 1024 * 1024;
+const EARTH_TERRAIN_SOURCE_CACHE_MAXIMUM_BYTES = 64 * 1024 * 1024;
+const EARTH_TERRARIUM_MAX_LEVEL = 10;
 
 const elements = {
   console: document.querySelector('#console'),
@@ -51,6 +58,7 @@ const elements = {
   localProvenance: document.querySelector('#local-provenance'),
   weatherStatus: document.querySelector('#weather-status'),
   weatherTime: document.querySelector('#weather-time'),
+  cacheStatus: document.querySelector('#cache-status'),
   regionStatus: document.querySelector('#region-status'),
   cursorPosition: document.querySelector('#cursor-position'),
   locate: document.querySelector('#locate'),
@@ -71,7 +79,10 @@ const elements = {
 };
 
 const geodataBaseUrl = resolveEarthGeodataBaseUrl();
-const geodata = new GeodataClient({ baseUrl: geodataBaseUrl });
+const directSourceFetch = globalThis.fetch.bind(globalThis);
+let activeSourceFetch = directSourceFetch;
+const sourceFetch = (input, init) => activeSourceFetch(input, init);
+const geodata = new GeodataClient({ baseUrl: geodataBaseUrl, fetchImpl: sourceFetch });
 
 const runtime = {
   ready: false,
@@ -96,6 +107,12 @@ const runtime = {
   waterStatus: 'initializing',
   terrainContours: null,
   vectorHeightRefreshTimer: null,
+  sourceCacheManager: null,
+  roadSourceCache: null,
+  terrainSourceCache: null,
+  cachedGeoFetch: null,
+  sourceCacheTelemetry: null,
+  sourceCacheError: null,
   localStatus: geodata.configured ? 'unrequested' : 'backend-unconfigured',
   localEnvelope: null,
   localRender: null,
@@ -129,6 +146,7 @@ function publicState() {
     sceneRenderConsecutiveFailures: runtime.sceneRenderConsecutiveFailures,
     sceneRenderRecoveryAttempts: runtime.sceneRenderRecoveryAttempts,
     frameCount: runtime.frameCount,
+    sourceCache: sourceCacheSnapshot(),
     terrainSource: runtime.terrainSource,
     terrainStatus: runtime.terrainStatus,
     terrainGeneration: runtime.terrainGeneration,
@@ -174,6 +192,20 @@ function publicState() {
         maximumSourceDeviationPixels: 0,
         linePassesPerPath: 1,
         glow: false,
+        landCompanion: {
+          color: EARTH_GEOMETRY_STYLE.colors.shorelineLandline,
+          geometry: 'distinct-degree-one-nurbs-buffer-polyline',
+          side: 'land',
+          offsetSpace: runtime.osmTelemetry?.shorelineCompanion?.offsetSpace
+            ?? 'global-web-mercator-tile-pixels',
+          requestedOffsetPixels: runtime.osmTelemetry?.shorelineCompanion?.requestedOffsetPixels ?? 2,
+          elevationOffsetMeters: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelineLandlines,
+          curveCount: runtime.osmTelemetry?.geometry?.shorelineLandlineCurveCount ?? 0,
+          linePassesPerPath: 1,
+          displayDerived: true,
+          glow: false,
+          halo: false,
+        },
       },
     },
     geometryStyle: {
@@ -217,6 +249,75 @@ function publicState() {
   };
 }
 
+function sourceCacheSnapshot() {
+  return {
+    schemaVersion: 'peercompute.earthgrid.source-cache.v1',
+    owner: 'PeerCompute StateManager',
+    storage: 'local-only-memory-indexeddb',
+    yjsReplicated: false,
+    backendProxyConfigured: geodataBaseUrl !== null,
+    backendRoutePolicy: 'fixed-same-origin-or-configured-origin-no-upstream-url-input',
+    road: runtime.roadSourceCache?.getStats?.() ?? null,
+    terrain: runtime.terrainSourceCache?.getStats?.() ?? null,
+    transport: runtime.cachedGeoFetch?.getTelemetry?.() ?? runtime.sourceCacheTelemetry,
+    error: runtime.sourceCacheError,
+  };
+}
+
+function updateSourceCacheStatus(telemetry = runtime.cachedGeoFetch?.getTelemetry?.()) {
+  runtime.sourceCacheTelemetry = telemetry ? { ...telemetry } : null;
+  if (runtime.sourceCacheError) {
+    elements.cacheStatus.textContent = `LOCAL CACHE UNAVAILABLE // ${runtime.sourceCacheError}`;
+    return;
+  }
+  const hits = telemetry?.cacheHits ?? 0;
+  const misses = telemetry?.cacheMisses ?? 0;
+  const backend = geodataBaseUrl === null ? 'DIRECT SOURCE' : 'BACKEND + LOCAL';
+  elements.cacheStatus.textContent = `${backend} // ${hits} HIT // ${misses} MISS`;
+}
+
+function initializeSourceCaches() {
+  try {
+    const manager = new StateManager(null, {
+      enablePersistence: false,
+      disableNetworkProvider: true,
+      disableBroadcast: true,
+    });
+    const roadCache = manager.createLocalArtifactCache({
+      name: 'earthgrid-road-source-v1',
+      maximumEntries: 64,
+      maximumBytes: EARTH_ROAD_SOURCE_CACHE_MAXIMUM_BYTES,
+      maximumEntryBytes: 2 * 1024 * 1024,
+      persistent: true,
+    });
+    const terrainCache = manager.createLocalArtifactCache({
+      name: 'earthgrid-terrain-source-v1',
+      maximumEntries: 192,
+      maximumBytes: EARTH_TERRAIN_SOURCE_CACHE_MAXIMUM_BYTES,
+      maximumEntryBytes: 512 * 1024,
+      persistent: true,
+    });
+    const cachedFetch = createCachedGeoFetch({
+      fetchImpl: directSourceFetch,
+      geodataBaseUrl,
+      localRoadCache: roadCache,
+      localTerrainCache: terrainCache,
+      directFallback: true,
+      onTelemetry: updateSourceCacheStatus,
+    });
+    runtime.sourceCacheManager = manager;
+    runtime.roadSourceCache = roadCache;
+    runtime.terrainSourceCache = terrainCache;
+    runtime.cachedGeoFetch = cachedFetch;
+    activeSourceFetch = cachedFetch;
+    updateSourceCacheStatus(cachedFetch.getTelemetry());
+  } catch (error) {
+    runtime.sourceCacheError = error instanceof Error ? error.message : String(error);
+    activeSourceFetch = directSourceFetch;
+    updateSourceCacheStatus(null);
+  }
+}
+
 window.__earthDemo = {
   getState: publicState,
   setLocation: (location) => applyLocation(location, { source: 'api', fly: true }),
@@ -228,7 +329,7 @@ window.__earthDemo = {
 
 const terrainMetadata = Object.freeze({
   'noaa-etopo2022': Object.freeze({ mode: 'POLE-TO-POLE', maxLevel: ETOPO2022_MAX_LEVEL, maximumLatitude: 90 }),
-  'aws-terrarium': Object.freeze({ mode: 'DETAIL ±85°', maxLevel: TERRARIUM_MAX_LEVEL, maximumLatitude: WEB_MERCATOR_MAX_LATITUDE })
+  'aws-terrarium': Object.freeze({ mode: 'BOUNDED DETAIL ±85°', maxLevel: EARTH_TERRARIUM_MAX_LEVEL, maximumLatitude: WEB_MERCATOR_MAX_LATITUDE })
 });
 
 function updateReadout() {
@@ -256,6 +357,7 @@ function recordSceneRenderError(sceneOrError, possibleError) {
       if (!runtime.viewer || runtime.viewer.isDestroyed()) return;
       if (runtime.sceneRenderErrorCount !== recoveryErrorCount || runtime.sceneRenderError === null) return;
       runtime.viewer.useDefaultRenderLoop = true;
+      runtime.viewer.scene.requestRender();
     });
   } else {
     runtime.fatalError = `Cesium rendering failed repeatedly: ${runtime.sceneRenderError}`;
@@ -303,8 +405,15 @@ function scheduleVectorHeightRefresh() {
   if (runtime.vectorHeightRefreshTimer !== null) {
     clearTimeout(runtime.vectorHeightRefreshTimer);
   }
-  runtime.vectorHeightRefreshTimer = setTimeout(() => {
+  const refreshWhenTerrainSettles = () => {
     runtime.vectorHeightRefreshTimer = null;
+    if ((runtime.terrain?.inFlight ?? 0) > 0 || (runtime.terrain?.activeRetries ?? 0) > 0) {
+      runtime.vectorHeightRefreshTimer = setTimeout(
+        refreshWhenTerrainSettles,
+        EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS,
+      );
+      return;
+    }
     try {
       runtime.osmGeometry?.refreshHeights?.();
       if (!elements.osmContext.checked && elements.localScene.checked) {
@@ -317,7 +426,11 @@ function scheduleVectorHeightRefresh() {
       elements.console.classList.add('console--error');
     }
     runtime.viewer?.scene?.requestRender?.();
-  }, EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS);
+  };
+  runtime.vectorHeightRefreshTimer = setTimeout(
+    refreshWhenTerrainSettles,
+    EARTH_VECTOR_HEIGHT_REFRESH_DELAY_MS,
+  );
 }
 
 function updateTerrainTelemetry(telemetry, generation) {
@@ -337,6 +450,22 @@ function updateTerrainTelemetry(telemetry, generation) {
 
 function createTerrainProvider(source, generation) {
   const options = {
+    maxLevel: source === 'noaa-etopo2022' ? ETOPO2022_MAX_LEVEL : EARTH_TERRARIUM_MAX_LEVEL,
+    fetchHeightmap: source === 'noaa-etopo2022'
+      ? (url, requestOptions = {}) => fetchEtopo2022Heightmap(url, {
+        ...requestOptions,
+        fetchImpl: sourceFetch,
+      })
+      : (url, requestOptions = {}) => fetchTerrariumHeightmap(url, {
+        ...requestOptions,
+        fetchImpl: sourceFetch,
+      }),
+    ...(source === 'noaa-etopo2022' ? {
+      fetchSamples: (points, requestOptions = {}) => fetchEtopo2022Samples(points, {
+        ...requestOptions,
+        fetchImpl: sourceFetch,
+      }),
+    } : {}),
     onTelemetry: (telemetry) => updateTerrainTelemetry(telemetry, generation),
     onHeightmap: (heightmap) => {
       if (generation !== runtime.terrainGeneration) return;
@@ -390,7 +519,7 @@ function configureScene(viewer) {
   configureTransparentTerrainGlobe(Cesium, scene);
   scene.globe.showGroundAtmosphere = false;
   scene.globe.enableLighting = false;
-  scene.globe.maximumScreenSpaceError = 2;
+  scene.globe.maximumScreenSpaceError = 6;
   scene.fog.enabled = false;
   scene.highDynamicRange = false;
   scene.skyAtmosphere.show = false;
@@ -411,6 +540,7 @@ async function startShortbread() {
   try {
     const layer = await loadShortbreadGeometryLayer(Cesium, {
       viewer: runtime.viewer,
+      fetchImpl: sourceFetch,
       maximumTotalBytes: EARTH_SHORTBREAD_MAXIMUM_TOTAL_BYTES,
       maximumActiveVertices: EARTH_SHORTBREAD_MAXIMUM_RENDERED_VERTICES,
       minimumGeometryZoom: SHORTBREAD_GEOMETRY_DETAIL_MINIMUM_ZOOM,
@@ -418,6 +548,7 @@ async function startShortbread() {
       categoryElevationOffsetsMeters: {
         waterSurface: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.waterSurfaces,
         shoreline: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelines,
+        landline: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelineLandlines,
         building: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.buildingWires,
         road: EARTH_GEOMETRY_STYLE.heightOffsetsMeters.globalRoads,
       },
@@ -449,10 +580,10 @@ async function startShortbread() {
         elements.waterStatus.textContent = telemetry.broadViewDeferral?.active
           ? `BLUE VIEW DEFERRED // ZOOM TO Z${telemetry.broadViewDeferral.minimumGeometryZoom} FOR WATER SURFACES`
           : telemetry.geometry?.waterSurfaceCount > 0
-          ? `BLUE ${runtime.waterStatus.toUpperCase()} // ${telemetry.geometry.waterSurfaceCount} SURFACES // ${telemetry.geometry.shorelineCurveCount} NURBS EDGES`
+          ? `BLUE/GREEN ${runtime.waterStatus.toUpperCase()} // ${telemetry.geometry.waterSurfaceCount} SURFACES // ${telemetry.geometry.shorelineCurveCount} WATER + ${telemetry.geometry.shorelineLandlineCurveCount ?? 0} LAND EDGES`
           : telemetry.loaded > 0
-            ? `BLUE ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 0 NURBS EDGES`
-            : 'BLUE CONNECTING // WAITING FOR FIRST TILE';
+            ? `BLUE/GREEN ${runtime.waterStatus.toUpperCase()} // 0 SURFACES IN VIEW // 0 PAIRED EDGES`
+            : 'BLUE/GREEN CONNECTING // WAITING FOR FIRST TILE';
         if (presentation.geometrySettled
           && Number.isInteger(presentation.qualifiedRevision)
           && presentation.qualifiedRevision !== runtime.osmQualifiedRevision) {
@@ -849,6 +980,7 @@ function configureControls(viewer) {
 }
 
 async function start() {
+  initializeSourceCaches();
   const initialGeneration = 1;
   runtime.terrainGeneration = initialGeneration;
   const viewer = new Cesium.Viewer('viewer', {
@@ -865,7 +997,8 @@ async function start() {
     selectionIndicator: false,
     infoBox: false,
     scene3DOnly: true,
-    requestRenderMode: false,
+    requestRenderMode: true,
+    maximumRenderTimeChange: Number.POSITIVE_INFINITY,
     showRenderLoopErrors: false
   });
   runtime.viewer = viewer;
@@ -885,7 +1018,7 @@ async function start() {
   runtime.cleanup.push(destroyControls);
   const removePostRender = viewer.scene.postRender.addEventListener(() => {
     runtime.frameCount += 1;
-    if (runtime.frameCount % 20 === 0) updateReadout();
+    updateReadout();
     updateReady();
   });
   runtime.cleanup.push(removePostRender);
@@ -905,6 +1038,8 @@ function destroy() {
   runtime.weather?.destroy();
   runtime.osmGeometry?.destroy();
   runtime.terrainContours?.destroy();
+  void runtime.cachedGeoFetch?.destroy?.();
+  void runtime.sourceCacheManager?.destroy?.();
   for (const cleanup of runtime.cleanup.splice(0)) cleanup?.();
   const viewer = runtime.viewer;
   viewer?.terrainProvider?.wxglobe?.abort?.();

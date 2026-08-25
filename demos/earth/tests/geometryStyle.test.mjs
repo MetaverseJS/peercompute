@@ -23,14 +23,19 @@ test('freezes one-pass actual-geometry styling and road-over-water ordering', ()
     'terrain-contour',
     'water-surface',
     'shoreline',
+    'shoreline-landline',
     'building-wireframe',
     'global-road',
     'local-road',
   ]);
   assert.ok(EARTH_GEOMETRY_STYLE.heightOffsetsMeters.globalRoads > EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelines);
+  assert.ok(EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelineLandlines > EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelines);
+  assert.ok(EARTH_GEOMETRY_STYLE.heightOffsetsMeters.buildingWires > EARTH_GEOMETRY_STYLE.heightOffsetsMeters.shorelineLandlines);
   assert.ok(EARTH_GEOMETRY_STYLE.heightOffsetsMeters.globalRoads > EARTH_GEOMETRY_STYLE.heightOffsetsMeters.waterSurfaces);
   assert.ok(EARTH_GEOMETRY_STYLE.heightOffsetsMeters.localRoads > EARTH_GEOMETRY_STYLE.heightOffsetsMeters.globalRoads);
   assert.equal(EARTH_GEOMETRY_STYLE.roadsTopmost, true);
+  assert.equal(EARTH_GEOMETRY_STYLE.colors.shoreline, '#24cfff');
+  assert.equal(EARTH_GEOMETRY_STYLE.colors.shorelineLandline, '#33ff73');
 });
 
 test('configures a translucent real terrain globe without a painted material', () => {

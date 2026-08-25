@@ -68,7 +68,8 @@ runtime metadata to NetViz.
   `services/geodata` service, and EarthGrid combine NOAA/AWS terrain,
   actual degree-one NURBS elevation contours, official OSM Shortbread ocean and
   non-glacier inland water rendered as blue 50%-opacity Cesium buffer polygons,
-  exact bright-blue degree-one NURBS shoreline geometry, source-native-zero
+  exact bright-blue degree-one NURBS shoreline geometry with a separately
+  displaced green land-side companion curve, source-native-zero
   submerged contour geometry, building footprint wires, and solid road curves
   with bounded curved-ellipsoid tessellation plus sampled/source heights and
   indexed active-water floors that place global and local roads above every
@@ -78,6 +79,9 @@ runtime metadata to NetViz.
   location startup. Its ordinary GIS base has zero imagery layers and no
   canvas-painted map, texture glow, blur, bloom, halo, or duplicate line pass;
   optional source-raster NOAA weather is the sole imagery overlay.
+  Shortbread and default AWS Terrarium source bytes use a bounded local-only
+  `StateManager` artifact tier outside Yjs plus fixed, byte-bounded same-origin
+  backend cache routes; source bytes and tile keys are never peer-replicated.
 - **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
@@ -459,13 +463,14 @@ Dev servers:
 
 Current direct Tailnet HTTPS development handoffs:
 
+- WXGlobe: `https://100.68.165.52:5186/`
 - EarthGrid: `https://100.68.165.52:5187/`
 - RoadVector: `https://100.68.165.52:5188/`
 
-They are private-IP listeners with an IP-SAN self-signed development
+These are private-IP listeners with an IP-SAN self-signed development
 certificate, not Tailscale Serve or Funnel; the headset/browser must accept or
-trust that certificate first. Their geodata dependency remains loopback-only
-behind the same-origin Vite proxy.
+trust that certificate first. EarthGrid and RoadVector keep their geodata
+dependency loopback-only behind the same-origin Vite proxy.
 
 Multiplayer bot controls:
 - CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
@@ -771,7 +776,8 @@ Current demos and validation surfaces:
   higher-detail land source.
 - **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with the same
   transparent black terrain, actual blue/green NURBS contour geometry, blue
-  50%-opacity OSM buffer polygons, exact NURBS shorelines, wireframe buildings,
+  50%-opacity OSM buffer polygons, exact blue NURBS shorelines with paired green
+  land-side curves, wireframe buildings,
   solid OSM roads above water through explicit sampled-height offsets, bounded
   local scene data, source
   freshness/provenance, user location, and optional NOAA radar or satellite
@@ -779,6 +785,13 @@ Current demos and validation surfaces:
   textures or glow effects. The whole-world camera keeps real terrain contours
   but defers detailed Shortbread buffers until zoom 5, preventing an unbounded
   global-ocean triangulation while reporting the deferral explicitly.
+  Cesium request-render mode avoids a continuous idle render loop, while
+  bounded browser/StateManager caches (32 MiB roads, 64 MiB terrain) and backend
+  caches retain Shortbread and default Terrarium source bytes without putting
+  them in replicated Yjs state. The
+  interactive EarthGrid Terrarium path stops at z10 with a relaxed six-pixel
+  screen-space error to keep regional source fan-out bounded, and vector-height
+  snapshots reconcile once after each quiescent terrain burst.
 - **RoadVector**: first/third-person particle motorcycle racing on real local
   OSM roads and AWS Terrarium terrain, with source building geometry, synthetic lane-aware traffic,
   race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening CesiumJS

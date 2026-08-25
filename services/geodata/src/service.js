@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto';
+import { SHORTBREAD_MAX_ZOOM, TERRARIUM_MAX_LEVEL } from '@peercompute/geo-core';
 import { createCatalogEnvelope, SOURCE_LICENSES } from './catalog.js';
 import { GeodataError } from './errors.js';
 import { CoalescingTtlLruCache } from './lib/cache.js';
 import { raceWithSignal } from './lib/semaphore.js';
 import { normalizeOverpassRegion } from './osm/normalize.js';
 import { createOverpassProvider } from './providers/overpass.js';
+import {
+  createSourceArtifactProvider,
+  parseTileCoordinates
+} from './providers/source-artifacts.js';
 
 export const SERVICE_VERSION = '0.1.0';
 
@@ -89,7 +94,9 @@ export function createGeodataService({
   fetchImpl = globalThis.fetch,
   clock = Date.now,
   cache,
+  sourceCache,
   overpassProvider,
+  sourceArtifactProvider,
   processInfo = {
     nodeVersion: process.version,
     platform: process.platform,
@@ -99,15 +106,43 @@ export function createGeodataService({
 }) {
   const regionCache = cache ?? new CoalescingTtlLruCache({
     maxEntries: config.limits.cacheMaxEntries,
+    maxBytes: config.limits.cacheMaxBytes,
+    maxEntryBytes: config.limits.cacheMaxEntryBytes,
     freshTtlMs: config.limits.cacheFreshTtlMs,
     staleIfErrorMs: config.limits.cacheStaleIfErrorMs,
     clock
   });
+  const artifactCache = sourceCache ?? new CoalescingTtlLruCache({
+    maxEntries: config.limits.sourceCacheMaxEntries,
+    maxBytes: config.limits.sourceCacheMaxBytes,
+    maxEntryBytes: config.limits.sourceCacheMaxEntryBytes,
+    freshTtlMs: config.limits.shortbreadFreshTtlMs,
+    staleIfErrorMs: config.limits.shortbreadStaleIfErrorMs,
+    sizeOf: (value) => value.bytes.byteLength,
+    clock
+  });
   const provider = overpassProvider ?? createOverpassProvider({ config, fetchImpl });
+  const artifactProvider = sourceArtifactProvider ?? createSourceArtifactProvider({ config, fetchImpl });
+
+  async function getSourceArtifact(cacheKey, loader, ttl, signal) {
+    const sharedResult = artifactCache.getOrLoad(cacheKey, loader, ttl);
+    const result = await raceWithSignal(sharedResult, signal);
+    return Object.freeze({
+      ...result.value,
+      cacheStatus: result.cacheStatus,
+      fresh: result.fresh,
+      fetchedAtMs: result.fetchedAtMs,
+      expiresAtMs: result.expiresAtMs,
+      staleUntilMs: result.staleUntilMs,
+      refreshErrorCode: result.refreshErrorCode ?? null
+    });
+  }
 
   return Object.freeze({
     cache: regionCache,
+    sourceCache: artifactCache,
     provider,
+    sourceArtifactProvider: artifactProvider,
 
     getHealthEnvelope() {
       const now = clock();
@@ -136,25 +171,53 @@ export function createGeodataService({
           readiness: {
             ready,
             catalog: true,
-            osmRegion: ready
+            osmRegion: ready,
+            shortbreadCache: true,
+            terrariumCache: true
           },
           sourceCapabilities: {
             terrainCatalog: true,
             globalOsmVectorCatalog: true,
+            globalOsmVectorAdapter: {
+              configured: true,
+              mode: 'fixed-upstream-memory-cache'
+            },
+            terrariumAdapter: {
+              configured: true,
+              mode: 'fixed-upstream-memory-cache'
+            },
             localOsmAdapter: {
               configured: provider.configured,
               mode: provider.mode
             },
             weatherCatalog: true
           },
-          cache: regionCache.stats,
-          upstream: provider.stats,
+          cache: {
+            osmRegion: regionCache.stats,
+            sourceArtifacts: artifactCache.stats
+          },
+          upstream: {
+            overpass: provider.stats,
+            sourceArtifacts: artifactProvider.stats
+          },
           limits: {
             bboxMaxAxisMeters: config.limits.bboxMaxAxisMeters,
             bboxMaxAreaSquareMeters: config.limits.bboxMaxAreaSquareMeters,
             maxConcurrentOverpassCalls: config.limits.maxConcurrentOverpassCalls,
             maxResponseBytes: config.limits.overpassMaxResponseBytes,
-            maxNormalizedResponseBytes: config.limits.normalizedResponseMaxBytes
+            maxNormalizedResponseBytes: config.limits.normalizedResponseMaxBytes,
+            osmCacheMaxEntries: config.limits.cacheMaxEntries,
+            osmCacheMaxBytes: config.limits.cacheMaxBytes,
+            sourceCacheMaxEntries: config.limits.sourceCacheMaxEntries,
+            sourceCacheMaxBytes: config.limits.sourceCacheMaxBytes,
+            sourceCacheMaxEntryBytes: config.limits.sourceCacheMaxEntryBytes,
+            sourceMaxConcurrentCalls: config.limits.sourceMaxConcurrentCalls,
+            sourceMaxQueuedCalls: config.limits.sourceMaxQueuedCalls,
+            shortbreadTileJsonMaxBytes: config.limits.shortbreadTileJsonMaxBytes,
+            shortbreadTileMaxBytes: config.limits.shortbreadTileMaxBytes,
+            shortbreadMaxFeaturesPerTile: config.limits.shortbreadMaxFeaturesPerTile,
+            shortbreadMaxCoordinatesPerTile: config.limits.shortbreadMaxCoordinatesPerTile,
+            terrariumTileMaxBytes: config.limits.terrariumTileMaxBytes
           }
         }
       };
@@ -162,6 +225,44 @@ export function createGeodataService({
 
     getCatalogEnvelope() {
       return createCatalogEnvelope({ config, now: clock() });
+    },
+
+    getShortbreadTileJson({ signal } = {}) {
+      return getSourceArtifact(
+        'osm-shortbread:tilejson:v1',
+        () => artifactProvider.fetchShortbreadTileJson(),
+        {
+          freshTtlMs: config.limits.shortbreadFreshTtlMs,
+          staleIfErrorMs: config.limits.shortbreadStaleIfErrorMs
+        },
+        signal
+      );
+    },
+
+    getShortbreadTile(params, { signal } = {}) {
+      const tile = parseTileCoordinates(params, SHORTBREAD_MAX_ZOOM);
+      return getSourceArtifact(
+        `osm-shortbread:mvt:v1:${tile.z}/${tile.x}/${tile.y}`,
+        () => artifactProvider.fetchShortbreadTile(tile),
+        {
+          freshTtlMs: config.limits.shortbreadFreshTtlMs,
+          staleIfErrorMs: config.limits.shortbreadStaleIfErrorMs
+        },
+        signal
+      );
+    },
+
+    getTerrariumTile(params, { signal } = {}) {
+      const tile = parseTileCoordinates(params, TERRARIUM_MAX_LEVEL);
+      return getSourceArtifact(
+        `aws-terrarium:png:v1:${tile.z}/${tile.x}/${tile.y}`,
+        () => artifactProvider.fetchTerrariumTile(tile),
+        {
+          freshTtlMs: config.limits.terrariumFreshTtlMs,
+          staleIfErrorMs: config.limits.terrariumStaleIfErrorMs
+        },
+        signal
+      );
     },
 
     async getOsmRegionEnvelope(query, { signal } = {}) {
@@ -189,16 +290,20 @@ export function createGeodataService({
           value,
           stale: false
         }), config.limits.normalizedResponseMaxBytes);
-        return value;
+        // Retain the normalized payload as exact UTF-8 JSON rather than an
+        // object graph so the cache's 128 MiB accounting is a hard resident
+        // payload-byte bound, not a lower-bound estimate of JS heap use.
+        return JSON.stringify(value);
       });
       const result = await raceWithSignal(sharedResult, signal);
       const stale = !result.fresh;
+      const cachedValue = JSON.parse(result.value);
       const envelope = createOsmRegionEnvelope({
         cacheKey,
         config,
         provider,
         query,
-        value: result.value,
+        value: cachedValue,
         stale
       });
       const serialization = serializeBoundedOsmRegionEnvelope(

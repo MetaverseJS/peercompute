@@ -58735,3 +58735,179 @@ implementation and the RoadVector reliability follow-through requested at
   RoadVector `https://100.68.165.52:5188/`, EarthGrid
   `https://100.68.165.52:5187/`, and loopback geodata `127.0.0.1:8788` remain
   intentionally running for user testing. All owned smoke ports are closed.
+
+## 2026-08-25 11:08:48 AKDT - Land-side shoreline and road/terrain cache intake
+
+Prompt: “alright. the earthgrid is looking really good although performance is
+rough. I think the blue line that goes aroudn bodies of water should sit right
+next to a green line for the continent. does that make sense?I also think we
+should be caching the road and terrain data in the state manager in peercompute
+as well as at our backend server”
+
+### Interpretation and actions started
+
+- Interpreted the visual request as a true green land-side companion NURBS
+  geometry next to the exact blue water boundary, not a glow, halo, texture, or
+  second source-boundary claim. Outer water rings and island/hole rings require
+  opposite derived offset directions.
+- Interpreted caching as three explicit responsibilities: existing and extended
+  authoritative backend caches, a bounded local-only artifact tier owned by
+  PeerCompute `StateManager`, and no implicit replication of precise road or
+  terrain payloads through Yjs/presence.
+- Re-entered ICC with durable task
+  `earthgrid-landline-state-cache-20260825`. Repository preflight passed `6/6`
+  with only the historical missing `origin/master` warning; opened active
+  conflict-free root lease `codex-root-landline-state-cache`.
+- Started three read-only parallel audits for StateManager semantics, backend
+  road/terrain caching, and land-side shoreline topology/performance. Root
+  inspection confirmed StateManager warm/cold state is Yjs/IndexedDB replicated
+  state and therefore cannot safely receive large raw GIS payloads unchanged;
+  a distinct explicitly local artifact tier is required.
+
+### Files touched so far
+
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/branch/earth-platform-motorcycle-xr.md`
+- `plan/log.md`
+
+### Commands and results so far
+
+- Node/worktree intake - PASS on Node `v24.18.0`; clean worktree before this
+  documentation update.
+- ICC `work`, repo-wide `agent-preflight`, and root agent lease - PASS; zero
+  conflicts.
+- Focused `rg`/source inspection of StateManager/DataState, geodata service
+  cache, EarthGrid Shortbread buffer geometry, and AWS/NOAA terrain loaders -
+  PASS. Existing local OSM cache is coalesced TTL/LRU but entry-count-only;
+  global Shortbread and terrain bytes still bypass the backend and StateManager.
+
+### Open
+
+- Freeze cache APIs/limits and shoreline offset math after the parallel audits;
+  implement focused tests first; integrate EarthGrid/RoadVector; benchmark cold
+  and warm behavior; rebuild and run browser/live gates; update all docs and ICC
+  evidence; create a coherent local commit without pushing.
+
+## 2026-08-25 12:42:29 AKDT - Land-side shoreline and dual cache tiers complete
+
+Prompt at `2026-08-25 11:08:48 AKDT`: “alright. the earthgrid is looking really
+good although performance is rough. I think the blue line that goes aroudn
+bodies of water should sit right next to a green line for the continent. does
+that make sense?I also think we should be caching the road and terrain data in
+the state manager in peercompute as well as at our backend server”
+
+### Implementation narrative
+
+- Added a separate exact green land-side curve for every blue Shortbread water
+  boundary. A bounded Web-Mercator derivation uses ring area and outer/hole role
+  rather than trusting source winding, bounded miter joins with bevel fallback,
+  zero-offset tile-edge taper, and antimeridian splitting. Each companion is a
+  distinct unit-weight degree-one NURBS/actual Cesium buffer polyline with one
+  solid `#33ff73` pass; it is not a glow, halo, texture, or source-boundary
+  claim. Pair, control-point, join, seam, cap, height, and omission telemetry
+  are public and participate in the existing atomic active-vertex transaction.
+- Added `LocalArtifactCache` as a StateManager-owned but Yjs-independent tier.
+  It uses bounded memory plus optional IndexedDB, validates schema/media/bytes,
+  stores SHA-256 integrity and freshness metadata, coalesces identical loads,
+  isolates subscriber abort, reserves worst-case in-flight bytes, performs LRU
+  admission/eviction, retains persistent records across manager destruction,
+  and reports exact hit/miss/stale/rejection statistics. `createCachedGeoFetch`
+  recognizes only official Shortbread and AWS Terrarium URLs, maps them to fixed
+  same-origin routes, and falls back truthfully for static deployments.
+- Extended the geodata service with fixed TileJSON, MVT, and Terrarium routes;
+  arbitrary host/URL input is impossible. Added exact byte/media validation,
+  manual redirect rejection, stream/declared-size limits, source-specific TTL
+  and stale bounds, strong SHA-256 ETags/304, two independent byte-bounded LRU
+  caches, pending-byte reservations, source concurrency/queue/rate limits, and
+  cache health/catalog disclosures. Also added one bounded Overpass retry for
+  retryable transport/408/429/5xx failures inside the shared 25-second deadline.
+- Wired EarthGrid and RoadVector to local StateManager road/terrain caches and
+  same-origin backend cache routes while keeping source attribution and NOAA's
+  direct authority unchanged. Added cache UI/public state, warm reload browser
+  assertions, and teardown. EarthGrid uses 32 MiB road and 64 MiB terrain local
+  limits; RoadVector uses separate bounded road/terrain tiers.
+- Reduced EarthGrid churn with request-render mode, interactive Terrarium z10,
+  six-pixel maximum screen-space error, and one vector/local height refresh only
+  after the active terrain burst settles. Broad-view z0 Shortbread remains
+  explicitly deferred before expensive polygon allocation.
+
+### Source-density and reliability corrections
+
+- A real private RoadVector run exposed backend `502` for official Alaska tile
+  `5/4/7.mvt`. The valid tile is 833,903 bytes with 12,848 selected features
+  (one ocean, 12,847 water polygons) and 257,997 coordinates. Replaced the old
+  10,000 feature assumption with one exported 25,000-feature hard ceiling used
+  by backend, cached-fetch validator, decoder, EarthGrid buffer geometry, and
+  RoadVector imagery. Exact 25,000 passes and 25,001 fails; 2 MiB, one-million
+  coordinate, 192 MiB session, and four-million active-vertex caps did not move.
+- A public Overpass `502` during private testing motivated the bounded one-retry
+  policy. A 300/min fixed-source rate initially returned `429` during two cold
+  terrain sweeps; the fixed route class now admits 360/min while retaining its
+  concurrency/queue and byte limits. Both failures and corrections are covered
+  by tests and were not hidden as larger browser timeouts.
+- The first final screenshot script failed because Playwright's `waitForFunction`
+  timeout was supplied in its argument slot, leaving the default 30 seconds.
+  The corrected script then timed out only because it required every progressive
+  terrain request to be idle; inspection after 60 seconds showed vector/local
+  geometry already ready, 22/32 terrain requests loaded, ten still streaming,
+  no failed request, and no browser error. The final visual gate correctly waits
+  for the current vector/local revision, pair invariant, and positive terrain,
+  without falsely making all future terrain refinement a readiness prerequisite.
+
+### Files touched
+
+- Geometry/cache core: `packages/geo-core/src/{index.js,client/geodataCache.js,vector/shortbread.js,vector/shortbreadGeometry.js,vector/shortbreadImagery.js,vector/waterNurbs.js}` and focused tests.
+- PeerCompute state: `peercompute/src/peercompute/{index.js,stateManager/StateManager.js,stateManager/DataState.js,stateManager/LocalArtifactCache.js}` and unit tests.
+- Backend: `services/geodata/src/{app.js,catalog.js,config.js,service.js,lib/cache.js,lib/fetch-bytes.js,lib/fetch-json.js,lib/semaphore.js,providers/overpass.js,providers/source-artifacts.js}`, backend tests, and service README.
+- Demo/release/docs: EarthGrid and RoadVector main/UI/README files,
+  `demos/tests/{runtime-smoke.mjs,demo-release.test.js}`, root/plan/branch docs,
+  regenerated `docs/{earth,motorcycle}/**`, and the inspected
+  `docs/assets/earth.png` gallery frame.
+
+### Commands and results
+
+- Node `v24.18.0`. `npm run test:earth-platform:unit` - PASS `349/349` Node
+  tests plus mocked Chromium WebXR: geo-core `80/80`, geodata `60/60`, Earth
+  `48/48`, WXGlobe `28/28`, XR `22/22`, physics `33/33`, traffic `12/12`, and
+  RoadVector `66/66`. PeerCompute unit suite independently passed `214/214` in
+  35.52 seconds; focused StateManager/local-cache coverage passed `19/19`.
+- `npm run test:earth-platform:release` - PASS. All three Cesium demos rebuilt;
+  static release checks passed `44/44`; combined built HTTPS WXGlobe/EarthGrid/
+  RoadVector browser smoke passed and closed owned port `43947`. The smoke
+  proves same-context warm road/terrain hits and no duplicate fixed-route calls.
+- `npm run test:earth-platform:live` - PASS in 14.1 seconds: current
+  Shortbread, bounded Overpass (second allowed attempt), current nowCOAST,
+  finite NOAA ETOPO, and valid AWS Terrarium. Exact observed counts were 508
+  Shortbread streets, 172 Overpass roads / 100 buildings / 705 directed edges,
+  4.88-minute nowCOAST age, and 69,200 Terrarium bytes.
+- Backend ETag probe - PASS: cached `5/4/7.mvt` returned `200`, 833,903 bytes,
+  source/cache headers and strong SHA-256 ETag; matching `If-None-Match` returned
+  bodyless `304` with the same validator/source policy.
+- Private EarthGrid - PASS secure/current/local-live with 1,522 roads, 164
+  water surfaces, 175 blue plus 175 green paired curves, and zero browser errors.
+  Current inspected 1440x900 screenshot SHA-256 is
+  `3e186fb83a4218784bffb1fc180f8435ab67e9b84c556641857636f650df0198`.
+- Private RoadVector - PASS in 12.195 seconds with 25/25 Shortbread tiles, 217
+  major roads, five current overview terrain tiles, current FHWA, 1,620 local
+  roads, zero failed responses, and zero browser errors.
+- `git diff --check` and final ICC/commit evidence are recorded in the clean
+  point below after documentation, indexing, guard, and staging complete.
+- Physical headset validation remains NOT RUN; no hardware certification is
+  claimed.
+
+## 2026-08-25 12:42:29 AKDT - Aviation/WX globe private link handoff
+
+Prompt: “can you give me the link to the aviation globe?”
+
+- Created environment-owned runtime config
+  `/home/cos/.local/state/peercompute/wxglobe-tailnet/vite.config.mjs` and started
+  transient user unit `peercompute-wxglobe-tailnet.service` directly on Tailnet
+  IP `100.68.165.52:5186`; no repository credential/runtime file was added.
+- Verified `https://100.68.165.52:5186/` and its Cesium geometry worker return
+  HTTP `200`. The served certificate has IP SAN `100.68.165.52` and MagicDNS SAN
+  `shitbox.tail5c077c.ts.net`.
+- Fresh headless Chromium reports secure context, ready, 59 rendered frames,
+  `CappedHeightmapTerrainProvider`, positive loaded real terrain, zero imagery,
+  no fatal error, and zero page/console errors. The direct private listener is
+  intentionally left running for the user.

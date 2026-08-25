@@ -3,6 +3,7 @@ import {
   NOWCOAST_LAYERS,
   nowCoastCapabilitiesUrl
 } from '@peercompute/geo-core';
+import { SOURCE_CACHE_ROUTES, SOURCE_CACHE_URL_TEMPLATES } from './providers/source-artifacts.js';
 
 const SOURCE_LICENSES = Object.freeze({
   osm: Object.freeze({
@@ -92,21 +93,26 @@ function sourceOverrides(id, config, layers) {
     case 'aws-terrarium':
       return {
         category: 'terrain',
-        url: 'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png',
-        accessMode: 'browser-direct-optional',
+        url: SOURCE_CACHE_URL_TEMPLATES.terrariumTile,
+        upstreamUrl: 'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png',
+        directFallbackUrl: 'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png',
+        accessMode: 'server-cache-adapter',
         licenseUrl: 'https://registry.opendata.aws/terrain-tiles/',
         attribution: 'Mapzen terrain tiles and named upstream elevation sources',
         configured: true,
-        transportAuthority: 'browser'
+        transportAuthority: 'peercompute-geodata-server'
       };
     case 'osm-shortbread':
       return {
         category: 'global-vector-context',
-        url: 'https://vector.openstreetmap.org/shortbread_v1/tilejson.json',
-        accessMode: 'browser-direct',
+        url: SOURCE_CACHE_ROUTES.shortbreadTileJson,
+        tileUrl: SOURCE_CACHE_URL_TEMPLATES.shortbreadTile,
+        upstreamUrl: 'https://vector.openstreetmap.org/shortbread_v1/tilejson.json',
+        directFallbackUrl: 'https://vector.openstreetmap.org/shortbread_v1/tilejson.json',
+        accessMode: 'server-cache-adapter',
         ...SOURCE_LICENSES.osm,
         configured: true,
-        transportAuthority: 'browser'
+        transportAuthority: 'peercompute-geodata-server'
       };
     case 'osm-local-region':
       return {

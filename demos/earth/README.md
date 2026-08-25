@@ -3,14 +3,18 @@
 EarthGrid is the reusable, non-aviation Earth/GIS base for PeerCompute demos.
 It combines NOAA/AWS elevation with actual Cesium buffer geometry derived from
 official OpenStreetMap Shortbread: blue polygons for ocean and inland water,
-degree-one NURBS shoreline polylines, building footprint wires, solid road
-curves, and degree-one NURBS elevation contours. Water is non-extruded,
+degree-one NURBS shoreline polylines with separate green land-side companion
+curves, building footprint wires, solid road curves, and degree-one NURBS
+elevation contours. The green companion is display-derived actual geometry
+offset beside the source shoreline; it is not glow, a halo, or a second source
+boundary. Water is non-extruded,
 non-animated geometry with opacity exactly `0.5`. Terrain contours at or below
 the active provider's native zero-height reference use the shoreline blue;
 positive contours use green. Cesium's buffer API has no public ground z-index,
 so every category carries an explicit source/sampled height and a small
 monotonic radial bias: terrain contours `0.25 m`, water `0.5 m`, shorelines
-`0.75 m`, building wires `1 m`, global roads `2 m`, and local roads `4 m`.
+`0.75 m`, shoreline land-side companions `0.875 m`, building wires `1 m`,
+global roads `2 m`, and local roads `4 m`.
 Roads therefore remain above water regardless of decoder order. The normal GIS
 base uses no canvas-painted imagery, texture glow, blur, bloom, halo, or
 duplicate line pass. Optional time-qualified NOAA nowCOAST radar or satellite
@@ -19,7 +23,13 @@ imagery remains source raster data and is the sole permitted imagery overlay.
 The display is for visualization and gameplay only. It is not a navigation,
 routing, warning, or traffic product. OpenStreetMap content and the normalized
 road graph are an ODbL-derived database and retain visible attribution.
-AWS Terrarium is the default interactive terrain source; NOAA ETOPO 2022
+AWS Terrarium is the default interactive terrain source, capped at z10 with a
+six-pixel Cesium screen-space error so a regional view cannot fan out into
+unbounded source work. Terrain-driven vector-height rebuilds wait for a
+quiescent request burst, avoiding repeated full geometry snapshots while the
+camera is still filling its terrain working set.
+This keeps the overview from generating hundreds of higher-LOD PNG requests;
+NOAA ETOPO 2022
 remains a selectable pole-to-pole source rather than a startup dependency.
 For each loaded local region the UI exposes the OSM base timestamp, adapter
 fetch time, freshness boundary, cache state, provider mode, and whether a
@@ -47,7 +57,9 @@ Tailscale Serve or Funnel. Accept or install that certificate on the viewing
 device first; `/api` remains a same-origin proxy to loopback `8788`.
 
 Browser geolocation is user-triggered, requires a secure context, is rounded to
-four decimal places, and is retained in memory only. The local query starts at
+four decimal places, and the exact coordinate is retained in memory only. The
+bounded source tiles around a selected region may be retained in the local-only
+artifact cache described below. The local query starts at
 a 1.2 km radius and retries bounded 800 m and 500 m regions when source or
 normalized-result density exceeds a hard cap.
 
@@ -78,6 +90,18 @@ responses are accepted only when their exact schema discriminator, source,
 status/freshness, bbox, counts, graph references, and OSM/ODbL provenance are
 coherent.
 
+Official Shortbread road/water vector bytes and default AWS Terrarium PNG bytes
+use two bounded cache tiers. In the browser, a PeerCompute `StateManager` owns a
+32 MiB local road cache and a 64 MiB local terrain cache in memory/IndexedDB.
+That artifact tier is deliberately separate from its Yjs document, so source
+bytes, tile keys, and access metadata are never replicated to peers. With a
+configured same-origin backend, fixed
+`/api/v1/cache/...` routes add a second byte-bounded, coalescing cache with
+strong ETags, conditional `304` responses, and visible hit/miss/stale headers.
+No route accepts an arbitrary upstream URL. Normalized detailed OSM regions
+continue through the backend's existing bounded semantic cache. NOAA ETOPO
+queries remain direct-source rather than entering the fixed tile proxy.
+
 EarthGrid opts into the official Shortbread `ocean` and `water_polygons`
 layers. It renders oceans plus non-glacier polygonal lakes, reservoirs, wide
 rivers, basins, docks, and canals. Glaciers are not classified as water, and
@@ -86,7 +110,7 @@ outside this surface-only layer. One camera-bounded Shortbread scheduler feeds
 immutable `Cesium.BufferPolygonCollection` and
 `Cesium.BufferPolylineCollection` snapshots: at most 24 active tiles, six
 concurrent requests, a 96-tile decoded LRU, 2 MiB per tile, 192 MiB per
-layer-session, 10,000 decoded features per tile, and 4,000,000 active vertices.
+layer-session, 25,000 decoded features per tile, and 4,000,000 active vertices.
 The aggregate byte counter is a lifetime session budget, not resident-cache
 accounting. Cesium is pinned to exact `1.144.0` because the high-throughput
 Buffer geometry API is explicitly experimental and is not covered by Cesium's
@@ -116,6 +140,14 @@ rejects a tile before changing the active Cesium buffer snapshot if its 4,096-ri
 8,192-curve, 65,536-source-point, or 131,072-sampled-vertex hard limit is
 exceeded. Telemetry exposes open/closed curves, clipped segments, fully clipped
 rings, cap rejections, and zero source deviation.
+
+Every accepted blue shoreline fragment has exactly one green degree-one NURBS
+land-side companion. The companion is offset by two tile pixels in unwrapped
+global Web Mercator space, uses source ring role rather than winding assumptions
+to choose the land side, applies bounded miter/bevel joins, tapers to shared
+tile-edge endpoints, and splits safely at the dateline. Pairing, offset work,
+source/output vertices, seam tapers, and cap rejections are all exposed in
+telemetry and charged to the same transactional geometry budgets.
 
 Shortbread does not publish numeric lake/river/ocean elevations. Oceans use the
 active terrain source's native-zero display level. Each inland polygon uses

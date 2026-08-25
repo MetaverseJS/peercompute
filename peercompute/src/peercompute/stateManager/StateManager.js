@@ -10,6 +10,7 @@ import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { PeerComputeProvider } from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
+import { LocalArtifactCache } from './LocalArtifactCache.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -176,6 +177,33 @@ export class StateManager {
    */
   getDataState() {
     return this.dataState;
+  }
+
+  /**
+   * Create a bounded local-only source-artifact cache.
+   *
+   * This method does not require initialize(): the cache is deliberately
+   * separate from the Y.Doc, y-indexeddb, and network-provider lifecycles.
+   * @param {Object} options LocalArtifactCache options
+   * @returns {LocalArtifactCache}
+   */
+  createLocalArtifactCache(options = {}) {
+    const cache = new LocalArtifactCache({
+      ...options,
+      onDestroy: (destroyedCache) => {
+        this.dataState.unregisterLocalArtifactCache(destroyedCache.name, destroyedCache);
+      }
+    });
+    try {
+      return this.dataState.registerLocalArtifactCache(cache.name, cache);
+    } catch (error) {
+      void cache.destroy();
+      throw error;
+    }
+  }
+
+  getLocalArtifactCache(name) {
+    return this.dataState.getLocalArtifactCache(name);
   }
 
   getWarmDeltas(namespace) {
@@ -881,6 +909,10 @@ export class StateManager {
    */
   async destroy() {
     try {
+      // Local artifact bytes live outside Yjs but remain owned by this manager.
+      // Destroy handles without deleting their optional persistent records.
+      await this.dataState.destroyLocalArtifactCaches();
+
       // Cleanup libp2p provider
       if (this.libp2pProvider) {
         this.libp2pProvider.destroy();
@@ -957,6 +989,7 @@ export class StateManager {
    * @returns {Object} Statistics
    */
   getStats() {
+    const localArtifactCaches = this.dataState.getLocalArtifactCacheStats();
     return {
       isInitialized: this.isInitialized,
       keyCount: this.state.size,
@@ -966,7 +999,11 @@ export class StateManager {
       hasP2PSync: !!this.libp2pProvider,
       docName: this.config.docName,
       topic: this.config.topic,
-      hotBufferCount: this.dataState?.listHotBuffers?.().length || 0
+      hotBufferCount: this.dataState?.listHotBuffers?.().length || 0,
+      localArtifactCacheCount: localArtifactCaches.caches,
+      localArtifactCacheEntryCount: localArtifactCaches.entries,
+      localArtifactCacheResidentBytes: localArtifactCaches.residentBytes,
+      localArtifactCachePendingCount: localArtifactCaches.pending
     };
   }
 }

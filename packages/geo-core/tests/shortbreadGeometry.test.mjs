@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import * as Cesium from 'cesium';
 
+import { SHORTBREAD_MAXIMUM_FEATURES_PER_TILE } from '../src/vector/shortbread.js';
 import {
   createShortbreadBufferTileGeometry,
   loadShortbreadGeometryLayer,
@@ -220,6 +221,33 @@ function commandsForDecodedTile(decoded) {
   return geometryCommands(longitude, latitude);
 }
 
+test('geometry decoding uses the shared 25,000-feature hard boundary', async () => {
+  assert.equal(
+    SHORTBREAD_GEOMETRY_LIMITS.maximumFeaturesPerTile,
+    SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
+  );
+  const harness = makeViewer(radiansRectangle(-10, -10, 10, 10));
+  const oneTile = Object.freeze({ x: 0, y: 0, z: 0, key: '0/0/0' });
+  let observedMaximumFeatures = null;
+  const layer = new ShortbreadGeometryLayer(Cesium, {
+    viewer: harness.viewer,
+    tileJson,
+    maximumActiveTiles: 1,
+    maximumCachedTiles: 1,
+    fetchImpl: async () => response([1]),
+    decodeTile: (_bytes, options) => {
+      observedMaximumFeatures = options.maximumFeatures;
+      return Object.freeze({ ...options });
+    },
+    commandsFromTile: () => [],
+    tileSelector: () => tileSelection([oneTile]),
+  });
+  await layer.start();
+  await layer.waitForIdle();
+  assert.equal(observedMaximumFeatures, SHORTBREAD_MAXIMUM_FEATURES_PER_TILE);
+  layer.destroy();
+});
+
 test('plans scrambled water, building, and road input in deterministic buffer category order', () => {
   const commands = geometryCommands(0);
   const plan = planShortbreadGeometry(commands, { x: 0, y: 0, z: 0, size: 512 });
@@ -227,13 +255,18 @@ test('plans scrambled water, building, and road input in deterministic buffer ca
   assert.equal(plan.renderingModel, 'actual-cesium-buffer-geometry');
   assert.equal(plan.renderer, 'cesium-buffer-geometry');
   assert.equal(plan.geometryBackend, 'Cesium.BufferPolygonCollection/Cesium.BufferPolylineCollection');
-  assert.deepEqual(plan.categoryOrder, ['water-surface', 'shoreline', 'building-wireframe', 'road']);
-  assert.deepEqual(plan.elevationOffsetsMeters, { waterSurface: 0, shoreline: 0.5, building: 1, road: 2 });
+  assert.deepEqual(plan.categoryOrder, [
+    'water-surface', 'shoreline', 'shoreline-landline', 'building-wireframe', 'road',
+  ]);
+  assert.deepEqual(plan.elevationOffsetsMeters, {
+    waterSurface: 0, shoreline: 0.5, landline: 0.75, building: 1, road: 2,
+  });
   assert.equal(plan.rasterPainted, false);
   assert.equal(plan.glow, false);
   assert.equal(plan.linePassesPerCurve, 1);
   assert.equal(plan.counts.waterSurfaceCount, 2);
   assert.equal(plan.counts.shorelineCurveCount, 3, 'outer, hole, and second polygon remain separate shoreline curves');
+  assert.equal(plan.counts.shorelineLandlineCurveCount, 3);
   assert.equal(plan.counts.buildingWireframeCount, 2);
   assert.equal(plan.counts.roadCurveCount, 2);
   assert.deepEqual(
@@ -244,6 +277,9 @@ test('plans scrambled water, building, and road input in deterministic buffer ca
       'shoreline',
       'shoreline',
       'shoreline',
+      'shoreline-landline',
+      'shoreline-landline',
+      'shoreline-landline',
       'building-wireframe',
       'building-wireframe',
       'road',
@@ -253,16 +289,23 @@ test('plans scrambled water, building, and road input in deterministic buffer ca
   assert.ok(plan.descriptors.every((descriptor, index, all) => (
     index === 0 || descriptor.categoryOrderIndex >= all[index - 1].categoryOrderIndex
   )));
-  assert.deepEqual(plan.compatibilityZIndex, { waterSurface: 10, shoreline: 20, building: 30, road: 40 });
+  assert.deepEqual(plan.compatibilityZIndex, {
+    waterSurface: 10, shoreline: 20, landline: 25, building: 30, road: 40,
+  });
   assert.equal(plan.roadPrecedence.independentOfInputOrder, true);
   assert.equal(plan.roadPrecedence.topmost, true);
   const surfaces = plan.descriptors.filter(({ kind }) => kind === 'water-surface');
   const shorelines = plan.descriptors.filter(({ kind }) => kind === 'shoreline');
+  const landlines = plan.descriptors.filter(({ kind }) => kind === 'shoreline-landline');
   assert.deepEqual(surfaces.map(({ waterBodyId }) => waterBodyId), ['water-body-000000', 'water-body-000001']);
   assert.deepEqual(
     shorelines.map(({ waterBodyId }) => waterBodyId),
     ['water-body-000000', 'water-body-000000', 'water-body-000001'],
   );
+  assert.deepEqual(landlines.map(({ waterBodyId }) => waterBodyId), shorelines.map(({ waterBodyId }) => waterBodyId));
+  assert.deepEqual(landlines.map(({ ringRole }) => ringRole), ['outer', 'hole', 'outer']);
+  assert.equal(plan.shorelineCompanion.pairedCurveCount, shorelines.length);
+  assert.equal(plan.shorelineCompanion.unpairedCurveCount, 0);
 });
 
 test('preserves multipart holes and exact source paths with one solid Color pass', () => {
@@ -285,9 +328,21 @@ test('preserves multipart holes and exact source paths with one solid Color pass
   assert.ok(shorelines.every((line) => line.nurbs.maximumSourceDeviationPixels === 0));
   assert.ok(shorelines.every((line) => line.elevationOffsetMeters === 0.5));
 
+  const landlines = plan.descriptors.filter(({ kind }) => kind === 'shoreline-landline');
+  assert.equal(landlines.length, shorelines.length);
+  assert.ok(landlines.every((line) => line.material.type === 'Color'));
+  assert.ok(landlines.every((line) => line.material.color === '#33ff73'));
+  assert.ok(landlines.every((line) => line.linePassCount === 1 && line.nurbs.degree === 1));
+  assert.ok(landlines.every((line) => line.categoryOrderIndex === 2));
+  assert.ok(landlines.every((line) => line.elevationOffsetMeters === 0.75));
+  assert.ok(landlines.every((line, index) => line.sourceShorelineId === shorelines[index].id));
+  assert.ok(landlines.some((line, index) => (
+    JSON.stringify(line.positions) !== JSON.stringify(shorelines[index].positions)
+  )), 'the green companion is distinct offset geometry');
+
   const buildings = plan.descriptors.filter(({ kind }) => kind === 'building-wireframe');
   assert.ok(buildings.every((line) => line.material.type === 'Color' && line.linePassCount === 1));
-  assert.ok(buildings.every((line) => line.categoryOrderIndex === 2));
+  assert.ok(buildings.every((line) => line.categoryOrderIndex === 3));
   assert.ok(buildings.every((line) => line.elevationOffsetMeters === 1));
 
   const roads = plan.descriptors.filter(({ kind }) => kind === 'road');
@@ -295,11 +350,12 @@ test('preserves multipart holes and exact source paths with one solid Color pass
   assert.ok(roads.every((line) => line.nurbs.degree === 1));
   assert.ok(roads.every((line) => line.nurbs.maximumSourceDeviationDegrees === 0));
   assert.ok(roads.every((line) => line.material.type === 'Color' && line.linePassCount === 1));
-  assert.ok(roads.every((line) => line.categoryOrderIndex === 3));
+  assert.ok(roads.every((line) => line.categoryOrderIndex === 4));
   assert.ok(roads.every((line) => line.elevationOffsetMeters === 2));
 
   const serialized = JSON.stringify(plan);
-  assert.doesNotMatch(serialized, /PolylineGlow|depthFail|shadowBlur|halo|painted-texture/iu);
+  assert.doesNotMatch(serialized, /PolylineGlow|depthFail|shadowBlur|painted-texture/iu);
+  assert.equal(plan.shorelineCompanion.halo, false);
   assert.equal(SHORTBREAD_GEOMETRY_STYLE.rasterPainted, false);
   assert.equal(SHORTBREAD_GEOMETRY_STYLE.glow, false);
   assert.equal(SHORTBREAD_GEOMETRY_STYLE.bloom, false);
@@ -368,6 +424,12 @@ test('rejects invalid topology, feature overflow, and vertex overflow before ret
   ], { x: 0, y: 0, z: 0 }, {
     maximumFeaturesPerTile: 1,
   }), (error) => error?.code === 'ERR_SHORTBREAD_GEOMETRY_FEATURE_CAP');
+  assert.throws(() => planShortbreadGeometry(geometryCommands(0), { x: 0, y: 0, z: 0 }, {
+    landlineLimits: { maximumOutputControlPoints: 1 },
+  }), (error) => error?.code === 'ERR_SHORTBREAD_LANDLINE_CONTROL_POINT_CAP');
+  assert.throws(() => planShortbreadGeometry(geometryCommands(0), { x: 0, y: 0, z: 0 }, {
+    landlineLimits: { maximumOperations: 1 },
+  }), (error) => error?.code === 'ERR_SHORTBREAD_LANDLINE_OPERATION_CAP');
 });
 
 test('rejects pathological polygon source topology before Cesium triangulation', () => {
@@ -413,12 +475,12 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
       return 100;
     },
   });
-  assert.equal(tileGeometry.collectionCount, 4);
+  assert.equal(tileGeometry.collectionCount, 5);
   assert.equal(tileGeometry.primitiveCount, plan.counts.entityCount);
   assert.deepEqual(tileGeometry.categories.map(({ kind }) => kind), SHORTBREAD_GEOMETRY_CATEGORY_ORDER);
   assert.deepEqual(
     tileGeometry.categories.map(({ elevationOffsetMeters }) => elevationOffsetMeters),
-    [0, 0.5, 1, 2],
+    [0, 0.5, 0.75, 1, 2],
   );
 
   const water = tileGeometry.getCategory('water-surface');
@@ -451,6 +513,27 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
   );
   assert.ok(Math.abs(Cesium.Ellipsoid.WGS84.cartesianToCartographic(shorelinePosition).height - 100.5) < 1e-5);
 
+  const landline = tileGeometry.getCategory('shoreline-landline');
+  assert.ok(landline.collection instanceof Cesium.BufferPolylineCollection);
+  assert.equal(landline.collection.primitiveCountMax, landline.primitiveCount);
+  assert.equal(landline.collection.vertexCountMax, landline.vertexCount);
+  assert.equal(landline.allowPicking, false);
+  assert.equal(landline.blend, 'opaque');
+  assert.equal(landline.linePassCount, 1);
+  const landlineLine = landline.collection.get(0, new Cesium.BufferPolyline());
+  const landlineMaterial = landlineLine.getMaterial(new Cesium.BufferPolylineMaterial());
+  assert.equal(landlineMaterial.color.toCssColorString(), 'rgb(51,255,115)');
+  assert.equal(landlineMaterial.outlineWidth, 0);
+  const landlinePosition = Cesium.Cartesian3.unpack(
+    landlineLine.getPositions(), 0, new Cesium.Cartesian3(),
+  );
+  assert.ok(Math.abs(Cesium.Ellipsoid.WGS84.cartesianToCartographic(landlinePosition).height - 100.75) < 1e-5);
+  assert.notDeepEqual(
+    Array.from(landlineLine.getPositions().slice(0, 6)),
+    Array.from(shorelineLine.getPositions().slice(0, 6)),
+    'landline occupies its own laterally offset Cartesian geometry',
+  );
+
   const road = tileGeometry.getCategory('road');
   assert.ok(road.collection instanceof Cesium.BufferPolylineCollection);
   assert.equal(road.collection.primitiveCountMax, road.primitiveCount);
@@ -472,13 +555,18 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
   }
   assert.ok(Math.min(...roadHeights) >= 102 - 1e-5, 'roads crossing elevated water stay above its flat level');
   assert.ok(resolverCalls.length > 0);
-  assert.ok(resolverCalls.every(([, , kind]) => ['water-surface', 'building-wireframe', 'road'].includes(kind)));
+  assert.ok(resolverCalls.every(([, , kind]) => (
+    ['water-surface', 'shoreline-landline', 'building-wireframe', 'road'].includes(kind)
+  )));
+  assert.ok(resolverCalls.some(([, , kind]) => kind === 'shoreline-landline'));
   assert.ok(tileGeometry.heightResolution.waterLevelCoordinateCount > 0);
   assert.ok(tileGeometry.heightResolution.resolvedTerrainCoordinateCount > 0);
   assert.ok(tileGeometry.heightResolution.unresolvedFallbackCoordinateCount > 0);
   assert.equal(tileGeometry.heightResolution.derivedInlandWaterBodyCount, 2);
   assert.equal(tileGeometry.heightResolution.fallbackInlandWaterBodyCount, 0);
   assert.equal(tileGeometry.heightResolution.unmatchedShorelineCount, 0);
+  assert.equal(tileGeometry.heightResolution.unmatchedLandlineCount, 0);
+  assert.ok(tileGeometry.heightResolution.landlineTerrainResolvedCoordinateCount > 0);
   assert.ok(tileGeometry.heightResolution.waterLevelClampedRoadCoordinateCount > 0);
 
   tileGeometry.destroy();
@@ -503,7 +591,15 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
   const oceanShoreline = oceanGeometry.getCategory('shoreline').collection.get(0, new Cesium.BufferPolyline());
   const oceanShorePosition = Cesium.Cartesian3.unpack(oceanShoreline.getPositions(), 0, new Cesium.Cartesian3());
   assert.ok(Math.abs(Cesium.Ellipsoid.WGS84.cartesianToCartographic(oceanShorePosition).height - 0.5) < 1e-5);
-  assert.equal(oceanResolverCalls, 0);
+  const oceanLandline = oceanGeometry.getCategory('shoreline-landline').collection.get(
+    0,
+    new Cesium.BufferPolyline(),
+  );
+  const oceanLandPosition = Cesium.Cartesian3.unpack(
+    oceanLandline.getPositions(), 0, new Cesium.Cartesian3(),
+  );
+  assert.ok(Math.abs(Cesium.Ellipsoid.WGS84.cartesianToCartographic(oceanLandPosition).height - 500.75) < 1e-5);
+  assert.ok(oceanResolverCalls > 0, 'the land-side companion samples terrain even when ocean water stays at zero');
   assert.equal(oceanGeometry.heightResolution.oceanWaterBodyCount, 1);
   oceanGeometry.destroy();
 
@@ -581,6 +677,20 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
   assert.ok(crossingGeometry.heightResolution.tessellatedPolylineCoordinateCount > 2);
   assert.ok(crossingGeometry.heightResolution.tessellatedPolygonCoordinateCount > 4);
   assert.ok(crossingGeometry.heightResolution.waterRoadIntersectionTestCount > 0);
+  const crossingLandline = crossingGeometry.getCategory('shoreline-landline').collection.get(
+    0,
+    new Cesium.BufferPolyline(),
+  );
+  for (let offset = 0; offset < crossingLandline.getPositions().length; offset += 3) {
+    const position = Cesium.Cartesian3.unpack(
+      crossingLandline.getPositions(), offset, new Cesium.Cartesian3(),
+    );
+    assert.ok(
+      Cesium.Ellipsoid.WGS84.cartesianToCartographic(position).height >= 100.75 - 1e-5,
+      'land-side companion terrain is clamped to at least its paired flat water level',
+    );
+  }
+  assert.ok(crossingGeometry.heightResolution.landlineWaterLevelClampedCoordinateCount > 0);
   assert.throws(() => createShortbreadBufferTileGeometry(Cesium, crossingPlan, {
     heightResolver(_longitude, _latitude, descriptor) {
       return descriptor.kind === 'water-surface' ? 100 : 50;
@@ -593,15 +703,18 @@ test('builds exact-capacity Cesium buffer collections with holes, solid material
   }), (error) => error?.code === 'ERR_SHORTBREAD_WATER_ROAD_INTERSECTION_CAP');
   assert.throws(() => createShortbreadBufferTileGeometry(Cesium, crossingPlan, {
     heightResolver: () => 100,
-    categoryElevationOffsetsMeters: { waterSurface: 0, shoreline: 0.5, building: 1, road: 0 },
+    categoryElevationOffsetsMeters: {
+      waterSurface: 0, shoreline: 0.5, landline: 0.75, building: 1, road: 0,
+    },
   }), /strictly preserve/u);
   assert.throws(() => createShortbreadBufferTileGeometry(Cesium, crossingPlan, {
     heightResolver: () => 100,
     categoryElevationOffsetsMeters: {
       waterSurface: 0,
       shoreline: 0.000001,
-      building: 0.000002,
-      road: 0.000003,
+      landline: 0.000002,
+      building: 0.000003,
+      road: 0.000004,
     },
   }), (error) => error?.code === 'ERR_SHORTBREAD_ROAD_WATER_CLEARANCE');
   assert.throws(() => createShortbreadBufferTileGeometry(Cesium, crossingPlan, {
@@ -795,7 +908,7 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
   assert.equal(requestedUrls.length, 1);
 
   const tileGeometry = layer.scenePrimitive.orderedTiles[0];
-  assert.equal(tileGeometry.primitiveCount, 9);
+  assert.equal(tileGeometry.primitiveCount, 12);
   assert.ok(tileGeometry.getCategory('water-surface').collection instanceof Cesium.BufferPolygonCollection);
   assert.ok(tileGeometry.getCategory('road').collection instanceof Cesium.BufferPolylineCollection);
   const submissionOrder = [];
@@ -831,19 +944,41 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
   assert.ok(firstTelemetry.minimumRoadWaterClearanceMeters > 0);
   assert.deepEqual(firstTelemetry.categoryOrder, SHORTBREAD_GEOMETRY_CATEGORY_ORDER);
   assert.deepEqual(firstTelemetry.categoryElevationOffsetsMeters, {
-    waterSurface: 0, shoreline: 0.5, building: 1, road: 2,
+    waterSurface: 0, shoreline: 0.5, landline: 0.75, building: 1, road: 2,
   });
   assert.equal(firstTelemetry.geometry.tileCount, 1);
   assert.equal(firstTelemetry.geometry.cesiumEntityCount, 0);
-  assert.equal(firstTelemetry.geometry.bufferCollectionCount, 4);
-  assert.equal(firstTelemetry.geometry.bufferPrimitiveCount, 9);
+  assert.equal(firstTelemetry.geometry.bufferCollectionCount, 5);
+  assert.equal(firstTelemetry.geometry.bufferPrimitiveCount, 12);
   assert.equal(firstTelemetry.geometry.bufferPolygonCount, 2);
-  assert.equal(firstTelemetry.geometry.bufferPolylineCount, 7);
+  assert.equal(firstTelemetry.geometry.bufferPolylineCount, 10);
   assert.equal(firstTelemetry.geometry.waterSurfaceCount, 2);
   assert.equal(firstTelemetry.geometry.shorelineCurveCount, 3);
+  assert.equal(firstTelemetry.geometry.shorelineLandlineCurveCount, 3);
   assert.equal(firstTelemetry.geometry.buildingWireframeCount, 2);
   assert.equal(firstTelemetry.geometry.roadCurveCount, 2);
   assert.equal(firstTelemetry.waterNurbs.curveCount, 3);
+  assert.equal(firstTelemetry.waterNurbs.companionCurveCount, 3);
+  assert.equal(firstTelemetry.shorelineCompanion.kind, 'shoreline-landline');
+  assert.equal(firstTelemetry.shorelineCompanion.geometry, 'distinct-actual-cesium-buffer-polyline');
+  assert.equal(firstTelemetry.shorelineCompanion.color, '#33ff73');
+  assert.equal(firstTelemetry.shorelineCompanion.curveCount, 3);
+  assert.equal(firstTelemetry.shorelineCompanion.pairedCurveCount, 3);
+  assert.equal(firstTelemetry.shorelineCompanion.unpairedCurveCount, 0);
+  assert.equal(firstTelemetry.shorelineCompanion.pairInvariantSatisfied, true);
+  assert.equal(firstTelemetry.shorelineCompanion.rasterPainted, false);
+  assert.equal(firstTelemetry.shorelineCompanion.glow, false);
+  assert.equal(firstTelemetry.shorelineCompanion.halo, false);
+  assert.equal(firstTelemetry.shorelineCompanion.linePassesPerCurve, 1);
+  assert.equal(
+    firstTelemetry.shorelineCompanion.maximumOutputControlPointsPerTile,
+    SHORTBREAD_GEOMETRY_LIMITS.maximumLandlineOutputControlPointsPerTile,
+  );
+  assert.equal(
+    firstTelemetry.shorelineCompanion.maximumOffsetOperationsPerTile,
+    SHORTBREAD_GEOMETRY_LIMITS.maximumLandlineOffsetOperationsPerTile,
+  );
+  assert.equal(firstTelemetry.readiness.shorelineCompanionCountsExact, true);
   assert.equal(layer.sampleWaterSurfaceHeight(-95, 40), 100);
   assert.equal(layer.sampleWaterSurfaceHeight(-90, 45), undefined, 'source polygon holes remain dry');
   assert.equal(layer.sampleWaterSurfaceHeight(-70, 40), undefined);

@@ -9,15 +9,23 @@ export class BoundedSemaphore {
   #active = 0;
   #queue = [];
 
-  constructor({ concurrency, maxQueue }) {
+  constructor({
+    concurrency,
+    maxQueue,
+    busyMessage = 'The OSM adapter is busy; retry after a short delay.'
+  }) {
     if (!Number.isInteger(concurrency) || concurrency < 1) {
       throw new RangeError('Semaphore concurrency must be a positive integer.');
     }
     if (!Number.isInteger(maxQueue) || maxQueue < 0) {
       throw new RangeError('Semaphore maxQueue must be a non-negative integer.');
     }
+    if (typeof busyMessage !== 'string' || busyMessage.length === 0) {
+      throw new TypeError('Semaphore busyMessage must be a non-empty string.');
+    }
     this.concurrency = concurrency;
     this.maxQueue = maxQueue;
+    this.busyMessage = busyMessage;
   }
 
   get active() {
@@ -39,7 +47,7 @@ export class BoundedSemaphore {
     if (this.#queue.length >= this.maxQueue) {
       throw new GeodataError(
         'UPSTREAM_BUSY',
-        'The OSM adapter is busy; retry after a short delay.',
+        this.busyMessage,
         { statusCode: 503, retryable: true }
       );
     }

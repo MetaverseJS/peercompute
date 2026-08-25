@@ -1,6 +1,7 @@
 import {
   createTerrariumTerrainProvider,
   createTopoOverlayMaterial,
+  fetchTerrariumHeightmap,
   loadFederalHighwayImageryProvider,
   loadShortbreadImageryProvider,
 } from '@peercompute/geo-core';
@@ -41,6 +42,7 @@ function defaultViewerFactory(Cesium, container, options) {
 }
 
 function createRoadvectorOverviewTerrainProvider(Cesium, {
+  fetchImpl = globalThis.fetch,
   onTelemetry,
   maximumTileRequests,
 } = {}) {
@@ -49,6 +51,10 @@ function createRoadvectorOverviewTerrainProvider(Cesium, {
   }
   return createTerrariumTerrainProvider(Cesium, {
     maxLevel: ROADVECTOR_OVERVIEW_TERRAIN_MAX_LEVEL,
+    fetchHeightmap: (url, options = {}) => fetchTerrariumHeightmap(url, {
+      ...options,
+      fetchImpl,
+    }),
     onTelemetry,
   });
 }
@@ -277,6 +283,7 @@ export function createRoadvectorOverviewRuntime({
     const generation = ++terrainGeneration;
     terrainTelemetry = null;
     terrainProvider = terrainProviderFactory(Cesium, {
+      fetchImpl,
       maximumTileRequests: ROADVECTOR_OVERVIEW_MAXIMUM_TERRAIN_TILES,
       onTelemetry(telemetry) {
         if (disposed || generation !== terrainGeneration) return;

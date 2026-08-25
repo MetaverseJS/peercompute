@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import * as Cesium from 'cesium';
+import { PbfWriter } from 'pbf';
+
 import {
   classifyShortbreadRoad,
+  decodeShortbreadTile,
   formatShortbreadTileUrl,
   shortbreadDrawCommands,
+  SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
   SHORTBREAD_WATER_STYLE,
   validateShortbreadTileJson
 } from '../src/vector/shortbread.js';
+import { ShortbreadImageryProvider } from '../src/vector/shortbreadImagery.js';
 
 const tileJson = {
   tilejson: '3.0.0',
@@ -23,6 +29,43 @@ const tileJson = {
   ],
   attribution: '© OpenStreetMap contributors'
 };
+
+function writePointFeature(_feature, pbf) {
+  pbf.writeVarintField(3, 1);
+  pbf.writePackedVarint(4, [9, 0, 0]);
+}
+
+function writePointLayer({ name, featureCount }, pbf) {
+  pbf.writeStringField(1, name);
+  for (let index = 0; index < featureCount; index += 1) {
+    pbf.writeMessage(2, writePointFeature, null);
+  }
+  pbf.writeVarintField(5, 4_096);
+  pbf.writeVarintField(15, 2);
+}
+
+function createPointMvt(featureCount) {
+  const pbf = new PbfWriter();
+  pbf.writeMessage(3, writePointLayer, { name: 'streets', featureCount });
+  return pbf.finish();
+}
+
+function canvasFactory() {
+  const context = {
+    beginPath() {},
+    clearRect() {},
+    closePath() {},
+    fill() {},
+    lineTo() {},
+    moveTo() {},
+    stroke() {}
+  };
+  return {
+    width: 0,
+    height: 0,
+    getContext: (type) => type === '2d' ? context : null
+  };
+}
 
 test('validates only the official bounded Shortbread TileJSON contract', () => {
   const normalized = validateShortbreadTileJson(tileJson);
@@ -76,4 +119,38 @@ test('road classification and draw commands retain category colors', () => {
   assert.equal(SHORTBREAD_WATER_STYLE.submergedContours.waterLineReference, 'terrain-source-native-zero');
   assert.deepEqual(SHORTBREAD_WATER_STYLE.sourceLayers, ['ocean', 'water_polygons']);
   assert.deepEqual(SHORTBREAD_WATER_STYLE.excludedKinds, ['glacier']);
+});
+
+test('decoder and legacy imagery share the exact 25,000-feature hard boundary', async () => {
+  assert.equal(SHORTBREAD_MAXIMUM_FEATURES_PER_TILE, 25_000);
+  const boundary = createPointMvt(SHORTBREAD_MAXIMUM_FEATURES_PER_TILE);
+  const decoded = decodeShortbreadTile(boundary, { x: 4, y: 7, z: 5 });
+  assert.equal(decoded.streets.length, SHORTBREAD_MAXIMUM_FEATURES_PER_TILE);
+
+  const provider = new ShortbreadImageryProvider(Cesium, {
+    tileJson,
+    canvasFactory,
+    fetchImpl: async () => new Response(boundary, {
+      headers: { 'content-type': 'application/vnd.mapbox-vector-tile' }
+    })
+  });
+  await provider.requestImage(4, 7, 5);
+  assert.equal(provider.getTelemetry().roadCommands, SHORTBREAD_MAXIMUM_FEATURES_PER_TILE);
+  provider.destroy();
+
+  const aboveBoundary = createPointMvt(SHORTBREAD_MAXIMUM_FEATURES_PER_TILE + 1);
+  assert.throws(
+    () => decodeShortbreadTile(aboveBoundary, { x: 4, y: 7, z: 5 }),
+    /feature cap/u
+  );
+  const rejectingProvider = new ShortbreadImageryProvider(Cesium, {
+    tileJson,
+    canvasFactory,
+    fetchImpl: async () => new Response(aboveBoundary, {
+      headers: { 'content-type': 'application/vnd.mapbox-vector-tile' }
+    })
+  });
+  await assert.rejects(rejectingProvider.requestImage(4, 7, 5), /feature cap/u);
+  assert.equal(rejectingProvider.getTelemetry().failed, 1);
+  rejectingProvider.destroy();
 });

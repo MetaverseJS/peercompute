@@ -232,7 +232,7 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   const motorcycleModule = read(`docs/motorcycle/${motorcycleModulePath}`);
   assert.ok(earthModule.includes('peercompute.geo.osm-region.v1'));
   assert.ok(earthModule.includes('OpenStreetMap'));
-  assert.ok(earthModule.includes('peercompute.earthgrid.actual-geometry-style.v2'), 'EarthGrid built bundle is stale: buffer-geometry style contract missing');
+  assert.ok(earthModule.includes('peercompute.earthgrid.actual-geometry-style.v3'), 'EarthGrid built bundle is stale: paired shoreline buffer-geometry style contract missing');
   assert.ok(earthModule.includes('peercompute.geo.shortbread-geometry-telemetry.v1'), 'EarthGrid built bundle is stale: Shortbread geometry lifecycle missing');
   assert.ok(earthModule.includes('peercompute.earthgrid.water-buffer-geometry.v2'), 'EarthGrid built bundle is stale: water buffer-geometry contract missing');
   assert.ok(earthModule.includes('flat-cesium-buffer-polygon'), 'EarthGrid built bundle is stale: flat water buffer polygon missing');
@@ -240,6 +240,12 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(earthModule.includes('#0080ff'), 'EarthGrid built bundle is stale: exact blue water color missing');
   assert.ok(earthModule.includes('peercompute.geo.water-nurbs-outlines.v1'), 'EarthGrid built bundle is stale: NURBS shoreline contract missing');
   assert.ok(earthModule.includes('exact-degree-one-nurbs-polyline'), 'EarthGrid built bundle is stale: exact shoreline topology policy missing');
+  assert.ok(earthModule.includes('shoreline-landline'), 'EarthGrid built bundle is stale: land-side shoreline companion category missing');
+  assert.ok(earthModule.includes('global-web-mercator-tile-pixels'), 'EarthGrid built bundle is stale: land-side offset-space contract missing');
+  assert.ok(earthModule.includes('#33ff73'), 'EarthGrid built bundle is stale: exact green land-side color missing');
+  assert.ok(earthModule.includes('peercompute.earthgrid.source-cache.v1'), 'EarthGrid built bundle is stale: local StateManager source cache missing');
+  assert.ok(earthModule.includes('peercompute.geo.cached-fetch-telemetry.v1'), 'EarthGrid built bundle is stale: backend/local cached fetch missing');
+  assert.ok(earthModule.includes('peercompute.local-artifact-cache-stats.v1'), 'EarthGrid built bundle is stale: bounded local artifact cache missing');
   assert.ok(earthModule.includes('peercompute.earthgrid.terrain-nurbs-geometry.v1'), 'EarthGrid built bundle is stale: terrain contour geometry missing');
   assert.ok(earthModule.includes('actual-cesium-buffer-geometry'), 'EarthGrid built bundle is stale: Cesium buffer renderer missing');
   assert.ok(earthModule.includes('Cesium.BufferPolygonCollection/BufferPolylineCollection'), 'EarthGrid built bundle is stale: buffer backend marker missing');
@@ -248,6 +254,9 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(earthModule.includes('terrain-source-native-zero'), 'EarthGrid built bundle is stale: truthful waterline reference missing');
   assert.ok(!earthModule.includes('EarthGridWaterlineTopoOverlayMaterial'), 'EarthGrid must not retain the painted terrain shader');
   assert.ok(earthHtml.includes('WATER // 50%'), 'EarthGrid built HTML is stale: water legend missing');
+  assert.ok(earthHtml.includes('LAND SIDE // GREEN COMPANION'), 'EarthGrid built HTML is stale: paired shoreline legend missing');
+  assert.ok(earthHtml.includes('SOURCE CACHE'), 'EarthGrid built HTML is stale: source-cache disclosure missing');
+  assert.ok(earthHtml.includes('BOUNDED Z10 DETAIL'), 'EarthGrid built HTML is stale: bounded interactive terrain LOD disclosure missing');
   assert.ok(earthModule.includes('geolocation-denied-fallback'), 'EarthGrid built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.game-runtime-state.v1'));
   assert.ok(motorcycleModule.includes('peercompute.synthetic-road-traffic.snapshot.v1'));
@@ -260,6 +269,8 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('geolocation-denied-fallback'), 'RoadVector built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.cesium-overview-renderer.v1'), 'RoadVector built bundle is stale: Cesium overview missing');
+  assert.ok(motorcycleModule.includes('peercompute.roadvector.source-cache.v1'), 'RoadVector built bundle is stale: local StateManager source cache missing');
+  assert.ok(motorcycleModule.includes('peercompute.geo.cached-fetch-telemetry.v1'), 'RoadVector built bundle is stale: backend/local cached fetch missing');
   assert.ok(motorcycleModule.includes('CappedHeightmapTerrainProvider'), 'RoadVector built bundle is stale: Cesium terrain provider missing');
   assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_TERRAIN_TIMEOUT'), 'RoadVector built bundle is stale: bounded terrain deadline missing');
   assert.ok(motorcycleModule.includes('aws-terrarium'), 'RoadVector built bundle is stale: reliable Terrarium terrain source missing');
@@ -270,6 +281,7 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
   assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
   assert.ok(motorcycleHtml.includes('AWS TERRAIN TILES'), 'RoadVector built HTML is stale: Terrarium attribution missing');
+  assert.ok(motorcycleHtml.includes('SOURCE CACHE'), 'RoadVector built HTML is stale: source-cache disclosure missing');
   assert.ok(motorcycleModule.includes('xr-standard'));
   [
     'docs/earth/cesium/Workers/createVerticesFromHeightmap.js',

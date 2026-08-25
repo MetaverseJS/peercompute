@@ -5,9 +5,11 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 
 import {
+  createCachedGeoFetch,
   GeodataClient,
   configuredGeodataBaseUrl,
 } from '@peercompute/geo-core';
+import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import { ViewRig } from '../../shared/xr/index.js';
 import { createMotorcycleInputRuntime } from './input/runtimeInput.js';
 import { createRoadvectorOverviewRuntime } from './overview/overviewRuntime.js';
@@ -37,6 +39,7 @@ const FIRST_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.firstOffsetMeters;
 const THIRD_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters;
 const RUNTIME_QUERY = new URLSearchParams(globalThis.location.search);
 const PHYSICS_DEBUG = RUNTIME_QUERY.get('physicsDebug') === '1';
+const ROADVECTOR_SOURCE_CACHE_MAXIMUM_BYTES = 32 * 1024 * 1024;
 
 const elements = Object.freeze({
   overviewViewport: document.querySelector('#overview-viewport'),
@@ -47,6 +50,7 @@ const elements = Object.freeze({
   osmStatus: document.querySelector('#osm-status'),
   terrainStatus: document.querySelector('#terrain-status'),
   overviewStatus: document.querySelector('#overview-status'),
+  cacheStatus: document.querySelector('#cache-status'),
   playerStatus: document.querySelector('#player-status'),
   physicsStatus: document.querySelector('#physics-status'),
   trafficStatus: document.querySelector('#traffic-status'),
@@ -84,9 +88,13 @@ function apiBaseUrl() {
   return configuredGeodataBaseUrl(import.meta.env);
 }
 
+const geodataBaseUrl = apiBaseUrl();
+const directSourceFetch = globalThis.fetch.bind(globalThis);
+let activeSourceFetch = directSourceFetch;
+const sourceFetch = (input, init) => activeSourceFetch(input, init);
 const geodata = new GeodataClient({
-  baseUrl: apiBaseUrl(),
-  fetchImpl: globalThis.fetch,
+  baseUrl: geodataBaseUrl,
+  fetchImpl: sourceFetch,
 });
 
 const scene = new THREE.Scene();
@@ -150,15 +158,92 @@ const runtime = {
   lastInputResetView: null,
   lastCameraTerrainFloor: terrainCameraFloor.getTelemetry(),
   originOffset: [0, 0, 0],
+  sourceCacheManager: null,
+  roadSourceCache: null,
+  terrainSourceCache: null,
+  cachedGeoFetch: null,
+  sourceCacheTelemetry: null,
+  sourceCacheError: null,
   xrUiCapture: false,
   lastHudAt: 0,
   cleanup: [],
 };
 
+function sourceCacheSnapshot() {
+  return {
+    schemaVersion: 'peercompute.roadvector.source-cache.v1',
+    owner: 'PeerCompute StateManager',
+    storage: 'local-only-memory-indexeddb',
+    yjsReplicated: false,
+    backendProxyConfigured: geodataBaseUrl !== null,
+    backendRoutePolicy: 'fixed-same-origin-or-configured-origin-no-upstream-url-input',
+    road: runtime.roadSourceCache?.getStats?.() ?? null,
+    terrain: runtime.terrainSourceCache?.getStats?.() ?? null,
+    transport: runtime.cachedGeoFetch?.getTelemetry?.() ?? runtime.sourceCacheTelemetry,
+    error: runtime.sourceCacheError,
+  };
+}
+
+function updateSourceCacheStatus(telemetry = runtime.cachedGeoFetch?.getTelemetry?.()) {
+  runtime.sourceCacheTelemetry = telemetry ? { ...telemetry } : null;
+  if (runtime.sourceCacheError) {
+    elements.cacheStatus.textContent = `LOCAL CACHE UNAVAILABLE // ${runtime.sourceCacheError}`;
+    return;
+  }
+  const hits = telemetry?.cacheHits ?? 0;
+  const misses = telemetry?.cacheMisses ?? 0;
+  const backend = geodataBaseUrl === null ? 'DIRECT SOURCE' : 'BACKEND + LOCAL';
+  elements.cacheStatus.textContent = `${backend} // ${hits} HIT // ${misses} MISS`;
+}
+
+function initializeSourceCaches() {
+  try {
+    const manager = new StateManager(null, {
+      enablePersistence: false,
+      disableNetworkProvider: true,
+      disableBroadcast: true,
+    });
+    const roadCache = manager.createLocalArtifactCache({
+      name: 'roadvector-road-source-v1',
+      maximumEntries: 64,
+      maximumBytes: ROADVECTOR_SOURCE_CACHE_MAXIMUM_BYTES,
+      maximumEntryBytes: 2 * 1024 * 1024,
+      persistent: true,
+    });
+    const terrainCache = manager.createLocalArtifactCache({
+      name: 'roadvector-terrain-source-v1',
+      maximumEntries: 96,
+      maximumBytes: ROADVECTOR_SOURCE_CACHE_MAXIMUM_BYTES,
+      maximumEntryBytes: 512 * 1024,
+      persistent: true,
+    });
+    const cachedFetch = createCachedGeoFetch({
+      fetchImpl: directSourceFetch,
+      geodataBaseUrl,
+      localRoadCache: roadCache,
+      localTerrainCache: terrainCache,
+      directFallback: true,
+      onTelemetry: updateSourceCacheStatus,
+    });
+    runtime.sourceCacheManager = manager;
+    runtime.roadSourceCache = roadCache;
+    runtime.terrainSourceCache = terrainCache;
+    runtime.cachedGeoFetch = cachedFetch;
+    activeSourceFetch = cachedFetch;
+    updateSourceCacheStatus(cachedFetch.getTelemetry());
+  } catch (error) {
+    runtime.sourceCacheError = error instanceof Error ? error.message : String(error);
+    activeSourceFetch = directSourceFetch;
+    updateSourceCacheStatus(null);
+  }
+}
+
+initializeSourceCaches();
+
 const overviewRuntime = createRoadvectorOverviewRuntime({
   Cesium,
   container: elements.overviewViewport,
-  fetchImpl: globalThis.fetch,
+  fetchImpl: sourceFetch,
   onLocationSelected(location, { source, clickedLocation }) {
     elements.regionStatus.textContent = `GLOBE SELECTED ${clickedLocation?.latitude?.toFixed?.(4) ?? location.latitude.toFixed(4)}, ${clickedLocation?.longitude?.toFixed?.(4) ?? location.longitude.toFixed(4)} // LOADING EXACT REGION`;
     return loadLocation(location, { source });
@@ -338,6 +423,7 @@ function publicState() {
     generation: runtime.generation,
     displayMode: runtime.displayMode,
     overview: overviewRuntime.getStatus(),
+    sourceCache: sourceCacheSnapshot(),
     scale: {
       ...ROADVECTOR_SCALE_DISCLOSURE,
       camera: {
@@ -501,7 +587,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       geodata,
       location,
       signal: abortController.signal,
-      fetchImpl: globalThis.fetch,
+      fetchImpl: sourceFetch,
     });
     if (generation !== runtime.generation || abortController.signal.aborted) return null;
     teardownWorld();
@@ -808,6 +894,8 @@ async function dispose() {
   viewRig.dispose();
   await inputRuntime.dispose();
   await overviewRuntime.dispose();
+  await runtime.cachedGeoFetch?.destroy?.();
+  await runtime.sourceCacheManager?.destroy?.();
   teardownWorld();
   scene.remove(xrRoot);
   renderer.dispose();

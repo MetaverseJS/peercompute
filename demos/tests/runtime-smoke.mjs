@@ -176,6 +176,13 @@ const allDemos = [
         && state.dataSourceCount === 0
         && state.scenePrimitiveCount >= 2
         && state.geodataConfigured === true
+        && state.sourceCache?.owner === 'PeerCompute StateManager'
+        && state.sourceCache?.yjsReplicated === false
+        && state.sourceCache?.backendProxyConfigured === true
+        && state.sourceCache?.road?.maximumBytes === 32 * 1024 * 1024
+        && state.sourceCache?.terrain?.maximumBytes === 64 * 1024 * 1024
+        && state.sourceCache?.transport?.proxyRequests > 0
+        && state.sourceCache?.transport?.cacheMisses > 0
         && state.localVisible === false
         && state.weatherStatus === 'off'
         && !state.fatalError
@@ -212,6 +219,12 @@ const allDemos = [
         && state.overview?.federalHighways?.loadedTiles > 0
         && state.overview?.federalHighways?.renderedRoads > 0
         && state.overview?.renderer?.terrainTilesLoaded === true
+        && state.sourceCache?.owner === 'PeerCompute StateManager'
+        && state.sourceCache?.yjsReplicated === false
+        && state.sourceCache?.backendProxyConfigured === true
+        && state.sourceCache?.road?.entries > 0
+        && state.sourceCache?.terrain?.entries > 0
+        && state.sourceCache?.transport?.proxyRequests > 0
         && state.overview?.players?.synthetic === false
         && state.locationSource === 'browser-geolocation'
         && state.scene?.counts?.sourceRoads > 0
@@ -376,6 +389,7 @@ async function runDemo(context, demo) {
     requestCount: 0
   };
   const weatherControl = { expired: false };
+  const sourceCacheControl = { roadRequests: 0, terrainRequests: 0 };
   let expectedHttpConsoleErrors = 0;
 
   if (
@@ -383,6 +397,46 @@ async function runDemo(context, demo) {
     || demo.name === 'motorcycle'
     || (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_LIVE_TERRAIN !== '1')
   ) {
+    await page.route('**/api/v1/cache/**', async (route) => {
+      const url = new URL(route.request().url());
+      const sharedHeaders = {
+        'cache-control': 'public, max-age=300, stale-while-revalidate=86400',
+        'x-geodata-cache': 'miss',
+        'x-geodata-source': 'deterministic-runtime-fixture',
+      };
+      if (url.pathname === '/api/v1/cache/osm-shortbread/tilejson') {
+        sourceCacheControl.roadRequests += 1;
+        await route.fulfill({
+          status: 200,
+          headers: { ...sharedHeaders, 'content-type': 'application/json; charset=utf-8' },
+          body: JSON.stringify(shortbreadTileJsonFixture),
+        });
+        return;
+      }
+      if (/^\/api\/v1\/cache\/osm-shortbread\/\d+\/\d+\/\d+\.mvt$/u.test(url.pathname)) {
+        sourceCacheControl.roadRequests += 1;
+        await route.fulfill({
+          status: 200,
+          headers: { ...sharedHeaders, 'content-type': 'application/vnd.mapbox-vector-tile' },
+          body: shortbreadMvtFixture,
+        });
+        return;
+      }
+      if (/^\/api\/v1\/cache\/aws-terrarium\/\d+\/\d+\/\d+\.png$/u.test(url.pathname)) {
+        sourceCacheControl.terrainRequests += 1;
+        await route.fulfill({
+          status: 200,
+          headers: {
+            ...sharedHeaders,
+            'cache-control': 'public, max-age=604800, stale-while-revalidate=2592000',
+            'content-type': 'image/png',
+          },
+          body: terrariumPngFixture,
+        });
+        return;
+      }
+      await route.abort('blockedbyclient');
+    });
     await page.route('**/api/v1/geo/osm?**', async (route) => {
       const url = new URL(route.request().url());
       osmControl.requestCount += 1;
@@ -905,6 +959,28 @@ async function runDemo(context, demo) {
       if (osmControl.requestCount < 7) {
         errors.push('[runtime] RoadVector source lifecycle did not exercise every bounded request path.');
       }
+
+      const roadvectorColdRouteCounts = { ...sourceCacheControl };
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.ready === true
+          && state.locationSource === 'browser-geolocation'
+          && state.overview?.roads?.status === 'current'
+          && state.overview?.relief?.status === 'current'
+          && state.scene?.counts?.sourceRoads > 0
+          && state.sourceCache?.road?.hits > 0
+          && state.sourceCache?.terrain?.hits > 0
+          && state.sourceCache?.transport?.cacheHits > 0;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      const roadvectorWarm = await page.evaluate(demo.verify);
+      if (sourceCacheControl.roadRequests !== roadvectorColdRouteCounts.roadRequests
+        || sourceCacheControl.terrainRequests !== roadvectorColdRouteCounts.terrainRequests) {
+        errors.push('[runtime] RoadVector warm reload repeated a fixed source-cache route request.');
+      }
+      if (roadvectorWarm.sourceCache?.yjsReplicated !== false) {
+        errors.push('[runtime] RoadVector warm source artifacts entered replicated state.');
+      }
     }
 
     if (demo.name === 'earth') {
@@ -941,10 +1017,10 @@ async function runDemo(context, demo) {
         const state = window.__earthDemo?.getState?.();
         return state?.terrain?.inFlight === 0 && state.terrain?.activeRetries === 0;
       }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
-      // The final successful heightmap schedules one bounded 150 ms vector
-      // height reconciliation. Wait past that public debounce before accepting
-      // the revision so the gate cannot sample a transient pre-refresh frame.
-      await page.waitForTimeout(250);
+      // The final successful heightmap schedules one bounded quiescent vector
+      // reconciliation. Wait past that public debounce before accepting the
+      // revision so the gate cannot sample a transient pre-refresh frame.
+      await page.waitForTimeout(1_000);
       await page.waitForFunction(() => {
         const state = window.__earthDemo?.getState?.();
         return state?.ready === true
@@ -1031,6 +1107,24 @@ async function runDemo(context, demo) {
         || !(initial.osmTelemetry?.waterNurbs?.curveCount > 0)) {
         errors.push('[runtime] Earth exact one-pass bright-blue NURBS shoreline geometry is missing.');
       }
+      if (initial.waterStyle?.outline?.landCompanion?.color !== '#33ff73'
+        || initial.waterStyle?.outline?.landCompanion?.geometry !== 'distinct-degree-one-nurbs-buffer-polyline'
+        || initial.waterStyle?.outline?.landCompanion?.side !== 'land'
+        || initial.waterStyle?.outline?.landCompanion?.offsetSpace !== 'global-web-mercator-tile-pixels'
+        || initial.waterStyle?.outline?.landCompanion?.requestedOffsetPixels !== 2
+        || initial.waterStyle?.outline?.landCompanion?.displayDerived !== true
+        || initial.waterStyle?.outline?.landCompanion?.linePassesPerPath !== 1
+        || initial.waterStyle?.outline?.landCompanion?.glow !== false
+        || initial.waterStyle?.outline?.landCompanion?.halo !== false
+        || !(initial.osmTelemetry?.geometry?.shorelineLandlineCurveCount > 0)
+        || initial.osmTelemetry?.geometry?.shorelineLandlineCurveCount
+          !== initial.osmTelemetry?.geometry?.shorelineCurveCount
+        || initial.osmTelemetry?.shorelineCompanion?.unpairedCurveCount !== 0
+        || initial.osmTelemetry?.shorelineCompanion?.pairInvariantSatisfied !== true
+        || initial.osmTelemetry?.shorelineCompanion?.glow !== false
+        || initial.osmTelemetry?.shorelineCompanion?.halo !== false) {
+        errors.push('[runtime] Earth distinct green land-side NURBS shoreline companion is missing or unpaired.');
+      }
       if (initial.terrainContourStyle?.waterLineElevationMeters !== 0
         || initial.terrainContourStyle?.waterLineReference !== 'terrain-source-native-zero'
         || initial.terrainContourStyle?.atOrBelowWaterColor !== initial.waterStyle?.outline?.color
@@ -1046,6 +1140,10 @@ async function runDemo(context, demo) {
         || !(initial.terrainContourStyle?.atOrBelowWaterPathCount > 0)
         || !(initial.terrainContourStyle?.aboveWaterPathCount > 0)) {
         errors.push('[runtime] Earth actual terrain contours do not preserve blue submerged and green positive geometry.');
+      }
+      if ((initial.terrain?.maximumLoadedLevel ?? Number.POSITIVE_INFINITY) > 10
+        || (initial.terrain?.lastTile?.level ?? Number.POSITIVE_INFINITY) > 10) {
+        errors.push('[runtime] Earth interactive Terrarium requests escaped the bounded z10 performance cap.');
       }
       if (initial.osmTelemetry?.limits?.maximumTotalBytes !== 192 * 1024 * 1024
         || initial.osmTelemetry?.limits?.maximumActiveVertices !== 4_000_000
@@ -1218,6 +1316,13 @@ async function runDemo(context, demo) {
       await page.waitForTimeout(50);
       await page.evaluate(() => window.__earthDemo.setLocation({ longitude: -149.893, latitude: 61.222 }));
       await page.evaluate(() => Promise.allSettled([window.__earthDelayedLoad]));
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.location?.longitude === -149.893
+          && state?.location?.latitude === 61.222
+          && state?.localStatus === 'local-live'
+          && state?.localVisible === true;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
       const raced = await page.evaluate(demo.verify);
       if (raced.location?.longitude !== -149.893 || raced.location?.latitude !== 61.222) {
         errors.push('[runtime] An older delayed Earth generation replaced the current scope.');
@@ -1239,6 +1344,31 @@ async function runDemo(context, demo) {
       }
       if (expectedHttpConsoleErrors !== 0) errors.push('[runtime] Expected dense-region HTTP failure was not observed exactly once.');
       if (osmControl.requestCount < 7) errors.push('[runtime] Earth local-source lifecycle did not exercise every bounded request path.');
+
+      const earthColdRouteCounts = { ...sourceCacheControl };
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__earthDemo?.viewer), null, {
+        timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs,
+      });
+      await page.evaluate(() => window.__earthDemo.setLocation({ longitude: -149.895, latitude: 61.2205 }));
+      await page.waitForFunction(() => {
+        const state = window.__earthDemo?.getState?.();
+        return state?.ready === true
+          && state.localStatus === 'local-live'
+          && state.localVisible === true
+          && state.osmTelemetry?.shorelineCompanion?.pairInvariantSatisfied === true
+          && state.sourceCache?.road?.hits > 0
+          && state.sourceCache?.terrain?.hits > 0
+          && state.sourceCache?.transport?.cacheHits > 0;
+      }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      const earthWarm = await page.evaluate(demo.verify);
+      if (sourceCacheControl.roadRequests !== earthColdRouteCounts.roadRequests
+        || sourceCacheControl.terrainRequests !== earthColdRouteCounts.terrainRequests) {
+        errors.push('[runtime] Earth warm reload repeated a fixed source-cache route request.');
+      }
+      if (earthWarm.sourceCache?.yjsReplicated !== false) {
+        errors.push('[runtime] Earth warm source artifacts entered replicated state.');
+      }
     }
 
     if (demo.name === 'wxglobe' && process.env.WXGLOBE_REQUIRE_AWS_TERRAIN === '1') {

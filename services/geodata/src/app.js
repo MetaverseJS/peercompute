@@ -6,6 +6,7 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import { loadConfig } from './config.js';
 import { asPublicError, createErrorEnvelope, GeodataError } from './errors.js';
 import { parseOsmRegionQuery } from './osm/bbox.js';
+import { SOURCE_CACHE_ROUTES } from './providers/source-artifacts.js';
 import { createGeodataService } from './service.js';
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
@@ -67,7 +68,9 @@ export async function buildGeodataApp(options = {}) {
     fetchImpl: options.fetchImpl,
     clock,
     cache: options.cache,
+    sourceCache: options.sourceCache,
     overpassProvider: options.overpassProvider,
+    sourceArtifactProvider: options.sourceArtifactProvider,
     processInfo: options.processInfo
   });
   app.decorate('geodataService', service);
@@ -79,7 +82,15 @@ export async function buildGeodataApp(options = {}) {
     },
     methods: ['GET', 'OPTIONS'],
     allowedHeaders: ['Accept', 'Content-Type', 'If-None-Match'],
-    exposedHeaders: ['ETag', 'X-Geodata-Cache', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+    exposedHeaders: [
+      'Age',
+      'ETag',
+      'X-Geodata-Cache',
+      'X-Geodata-Source',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset'
+    ],
     credentials: false,
     maxAge: 600,
     strictPreflight: true,
@@ -178,6 +189,82 @@ export async function buildGeodataApp(options = {}) {
       requestAbort.cleanup();
     }
   });
+
+  async function sendCachedSourceArtifact(request, reply, load, policy) {
+    if (Object.keys(request.query ?? {}).length !== 0) {
+      throw new GeodataError(
+        'INVALID_QUERY',
+        'Cached source routes do not accept query parameters.',
+        { statusCode: 400, retryable: false }
+      );
+    }
+    const requestAbort = createRequestAbort(request);
+    try {
+      const result = await load(requestAbort.signal);
+      const ageSeconds = Math.max(0, Math.floor((clock() - result.fetchedAtMs) / 1_000));
+      const cacheControl = result.fresh
+        ? `public, max-age=${policy.maxAgeSeconds}, stale-while-revalidate=${policy.staleWhileRevalidateSeconds}, stale-if-error=${policy.staleIfErrorSeconds}`
+        : `public, max-age=0, must-revalidate, stale-if-error=${policy.staleIfErrorSeconds}`;
+      reply
+        .header('age', String(ageSeconds))
+        .header('cache-control', cacheControl)
+        .header('etag', result.etag)
+        .header('x-geodata-cache', result.cacheStatus)
+        .header('x-geodata-source', result.sourceId);
+      if (!result.fresh) reply.header('warning', '110 - "Response is stale"');
+      if (requestAcceptsEtag(request.headers['if-none-match'], result.etag)) {
+        return reply.code(304).send();
+      }
+      return reply.type(result.contentType).send(result.bytes);
+    } finally {
+      requestAbort.cleanup();
+    }
+  }
+
+  const sourceRouteConfig = {
+    compress: false,
+    rateLimit: {
+      max: config.limits.sourceRateLimitMax,
+      timeWindow: config.limits.rateLimitWindow
+    }
+  };
+  const shortbreadPolicy = Object.freeze({
+    maxAgeSeconds: Math.floor(config.limits.shortbreadFreshTtlMs / 1_000),
+    staleWhileRevalidateSeconds: config.limits.shortbreadPublicStaleWhileRevalidateSeconds,
+    staleIfErrorSeconds: Math.floor(config.limits.shortbreadStaleIfErrorMs / 1_000)
+  });
+  const terrariumPolicy = Object.freeze({
+    maxAgeSeconds: Math.floor(config.limits.terrariumFreshTtlMs / 1_000),
+    staleWhileRevalidateSeconds: config.limits.terrariumPublicStaleWhileRevalidateSeconds,
+    staleIfErrorSeconds: Math.floor(config.limits.terrariumStaleIfErrorMs / 1_000)
+  });
+
+  app.get(SOURCE_CACHE_ROUTES.shortbreadTileJson, {
+    config: sourceRouteConfig
+  }, (request, reply) => sendCachedSourceArtifact(
+    request,
+    reply,
+    (signal) => service.getShortbreadTileJson({ signal }),
+    shortbreadPolicy
+  ));
+
+  app.get(SOURCE_CACHE_ROUTES.shortbreadTile, {
+    config: sourceRouteConfig
+  }, (request, reply) => sendCachedSourceArtifact(
+    request,
+    reply,
+    (signal) => service.getShortbreadTile(request.params, { signal }),
+    shortbreadPolicy
+  ));
+
+  app.get(SOURCE_CACHE_ROUTES.terrariumTile, {
+    config: sourceRouteConfig
+  }, (request, reply) => sendCachedSourceArtifact(
+    request,
+    reply,
+    (signal) => service.getTerrariumTile(request.params, { signal }),
+    terrariumPolicy
+  ));
 
   await app.ready();
   return app;

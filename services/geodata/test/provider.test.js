@@ -39,6 +39,158 @@ test('provider sends only the fixed POST endpoint, bounded query, and identifyin
   assert.match(query, /\(1\.000000,2\.000000,3\.000000,4\.000000\)/u);
 });
 
+test('provider retries one retryable HTTP or transport failure and succeeds on the second attempt', async () => {
+  for (const firstFailure of ['http-503', 'transport']) {
+    let calls = 0;
+    const backoffs = [];
+    const provider = createOverpassProvider({
+      config: providerConfig({ overpassRetryBackoffMs: 17 }),
+      waitForRetry: async (delayMs, signal) => {
+        assert.equal(signal.aborted, false);
+        backoffs.push(delayMs);
+      },
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) {
+          if (firstFailure === 'transport') throw new Error('temporary socket failure');
+          return new Response('{}', {
+            status: 503,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
+        return responseForJson({ elements: [] });
+      }
+    });
+    assert.deepEqual((await provider.fetchRegion(request)).elements, []);
+    assert.equal(calls, 2);
+    assert.deepEqual(backoffs, [17]);
+  }
+});
+
+test('provider aborts during retry backoff without issuing the second attempt', async () => {
+  let calls = 0;
+  const controller = new AbortController();
+  const provider = createOverpassProvider({
+    config: providerConfig({
+      overpassCallTimeoutMs: 5_000,
+      overpassRetryBackoffMs: 500
+    }),
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response('{}', {
+        status: 503,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  const pending = provider.fetchRegion({ ...request, signal: controller.signal });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  controller.abort(new DOMException('test caller aborted', 'AbortError'));
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+  assert.equal(calls, 1);
+  assert.equal(provider.stats.active, 0);
+});
+
+test('provider shared deadline includes retry backoff and prevents a late second attempt', async () => {
+  let calls = 0;
+  const provider = createOverpassProvider({
+    config: providerConfig({
+      overpassCallTimeoutMs: 20,
+      overpassRetryBackoffMs: 100
+    }),
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response('{}', {
+        status: 503,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  await assert.rejects(
+    provider.fetchRegion(request),
+    (error) => error.code === 'UPSTREAM_TIMEOUT' && error.statusCode === 504
+  );
+  assert.equal(calls, 1);
+  assert.equal(provider.stats.active, 0);
+});
+
+test('provider attempts at most twice when a retryable response remains unavailable', async () => {
+  let calls = 0;
+  let backoffs = 0;
+  const provider = createOverpassProvider({
+    config: providerConfig(),
+    waitForRetry: async () => { backoffs += 1; },
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response('{}', {
+        status: 502,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  await assert.rejects(
+    provider.fetchRegion(request),
+    (error) => error.code === 'UPSTREAM_HTTP_ERROR' && error.retryable === true
+  );
+  assert.equal(calls, 2);
+  assert.equal(backoffs, 1);
+});
+
+test('provider never retries 4xx, schema, size, or truncation failures', async () => {
+  const cases = [
+    {
+      name: 'HTTP 400',
+      expectedCode: 'UPSTREAM_HTTP_ERROR',
+      response: () => new Response('{}', {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      })
+    },
+    {
+      name: 'invalid schema',
+      expectedCode: 'UPSTREAM_SCHEMA_INVALID',
+      response: () => responseForJson({ notElements: [] })
+    },
+    {
+      name: 'declared oversized body',
+      expectedCode: 'UPSTREAM_BODY_TOO_LARGE',
+      limits: { overpassMaxResponseBytes: 8 },
+      response: () => new Response('{}', {
+        headers: { 'content-type': 'application/json', 'content-length': '9' }
+      })
+    },
+    {
+      name: 'truncated result bound',
+      expectedCode: 'UPSTREAM_RESULT_LIMIT_EXCEEDED',
+      response: () => responseForJson({ elements: Array.from(
+        { length: OVERPASS_OUTPUT_LIMIT },
+        (_, id) => ({ type: 'node', id })
+      ) })
+    }
+  ];
+
+  for (const fixture of cases) {
+    let calls = 0;
+    const provider = createOverpassProvider({
+      config: providerConfig(fixture.limits),
+      waitForRetry: async () => {
+        throw new Error(`unexpected retry for ${fixture.name}`);
+      },
+      fetchImpl: async () => {
+        calls += 1;
+        return fixture.response();
+      }
+    });
+    await assert.rejects(
+      provider.fetchRegion(request),
+      (error) => error.code === fixture.expectedCode,
+      fixture.name
+    );
+    assert.equal(calls, 1, fixture.name);
+  }
+});
+
 test('provider runs no more than two upstream calls concurrently', async () => {
   let active = 0;
   let maximumActive = 0;

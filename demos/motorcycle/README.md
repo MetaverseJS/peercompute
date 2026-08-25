@@ -66,6 +66,15 @@ Serve, Funnel, or a public tunnel. Accept or install that development
 certificate on the headset/browser before testing geolocation or immersive
 WebXR. The same-origin `/api` proxy keeps the geodata service on loopback.
 
+RoadVector's official Shortbread overview tiles and AWS Terrarium source tiles
+use a bounded local-only artifact cache owned by PeerCompute `StateManager` and
+a second bounded cache at the same-origin geodata backend. The local artifact
+tier uses memory plus IndexedDB but is separate from the replicated Yjs
+document, so tile bytes and cache metadata are never sent to peers. Fixed
+backend routes expose strong ETags and hit/miss/stale state without accepting
+caller-supplied upstream URLs. Detailed normalized OSM ride regions retain the
+backend's existing bounded semantic cache.
+
 Production builds do not silently select a cross-origin backend. Build with
 `VITE_GEODATA_SAME_ORIGIN=true` (or
 `VITE_GEODATA_API_URL=same-origin`) behind an HTTPS reverse proxy, or set an
@@ -123,7 +132,9 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
 
 ## Data, privacy, and limits
 
-- Exact device coordinates remain in browser memory only. Requests are
+- Exact device coordinates remain in browser memory only; bounded road and
+  terrain source tiles around that coordinate may remain in the disclosed
+  local-only artifact cache. Requests are
   quantized and expanded to a bounded region before reaching the backend; the
   service does not log exact query coordinates.
 - Startup requests browser location permission so the opening hemisphere is

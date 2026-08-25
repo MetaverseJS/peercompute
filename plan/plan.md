@@ -1173,3 +1173,60 @@ The root node should exist on a domain secured with SSL enabling all executable 
   a later scene error and recovers only after a later fully qualified frame;
   an unrelated post-presentation error is not retroactively assigned to an
   already-presented layer revision.
+
+## EarthGrid land-side shoreline and multilevel geodata cache snapshot - 2026-08-25 AKDT
+
+- Add one distinct solid green land-side companion curve beside every bright
+  blue Shortbread shoreline curve. The green line is derived display geometry,
+  not a second source boundary or a glow/halo pass; both members remain bounded
+  unit-weight degree-one NURBS polylines with explicit topology and omission
+  telemetry.
+- Derive the companion on the land side of ocean/lake outer rings and holes,
+  retain tile-edge suppression and antimeridian behavior, and charge every
+  generated control/tessellated vertex to the existing hard active caps.
+- Put validated road and terrain response artifacts behind a bounded local-only
+  cache owned by PeerCompute `StateManager`. Cache payloads must never enter the
+  replicated Yjs warm state or presence channel; persistence, byte/entry caps,
+  TTL/stale bounds, integrity metadata, eviction, and lifecycle remain explicit.
+- Extend the loopback geodata service from its existing coalesced OSM-region
+  cache to bounded allowlisted road/vector and terrain source caches. Preserve
+  source validation, content types, freshness, ETags, abort isolation, request
+  coalescing, SSRF prevention, and visible cache provenance.
+- Wire EarthGrid and RoadVector through the same-origin cache endpoints and
+  StateManager cache adapter while retaining direct-source fallback for static
+  deployments without the backend. Measure cold/warm behavior and ensure the
+  new shoreline pass does not reopen broad-view synchronous geometry work.
+
+## EarthGrid land-side shoreline and multilevel cache result - 2026-08-25 AKDT
+
+- The requested companion is complete as one solid `#33ff73` degree-one NURBS
+  buffer curve on the derived land side of every accepted `#24cfff` water
+  boundary. Outer rings, island holes, tile seams, antimeridian wrapping,
+  bounded miter/bevel joins, topology caps, exact pairing, and one-pass/no-glow
+  telemetry are enforced before atomic tile presentation.
+- PeerCompute `StateManager` now owns a separate local artifact tier backed by
+  bounded memory and IndexedDB. It is deliberately outside the Y.Doc and
+  network provider, so precise road/terrain bytes and cache keys are never
+  replicated to peers. EarthGrid and RoadVector use it for validated
+  Shortbread and Terrarium responses, with caller abort, coalescing, stale,
+  integrity, LRU, byte-reservation, and admission telemetry.
+- The loopback geodata service now exposes only fixed allowlisted Shortbread
+  TileJSON/MVT and AWS Terrarium routes. A separate 512-entry/128 MiB source
+  cache preserves exact validated bytes, strong ETags/304, source TTL/stale
+  policy, coalescing, concurrency/queue limits, and byte-bounded LRU. Detailed
+  local OSM regions remain in their independent 128-entry/128 MiB semantic
+  cache; NOAA ETOPO remains a direct bounded source and is never mislabeled.
+- The official Alaska z5 Shortbread boundary tile proved that the old 10,000
+  feature admission was below real source density. Backend and every consumer
+  now share the exported 25,000-feature hard ceiling; the existing 2 MiB tile,
+  one-million coordinate, 192 MiB geometry-session, and four-million active
+  vertex limits remain unchanged, and 25,001 still fails closed.
+- EarthGrid now uses request-render mode, z10 interactive Terrarium detail, a
+  six-pixel globe screen-space error, and one height reconciliation after a
+  quiescent terrain burst. Detailed global geometry remains deferred below z5.
+  This keeps interaction usable while terrain continues progressively filling
+  its bounded cache rather than blocking the qualified vector/local scene.
+- Final private services are direct Tailnet HTTPS listeners, without Tailscale
+  Serve/Funnel: WXGlobe `https://100.68.165.52:5186/`, EarthGrid
+  `https://100.68.165.52:5187/`, and RoadVector
+  `https://100.68.165.52:5188/`; geodata stays on loopback `127.0.0.1:8788`.

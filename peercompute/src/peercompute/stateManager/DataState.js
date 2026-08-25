@@ -23,6 +23,9 @@ export class DataState {
     this.state = stateMap;
     this.hotStore = hotStore || new Map();
     this.deltaNamespace = deltaNamespace;
+    // Local source-artifact caches are intentionally not stored in `state`.
+    // The registry is process-local and therefore cannot enter Yjs replication.
+    this.localArtifactCaches = new Map();
   }
 
   _getNamespaceMap(namespace) {
@@ -103,5 +106,51 @@ export class DataState {
 
   listHotBuffers() {
     return Array.from(this.hotStore.keys());
+  }
+
+  registerLocalArtifactCache(name, cache) {
+    const key = String(name ?? '').trim();
+    if (!key || !cache || typeof cache !== 'object') {
+      throw new TypeError('[DataState] local artifact cache name and instance are required');
+    }
+    if (this.localArtifactCaches.has(key)) {
+      throw new Error(`[DataState] local artifact cache ${key} is already registered`);
+    }
+    this.localArtifactCaches.set(key, cache);
+    return cache;
+  }
+
+  getLocalArtifactCache(name) {
+    return this.localArtifactCaches.get(String(name ?? '').trim()) ?? null;
+  }
+
+  unregisterLocalArtifactCache(name, cache) {
+    const key = String(name ?? '').trim();
+    if (cache && this.localArtifactCaches.get(key) !== cache) return false;
+    return this.localArtifactCaches.delete(key);
+  }
+
+  getLocalArtifactCacheStats() {
+    let entries = 0;
+    let residentBytes = 0;
+    let pending = 0;
+    for (const cache of this.localArtifactCaches.values()) {
+      const stats = cache?.getStats?.();
+      entries += Number(stats?.entries ?? 0);
+      residentBytes += Number(stats?.residentBytes ?? 0);
+      pending += Number(stats?.pending ?? 0);
+    }
+    return Object.freeze({
+      caches: this.localArtifactCaches.size,
+      entries,
+      residentBytes,
+      pending
+    });
+  }
+
+  async destroyLocalArtifactCaches() {
+    const caches = [...this.localArtifactCaches.values()];
+    this.localArtifactCaches.clear();
+    await Promise.allSettled(caches.map((cache) => cache?.destroy?.()));
   }
 }

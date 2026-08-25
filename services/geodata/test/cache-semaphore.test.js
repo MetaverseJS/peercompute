@@ -103,6 +103,48 @@ test('aborting one cache subscriber does not abort the shared loader or other su
   assert.equal((await survivingSubscriber).value, 'real-data');
 });
 
+test('cache reserves pending bytes, enforces hard entry/aggregate caps, and exposes bounded telemetry', async () => {
+  const firstGate = deferred();
+  const secondGate = deferred();
+  const cache = new CoalescingTtlLruCache({
+    maxEntries: 3,
+    maxBytes: 8,
+    maxEntryBytes: 4,
+    freshTtlMs: 1_000,
+    staleIfErrorMs: 1_000,
+    sizeOf: (value) => Buffer.byteLength(value)
+  });
+  const first = cache.getOrLoad('first', () => firstGate.promise);
+  const firstSubscriber = cache.getOrLoad('first', async () => 'wrong');
+  const second = cache.getOrLoad('second', () => secondGate.promise);
+  assert.equal(cache.stats.pending, 2);
+  assert.equal(cache.stats.reservedBytes, 8);
+  assert.equal(cache.stats.coalesced, 1);
+  assert.throws(
+    () => cache.getOrLoad('third', async () => '3333'),
+    (error) => error.code === 'CACHE_BUSY' && error.statusCode === 503
+  );
+
+  firstGate.resolve('1111');
+  secondGate.resolve('2222');
+  await Promise.all([first, firstSubscriber, second]);
+  assert.equal(cache.stats.bytes, 8);
+  assert.equal(cache.stats.reservedBytes, 0);
+  assert.equal(cache.stats.misses, 3);
+
+  await cache.getOrLoad('first', async () => 'wrong');
+  await cache.getOrLoad('third', async () => '3333');
+  assert.equal(cache.stats.bytes, 8);
+  assert.equal(cache.stats.hits, 1);
+  assert.equal(cache.stats.evictions, 1);
+  await assert.rejects(
+    cache.getOrLoad('oversized', async () => '12345'),
+    (error) => error.code === 'CACHE_ENTRY_TOO_LARGE' && error.statusCode === 502
+  );
+  assert.equal(cache.stats.pending, 0);
+  assert.ok(cache.stats.bytes <= cache.stats.maxBytes);
+});
+
 test('bounded semaphore caps concurrency, rejects excess queueing, and removes aborted waiters', async () => {
   const semaphore = new BoundedSemaphore({ concurrency: 2, maxQueue: 1 });
   const firstRelease = await semaphore.acquire();

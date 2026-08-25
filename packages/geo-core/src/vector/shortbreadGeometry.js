@@ -4,11 +4,17 @@ import {
   decodeShortbreadTile,
   formatShortbreadTileUrl,
   shortbreadDrawCommands,
+  SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
   SHORTBREAD_MAX_ZOOM,
   SHORTBREAD_TILEJSON_URL,
   validateShortbreadTileJson,
 } from './shortbread.js';
-import { buildWaterNurbsOutlines, WATER_NURBS_LIMITS } from './waterNurbs.js';
+import {
+  buildLandSideNurbsCompanions,
+  buildWaterNurbsOutlines,
+  SHORELINE_LANDLINE_LIMITS,
+  WATER_NURBS_LIMITS,
+} from './waterNurbs.js';
 
 const TWO_PI = Math.PI * 2;
 const WEB_MERCATOR_MAXIMUM_LATITUDE_RADIANS = 85.0511287798066 * Math.PI / 180;
@@ -32,7 +38,7 @@ export const SHORTBREAD_GEOMETRY_LIMITS = Object.freeze({
   maximumCachedTiles: 96,
   maximumTileBytes: 2 * 1024 * 1024,
   maximumTotalBytes: 192 * 1024 * 1024,
-  maximumFeaturesPerTile: 10_000,
+  maximumFeaturesPerTile: SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
   maximumActiveVertices: 4_000_000,
   maximumWaterRoadIntersectionTestsPerTile: 2_000_000,
   maximumWaterSampleIntersectionTestsPerQuery: 65_536,
@@ -43,6 +49,12 @@ export const SHORTBREAD_GEOMETRY_LIMITS = Object.freeze({
   // a global ocean polygon cannot monopolize the browser main thread.
   maximumPolygonSourceRingsPerSurface: 1_024,
   maximumPolygonSourcePositionsPerSurface: 16_384,
+  maximumLandlineOutputControlPointsPerTile: (
+    SHORELINE_LANDLINE_LIMITS.maximumOutputControlPointsPerTile
+  ),
+  maximumLandlineOffsetOperationsPerTile: (
+    SHORELINE_LANDLINE_LIMITS.maximumOffsetOperationsPerTile
+  ),
 });
 
 // Shortbread roads and inland water both begin at z5. EarthGrid uses this
@@ -53,6 +65,7 @@ export const SHORTBREAD_GEOMETRY_DETAIL_MINIMUM_ZOOM = 5;
 export const SHORTBREAD_GEOMETRY_Z_INDEX = Object.freeze({
   waterSurface: 10,
   shoreline: 20,
+  landline: 25,
   building: 30,
   road: 40,
 });
@@ -60,6 +73,7 @@ export const SHORTBREAD_GEOMETRY_Z_INDEX = Object.freeze({
 export const SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS = Object.freeze({
   waterSurface: 0,
   shoreline: 0.5,
+  landline: 0.75,
   building: 1,
   road: 2,
 });
@@ -67,6 +81,7 @@ export const SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS = Object.freeze({
 export const SHORTBREAD_GEOMETRY_CATEGORY_ORDER = Object.freeze([
   'water-surface',
   'shoreline',
+  'shoreline-landline',
   'building-wireframe',
   'road',
 ]);
@@ -85,6 +100,7 @@ export const SHORTBREAD_GEOMETRY_STYLE = Object.freeze({
   linePassesPerCurve: 1,
   water: Object.freeze({ color: '#0080ff', alpha: 0.5 }),
   shoreline: Object.freeze({ color: '#24cfff', alpha: 1, width: 1.5 }),
+  landline: Object.freeze({ color: '#33ff73', alpha: 1, width: 1, offsetTilePixels: 2 }),
   building: Object.freeze({ color: '#32aaff', alpha: 1, width: 1 }),
   compatibilityZIndex: SHORTBREAD_GEOMETRY_Z_INDEX,
   categoryOrder: SHORTBREAD_GEOMETRY_CATEGORY_ORDER,
@@ -293,18 +309,8 @@ export function shortbreadTilePixelToLonLat(position, tile) {
   return Object.freeze([longitude, latitude]);
 }
 
-function waterNurbsForCommands(commands, tile, waterNurbsLimits) {
-  const rings = [];
-  for (let commandIndex = 0; commandIndex < commands.length; commandIndex += 1) {
-    const command = commands[commandIndex];
-    if (command?.kind !== 'water' || command.nurbsOutline === false) continue;
-    for (const polygon of polygonParts(command.geometry, `water command ${commandIndex}`)) {
-      for (const ring of polygon) {
-        rings.push(ring.map((position) => projectLonLatToShortbreadTilePixel(position, tile)));
-      }
-    }
-  }
-  const outlines = buildWaterNurbsOutlines(rings, {
+function waterNurbsForRingRecords(ringRecords, tile, waterNurbsLimits) {
+  const outlines = buildWaterNurbsOutlines(ringRecords.map(({ points }) => points), {
     tileSize: tile.size,
     ...waterNurbsLimits,
   });
@@ -335,7 +341,40 @@ function validateWaterNurbsLimits(overrides) {
   return Object.freeze(limits);
 }
 
-function planCounts(descriptors, commands, waterNurbs, deferral) {
+function validateLandlineLimits(overrides) {
+  const limits = {
+    offsetPixels: SHORTBREAD_GEOMETRY_STYLE.landline.offsetTilePixels,
+    maximumMiterRatio: 2,
+    maximumOutputControlPoints: SHORELINE_LANDLINE_LIMITS.maximumOutputControlPointsPerTile,
+    maximumOperations: SHORELINE_LANDLINE_LIMITS.maximumOffsetOperationsPerTile,
+  };
+  if (overrides === undefined || overrides === null) return Object.freeze(limits);
+  if (typeof overrides !== 'object' || Array.isArray(overrides)) {
+    throw new TypeError('landlineLimits must be an object.');
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!(key in limits)) throw new TypeError(`Unknown shoreline landline limit ${key}.`);
+    if (key === 'offsetPixels' || key === 'maximumMiterRatio') {
+      const hardMaximum = key === 'offsetPixels'
+        ? SHORELINE_LANDLINE_LIMITS.maximumOffsetPixels
+        : SHORELINE_LANDLINE_LIMITS.maximumMiterRatio;
+      if (!Number.isFinite(value) || value <= 0 || value > hardMaximum) {
+        throw new RangeError(`${key} cannot exceed the hard shoreline landline limit.`);
+      }
+    } else {
+      const hardMaximum = key === 'maximumOutputControlPoints'
+        ? SHORELINE_LANDLINE_LIMITS.maximumOutputControlPointsPerTile
+        : SHORELINE_LANDLINE_LIMITS.maximumOffsetOperationsPerTile;
+      if (!Number.isSafeInteger(value) || value < 1 || value > hardMaximum) {
+        throw new RangeError(`${key} cannot exceed the hard shoreline landline limit.`);
+      }
+    }
+    limits[key] = Number(value);
+  }
+  return Object.freeze(limits);
+}
+
+function planCounts(descriptors, commands, waterNurbs, shorelineCompanion, deferral) {
   const count = (kind) => descriptors.filter((descriptor) => descriptor.kind === kind).length;
   const vertexCount = descriptors.reduce((total, descriptor) => (
     total + (descriptor.kind === 'water-surface'
@@ -349,6 +388,7 @@ function planCounts(descriptors, commands, waterNurbs, deferral) {
     roadCommandCount: commands.filter((command) => command?.kind === 'road').length,
     waterSurfaceCount: count('water-surface'),
     shorelineCurveCount: count('shoreline'),
+    shorelineLandlineCurveCount: count('shoreline-landline'),
     buildingWireframeCount: count('building-wireframe'),
     roadCurveCount: count('road'),
     entityCount: descriptors.length,
@@ -356,38 +396,12 @@ function planCounts(descriptors, commands, waterNurbs, deferral) {
     waterNurbsSourceRingCount: waterNurbs.sourceRingCount,
     waterNurbsSuppressedBoundarySegmentCount: waterNurbs.suppressedBoundarySegmentCount,
     waterNurbsFullyClippedRingCount: waterNurbs.fullyClippedRingCount,
+    shorelineLandlineSourceControlPointCount: shorelineCompanion.sourceControlPointCount,
+    shorelineLandlineOutputControlPointCount: shorelineCompanion.outputControlPointCount,
     deferredCommandCount: deferral.commandCount,
     deferredWaterCommandCount: deferral.waterCommandCount,
     deferredSourcePositionCount: deferral.sourcePositionCount,
   });
-}
-
-function shorelineCoordinateKey(position) {
-  return `${Math.round(position[0] * 1e8)}:${Math.round(position[1] * 1e8)}`;
-}
-
-function shorelineSegmentKey(left, right) {
-  const leftKey = shorelineCoordinateKey(left);
-  const rightKey = shorelineCoordinateKey(right);
-  return leftKey < rightKey ? `${leftKey}|${rightKey}` : `${rightKey}|${leftKey}`;
-}
-
-function waterSegmentBodyIndex(waterSurfaces) {
-  const index = new Map();
-  for (const surface of waterSurfaces) {
-    for (const ring of surface.rings) {
-      for (let positionIndex = 0; positionIndex < ring.length - 1; positionIndex += 1) {
-        const key = shorelineSegmentKey(ring[positionIndex], ring[positionIndex + 1]);
-        if (!index.has(key)) index.set(key, surface.waterBodyId);
-      }
-    }
-  }
-  return index;
-}
-
-function shorelineWaterBodyId(positions, segmentBodyIndex) {
-  if (positions.length < 2) return null;
-  return segmentBodyIndex.get(shorelineSegmentKey(positions[0], positions[1])) ?? null;
 }
 
 export function planShortbreadGeometry(commands, tile, {
@@ -395,6 +409,7 @@ export function planShortbreadGeometry(commands, tile, {
   maximumVertices = SHORTBREAD_GEOMETRY_LIMITS.maximumActiveVertices,
   minimumGeometryZoom = 0,
   waterNurbsLimits,
+  landlineLimits,
 } = {}) {
   if (!Array.isArray(commands)) throw new TypeError('Shortbread draw commands must be an array.');
   positiveSafeInteger(
@@ -429,10 +444,12 @@ export function planShortbreadGeometry(commands, tile, {
       : 0,
   });
   const boundedWaterNurbsLimits = validateWaterNurbsLimits(waterNurbsLimits);
-  const waterNurbs = waterNurbsForCommands(plannedCommands, normalized, boundedWaterNurbsLimits);
+  const boundedLandlineLimits = validateLandlineLimits(landlineLimits);
   const descriptors = [];
+  const waterRingRecords = [];
   let waterIndex = 0;
   let shorelineIndex = 0;
+  let shorelineLandlineIndex = 0;
   let buildingIndex = 0;
   let roadIndex = 0;
 
@@ -456,13 +473,32 @@ export function planShortbreadGeometry(commands, tile, {
         categoryOrderIndex: 0,
         renderPass: 10,
       }));
+      if (command.nurbsOutline !== false) {
+        for (let ringIndex = 0; ringIndex < rings.length; ringIndex += 1) {
+          waterRingRecords.push(Object.freeze({
+            points: Object.freeze(rings[ringIndex].map((position) => (
+              projectLonLatToWrappedTilePixel(position, normalized)
+            ))),
+            waterBodyId,
+            role: ringIndex === 0 ? 'outer' : 'hole',
+          }));
+        }
+      }
       waterIndex += 1;
     }
   }
 
-  const waterSurfaces = descriptors.filter((descriptor) => descriptor.kind === 'water-surface');
-  const segmentBodyIndex = waterSegmentBodyIndex(waterSurfaces);
+  const waterNurbs = waterNurbsForRingRecords(
+    waterRingRecords,
+    normalized,
+    boundedWaterNurbsLimits,
+  );
+  const shorelineCompanion = buildLandSideNurbsCompanions(waterNurbs, waterRingRecords, {
+    tile: normalized,
+    ...boundedLandlineLimits,
+  });
   for (const curve of waterNurbs.curves) {
+    const ringRecord = waterRingRecords[curve.sourceRingIndex];
     const positions = Object.freeze(
       curve.points.map((position) => shortbreadTilePixelToLonLat(position, normalized)),
     );
@@ -471,7 +507,8 @@ export function planShortbreadGeometry(commands, tile, {
       kind: 'shoreline',
       geometryModel: 'exact-degree-one-nurbs-polyline',
       positions,
-      waterBodyId: shorelineWaterBodyId(positions, segmentBodyIndex),
+      waterBodyId: ringRecord.waterBodyId,
+      ringRole: ringRecord.role,
       material: lineMaterial(SHORTBREAD_GEOMETRY_STYLE.shoreline.color),
       width: SHORTBREAD_GEOMETRY_STYLE.shoreline.width,
       elevationOffsetMeters: SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS.shoreline,
@@ -489,6 +526,36 @@ export function planShortbreadGeometry(commands, tile, {
     shorelineIndex += 1;
   }
 
+  for (const curve of shorelineCompanion.curves) {
+    const positions = Object.freeze(
+      curve.points.map((position) => shortbreadTilePixelToLonLat(position, normalized)),
+    );
+    descriptors.push(freezeDescriptor({
+      id: `shoreline-landline-${String(shorelineLandlineIndex).padStart(6, '0')}`,
+      sourceShorelineId: `shoreline-${String(curve.sourceCurveIndex).padStart(6, '0')}`,
+      kind: 'shoreline-landline',
+      geometryModel: 'distinct-land-side-degree-one-nurbs-polyline',
+      positions,
+      waterBodyId: curve.waterBodyId,
+      ringRole: curve.ringRole,
+      material: lineMaterial(SHORTBREAD_GEOMETRY_STYLE.landline.color),
+      width: SHORTBREAD_GEOMETRY_STYLE.landline.width,
+      elevationOffsetMeters: SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS.landline,
+      categoryOrderIndex: 2,
+      renderPass: 25,
+      linePassCount: 1,
+      nurbs: Object.freeze({
+        degree: 1,
+        rationalWeights: 'uniform-unit',
+        knotModel: curve.knotModel,
+        closed: curve.closed,
+        sourceCurveIndex: curve.sourceCurveIndex,
+        requestedLateralOffsetPixels: curve.requestedOffsetPixels,
+      }),
+    }));
+    shorelineLandlineIndex += 1;
+  }
+
   for (let commandIndex = 0; commandIndex < plannedCommands.length; commandIndex += 1) {
     const command = plannedCommands[commandIndex];
     if (command?.kind !== 'building') continue;
@@ -502,7 +569,7 @@ export function planShortbreadGeometry(commands, tile, {
           material: lineMaterial(SHORTBREAD_GEOMETRY_STYLE.building.color),
           width: SHORTBREAD_GEOMETRY_STYLE.building.width,
           elevationOffsetMeters: SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS.building,
-          categoryOrderIndex: 2,
+          categoryOrderIndex: 3,
           renderPass: 30,
           linePassCount: 1,
         }));
@@ -526,7 +593,7 @@ export function planShortbreadGeometry(commands, tile, {
         ),
         width: Math.max(1, Number.isFinite(command.width) ? Number(command.width) : 1),
         elevationOffsetMeters: SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS.road,
-        categoryOrderIndex: 3,
+        categoryOrderIndex: 4,
         renderPass: 40,
         linePassCount: 1,
         nurbs: Object.freeze({
@@ -540,7 +607,15 @@ export function planShortbreadGeometry(commands, tile, {
     }
   }
 
-  const counts = planCounts(descriptors, commands, waterNurbs, deferral);
+  const counts = planCounts(descriptors, commands, waterNurbs, shorelineCompanion, deferral);
+  if (counts.shorelineLandlineCurveCount !== counts.shorelineCurveCount
+    || shorelineCompanion.unpairedCurveCount !== 0) {
+    throw codedError(
+      Error,
+      'ERR_SHORTBREAD_LANDLINE_PAIRING',
+      'Every planned blue shoreline must have exactly one green land-side companion.',
+    );
+  }
   if (counts.vertexCount > maximumVertices) {
     throw codedError(
       RangeError,
@@ -562,12 +637,13 @@ export function planShortbreadGeometry(commands, tile, {
     roadPrecedence: Object.freeze({
       independentOfInputOrder: true,
       topmost: true,
-      categoryOrderIndex: 3,
+      categoryOrderIndex: 4,
       elevationOffsetMeters: SHORTBREAD_GEOMETRY_ELEVATION_OFFSETS_METERS.road,
     }),
     compatibilityZIndex: SHORTBREAD_GEOMETRY_Z_INDEX,
     deferral,
     waterNurbs,
+    shorelineCompanion,
     counts,
     descriptors: Object.freeze(descriptors),
   });
@@ -578,6 +654,13 @@ function normalizeLongitudeRadians(longitude) {
   let result = (longitude + Math.PI) % TWO_PI;
   if (result < 0) result += TWO_PI;
   return result - Math.PI;
+}
+
+function normalizeLongitudeDegrees(longitude) {
+  if (longitude === 180) return 180;
+  let result = (longitude + 180) % 360;
+  if (result < 0) result += 360;
+  return result - 180;
 }
 
 function normalizedRectangle(rectangle) {
@@ -789,6 +872,13 @@ const BUFFER_CATEGORY_SPECS = Object.freeze([
     heightMode: 'water-level',
   }),
   Object.freeze({
+    kind: 'shoreline-landline',
+    offsetKey: 'landline',
+    geometryType: 'polyline',
+    blend: 'opaque',
+    heightMode: 'terrain-at-least-water-level',
+  }),
+  Object.freeze({
     kind: 'building-wireframe',
     offsetKey: 'building',
     geometryType: 'polyline',
@@ -830,9 +920,10 @@ function validateElevationOffsets(overrides) {
     offsets[key] = Number(value);
   }
   if (!(offsets.waterSurface < offsets.shoreline
-    && offsets.shoreline < offsets.building
+    && offsets.shoreline < offsets.landline
+    && offsets.landline < offsets.building
     && offsets.building < offsets.road)) {
-    throw new RangeError('Shortbread elevation offsets must strictly preserve water, shoreline, building, then road order.');
+    throw new RangeError('Shortbread elevation offsets must strictly preserve water, shoreline, landline, building, then road order.');
   }
   if (offsets.road - offsets.waterSurface < MINIMUM_ROAD_WATER_CLEARANCE_METERS) {
     throw codedError(
@@ -903,6 +994,9 @@ function deriveWaterBodyLevels(plan, heightResolver, heightResolutionStats) {
   for (const descriptor of plan.descriptors) {
     if (descriptor.kind === 'shoreline' && !levels.has(descriptor.waterBodyId)) {
       heightResolutionStats.unmatchedShorelineCount += 1;
+    }
+    if (descriptor.kind === 'shoreline-landline' && !levels.has(descriptor.waterBodyId)) {
+      heightResolutionStats.unmatchedLandlineCount += 1;
     }
   }
   return levels;
@@ -1193,6 +1287,7 @@ function descriptorHeightResolver(heightResolver, descriptor, {
 }) {
   const cache = new Map();
   return (position, positionIndex) => {
+    const landline = heightMode === 'terrain-at-least-water-level';
     const minimumBaseHeight = minimumBaseHeights?.[positionIndex] ?? Number.NEGATIVE_INFINITY;
     const cacheKey = `${position[0]}\u0000${position[1]}\u0000${minimumBaseHeight}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey);
@@ -1201,7 +1296,7 @@ function descriptorHeightResolver(heightResolver, descriptor, {
       baseHeight = fixedBaseHeight ?? 0;
       heightResolutionStats.waterLevelCoordinateCount += 1;
     } else if (heightResolver) {
-      baseHeight = heightResolver(position[0], position[1], descriptor);
+      baseHeight = heightResolver(normalizeLongitudeDegrees(position[0]), position[1], descriptor);
       if (baseHeight && typeof baseHeight.then === 'function') {
         throw codedError(
           TypeError,
@@ -1210,8 +1305,9 @@ function descriptorHeightResolver(heightResolver, descriptor, {
         );
       }
       if (baseHeight === undefined || baseHeight === null) {
-        baseHeight = 0;
+        baseHeight = landline ? fixedBaseHeight ?? 0 : 0;
         heightResolutionStats.unresolvedFallbackCoordinateCount += 1;
+        if (landline) heightResolutionStats.landlineWaterLevelFallbackCoordinateCount += 1;
       } else if (!Number.isFinite(baseHeight)
         || Math.abs(baseHeight) > MAXIMUM_ABSOLUTE_RESOLVED_HEIGHT_METERS) {
         throw codedError(
@@ -1226,9 +1322,16 @@ function descriptorHeightResolver(heightResolver, descriptor, {
           heightResolutionStats.waterlineClampedTerrainCoordinateCount += 1;
         }
         heightResolutionStats.resolvedTerrainCoordinateCount += 1;
+        if (landline) heightResolutionStats.landlineTerrainResolvedCoordinateCount += 1;
       }
     } else {
-      heightResolutionStats.ellipsoidZeroCoordinateCount += 1;
+      baseHeight = landline ? fixedBaseHeight ?? 0 : 0;
+      if (landline) heightResolutionStats.landlineWaterLevelFallbackCoordinateCount += 1;
+      else heightResolutionStats.ellipsoidZeroCoordinateCount += 1;
+    }
+    if (landline && baseHeight < (fixedBaseHeight ?? 0)) {
+      baseHeight = fixedBaseHeight ?? 0;
+      heightResolutionStats.landlineWaterLevelClampedCoordinateCount += 1;
     }
     if (descriptor.kind === 'road' && baseHeight < minimumBaseHeight) {
       baseHeight = minimumBaseHeight;
@@ -1462,7 +1565,7 @@ function createPolylineCategory(Cesium, spec, descriptors, options) {
       descriptor,
       {
         ...options,
-        fixedBaseHeight: spec.kind === 'shoreline'
+        fixedBaseHeight: spec.kind === 'shoreline' || spec.kind === 'shoreline-landline'
           ? options.waterBodyLevels.get(descriptor.waterBodyId) ?? 0
           : undefined,
         minimumBaseHeights,
@@ -1599,6 +1702,10 @@ export function createShortbreadBufferTileGeometry(Cesium, plan, {
     resolvedWaterLevelSampleCount: 0,
     unresolvedWaterLevelSampleCount: 0,
     unmatchedShorelineCount: 0,
+    unmatchedLandlineCount: 0,
+    landlineTerrainResolvedCoordinateCount: 0,
+    landlineWaterLevelFallbackCoordinateCount: 0,
+    landlineWaterLevelClampedCoordinateCount: 0,
     waterLevelClampedRoadCoordinateCount: 0,
     sourcePolygonCoordinateCount: 0,
     tessellatedPolygonCoordinateCount: 0,
@@ -1807,6 +1914,10 @@ function activeGeometryCounts(records) {
     resolvedWaterLevelSampleCount: 0,
     unresolvedWaterLevelSampleCount: 0,
     unmatchedShorelineCount: 0,
+    unmatchedLandlineCount: 0,
+    landlineTerrainResolvedCoordinateCount: 0,
+    landlineWaterLevelFallbackCoordinateCount: 0,
+    landlineWaterLevelClampedCoordinateCount: 0,
     waterLevelClampedRoadCoordinateCount: 0,
     sourcePolygonCoordinateCount: 0,
     tessellatedPolygonCoordinateCount: 0,
@@ -1816,6 +1927,18 @@ function activeGeometryCounts(records) {
     waterSpatialIndexCellAssignmentCount: 0,
     waterSurfaceCount: 0,
     shorelineCurveCount: 0,
+    shorelineLandlineCurveCount: 0,
+    shorelineLandlineSourceControlPointCount: 0,
+    shorelineLandlineOutputControlPointCount: 0,
+    shorelineLandlinePairedCurveCount: 0,
+    shorelineLandlineUnpairedCurveCount: 0,
+    shorelineLandlineOuterPairCount: 0,
+    shorelineLandlineHolePairCount: 0,
+    shorelineLandlineMiterJoinCount: 0,
+    shorelineLandlineBevelJoinCount: 0,
+    shorelineLandlineSeamTaperCount: 0,
+    shorelineLandlineAntimeridianWrapCount: 0,
+    shorelineLandlineOffsetOperationCount: 0,
     buildingWireframeCount: 0,
     roadCurveCount: 0,
     deferredTileCount: 0,
@@ -1832,6 +1955,30 @@ function activeGeometryCounts(records) {
     counts.vertexCount += record.plan.counts.vertexCount ?? 0;
     counts.waterSurfaceCount += record.plan.counts.waterSurfaceCount ?? 0;
     counts.shorelineCurveCount += record.plan.counts.shorelineCurveCount ?? 0;
+    counts.shorelineLandlineCurveCount += record.plan.counts.shorelineLandlineCurveCount ?? 0;
+    counts.shorelineLandlineSourceControlPointCount += (
+      record.plan.shorelineCompanion?.sourceControlPointCount ?? 0
+    );
+    counts.shorelineLandlineOutputControlPointCount += (
+      record.plan.shorelineCompanion?.outputControlPointCount ?? 0
+    );
+    counts.shorelineLandlinePairedCurveCount += (
+      record.plan.shorelineCompanion?.pairedCurveCount ?? 0
+    );
+    counts.shorelineLandlineUnpairedCurveCount += (
+      record.plan.shorelineCompanion?.unpairedCurveCount ?? 0
+    );
+    counts.shorelineLandlineOuterPairCount += record.plan.shorelineCompanion?.outerPairCount ?? 0;
+    counts.shorelineLandlineHolePairCount += record.plan.shorelineCompanion?.holePairCount ?? 0;
+    counts.shorelineLandlineMiterJoinCount += record.plan.shorelineCompanion?.miterJoinCount ?? 0;
+    counts.shorelineLandlineBevelJoinCount += record.plan.shorelineCompanion?.bevelJoinCount ?? 0;
+    counts.shorelineLandlineSeamTaperCount += record.plan.shorelineCompanion?.seamTaperCount ?? 0;
+    counts.shorelineLandlineAntimeridianWrapCount += (
+      record.plan.shorelineCompanion?.antimeridianWrapCount ?? 0
+    );
+    counts.shorelineLandlineOffsetOperationCount += (
+      record.plan.shorelineCompanion?.offsetOperationCount ?? 0
+    );
     counts.buildingWireframeCount += record.plan.counts.buildingWireframeCount ?? 0;
     counts.roadCurveCount += record.plan.counts.roadCurveCount ?? 0;
     if (record.plan.deferral?.active) counts.deferredTileCount += 1;
@@ -1874,6 +2021,16 @@ function activeGeometryCounts(records) {
       record.bufferGeometry?.heightResolution.unresolvedWaterLevelSampleCount ?? 0
     );
     counts.unmatchedShorelineCount += record.bufferGeometry?.heightResolution.unmatchedShorelineCount ?? 0;
+    counts.unmatchedLandlineCount += record.bufferGeometry?.heightResolution.unmatchedLandlineCount ?? 0;
+    counts.landlineTerrainResolvedCoordinateCount += (
+      record.bufferGeometry?.heightResolution.landlineTerrainResolvedCoordinateCount ?? 0
+    );
+    counts.landlineWaterLevelFallbackCoordinateCount += (
+      record.bufferGeometry?.heightResolution.landlineWaterLevelFallbackCoordinateCount ?? 0
+    );
+    counts.landlineWaterLevelClampedCoordinateCount += (
+      record.bufferGeometry?.heightResolution.landlineWaterLevelClampedCoordinateCount ?? 0
+    );
     counts.waterLevelClampedRoadCoordinateCount += (
       record.bufferGeometry?.heightResolution.waterLevelClampedRoadCoordinateCount ?? 0
     );
@@ -2504,6 +2661,10 @@ export class ShortbreadGeometryLayer {
       maximumVertices: this.limits.maximumActiveVertices,
       minimumGeometryZoom: this.minimumGeometryZoom,
       waterNurbsLimits: this.waterNurbsLimits,
+      landlineLimits: {
+        maximumOutputControlPoints: this.limits.maximumLandlineOutputControlPointsPerTile,
+        maximumOperations: this.limits.maximumLandlineOffsetOperationsPerTile,
+      },
     });
     if (signal.aborted || this.destroyed || !this.desiredKeys.has(tile.key)) throw abortError();
     const record = { key: tile.key, tile, plan, bufferGeometry: null, active: false };
@@ -2623,8 +2784,14 @@ export class ShortbreadGeometryLayer {
     const bufferCountsExact = geometry.bufferPrimitiveCount === geometry.entityCount
       && geometry.bufferPolygonCount === geometry.waterSurfaceCount
       && geometry.bufferPolylineCount === geometry.shorelineCurveCount
+        + geometry.shorelineLandlineCurveCount
         + geometry.buildingWireframeCount
         + geometry.roadCurveCount;
+    const shorelineCompanionCountsExact = geometry.shorelineLandlineCurveCount
+      === geometry.shorelineCurveCount
+      && geometry.shorelineLandlinePairedCurveCount === geometry.shorelineCurveCount
+      && geometry.shorelineLandlineUnpairedCurveCount === 0;
+    const cpuGeometryValidated = bufferCountsExact && shorelineCompanionCountsExact;
     const gpuSubmittedFrame = geometry.bufferPrimitiveCount > 0
       && this.scenePrimitive.submittedRevision === this.scenePrimitive.revision;
     const currentRevisionRenderFailed = this.renderErrorRevision === this.scenePrimitive.revision;
@@ -2639,7 +2806,7 @@ export class ShortbreadGeometryLayer {
     const settledEmpty = lifecycleIdle && missingDesiredTileCount === 0
       && !settledTerminalFailure && geometry.tileCount > 0 && geometry.bufferPrimitiveCount === 0;
     const renderReady = this.started && this.scenePrimitiveAdded && this.scenePrimitive.show
-      && bufferCountsExact && gpuPresentedFrame && !currentRevisionRenderFailed
+      && cpuGeometryValidated && gpuPresentedFrame && !currentRevisionRenderFailed
       && !settledTerminalFailure && missingDesiredTileCount === 0;
     const heightResolutionMode = this.heightResolver
       ? geometry.unresolvedFallbackCoordinateCount > 0 || geometry.fallbackInlandWaterBodyCount > 0
@@ -2659,7 +2826,7 @@ export class ShortbreadGeometryLayer {
       allowPicking: false,
       workerGeometryJobs: 0,
       groundWorkerQueue: false,
-      cpuGeometryValidated: bufferCountsExact,
+      cpuGeometryValidated,
       gpuSubmittedFrame,
       gpuPresentedFrame,
       renderReady,
@@ -2716,6 +2883,11 @@ export class ShortbreadGeometryLayer {
         resolvedWaterLevelSampleCount: geometry.resolvedWaterLevelSampleCount,
         unresolvedWaterLevelSampleCount: geometry.unresolvedWaterLevelSampleCount,
         unmatchedShorelineCount: geometry.unmatchedShorelineCount,
+        unmatchedLandlineCount: geometry.unmatchedLandlineCount,
+        landlineModel: 'terrain-sampled-land-side-curve-never-below-flat-water-level-plus-offset',
+        landlineTerrainResolvedCoordinateCount: geometry.landlineTerrainResolvedCoordinateCount,
+        landlineWaterLevelFallbackCoordinateCount: geometry.landlineWaterLevelFallbackCoordinateCount,
+        landlineWaterLevelClampedCoordinateCount: geometry.landlineWaterLevelClampedCoordinateCount,
         waterLevelClampedRoadCoordinateCount: geometry.waterLevelClampedRoadCoordinateCount,
         waterRoadIntersectionTestCount: geometry.waterRoadIntersectionTestCount,
         waterSpatialIndexCellAssignmentCount: geometry.waterSpatialIndexCellAssignmentCount,
@@ -2817,6 +2989,7 @@ export class ShortbreadGeometryLayer {
         renderReady,
         scenePrimitiveAdded: this.scenePrimitiveAdded,
         bufferCountsExact,
+        shorelineCompanionCountsExact,
         revision: this.scenePrimitive.revision,
         attemptedRevision: this.scenePrimitive.attemptedRevision,
         submittedRevision: this.scenePrimitive.submittedRevision,
@@ -2848,10 +3021,51 @@ export class ShortbreadGeometryLayer {
         curveModel: 'NURBS',
         degree: 1,
         curveCount: geometry.shorelineCurveCount,
+        companionCurveCount: geometry.shorelineLandlineCurveCount,
         sourceRingCount: geometry.waterNurbsSourceRingCount,
         suppressedBoundarySegmentCount: geometry.waterNurbsSuppressedBoundarySegmentCount,
         linePassCount: geometry.shorelineCurveCount > 0 ? 1 : 0,
         glow: false,
+      }),
+      shorelineCompanion: Object.freeze({
+        schemaVersion: 'peercompute.geo.shoreline-landline.v1',
+        kind: 'shoreline-landline',
+        geometry: 'distinct-actual-cesium-buffer-polyline',
+        curveModel: 'NURBS',
+        degree: 1,
+        color: SHORTBREAD_GEOMETRY_STYLE.landline.color,
+        alpha: SHORTBREAD_GEOMETRY_STYLE.landline.alpha,
+        width: SHORTBREAD_GEOMETRY_STYLE.landline.width,
+        requestedOffsetPixels: SHORTBREAD_GEOMETRY_STYLE.landline.offsetTilePixels,
+        offsetSpace: 'global-web-mercator-tile-pixels',
+        landSideModel: 'outer-away-from-ring-interior-hole-toward-ring-interior',
+        windingIndependent: true,
+        joinModel: 'bounded-miter-with-bevel-fallback',
+        seamModel: 'tile-boundary-endpoint-taper',
+        heightModel: 'terrain-base-at-least-flat-water-level-plus-landline-offset',
+        categoryOrderIndex: 2,
+        elevationOffsetMeters: this.categoryElevationOffsetsMeters.landline,
+        curveCount: geometry.shorelineLandlineCurveCount,
+        pairedCurveCount: geometry.shorelineLandlinePairedCurveCount,
+        unpairedCurveCount: geometry.shorelineLandlineUnpairedCurveCount,
+        pairInvariantSatisfied: shorelineCompanionCountsExact,
+        outerPairCount: geometry.shorelineLandlineOuterPairCount,
+        holePairCount: geometry.shorelineLandlineHolePairCount,
+        sourceControlPointCount: geometry.shorelineLandlineSourceControlPointCount,
+        outputControlPointCount: geometry.shorelineLandlineOutputControlPointCount,
+        miterJoinCount: geometry.shorelineLandlineMiterJoinCount,
+        bevelJoinCount: geometry.shorelineLandlineBevelJoinCount,
+        seamTaperCount: geometry.shorelineLandlineSeamTaperCount,
+        antimeridianWrapCount: geometry.shorelineLandlineAntimeridianWrapCount,
+        offsetOperationCount: geometry.shorelineLandlineOffsetOperationCount,
+        antimeridianSafe: true,
+        rasterPainted: false,
+        glow: false,
+        halo: false,
+        duplicateLinePass: false,
+        linePassesPerCurve: 1,
+        maximumOutputControlPointsPerTile: this.limits.maximumLandlineOutputControlPointsPerTile,
+        maximumOffsetOperationsPerTile: this.limits.maximumLandlineOffsetOperationsPerTile,
       }),
       limits: this.limits,
       attributionHtml: OSM_ATTRIBUTION_HTML,

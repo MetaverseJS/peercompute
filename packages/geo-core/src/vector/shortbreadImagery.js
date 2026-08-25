@@ -4,6 +4,7 @@ import {
   decodeShortbreadTile,
   formatShortbreadTileUrl,
   shortbreadDrawCommands,
+  SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
   SHORTBREAD_TILEJSON_URL,
   SHORTBREAD_WATER_STYLE,
   validateShortbreadTileJson,
@@ -406,6 +407,7 @@ export class ShortbreadImageryProvider {
         x,
         y,
         z: level,
+        maximumFeatures: SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
         includeWater: this.includeWater,
       });
       let commands = shortbreadDrawCommands(decoded);

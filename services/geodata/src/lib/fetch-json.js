@@ -139,6 +139,9 @@ export async function fetchBoundedJson({
     }
   } catch (error) {
     if (error instanceof GeodataError) throw error;
+    if (signal?.aborted && !timeoutSignal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : error;
+    }
     if (isAbortError(error) || timeoutSignal.aborted) {
       throw new GeodataError('UPSTREAM_TIMEOUT', 'The configured OSM source did not respond within 25 seconds.', {
         statusCode: 504,

@@ -103,6 +103,7 @@ input[type="checkbox"] { accent-color: var(--green); }
 .legend span::before { content: ""; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; }
 .legend__water { color: var(--water-line); }
 .legend .legend__water::before { height: 6px; border: 1px solid var(--water-line); background: rgba(0,128,255,.5); opacity: 1; }
+.legend__landline { color: var(--green); }
 .legend__road { color: var(--yellow); }
 .legend__building { color: var(--blue); }
 .legend__weather { color: var(--magenta); }

@@ -244,6 +244,72 @@ test('StateManager admits and invalidates task graph cache artifacts as authorit
   assert.equal(sm.listTaskGraphCacheArtifactAdmissions({ includeInvalidated: false }).length, 0);
 });
 
+test('StateManager owns local artifact caches without Yjs or network replication', async () => {
+  let broadcasts = 0;
+  const networkManager = {
+    getLibp2pNode: () => null,
+    broadcast: async () => { broadcasts += 1; }
+  };
+  const sm = new StateManager(networkManager, {
+    enablePersistence: false,
+    disableNetworkProvider: true,
+    disableBroadcast: false
+  });
+  let yjsUpdates = 0;
+  sm.getYDoc().on('update', () => { yjsUpdates += 1; });
+
+  const cache = sm.createLocalArtifactCache({
+    name: 'state-manager-local-only',
+    maximumEntries: 2,
+    maximumBytes: 16 * 1024,
+    maximumEntryBytes: 4 * 1024,
+    persistent: false,
+    clock: () => 0
+  });
+  assert.equal(sm.isInitialized, false, 'local cache creation must not require Yjs initialization');
+  assert.equal(sm.getLocalArtifactCache('state-manager-local-only'), cache);
+  assert.throws(() => sm.createLocalArtifactCache({
+    name: 'state-manager-local-only',
+    persistent: false
+  }), /already registered/u);
+
+  const loaded = await cache.getOrLoad({
+    key: 'private-tile-coordinate',
+    sourceId: 'unit-source',
+    mediaType: 'application/octet-stream',
+    freshUntil: 100,
+    staleUntil: 200,
+    loader: async () => new Uint8Array([1, 2, 3])
+  });
+  assert.equal(loaded.cacheStatus, 'miss');
+  assert.equal(yjsUpdates, 0);
+  assert.equal(broadcasts, 0);
+  assert.equal(sm.getYMap().size, 0);
+  assert.deepEqual(sm.getStats(), {
+    isInitialized: false,
+    keyCount: 0,
+    subscriberCount: 0,
+    globalSubscriberCount: 0,
+    hasPersistence: false,
+    hasP2PSync: false,
+    docName: 'peercompute-state',
+    topic: 'peercompute-state-sync',
+    hotBufferCount: 0,
+    localArtifactCacheCount: 1,
+    localArtifactCacheEntryCount: 1,
+    localArtifactCacheResidentBytes: cache.getStats().residentBytes,
+    localArtifactCachePendingCount: 0
+  });
+
+  await sm.destroy();
+  assert.equal(sm.getLocalArtifactCache('state-manager-local-only'), null);
+  await assert.rejects(() => cache.read('private-tile-coordinate'), (error) => (
+    error?.code === 'ERR_LOCAL_ARTIFACT_CACHE_DESTROYED'
+  ));
+  assert.equal(yjsUpdates, 0);
+  assert.equal(broadcasts, 0);
+});
+
 test('PeerComputeProvider initial sync sends missed warm deltas to late peers', async (t) => {
   const mesh = createInMemoryProviderMesh(['source-peer', 'replica-peer']);
   const topic = 'peercompute-provider-initial-sync-test';

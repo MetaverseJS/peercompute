@@ -1,4 +1,5 @@
 export * from './client/geodata.js';
+export * from './client/geodataCache.js';
 export * from './client/http.js';
 export * from './geo/bbox.js';
 export * from './geo/localFrame.js';
