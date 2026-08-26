@@ -59769,3 +59769,7 @@ and performance, and retain a physics-based motorcycle.
   RoadVector source; those are documented scope, not hidden globe-terrain
   fallbacks. No test server or owned listener remains active, and
   `terminal-browser` was not used.
+- LOCAL CLEAN POINT at `2026-08-25 22:54:16 AKDT`: committed the verified
+  implementation, tests, documentation, and current generated RoadVector
+  artifact as `2eb29f2be4361ab2c696fc929b95ab3485a85e90`
+  (`feat(motorcycle): stream continuous globe terrain`). Nothing was pushed.
