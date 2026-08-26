@@ -8,6 +8,7 @@ import {
   createPlaneSurfaceCollider,
 } from '../../particle-rigid/index.js';
 import { bodyWorldVector } from '../../particle-rigid/bodyMath.js';
+import { quatMultiply } from '../../particle-rigid/math.js';
 import {
   createMotorcyclePhysics,
   createMotorcycleRig,
@@ -63,6 +64,79 @@ function finiteSnapshot(snapshot) {
     [...state.position, ...state.orientation, ...state.linearVelocity, ...state.angularVelocity]
       .every(Number.isFinite)
   ));
+}
+
+function standardDeviation(values) {
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return Math.sqrt(
+    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length,
+  );
+}
+
+function roughCourseHeight(x, z) {
+  return 2 * Math.sin(z * Math.PI / 40)
+    + 0.08 * Math.sin(z * Math.PI * 2 / 3)
+    + 0.04 * Math.sin(x * Math.PI * 2 / 5);
+}
+
+function roughCourseNormal(x, z) {
+  const dx = 0.04 * Math.PI * 2 / 5 * Math.cos(x * Math.PI * 2 / 5);
+  const dz = 2 * Math.PI / 40 * Math.cos(z * Math.PI / 40)
+    + 0.08 * Math.PI * 2 / 3 * Math.cos(z * Math.PI * 2 / 3);
+  const magnitude = Math.hypot(dx, 1, dz);
+  return new Float32Array([-dx / magnitude, 1 / magnitude, -dz / magnitude]);
+}
+
+function createDeterministicRoughSurface(id) {
+  const metadata = Object.freeze({ course: 'deterministic-rough' });
+  const sampleSphere = ({ center, radius }) => {
+    const height = roughCourseHeight(center[0], center[2]);
+    const normal = roughCourseNormal(center[0], center[2]);
+    const signedDistance = normal[1] * (center[1] - height) - radius;
+    return {
+      hit: signedDistance <= 0,
+      signedDistance: Math.fround(signedDistance),
+      penetration: Math.fround(Math.max(0, -signedDistance)),
+      normal,
+      point: new Float32Array([
+        center[0] - normal[0] * radius,
+        center[1] - normal[1] * radius,
+        center[2] - normal[2] * radius,
+      ]),
+      surfaceVelocity: new Float32Array(3),
+      friction: 1.05,
+      restitution: 0,
+      metadata,
+    };
+  };
+  return Object.freeze({
+    id,
+    type: 'heightfield',
+    metadata,
+    sampleSphere,
+    sweepSphere({ from, to, radius }) {
+      const distance = Math.hypot(
+        to[0] - from[0],
+        to[1] - from[1],
+        to[2] - from[2],
+      );
+      const steps = Math.min(8, Math.max(1, Math.ceil(distance / (radius * 0.5))));
+      let sample = null;
+      for (let index = 1; index <= steps; index += 1) {
+        const alpha = index / steps;
+        sample = sampleSphere({
+          center: [
+            from[0] + (to[0] - from[0]) * alpha,
+            from[1] + (to[1] - from[1]) * alpha,
+            from[2] + (to[2] - from[2]) * alpha,
+          ],
+          radius,
+        });
+        if (sample.hit) return { ...sample, swept: true, toi: Math.fround(alpha) };
+      }
+      return { ...sample, hit: false };
+    },
+  });
 }
 
 test('ControlFrame normalization clamps analogs and preserves one-shot actions', () => {
@@ -194,6 +268,8 @@ test('motorcycle rig is six particle-cloud rigid components with physical joints
   assert.equal(rig.componentCount, 6);
   assert.equal(world.bodies.size, 6);
   assert.equal(world.joints.size, 7);
+  assert.equal(world.getBody(rig.bodyIds.rearWheel).particleCloud.count, 32);
+  assert.equal(world.getBody(rig.bodyIds.frontWheel).particleCloud.count, 32);
   assert.deepEqual(
     [...new Set(world.jointOrder.map((joint) => joint.type))].sort(),
     ['hinge', 'prismatic', 'spring'],
@@ -504,6 +580,55 @@ test('automatic transmission is explicit, ignores manual shifts, and survives re
   game.dispose();
 });
 
+test('drive torque is slew-limited and automatic shifts use qualified ground motion', () => {
+  const torqueGame = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+    controllerOptions: { throttleRiseRate: 120 },
+  });
+  torqueGame.stepFrame(FIXED_DT, { sequence: 1, throttle: 1 });
+  const firstTorque = torqueGame.controller.getTelemetry();
+  assert.ok(firstTorque.driveTorqueTarget > firstTorque.driveTorque);
+  assert.equal(firstTorque.driveTorqueRateLimited, true);
+  assert.ok(
+    firstTorque.driveTorque <= 3_000 * FIXED_DT + 1e-5,
+    `first-step drive torque=${firstTorque.driveTorque}`,
+  );
+  torqueGame.stepFrame(FIXED_DT, { sequence: 2, throttle: 1 });
+  const secondTorque = torqueGame.controller.getTelemetry();
+  assert.ok(secondTorque.driveTorque - firstTorque.driveTorque <= 3_000 * FIXED_DT + 1e-5);
+  torqueGame.controller.reset();
+  assert.equal(torqueGame.controller.getTelemetry().driveTorque, 0);
+  assert.equal(torqueGame.controller.getTelemetry().driveTorqueTarget, 0);
+  torqueGame.dispose();
+
+  const shiftGame = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+    controllerOptions: {
+      aerodynamicDrag: 0,
+      throttleRiseRate: 120,
+    },
+  });
+  setBikeForwardSpeed(shiftGame, 30);
+  for (let step = 0; step < 60; step += 1) {
+    shiftGame.stepFrame(FIXED_DT, { sequence: step });
+  }
+  let shiftTelemetry = shiftGame.controller.getTelemetry();
+  assert.ok(shiftTelemetry.groundCoupledRpm > 4_700);
+  assert.equal(shiftTelemetry.automaticShiftRearContactQualified, false);
+  assert.equal(shiftTelemetry.gear, 1, 'airborne wheel motion cannot cause an upshift');
+
+  setBikeForwardSpeed(shiftGame, 18);
+  shiftGame.controller.setGear(3);
+  for (let step = 0; step < 41; step += 1) {
+    shiftGame.stepFrame(FIXED_DT, { sequence: 60 + step, throttle: 1 });
+  }
+  shiftTelemetry = shiftGame.controller.getTelemetry();
+  assert.equal(shiftTelemetry.gear, 2);
+  assert.equal(shiftTelemetry.lastAutomaticShiftReason, 'ground-coupled-kickdown');
+  assert.ok(shiftTelemetry.predictedLowerGearRpm < 11_500 * 0.92);
+  shiftGame.dispose();
+});
+
 test('bounded lean assist applies torque and reset restores the six-body snapshot', () => {
   const game = createMotorcyclePhysics({
     worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
@@ -616,13 +741,13 @@ test('unified curvature produces stable physical right turns at 8 and 20 metres 
   const high = runTurn(20);
   assert.ok(medium.yawRightDegrees >= 18 && medium.yawRightDegrees <= 28, JSON.stringify(medium));
   assert.ok(medium.rightDisplacement >= 1.1 && medium.rightDisplacement <= 1.8, JSON.stringify(medium));
-  assert.ok(medium.forwardSpeed >= 7.2 && medium.forwardSpeed <= 8.5, JSON.stringify(medium));
+  assert.ok(medium.forwardSpeed >= 7.2 && medium.forwardSpeed <= 9.2, JSON.stringify(medium));
   assert.ok(medium.maximumTiltDegrees >= 13 && medium.maximumTiltDegrees <= 20, JSON.stringify(medium));
   assert.ok(medium.maximumLateralSlip <= 0.2, JSON.stringify(medium));
 
   assert.ok(high.yawRightDegrees >= 10 && high.yawRightDegrees <= 19, JSON.stringify(high));
   assert.ok(high.rightDisplacement >= 1 && high.rightDisplacement <= 1.7, JSON.stringify(high));
-  assert.ok(high.forwardSpeed >= 17.2 && high.forwardSpeed <= 19.2, JSON.stringify(high));
+  assert.ok(high.forwardSpeed >= 17.2 && high.forwardSpeed <= 19.5, JSON.stringify(high));
   assert.ok(high.maximumTiltDegrees >= 11 && high.maximumTiltDegrees <= 18, JSON.stringify(high));
   assert.ok(high.maximumLateralSlip <= 0.2, JSON.stringify(high));
   assert.ok(high.yawRightDegrees < medium.yawRightDegrees);
@@ -635,7 +760,7 @@ test('unified curvature produces stable physical right turns at 8 and 20 metres 
   }
 });
 
-test('full keyboard throttle remains upright and deterministically shifts during a nine-second run', () => {
+test('full keyboard throttle sustains 25 metres per second with bounded physical jitter', () => {
   const run = (id) => {
     const game = createRoadBike(id);
     settleBike(game);
@@ -646,7 +771,14 @@ test('full keyboard throttle remains upright and deterministically shifts during
     let minimumDriveTorqueScale = 1;
     let minimumDriveSlipScale = 1;
     let minimumDriveFrontLoadScale = 1;
-    for (let step = 0; step < 1_080; step += 1) {
+    let maximumFilteredAxleLoad = 0;
+    let observedRateLimit = false;
+    let previousDriveTorque = 0;
+    let maximumDriveTorqueDelta = 0;
+    const sustainedSpeeds = [];
+    const sustainedHeights = [];
+    const sustainedVerticalSpeeds = [];
+    for (let step = 0; step < 1_800; step += 1) {
       game.stepFrame(FIXED_DT, { sequence: 120 + step, throttle: 1 });
       const telemetry = game.controller.getTelemetry();
       const up = bodyWorldVector(chassis, [0, 1, 0]);
@@ -658,6 +790,21 @@ test('full keyboard throttle remains upright and deterministically shifts during
         minimumDriveFrontLoadScale,
         telemetry.driveFrontLoadScale,
       );
+      maximumFilteredAxleLoad = Math.max(
+        maximumFilteredAxleLoad,
+        telemetry.tires.rear.filteredNormalLoad + telemetry.tires.front.filteredNormalLoad,
+      );
+      observedRateLimit ||= telemetry.driveTorqueRateLimited;
+      maximumDriveTorqueDelta = Math.max(
+        maximumDriveTorqueDelta,
+        Math.abs(telemetry.driveTorque - previousDriveTorque),
+      );
+      previousDriveTorque = telemetry.driveTorque;
+      if (step >= 1_200) {
+        sustainedSpeeds.push(telemetry.forwardSpeed);
+        sustainedHeights.push(chassis.position[1]);
+        sustainedVerticalSpeeds.push(chassis.linearVelocity[1]);
+      }
     }
     const telemetry = game.controller.getTelemetry();
     const snapshot = game.world.getSnapshot();
@@ -671,8 +818,17 @@ test('full keyboard throttle remains upright and deterministically shifts during
       minimumDriveTorqueScale,
       minimumDriveSlipScale,
       minimumDriveFrontLoadScale,
+      maximumFilteredAxleLoad,
+      observedRateLimit,
+      maximumDriveTorqueDelta,
+      minimumSustainedSpeed: Math.min(...sustainedSpeeds),
+      meanSustainedSpeed: sustainedSpeeds.reduce((sum, value) => sum + value, 0)
+        / sustainedSpeeds.length,
+      sustainedHeightJitter: standardDeviation(sustainedHeights),
+      sustainedVerticalSpeedJitter: standardDeviation(sustainedVerticalSpeeds),
       gear: telemetry.gear,
       automaticShiftCount: telemetry.automaticShiftCount,
+      lastAutomaticShiftReason: telemetry.lastAutomaticShiftReason,
       engineRpm: telemetry.engineRpm,
       overflowed: game.world.getTelemetry().overflows.overflowed,
       finite: finiteSnapshot(snapshot),
@@ -684,16 +840,100 @@ test('full keyboard throttle remains upright and deterministically shifts during
   const first = run('full-throttle-deterministic');
   const second = run('full-throttle-deterministic');
   assert.deepEqual(second, first);
-  assert.ok(first.forwardSpeed >= 14.5 && first.forwardSpeed <= 16.5, JSON.stringify(first));
-  assert.ok(first.distance >= 78 && first.distance <= 92, JSON.stringify(first));
-  assert.ok(first.upY >= 0.995, JSON.stringify(first));
-  assert.ok(first.maximumTiltDegrees <= 3, JSON.stringify(first));
+  assert.ok(first.forwardSpeed >= 28 && first.forwardSpeed <= 33, JSON.stringify(first));
+  assert.ok(first.minimumSustainedSpeed >= 25, JSON.stringify(first));
+  assert.ok(first.meanSustainedSpeed >= 28, JSON.stringify(first));
+  assert.ok(first.upY >= 0.99, JSON.stringify(first));
+  assert.ok(first.maximumTiltDegrees <= 6, JSON.stringify(first));
+  assert.ok(first.sustainedHeightJitter <= 0.004, JSON.stringify(first));
+  assert.ok(first.sustainedVerticalSpeedJitter <= 0.12, JSON.stringify(first));
+  assert.ok(first.maximumFilteredAxleLoad <= 6_000, JSON.stringify(first));
   assert.ok(first.maximumRearSlip <= 0.7, JSON.stringify(first));
   assert.ok(first.minimumDriveTorqueScale <= 0.3, 'slip/front-load limiter must actively intervene');
   assert.ok(first.minimumDriveSlipScale < 1, 'rear-slip limiter must actively intervene');
   assert.ok(first.minimumDriveFrontLoadScale <= 0.3, 'front-load limiter must actively intervene');
-  assert.equal(first.gear, 2);
-  assert.equal(first.automaticShiftCount, 1);
+  assert.equal(first.observedRateLimit, true);
+  assert.ok(first.maximumDriveTorqueDelta <= 51, JSON.stringify(first));
+  assert.equal(first.gear, 4);
+  assert.equal(first.automaticShiftCount, 3);
+  assert.equal(first.lastAutomaticShiftReason, 'ground-coupled-upshift');
+  assert.equal(first.overflowed, false);
+  assert.equal(first.finite, true);
+  assert.match(first.hash, /^[0-9a-f]{64}$/);
+});
+
+test('rough mountain course remains finite, in contact, and substantially faster than baseline', () => {
+  const run = () => {
+    const game = createMotorcyclePhysics({
+      worldOptions: { solverIterations: 12, maxParticles: 512 },
+      rigOptions: { id: 'deterministic-rough-bike' },
+    });
+    game.world.addSurfaceCollider(createDeterministicRoughSurface('deterministic-rough'));
+    settleBike(game, 240);
+    const chassis = game.world.getBody(game.rig.bodyIds.chassis);
+    let peakForwardSpeed = 0;
+    let maximumTerrainRelativeTiltDegrees = 0;
+    let maximumLeanDegrees = 0;
+    let maximumPenetration = 0;
+    let hardStopSteps = 0;
+    let observedFilteredContact = false;
+    for (let step = 0; step < 1_080; step += 1) {
+      game.stepFrame(FIXED_DT, { sequence: 240 + step, throttle: 1 });
+      const telemetry = game.controller.getTelemetry();
+      const up = bodyWorldVector(chassis, [0, 1, 0]);
+      const terrainNormal = roughCourseNormal(chassis.position[0], chassis.position[2]);
+      maximumTerrainRelativeTiltDegrees = Math.max(
+        maximumTerrainRelativeTiltDegrees,
+        degrees(clampedAcos(
+          up[0] * terrainNormal[0] + up[1] * terrainNormal[1] + up[2] * terrainNormal[2],
+        )),
+      );
+      peakForwardSpeed = Math.max(peakForwardSpeed, telemetry.forwardSpeed);
+      maximumLeanDegrees = Math.max(maximumLeanDegrees, Math.abs(degrees(telemetry.leanAngle)));
+      maximumPenetration = Math.max(
+        maximumPenetration,
+        game.world.getTelemetry().maximumPenetration,
+      );
+      const rearSpan = telemetry.suspension.rear.maximumRadians
+        - telemetry.suspension.rear.minimumRadians;
+      const rearTravel = (telemetry.suspension.rear.swingarmAngleRadians
+        - telemetry.suspension.rear.minimumRadians) / rearSpan;
+      hardStopSteps += Number(
+        telemetry.suspension.front.normalizedTravel <= 0.01
+        || telemetry.suspension.front.normalizedTravel >= 0.99
+        || rearTravel <= 0.01
+        || rearTravel >= 0.99,
+      );
+      observedFilteredContact ||= telemetry.tires.front.filteredNormalLoad > 0
+        && telemetry.tires.rear.filteredNormalLoad > 0;
+    }
+    const telemetry = game.controller.getTelemetry();
+    const result = {
+      forwardSpeed: telemetry.forwardSpeed,
+      peakForwardSpeed,
+      maximumTerrainRelativeTiltDegrees,
+      maximumLeanDegrees,
+      maximumPenetration,
+      hardStopFraction: hardStopSteps / 1_080,
+      observedFilteredContact,
+      gear: telemetry.gear,
+      overflowed: game.world.getTelemetry().overflows.overflowed,
+      finite: finiteSnapshot(game.world.getSnapshot()),
+      hash: snapshotHash(game.world.getSnapshot()),
+    };
+    game.dispose();
+    return result;
+  };
+  const first = run();
+  const second = run();
+  assert.deepEqual(second, first);
+  assert.ok(first.forwardSpeed >= 10.5, JSON.stringify(first));
+  assert.ok(first.peakForwardSpeed >= 12.5, JSON.stringify(first));
+  assert.ok(first.maximumTerrainRelativeTiltDegrees <= 60, JSON.stringify(first));
+  assert.ok(first.maximumLeanDegrees <= 5, JSON.stringify(first));
+  assert.ok(first.maximumPenetration <= 0.015, JSON.stringify(first));
+  assert.ok(first.hardStopFraction <= 0.02, JSON.stringify(first));
+  assert.equal(first.observedFilteredContact, true);
   assert.equal(first.overflowed, false);
   assert.equal(first.finite, true);
   assert.match(first.hash, /^[0-9a-f]{64}$/);
@@ -781,19 +1021,20 @@ test('rider-foot parking anchor remains continuous across an origin rebase', () 
   const shiftedChassis = shifted.world.getBody(shifted.rig.bodyIds.chassis);
   const relativeBefore = [
     shiftedChassis.position[0] - anchorBefore[0],
-    shiftedChassis.position[2] - anchorBefore[1],
+    shiftedChassis.position[2] - anchorBefore[2],
   ];
   shifted.world.shiftOrigin(shift);
 
-  assert.deepEqual(shifted.controller.parkingAnchor, [
+  assert.deepEqual(Array.from(shifted.controller.parkingAnchor), [
     Math.fround(anchorBefore[0] - shift[0]),
-    Math.fround(anchorBefore[1] - shift[2]),
+    Math.fround(anchorBefore[1] - shift[1]),
+    Math.fround(anchorBefore[2] - shift[2]),
   ]);
   assert.ok(Math.abs(
     shiftedChassis.position[0] - shifted.controller.parkingAnchor[0] - relativeBefore[0]
   ) < 2e-6);
   assert.ok(Math.abs(
-    shiftedChassis.position[2] - shifted.controller.parkingAnchor[1] - relativeBefore[1]
+    shiftedChassis.position[2] - shifted.controller.parkingAnchor[2] - relativeBefore[1]
   ) < 2e-6);
 
   let maximumShiftedForce = 0;
@@ -827,6 +1068,37 @@ test('rider-foot parking anchor remains continuous across an origin rebase', () 
 
   baseline.dispose();
   shifted.dispose();
+});
+
+test('controller reset state and parking anchor follow a rigid reference-frame transform', () => {
+  const game = createRoadBike('reference-frame-controller');
+  settleBike(game, 240);
+  const anchorBefore = Array.from(game.controller.parkingAnchor);
+  const halfSqrtTwo = Math.sqrt(0.5);
+  const frameOrientation = new Float32Array([0, halfSqrtTwo, 0, halfSqrtTwo]);
+  const transformVector = ([x, y, z]) => [z, y, -x];
+  const transformPoint = ([x, y, z]) => {
+    const rotated = transformVector([x, y, z]);
+    return [rotated[0] + 10, rotated[1] + 2, rotated[2] - 3];
+  };
+  const transform = Object.freeze({
+    schema: 'fixture.motorcycle-reference-frame.v1',
+    transformPoint,
+    transformVector,
+    transformOrientation(value) {
+      return Array.from(quatMultiply(frameOrientation, value, new Float32Array(4)));
+    },
+  });
+  game.world.transformReferenceFrame(transform);
+  assert.deepEqual(
+    Array.from(game.controller.parkingAnchor),
+    Array.from(Float32Array.from(transformPoint(anchorBefore))),
+  );
+  game.controller.reset();
+  assert.deepEqual(game.world.getSnapshot(), game.controller.initialSnapshot);
+  assert.equal(game.controller.parkingAnchor, null);
+  assert.equal(finiteSnapshot(game.world.getSnapshot()), true);
+  game.dispose();
 });
 
 test('wheel contacts with rigid traffic remain generic body collisions', () => {

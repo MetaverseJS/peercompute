@@ -261,8 +261,21 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(earthHtml.includes('BOUNDED Z10 DETAIL'), 'EarthGrid built HTML is stale: bounded interactive terrain LOD disclosure missing');
   assert.ok(earthModule.includes('geolocation-denied-fallback'), 'EarthGrid built bundle is stale: denied-location fallback missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.game-runtime-state.v1'));
+  assert.ok(motorcycleModule.includes('surfaceContactShapes'), 'RoadVector built bundle is stale: continuous wheel support descriptors missing');
+  assert.ok(motorcycleModule.includes('surfaceContactShapeA'), 'RoadVector built bundle is stale: public continuous wheel contact identity missing');
+  assert.ok(motorcycleModule.includes('contactModel'), 'RoadVector built bundle is stale: compliant contact material model missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.terrain-draped-road-surface.v1'), 'RoadVector built bundle is stale: draped physical road surface missing');
   assert.ok(motorcycleModule.includes('peercompute.motorcycle.composite-road-terrain-collider.telemetry.v1'), 'RoadVector built bundle is stale: composite road/terrain collider missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.globe-surface-stream.v1'), 'RoadVector built bundle is stale: continuous globe stream missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.globe-surface-snapshot.v1'), 'RoadVector built bundle is stale: atomic globe snapshot missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.globe-surface-reservation.v1'), 'RoadVector built bundle is stale: stream reservation contract missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.streaming-surface-collider.telemetry.v1'), 'RoadVector built bundle is stale: streaming collision facade missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.streamed-terrain-renderer.v1'), 'RoadVector built bundle is stale: streamed Three terrain renderer missing');
+  assert.ok(motorcycleModule.includes('activeSnapshotNoopCount'), 'RoadVector built bundle is stale: active stream no-op telemetry missing');
+  assert.ok(motorcycleModule.includes('evaluatedContentEpoch'), 'RoadVector built bundle is stale: stream content-epoch qualification missing');
+  assert.ok(motorcycleModule.includes('atomic-stream-snapshot-with-single-fallback'), 'RoadVector built bundle is stale: deterministic fallback collision policy missing');
+  assert.ok(motorcycleModule.includes('wgs84-ecef-cesium-overview'), 'RoadVector built bundle is stale: WGS84/Cesium globe authority missing');
+  assert.ok(motorcycleModule.includes('three-webxr-local-tangent-frame'), 'RoadVector built bundle is stale: local tangent ride renderer disclosure missing');
   assert.ok(motorcycleModule.includes('transmissionMode'), 'RoadVector built bundle is stale: explicit transmission mode missing');
   assert.ok(motorcycleModule.includes('maximumDesktopPixelRatio'), 'RoadVector built bundle is stale: desktop pixel-ratio cap missing');
   assert.ok(motorcycleModule.includes('peercompute.synthetic-road-traffic.snapshot.v1'));
@@ -293,6 +306,8 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('peercompute.roadvector.hemisphere-overview.v1'), 'RoadVector built bundle is stale: hemisphere overview missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.cesium-overview-renderer.v1'), 'RoadVector built bundle is stale: Cesium overview missing');
   assert.ok(motorcycleModule.includes('peercompute.roadvector.source-cache.v1'), 'RoadVector built bundle is stale: local StateManager source cache missing');
+  assert.ok(motorcycleModule.includes('peercompute.motorcycle.terrarium-decoded-cache.v1'), 'RoadVector built bundle is stale: decoded terrain cache missing');
+  assert.ok(motorcycleModule.includes('session-local-bounded-decoded-heightmap-lru'), 'RoadVector built bundle is stale: decoded terrain LRU policy missing');
   assert.ok(motorcycleModule.includes('peercompute.geo.cached-fetch-telemetry.v1'), 'RoadVector built bundle is stale: backend/local cached fetch missing');
   assert.ok(motorcycleModule.includes('CappedHeightmapTerrainProvider'), 'RoadVector built bundle is stale: Cesium terrain provider missing');
   assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_TERRAIN_TIMEOUT'), 'RoadVector built bundle is stale: bounded terrain deadline missing');
@@ -303,6 +318,7 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(motorcycleModule.includes('ERR_MOTORCYCLE_NO_USABLE_ROAD'), 'RoadVector built bundle is stale: empty-road selection guard missing');
   assert.ok(motorcycleModule.includes('fixed-red-remote-players'), 'RoadVector built bundle is stale: live-player color policy missing');
   assert.ok(motorcycleHtml.includes('RIDE THIS REGION'), 'RoadVector built HTML is stale: overview-to-ride control missing');
+  assert.ok(motorcycleHtml.includes('CONTINUOUS GLOBE TERRAIN'), 'RoadVector built HTML is stale: continuous off-road globe disclosure missing');
   assert.ok(motorcycleHtml.includes('AUTOMATIC TRANSMISSION // PHYSICS RPM'), 'RoadVector built HTML is stale: automatic transmission control missing');
   assert.ok(motorcycleHtml.includes('AWS TERRAIN TILES'), 'RoadVector built HTML is stale: Terrarium attribution missing');
   assert.ok(motorcycleHtml.includes('SOURCE CACHE'), 'RoadVector built HTML is stale: source-cache disclosure missing');

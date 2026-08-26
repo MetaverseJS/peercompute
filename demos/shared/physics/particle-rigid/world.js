@@ -21,8 +21,10 @@ import {
   finiteArray,
   mat3MulVec,
   quat,
+  quatConjugate,
   quatDeltaVector,
   quatIntegrateWorld,
+  quatMultiply,
   quatRotate,
   quatSlerp,
   rotateTensor,
@@ -32,6 +34,8 @@ import {
   vecCross,
   vecDot,
   vecLength,
+  vecNormalize,
+  vecProjectOnPlane,
   vecScale,
   vecSub,
 } from './math.js';
@@ -39,6 +43,7 @@ import { calculateParticleCloudMassProperties } from './particleCloud.js';
 import {
   normalizeJointDefinition,
   normalizeMaterial,
+  normalizeSurfaceContactShapes,
   normalizeWorldOptions,
 } from './schema.js';
 import { DeterministicSpatialHash } from './spatialHash.js';
@@ -61,6 +66,7 @@ function publicContact(contact) {
     bodyA: contact.bodyA.id,
     bodyB: contact.bodyB?.id ?? null,
     surfaceId: contact.surfaceId ?? null,
+    surfaceContactShapeA: contact.surfaceContactShapeId ?? null,
     particleA: contact.particleIndexA,
     particleB: contact.particleIndexB ?? null,
     particleTagA: contact.particleTagA ?? null,
@@ -75,6 +81,9 @@ function publicContact(contact) {
     impulse: Array.from(contactImpulseVector(contact)),
     muLongitudinal: contact.muLongitudinal,
     muLateral: contact.muLateral,
+    contactModel: contact.contactModel,
+    contactStiffness: contact.contactStiffness,
+    contactDamping: contact.contactDamping,
     metadata: contact.metadata ?? null,
   };
 }
@@ -84,6 +93,51 @@ function combineMaterial(a, b) {
     friction: Math.fround(Math.sqrt(a.friction * b.friction)),
     restitution: Math.fround(Math.max(a.restitution, b.restitution)),
     rollingFriction: Math.fround(Math.sqrt(a.rollingFriction * b.rollingFriction)),
+    ...combineNormalContactMaterial(a, b),
+  };
+}
+
+function combineNormalContactMaterial(a, b) {
+  const compliant = [a, b].filter((material) => material.contactModel === 'compliant');
+  if (compliant.length === 0) {
+    return {
+      contactModel: 'rigid',
+      contactStiffness: 1,
+      contactDamping: 1,
+    };
+  }
+  if (compliant.length === 1) {
+    return {
+      contactModel: 'compliant',
+      contactStiffness: compliant[0].contactStiffness,
+      contactDamping: compliant[0].contactDamping,
+    };
+  }
+  const series = (left, right) => (
+    left <= 0 || right <= 0 ? 0 : (left * right) / (left + right)
+  );
+  return {
+    contactModel: 'compliant',
+    contactStiffness: Math.fround(series(
+      compliant[0].contactStiffness,
+      compliant[1].contactStiffness,
+    )),
+    contactDamping: Math.fround(series(
+      compliant[0].contactDamping,
+      compliant[1].contactDamping,
+    )),
+  };
+}
+
+function wheelTubeCenter(bodyPosition, bodyOrientation, shape, normal) {
+  const center = vecAdd(bodyPosition, quatRotate(bodyOrientation, shape.localCenter));
+  const axis = vecNormalize(quatRotate(bodyOrientation, shape.localAxis), [1, 0, 0]);
+  const projectedNormal = vecProjectOnPlane(normal, axis);
+  const localUp = vecProjectOnPlane(quatRotate(bodyOrientation, [0, 1, 0]), axis);
+  const radial = vecNormalize(projectedNormal, vecNormalize(localUp, [0, 1, 0]));
+  return {
+    center,
+    tubeCenter: vecAdd(center, vecScale(radial, -shape.radius)),
   };
 }
 
@@ -216,20 +270,273 @@ function cloneTarget(target) {
   };
 }
 
-function shiftSnapshot(snapshot, shift) {
-  if (!snapshot) return;
-  for (const body of snapshot.bodies) {
-    for (const field of ['position', 'previousPosition']) {
-      body[field][0] = Math.fround(body[field][0] - shift[0]);
-      body[field][1] = Math.fround(body[field][1] - shift[1]);
-      body[field][2] = Math.fround(body[field][2] - shift[2]);
-    }
-    if (body.kinematicTarget) {
-      body.kinematicTarget.position[0] = Math.fround(body.kinematicTarget.position[0] - shift[0]);
-      body.kinematicTarget.position[1] = Math.fround(body.kinematicTarget.position[1] - shift[1]);
-      body.kinematicTarget.position[2] = Math.fround(body.kinematicTarget.position[2] - shift[2]);
+function finiteTransformResult(value, length, label) {
+  if ((!Array.isArray(value) && !ArrayBuffer.isView(value)) || value.length !== length) {
+    throw new TypeError(`${label} must contain exactly ${length} components`);
+  }
+  const result = Array.from(value, Number);
+  if (!result.every(Number.isFinite)) throw new TypeError(`${label} must be finite`);
+  return result;
+}
+
+const REFERENCE_FRAME_TELEMETRY_SCHEMA = 'peercompute.physics.reference-frame-telemetry.v1';
+
+function createReferenceFrameTelemetry() {
+  return {
+    schema: REFERENCE_FRAME_TELEMETRY_SCHEMA,
+    transformCount: 0,
+    gravityOverrideCount: 0,
+    listenerInvocationCount: 0,
+    listenerFailureCount: 0,
+    lastListenerCount: 0,
+    lastListenerFailureCount: 0,
+    lastListenerError: null,
+    lastGravityMode: null,
+  };
+}
+
+function cloneWorldTelemetry(telemetry, referenceFrameTelemetry) {
+  return {
+    ...cloneTelemetry(telemetry),
+    referenceFrame: { ...referenceFrameTelemetry },
+  };
+}
+
+function describeListenerFailure(error) {
+  try {
+    const description = error instanceof Error
+      ? `${error.name || 'Error'}: ${error.message || 'reference-frame listener failed'}`
+      : String(error);
+    return description.slice(0, 512);
+  } catch {
+    return 'unreportable reference-frame listener failure';
+  }
+}
+
+function normalizeReferenceFrameTransform(transform) {
+  if (!transform || typeof transform !== 'object') {
+    throw new TypeError('reference frame transform must be an object');
+  }
+  for (const method of ['transformPoint', 'transformVector', 'transformOrientation']) {
+    if (typeof transform[method] !== 'function') {
+      throw new TypeError(`reference frame transform requires ${method}()`);
     }
   }
+  const point = (value, label) => vec3(finiteTransformResult(
+    transform.transformPoint(Array.from(value)),
+    3,
+    label,
+  ));
+  const vector = (value, label) => vec3(finiteTransformResult(
+    transform.transformVector(Array.from(value)),
+    3,
+    label,
+  ));
+  const orientation = (value, label) => {
+    const result = finiteTransformResult(
+      transform.transformOrientation(Array.from(value)),
+      4,
+      label,
+    );
+    if (Math.hypot(...result) <= 1e-8) throw new RangeError(`${label} must have non-zero length`);
+    return quat(result);
+  };
+  const frameOrientation = orientation([0, 0, 0, 1], 'reference frame orientation');
+  const inverseFrameOrientation = quatConjugate(frameOrientation, new Float32Array(4));
+  const relativeOrientation = (value, label) => quat(quatMultiply(
+    orientation(value, label),
+    inverseFrameOrientation,
+  ));
+  return Object.freeze({ source: transform, point, vector, orientation, relativeOrientation });
+}
+
+function stageReferenceFrameGravity(frame, currentGravity, transactionOptions) {
+  if (transactionOptions !== undefined
+    && (!transactionOptions || typeof transactionOptions !== 'object'
+      || Array.isArray(transactionOptions))) {
+    throw new TypeError('reference frame transaction options must be an object');
+  }
+  if (transactionOptions?.gravity === undefined) {
+    return {
+      gravity: frame.vector(currentGravity, 'world gravity'),
+      mode: 'transformed-legacy',
+      overridden: false,
+    };
+  }
+  return {
+    gravity: vec3(finiteTransformResult(
+      transactionOptions.gravity,
+      3,
+      'local gravity override',
+    )),
+    mode: 'local-override',
+    overridden: true,
+  };
+}
+
+function normalizedWorldAxis(value, label) {
+  const length = vecLength(value);
+  if (length <= 1e-8) throw new RangeError(`${label} must have non-zero length`);
+  return vecNormalize(value);
+}
+
+function stageBodyState(body, frame) {
+  return {
+    position: frame.point(body.position, `body ${body.id} position`),
+    previousPosition: frame.point(body.previousPosition, `body ${body.id} previousPosition`),
+    predictedPosition: frame.point(body.predictedPosition, `body ${body.id} predictedPosition`),
+    orientation: frame.orientation(body.orientation, `body ${body.id} orientation`),
+    previousOrientation: frame.orientation(
+      body.previousOrientation,
+      `body ${body.id} previousOrientation`,
+    ),
+    predictedOrientation: frame.orientation(
+      body.predictedOrientation,
+      `body ${body.id} predictedOrientation`,
+    ),
+    linearVelocity: frame.vector(body.linearVelocity, `body ${body.id} linearVelocity`),
+    angularVelocity: frame.vector(body.angularVelocity, `body ${body.id} angularVelocity`),
+    force: frame.vector(body.force, `body ${body.id} force`),
+    torque: frame.vector(body.torque, `body ${body.id} torque`),
+    kinematicTarget: body.kinematicTarget
+      ? {
+          position: frame.point(
+            body.kinematicTarget.position,
+            `body ${body.id} kinematic target position`,
+          ),
+          orientation: frame.orientation(
+            body.kinematicTarget.orientation,
+            `body ${body.id} kinematic target orientation`,
+          ),
+        }
+      : null,
+  };
+}
+
+function stageJointState(joint, frame) {
+  const worldConnected = joint.bodyB === null;
+  const localAxisB = worldConnected
+    ? normalizedWorldAxis(
+        frame.vector(joint.localAxisB, `joint ${joint.id} world axis`),
+        `joint ${joint.id} world axis`,
+      )
+    : vec3(joint.localAxisB);
+  const referenceB = worldConnected
+    ? normalizedWorldAxis(
+        frame.vector(joint.runtime.referenceB, `joint ${joint.id} world reference`),
+        `joint ${joint.id} world reference`,
+      )
+    : vec3(joint.runtime.referenceB);
+  return {
+    localAnchorB: worldConnected
+      ? frame.point(joint.localAnchorB, `joint ${joint.id} world anchor`)
+      : vec3(joint.localAnchorB),
+    localAxisB,
+    referenceB,
+    initialRelativeOrientation: worldConnected
+      ? frame.orientation(
+          joint.runtime.initialRelativeOrientation,
+          `joint ${joint.id} world-relative orientation`,
+        )
+      : frame.relativeOrientation(
+          joint.runtime.initialRelativeOrientation,
+          `joint ${joint.id} body-relative orientation`,
+        ),
+  };
+}
+
+function stageSnapshot(snapshot, frame, joints) {
+  if (!snapshot) return null;
+  return {
+    ...snapshot,
+    bodies: snapshot.bodies.map((body) => ({
+      ...body,
+      position: Array.from(frame.point(body.position, `snapshot body ${body.id} position`)),
+      previousPosition: Array.from(frame.point(
+        body.previousPosition ?? body.position,
+        `snapshot body ${body.id} previousPosition`,
+      )),
+      orientation: Array.from(frame.orientation(
+        body.orientation,
+        `snapshot body ${body.id} orientation`,
+      )),
+      previousOrientation: Array.from(frame.orientation(
+        body.previousOrientation ?? body.orientation,
+        `snapshot body ${body.id} previousOrientation`,
+      )),
+      linearVelocity: Array.from(frame.vector(
+        body.linearVelocity,
+        `snapshot body ${body.id} linearVelocity`,
+      )),
+      angularVelocity: Array.from(frame.vector(
+        body.angularVelocity,
+        `snapshot body ${body.id} angularVelocity`,
+      )),
+      force: Array.from(frame.vector(body.force ?? [0, 0, 0], `snapshot body ${body.id} force`)),
+      torque: Array.from(frame.vector(body.torque ?? [0, 0, 0], `snapshot body ${body.id} torque`)),
+      kinematicTarget: body.kinematicTarget
+        ? {
+            position: Array.from(frame.point(
+              body.kinematicTarget.position,
+              `snapshot body ${body.id} kinematic target position`,
+            )),
+            orientation: Array.from(frame.orientation(
+              body.kinematicTarget.orientation,
+              `snapshot body ${body.id} kinematic target orientation`,
+            )),
+          }
+        : null,
+    })),
+    joints: (snapshot.joints ?? []).map((state) => {
+      const joint = joints.get(state.id);
+      if (!joint) throw new Error(`snapshot references unknown joint ${state.id}`);
+      const worldConnected = joint.bodyB === null;
+      return {
+        ...state,
+        motor: state.motor ? { ...state.motor } : null,
+        runtime: {
+          ...state.runtime,
+          referenceA: Array.from(state.runtime.referenceA),
+          referenceB: Array.from(worldConnected
+            ? normalizedWorldAxis(
+                frame.vector(
+                  state.runtime.referenceB,
+                  `snapshot joint ${state.id} world reference`,
+                ),
+                `snapshot joint ${state.id} world reference`,
+              )
+            : vec3(state.runtime.referenceB)),
+          initialRelativeOrientation: Array.from(worldConnected
+            ? frame.orientation(
+                state.runtime.initialRelativeOrientation,
+                `snapshot joint ${state.id} world-relative orientation`,
+              )
+            : frame.relativeOrientation(
+                state.runtime.initialRelativeOrientation,
+                `snapshot joint ${state.id} body-relative orientation`,
+              )),
+        },
+      };
+    }),
+  };
+}
+
+function translationReferenceFrameTransform(shift) {
+  const offset = vec3(shift);
+  const identityOrientation = (value) => Array.from(value);
+  const identityVector = (value) => Array.from(value);
+  const transform = {
+    schema: 'peercompute.physics.translation-reference-frame-transform.v1',
+    translation: Object.freeze(Array.from(offset, (entry) => -entry)),
+    transformPoint: (value) => [
+      value[0] - offset[0],
+      value[1] - offset[1],
+      value[2] - offset[2],
+    ],
+    transformVector: identityVector,
+    transformOrientation: identityOrientation,
+  };
+  return Object.freeze(transform);
 }
 
 export class ParticleRigidWorld {
@@ -254,6 +561,8 @@ export class ParticleRigidWorld {
     this.postStepListeners = [];
     this.contactModifiers = [];
     this.originShiftListeners = [];
+    this.referenceFrameTransformListeners = [];
+    this.referenceFrameTelemetry = createReferenceFrameTelemetry();
     this.collisionExclusions = new Set();
     this.telemetry = createStepTelemetry();
     this.spatialHash = new DeterministicSpatialHash({
@@ -298,6 +607,10 @@ export class ParticleRigidWorld {
       quatRotate(orientation, cloud.centerOfMass),
     );
     const material = normalizeMaterial(definition.material);
+    const surfaceContactShapes = normalizeSurfaceContactShapes(
+      definition.surfaceContactShapes,
+      { bodyId: id, centerOfMass: cloud.centerOfMass, material },
+    );
     const body = {
       id,
       index: this.bodies.size,
@@ -317,6 +630,10 @@ export class ParticleRigidWorld {
       inertia: cloud.inertia,
       inverseInertia: motionType === 'dynamic' ? cloud.inverseInertia : new Float32Array(9),
       particleCloud: cloud,
+      // When present these analytic shapes are authoritative for this body's
+      // surface collision. The particle cloud remains in the spatial hash for
+      // inertia and body/body collision.
+      surfaceContactShapes,
       material,
       collisionGroup: (definition.collisionGroup ?? 1) | 0,
       collisionMask: (definition.collisionMask ?? 0x7fffffff) | 0,
@@ -468,6 +785,17 @@ export class ParticleRigidWorld {
     this.originShiftListeners.push(listener);
     return () => {
       this.originShiftListeners = this.originShiftListeners.filter((candidate) => candidate !== listener);
+    };
+  }
+
+  addReferenceFrameTransformListener(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('reference frame transform listener must be a function');
+    }
+    this.referenceFrameTransformListeners.push(listener);
+    return () => {
+      this.referenceFrameTransformListeners = this.referenceFrameTransformListeners
+        .filter((candidate) => candidate !== listener);
     };
   }
 
@@ -645,6 +973,7 @@ export class ParticleRigidWorld {
     const contacts = [];
     outer: for (const entry of entries) {
       if (entry.body.motionType !== 'dynamic') continue;
+      if (entry.body.surfaceContactShapes.length > 0) continue;
       for (const surface of this.surfaceOrder) {
         if (telemetry.surfaceQueries >= this.options.maxSurfaceQueries) {
           telemetry.overflows.surfaceQueries += 1;
@@ -714,6 +1043,184 @@ export class ParticleRigidWorld {
     return contacts;
   }
 
+  #surfaceContactShapeContacts(telemetry) {
+    const contacts = [];
+    let exhausted = false;
+    const invoke = (surface, method, query) => {
+      if (typeof surface[method] !== 'function') return null;
+      if (telemetry.surfaceQueries >= this.options.maxSurfaceQueries) {
+        telemetry.overflows.surfaceQueries += 1;
+        exhausted = true;
+        return null;
+      }
+      telemetry.surfaceQueries += 1;
+      return surface[method](query);
+    };
+
+    outer: for (const body of this.bodyOrder) {
+      if (body.motionType !== 'dynamic' || body.surfaceContactShapes.length === 0) continue;
+      for (const shape of body.surfaceContactShapes) {
+        const previousCenter = vecAdd(
+          body.previousPosition,
+          quatRotate(body.previousOrientation, shape.localCenter),
+        );
+        const predictedCenter = vecAdd(
+          body.predictedPosition,
+          quatRotate(body.predictedOrientation, shape.localCenter),
+        );
+        for (const surface of this.surfaceOrder) {
+          const commonQuery = {
+            bodyId: body.id,
+            surfaceContactShapeId: shape.id,
+            tag: shape.tag,
+            dt: this.fixedDt,
+          };
+          const broadQuery = {
+            ...commonQuery,
+            from: previousCenter,
+            to: predictedCenter,
+            center: predictedCenter,
+            radius: shape.radius + shape.treadRadius,
+          };
+          let broadSample = invoke(surface, 'sweepSphere', broadQuery);
+          if (exhausted) break outer;
+          if ((!broadSample || (!broadSample.hit && broadSample.signedDistance === undefined))) {
+            broadSample = invoke(surface, 'sampleSphere', broadQuery);
+            if (exhausted) break outer;
+          }
+          if (!broadSample || (!broadSample.hit
+            && !(Number.isFinite(broadSample.signedDistance)
+              && broadSample.signedDistance <= this.options.precontactMargin))) continue;
+
+          let normal = vecNormalize(vec3(broadSample.normal ?? [0, 1, 0]), [0, 1, 0]);
+          let previous = wheelTubeCenter(
+            body.previousPosition,
+            body.previousOrientation,
+            shape,
+            normal,
+          );
+          let predicted = wheelTubeCenter(
+            body.predictedPosition,
+            body.predictedOrientation,
+            shape,
+            normal,
+          );
+          const exactQuery = {
+            ...commonQuery,
+            from: previous.tubeCenter,
+            to: predicted.tubeCenter,
+            center: predicted.tubeCenter,
+            radius: shape.treadRadius,
+          };
+          let sample = invoke(surface, 'sweepSphere', exactQuery);
+          if (exhausted) break outer;
+          if ((!sample || (!sample.hit && sample.signedDistance === undefined))) {
+            sample = invoke(surface, 'sampleSphere', exactQuery);
+            if (exhausted) break outer;
+          }
+          if (!sample) continue;
+
+          const sampledNormal = vecNormalize(vec3(sample.normal ?? normal), normal);
+          predicted = wheelTubeCenter(
+            body.predictedPosition,
+            body.predictedOrientation,
+            shape,
+            sampledNormal,
+          );
+          previous = wheelTubeCenter(
+            body.previousPosition,
+            body.previousOrientation,
+            shape,
+            sampledNormal,
+          );
+          const refinementDistance = vecLength(vecSub(predicted.tubeCenter, exactQuery.center));
+          if (refinementDistance > 1e-5
+            && (typeof surface.sweepSphere === 'function'
+              || typeof surface.sampleSphere === 'function')) {
+            const refinementMethod = typeof surface.sweepSphere === 'function'
+              ? 'sweepSphere'
+              : 'sampleSphere';
+            const refined = invoke(surface, refinementMethod, {
+              ...commonQuery,
+              // The first exact query already owns swept CCD. This fixed-point
+              // normal refinement is endpoint-only so it cannot multiply the
+              // road collider's adaptive path samples.
+              from: predicted.tubeCenter,
+              to: predicted.tubeCenter,
+              center: predicted.tubeCenter,
+              radius: shape.treadRadius,
+            });
+            if (exhausted) break outer;
+            if (refined && (refined.hit || Number.isFinite(refined.signedDistance))) {
+              sample = {
+                ...refined,
+                swept: Boolean(sample.swept || refined.swept),
+                toi: sample.toi ?? refined.toi,
+              };
+              normal = vecNormalize(vec3(sample.normal ?? sampledNormal), sampledNormal);
+              predicted = wheelTubeCenter(
+                body.predictedPosition,
+                body.predictedOrientation,
+                shape,
+                normal,
+              );
+            } else {
+              normal = sampledNormal;
+            }
+          } else {
+            normal = sampledNormal;
+          }
+
+          const signedDistance = sample.signedDistance ?? -(sample.penetration ?? 0);
+          if (!sample.hit && !(Number.isFinite(signedDistance)
+            && signedDistance <= this.options.precontactMargin)) continue;
+          const point = vecAdd(predicted.tubeCenter, vecScale(normal, -shape.treadRadius));
+          const surfaceMaterial = normalizeMaterial({
+            friction: sample.friction ?? shape.material.friction,
+            restitution: sample.restitution ?? shape.material.restitution,
+            rollingFriction: sample.rollingFriction ?? shape.material.rollingFriction,
+            contactModel: sample.contactModel ?? 'rigid',
+            contactStiffness: sample.contactStiffness ?? 1,
+            contactDamping: sample.contactDamping ?? 1,
+          });
+          const material = combineMaterial(shape.material, surfaceMaterial);
+          contacts.push({
+            id: `surface:${surface.id}|shape:${body.id}#${shape.id}`,
+            type: 'surface',
+            surfaceId: surface.id,
+            surfaceContactShapeId: shape.id,
+            bodyA: body,
+            bodyB: null,
+            particleIndexA: null,
+            particleIndexB: null,
+            particleTagA: shape.tag,
+            particleTagB: null,
+            pointA: point,
+            pointB: point,
+            normal,
+            penetration: Math.fround(Math.max(0, sample.penetration ?? -signedDistance)),
+            separation: Math.fround(signedDistance),
+            surfaceVelocity: vec3(sample.surfaceVelocity),
+            tangentLongitudinal: sample.tangentLongitudinal
+              ? vec3(sample.tangentLongitudinal)
+              : null,
+            ...material,
+            metadata: {
+              ...(surface.metadata ?? {}),
+              ...(sample.metadata ?? {}),
+              surfaceContactShape: 'wheel',
+              surfaceContactShapeId: shape.id,
+              sampledSurfacePoint: sample.point ? Array.from(sample.point) : null,
+              swept: Boolean(sample.swept),
+              toi: sample.toi ?? null,
+            },
+          });
+        }
+      }
+    }
+    return contacts;
+  }
+
   #modifyAndBoundContacts(rawContacts, telemetry) {
     const contacts = [];
     for (const contact of rawContacts.sort(ID_COMPARE)) {
@@ -750,6 +1257,65 @@ export class ParticleRigidWorld {
       return contacts.slice(0, this.options.maxContacts);
     }
     return contacts;
+  }
+
+  #refreshSurfaceContactShapeContact(contact, telemetry) {
+    if (!contact.surfaceContactShapeId) return false;
+    const body = contact.bodyA;
+    const shape = body.surfaceContactShapes.find(
+      (candidate) => candidate.id === contact.surfaceContactShapeId,
+    );
+    const surface = this.surfaces.get(contact.surfaceId);
+    if (!shape || !surface) return false;
+    if (telemetry.surfaceQueries >= this.options.maxSurfaceQueries) {
+      telemetry.overflows.surfaceQueries += 1;
+      return false;
+    }
+    const predicted = wheelTubeCenter(
+      body.predictedPosition,
+      body.predictedOrientation,
+      shape,
+      contact.normal,
+    );
+    const query = {
+      from: predicted.tubeCenter,
+      to: predicted.tubeCenter,
+      center: predicted.tubeCenter,
+      radius: shape.treadRadius,
+      bodyId: body.id,
+      surfaceContactShapeId: shape.id,
+      tag: shape.tag,
+      dt: this.fixedDt,
+    };
+    // Prefer a zero-length sweep so collider accounting sees one endpoint
+    // sample and never mistakes solver-owned support refreshes for fallback
+    // height queries. A sample-only collider remains fully supported.
+    const sample = surface.sweepSphere
+      ? surface.sweepSphere(query)
+      : surface.sampleSphere?.(query);
+    telemetry.surfaceQueries += 1;
+    if (!sample || (!sample.hit && !Number.isFinite(sample.signedDistance))) return false;
+    const normal = vecNormalize(vec3(sample.normal ?? contact.normal), contact.normal);
+    const refined = wheelTubeCenter(
+      body.predictedPosition,
+      body.predictedOrientation,
+      shape,
+      normal,
+    );
+    const signedDistance = sample.signedDistance ?? -(sample.penetration ?? 0);
+    const point = vecAdd(refined.tubeCenter, vecScale(normal, -shape.treadRadius));
+    contact.normal = normal;
+    contact.pointA = point;
+    contact.pointB = point;
+    contact.penetration = Math.fround(Math.max(0, sample.penetration ?? -signedDistance));
+    contact.separation = Math.fround(signedDistance);
+    contact.surfaceVelocity = vec3(sample.surfaceVelocity);
+    contact.metadata = {
+      ...(contact.metadata ?? {}),
+      ...(sample.metadata ?? {}),
+      sampledSurfacePoint: sample.point ? Array.from(sample.point) : null,
+    };
+    return true;
   }
 
   #commitAndValidate() {
@@ -817,7 +1383,12 @@ export class ParticleRigidWorld {
     const entries = this.#particleEntries();
     const particleContacts = this.#particleContacts(entries);
     const surfaceContacts = this.#surfaceContacts(entries, telemetry);
-    this.contacts = this.#modifyAndBoundContacts([...particleContacts, ...surfaceContacts], telemetry);
+    const surfaceContactShapeContacts = this.#surfaceContactShapeContacts(telemetry);
+    this.contacts = this.#modifyAndBoundContacts([
+      ...particleContacts,
+      ...surfaceContacts,
+      ...surfaceContactShapeContacts,
+    ], telemetry);
 
     const solverOptions = {
       ...this.options,
@@ -849,6 +1420,16 @@ export class ParticleRigidWorld {
           joint.bodyB ? this.bodies.get(joint.bodyB) : null,
         );
       }
+      const refreshSupport = iteration === 0
+        || iteration === Math.floor(jointPositionIterations / 2)
+        || iteration === jointPositionIterations - 1;
+      if (refreshSupport) {
+        for (const contact of this.contacts) {
+          if (contact.contactModel !== 'compliant' || !contact.surfaceContactShapeId) continue;
+          this.#refreshSurfaceContactShapeContact(contact, telemetry);
+          correctContactPosition(contact, solverOptions);
+        }
+      }
     }
     // Hard travel stops win the final positional projection so later compound
     // joint corrections cannot leave the published rig outside its limits.
@@ -860,8 +1441,18 @@ export class ParticleRigidWorld {
           joint.bodyB ? this.bodies.get(joint.bodyB) : null,
         );
       }
+      if (iteration === 3) {
+        for (const contact of this.contacts) {
+          if (contact.contactModel !== 'compliant' || !contact.surfaceContactShapeId) continue;
+          this.#refreshSurfaceContactShapeContact(contact, telemetry);
+          correctContactPosition(contact, solverOptions);
+        }
+      }
     }
-    for (const contact of this.contacts) correctContactPosition(contact, solverOptions);
+    for (const contact of this.contacts) {
+      if (contact.contactModel === 'compliant' && contact.surfaceContactShapeId) continue;
+      correctContactPosition(contact, solverOptions);
+    }
     this.#commitAndValidate();
     this.stepCount += 1;
     this.simulationTime = Math.fround(this.simulationTime + dt);
@@ -873,7 +1464,7 @@ export class ParticleRigidWorld {
         step: this.stepCount,
         controlFrame,
         contacts: this.contacts,
-        telemetry: cloneTelemetry(this.telemetry),
+        telemetry: cloneWorldTelemetry(this.telemetry, this.referenceFrameTelemetry),
       });
     }
   }
@@ -909,7 +1500,7 @@ export class ParticleRigidWorld {
       substeps,
       alpha,
       droppedTime,
-      telemetry: cloneTelemetry(this.telemetry),
+      telemetry: cloneWorldTelemetry(this.telemetry, this.referenceFrameTelemetry),
     };
   }
 
@@ -957,7 +1548,7 @@ export class ParticleRigidWorld {
   }
 
   getTelemetry() {
-    return cloneTelemetry(this.telemetry);
+    return cloneWorldTelemetry(this.telemetry, this.referenceFrameTelemetry);
   }
 
   getSnapshot() {
@@ -1036,29 +1627,85 @@ export class ParticleRigidWorld {
     return this.defaultSnapshot;
   }
 
-  shiftOrigin(offset) {
-    const shift = vec3(offset);
+  transformReferenceFrame(transform, transactionOptions = undefined) {
+    this.#assertAlive();
+    const frame = normalizeReferenceFrameTransform(transform);
+    // Stage every fallible conversion before mutating live state. A malformed
+    // transform therefore cannot leave a partially converted physics world.
+    const bodyStates = new Map(this.bodyOrder.map((body) => [
+      body.id,
+      stageBodyState(body, frame),
+    ]));
+    const jointStates = new Map(this.jointOrder.map((joint) => [
+      joint.id,
+      stageJointState(joint, frame),
+    ]));
+    const defaultSnapshot = stageSnapshot(this.defaultSnapshot, frame, this.joints);
+    const gravityState = stageReferenceFrameGravity(
+      frame,
+      this.options.gravity,
+      transactionOptions,
+    );
+    const nextOptions = Object.freeze({ ...this.options, gravity: gravityState.gravity });
+
     for (const body of this.bodyOrder) {
-      for (const position of [body.position, body.previousPosition, body.predictedPosition]) {
-        position[0] = Math.fround(position[0] - shift[0]);
-        position[1] = Math.fround(position[1] - shift[1]);
-        position[2] = Math.fround(position[2] - shift[2]);
-      }
-      if (body.kinematicTarget) {
-        body.kinematicTarget.position[0] = Math.fround(body.kinematicTarget.position[0] - shift[0]);
-        body.kinematicTarget.position[1] = Math.fround(body.kinematicTarget.position[1] - shift[1]);
-        body.kinematicTarget.position[2] = Math.fround(body.kinematicTarget.position[2] - shift[2]);
-      }
+      const state = bodyStates.get(body.id);
+      body.position.set(state.position);
+      body.previousPosition.set(state.previousPosition);
+      body.predictedPosition.set(state.predictedPosition);
+      body.orientation.set(state.orientation);
+      body.previousOrientation.set(state.previousOrientation);
+      body.predictedOrientation.set(state.predictedOrientation);
+      body.linearVelocity.set(state.linearVelocity);
+      body.angularVelocity.set(state.angularVelocity);
+      body.force.set(state.force);
+      body.torque.set(state.torque);
+      body.kinematicTarget = state.kinematicTarget;
     }
     for (const joint of this.jointOrder) {
-      if (joint.bodyB === null) {
-        joint.localAnchorB[0] = Math.fround(joint.localAnchorB[0] - shift[0]);
-        joint.localAnchorB[1] = Math.fround(joint.localAnchorB[1] - shift[1]);
-        joint.localAnchorB[2] = Math.fround(joint.localAnchorB[2] - shift[2]);
+      const state = jointStates.get(joint.id);
+      joint.localAnchorB.set(state.localAnchorB);
+      joint.localAxisB.set(state.localAxisB);
+      joint.runtime.referenceB.set(state.referenceB);
+      joint.runtime.initialRelativeOrientation.set(state.initialRelativeOrientation);
+    }
+    this.options = nextOptions;
+    this.defaultSnapshot = defaultSnapshot;
+    this.contacts = [];
+    this.spatialHash.clear();
+    this.telemetry = cloneTelemetry(this.telemetry);
+    this.telemetry.contactCount = 0;
+    this.telemetry.particleContactCount = 0;
+    this.telemetry.surfaceContactCount = 0;
+    this.telemetry.maximumPenetration = 0;
+    this.telemetry.overflows.gridCells = 0;
+    this.telemetry.overflows.gridReferences = 0;
+    this.telemetry.overflows.candidatePairs = 0;
+    this.telemetry.overflows.overflowed = Object.entries(this.telemetry.overflows)
+      .some(([key, value]) => key !== 'overflowed' && value > 0);
+    const listeners = [...this.referenceFrameTransformListeners];
+    this.referenceFrameTelemetry.transformCount += 1;
+    this.referenceFrameTelemetry.gravityOverrideCount += gravityState.overridden ? 1 : 0;
+    this.referenceFrameTelemetry.listenerInvocationCount += listeners.length;
+    this.referenceFrameTelemetry.lastListenerCount = listeners.length;
+    this.referenceFrameTelemetry.lastListenerFailureCount = 0;
+    this.referenceFrameTelemetry.lastListenerError = null;
+    this.referenceFrameTelemetry.lastGravityMode = gravityState.mode;
+    for (const listener of listeners) {
+      try {
+        listener(transform);
+      } catch (error) {
+        this.referenceFrameTelemetry.listenerFailureCount += 1;
+        this.referenceFrameTelemetry.lastListenerFailureCount += 1;
+        this.referenceFrameTelemetry.lastListenerError = describeListenerFailure(error);
       }
     }
-    shiftSnapshot(this.defaultSnapshot, shift);
-    this.contacts = [];
+    return transform;
+  }
+
+  shiftOrigin(offset) {
+    const shift = vec3(offset);
+    this.transformReferenceFrame(translationReferenceFrameTransform(shift));
     for (const listener of this.originShiftListeners) listener(vec3(shift));
   }
 
@@ -1075,6 +1722,7 @@ export class ParticleRigidWorld {
     this.postStepListeners = [];
     this.contactModifiers = [];
     this.originShiftListeners = [];
+    this.referenceFrameTransformListeners = [];
     this.collisionExclusions.clear();
     this.#collisionExclusionsByBody.clear();
     this.spatialHash.clear();

@@ -66,6 +66,33 @@ function makeTerrain() {
   };
 }
 
+function makeHaloTerrain() {
+  const terrain = makeTerrain();
+  const width = 5;
+  const height = 5;
+  const positions = new Float32Array(width * height * 3);
+  const heights = new Float32Array(width * height);
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      const index = row * width + column;
+      positions[index * 3] = column - 2;
+      positions[index * 3 + 1] = row + column;
+      positions[index * 3 + 2] = 2 - row;
+      heights[index] = 100 + row + column;
+    }
+  }
+  return Object.freeze({
+    ...terrain,
+    width,
+    height,
+    positions,
+    heights,
+    localBounds: Object.freeze({ minX: -2, maxX: 2, minY: 0, maxY: 8, minZ: -2, maxZ: 2 }),
+    coreBbox: Object.freeze([0, 0, 1, 1]),
+    halo: Object.freeze({ geometryOverlapVertices: 1 }),
+  });
+}
+
 function makeRoadSegments() {
   return [
     {
@@ -714,6 +741,141 @@ test('renderer hard-clamps terrain work even when material options request large
   assert.equal(status.limits.maximumTerrainContourLevels, 96);
   assert.equal(status.limits.maximumTerrainNurbsCurves, 512);
   assert.equal(status.limits.maximumTerrainContourVertices, 60_000);
+  renderer.dispose();
+});
+
+test('world renderer preserves static geospatial geometry through a full reference-frame transform', () => {
+  const terrain = makeTerrain();
+  const scene = new THREE.Scene();
+  const physics = makePhysics();
+  const renderer = createMotorcycleWorldRenderer({
+    THREE,
+    scene,
+    terrain,
+    sceneData: makeSceneData(),
+    world: physics,
+    rig: physics.rig,
+    raceCourse: makeRaceCourse(),
+    motorcycleModelInstance: makeModelInstance(),
+  });
+  const geospatial = renderer.root.getObjectByName('motorcycle-geospatial-origin');
+  const sourcePoint = new THREE.Vector3(3, 4, 5);
+  const before = sourcePoint.clone().applyMatrix4(geospatial.matrixWorld);
+  const transform = {
+    transformPoint([x, y, z]) { return [z + 10, y + 2, -x - 5]; },
+    transformVector([x, y, z]) { return [z, y, -x]; },
+  };
+  const matrixBeforeFailure = geospatial.matrixWorld.clone();
+  let vectorCalls = 0;
+  assert.throws(() => renderer.prepareReferenceFrameTransform({
+    transformPoint: transform.transformPoint,
+    transformVector(value) {
+      vectorCalls += 1;
+      if (vectorCalls === 2) throw new Error('injected renderer prepare failure');
+      return transform.transformVector(value);
+    },
+  }), /injected renderer prepare failure/);
+  assert.ok(geospatial.matrixWorld.equals(matrixBeforeFailure));
+  const expected = new THREE.Vector3(...transform.transformPoint(before.toArray()));
+  const result = renderer.transformReferenceFrame(transform);
+  const after = sourcePoint.clone().applyMatrix4(geospatial.matrixWorld);
+  assert.ok(after.distanceTo(expected) < 1e-10);
+  assert.equal(result.sequence, 1);
+  assert.equal(renderer.getTelemetry().origin.referenceFrameTransformCount, 1);
+  assert.throws(() => renderer.transformReferenceFrame({}), /transformPoint/);
+  const preparedBeforeDispose = renderer.prepareReferenceFrameTransform(transform);
+  renderer.dispose();
+  assert.equal(preparedBeforeDispose.commit(), false,
+    'a synchronously prepared renderer commit fails harmlessly after disposal');
+});
+
+test('world renderer retains immutable streamed terrain chunks across active snapshots', () => {
+  const terrain = makeTerrain();
+  const streamedTerrain = makeHaloTerrain();
+  const scene = new THREE.Scene();
+  const physics = makePhysics();
+  const renderer = createMotorcycleWorldRenderer({
+    THREE,
+    scene,
+    terrain,
+    sceneData: makeSceneData(),
+    world: physics,
+    rig: physics.rig,
+    raceCourse: makeRaceCourse(),
+    motorcycleModelInstance: makeModelInstance(),
+  });
+  const transform = Object.freeze({
+    chunkToCurrentPoint([x, y, z]) { return [x + 20, y + 3, z - 10]; },
+    chunkToCurrentVector(vector) { return [...vector]; },
+  });
+  const record = Object.freeze({
+    key: '14/1370/4644',
+    terrain: streamedTerrain,
+    transform,
+  });
+  const snapshot = (revision, records) => Object.freeze({
+    schemaVersion: 'peercompute.motorcycle.globe-surface-snapshot.v1',
+    revision,
+    records: Object.freeze(records),
+    activeKeys: Object.freeze(records.map((entry) => entry.key)),
+  });
+  const badRecord = Object.freeze({
+    ...record,
+    key: '14/1370/4643',
+    transform: Object.freeze({
+      chunkToCurrentPoint: transform.chunkToCurrentPoint,
+      chunkToCurrentVector() { return [Number.NaN, 0, 0]; },
+    }),
+  });
+  assert.throws(
+    () => renderer.prepareSurfaceSnapshot(snapshot(1, [record, badRecord])),
+    /non-finite/,
+  );
+  assert.equal(renderer.getTelemetry().streamingTerrain.revision, 0);
+  assert.equal(renderer.getTelemetry().streamingTerrain.residentChunkCount, 0);
+
+  const prepared = renderer.prepareSurfaceSnapshot(snapshot(1, [record]));
+  assert.equal(renderer.getTelemetry().streamingTerrain.revision, 0);
+  assert.equal(prepared.commit(), true);
+  let status = renderer.getTelemetry().streamingTerrain;
+  assert.equal(status.activeChunkCount, 1);
+  assert.equal(status.residentChunkCount, 1);
+  assert.equal(status.buildCount, 1);
+  assert.equal(status.initialTerrainVisible, false);
+  const chunk = renderer.root.getObjectByName('motorcycle-streamed-terrain-14-1370-4644');
+  assert.ok(chunk);
+  const chunkMesh = chunk.children.find((child) => child.isMesh);
+  assert.equal(chunkMesh.geometry.getAttribute('position').count, 9);
+  assert.equal(status.overlapGeometryRendered, false);
+  assert.equal(status.haloPolicy, 'collision-only-render-core-bounds');
+  assert.ok(Math.abs(chunk.matrix.elements[12] - 20) < 1e-12);
+  assert.equal(renderer.setStreamedTerrainVisible(false), false);
+  status = renderer.getTelemetry().streamingTerrain;
+  assert.equal(status.activeChunkCount, 0);
+  assert.equal(status.initialTerrainVisible, true);
+  assert.equal(renderer.setStreamedTerrainVisible(true), true);
+  assert.equal(renderer.getTelemetry().streamingTerrain.activeChunkCount, 1);
+  assert.equal(renderer.syncSurfaceSnapshot(snapshot(1, [record])), false);
+  assert.equal(renderer.syncSurfaceSnapshot(snapshot(2, [])), true);
+  status = renderer.getTelemetry().streamingTerrain;
+  assert.equal(status.activeChunkCount, 0);
+  assert.equal(status.residentChunkCount, 1);
+  assert.equal(status.initialTerrainVisible, true);
+  assert.equal(renderer.syncSurfaceSnapshot(snapshot(3, [record])), true);
+  status = renderer.getTelemetry().streamingTerrain;
+  assert.equal(status.buildCount, 1);
+  assert.equal(status.reuseCount, 1);
+  chunkMesh.geometry.addEventListener('dispose', () => {
+    throw new Error('injected geometry disposal observer failure');
+  });
+  const replacementRecord = Object.freeze({ ...record, terrain: makeHaloTerrain() });
+  assert.doesNotThrow(() => renderer.syncSurfaceSnapshot(snapshot(4, [replacementRecord])));
+  status = renderer.getTelemetry().streamingTerrain;
+  assert.equal(status.disposalFailureCount, 1);
+  assert.equal(status.lastDisposalError.kind, 'geometry');
+  const released = renderer.prepareSurfaceSnapshot(snapshot(5, []));
+  assert.equal(released.dispose(), true);
+  assert.equal(released.commit(), false, 'an explicitly released transaction cannot throw');
   renderer.dispose();
 });
 

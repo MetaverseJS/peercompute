@@ -90,25 +90,33 @@ runtime metadata to NetViz.
 - **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
-  restriction-aware synthetic traffic with collision cages, local-origin
-  rebasing, an explicit physics-based automatic/manual gearbox, and centered
+  restriction-aware synthetic traffic with bounded collision cages, continuous
+  WGS84/ECEF-to-ENU frame handoffs, an explicit physics-based automatic/manual gearbox, and centered
   first/third-person views. Its terrain-draped road ribbons and single
   composite collider share the exact terrain-plane plus road-deck contract, so
   tire contacts occur on the visible OSM road and retain source way/segment metadata.
+  Solver-owned analytic tread shapes provide continuous compliant terrain
+  support while 32 ring particles per wheel remain authoritative for inertia
+  and body/body impacts. The deterministic full-throttle gate sustains at
+  least 26.09 m/s, reaches 30.55 m/s, and reduces final-window physical
+  chassis-height deviation to 0.118 mm without pose or velocity correction.
   It opens on a CesiumJS north-up AWS
   topographic hemisphere, overlays a bounded regional OSM major-road window,
   adds a persistent official FHWA/U.S. DOT National Highway System overview
-  for Alaska and the United States, accepts globe clicks as bounded local ride
-  requests, and shows validated live PeerCompute players in fixed red before the
-  discrete transition into the Three.js local meter-scale ride.
-  The local visual combines transparent Terrarium terrain with bounded NURBS
+  for Alaska and the United States, accepts globe clicks as seed-road ride
+  requests, and shows validated live PeerCompute players in fixed red. Three.js
+  and WebXR keep the six-body solver in a local metre tangent frame while a
+  bounded 3×3-active/5×5-desired Terrarium stream advances its persistent globe
+  position without a ride boundary reset. Riders may leave the seed roads for
+  continuous off-road terrain; absent forward terrain pauses physics rather
+  than teleporting or inventing relief. The local visual combines transparent Terrarium terrain with bounded NURBS
   contours and a bounded 7.5 MB CC BY 4.0 optimized “Akira Bike” presentation
   model by Ryanwill679; the model has no collision authority and the unchanged
   six-body particle rig remains authoritative. Runtime glass uses a one-pass
   alpha policy with forced one-pass transparency instead of a full-model
   transmission prepass, an exact presentation-only tire-grounding offset, off-camera race
   gates are culled, and dense collision particles remain debug-only. A
-  rebase-aware exact-terrain camera floor keeps first-, third-, and stereo-XR
+  frame-aware exact-terrain camera floor keeps first-, third-, and stereo-XR
   optical points at least 0.35 m above the rendered surface.
 - **Reusable input/WebXR toolkit**: device-independent action frames unify
   keyboard/pointer lock, multitouch, standard gamepads, `xr-standard`
@@ -811,15 +819,15 @@ Current demos and validation surfaces:
   interactive EarthGrid Terrarium path stops at z10 with a relaxed six-pixel
   screen-space error to keep regional source fan-out bounded, and vector-height
   snapshots reconcile once after each quiescent terrain burst.
-- **RoadVector**: first/third-person particle motorcycle racing on real local
-  OSM roads and AWS Terrarium terrain, with source building geometry, synthetic lane-aware traffic,
+- **RoadVector**: first/third-person particle motorcycle racing from real seed
+  OSM roads onto continuously streamed AWS Terrarium globe terrain, with source building geometry, synthetic lane-aware traffic,
   race gates/timing, desktop/mobile/gamepad/WebXR controls, an opening CesiumJS
   Terrarium topographic hemisphere with bounded regional major roads, an official
   versioned FHWA National Highway System layer covering Alaska and the U.S.,
   click-to-start location selection, genuine
   remote PeerCompute players in red, and bright category rendering. Cesium
-  owns global WGS84/open-data display; Three.js owns the local meter-scale
-  ride, particle physics, and XR rendering. Its default local presentation is
+  owns global WGS84/ECEF authority and open-data overview; Three.js owns the
+  moving local-metre tangent ride, particle physics, and XR rendering. Its default local presentation is
   a transparent NURBS-contour surface and a hash-verified, locally packaged,
   optimized CC BY 4.0 motorcycle model attached to the physical chassis.
 - **Multiscale Ladder**: WebGPU-first scale ladder for supergalactic-to-orbital visualization, proxy physics layers, executable N-body, stellar-fusion, magnetosphere plasma/MHD, PIC plasma patch, relativistic correction, cosmology expansion, reactive thermal, Maxwell, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, SPH material phase-change, molecular-dynamics solver-worker telemetry, packet-level law-graph consistency reports, visible N-body/stellar/magnetosphere/PIC/relativity/cosmology/field/weather/radiation/fire/material/molecular overlays, and explicit warm-delta packet readout.

@@ -2651,3 +2651,136 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   frames/s and road collision sampling was bounded. This is not a headset or
   hardware-GPU result. Physical headset enter/exit/re-enter, hands/controllers,
   haptics, comfort, and frame timing remain NOT RUN.
+
+## RoadVector continuous Cesium-globe ride strategy - 2026-08-25 AKDT
+
+- Baseline first: record full-throttle speed/gear/RPM, suspension travel and
+  frame-to-frame deltas, tire contact churn/impulses, dropped fixed time,
+  out-of-bounds reset position, and road versus off-road surface metadata on
+  flat, slope, rough relief, and the current bounded runtime.
+- Geospatial continuity: pure tests must convert the same physical pose among
+  WGS84/ECEF, the persistent ride frame, origin-rebased solver coordinates, and
+  each streamed terrain window without a position, orientation, or velocity
+  discontinuity. Cover antimeridian/high-latitude input and repeated rebases.
+- Streaming: deterministic fake-source tests cross the old boundary through
+  overlapping terrain windows, retain a physical terrain collider at every
+  committed step, abort superseded loads, reuse cached Terrarium/road data,
+  respect tile/byte/vertex/concurrency caps, and settle source failures
+  truthfully. No boundary reset is allowed in the success path.
+- Off-road: front and rear tires must contact terrain outside every road
+  footprint, traverse slopes and bounded roughness, and keep suspension travel,
+  penetration, slip, attitude, speed, state, and capacity finite. When a road
+  exists, its shared rendered/collision deck remains physically above terrain.
+- Speed and jitter: duplicated fixed-step runs must reach a materially higher
+  stable target on flat terrain, shift through the automatic gearbox, remain
+  upright, brake physically, and replay identically. Quantify suspension/contact
+  oscillation rather than judging only screenshots; prohibit pose/velocity
+  writes, reduced solver iterations, or reduced physics cadence.
+- Built runtime: use separate headless Playwright/system Chromium automation to
+  hold keyboard controls across at least one old local-boundary distance, then
+  leave a road for terrain. Require Cesium ride mode, moving WGS84 position,
+  committed terrain generation changes, road/off-road tire contacts, no reset,
+  finite physics, no source/cap error, and zero page/console errors. Do not use
+  `terminal-browser`. Physical-headset validation remains explicitly NOT RUN
+  unless real hardware is available.
+
+### Frozen numeric and stream gates
+
+- Smooth physics: thirty seconds at full automatic throttle on deterministic
+  flat terrain, final-five-second mean at least `25 m/s`, chassis-height
+  standard deviation at most `0.004 m`, vertical-velocity standard deviation at
+  most `0.12 m/s`, axle-load peak at most six times static weight, maximum tilt
+  at most eight degrees, finite state, zero overflow, and byte-identical replay.
+- Rough/off-road physics: deterministic broad mountain plus short relief,
+  twelve seconds at full throttle, peak at least `12.5 m/s`, final at least
+  `11 m/s`, maximum tilt at most twenty-five degrees, penetration at most
+  `0.025 m`, suspension hard-stop occupancy below five percent, appropriate
+  ground-speed gear, finite state, zero overflow, and byte-identical replay.
+- Stream state: terrain chunks move through absent, queued, fetching, decoded,
+  compiled, resident, active/evicted states. Network completion never mutates
+  the live collider. A fixed-step commit publishes one sorted generation shared
+  by collider and renderer; a failed/superseded neighbor retains the prior
+  overlap and enters `stream-wait` before any unavailable tire query.
+- Cache/resource gates: wrapped z12-z14 tile keys; 3x3 active and 5x5 desired
+  rings; maximum 32 compiled residents; six source requests; terrain and road
+  byte/entry/vertex limits; A -> B -> A exact compiled-buffer reuse without
+  refetch; deterministic LRU destruction; terrain required and road missing
+  truthfully treated as off-road.
+- Frame gates: WGS84/ECEF pose and both linear/angular velocity remain invariant
+  through repeated ENU handoffs, including antimeridian/high-latitude cases.
+  All current/previous/predicted bodies, kinematic targets, world joint data,
+  controller anchors, render chunks, chase state, and XR root transform in one
+  transaction; tracked headset camera state is never mutated.
+- Runtime gate replaces the bounded-edge reset assertion: drive across at least
+  two former regions, observe at least two committed terrain generations, keep
+  render/collider generation IDs equal, record no boundary reset/teleport/
+  unavailable tire sample, leave the road onto a real slope, meet the physical
+  speed gate, and retain bounded cache/resource telemetry. Use standalone
+  Playwright/system Chromium only; `terminal-browser` is forbidden.
+
+## RoadVector continuous globe executed evidence - 2026-08-25 AKDT
+
+- PASS: `npm run test:geo-core` -> `87/87`; local-frame tests cover frozen ENU
+  point/vector/orientation transforms, inverse round trips, antimeridian and
+  high-latitude frames. Particle-world tests cover atomic complete reference-
+  frame transformation, local radial-gravity override, isolated post-commit
+  listener faults, and legacy translation-shift parity.
+- PASS: stream/tile/collider tests cover wrapped z12-z14 keys, explicit polar
+  unsupported state, 3x3/5x5 membership, active-first scheduling, deterministic
+  reverse completion, stage/reserve/idempotent commit, content identity,
+  same-center retry/backoff, supersession, cap/terminal failure, stale-resource
+  disposal, A-B-A reuse, exact road precedence, fallback transforms, and
+  collision snapshot revision truth.
+- PASS: RoadVector `117/117`. Runtime tests cross the former seed boundary onto
+  a committed off-road terrain generation, withhold all substeps before a fast
+  tire envelope leaves coverage, retain old state on prepare failure, ignore
+  inactive desired-content changes, retry rejected preparation, restore the
+  seed frame on reset, deactivate far seed traffic/race work, and keep render,
+  collision, WGS84/ECEF, camera, and XR frame ownership coherent.
+- PASS: decoded-heightmap tests prove concurrent coalescing, subscriber-abort
+  isolation, exact Float32 ownership, the 16 MiB hard cap even for injected
+  Float64/oversized backing buffers, bounded LRU, transient busy pressure,
+  orphan cancellation, destroy/late-completion fencing, and exact `225` logical
+  halo reads -> `49` source decodes for one 5x5 window.
+- PASS: `npm run test:physics` -> `54/54`. The analytic continuous tread is a
+  solver-owned compliant surface-contact shape; wheel rings remain physical for
+  inertia/body impacts. Exact final smooth metrics: terminal `30.547739 m/s`,
+  final-five-second minimum `26.090229`, mean `28.705664`, chassis-height sigma
+  `0.000118162 m`, vertical-speed sigma `0.001767406 m/s`, max tilt `1.04155°`,
+  partial-throttle launch `3.200653 m/s`, 147 particles, no overflow, and
+  `275.05` fixed steps/s in the instrumented run. Rough mountain, turn,
+  physical service braking, reframe/reset, and duplicate determinism pass.
+- PASS: `npm run test:xr` -> `24/24`; mocked WebXR browser smoke passes;
+  `npm run test:traffic` -> `12/12`. Non-contact renderer/view/camera audits
+  additionally pass `38/38`, including no-throw prepared commits and caught GPU
+  disposal-listener errors.
+- PASS: `npm run build:motorcycle`; Vite transformed `2325` modules, copied
+  `391` Cesium runtime/license items, and emitted the current content-hashed
+  RoadVector bundle. The expected Cesium-heavy >2.2 MiB chunk warning remains a
+  disclosure, not a failed cap.
+- PASS: `node --test demos/tests/demo-release.test.js` -> `17/17`. Static
+  markers require continuous wheel contact, globe stream/snapshot/reservation,
+  WGS84/Cesium authority, Three/WebXR local frame, decoded terrain LRU,
+  generated model/license assets, and current HTML disclosures.
+- PASS: standalone Playwright/system Chromium built smoke on owned port `43982`
+  (closed afterward). It verifies source/cache readiness, complete active
+  terrain generation, decoded-cache cap/hits/coalescing, physical fixed-step
+  throttle acceleration plus synchronized HUD, compliant tread contact,
+  automatic/manual transmission, a ~4 km off-road generation handoff, terrain
+  contact outside the seed overlay, no boundary reset, matching renderer/
+  collider revisions, reset, supersession, warm caches, and zero page/console
+  errors. The first cold run exposed repeated PNG decoding; the second exposed
+  a pre-qualification acceleration ordering error; the third exposed a stale
+  HUD comparison. Each gate was corrected without weakening stream or physics
+  acceptance, and the final rebuilt run passes.
+- PASS: the final neighboring-demo compatibility rerun after the RoadVector
+  bundle freeze completed EarthGrid `48/48` and WXGlobe `28/28` on Node
+  `v24.18.0`.
+- PASS: ICC path-scoped guard-diff checks cover `demos/**`,
+  `packages/geo-core/**`, `plan/**`, and root `README.md`. The intentionally
+  unscoped guard rejects Vite's deletion of inactive hashed bundles by generic
+  policy; the fresh build, static `17/17` release gate, referenced-hash checks,
+  and exact built runtime smoke prove the generated replacement separately.
+- NOT RUN: physical headset entry/re-entry, tracked controllers/hands, haptics,
+  comfort, and headset GPU/frame timing. System-Chromium software-render timing
+  is not a headset certification. No `terminal-browser` invocation occurred.

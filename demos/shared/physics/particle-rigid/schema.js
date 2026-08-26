@@ -33,6 +33,7 @@ export const DEFAULT_MATERIAL = Object.freeze({
   friction: 0.8,
   restitution: 0,
   rollingFriction: 0.015,
+  contactModel: 'rigid',
   contactStiffness: 1,
   contactDamping: 1,
 });
@@ -151,7 +152,11 @@ export function normalizeWorldOptions(options = {}) {
 }
 
 export function normalizeMaterial(material = {}) {
-  return Object.freeze({
+  const contactModel = material.contactModel ?? DEFAULT_MATERIAL.contactModel;
+  if (!['rigid', 'compliant'].includes(contactModel)) {
+    throw new TypeError('material.contactModel must be rigid or compliant');
+  }
+  const normalized = {
     friction: nonNegative(material.friction, DEFAULT_MATERIAL.friction, 'material.friction'),
     restitution: Math.min(1, nonNegative(
       material.restitution,
@@ -163,6 +168,7 @@ export function normalizeMaterial(material = {}) {
       DEFAULT_MATERIAL.rollingFriction,
       'material.rollingFriction',
     ),
+    contactModel,
     contactStiffness: nonNegative(
       material.contactStiffness,
       DEFAULT_MATERIAL.contactStiffness,
@@ -173,7 +179,65 @@ export function normalizeMaterial(material = {}) {
       DEFAULT_MATERIAL.contactDamping,
       'material.contactDamping',
     ),
+  };
+  if (contactModel === 'compliant' && normalized.contactStiffness <= 0) {
+    throw new RangeError('compliant material.contactStiffness must be positive');
+  }
+  return Object.freeze(normalized);
+}
+
+export function normalizeSurfaceContactShapes(
+  definitions,
+  { bodyId = 'body', centerOfMass = [0, 0, 0], material = DEFAULT_MATERIAL } = {},
+) {
+  if (definitions === undefined || definitions === null) return Object.freeze([]);
+  if (!Array.isArray(definitions)) {
+    throw new TypeError(`body ${bodyId} surfaceContactShapes must be an array`);
+  }
+  const ids = new Set();
+  const shapes = definitions.map((definition, index) => {
+    if (!definition || typeof definition !== 'object') {
+      throw new TypeError(`body ${bodyId} surfaceContactShapes[${index}] must be an object`);
+    }
+    const id = definition.id ?? `surface-contact-${index}`;
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new TypeError(`body ${bodyId} surface contact shape id must be a non-empty string`);
+    }
+    if (ids.has(id)) throw new Error(`body ${bodyId} has duplicate surface contact shape id: ${id}`);
+    ids.add(id);
+    if (definition.type !== 'wheel') {
+      throw new TypeError(`body ${bodyId} surface contact shape ${id} has unsupported type ${definition.type}`);
+    }
+    const center = vec3(definition.center);
+    const axis = vecNormalize(vec3(definition.axis ?? [1, 0, 0]), [1, 0, 0]);
+    const tag = definition.tag ?? null;
+    if (tag !== null && typeof tag !== 'string') {
+      throw new TypeError(`body ${bodyId} surface contact shape ${id} tag must be a string or null`);
+    }
+    return Object.freeze({
+      id,
+      type: 'wheel',
+      localCenter: vec3([
+        center[0] - centerOfMass[0],
+        center[1] - centerOfMass[1],
+        center[2] - centerOfMass[2],
+      ]),
+      localAxis: axis,
+      radius: positive(
+        definition.radius,
+        undefined,
+        `body ${bodyId} surface contact shape ${id} radius`,
+      ),
+      treadRadius: positive(
+        definition.treadRadius,
+        undefined,
+        `body ${bodyId} surface contact shape ${id} treadRadius`,
+      ),
+      tag,
+      material: normalizeMaterial({ ...material, ...(definition.material ?? {}) }),
+    });
   });
+  return Object.freeze(shapes);
 }
 
 function jointVector(value, fallback, normalize = false) {

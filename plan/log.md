@@ -59475,3 +59475,297 @@ and performance, and retain a physics-based motorcycle.
   relying only on the earlier terminal-layout wording.
 - Open questions: none. The terminal-browser prohibition remains in force
   unless the user explicitly changes this working agreement later.
+
+## 2026-08-25 20:23:51 AKDT - Continuous globe riding, off-road mountains, speed, and jitter intake
+
+### Exact prompt and requested outcome
+
+- Prompt: `the motorcycle game is getting pretty good but physics is kinda
+  jittery and the bike doesn't go nearly fast enough. it's also easy to drive
+  out of bounds. I think we shuold probably be driving on the actual cesium
+  globe instead. also you should be able to drive offroad and just mob over the
+  mountains if you want.`
+- Requested result: a smoother, substantially faster physics-based motorcycle
+  that rides continuously over the actual Cesium globe and real streamed
+  terrain, does not reset at the current local boundary, and can leave roads to
+  traverse mountain terrain.
+
+### Initial evidence and actions
+
+- Read the ICC control-plane skill and created durable task
+  `roadvector-globe-offroad-speed-stability-20260825` with a six-item plan for
+  diagnosis, globe/runtime design, streaming, physical tuning, integration,
+  and release verification. The initial generic ICC plan was replaced with
+  task-specific evidence gates; root owns the shared ICC state.
+- Reviewed `AGENTS.md`, `plan/plan.md`, this log, `plan/tests.md`, and the Earth/
+  RoadVector branch contract. Node is the required `v24.18.0`; the worktree was
+  clean at intake and the branch was ahead of its configured upstream.
+- Source inspection proved the current cause of the boundary behavior:
+  `loadMotorcycleLocation` loads one 500/800/1,200 m region, `gameRuntime`
+  treats an eight-metre inset from that terrain grid as outside, and the next
+  fixed step resets traffic, race, controller, and bike to the original road
+  spawn. Existing origin rebasing is translation within that immutable local
+  terrain; it does not stream a new region.
+- Cesium currently owns only the hidden/shown hemisphere overview with z0–z3
+  Terrarium relief. Ride mode hides Cesium and renders one static local terrain,
+  road, building, race, traffic, and physical-bike snapshot through Three.js.
+- The current deterministic nine-second full-throttle contract reaches about
+  14.5–16.5 m/s (52–59 km/h) and only one automatic upshift. This establishes
+  the low-speed baseline; contact/suspension jitter measurements are in
+  progress rather than guessed from presentation alone.
+- Started three independent read-only audits: continuous Cesium/terrain-frame
+  architecture, fixed-step/controller/contact jitter and speed limits, and
+  runtime/test/release coupling. Subagents were explicitly told not to edit,
+  start servers, use `terminal-browser`, or alter root-owned ICC state.
+
+### Files, commands, failures, and open work
+
+- Files touched in this intake: `plan/plan.md`, `plan/tests.md`,
+  `plan/branch/earth-platform-motorcycle-xr.md`, and `plan/log.md`.
+- Commands/tools: ICC repo resolution, `codebase_work`, task-plan replacement,
+  `agent-preflight`, conflict-free plan-doc lease, Node/version and Git status,
+  plus bounded `rg`/`sed`/`nl` inspection of RoadVector main, overview, loader,
+  runtime, terrain, road collider, renderer, local-frame, controller, solver,
+  tests, and package scripts. No server or browser was started.
+- ICC's first generated plan over-weighted generic synthetic/fallback findings;
+  it was replaced by the explicit user requirement matrix. One read-only audit
+  invoked ICC before root's ownership message and temporarily narrowed the
+  durable task goal; root will restore the goal after audits, without relying
+  on that incidental artifact for architecture decisions.
+- Open: freeze the globe/local-frame and streaming contract, capture exact
+  jitter/speed baselines, implement under non-overlapping ICC leases, add
+  deterministic/runtime gates, rebuild RoadVector, verify the private HTTPS
+  app through separate headless automation, update this entry with final
+  evidence, clean up, reconcile ICC, and create a coherent local commit.
+- Physical-headset validation is NOT RUN and no headset certification is
+  claimed.
+
+## 2026-08-25 20:36:53 AKDT - Continuous globe architecture and measured physics diagnosis
+
+### Architecture decision and measured causes
+
+- The ride will use Cesium/WGS84/ECEF as the persistent planetary authority and
+  Three.js/WebXR as the streamed near-field renderer. The six-body particle
+  world remains a bounded local-metre tangent frame. Cesium is not used for
+  120 Hz contact queries: its loaded-globe height is view-dependent, its most-
+  detailed terrain query is asynchronous, and the installed Cesium renderer
+  does not provide the existing Three/WebXR ride path.
+- The replacement world is a bounded stream of immutable Terrarium/road
+  chunks. A single stable composite surface publishes only complete,
+  deterministically sorted terrain generations at a fixed-step boundary.
+  Terrain is mandatory; roads are an optional higher surface inside their
+  footprints. A missing forward terrain ring enters a truthful `stream-wait`
+  and drops accumulated wall time rather than resetting, teleporting, or
+  inventing a flat authoritative surface.
+- A globe handoff requires a full rigid ENU-frame transform, not the current
+  translation-only origin shift. Current/previous/predicted body pose,
+  orientation, linear/angular velocity, force/torque, kinematic targets,
+  world-space joint data, controller/reset anchors, renderer chunks, cameras,
+  and XR locomotion root must change together while the ECEF state stays
+  invariant.
+- Deterministic measurement isolated the visible flat-road chatter to the
+  twenty-point tire ring: its 4.186 mm polygon scallop excites contact at about
+  129 Hz near the current top speed, aliasing the 120 Hz solver. The final five
+  seconds of a thirty-second stock flat run averaged 16.824 m/s with 5.97 mm
+  chassis-height standard deviation, 0.149 m/s vertical-velocity deviation,
+  4,139 N axle-load deviation, and at least one missing tire on 70.83 percent
+  of steps.
+- The low speed is not an aerodynamic ceiling. One-step front-load loss makes
+  drive torque alternate between the 0.28 safety floor and full authority, and
+  automatic shifting uses airborne wheel RPM while refusing a full-throttle
+  downshift. A bounded 32-point tire ring cut flat vertical-velocity deviation
+  from 0.178 to 0.101 m/s and raised speed from 59.76 to 69.30 km/h for about
+  2.5 percent more scoped CPU work. Contact/load filtering, torque-rate limits,
+  and ground-coupled shift/kickdown logic are required before increasing the
+  stable power envelope.
+- A separate runtime defect contributes to perceived slowness: four 120 Hz
+  substeps cover only 1/30 second, so render rates below 30 fps discard wall
+  time and make the simulation run slow. This will be surfaced cumulatively
+  and addressed only after physical and stream work remains within the fixed-
+  step performance budget; solver cadence will not be reduced.
+
+### Commands, tests, files, coordination, and open work
+
+- Baseline commands on Node `v24.18.0`: `npm run test:motorcycle` passed
+  `80/80`; `npm run test:physics` passed `44/44`; the read-only loader/scene/
+  globe/renderer/runtime selection passed `32/32`. `git diff --check` passed
+  for the intake documentation.
+- ICC task goal and its six-item plan were restored after a read-only worker's
+  accidental `work` invocation replaced them. The design gate is now passed;
+  globe streaming and physical tuning are in progress. Root created three
+  distinct bounded child tasks because ICC treats simultaneous same-task
+  leases as conflicting even with empty path overlap.
+- Conflict-free edit leases now cover only: (1) motorcycle rig/controller/tests
+  for high-speed physical dynamics; (2) geo-core ENU and particle-world frame
+  transforms/tests; and (3) wrapped ride tiles, terrain chunks, stream/collider
+  foundation/tests. Root retains runtime/renderer/main/view/docs integration.
+  Agents were explicitly prohibited from ICC writes, servers, browser use,
+  plan files, and files outside their leases.
+- Files touched by root remain documentation only: `plan/plan.md`,
+  `plan/tests.md`, `plan/branch/earth-platform-motorcycle-xr.md`, and this log.
+  Production edits are in progress under the three leases; no build, generated
+  artifact, runtime service, private URL, or external data was changed in this
+  checkpoint.
+- Numeric acceptance is frozen at at least 25 m/s (90 km/h) sustained on the
+  deterministic smooth surface with at most 4 mm chassis-height deviation and
+  0.12 m/s vertical-velocity deviation, plus at least 12.5 m/s (45 km/h) peak
+  and 11 m/s final on the deterministic rough mountain with at most 25 degrees
+  tilt. Both must stay finite/deterministic with physical braking, bounded
+  penetration/contact load, no capacity overflow, and no pose/velocity clamp.
+- Open: finish the three leased foundations, integrate atomic stream/frame
+  commits into the game renderer/view, make terrain-first road-optional spawn
+  and race/traffic degradation truthful, replace the boundary-reset gates,
+  run aggregate/build/non-terminal-browser runtime evidence, update docs,
+  reconcile ICC, stop owned test processes, and commit a coherent local clean
+  point. Physical-headset testing remains NOT RUN.
+
+## 2026-08-25 22:42:40 AKDT - Continuous globe, off-road, speed, and physical-jitter result
+
+### Prompt and completed outcome
+
+- Prompt received at `2026-08-25 20:23:51 AKDT`: “the motorcycle game is
+  getting pretty good but physics is kinda jittery and the bike doesn't go
+  nearly fast enough. it's also easy to drive out of bounds. I think we shuold
+  probably be driving on the actual cesium globe instead. also you should be
+  able to drive offroad and just mob over the mountains if you want.”
+- Completed the requested continuous terrain/off-road and physics work without
+  replacing the fixed-step physical authority. Cesium/WGS84/ECEF is now the
+  canonical planetary frame; Three/WebXR remains the near-field ride renderer,
+  and the six-body particle solver remains a bounded local ENU simulation.
+  Public state states that split explicitly rather than pretending Cesium is a
+  synchronous 120 Hz collision API.
+
+### Globe stream, collision, and frame transaction
+
+- Added pure ENU-frame deltas to `packages/geo-core/src/geo/localFrame.js` and
+  full particle-world reference-frame transactions in
+  `demos/shared/physics/particle-rigid/world.js`. The transaction handles
+  current/previous/predicted positions and orientations, linear/angular state,
+  kinematic targets, anchors, local radial gravity, reset state, and isolated
+  post-commit listeners while preserving the ECEF pose.
+- Added `demos/motorcycle/src/world/rideTile.js`,
+  `src/runtime/globeSurfaceStream.js`, and
+  `src/world/streamingSurfaceCollider.js`. The stream uses wrapped z12-z14
+  keys, explicit Web-Mercator polar rejection, a 3x3 active and 5x5 desired
+  window, six source requests, 32 residents, 64 MiB / 900,000 vertices,
+  deterministic key order, immutable snapshots, resource identities,
+  reserve/commit receipts, bounded retry/backoff, stale-result disposal, and
+  LRU eviction. Active terrain requests now qualify before desired-only
+  prefetch consumes the remaining slots.
+- Reworked `gameRuntime.js`, `worldRenderer.js`, `trafficPhysics.js`, `ViewRig`,
+  `terrainCameraFloor.js`, and `main.js` around one fixed-boundary publication.
+  The collision facade and renderer consume the same revision; forward tire
+  coverage is preflighted before any substep; missing terrain enters
+  `stream-wait`; successful travel crosses the former boundary with no reset.
+  Renderer terrain is clipped to core bounds while halo posts remain
+  collision-only. Race and physical traffic are disabled outside the seed
+  region and reactivate on return. Reset first restores the initial frame and
+  fallback safely. Prepared view/renderer commits and GPU disposal reporting
+  were made no-throw after validation; camera-floor held/unavailable state and
+  page/XR teardown ordering were corrected.
+- Continuous global terrain is implemented and physically rideable off road.
+  The current OSM road, building, race, and traffic data remains a truthful
+  bounded 2.4 km seed overlay; `loadRoadTile:null` is explicit, so this result
+  does not overclaim globally streamed roads. Web Mercator coverage ends at
+  approximately ±85.051 degrees and reports unsupported polar terrain.
+
+### Physical speed and jitter work
+
+- The measured stock 20-segment ring reached only about 16.8 m/s and excited
+  contact near 129 Hz, with 5.97 mm chassis-height and 0.149 m/s vertical-speed
+  deviation. Bounded 32- and 48-ring trials improved but did not satisfy the
+  frozen 4 mm / 0.12 m/s five-second gate; the 48-ring run still measured
+  11.612 mm and 0.254983 m/s. Those failed experiments were not disguised by
+  loosening the target or adding camera/pose smoothing.
+- Added generic solver-owned continuous wheel surface-contact shapes in
+  `particle-rigid/{schema,contacts,world}.js`. The analytic circular tread uses
+  an implicit compliant normal impulse and interleaved XPBD support; the 32
+  wheel-ring particles remain physical for inertia and body/body traffic
+  impacts. The motorcycle uses 24,000,000 N/m stiffness and 24,000 N·s/m
+  damping. Original swept CCD remains, with bounded endpoint-only refinement,
+  public tire/source metadata, and no pose or velocity correction.
+- Retuned the force-based controller using filtered load/slip/contact state,
+  rate-limited drive/reaction torque, ground-coupled automatic shift/kickdown,
+  and bounded first-gear anti-wheelie traction. The exact smooth run terminates
+  at `30.547739 m/s`, sustains a final-window minimum `26.090229` and mean
+  `28.705664`, measures `0.000118162 m` height sigma and `0.001767406 m/s`
+  vertical-speed sigma, stays within `1.04155°`, and produces no overflow.
+  Partial-throttle launch is `3.200653 m/s`; rough mountain, turning, service
+  brake, reset/reframe, determinism, and sample-work gates pass. The
+  instrumented 147-particle run processed `275.05` fixed steps/s.
+
+### Terrain decode performance hardening
+
+- The first built smoke reached only five of 25 logical stream chunks after 45
+  seconds. Diagnosis showed each 131x131 haloed logical chunk independently
+  decoding nine 256x256 PNGs: 225 reads for only 49 source tiles. Added a
+  session-local 64-entry decoded-heightmap LRU in `terrainGrid.js`, wired once
+  through `main.js` and exposed separately from StateManager/Yjs telemetry.
+- The cache coalesces concurrent readers, isolates subscriber aborts, owns an
+  exact Float32 copy, enforces a 16 MiB hard bound, evicts settled LRU entries,
+  cancels a request when its last subscriber aborts, treats temporary admission
+  pressure as retryable, and fences destroy/late decoder completion. A review
+  initially found Float64 byte-cap, late-completion, and orphaned-promise holes;
+  all three were reproduced and fixed before release. The full 5x5 unit now
+  proves exactly `225` logical reads, `49` decodes, finite seams, and bounded
+  resident bytes.
+
+### Files, commands, tests, and failures
+
+- Source touched: geo-core local frames; particle schema/contact/world; vehicle
+  rig/controller; RoadVector main, overview, game runtime, traffic, renderer,
+  camera configuration/floor, terrain grid, and three new stream/tile/collider
+  modules. Tests touched the matching geo-core, particle, vehicle, RoadVector,
+  XR, built-smoke, and static-release suites. UI/docs touched root and
+  RoadVector READMEs, RoadVector HTML, this plan/log/tests/branch set, and the
+  regenerated `docs/motorcycle/**` artifact.
+- Node is `v24.18.0`. PASS: geo-core `87/87`; XR `24/24` plus mocked WebXR;
+  traffic `12/12`; full physics `54/54`; final RoadVector `117/117`; static
+  release `17/17`; JS syntax and `git diff --check`. Focused terrain cache is
+  `11/11`; focused stream/collider is `18/18`; independent safe renderer/view/
+  camera audit is `38/38`.
+- `npm run build:motorcycle` PASS: Vite transformed `2325` modules and copied
+  `391` Cesium runtime/license items. The expected >2.2 MiB Cesium-heavy bundle
+  warning remains. The current generated entry is content hashed and the prior
+  inactive hashes were removed by Vite.
+- Standalone Playwright/system-Chromium built smoke used owned HTTPS port
+  `43982`, never `terminal-browser`. Iteration one timed out with five chunks
+  ready and revealed duplicate decode work. Iteration two correctly reported
+  zero acceleration because the probe ran during `stream-wait`; it was moved
+  after snapshot qualification. Iteration three physically accelerated from
+  `0.0214` to `5.8463 m/s` but compared the live HUD against an earlier speed;
+  the test now samples HUD and physics together. The rebuilt final run passes
+  stream/cache qualification, compliant tread contact, fixed-step throttle,
+  AUTO/manual controls, ~4 km off-road generation handoff, no reset, matching
+  render/collider revisions, warm source cache, failure races, reset, and zero
+  page/console errors. The owned listener is closed after every run.
+- Remaining limitations/open manual work: current detailed road/race/building/
+  traffic geometry is seed-region-only; a future polar DEM is required beyond
+  Web Mercator; physical-headset entry/re-entry, hands/controllers, haptics,
+  comfort, and headset GPU timing are NOT RUN. No headset certification or
+  global-road claim is made.
+
+### Final compatibility, ICC, and clean-point preparation at 2026-08-25 22:53:08 AKDT
+
+- Re-ran the neighboring globe demos against the frozen source on Node
+  `v24.18.0`: `npm run test:earth` passed `48/48`; `npm run test:wxglobe`
+  passed `28/28`. `git diff --check` remained clean.
+- Refreshed the ICC index (`829` files, `58,241` symbols) and memory (`828`
+  files, `12,206` chunks), then updated the durable task plan to `6/6` items
+  and `9/9` gates verified. The task scope explicitly distinguishes continuous
+  global terrain from the intentionally seed-bounded OSM road/building/race/
+  traffic overlay.
+- The unscoped default guard correctly returned `FAIL` because Vite removed six
+  inactive content-hashed RoadVector assets while emitting the two current
+  hashes. No source file was deleted. Required scoped guards passed for
+  `demos/**`, `packages/geo-core/**`, `plan/**`, and root `README.md`; generated
+  deletion/replacement is independently proven by the passing production build,
+  static `17/17` release test, exact referenced-asset checks, and final built
+  runtime smoke.
+- ICC's narrow completion oracle is complete when restricted to the implemented
+  stream/physics/runtime surfaces and the recorded runtime evidence. Its broad
+  heuristic audit still reports unrelated `synthetic` UI/traffic wording and
+  the deliberately seed-only road fallback when asked to score the entire
+  RoadVector source; those are documented scope, not hidden globe-terrain
+  fallbacks. No test server or owned listener remains active, and
+  `terminal-browser` was not used.

@@ -3,6 +3,9 @@ import {
   bodyWorldVector,
 } from '../particle-rigid/bodyMath.js';
 import {
+  quat,
+  quatConjugate,
+  quatMultiply,
   vec3,
   vecCross,
   vecDot,
@@ -27,16 +30,33 @@ const DEFAULT_CONFIG = Object.freeze({
   engineBraking: 4,
   drivetrainEfficiency: 0.91,
   maximumDriveTorque: 600,
+  throttleResponseExponent: 1.6,
   minimumDriveTorqueScale: 0.28,
-  tractionSlipStart: 0.42,
-  tractionSlipEnd: 0.9,
-  frontLoadCutStart: 0.05,
-  frontLoadCutEnd: 0.18,
+  // Contact impulses arrive as discrete particle-ring samples. Filter the
+  // physical observations (never the body pose/velocity) before they feed
+  // traction and wheelie control so ring phase cannot pulse engine torque.
+  tireLoadFilterTimeSeconds: 0.12,
+  tireSlipFilterTimeSeconds: 0.08,
+  tireContactGraceSeconds: 0.1,
+  driveTorqueRiseRateNmPerSecond: 3_000,
+  driveTorqueFallRateNmPerSecond: 6_000,
+  tractionSlipStart: 0.18,
+  tractionSlipEnd: 0.32,
+  tractionControlMinimumSpeed: 0.1,
+  tractionControlFullSpeed: 0.75,
+  offroadNormalDeviationStart: 0.015,
+  offroadNormalDeviationEnd: 0.05,
+  frontLoadCutStart: 0.25,
+  frontLoadCutEnd: 0.28,
+  firstGearFrontLoadCutStart: 0.32,
+  firstGearFrontLoadCutEnd: 0.35,
+  firstGearFrontLoadFadeBeginSpeed: 2,
+  firstGearFrontLoadFadeFullSpeed: 2.5,
   // Combined full-brake force is close to one vehicle weight at the tire
   // radius. This preserves grip-dependent stopping without an unavoidable
   // first-frame stoppie in the reusable default setup.
-  rearBrakeTorque: 250,
-  frontBrakeTorque: 450,
+  rearBrakeTorque: 320,
+  frontBrakeTorque: 580,
   steeringAngle: 0.42,
   steeringImpulse: 14,
   lateralAccelerationCap: 4.5,
@@ -49,13 +69,15 @@ const DEFAULT_CONFIG = Object.freeze({
   brakeRiseRate: 10,
   brakeFallRate: 12,
   maxLean: 0.7,
-  leanStiffness: 2_800,
-  leanDamping: 420,
-  maxLeanTorque: 3_500,
-  aerodynamicDrag: 0.42,
+  leanStiffness: 7_500,
+  corneringLeanStiffness: 4_500,
+  leanDamping: 2_500,
+  maxLeanTorque: 12_000,
+  aerodynamicDrag: 0.56,
+  corneringDrag: 0.2,
   parkingHoldSpeed: 0.6,
   parkingSpring: 16_000,
-  parkingDamping: 5_000,
+  parkingDamping: 7_500,
   parkingMaximumForce: 4_000,
   parkingLeanStiffness: 10_000,
   parkingLeanDamping: 1_000,
@@ -63,9 +85,16 @@ const DEFAULT_CONFIG = Object.freeze({
   automaticTransmission: true,
   automaticUpshiftRpm: 4_700,
   automaticDownshiftRpm: 2_600,
+  automaticKickdownRpm: 3_200,
+  automaticKickdownThrottle: 0.65,
+  automaticDownshiftRedlineFraction: 0.92,
+  automaticShiftMinimumContactSeconds: 0.08,
+  automaticShiftMaximumSlip: 0.35,
   automaticShiftCooldownSeconds: 0.32,
   tirePeakFriction: 1.22,
-  tireSlideFriction: 0.78,
+  tireSlideFriction: 1.05,
+  tireLateralPeakFriction: 0.4,
+  tireLateralSlideFriction: 0.32,
   tireSlipFalloff: 0.36,
   lateralSlipFalloff: 0.52,
 });
@@ -110,6 +139,25 @@ function createActuatorState() {
   };
 }
 
+function createFilteredTireState() {
+  return {
+    normalLoad: 0,
+    longitudinalSlip: 0,
+    lateralSlip: 0,
+    sampledLongitudinalSlip: 0,
+    sampledLateralSlip: 0,
+    surfaceNormalAlignment: 1,
+    contactPersistenceSeconds: 0,
+    contactAgeSeconds: 1_000_000,
+  };
+}
+
+function filterTimeConstant(current, target, timeSeconds, dt) {
+  if (!(timeSeconds > 0)) return Math.fround(target);
+  const alpha = 1 - Math.exp(-dt / timeSeconds);
+  return Math.fround(current + (target - current) * alpha);
+}
+
 function torqueCurve(rpm, redline) {
   const x = clamp(rpm / redline, 0, 1.2);
   const midrange = 1 - Math.pow((x - 0.62) / 0.72, 2);
@@ -149,6 +197,13 @@ function emptyTireTelemetry() {
     lateralImpulse: 0,
     longitudinalSlip: 0,
     lateralSlip: 0,
+    filteredNormalLoad: 0,
+    filteredLongitudinalSlip: 0,
+    filteredLateralSlip: 0,
+    surfaceNormalAlignment: 0,
+    filteredSurfaceNormalAlignment: 1,
+    contactPersistenceSeconds: 0,
+    contactAgeSeconds: 1_000_000,
   };
 }
 
@@ -159,7 +214,9 @@ function emptyControllerTelemetry(gear, engineRpm) {
     engineRpm,
     engineTorque: 0,
     requestedDriveTorque: 0,
+    driveTorqueTarget: 0,
     driveTorque: 0,
+    driveTorqueRateLimited: false,
     driveTorqueScale: 1,
     driveSlipScale: 1,
     driveFrontLoadScale: 1,
@@ -174,6 +231,10 @@ function emptyControllerTelemetry(gear, engineRpm) {
     desiredLateralAcceleration: 0,
     steeringSpeedBlend: 0,
     automaticShiftCount: 0,
+    groundCoupledRpm: engineRpm,
+    predictedLowerGearRpm: engineRpm,
+    automaticShiftRearContactQualified: false,
+    lastAutomaticShiftReason: 'none',
     parkingHoldForceNewtons: 0,
     parkingHoldTorqueNewtonMeters: 0,
     actuators: createActuatorState(),
@@ -214,6 +275,58 @@ function shiftSnapshot(snapshot, shift) {
   }
 }
 
+function transformSnapshot(snapshot, transform, world) {
+  const point = (value) => Array.from(vec3(transform.transformPoint(Array.from(value))));
+  const vector = (value) => Array.from(vec3(transform.transformVector(Array.from(value))));
+  const orientation = (value) => Array.from(quat(
+    transform.transformOrientation(Array.from(value)),
+  ));
+  const frameOrientation = quat(orientation([0, 0, 0, 1]));
+  const inverseFrameOrientation = quatConjugate(frameOrientation, new Float32Array(4));
+  const relativeOrientation = (value) => Array.from(quat(quatMultiply(
+    quat(orientation(value)),
+    inverseFrameOrientation,
+    new Float32Array(4),
+  )));
+  return {
+    ...snapshot,
+    bodies: snapshot.bodies.map((body) => ({
+      ...body,
+      position: point(body.position),
+      previousPosition: point(body.previousPosition ?? body.position),
+      orientation: orientation(body.orientation),
+      previousOrientation: orientation(body.previousOrientation ?? body.orientation),
+      linearVelocity: vector(body.linearVelocity),
+      angularVelocity: vector(body.angularVelocity),
+      force: vector(body.force ?? [0, 0, 0]),
+      torque: vector(body.torque ?? [0, 0, 0]),
+      kinematicTarget: body.kinematicTarget
+        ? {
+            position: point(body.kinematicTarget.position),
+            orientation: orientation(body.kinematicTarget.orientation),
+          }
+        : null,
+    })),
+    joints: (snapshot.joints ?? []).map((state) => {
+      const worldConnected = world.getJoint(state.id).bodyB === null;
+      return {
+        ...state,
+        motor: state.motor ? { ...state.motor } : null,
+        runtime: {
+          ...state.runtime,
+          referenceA: Array.from(state.runtime.referenceA),
+          referenceB: worldConnected
+            ? vector(state.runtime.referenceB)
+            : Array.from(state.runtime.referenceB),
+          initialRelativeOrientation: worldConnected
+            ? orientation(state.runtime.initialRelativeOrientation)
+            : relativeOrientation(state.runtime.initialRelativeOrientation),
+        },
+      };
+    }),
+  };
+}
+
 export class MotorcycleController {
   constructor(world, rig, options = {}) {
     if (!world || !rig) throw new TypeError('MotorcycleController requires world and rig');
@@ -227,6 +340,15 @@ export class MotorcycleController {
     this.actuators = createActuatorState();
     this.automaticShiftCooldown = 0;
     this.automaticShiftCount = 0;
+    this.groundCoupledRpm = this.config.idleRpm;
+    this.predictedLowerGearRpm = this.config.idleRpm;
+    this.automaticShiftRearContactQualified = false;
+    this.lastAutomaticShiftReason = 'none';
+    this.driveTorqueState = 0;
+    this.filteredTires = {
+      rear: createFilteredTireState(),
+      front: createFilteredTireState(),
+    };
     this.hasObservedTireContact = false;
     this.lastSequence = -1;
     this.controls = createNeutralControlFrame();
@@ -237,13 +359,24 @@ export class MotorcycleController {
     this.unsubscribeStep = world.addStepListener((context) => this.#beforeStep(context));
     this.unsubscribeContact = world.addContactModifier((contact) => this.#modifyContact(contact));
     this.unsubscribePost = world.addPostStepListener((context) => this.#afterStep(context));
-    this.unsubscribeOriginShift = world.addOriginShiftListener?.((shift) => {
-      shiftSnapshot(this.initialSnapshot, shift);
-      if (this.parkingAnchor) {
-        this.parkingAnchor[0] = Math.fround(this.parkingAnchor[0] - shift[0]);
-        this.parkingAnchor[1] = Math.fround(this.parkingAnchor[1] - shift[2]);
-      }
-    }) ?? null;
+    this.unsubscribeReferenceFrameTransform = world.addReferenceFrameTransformListener
+      ? world.addReferenceFrameTransformListener((transform) => {
+          this.initialSnapshot = transformSnapshot(this.initialSnapshot, transform, world);
+          if (this.parkingAnchor) {
+            this.parkingAnchor = vec3(transform.transformPoint(Array.from(this.parkingAnchor)));
+          }
+        })
+      : null;
+    this.unsubscribeOriginShift = this.unsubscribeReferenceFrameTransform
+      ? null
+      : world.addOriginShiftListener?.((shift) => {
+          shiftSnapshot(this.initialSnapshot, shift);
+          if (this.parkingAnchor) {
+            this.parkingAnchor[0] = Math.fround(this.parkingAnchor[0] - shift[0]);
+            this.parkingAnchor[1] = Math.fround(this.parkingAnchor[1] - shift[1]);
+            this.parkingAnchor[2] = Math.fround(this.parkingAnchor[2] - shift[2]);
+          }
+        }) ?? null;
   }
 
   #wheelAxle(body) {
@@ -333,50 +466,113 @@ export class MotorcycleController {
     }
   }
 
-  #updateAutomaticGearbox(control, dt, manualShifted) {
+  #updateAutomaticGearbox(control, dt, manualShifted, groundWheelOmega) {
     this.automaticShiftCooldown = Math.max(0, this.automaticShiftCooldown - dt);
+    const ratio = this.config.gearRatios[this.gear]
+      * this.config.finalDrive
+      * this.config.primaryDrive;
+    this.groundCoupledRpm = Math.max(
+      this.config.idleRpm,
+      Math.abs(groundWheelOmega * ratio) * 60 / (Math.PI * 2),
+    );
+    const lowerGear = Math.max(1, this.gear - 1);
+    const lowerRatio = this.config.gearRatios[lowerGear]
+      * this.config.finalDrive
+      * this.config.primaryDrive;
+    this.predictedLowerGearRpm = Math.max(
+      this.config.idleRpm,
+      Math.abs(groundWheelOmega * lowerRatio) * 60 / (Math.PI * 2),
+    );
+    const rear = this.filteredTires.rear;
+    this.automaticShiftRearContactQualified = rear.contactPersistenceSeconds
+        >= this.config.automaticShiftMinimumContactSeconds
+      && rear.contactAgeSeconds <= this.config.tireContactGraceSeconds
+      && Math.abs(rear.longitudinalSlip) <= this.config.automaticShiftMaximumSlip;
     if (!this.automaticTransmissionEnabled || manualShifted || control.clutch > 0.05 || this.gear === 0) {
       return false;
     }
     if (this.automaticShiftCooldown > 0) return false;
     const lastGear = this.config.gearRatios.length - 1;
     let nextGear = this.gear;
-    if (this.engineRpm >= this.config.automaticUpshiftRpm && this.gear < lastGear) {
+    let shiftReason = 'none';
+    if (this.groundCoupledRpm >= this.config.automaticUpshiftRpm
+      && this.gear < lastGear
+      && this.automaticShiftRearContactQualified) {
       nextGear += 1;
-    } else if (this.engineRpm <= this.config.automaticDownshiftRpm
-      && this.gear > 1
-      && this.actuators.throttle < 0.72) {
+      shiftReason = 'ground-coupled-upshift';
+    } else if (this.gear > 1
+      && this.predictedLowerGearRpm
+        <= this.config.redlineRpm * this.config.automaticDownshiftRedlineFraction
+      && (this.groundCoupledRpm <= this.config.automaticDownshiftRpm
+        || (this.actuators.throttle >= this.config.automaticKickdownThrottle
+          && this.groundCoupledRpm <= this.config.automaticKickdownRpm))) {
       nextGear -= 1;
+      shiftReason = this.actuators.throttle >= this.config.automaticKickdownThrottle
+        ? 'ground-coupled-kickdown'
+        : 'ground-coupled-downshift';
     }
     if (nextGear === this.gear) return false;
     this.gear = nextGear;
     this.automaticShiftCooldown = this.config.automaticShiftCooldownSeconds;
     this.automaticShiftCount += 1;
+    this.lastAutomaticShiftReason = shiftReason;
     return true;
   }
 
-  #driveTorqueLimits() {
-    const rear = this.telemetry.tires.rear;
-    const front = this.telemetry.tires.front;
+  #driveTorqueLimits(forwardSpeed) {
+    const rear = this.filteredTires.rear;
+    const front = this.filteredTires.front;
     const axleLoad = rear.normalLoad + front.normalLoad;
-    if (rear.contactCount === 0 && front.contactCount === 0) {
-      const frontLoadScale = this.hasObservedTireContact
+    const rearContactRecent = rear.contactAgeSeconds <= this.config.tireContactGraceSeconds;
+    const frontContactRecent = front.contactAgeSeconds <= this.config.tireContactGraceSeconds;
+    const terrainNormalDeviation = Math.max(
+      1 - rear.surfaceNormalAlignment,
+      1 - front.surfaceNormalAlignment,
+    );
+    const offroadBlend = smoothstep(
+      this.config.offroadNormalDeviationStart,
+      this.config.offroadNormalDeviationEnd,
+      terrainNormalDeviation,
+    );
+    const intervention = smoothstep(
+      this.config.tractionControlMinimumSpeed,
+      this.config.tractionControlFullSpeed,
+      Math.abs(forwardSpeed),
+    ) * (1 - offroadBlend);
+    if (!rearContactRecent && !frontContactRecent) {
+      const rawFrontLoadScale = this.hasObservedTireContact
         ? this.config.minimumDriveTorqueScale
         : 1;
+      const frontLoadScale = 1 + (rawFrontLoadScale - 1) * intervention;
       return { scale: frontLoadScale, slipScale: 1, frontLoadScale };
     }
-    const slipScale = 1 - smoothstep(
+    const rawSlipScale = 1 - smoothstep(
       this.config.tractionSlipStart,
       this.config.tractionSlipEnd,
       Math.abs(rear.longitudinalSlip),
     ) * (1 - this.config.minimumDriveTorqueScale);
     const frontLoadRatio = axleLoad > 1e-6 ? front.normalLoad / axleLoad : 0;
-    const frontLoadScale = this.config.minimumDriveTorqueScale
+    const firstGearLoadBlend = this.gear === 1
+      ? 1 - smoothstep(
+          this.config.firstGearFrontLoadFadeBeginSpeed,
+          this.config.firstGearFrontLoadFadeFullSpeed,
+          Math.abs(forwardSpeed),
+        )
+      : 0;
+    const frontLoadCutStart = this.config.frontLoadCutStart
+      + (this.config.firstGearFrontLoadCutStart - this.config.frontLoadCutStart)
+        * firstGearLoadBlend;
+    const frontLoadCutEnd = this.config.frontLoadCutEnd
+      + (this.config.firstGearFrontLoadCutEnd - this.config.frontLoadCutEnd)
+        * firstGearLoadBlend;
+    const rawFrontLoadScale = this.config.minimumDriveTorqueScale
       + smoothstep(
-        this.config.frontLoadCutStart,
-        this.config.frontLoadCutEnd,
+        frontLoadCutStart,
+        frontLoadCutEnd,
         frontLoadRatio,
       ) * (1 - this.config.minimumDriveTorqueScale);
+    const slipScale = 1 + (rawSlipScale - 1) * intervention;
+    const frontLoadScale = 1 + (rawFrontLoadScale - 1) * intervention;
     const scale = Math.fround(clamp(
       Math.min(slipScale, frontLoadScale),
       this.config.minimumDriveTorqueScale,
@@ -399,6 +595,12 @@ export class MotorcycleController {
     const frontWheel = this.world.getBody(this.rig.bodyIds.frontWheel);
     const rearOmega = this.#wheelAngularSpeed(rearWheel);
     const frontOmega = this.#wheelAngularSpeed(frontWheel);
+    const forward = vecNormalize(bodyWorldVector(chassis, [0, 0, 1]), [0, 0, 1]);
+    const up = vecNormalize(bodyWorldVector(chassis, [0, 1, 0]), [0, 1, 0]);
+    const speed = vecLength(chassis.linearVelocity);
+    const forwardSpeed = vecDot(chassis.linearVelocity, forward);
+    const groundWheelOmega = Math.abs(forwardSpeed)
+      / (this.rig.rollingRadiusMeters ?? (this.rig.wheelRadius + this.rig.tireRadius));
     let ratio = this.config.gearRatios[this.gear] * this.config.finalDrive * this.config.primaryDrive;
     const coupledRpm = Math.abs(rearOmega * ratio) * 60 / (Math.PI * 2);
     const freeRpm = this.config.idleRpm
@@ -410,7 +612,7 @@ export class MotorcycleController {
     );
     this.engineRpm += (targetRpm - this.engineRpm) * 0.12;
     this.engineRpm = clamp(this.engineRpm, this.config.idleRpm, this.config.redlineRpm * 1.05);
-    if (this.#updateAutomaticGearbox(control, dt, manualShifted)) {
+    if (this.#updateAutomaticGearbox(control, dt, manualShifted, groundWheelOmega)) {
       ratio = this.config.gearRatios[this.gear] * this.config.finalDrive * this.config.primaryDrive;
       this.engineRpm = clamp(
         Math.max(this.config.idleRpm, Math.abs(rearOmega * ratio) * 60 / (Math.PI * 2)),
@@ -418,19 +620,28 @@ export class MotorcycleController {
         this.config.redlineRpm * 1.05,
       );
     }
-    const engineTorque = this.actuators.throttle
+    const engineTorque = Math.pow(this.actuators.throttle, this.config.throttleResponseExponent)
       * this.config.peakTorque
       * torqueCurve(this.engineRpm, this.config.redlineRpm);
     const requestedDriveTorque = this.gear === 0
       ? 0
       : engineTorque * ratio * clutchEngagement * this.config.drivetrainEfficiency;
-    const driveTorqueLimits = this.#driveTorqueLimits();
+    const driveTorqueLimits = this.#driveTorqueLimits(forwardSpeed);
     const driveTorqueScale = driveTorqueLimits.scale;
-    const driveTorque = clamp(
+    const driveTorqueTarget = clamp(
       requestedDriveTorque,
       -this.config.maximumDriveTorque,
       this.config.maximumDriveTorque,
     ) * driveTorqueScale;
+    const driveTorqueRate = Math.abs(driveTorqueTarget) > Math.abs(this.driveTorqueState)
+      ? this.config.driveTorqueRiseRateNmPerSecond
+      : this.config.driveTorqueFallRateNmPerSecond;
+    this.driveTorqueState = moveTowards(
+      this.driveTorqueState,
+      driveTorqueTarget,
+      driveTorqueRate * dt,
+    );
+    const driveTorqueRateLimited = Math.abs(this.driveTorqueState - driveTorqueTarget) > 1e-4;
     const engineBrake = this.gear === 0
       ? 0
       : (1 - this.actuators.throttle) * clutchEngagement * this.config.engineBraking * ratio;
@@ -438,7 +649,7 @@ export class MotorcycleController {
     // rotation moves the bottom of the tire toward -Z and the road reaction
     // propels the motorcycle toward +Z.
     const driveDirection = 1;
-    const netDriveTorque = driveTorque * driveDirection
+    const netDriveTorque = this.driveTorqueState * driveDirection
       - Math.sign(rearOmega) * engineBrake * clamp(Math.abs(rearOmega) / 4, 0, 1);
     this.#applyWheelTorque(this.rig.bodyIds.rearWheel, netDriveTorque);
     this.world.applyTorque(
@@ -460,10 +671,6 @@ export class MotorcycleController {
       vecScale(this.#wheelAxle(frontWheel), -frontBrakeTorque),
     );
 
-    const forward = vecNormalize(bodyWorldVector(chassis, [0, 0, 1]), [0, 0, 1]);
-    const up = vecNormalize(bodyWorldVector(chassis, [0, 1, 0]), [0, 1, 0]);
-    const speed = vecLength(chassis.linearVelocity);
-    const forwardSpeed = vecDot(chassis.linearVelocity, forward);
     const steeringSpeedBlend = smoothstep(
       this.config.lateralAccelerationMinimumSpeed,
       this.config.lateralAccelerationFullSpeed,
@@ -495,9 +702,12 @@ export class MotorcycleController {
       maxImpulse: this.config.steeringImpulse,
     });
 
-    const globalUp = vec3([0, 1, 0]);
+    const globalUp = vecNormalize(
+      vecScale(this.world.options.gravity, -1),
+      [0, 1, 0],
+    );
     const leanAngle = Math.atan2(vecDot(vecCross(globalUp, up), forward), vecDot(globalUp, up));
-    const gravity = Math.max(1e-6, Math.abs(this.world.options.gravity[1]));
+    const gravity = Math.max(1e-6, vecLength(this.world.options.gravity));
     const targetLean = clamp(
       Math.atan(desiredLateralAcceleration / gravity),
       -this.config.maxLean,
@@ -506,37 +716,46 @@ export class MotorcycleController {
     let leanTorque = 0;
     if (this.leanAssistEnabled) {
       const rollRate = vecDot(chassis.angularVelocity, forward);
+      const corneringBlend = smoothstep(0, 0.1, Math.abs(targetLean));
+      const leanStiffness = this.config.leanStiffness
+        + (this.config.corneringLeanStiffness - this.config.leanStiffness) * corneringBlend;
       leanTorque = clamp(
-        (targetLean - leanAngle) * this.config.leanStiffness - rollRate * this.config.leanDamping,
+        (targetLean - leanAngle) * leanStiffness - rollRate * this.config.leanDamping,
         -this.config.maxLeanTorque,
         this.config.maxLeanTorque,
       );
       this.world.applyTorque(this.rig.bodyIds.chassis, vecScale(forward, leanTorque));
     }
     if (speed > 0.05) {
+      const dragCoefficient = this.config.aerodynamicDrag
+        + this.config.corneringDrag
+          * Math.min(1, Math.abs(desiredLateralAcceleration) / this.config.lateralAccelerationCap);
       this.world.applyForce(
         this.rig.bodyIds.chassis,
-        vecScale(chassis.linearVelocity, -this.config.aerodynamicDrag * speed),
+        vecScale(chassis.linearVelocity, -dragCoefficient * speed),
       );
     }
     let parkingHoldForceNewtons = 0;
     let parkingHoldTorqueNewtonMeters = 0;
     const parkingInput = this.actuators.throttle <= 1e-4;
-    const planarSpeed = Math.hypot(chassis.linearVelocity[0], chassis.linearVelocity[2]);
+    const planarVelocity = vecProjectOnPlane(chassis.linearVelocity, globalUp);
+    const planarSpeed = vecLength(planarVelocity);
     if (parkingInput && planarSpeed < this.config.parkingHoldSpeed) {
       // A real motorcycle needs a rider's feet at rest. Model that low-speed
       // assist as a bounded spring/damper distributed over every rigid
       // component, never as a pose/velocity overwrite.
-      this.parkingAnchor ??= [chassis.position[0], chassis.position[2]];
-      let forceX = -(chassis.position[0] - this.parkingAnchor[0]) * this.config.parkingSpring
-        - chassis.linearVelocity[0] * this.config.parkingDamping;
-      let forceZ = -(chassis.position[2] - this.parkingAnchor[1]) * this.config.parkingSpring
-        - chassis.linearVelocity[2] * this.config.parkingDamping;
-      const magnitude = Math.hypot(forceX, forceZ);
+      this.parkingAnchor ??= vec3(chassis.position);
+      const displacement = vecProjectOnPlane(
+        vecSub(chassis.position, this.parkingAnchor),
+        globalUp,
+      );
+      let parkingForce = vecSub(
+        vecScale(displacement, -this.config.parkingSpring),
+        vecScale(planarVelocity, this.config.parkingDamping),
+      );
+      const magnitude = vecLength(parkingForce);
       if (magnitude > this.config.parkingMaximumForce) {
-        const scale = this.config.parkingMaximumForce / magnitude;
-        forceX *= scale;
-        forceZ *= scale;
+        parkingForce = vecScale(parkingForce, this.config.parkingMaximumForce / magnitude);
       }
       const totalMass = this.rig.bodyIdList.reduce(
         (sum, bodyId) => sum + this.world.getBody(bodyId).mass,
@@ -545,10 +764,9 @@ export class MotorcycleController {
       for (const bodyId of this.rig.bodyIdList) {
         const body = this.world.getBody(bodyId);
         const share = body.mass / totalMass;
-        const force = [forceX * share, 0, forceZ * share];
-        this.world.applyForce(bodyId, force);
+        this.world.applyForce(bodyId, vecScale(parkingForce, share));
       }
-      parkingHoldForceNewtons = Math.hypot(forceX, forceZ);
+      parkingHoldForceNewtons = vecLength(parkingForce);
       const rollRate = vecDot(chassis.angularVelocity, forward);
       const parkingLeanTorque = clamp(
         -leanAngle * this.config.parkingLeanStiffness
@@ -572,7 +790,9 @@ export class MotorcycleController {
       engineRpm: Math.fround(this.engineRpm),
       engineTorque: Math.fround(engineTorque),
       requestedDriveTorque: Math.fround(requestedDriveTorque),
+      driveTorqueTarget: Math.fround(driveTorqueTarget),
       driveTorque: Math.fround(netDriveTorque),
+      driveTorqueRateLimited,
       driveTorqueScale: Math.fround(driveTorqueScale),
       driveSlipScale: driveTorqueLimits.slipScale,
       driveFrontLoadScale: driveTorqueLimits.frontLoadScale,
@@ -587,6 +807,10 @@ export class MotorcycleController {
       desiredLateralAcceleration: Math.fround(desiredLateralAcceleration),
       steeringSpeedBlend: Math.fround(steeringSpeedBlend),
       automaticShiftCount: this.automaticShiftCount,
+      groundCoupledRpm: Math.fround(this.groundCoupledRpm),
+      predictedLowerGearRpm: Math.fround(this.predictedLowerGearRpm),
+      automaticShiftRearContactQualified: this.automaticShiftRearContactQualified,
+      lastAutomaticShiftReason: this.lastAutomaticShiftReason,
       parkingHoldForceNewtons: Math.fround(parkingHoldForceNewtons),
       parkingHoldTorqueNewtonMeters: Math.fround(parkingHoldTorqueNewtonMeters),
       actuators: { ...this.actuators },
@@ -620,8 +844,9 @@ export class MotorcycleController {
     );
     const muLongitudinal = this.config.tireSlideFriction
       + (this.config.tirePeakFriction - this.config.tireSlideFriction) * longitudinalFalloff;
-    const muLateral = this.config.tireSlideFriction
-      + (this.config.tirePeakFriction - this.config.tireSlideFriction) * lateralFalloff;
+    const muLateral = this.config.tireLateralSlideFriction
+      + (this.config.tireLateralPeakFriction - this.config.tireLateralSlideFriction)
+        * lateralFalloff;
     const combinedMaterialFriction = Math.max(0, Number(contact.friction) || 0);
     return {
       tangentLongitudinal: kinematics.forward,
@@ -643,6 +868,7 @@ export class MotorcycleController {
   }
 
   #afterStep({ contacts, dt }) {
+    const globalUp = vecNormalize(vecScale(this.world.options.gravity, -1), [0, 1, 0]);
     const tires = {
       rear: emptyTireTelemetry(),
       front: emptyTireTelemetry(),
@@ -657,8 +883,9 @@ export class MotorcycleController {
       target.lateralImpulse += contact.lateralImpulse;
       target.longitudinalSlip += contact.metadata.longitudinalSlip;
       target.lateralSlip += contact.metadata.lateralSlip;
+      target.surfaceNormalAlignment += clamp(vecDot(contact.normal, globalUp), -1, 1);
     }
-    for (const tire of Object.values(tires)) {
+    for (const [name, tire] of Object.entries(tires)) {
       tire.normalLoad = Math.fround(tire.normalImpulse / dt);
       tire.normalImpulse = Math.fround(tire.normalImpulse);
       tire.longitudinalImpulse = Math.fround(tire.longitudinalImpulse);
@@ -666,7 +893,62 @@ export class MotorcycleController {
       if (tire.contactCount > 0) {
         tire.longitudinalSlip = Math.fround(tire.longitudinalSlip / tire.contactCount);
         tire.lateralSlip = Math.fround(tire.lateralSlip / tire.contactCount);
+        tire.surfaceNormalAlignment = Math.fround(
+          tire.surfaceNormalAlignment / tire.contactCount,
+        );
+      } else {
+        tire.surfaceNormalAlignment = 1;
       }
+      const filtered = this.filteredTires[name];
+      if (tire.contactCount > 0) {
+        const continuedContact = filtered.contactAgeSeconds
+          <= this.config.tireContactGraceSeconds;
+        filtered.contactAgeSeconds = 0;
+        filtered.contactPersistenceSeconds = continuedContact
+          ? filtered.contactPersistenceSeconds + dt
+          : dt;
+        filtered.sampledLongitudinalSlip = tire.longitudinalSlip;
+        filtered.sampledLateralSlip = tire.lateralSlip;
+      } else {
+        filtered.contactAgeSeconds += dt;
+        if (filtered.contactAgeSeconds <= this.config.tireContactGraceSeconds) {
+          filtered.contactPersistenceSeconds += dt;
+        } else {
+          filtered.contactPersistenceSeconds = 0;
+          filtered.sampledLongitudinalSlip = 0;
+          filtered.sampledLateralSlip = 0;
+        }
+      }
+      filtered.normalLoad = filterTimeConstant(
+        filtered.normalLoad,
+        tire.normalLoad,
+        this.config.tireLoadFilterTimeSeconds,
+        dt,
+      );
+      filtered.longitudinalSlip = filterTimeConstant(
+        filtered.longitudinalSlip,
+        filtered.sampledLongitudinalSlip,
+        this.config.tireSlipFilterTimeSeconds,
+        dt,
+      );
+      filtered.lateralSlip = filterTimeConstant(
+        filtered.lateralSlip,
+        filtered.sampledLateralSlip,
+        this.config.tireSlipFilterTimeSeconds,
+        dt,
+      );
+      filtered.surfaceNormalAlignment = filterTimeConstant(
+        filtered.surfaceNormalAlignment,
+        tire.surfaceNormalAlignment,
+        this.config.tireLoadFilterTimeSeconds,
+        dt,
+      );
+      tire.filteredNormalLoad = filtered.normalLoad;
+      tire.filteredLongitudinalSlip = filtered.longitudinalSlip;
+      tire.filteredLateralSlip = filtered.lateralSlip;
+      tire.filteredSurfaceNormalAlignment = filtered.surfaceNormalAlignment;
+      tire.contactPersistenceSeconds = Math.fround(filtered.contactPersistenceSeconds);
+      tire.contactAgeSeconds = Math.fround(filtered.contactAgeSeconds);
     }
     this.hasObservedTireContact ||= tires.front.contactCount > 0 || tires.rear.contactCount > 0;
     this.telemetry.tires = tires;
@@ -703,6 +985,15 @@ export class MotorcycleController {
     this.actuators = createActuatorState();
     this.automaticShiftCooldown = 0;
     this.automaticShiftCount = 0;
+    this.groundCoupledRpm = this.config.idleRpm;
+    this.predictedLowerGearRpm = this.config.idleRpm;
+    this.automaticShiftRearContactQualified = false;
+    this.lastAutomaticShiftReason = 'none';
+    this.driveTorqueState = 0;
+    this.filteredTires = {
+      rear: createFilteredTireState(),
+      front: createFilteredTireState(),
+    };
     this.hasObservedTireContact = false;
     this.lastSequence = -1;
     this.controls = createNeutralControlFrame();
@@ -736,10 +1027,12 @@ export class MotorcycleController {
     this.unsubscribeStep?.();
     this.unsubscribeContact?.();
     this.unsubscribePost?.();
+    this.unsubscribeReferenceFrameTransform?.();
     this.unsubscribeOriginShift?.();
     this.unsubscribeStep = null;
     this.unsubscribeContact = null;
     this.unsubscribePost = null;
+    this.unsubscribeReferenceFrameTransform = null;
     this.unsubscribeOriginShift = null;
   }
 }

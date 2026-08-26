@@ -1354,3 +1354,70 @@ The root node should exist on a domain secured with SSL enabling all executable 
   and direct private HTTPS proofs pass. Test listeners and owned TLS relays are
   closed; the two requested direct private app services remain active. Physical
   headset behavior/performance remains NOT RUN and is not certified.
+
+## RoadVector continuous globe riding roadmap - 2026-08-25 AKDT
+
+- Active ICC task: `roadvector-globe-offroad-speed-stability-20260825`.
+- Replace the current 500–1,200 m local snapshot and eight-metre boundary reset
+  with a continuously streamed, bounded terrain working set anchored to the
+  actual Cesium globe. The six-body particle motorcycle remains a local-metre,
+  fixed-120 Hz/twelve-iteration physical simulation; Cesium/WGS84/ECEF owns the
+  persistent world position and visible planetary terrain.
+- Preserve physical tire, suspension, road, terrain, traffic, and origin-rebase
+  behavior while terrain and road windows change. A rider may leave roads and
+  cross real terrain and mountains; road decks take precedence only where a
+  current road footprint exists. Missing next-window terrain must be explicit
+  and bounded rather than silently teleporting or inventing authoritative data.
+- Diagnose and remove visible fixed-step/contact jitter, then raise the stable
+  physical powertrain target substantially above the current roughly 58 km/h
+  nine-second result. Do not reduce solver authority or clamp poses/velocities;
+  acceleration, suspension, grip, braking, drag, gearing, and stability remain
+  force/contact based and deterministically tested.
+- Preserve desktop/mobile/gamepad/WebXR input, automatic/manual transmission,
+  chase/first-person camera behavior, model attribution, caches, provenance,
+  and finite resource caps. Browser validation must use non-interactive
+  headless automation and must never invoke `terminal-browser`.
+
+## RoadVector continuous globe riding result - 2026-08-25 AKDT
+
+- COMPLETE: Cesium/WGS84/ECEF is the persistent planetary authority while the
+  Three/WebXR ride and six-body solver remain in a bounded local ENU metre
+  frame. Full rigid frame transactions preserve current/previous/predicted
+  poses, orientations, velocities, controller anchors, local radial gravity,
+  renderer chunks, chase state, camera floor, and XR locomotion without
+  mutating the tracked headset camera.
+- COMPLETE: a deterministic z12-z14 terrain stream owns a 3x3 mandatory active
+  ring, 5x5 desired ring, six-request scheduler, 32-record/64 MiB/900,000-
+  vertex residency caps, immutable generation snapshots, reservations,
+  retries, LRU disposal, and `stream-wait`. The bike can cross the former
+  region boundary onto real Terrarium mountain/off-road collision without a
+  reset or fabricated relief. Web Mercator polar limits remain explicitly
+  unsupported rather than clamped.
+- COMPLETE: the stable collision facade resolves optional roads above streamed
+  terrain, retains the bounded seed road as a fallback only while physically
+  covered, and shares one committed snapshot revision with the streamed Three
+  renderer and camera-floor sampler. The current release truthfully keeps OSM
+  roads, buildings, race, and synthetic traffic as the 2.4 km seed overlay;
+  continuous global terrain does not falsely claim globally streamed roads.
+- COMPLETE: each wheel now has one solver-owned analytic circular tread contact
+  with compliant normal impulse and XPBD support. Thirty-two ring particles
+  remain for physical inertia and body/body impacts. The six rigid bodies,
+  120 Hz step, twelve solver iterations, suspension, friction, CCD, drive and
+  braking forces, and deterministic replay remain authoritative; no pose or
+  velocity smoothing/clamp was introduced.
+- COMPLETE: the automatic powertrain uses filtered load/slip/contact state,
+  ground-coupled shifting/kickdown, and rate-limited reaction torque. The final
+  deterministic smooth gate sustains at least 26.09 m/s and reaches 30.55 m/s
+  with 0.118 mm height deviation, 0.00177 m/s vertical-speed deviation, and
+  1.04 degrees maximum tilt. The rough-mountain and physical braking gates pass.
+- COMPLETE: a 64-entry, exact-16 MiB session-local decoded Terrarium LRU
+  coalesces caller-isolated halo reads, owns exact Float32 storage, cancels
+  orphaned work, fences late completion, and stays outside Yjs. One 5x5 logical
+  window still accounts for 225 bounded halo reads but now performs exactly 49
+  PNG decodes. Active terrain is scheduled ahead of desired-ring prefetch.
+- VERIFIED: geo-core `87/87`, XR `24/24` plus mocked browser, traffic `12/12`,
+  physics `54/54`, RoadVector `114/114` before the final two cache/scheduler
+  regressions and `117/117` after them, static release `17/17`, production
+  build, and the standalone Playwright/system-Chromium built smoke pass. The
+  owned HTTPS listener is closed after the smoke. Physical-headset validation
+  remains NOT RUN and no headset performance certification is claimed.

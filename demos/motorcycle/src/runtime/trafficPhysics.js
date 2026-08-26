@@ -12,20 +12,41 @@ function finiteOriginOffset(originOffset = [0, 0, 0]) {
   return result;
 }
 
-export function trafficPose(vehicle, terrain, originOffset = [0, 0, 0]) {
+function validateReferenceTransform(referenceTransform) {
+  if (referenceTransform === null || referenceTransform === undefined) return null;
+  if (typeof referenceTransform.transformPoint !== 'function'
+    || typeof referenceTransform.transformOrientation !== 'function') {
+    throw new TypeError('Traffic reference transform must map points and orientations.');
+  }
+  return referenceTransform;
+}
+
+export function trafficPose(
+  vehicle,
+  terrain,
+  originOffset = [0, 0, 0],
+  referenceTransform = null,
+) {
   const [longitude, latitude] = vehicle.coordinates;
   const groundHeight = terrain.sampleRawHeight(longitude, latitude);
   const local = terrain.frame.toLocal({ longitude, latitude, height: groundHeight });
   const offset = finiteOriginOffset(originOffset);
   const vehicleHeight = vehicle.dimensionsMeters[2];
   const yaw = Math.PI - vehicle.headingRadians;
-  return Object.freeze({
-    position: Object.freeze([
+  const sourcePosition = [
       local[0] - offset[0],
       local[1] + vehicleHeight / 2 - offset[1],
       local[2] - offset[2],
-    ]),
-    orientation: Object.freeze([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]),
+  ];
+  const sourceOrientation = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
+  const transform = validateReferenceTransform(referenceTransform);
+  return Object.freeze({
+    position: Object.freeze(transform
+      ? Array.from(transform.transformPoint(sourcePosition))
+      : sourcePosition),
+    orientation: Object.freeze(transform
+      ? Array.from(transform.transformOrientation(sourceOrientation))
+      : sourceOrientation),
   });
 }
 
@@ -57,6 +78,7 @@ export function createTrafficCollisionCloud(vehicle) {
 export function addTrafficPhysicsBodies(world, trafficSnapshot, terrain, {
   maximumVehicles = 18,
   originOffset = [0, 0, 0],
+  referenceTransform = null,
 } = {}) {
   if (!world?.addBody || !world?.setKinematicTarget) throw new TypeError('A particle-rigid world is required.');
   if (trafficSnapshot?.schemaVersion !== 'peercompute.synthetic-road-traffic.snapshot.v1') {
@@ -69,7 +91,7 @@ export function addTrafficPhysicsBodies(world, trafficSnapshot, terrain, {
   const bindings = [];
   for (const vehicle of vehicles) {
     const id = bodyId(vehicle.id);
-    const pose = trafficPose(vehicle, terrain, originOffset);
+    const pose = trafficPose(vehicle, terrain, originOffset, referenceTransform);
     world.addBody({
       id,
       motionType: 'kinematic',
@@ -90,7 +112,11 @@ export function addTrafficPhysicsBodies(world, trafficSnapshot, terrain, {
       },
     });
     world.setKinematicTarget(id, pose);
-    bindings.push(Object.freeze({ bodyId: id, vehicleId: vehicle.id }));
+    bindings.push(Object.freeze({
+      bodyId: id,
+      vehicleId: vehicle.id,
+      collisionMask: 0x7fffffff,
+    }));
   }
   for (let left = 0; left < bindings.length; left += 1) {
     for (let right = left + 1; right < bindings.length; right += 1) {
@@ -108,12 +134,25 @@ export function addTrafficPhysicsBodies(world, trafficSnapshot, terrain, {
   });
 }
 
+export function setTrafficPhysicsActive(world, bindingSet, active) {
+  if (bindingSet?.schemaVersion !== 'peercompute.motorcycle.traffic-physics-bindings.v1') {
+    throw new TypeError('Canonical traffic physics bindings are required.');
+  }
+  const enabled = Boolean(active);
+  for (const binding of bindingSet.bindings) {
+    const body = world.getBody(binding.bodyId);
+    body.collisionMask = enabled ? binding.collisionMask : 0;
+    body.metadata.physicsActive = enabled;
+  }
+  return Object.freeze({ active: enabled, bodyCount: bindingSet.bindings.length });
+}
+
 export function updateTrafficPhysicsBodies(
   world,
   trafficSnapshot,
   terrain,
   bindingSet,
-  { originOffset = [0, 0, 0] } = {},
+  { originOffset = [0, 0, 0], referenceTransform = null } = {},
 ) {
   if (bindingSet?.schemaVersion !== 'peercompute.motorcycle.traffic-physics-bindings.v1') {
     throw new TypeError('Canonical traffic physics bindings are required.');
@@ -123,7 +162,10 @@ export function updateTrafficPhysicsBodies(
   for (const binding of bindingSet.bindings) {
     const vehicle = vehicleById.get(binding.vehicleId);
     if (!vehicle) continue;
-    world.setKinematicTarget(binding.bodyId, trafficPose(vehicle, terrain, originOffset));
+    world.setKinematicTarget(
+      binding.bodyId,
+      trafficPose(vehicle, terrain, originOffset, referenceTransform),
+    );
     updated += 1;
   }
   return Object.freeze({ updated, missing: bindingSet.bindings.length - updated });

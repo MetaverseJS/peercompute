@@ -19,7 +19,10 @@ export const ROADVECTOR_CAMERA_CONFIG = Object.freeze({
 
 export const ROADVECTOR_SCALE_DISCLOSURE = Object.freeze({
   worldUnits: ROADVECTOR_WORLD_UNITS,
-  localRegionDiameterMeters: 2_400,
+  seedRoadOverlayDiameterMeters: 2_400,
   hemisphereDiameterKilometers: 12_742,
-  transition: 'discrete-overview-to-local',
+  streamedTerrainActiveTileCount: 9,
+  streamedTerrainDesiredTileCount: 25,
+  globeAuthority: 'WGS84/ECEF via Cesium overview',
+  transition: 'cesium-overview-to-continuous-enu-stream',
 });

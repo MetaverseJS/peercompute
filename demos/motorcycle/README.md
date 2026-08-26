@@ -2,10 +2,11 @@
 
 RoadVector is a location-based motorcycle racing demo built from reusable
 PeerCompute geospatial, particle-rigid, traffic, and WebXR modules. It loads a
-bounded OpenStreetMap-derived road scene from `services/geodata`, samples AWS
-Terrarium elevation tiles into a local ENU terrain mesh, derives a deterministic
-race course from real connected OSM node IDs, and simulates the motorcycle and
-traffic collision cages on the CPU at 120 Hz.
+bounded OpenStreetMap-derived seed road scene from `services/geodata`, then
+streams AWS Terrarium elevation chunks continuously around a WGS84/ECEF globe
+position. The seed graph supplies a deterministic race from real connected OSM
+node IDs; the motorcycle and bounded traffic collision cages run on the CPU at
+120 Hz.
 
 Startup is a separate CesiumJS north-up hemisphere overview centered on the
 permitted browser location. Cesium owns the WGS84 globe, camera, bounded AWS
@@ -16,15 +17,21 @@ primary network. That road overlay is intentionally bounded to a center-out
 coverage. A separate persistent FHWA/U.S. DOT National Highway System layer
 draws the current versioned nationwide network, including Alaska, from a
 small same-origin derived MVT snapshot with the original federal metadata
-retained. Click or tap the Cesium globe to request a local road region at that
-point; the overview stays active if no playable OSM road exists. Physics remains
-paused until `RIDE THIS REGION` switches discretely
-into the Three.js local one-unit-per-meter world. Earth-scale ECEF coordinates
-never enter the particle solver or WebXR ride scene.
+retained. Click or tap the Cesium globe to request a seed road region at that
+point; the overview stays active if no playable OSM road exists. `RIDE THIS
+REGION` enters a Three.js/WebXR one-unit-per-metre tangent frame while Cesium,
+WGS84, and ECEF remain the persistent planetary authority. The terrain working
+set then advances continuously; Earth-scale coordinates never enter the
+float/local particle solver.
 
-The local ride keeps its exact triangle terrain and six-body particle-rigid
-motorcycle for collision and dynamics. Terrarium elevations generate bounded
-genuine Three.js NURBS contours over a 3.5%-opacity terrain surface. The visible
+The ride keeps exact triangle terrain and a six-body particle-rigid motorcycle
+for collision and dynamics. A deterministic 3×3 active / 5×5 desired Terrarium
+working set publishes complete collision snapshots only at fixed-step
+boundaries, retains at most 32 resident chunks, and transforms the local ENU
+frame without changing the ECEF bike pose. Missing forward terrain pauses
+substeps as `stream-wait`; it never resets the bike or invents a flat
+authoritative surface. Terrarium elevations generate bounded genuine Three.js
+NURBS contours over a 3.5%-opacity terrain surface. The visible
 bike is an optimized derivative of [“Akira Bike” by Ryanwill679 on
 Sketchfab](https://sketchfab.com/3d-models/akira-bike-a5b1dc49808b40a9b94f9a4a3073d548),
 used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The local
@@ -37,14 +44,16 @@ suspension, wheels, tire contacts, and forces remain authoritative. Append
 diagnostics. Full attribution and modification details are packaged in
 `public/models/akira-bike/ATTRIBUTION.md`.
 
-The same bounded 5,000 road segments feed rendering and collision. Each road
+The same bounded 5,000 seed-road segments feed rendering and collision. Each road
 ribbon is clipped against the exact terrain triangles and lifted by one shared
 0.105 m deck clearance; its source footprint is packed into a bounded XZ
 spatial index. A single composite static surface samples the same exact terrain
 plane plus that clearance inside the footprint and the original terrain
-everywhere else, avoiding duplicate road/terrain impulses.
-Physical tire contacts retain the OSM way and segment identifiers, and origin
-rebases translate collider queries back into the immutable source frame.
+everywhere else, avoiding duplicate road/terrain impulses. Physical tire
+contacts retain the OSM way and segment identifiers. These detailed OSM roads,
+the race, buildings, and traffic are intentionally seed-region overlays; beyond
+them the current release is continuous terrain/off-road riding, not a claim of
+globally streamed street geometry.
 
 A manifest-driven 0.12573690675938365 m presentation-only downward offset puts
 the calibrated model minimum at the six-body rig's -1.042 m tire-bottom
@@ -60,8 +69,9 @@ draws. Race-gate beams use normal frustum culling; neither optimization changes
 the physics world or the asset's authored opaque materials.
 
 First-, centered-behind damped third-, and stereo-XR camera placement is
-constrained against the same exact terrain triangles with 0.35 m minimum
-optical clearance. The sampler remains correct through origin rebases; XR
+constrained against the same committed terrain/road snapshot with 0.35 m
+minimum optical clearance. The sampler, chase state, and XR locomotion root
+participate in full rotational/translational ENU frame handoffs; XR
 correction raises only the locomotion root and never overwrites the
 headset-tracked camera pose. Desktop rendering caps device pixel ratio at 1.5
 to bound fragment work on high-density displays; WebXR continues to use the
@@ -103,8 +113,11 @@ a second bounded cache at the same-origin geodata backend. The local artifact
 tier uses memory plus IndexedDB but is separate from the replicated Yjs
 document, so tile bytes and cache metadata are never sent to peers. Fixed
 backend routes expose strong ETags and hit/miss/stale state without accepting
-caller-supplied upstream URLs. Detailed normalized OSM ride regions retain the
-backend's existing bounded semantic cache.
+caller-supplied upstream URLs. A separate session-local 64-entry decoded
+heightmap LRU coalesces overlapping terrain-halo reads, avoiding repeated
+PNG/canvas decoding while remaining outside Yjs and below a 16 MiB decoded
+payload bound. Detailed normalized OSM ride regions retain the backend's
+existing bounded semantic cache.
 
 Production builds do not silently select a cross-origin backend. Build with
 `VITE_GEODATA_SAME_ORIGIN=true` (or
@@ -153,21 +166,32 @@ pressed.
   or manual shifting, steering constraint, suspension springs/dampers, bounded force-based
   rider-foot parking support, tire slip plus friction ellipse, surface material
   grip, and optional physical lean-assist torque.
+- Wheel/terrain contact: each wheel retains 32 ring particles for inertia and
+  body/body collision while one solver-owned analytic circular tread shape
+  supplies continuous terrain contact. Its implicit compliant normal impulse
+  and XPBD support use 24,000,000 N/m stiffness and 24,000 N·s/m damping; this
+  removes the rotating polygon-contact phase without smoothing, clamping, or
+  writing the bike pose. The deterministic smooth-road gate sustains at least
+  26.09 m/s, reaches 30.55 m/s, and measures 0.118 mm chassis-height deviation
+  plus 0.00177 m/s vertical-speed deviation over its final five seconds.
 - Race: a bounded deterministic course derived from the local directed road
   graph, ordered gates, laps/splits/timer/reset, and bright checkpoint visuals.
   The forgiving 14 m crossing corridor is independent of the correctly scaled
   8 m × 4.2 m visual portal.
 - Traffic: lane-aware, restriction-aware, seeded synthetic vehicles. All 14
-  default vehicles have bounded kinematic particle collision cages; this is
-  not a live traffic feed.
-- World coordinates: all physics uses a local ENU meter frame. Origin rebases
-  shift terrain, motorcycle, traffic, race, renderer, and camera/XR anchor in
-  one transaction.
+  default vehicles remain visible; at most four nearby seed-region vehicles
+  have kinematic particle collision cages. Those cages and the race leave the
+  broadphase/progress loop outside the seed region and reactivate on return.
+- World coordinates: all physics uses a local ENU metre frame under a
+  persistent WGS84/ECEF pose. Full frame handoffs rotate and translate body
+  current/previous/predicted state, velocity, gravity, terrain, renderer,
+  camera, and XR anchor in one prepared transaction.
 
 The public `window.__motorcycleDemo.getState()` surface exposes source
 provenance, load attempts, terrain degradation, physics/overflow/contact
-telemetry, wheel loads and slip, suspension travel, traffic/race state, input
-sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
+telemetry, wheel loads and slip, suspension travel, traffic/race region state,
+stream generations/content epochs/residency/coverage, current WGS84/ECEF pose,
+camera/frame/reset snapshots, and XR panel status for browser gates.
 
 ## Data, privacy, and limits
 
@@ -189,9 +213,12 @@ sources, camera/rebase/reset snapshots, and XR panel status for browser gates.
 - Terrain retains AWS Terrain Tiles registry attribution and not-for-navigation
   limitations. The Cesium overview is structurally limited to the complete
   z0–z3 Web Mercator pyramid (85 possible tiles), so moving between locations
-  cannot exhaust a session counter. Local relief loads at most nine z12 source
-  tiles and has a 10-second deadline. A failed or timed-out local sample becomes
-  an explicitly labeled degraded plane; it is never called live relief.
+  cannot exhaust a session counter. The initial seed relief retains its bounded
+  deadline and disclosed degraded-plane fallback. Continuous ride terrain uses
+  wrapped z12–z14 keys, a mandatory 3×3 active ring, 5×5 desired prefetch ring,
+  six-request concurrency, 32-resident-chunk LRU, and strict byte/vertex caps.
+  A missing or failed streamed neighbor pauses physics and remains explicitly
+  unavailable; the initial fallback plane is never promoted into global relief.
 - The FHWA National Highway System overview retains the exact upstream version,
   item/layer identity, archive/member hashes, source counts, original metadata,
   derivation parameters, tile checksums, and Alaska coverage. It is generalized
@@ -215,7 +242,8 @@ RUNTIME_SMOKE_DEMOS=motorcycle node demos/tests/runtime-smoke.mjs
 Deterministic tests cover inertia/gyro/CCD/contact math, suspension sag and a
 two-metre landing, grip-dependent acceleration/braking, real traffic impulse,
 race gates/timing, lane/restriction semantics, controls, render topology,
-origin rebasing, resets, and disposal. The mocked Chromium WebXR gate uses
+full ENU/ECEF handoffs, streamed terrain seams/reservations/retries, off-road
+coverage waits, resets, and disposal. The mocked Chromium WebXR gate uses
 real Three r182 raycasting and mesh transforms while faking only the browser XR
 system/session/input boundaries. Overview tests additionally cover north-up
 Cesium camera placement, polar/dateline tile wrapping, explicit terrain/road

@@ -111,3 +111,65 @@ test('camera floor clamps edge queries and fails safe to the terrain maximum', (
   assert.equal(status.sampleMode, 'terrain-maximum-fallback');
   assert.ok(Math.abs(camera.position.y - 7.35) < 1e-12);
 });
+
+test('camera floor follows the committed streaming composite instead of the seed grid', () => {
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.set(2, -5, 4);
+  const floor = createTerrainCameraFloor(THREE, { minimumClearanceMeters: 0.5 });
+  const status = floor.apply({
+    camera,
+    mode: 'third',
+    terrain: null,
+    sampleSurface(position) {
+      assert.deepEqual(position, [2, -5, 4]);
+      return {
+        available: true,
+        height: 12,
+        surfaceKind: 'terrain',
+        tileKey: '14/1/2',
+        snapshotRevision: 3,
+      };
+    },
+  });
+  assert.equal(status.sampleMode, 'streaming-composite-surface');
+  assert.equal(status.coordinateSpace, 'current-local-tangent-meters');
+  assert.equal(status.terrainHeightMeters, 12);
+  assert.equal(status.snapshotRevision, 3);
+  assert.equal(camera.position.y, 12.5);
+
+  camera.position.y = 7;
+  const unavailable = floor.apply({
+    camera,
+    mode: 'third',
+    sampleSurface: () => ({ available: false }),
+  });
+  assert.equal(unavailable.status, 'clamped-held');
+  assert.equal(unavailable.sampleMode, 'streaming-composite-held');
+  assert.equal(unavailable.snapshotRevision, 3);
+  assert.equal(camera.position.y, 12.5);
+
+  assert.equal(floor.transformReferenceFrame({
+    transformPoint: ([x, y, z]) => [x - 100, y + 5, z + 40],
+  }), true);
+  camera.position.set(-98, 8, 44);
+  const transformedHold = floor.apply({
+    camera,
+    mode: 'third',
+    sampleSurface: () => ({ available: false }),
+  });
+  assert.equal(transformedHold.status, 'clamped-held');
+  assert.equal(transformedHold.terrainHeightMeters, 17);
+  assert.equal(camera.position.y, 17.5);
+
+  const reset = floor.reset();
+  assert.equal(reset.status, 'uninitialized');
+  camera.position.set(1, 4, 2);
+  const newLocationMiss = floor.apply({
+    camera,
+    mode: 'third',
+    sampleSurface: () => ({ available: false }),
+  });
+  assert.equal(newLocationMiss.snapshotRevision, null);
+  assert.equal(newLocationMiss.terrainHeightMeters, 3.5);
+  assert.equal(camera.position.y, 4, 'a prior location floor cannot lift the new location');
+});

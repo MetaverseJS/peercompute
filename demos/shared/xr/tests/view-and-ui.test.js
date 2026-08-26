@@ -48,6 +48,11 @@ test('ViewRig coordinates first, damped third, and tracked XR modes without movi
   rig.setXRActive(false);
   assert.equal(rig.getStatus().mode, 'third');
   assert.deepEqual(activations.map((entry) => entry[1]), ['third', 'first', 'xr', 'third']);
+  rig.resetPose({ clearOwnedTransforms: true });
+  assert.deepEqual(first.position.toArray(), [0, 0, 0]);
+  assert.deepEqual(third.position.toArray(), [0, 0, 0]);
+  assert.deepEqual(anchor.position.toArray(), [0, 0, 0]);
+  assert.deepEqual(xr.position.toArray(), [44, 55, 66], 'tracked XR camera remains untouched');
   rig.dispose();
 });
 
@@ -150,6 +155,81 @@ test('ViewRig shifts camera, XR anchor, and chase damping state through one orig
     'damped chase position remains equivalent in the shifted frame');
   assert.throws(() => rig.shiftOrigin([0, Number.NaN, 0]), /finite/);
   rig.dispose();
+});
+
+test('ViewRig rotates and translates owned cameras, chase state, and XR root across an ENU handoff', () => {
+  const first = new FakeCamera('first');
+  const third = new FakeCamera('third');
+  const xr = new FakeCamera('xr');
+  const anchor = new FakeNode('anchor');
+  const rig = new ViewRig({
+    firstCamera: first,
+    thirdCamera: third,
+    xrCamera: xr,
+    xrAnchor: anchor,
+    thirdDamping: 2,
+  });
+  rig.update({ position: [4, 1, 2], orientation: [0, 0, 0, 1], deltaTime: 0.1 });
+  first.position.set(2, 3, 4);
+  anchor.position.set(-2, 1, 3);
+  xr.position.set(44, 55, 66);
+  const half = Math.sqrt(0.5);
+  const rotation = [0, half, 0, half];
+  const rotate = ([x, y, z]) => [z, y, -x];
+  const transform = {
+    transformPoint(value) {
+      const rotated = rotate(value);
+      return [rotated[0] + 10, rotated[1] + 2, rotated[2] - 5];
+    },
+    transformOrientation([x, y, z, w]) {
+      return [
+        rotation[3] * x + rotation[0] * w + rotation[1] * z - rotation[2] * y,
+        rotation[3] * y - rotation[0] * z + rotation[1] * w + rotation[2] * x,
+        rotation[3] * z + rotation[0] * y - rotation[1] * x + rotation[2] * w,
+        rotation[3] * w - rotation[0] * x - rotation[1] * y - rotation[2] * z,
+      ];
+    },
+  };
+
+  const beforeThird = third.position.toArray();
+  const beforeFirst = first.position.toArray();
+  const beforeAnchor = anchor.position.toArray();
+  let failedPointCalls = 0;
+  assert.throws(() => rig.prepareReferenceFrameTransform({
+    transformPoint(value) {
+      failedPointCalls += 1;
+      if (failedPointCalls === 2) throw new Error('injected prepare failure');
+      return transform.transformPoint(value);
+    },
+    transformOrientation: transform.transformOrientation,
+  }), /injected prepare failure/);
+  assert.deepEqual(third.position.toArray(), beforeThird);
+  assert.deepEqual(first.position.toArray(), beforeFirst);
+  assert.deepEqual(anchor.position.toArray(), beforeAnchor);
+  const result = rig.transformReferenceFrame(transform);
+  const expectedThird = transform.transformPoint(beforeThird);
+  for (let index = 0; index < 3; index += 1) {
+    assert.ok(Math.abs(third.position.toArray()[index] - expectedThird[index]) < 1e-12);
+  }
+  assert.deepEqual(first.position.toArray().map((value) => Math.round(value)), [14, 5, -7]);
+  assert.deepEqual(anchor.position.toArray().map((value) => Math.round(value)), [13, 3, -3]);
+  assert.deepEqual(xr.position.toArray(), [44, 55, 66], 'tracked XR camera is never transformed');
+  assert.equal(result.schemaVersion, 'peercompute.xr.view-reference-frame-transform.v1');
+  assert.equal(rig.getStatus().lastConstraint, null);
+
+  const targetAfter = transform.transformPoint([4, 1, 2]);
+  const orientationAfter = transform.transformOrientation([0, 0, 0, 1]);
+  const continued = rig.update({
+    position: targetAfter,
+    orientation: orientationAfter,
+    deltaTime: 0.1,
+  });
+  assert.ok(continued.position.every(Number.isFinite));
+  assert.throws(() => rig.transformReferenceFrame({}), /transformPoint/);
+  const preparedBeforeDispose = rig.prepareReferenceFrameTransform(transform);
+  rig.dispose();
+  assert.doesNotThrow(() => preparedBeforeDispose.commit(),
+    'a synchronously prepared commit cannot throw after disposal');
 });
 
 test('ViewRig applies a reusable camera floor to first, damped third, and stereo XR views', () => {

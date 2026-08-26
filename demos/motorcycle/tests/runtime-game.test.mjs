@@ -6,6 +6,7 @@ import { parseAndSnapBbox } from '../../../services/geodata/src/osm/bbox.js';
 import { normalizeOverpassRegion } from '../../../services/geodata/src/osm/normalize.js';
 import { createOverpassFixture } from '../../../services/geodata/test/fixture.js';
 import { createMotorcycleGameRuntime } from '../src/runtime/gameRuntime.js';
+import { createGlobeSurfaceStream } from '../src/runtime/globeSurfaceStream.js';
 import { createTrafficCollisionCloud, trafficPose } from '../src/runtime/trafficPhysics.js';
 import {
   createTerrainDrapedRoadSurface,
@@ -14,6 +15,7 @@ import {
 import { createRoadTerrainSurface } from '../src/world/roadSurfaceCollider.js';
 import { createMotorcycleSceneData } from '../src/world/sceneData.js';
 import { createDerivedFlatTerrainGrid } from '../src/world/terrainGrid.js';
+import { rideTileAt, rideTileBounds } from '../src/world/rideTile.js';
 
 const BBOX = [-0.02, -0.02, 0.04, 0.04];
 
@@ -58,6 +60,40 @@ function control(sequence, patch = {}) {
   };
 }
 
+async function waitFor(predicate, message) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail(message);
+}
+
+function createFlatRideTile(tile) {
+  const bounds = rideTileBounds(tile);
+  const terrain = createDerivedFlatTerrainGrid({ bbox: bounds.bbox });
+  return Object.freeze({
+    ...terrain,
+    rideTile: bounds.tile,
+    coreBbox: bounds.bbox,
+    halo: Object.freeze({ sourcePixels: 1, geometryOverlapVertices: 0 }),
+    resource: Object.freeze({
+      residentBytes: terrain.heights.byteLength + terrain.positions.byteLength,
+      vertexCount: terrain.positions.length / 3,
+      triangleCount: 8,
+    }),
+  });
+}
+
+function createFlatRideRoad(tile) {
+  return Object.freeze({
+    schemaVersion: 'peercompute.motorcycle.test-road-tile.v1',
+    tile,
+    resource: Object.freeze({ residentBytes: 1, vertexCount: 0 }),
+    sampleLocalSurface: () => null,
+    dispose: () => true,
+  });
+}
+
 test('composes the six-body motorcycle, real road graph, terrain contact, and synthetic traffic', () => {
   const { terrain, sceneData } = sceneFixture();
   const runtime = createMotorcycleGameRuntime({
@@ -97,7 +133,7 @@ test('composes the six-body motorcycle, real road graph, terrain contact, and sy
   assert.equal(state.motorcycle.componentCount, 6);
   assert.ok(Math.abs(state.physicsProfile.fixedDt - 1 / 120) < 1e-8);
   assert.equal(state.physicsProfile.solverIterations, 12);
-  assert.equal(state.physicsProfile.maxSubSteps, 4);
+  assert.equal(state.physicsProfile.maxSubSteps, 8);
   assert.equal(state.physics.overflows.overflowed, false);
   assert.equal(state.roadSurface.geometry.collisionModel, 'single-composite-static-heightfield');
   assert.equal(state.roadSurface.geometry.deckClearanceMeters, MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS);
@@ -445,6 +481,388 @@ test('changing transmission mode clears queued one-shot shift edges', () => {
   const automatic = runtime.setAutomaticTransmission(true);
   assert.equal(automatic.transmissionMode, 'automatic');
   assert.equal(runtime.getState().pendingInputEdges.shiftCount, 0);
+  runtime.dispose();
+});
+
+test('commits globe terrain and full ENU handoffs without resetting outside the seed region', async () => {
+  const fixture = sceneFixture();
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'streamed terrain did not qualify its active 3x3 ring',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 2,
+    maximumPhysicalTrafficVehicles: 2,
+    rebaseThresholdMeters: 20,
+  });
+  for (const bodyId of runtime.rig.bodyIdList) {
+    const body = runtime.world.getBody(bodyId);
+    for (const field of ['position', 'previousPosition', 'predictedPosition']) body[field][0] += 50;
+  }
+  const handedOff = runtime.stepFrame(1 / 120, control(1));
+  assert.equal(handedOff.physicsSubsteps, 1);
+  assert.equal(handedOff.boundaryReset, null);
+  assert.ok(handedOff.referenceFrameTransform);
+  assert.equal(handedOff.referenceFrameTransform.schema, 'peercompute.geo.enu-frame-transform.v1');
+  const state = runtime.getState();
+  assert.equal(state.origin.mode, 'wgs84-ecef-enu-stream');
+  assert.equal(state.origin.referenceFrameTransformCount, 1);
+  assert.ok(Math.abs(runtime.world.options.gravity[0]) < 1e-12);
+  assert.ok(Math.abs(runtime.world.options.gravity[1] + 9.81) < 1e-5);
+  assert.ok(Math.abs(runtime.world.options.gravity[2]) < 1e-12);
+  assert.equal(state.boundary.resetCount, 0);
+  assert.equal(state.globe.stream.committed.activeKeys.length, 9);
+  assert.equal(state.globe.collision.fallbackEnabled, true);
+  assert.equal(state.roadSurface.collider.schemaVersion,
+    'peercompute.motorcycle.streaming-surface-collider.telemetry.v1');
+  assert.ok(Number.isFinite(runtime.sampleSurfaceHeight(
+    runtime.world.getBody(runtime.rig.bodyIds.chassis).position,
+  )));
+
+  // Exceed both the seed terrain and committed stream coverage before the next
+  // ring qualifies. The deterministic solver must wait, not teleport or use a
+  // fabricated plane.
+  for (const bodyId of runtime.rig.bodyIdList) {
+    const body = runtime.world.getBody(bodyId);
+    for (const field of ['position', 'previousPosition', 'predictedPosition']) body[field][0] += 10_000;
+  }
+  const waiting = runtime.stepFrame(1 / 60, control(2, { throttle: 1 }));
+  assert.equal(waiting.physicsSubsteps, 0);
+  assert.equal(waiting.streamWait, true);
+  assert.equal(waiting.boundaryReset, null);
+  assert.equal(runtime.getState().boundary.action, 'stream-wait');
+  assert.equal(runtime.getState().boundary.resetCount, 0);
+  assert.ok(runtime.getState().globe.streamWaitSeconds >= 1 / 60);
+  assert.equal(runtime.getState().regionActivity.raceStatus, 'out-of-region');
+  assert.equal(runtime.getState().regionActivity.trafficStatus, 'out-of-region');
+  assert.equal(runtime.getState().regionActivity.physicalTrafficActive, false);
+  assert.ok(runtime.trafficPhysics.bindings.every((binding) => {
+    const body = runtime.world.getBody(binding.bodyId);
+    return body.collisionMask === 0 && body.metadata.physicsActive === false;
+  }), 'seed traffic cages leave the broadphase while the rider is out of region');
+  const resetAtDistance = runtime.stepFrame(1 / 240, control(3, { reset: true }));
+  assert.equal(resetAtDistance.resetApplied, true);
+  assert.ok(resetAtDistance.referenceFrameTransform);
+  const resetState = runtime.getState();
+  const resetChassis = runtime.world.getBody(runtime.rig.bodyIds.chassis);
+  assert.ok(Math.abs(resetChassis.position[0] - runtime.rig.rootPosition[0]) < 0.1);
+  assert.ok(Math.abs(resetChassis.position[2] - runtime.rig.rootPosition[2]) < 0.1);
+  assert.ok(Math.abs(resetState.globe.pose.longitude - fixture.terrain.frame.origin.longitude) < 0.01);
+  assert.ok(Math.abs(resetState.globe.pose.latitude - fixture.terrain.frame.origin.latitude) < 0.01);
+  assert.equal(resetState.globe.collision.streamEnabled, false);
+  assert.equal(resetState.globe.collision.fallbackEnabled, true);
+  assert.equal(resetState.regionActivity.seedRegionActive, true);
+  assert.ok(runtime.trafficPhysics.bindings.every((binding) => {
+    const body = runtime.world.getBody(binding.bodyId);
+    return body.collisionMask === binding.collisionMask && body.metadata.physicsActive === true;
+  }), 'reset restores the bounded seed traffic cages');
+  assert.ok(Number.isFinite(runtime.sampleSurfaceHeight(resetChassis.position)));
+  runtime.dispose();
+  assert.equal(surfaceStream.getStatus().state, 'disposed');
+});
+
+test('crosses the seed-region edge onto a newly committed off-road terrain generation', async () => {
+  const fixture = sceneFixture();
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'initial active terrain ring did not qualify',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+    rebaseThresholdMeters: 20,
+  });
+  runtime.stepFrame(0, control(1));
+  const initialGeneration = runtime.getState().globe.stream.committed.generation;
+  for (const bodyId of runtime.rig.bodyIdList) {
+    const body = runtime.world.getBody(bodyId);
+    for (const field of ['position', 'previousPosition', 'predictedPosition']) body[field][0] += 4_000;
+  }
+  runtime.stepFrame(1 / 120, control(2));
+  await waitFor(
+    () => surfaceStream.getStatus().generation > initialGeneration
+      && surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'next off-road terrain generation did not qualify',
+  );
+  const resumed = runtime.stepFrame(1 / 120, control(3));
+  const state = runtime.getState();
+  const chassis = runtime.world.getBody(runtime.rig.bodyIds.chassis);
+  const sample = runtime.sampleSurface(chassis.position);
+  assert.equal(resumed.boundaryReset, null);
+  assert.ok(state.globe.stream.committed.generation > initialGeneration);
+  assert.equal(state.boundary.resetCount, 0);
+  assert.equal(state.regionActivity.seedRegionActive, false);
+  assert.equal(sample.available, true);
+  assert.equal(sample.surfaceKind, 'terrain');
+  assert.equal(typeof sample.tileKey, 'string');
+  assert.equal(sample.snapshotRevision, state.globe.stream.committed.revision);
+  runtime.dispose();
+});
+
+test('reference-frame participant preparation fails before physics or stream state mutates', async () => {
+  const fixture = sceneFixture();
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'streamed terrain did not qualify its active ring',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+    rebaseThresholdMeters: 20,
+  });
+  runtime.setReferenceFrameParticipants([{
+    prepareReferenceFrameTransform() {
+      throw new Error('injected participant preparation failure');
+    },
+  }]);
+  for (const bodyId of runtime.rig.bodyIdList) {
+    const body = runtime.world.getBody(bodyId);
+    for (const field of ['position', 'previousPosition', 'predictedPosition']) body[field][0] += 50;
+  }
+  const before = runtime.world.getSnapshot();
+  const beforeStream = surfaceStream.getSnapshot();
+  assert.throws(
+    () => runtime.stepFrame(1 / 120, control(1)),
+    /injected participant preparation failure/,
+  );
+  const after = runtime.world.getSnapshot();
+  assert.deepEqual(after.bodies, before.bodies);
+  assert.equal(surfaceStream.getSnapshot(), beforeStream);
+  assert.equal(runtime.getState().origin.referenceFrameTransformCount, 0);
+  assert.equal(runtime.getState().frameCount, 0);
+
+  runtime.setReferenceFrameParticipants([{
+    prepareReferenceFrameTransform() {
+      return { commit() { throw new Error('must never be reached'); } };
+    },
+  }]);
+  assert.throws(
+    () => runtime.stepFrame(1 / 120, control(2)),
+    /validated synchronous no-throw commit/,
+  );
+  assert.deepEqual(runtime.world.getSnapshot().bodies, before.bodies);
+  assert.equal(surfaceStream.getSnapshot(), beforeStream);
+  runtime.dispose();
+});
+
+test('withholds every substep when the swept tire envelope outruns committed terrain coverage', async () => {
+  const fixture = sceneFixture();
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'streamed terrain did not qualify its active ring',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  for (const bodyId of [runtime.rig.bodyIds.rearWheel, runtime.rig.bodyIds.frontWheel]) {
+    runtime.world.getBody(bodyId).linearVelocity[0] = 500_000;
+  }
+  const before = runtime.world.getSnapshot();
+  const withheld = runtime.stepFrame(1 / 15, control(1, { throttle: 1 }));
+  assert.equal(withheld.physicsSubsteps, 0);
+  assert.equal(withheld.streamWait, true);
+  assert.equal(runtime.getState().globe.coveragePreflight.available, false);
+  assert.deepEqual(runtime.world.getSnapshot().bodies, before.bodies);
+  runtime.dispose();
+});
+
+test('inactive desired-tile completions do not rebuild the unchanged active terrain snapshot', async () => {
+  const fixture = sceneFixture();
+  const center = rideTileAt(fixture.terrain.frame.origin);
+  const blockedKey = `${center.z}/${(center.x + 2) % (2 ** center.z)}/${center.y}`;
+  let releaseOuterTile;
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => {
+      if (tile.key === blockedKey) {
+        await new Promise((resolve) => { releaseOuterTile = resolve; });
+      }
+      return createFlatRideTile(tile);
+    },
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9 && releaseOuterTile,
+    'active terrain did not qualify before the controlled outer tile',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  runtime.stepFrame(0, control(1));
+  const first = runtime.getState();
+  assert.ok(first.globe.stream.committed.revision > 0);
+  releaseOuterTile();
+  await waitFor(
+    () => surfaceStream.getStatus().counts.inflight === 0
+      && surfaceStream.getStatus().counts.queued === 0,
+    'outer desired terrain did not settle',
+  );
+  runtime.stepFrame(0, control(2));
+  const after = runtime.getState();
+  assert.equal(after.globe.stream.committed.revision, first.globe.stream.committed.revision);
+  assert.ok(after.globe.activeSnapshotNoopCount > first.globe.activeSnapshotNoopCount);
+  assert.equal(after.lastStep.streamCommit, null, 'an inactive content no-op is not a phantom commit');
+  runtime.dispose();
+});
+
+test('retries the same active content epoch after participant preparation rejects publication', async () => {
+  const fixture = sceneFixture();
+  const center = rideTileAt(fixture.terrain.frame.origin);
+  let releaseRoad;
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: async (tile) => {
+      if (tile.key !== center.key) return null;
+      await new Promise((resolve) => { releaseRoad = resolve; });
+      return createFlatRideRoad(tile);
+    },
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9 && releaseRoad,
+    'terrain did not qualify while the controlled active road was pending',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  let rejectNextSurface = false;
+  let surfacePreparationCount = 0;
+  runtime.setReferenceFrameParticipants([{
+    prepareReferenceFrameTransform() {
+      return {
+        commitModel: 'validated-synchronous-noexcept',
+        commit: () => true,
+      };
+    },
+    prepareSurfaceSnapshot() {
+      surfacePreparationCount += 1;
+      if (rejectNextSurface) {
+        rejectNextSurface = false;
+        throw new Error('injected surface preparation failure');
+      }
+      return {
+        commitModel: 'validated-synchronous-noexcept',
+        commit: () => true,
+      };
+    },
+  }]);
+  runtime.stepFrame(0, control(1));
+  const beforeRoad = runtime.getState();
+  assert.ok(beforeRoad.lastStep.streamCommit);
+  rejectNextSurface = true;
+  releaseRoad();
+  await waitFor(
+    () => surfaceStream.getStatus().counts.roadPending === 0
+      && surfaceStream.getStatus().contentEpoch > beforeRoad.globe.stream.contentEpoch,
+    'controlled active road did not settle',
+  );
+  assert.throws(
+    () => runtime.stepFrame(0, control(2)),
+    /injected surface preparation failure/,
+  );
+  const rejected = runtime.getState();
+  assert.equal(
+    rejected.globe.evaluatedContentEpoch,
+    beforeRoad.globe.evaluatedContentEpoch,
+    'rejected publication cannot consume the active content epoch',
+  );
+  const retried = runtime.stepFrame(0, control(3));
+  const afterRoad = runtime.getState();
+  assert.ok(retried.streamCommit);
+  assert.equal(afterRoad.globe.evaluatedContentEpoch, afterRoad.globe.stream.contentEpoch);
+  assert.equal(afterRoad.globe.stream.committed.contentEpoch, afterRoad.globe.stream.contentEpoch);
+  assert.ok(surfacePreparationCount >= 3, 'initial, rejected, and retried preparations all ran');
+  runtime.dispose();
+});
+
+test('reset disables a same-frame streamed snapshot and restores the seed fallback', async () => {
+  const fixture = sceneFixture();
+  const surfaceStream = createGlobeSurfaceStream({
+    currentFrame: fixture.terrain.frame,
+    loadTerrainTile: async (tile) => createFlatRideTile(tile),
+    loadRoadTile: null,
+  });
+  surfaceStream.update(fixture.terrain.frame.origin);
+  await waitFor(
+    () => surfaceStream.getStatus().counts.activeTerrainReady === 9,
+    'streamed terrain did not qualify its active ring',
+  );
+  const runtime = createMotorcycleGameRuntime({
+    ...fixture,
+    surfaceStream,
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  let streamVisibility = null;
+  runtime.setReferenceFrameParticipants([{
+    prepareReferenceFrameTransform() {
+      return {
+        commitModel: 'validated-synchronous-noexcept',
+        commit: () => true,
+      };
+    },
+    prepareSurfaceSnapshot() {
+      return {
+        commitModel: 'validated-synchronous-noexcept',
+        commit: () => true,
+      };
+    },
+    setStreamedTerrainVisible(value) { streamVisibility = value; },
+  }]);
+  runtime.stepFrame(0, control(1));
+  assert.equal(runtime.getState().globe.collision.streamEnabled, true);
+  const reset = runtime.stepFrame(1 / 240, control(2, { reset: true }));
+  assert.equal(reset.resetApplied, true);
+  assert.equal(reset.referenceFrameTransform, null);
+  assert.equal(reset.streamCommit, null);
+  assert.equal(runtime.getState().globe.collision.streamEnabled, false);
+  assert.equal(runtime.getState().globe.collision.fallbackEnabled, true);
+  assert.equal(streamVisibility, false);
+  const resumed = runtime.stepFrame(0, control(3));
+  assert.equal(resumed.streamCommit, null);
+  assert.equal(runtime.getState().globe.collision.streamEnabled, true);
+  assert.equal(streamVisibility, true);
   runtime.dispose();
 });
 

@@ -27,11 +27,119 @@ function countKnownOmitted(sceneOmitted, rendererCapOmitted, invalidOmitted) {
     + Math.max(0, Number(invalidOmitted) || 0);
 }
 
+function referenceFrameMatrix(THREE, transform) {
+  for (const method of ['transformPoint', 'transformVector']) {
+    if (typeof transform?.[method] !== 'function') {
+      throw new TypeError(`Renderer reference-frame transform requires ${method}().`);
+    }
+  }
+  const origin = transform.transformPoint([0, 0, 0]);
+  const basisX = transform.transformVector([1, 0, 0]);
+  const basisY = transform.transformVector([0, 1, 0]);
+  const basisZ = transform.transformVector([0, 0, 1]);
+  const values = [...origin, ...basisX, ...basisY, ...basisZ].map(Number);
+  if (values.length !== 12 || !values.every(Number.isFinite)) {
+    throw new TypeError('Renderer reference-frame transform returned non-finite coordinates.');
+  }
+  const matrix = new THREE.Matrix4();
+  matrix.makeBasis(
+    new THREE.Vector3(...basisX),
+    new THREE.Vector3(...basisY),
+    new THREE.Vector3(...basisZ),
+  );
+  matrix.setPosition(new THREE.Vector3(...origin));
+  return matrix;
+}
+
+function chunkFrameMatrix(THREE, transform) {
+  for (const method of ['chunkToCurrentPoint', 'chunkToCurrentVector']) {
+    if (typeof transform?.[method] !== 'function') {
+      throw new TypeError(`Terrain chunk transform requires ${method}().`);
+    }
+  }
+  const origin = transform.chunkToCurrentPoint([0, 0, 0]);
+  const basisX = transform.chunkToCurrentVector([1, 0, 0]);
+  const basisY = transform.chunkToCurrentVector([0, 1, 0]);
+  const basisZ = transform.chunkToCurrentVector([0, 0, 1]);
+  const values = [...origin, ...basisX, ...basisY, ...basisZ].map(Number);
+  if (values.length !== 12 || !values.every(Number.isFinite)) {
+    throw new TypeError('Terrain chunk transform returned non-finite coordinates.');
+  }
+  const matrix = new THREE.Matrix4();
+  matrix.makeBasis(
+    new THREE.Vector3().fromArray(basisX),
+    new THREE.Vector3().fromArray(basisY),
+    new THREE.Vector3().fromArray(basisZ),
+  );
+  matrix.setPosition(new THREE.Vector3().fromArray(origin));
+  return matrix;
+}
+
+function createTerrainCoreRenderView(terrain) {
+  const halo = Number(terrain?.halo?.geometryOverlapVertices ?? 0);
+  if (!Number.isSafeInteger(halo) || halo <= 0) return terrain;
+  const sourceWidth = Number(terrain.width);
+  const sourceHeight = Number(terrain.height);
+  const width = sourceWidth - halo * 2;
+  const height = sourceHeight - halo * 2;
+  if (width < 2 || height < 2) {
+    throw new RangeError('Terrain render core must retain at least a 2x2 grid.');
+  }
+  const positions = new Float32Array(width * height * 3);
+  const heights = new Float32Array(width * height);
+  const localBounds = {
+    minX: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+    minZ: Number.POSITIVE_INFINITY,
+    maxZ: Number.NEGATIVE_INFINITY,
+  };
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      const sourceIndex = (row + halo) * sourceWidth + column + halo;
+      const targetIndex = row * width + column;
+      heights[targetIndex] = terrain.heights[sourceIndex];
+      for (let axis = 0; axis < 3; axis += 1) {
+        const value = terrain.positions[sourceIndex * 3 + axis];
+        positions[targetIndex * 3 + axis] = value;
+        const minimumKey = axis === 0 ? 'minX' : axis === 1 ? 'minY' : 'minZ';
+        const maximumKey = axis === 0 ? 'maxX' : axis === 1 ? 'maxY' : 'maxZ';
+        localBounds[minimumKey] = Math.min(localBounds[minimumKey], value);
+        localBounds[maximumKey] = Math.max(localBounds[maximumKey], value);
+      }
+    }
+  }
+  return Object.freeze({
+    ...terrain,
+    bbox: terrain.coreBbox ?? terrain.bbox,
+    width,
+    height,
+    positions,
+    heights,
+    localBounds: Object.freeze(localBounds),
+    surfaceIndex: null,
+    renderCore: Object.freeze({
+      sourceWidth,
+      sourceHeight,
+      haloVertices: halo,
+      overlapGeometryRendered: false,
+      vertexCount: width * height,
+    }),
+  });
+}
+
 export function disposeThreeObject(root) {
-  if (!root?.traverse) return Object.freeze({ geometries: 0, materials: 0, textures: 0 });
+  if (!root?.traverse) {
+    return Object.freeze({
+      geometries: 0, materials: 0, textures: 0, failureCount: 0, lastError: null,
+    });
+  }
   const geometries = new Set();
   const materials = new Set();
   const textures = new Set();
+  let failureCount = 0;
+  let lastError = null;
   root.traverse((object) => {
     if (object.geometry?.dispose) geometries.add(object.geometry);
     const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
@@ -46,10 +154,28 @@ export function disposeThreeObject(root) {
       }
     }
   });
-  for (const texture of textures) texture.dispose();
-  for (const geometry of geometries) geometry.dispose();
-  for (const material of materials) material.dispose();
-  return Object.freeze({ geometries: geometries.size, materials: materials.size, textures: textures.size });
+  const disposeResource = (resource, kind) => {
+    try {
+      resource.dispose();
+    } catch (error) {
+      failureCount += 1;
+      lastError = Object.freeze({
+        kind,
+        name: error?.name ?? 'Error',
+        message: error?.message ?? String(error),
+      });
+    }
+  };
+  for (const texture of textures) disposeResource(texture, 'texture');
+  for (const geometry of geometries) disposeResource(geometry, 'geometry');
+  for (const material of materials) disposeResource(material, 'material');
+  return Object.freeze({
+    geometries: geometries.size,
+    materials: materials.size,
+    textures: textures.size,
+    failureCount,
+    lastError,
+  });
 }
 
 export function createMotorcycleWorldRenderer(threeOrOptions, options = undefined) {
@@ -71,6 +197,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     terrainMaterial = {},
     motorcycleModelInstance,
     roadSurface = null,
+    maximumResidentTerrainChunks = 32,
   } = configuration;
   const physicsWorld = configuration.physicsWorld ?? configuration.world;
   if (typeof scene?.add !== 'function' || typeof scene?.remove !== 'function') {
@@ -84,6 +211,11 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
   }
   if (roadSurface !== null && roadSurface?.schemaVersion !== MOTORCYCLE_ROAD_SURFACE_SCHEMA) {
     throw new TypeError('Motorcycle world renderer requires a canonical terrain-draped road surface.');
+  }
+  if (!Number.isSafeInteger(maximumResidentTerrainChunks)
+    || maximumResidentTerrainChunks < 9
+    || maximumResidentTerrainChunks > 64) {
+    throw new RangeError('maximumResidentTerrainChunks must be an integer between 9 and 64.');
   }
   const resolvedRoadSurface = roadSurface ?? createTerrainDrapedRoadSurface(
     terrain,
@@ -123,7 +255,9 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
   const geospatialRoot = new THREE.Group();
   geospatialRoot.name = 'motorcycle-geospatial-origin';
   geospatialRoot.add(terrainVisual, roads, buildings, traffic.root, race.root);
-  root.add(geospatialRoot, motorcycle.root, contacts.root);
+  const streamedTerrainRoot = new THREE.Group();
+  streamedTerrainRoot.name = 'motorcycle-streamed-terrain-chunks';
+  root.add(geospatialRoot, streamedTerrainRoot, motorcycle.root, contacts.root);
   scene.add(root);
 
   let disposed = false;
@@ -131,6 +265,24 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
   let lastInterpolationAlpha = 0;
   let disposal = null;
   const originOffset = [0, 0, 0];
+  let referenceFrameTransformCount = 0;
+  let lastReferenceFrameTransform = null;
+  let streamedRevision = 0;
+  let streamedAccessSequence = 0;
+  let streamedBuildCount = 0;
+  let streamedReuseCount = 0;
+  let streamedEvictionCount = 0;
+  let streamedDisposalFailureCount = 0;
+  let streamedLastDisposalError = null;
+  let streamedTerrainEnabled = true;
+  let streamedActiveKeys = new Set();
+  const streamedTerrainCache = new Map();
+  const disposeStreamedRoot = (object) => {
+    const result = disposeThreeObject(object);
+    streamedDisposalFailureCount += result.failureCount;
+    if (result.lastError) streamedLastDisposalError = result.lastError;
+    return result;
+  };
   const telemetry = () => {
     const roadCounts = roads.userData;
     const buildingCounts = buildings.userData;
@@ -146,6 +298,9 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
       origin: {
         offset: [...originOffset],
         geospatialRootPosition: geospatialRoot.position.toArray(),
+        geospatialRootQuaternion: geospatialRoot.quaternion.toArray(),
+        referenceFrameTransformCount,
+        lastReferenceFrameTransform: clonePlain(lastReferenceFrameTransform),
       },
       navigationGrade: false,
       terrain: {
@@ -200,12 +355,42 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
       contacts: clonePlain(contactCounts),
       traffic: clonePlain(trafficCounts),
       race: clonePlain(race.telemetry),
+      streamingTerrain: {
+        schemaVersion: 'peercompute.motorcycle.streamed-terrain-renderer.v1',
+        revision: streamedRevision,
+        activeChunkCount: streamedTerrainRoot.children.length,
+        residentChunkCount: streamedTerrainCache.size,
+        buildCount: streamedBuildCount,
+        reuseCount: streamedReuseCount,
+        evictionCount: streamedEvictionCount,
+        maximumResidentTerrainChunks,
+        initialTerrainVisible: terrainVisual.visible,
+        visible: streamedTerrainEnabled,
+        geometryModel: 'immutable-three-terrain-chunks-in-current-enu',
+        haloPolicy: 'collision-only-render-core-bounds',
+        overlapGeometryRendered: false,
+        renderedCoreVertexCount: [...streamedTerrainCache.values()].reduce(
+          (sum, entry) => sum + (
+            entry.root.parent === streamedTerrainRoot
+              ? entry.renderTerrain?.renderCore?.vertexCount ?? 0
+              : 0
+          ),
+          0,
+        ),
+        residentCoreVertexCount: [...streamedTerrainCache.values()].reduce(
+          (sum, entry) => sum + (entry.renderTerrain?.renderCore?.vertexCount ?? 0),
+          0,
+        ),
+        disposalFailureCount: streamedDisposalFailureCount,
+        lastDisposalError: clonePlain(streamedLastDisposalError),
+      },
       limits: {
         maximumRoadSegments,
         maximumBuildings,
         maximumMotorcycleParticles,
         maximumContactMarkers,
         maximumTrafficVehicles,
+        maximumResidentTerrainChunks,
         physicsDebug,
         maximumTerrainContourLevels: terrainVisual.userData.contours.maximumContourLevels,
         maximumTerrainNurbsCurves: terrainVisual.userData.contours.maximumNurbsCurves,
@@ -245,6 +430,152 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     },
     getTelemetry: telemetry,
     getStatus: telemetry,
+    syncSurfaceSnapshot(snapshot) {
+      return this.prepareSurfaceSnapshot(snapshot).commit();
+    },
+    prepareSurfaceSnapshot(snapshot) {
+      if (disposed) throw new Error('Cannot synchronize a disposed motorcycle world renderer.');
+      if (snapshot?.schemaVersion !== 'peercompute.motorcycle.globe-surface-snapshot.v1') {
+        throw new TypeError('Renderer requires a canonical globe-surface snapshot.');
+      }
+      if (snapshot.revision === streamedRevision) {
+        return Object.freeze({
+          schemaVersion: 'peercompute.motorcycle.prepared-surface-snapshot.v1',
+          commitModel: 'validated-synchronous-noexcept',
+          revision: snapshot.revision,
+          commit: () => false,
+          dispose: () => false,
+        });
+      }
+      const activeKeys = new Set(snapshot.activeKeys);
+      const prepared = [];
+      let nextAccessSequence = streamedAccessSequence;
+      try {
+        for (const record of snapshot.records) {
+          const resident = streamedTerrainCache.get(record.key) ?? null;
+          let entry = resident?.terrain === record.terrain ? resident : null;
+          const created = entry === null;
+          if (created) {
+            const renderTerrain = createTerrainCoreRenderView(record.terrain);
+            const visual = createTerrainVisual(THREE, renderTerrain, {
+              ...terrainMaterial,
+              maximumContourLevels: Math.min(
+                24,
+                MOTORCYCLE_RENDER_LIMITS.maximumTerrainContourLevels,
+              ),
+              maximumNurbsCurves: Math.min(
+                64,
+                MOTORCYCLE_RENDER_LIMITS.maximumTerrainNurbsCurves,
+              ),
+              maximumSampledVertices: Math.min(
+                12_000,
+                MOTORCYCLE_RENDER_LIMITS.maximumTerrainContourVertices,
+              ),
+            });
+            visual.name = `motorcycle-streamed-terrain-${record.key.replaceAll('/', '-')}`;
+            visual.matrixAutoUpdate = false;
+            entry = {
+              key: record.key,
+              terrain: record.terrain,
+              renderTerrain,
+              root: visual,
+              lastAccess: 0,
+            };
+          }
+          prepared.push({
+            record,
+            entry,
+            replaced: created ? resident : null,
+            created,
+            access: ++nextAccessSequence,
+            matrix: chunkFrameMatrix(THREE, record.transform),
+          });
+        }
+      } catch (error) {
+        for (const item of prepared) {
+          if (item.created) disposeStreamedRoot(item.entry.root);
+        }
+        throw error;
+      }
+      let committed = false;
+      let released = false;
+      return Object.freeze({
+        schemaVersion: 'peercompute.motorcycle.prepared-surface-snapshot.v1',
+        commitModel: 'validated-synchronous-noexcept',
+        revision: snapshot.revision,
+        commit() {
+          if (committed) return true;
+          if (released || disposed) {
+            if (!released) {
+              for (const item of prepared) {
+                if (item.created) disposeStreamedRoot(item.entry.root);
+              }
+              released = true;
+            }
+            return false;
+          }
+          for (const entry of streamedTerrainCache.values()) {
+            if (!activeKeys.has(entry.key) && entry.root.parent === streamedTerrainRoot) {
+              streamedTerrainRoot.remove(entry.root);
+            }
+          }
+          for (const item of prepared) {
+            if (item.replaced) {
+              item.replaced.root.removeFromParent?.();
+              disposeStreamedRoot(item.replaced.root);
+            }
+            item.entry.lastAccess = item.access;
+            item.entry.root.matrix.copy(item.matrix);
+            item.entry.root.matrixWorldNeedsUpdate = true;
+            streamedTerrainCache.set(item.record.key, item.entry);
+            if (item.entry.root.parent !== streamedTerrainRoot) {
+              streamedTerrainRoot.add(item.entry.root);
+            }
+            if (item.created) streamedBuildCount += 1;
+            else streamedReuseCount += 1;
+          }
+          streamedAccessSequence = nextAccessSequence;
+          while (streamedTerrainCache.size > maximumResidentTerrainChunks) {
+            const candidate = [...streamedTerrainCache.values()]
+              .filter((entry) => !activeKeys.has(entry.key))
+              .sort((left, right) => left.lastAccess - right.lastAccess
+                || left.key.localeCompare(right.key))[0];
+            if (!candidate) break;
+            candidate.root.removeFromParent?.();
+            disposeStreamedRoot(candidate.root);
+            streamedTerrainCache.delete(candidate.key);
+            streamedEvictionCount += 1;
+          }
+          terrainVisual.visible = snapshot.records.length === 0;
+          streamedTerrainEnabled = true;
+          streamedActiveKeys = new Set(snapshot.activeKeys);
+          streamedRevision = snapshot.revision;
+          streamedTerrainRoot.updateMatrixWorld(true);
+          committed = true;
+          return true;
+        },
+        dispose() {
+          if (committed || released) return false;
+          for (const item of prepared) {
+            if (item.created) disposeStreamedRoot(item.entry.root);
+          }
+          released = true;
+          return true;
+        },
+      });
+    },
+    setStreamedTerrainVisible(visible) {
+      if (disposed) throw new Error('Cannot change a disposed motorcycle world renderer.');
+      streamedTerrainEnabled = Boolean(visible);
+      for (const entry of streamedTerrainCache.values()) {
+        const shouldAttach = streamedTerrainEnabled && streamedActiveKeys.has(entry.key);
+        if (shouldAttach && entry.root.parent !== streamedTerrainRoot) streamedTerrainRoot.add(entry.root);
+        if (!shouldAttach && entry.root.parent === streamedTerrainRoot) streamedTerrainRoot.remove(entry.root);
+      }
+      terrainVisual.visible = !streamedTerrainEnabled || streamedTerrainRoot.children.length === 0;
+      streamedTerrainRoot.updateMatrixWorld(true);
+      return streamedTerrainEnabled;
+    },
     shiftOrigin(shift) {
       if (disposed) throw new Error('Cannot rebase a disposed motorcycle world renderer.');
       if ((!Array.isArray(shift) && !ArrayBuffer.isView(shift)) || shift.length < 3) {
@@ -257,6 +588,44 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
       geospatialRoot.updateMatrixWorld(true);
       return Object.freeze([...originOffset]);
     },
+    transformReferenceFrame(transform) {
+      return this.prepareReferenceFrameTransform(transform).commit();
+    },
+    prepareReferenceFrameTransform(transform) {
+      if (disposed) throw new Error('Cannot transform a disposed motorcycle world renderer.');
+      const frameMatrix = referenceFrameMatrix(THREE, transform);
+      geospatialRoot.updateMatrix();
+      const composed = frameMatrix.clone().multiply(geospatialRoot.matrix);
+      const preparedPosition = new THREE.Vector3();
+      const preparedQuaternion = new THREE.Quaternion();
+      const preparedScale = new THREE.Vector3();
+      composed.decompose(
+        preparedPosition,
+        preparedQuaternion,
+        preparedScale,
+      );
+      let committed = false;
+      return Object.freeze({
+        schemaVersion: 'peercompute.motorcycle.prepared-render-reference-frame-transform.v1',
+        commitModel: 'validated-synchronous-noexcept',
+        commit() {
+          if (committed) return lastReferenceFrameTransform;
+          if (disposed) return false;
+          geospatialRoot.position.copy(preparedPosition);
+          geospatialRoot.quaternion.copy(preparedQuaternion);
+          geospatialRoot.scale.copy(preparedScale);
+          geospatialRoot.updateMatrixWorld(true);
+          referenceFrameTransformCount += 1;
+          lastReferenceFrameTransform = Object.freeze({
+            sequence: referenceFrameTransformCount,
+            position: Object.freeze(geospatialRoot.position.toArray()),
+            orientation: Object.freeze(geospatialRoot.quaternion.toArray()),
+          });
+          committed = true;
+          return lastReferenceFrameTransform;
+        },
+      });
+    },
     dispose() {
       if (disposed) return false;
       scene.remove(root);
@@ -265,6 +634,11 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
       // this location snapshot, then dispose the shared resource only at app
       // shutdown.
       motorcycle.releaseModel();
+      for (const entry of streamedTerrainCache.values()) {
+        entry.root.removeFromParent?.();
+        disposeStreamedRoot(entry.root);
+      }
+      streamedTerrainCache.clear();
       disposal = disposeThreeObject(root);
       root.clear();
       disposed = true;

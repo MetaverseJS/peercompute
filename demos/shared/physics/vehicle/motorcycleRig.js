@@ -48,7 +48,7 @@ function createSwingarmCloud() {
 export function createMotorcycleParticleClouds(options = {}) {
   const wheelRadius = options.wheelRadius ?? 0.34;
   const tireRadius = options.tireRadius ?? 0.072;
-  const wheelSegments = options.wheelSegments ?? 20;
+  const wheelSegments = options.wheelSegments ?? 32;
   return Object.freeze({
     chassis: createBoxParticleCloud({
       halfExtents: [0.24, 0.23, 0.55],
@@ -83,7 +83,7 @@ export function createMotorcycleRig(world, {
   orientation = [0, 0, 0, 1],
   wheelRadius = 0.34,
   tireRadius = 0.072,
-  wheelSegments = 20,
+  wheelSegments = 32,
   material = {},
 } = {}) {
   if (!world || typeof world.addBody !== 'function' || typeof world.addJoint !== 'function') {
@@ -125,6 +125,8 @@ export function createMotorcycleRig(world, {
     frontWheel: ['motorcycle', 'wheel', 'steered-wheel'],
   };
   for (const component of Object.keys(bodyIds)) {
+    const isWheel = component.endsWith('Wheel');
+    const tireTag = component === 'rearWheel' ? 'rear-tire' : 'front-tire';
     world.addBody({
       id: bodyIds[component],
       motionType: 'dynamic',
@@ -133,11 +135,25 @@ export function createMotorcycleRig(world, {
       mass: masses[component],
       particleCloud: clouds[component],
       material: {
-        friction: component.endsWith('Wheel') ? 1.05 : 0.55,
+        friction: isWheel ? 1.05 : 0.55,
         restitution: 0.02,
-        rollingFriction: component.endsWith('Wheel') ? 0.008 : 0.02,
+        rollingFriction: isWheel ? 0.008 : 0.02,
         ...material,
       },
+      surfaceContactShapes: isWheel ? [{
+        id: 'tread',
+        type: 'wheel',
+        center: [0, 0, 0],
+        axis: [1, 0, 0],
+        radius: wheelRadius,
+        treadRadius: tireRadius,
+        tag: tireTag,
+        material: {
+          contactModel: material.contactModel ?? 'compliant',
+          contactStiffness: material.contactStiffness ?? 24_000_000,
+          contactDamping: material.contactDamping ?? 24_000,
+        },
+      }] : undefined,
       groups: componentGroups[component],
       metadata: {
         system: 'particle-motorcycle',
@@ -186,7 +202,7 @@ export function createMotorcycleRig(world, {
     anchors: { bodyA: [0, -0.24, -0.28], bodyB: [0, 0.03, -0.72] },
     restLength: 0.631,
     stiffness: 25_000,
-    damping: 1_200,
+    damping: 1_650,
   });
   world.addJoint({
     id: jointIds.rearAxle,
@@ -231,7 +247,7 @@ export function createMotorcycleRig(world, {
     anchors: { bodyA: [0, -0.10, -0.05], bodyB: [0, -0.15, 0.08] },
     restLength: 0.303,
     stiffness: 10_500,
-    damping: 950,
+    damping: 1_300,
   });
   world.addJoint({
     id: jointIds.frontAxle,

@@ -3,13 +3,126 @@ import test from 'node:test';
 
 import {
   createDerivedFlatTerrainGrid,
+  createTerrariumHeightmapCache,
   createTerrainGrid,
+  loadTerrariumTerrainTile,
   loadTerrariumTerrainGrid,
+  MOTORCYCLE_RIDE_TERRAIN_GRID_SIZE,
+  MOTORCYCLE_RIDE_TERRAIN_SOURCE_HALO_PIXELS,
   MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES,
 } from '../src/world/terrainGrid.js';
 import { createRoadTerrainSurface } from '../src/world/roadSurfaceCollider.js';
 
 const BBOX = [61.21, -149.92, 61.23, -149.88];
+
+test('decoded Terrarium cache coalesces halo reads, isolates aborts, and evicts by bounded LRU', async () => {
+  const calls = new Map();
+  let releaseFirst;
+  const cache = createTerrariumHeightmapCache({
+    maximumEntries: 2,
+    fetchImpl: async () => { throw new Error('fetchImpl must remain behind the injected decoder'); },
+    fetchHeightmap: async (url) => {
+      calls.set(url, (calls.get(url) ?? 0) + 1);
+      if (url === 'tile-a' && calls.get(url) === 1) {
+        await new Promise((resolve) => { releaseFirst = resolve; });
+      }
+      return {
+        width: 256,
+        height: 256,
+        heights: new Float32Array(256 * 256).fill(url.length),
+      };
+    },
+  });
+  const aborted = new AbortController();
+  const first = cache.load('tile-a', { signal: aborted.signal });
+  const coalesced = cache.load('tile-a');
+  await Promise.resolve();
+  aborted.abort();
+  releaseFirst();
+  await assert.rejects(first, { name: 'AbortError' });
+  const a = await coalesced;
+  assert.ok(a.heights instanceof Float32Array);
+  assert.equal(calls.get('tile-a'), 1);
+  assert.strictEqual(await cache.load('tile-a'), a);
+  const b = await cache.load('tile-b');
+  assert.equal(b.heights[0], 'tile-b'.length);
+  assert.strictEqual(await cache.load('tile-a'), a, 'cache hit refreshes LRU age');
+  await cache.load('tile-c');
+  assert.equal(cache.getTelemetry().entries, 2);
+  assert.equal(cache.getTelemetry().evictions, 1);
+  await cache.load('tile-b');
+  assert.equal(calls.get('tile-b'), 2, 'least-recent decoded heightmap was evicted');
+  const telemetry = cache.getTelemetry();
+  assert.equal(telemetry.schemaVersion, 'peercompute.motorcycle.terrarium-decoded-cache.v1');
+  assert.equal(telemetry.yjsReplicated, false);
+  assert.equal(telemetry.misses, 4);
+  assert.equal(telemetry.coalesced, 1);
+  assert.ok(telemetry.hits >= 2);
+  assert.equal(telemetry.callerAborts, 1);
+  assert.ok(telemetry.residentBytes <= telemetry.maximumResidentBytes);
+  assert.equal(cache.destroy(), true);
+  assert.equal(cache.destroy(), false);
+  await assert.rejects(cache.load('tile-a'), /destroyed/);
+});
+
+test('decoded Terrarium cache owns exact bytes and fences orphaned or late work', async () => {
+  const deferred = new Map();
+  const cache = createTerrariumHeightmapCache({
+    maximumEntries: 1,
+    fetchImpl: async () => { throw new Error('fetchImpl must remain behind the injected decoder'); },
+    fetchHeightmap: (url) => new Promise((resolve) => deferred.set(url, resolve)),
+  });
+  const firstController = new AbortController();
+  const first = cache.load('tile-a', { signal: firstController.signal });
+  await Promise.resolve();
+  await assert.rejects(cache.load('tile-b'), (error) => (
+    error?.code === 'ERR_MOTORCYCLE_TERRARIUM_CACHE_BUSY'
+    && error.retryable === true
+    && error.transient === true
+  ));
+  firstController.abort();
+  await assert.rejects(first, { name: 'AbortError' });
+
+  const second = cache.load('tile-b');
+  await Promise.resolve();
+  const oversizedBacking = new ArrayBuffer(256 * 256 * Float64Array.BYTES_PER_ELEMENT + 4096);
+  deferred.get('tile-b')({
+    width: 256,
+    height: 256,
+    heights: new Float64Array(oversizedBacking, 0, 256 * 256),
+  });
+  const admitted = await second;
+  assert.ok(admitted.heights instanceof Float32Array);
+  assert.equal(admitted.heights.buffer.byteLength, 256 * 256 * Float32Array.BYTES_PER_ELEMENT);
+  assert.equal(cache.getTelemetry().residentBytes, cache.getTelemetry().maximumResidentBytes);
+  deferred.get('tile-a')({
+    width: 256,
+    height: 256,
+    heights: new Float32Array(256 * 256),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cache.getTelemetry().orphanAborts, 1);
+  assert.equal(cache.getTelemetry().lateDiscards, 1);
+
+  let resolveLate;
+  const lateCache = createTerrariumHeightmapCache({
+    fetchImpl: async () => { throw new Error('fetchImpl must remain behind the injected decoder'); },
+    fetchHeightmap: () => new Promise((resolve) => { resolveLate = resolve; }),
+  });
+  const pending = lateCache.load('tile-late');
+  await Promise.resolve();
+  assert.equal(lateCache.destroy(), true);
+  resolveLate({
+    width: 256,
+    height: 256,
+    heights: new Float32Array(256 * 256),
+  });
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(lateCache.getTelemetry().entries, 0);
+  assert.equal(lateCache.getTelemetry().residentBytes, 0);
+  assert.equal(lateCache.getTelemetry().lateDiscards, 1);
+  cache.destroy();
+});
 
 test('builds a finite WGS84-to-local real-height grid and render-mesh sampler', () => {
   const heights = Float32Array.from([
@@ -167,4 +280,121 @@ test('rejects malformed grids instead of inventing source geometry', () => {
   assert.throws(() => createTerrainGrid({ bbox: [0, 1, 0, 2], width: 3, height: 3, heights: new Float32Array(9) }), /ordered/);
   assert.throws(() => createTerrainGrid({ bbox: BBOX, width: 3, height: 3, heights: new Float32Array(8) }), /requires 9/);
   assert.throws(() => createTerrainGrid({ bbox: BBOX, width: 2, height: 3, heights: new Float32Array(6) }), /between 3 and 129/);
+});
+
+function globalPostHeightmap(url) {
+  const match = /\/terrarium\/(\d+)\/(\d+)\/(\d+)\.png$/u.exec(url);
+  assert.ok(match, `unexpected Terrarium URL ${url}`);
+  const [, , xText, yText] = match;
+  const tileX = Number(xText);
+  const tileY = Number(yText);
+  return {
+    width: 256,
+    height: 256,
+    heights: Float32Array.from({ length: 256 * 256 }, (_, index) => {
+      const row = Math.floor(index / 256);
+      const column = index % 256;
+      return (tileX * 256 + column) * 0.25 + (tileY * 256 + row) * 0.125;
+    }),
+  };
+}
+
+test('loads a wrapped deterministic ride tile with bounded source halo and resources', async () => {
+  const requests = [];
+  let activeSourceRequests = 0;
+  let maximumSourceRequests = 0;
+  const terrain = await loadTerrariumTerrainTile({
+    tile: { z: 12, x: -1, y: 1300 },
+    fetchHeightmap: async (url) => {
+      requests.push(url);
+      activeSourceRequests += 1;
+      maximumSourceRequests = Math.max(maximumSourceRequests, activeSourceRequests);
+      await new Promise((resolve) => setImmediate(resolve));
+      const heightmap = globalPostHeightmap(url);
+      activeSourceRequests -= 1;
+      return heightmap;
+    },
+    clock: () => new Date('2026-08-25T22:00:00.000Z'),
+  });
+  assert.equal(terrain.rideTile.key, '12/4095/1300');
+  const expandedSize = MOTORCYCLE_RIDE_TERRAIN_GRID_SIZE
+    + MOTORCYCLE_RIDE_TERRAIN_SOURCE_HALO_PIXELS * 2;
+  assert.equal(terrain.width, expandedSize);
+  assert.equal(terrain.height, expandedSize);
+  assert.equal(terrain.halo.sourcePixels, 2);
+  assert.equal(terrain.halo.geometryOverlapVertices, 1);
+  assert.equal(terrain.halo.edgeModel, 'overlapped-shared-half-pixel-terrarium-posts');
+  assert.equal(terrain.source.fetchedAt, '2026-08-25T22:00:00.000Z');
+  assert.ok(requests.length > 0);
+  assert.ok(requests.length <= MOTORCYCLE_TERRAIN_MAXIMUM_SOURCE_TILES);
+  assert.equal(maximumSourceRequests, 1, 'one tile loader cannot multiply outer stream concurrency');
+  assert.equal(terrain.sourceTiles.length, requests.length);
+  assert.equal(new Set(terrain.sourceTiles.map((source) => source.key)).size, requests.length);
+  assert.ok(terrain.sourceTiles.some((source) => source.x === 0));
+  assert.equal(terrain.resource.vertexCount, expandedSize ** 2);
+  assert.ok(terrain.resource.residentBytes > terrain.heights.byteLength + terrain.positions.byteLength);
+  assert.equal(terrain.resource.triangleCount, (expandedSize - 1) ** 2 * 2);
+});
+
+test('adjacent ride terrain chunks share exact half-pixel boundary heights', async () => {
+  const options = {
+    fetchHeightmap: async (url) => globalPostHeightmap(url),
+    clock: () => new Date('2026-08-25T22:00:00.000Z'),
+  };
+  const [left, right] = await Promise.all([
+    loadTerrariumTerrainTile({ tile: { z: 14, x: 1300, y: 4600 }, ...options }),
+    loadTerrariumTerrainTile({ tile: { z: 14, x: 1301, y: 4600 }, ...options }),
+  ]);
+  assert.notStrictEqual(left.frame, right.frame);
+  const halo = MOTORCYCLE_RIDE_TERRAIN_SOURCE_HALO_PIXELS;
+  const leftCoreEast = halo + MOTORCYCLE_RIDE_TERRAIN_GRID_SIZE - 1;
+  const rightCoreWest = halo;
+  for (let row = 0; row < left.height; row += 1) {
+    const leftHeight = left.heights[row * left.width + leftCoreEast];
+    const rightHeight = right.heights[row * right.width + rightCoreWest];
+    assert.equal(leftHeight, rightHeight, `core row ${row}`);
+    assert.equal(
+      left.heights[row * left.width + left.width - 1],
+      right.heights[row * right.width + rightCoreWest + 1],
+      `east overlap row ${row}`,
+    );
+    assert.equal(
+      right.heights[row * right.width],
+      left.heights[row * left.width + leftCoreEast - 1],
+      `west overlap row ${row}`,
+    );
+  }
+});
+
+test('one decoded cache reduces a 5x5 ride window from 225 halo reads to 49 PNG decodes', async () => {
+  let sourceDecodes = 0;
+  const cache = createTerrariumHeightmapCache({
+    maximumEntries: 64,
+    fetchImpl: async () => { throw new Error('fetchImpl must remain behind the injected decoder'); },
+    fetchHeightmap: async (url) => {
+      sourceDecodes += 1;
+      return globalPostHeightmap(url);
+    },
+  });
+  const logicalTiles = [];
+  for (let yOffset = -2; yOffset <= 2; yOffset += 1) {
+    for (let xOffset = -2; xOffset <= 2; xOffset += 1) {
+      logicalTiles.push({ z: 14, x: 1300 + xOffset, y: 4600 + yOffset });
+    }
+  }
+  const terrains = await Promise.all(logicalTiles.map((tile) => loadTerrariumTerrainTile({
+    tile,
+    fetchHeightmap: cache.load,
+    clock: () => new Date('2026-08-25T22:00:00.000Z'),
+  })));
+  assert.equal(terrains.reduce((sum, terrain) => sum + terrain.sourceTiles.length, 0), 225);
+  assert.equal(sourceDecodes, 49);
+  const telemetry = cache.getTelemetry();
+  assert.equal(telemetry.entries, 49);
+  assert.equal(telemetry.residentEntries, 49);
+  assert.equal(telemetry.misses, 49);
+  assert.equal(telemetry.hits + telemetry.coalesced, 225 - 49);
+  assert.ok(telemetry.residentBytes <= telemetry.maximumResidentBytes);
+  assert.ok(terrains.every((terrain) => [...terrain.heights].every(Number.isFinite)));
+  cache.destroy();
 });

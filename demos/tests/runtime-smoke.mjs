@@ -685,9 +685,6 @@ async function runDemo(context, demo) {
         const state = window.__motorcycleDemo?.getState?.();
         return state?.displayMode === 'ride' && state.frameCount > 0;
       });
-      await page.evaluate(() => window.__motorcycleDemo.runScenario('accelerate'));
-      await page.waitForTimeout(750);
-      await page.evaluate(() => window.__motorcycleDemo.clearControlFrame());
       await page.click('#camera-toggle');
       await page.waitForFunction(() => window.__motorcycleDemo?.getState?.().view?.mode === 'first');
       await page.click('#locate');
@@ -703,6 +700,94 @@ async function runDemo(context, demo) {
         const state = window.__motorcycleDemo?.getState?.();
         return state?.displayMode === 'ride' && state.frameCount > 0;
       });
+      try {
+        await page.waitForFunction(() => {
+          const state = window.__motorcycleDemo?.getState?.();
+          const committed = state?.game?.globe?.stream?.committed;
+          return state?.game?.globe?.stream?.schemaVersion
+              === 'peercompute.motorcycle.globe-surface-stream.v1.telemetry'
+            && state.game.globe.stream.counts.desired === 25
+            && state.game.globe.stream.counts.active === 9
+            && committed?.activeKeys?.length === 9
+            && committed.generation === state.game.globe.stream.generation
+            && state.game.globe.evaluatedContentEpoch === state.game.globe.stream.contentEpoch
+            && Number.isSafeInteger(state.game.globe.activeSnapshotNoopCount)
+            && state.game.globe.stream.reservation?.active === false
+            && state?.sourceCache?.decodedTerrain?.schemaVersion
+              === 'peercompute.motorcycle.terrarium-decoded-cache.v1'
+            && state.sourceCache.decodedTerrain.yjsReplicated === false
+            && state.sourceCache.decodedTerrain.maximumEntries === 64
+            && state.sourceCache.decodedTerrain.entries <= 64
+            && state.sourceCache.decodedTerrain.residentBytes
+              <= state.sourceCache.decodedTerrain.maximumResidentBytes
+            && state.sourceCache.decodedTerrain.misses > 0
+            && state.sourceCache.decodedTerrain.hits
+              + state.sourceCache.decodedTerrain.coalesced > 0
+            && state?.renderer?.streamingTerrain?.revision === committed.revision
+            && state?.renderer?.streamingTerrain?.activeChunkCount === 9
+            && state?.renderer?.streamingTerrain?.schemaVersion
+              === 'peercompute.motorcycle.streamed-terrain-renderer.v1';
+        }, null, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      } catch (error) {
+        const streamDiagnostic = await page.evaluate(() => {
+          const state = window.__motorcycleDemo?.getState?.();
+          return {
+            displayMode: state?.displayMode,
+            fatalError: state?.fatalError,
+            frameCount: state?.frameCount,
+            gameGlobe: state?.game?.globe,
+            rendererStreamingTerrain: state?.renderer?.streamingTerrain,
+          };
+        });
+        throw new Error(
+          `${error.message}\nMotorcycle stream diagnostic: ${JSON.stringify(streamDiagnostic)}`,
+          { cause: error },
+        );
+      }
+      await page.evaluate(() => window.__motorcycleDemo.runScenario('accelerate'));
+      const accelerationEvidence = await page.evaluate(() => {
+        const game = window.__motorcycleDemo.gameRuntime;
+        const beforeSpeed = game.getState().motorcycle.forwardSpeed;
+        const sequenceBase = game.getState().frameCount + 1_000_000;
+        for (let step = 0; step < 240; step += 1) {
+          game.stepFrame(1 / 120, {
+            sequence: sequenceBase + step,
+            steer: 0,
+            throttle: 1,
+            frontBrake: 0,
+            rearBrake: 0,
+            clutch: 0,
+            shiftDelta: 0,
+            handbrake: false,
+            reset: false,
+          });
+        }
+        const speed = game.getState().motorcycle.forwardSpeed;
+        return {
+          beforeSpeed,
+          afterSpeed: speed,
+          targetDisplayedKph: Math.abs(speed) * 3.6,
+        };
+      });
+      await page.waitForFunction((beforeSpeed) => {
+        const speed = window.__motorcycleDemo?.gameRuntime
+          ?.getState?.().motorcycle?.forwardSpeed;
+        const displayed = Number.parseFloat(document.querySelector('#speed')?.textContent ?? '');
+        return Number.isFinite(speed)
+          && Math.abs(speed) >= Math.abs(beforeSpeed) + 0.5
+          && Number.isFinite(displayed)
+          && Math.abs(displayed - Math.abs(speed) * 3.6) <= 1;
+      }, accelerationEvidence.beforeSpeed, { timeout: 15_000 });
+      Object.assign(accelerationEvidence, await page.evaluate(() => {
+        const speed = window.__motorcycleDemo.gameRuntime
+          .getState().motorcycle.forwardSpeed;
+        return {
+          afterSpeed: speed,
+          targetDisplayedKph: Math.abs(speed) * 3.6,
+          displayedKph: Number.parseFloat(document.querySelector('#speed')?.textContent ?? ''),
+        };
+      }));
+      await page.evaluate(() => window.__motorcycleDemo.clearControlFrame());
       await page.waitForFunction(() => {
         const api = window.__motorcycleDemo;
         return api?.gameRuntime?.world?.getContacts?.().some((contact) => (
@@ -723,6 +808,10 @@ async function runDemo(context, demo) {
           count: contacts.length,
           tires: [...new Set(contacts.map((contact) => contact.metadata?.tire).filter(Boolean))],
           surfaceIds: [...new Set(contacts.map((contact) => contact.surfaceId))],
+          surfaceContactShapeIds: [...new Set(contacts.map(
+            (contact) => contact.surfaceContactShapeA,
+          ).filter(Boolean))],
+          contactModels: [...new Set(contacts.map((contact) => contact.contactModel).filter(Boolean))],
           wayIds: [...new Set(contacts.map((contact) => contact.metadata?.osmWayId).filter(Boolean))],
           roadSegmentIds: [...new Set(contacts.map((contact) => contact.metadata?.roadSegmentId).filter(Boolean))],
           sharedSurfaceObject: api.worldRenderer?.roadSurface === api.gameRuntime?.roadSurface,
@@ -730,6 +819,15 @@ async function runDemo(context, demo) {
       });
       const after = await page.evaluate(demo.verify);
       if (!(after.frameCount > 0)) errors.push('[runtime] motorcycle animation did not advance');
+      if (!Number.isFinite(accelerationEvidence.beforeSpeed)
+        || !Number.isFinite(accelerationEvidence.afterSpeed)
+        || Math.abs(accelerationEvidence.afterSpeed)
+          < Math.abs(accelerationEvidence.beforeSpeed) + 0.5
+        || !Number.isFinite(accelerationEvidence.displayedKph)
+        || Math.abs(accelerationEvidence.displayedKph
+          - Math.abs(accelerationEvidence.afterSpeed) * 3.6) > 1) {
+        errors.push(`[runtime] physical throttle did not accelerate the motorcycle or update the HUD: ${JSON.stringify(accelerationEvidence)}`);
+      }
       if (after.locationSource !== 'browser-geolocation') errors.push('[runtime] motorcycle did not accept permissioned geolocation');
       if (after.osmSource?.status !== 'current' || !after.osmSource?.cache?.state) {
         errors.push('[runtime] RoadVector did not expose exact OSM source status/cache provenance.');
@@ -745,11 +843,42 @@ async function runDemo(context, demo) {
         || after.overview?.federalHighways?.sourceRecordCount !== 492_005) {
         errors.push('[runtime] official FHWA NHS nationwide layer did not load and render.');
       }
+      if (after.game?.schemaVersion !== 'peercompute.motorcycle.game-runtime-state.v1') {
+        errors.push('[runtime] public motorcycle game schema is missing.');
+      }
       if (after.game?.physicsProfile?.authority !== 'deterministic-cpu') errors.push('[runtime] motorcycle physics is not CPU-authoritative');
+      if (after.game?.globe?.authority !== 'wgs84-ecef-cesium-overview'
+        || after.game?.globe?.rideRenderer !== 'three-webxr-local-tangent-frame'
+        || after.scale?.transition !== 'cesium-overview-to-continuous-enu-stream'
+        || after.scale?.seedRoadOverlayDiameterMeters !== 2_400
+        || after.game?.globe?.stream?.committed?.activeKeys?.length !== 9
+        || after.game?.globe?.lastCommit?.roads?.disabled !== 9
+        || after.game?.globe?.collision?.id !== 'streaming-road-terrain-surface'
+        || after.game?.globe?.collision?.streamEnabled !== true
+        || after.game?.globe?.collision?.fallbackEnabled !== true
+        || after.game?.globe?.pose?.ecef?.length !== 3
+        || ![after.game?.globe?.pose?.longitude, after.game?.globe?.pose?.latitude,
+          after.game?.globe?.pose?.height, ...(after.game?.globe?.pose?.ecef ?? [])]
+          .every(Number.isFinite)
+        || after.renderer?.streamingTerrain?.revision
+          !== after.game?.globe?.stream?.committed?.revision
+        || after.renderer?.streamingTerrain?.schemaVersion
+          !== 'peercompute.motorcycle.streamed-terrain-renderer.v1'
+        || after.renderer?.streamingTerrain?.residentChunkCount > 32
+        || after.renderer?.streamingTerrain?.initialTerrainVisible !== false
+        || after.renderer?.streamingTerrain?.haloPolicy
+          !== 'collision-only-render-core-bounds'
+        || after.renderer?.streamingTerrain?.overlapGeometryRendered !== false) {
+        errors.push('[runtime] continuous WGS84 globe terrain/render/collision contract is missing.');
+      }
       if (physicalRoadContact.count < 1
         || physicalRoadContact.tires.length < 1
         || physicalRoadContact.surfaceIds.length !== 1
-        || physicalRoadContact.surfaceIds[0] !== 'real-terrain-surface'
+        || physicalRoadContact.surfaceIds[0] !== 'streaming-road-terrain-surface'
+        || physicalRoadContact.surfaceContactShapeIds.length !== 1
+        || physicalRoadContact.surfaceContactShapeIds[0] !== 'tread'
+        || physicalRoadContact.contactModels.length !== 1
+        || physicalRoadContact.contactModels[0] !== 'compliant'
         || physicalRoadContact.roadSegmentIds.length < 1
         || physicalRoadContact.sharedSurfaceObject !== true) {
         errors.push(`[runtime] motorcycle did not physically contact the exact rendered road surface: ${JSON.stringify(physicalRoadContact)}`);
@@ -758,8 +887,10 @@ async function runDemo(context, demo) {
           !== 'peercompute.motorcycle.terrain-draped-road-surface.telemetry.v1'
         || after.game?.roadSurface?.geometry?.collisionModel !== 'single-composite-static-heightfield'
         || !(after.game?.roadSurface?.geometry?.triangleCount > 0)
-        || after.game?.roadSurface?.collider?.roadAware !== true
-        || !(after.game?.roadSurface?.collider?.roadHits > 0)
+        || after.game?.roadSurface?.collider?.schemaVersion
+          !== 'peercompute.motorcycle.streaming-surface-collider.telemetry.v1'
+        || !(after.game?.roadSurface?.collider?.fallbackRoadHits > 0)
+        || after.game?.roadSurface?.collider?.fallbackSurfaceId !== 'real-terrain-surface'
         || after.renderer?.roads?.terrainDraped !== true
         || after.renderer?.roads?.collisionModel !== 'single-composite-static-heightfield'
         || after.renderer?.roads?.surface?.triangleCount
@@ -767,7 +898,7 @@ async function runDemo(context, demo) {
         errors.push('[runtime] shared terrain-draped road render/collision contract is missing.');
       }
       if (after.game?.traffic?.spawnedVehicleCount !== 14) errors.push('[runtime] synthetic traffic population mismatch');
-      if (after.game?.trafficPhysics?.added !== 14) errors.push('[runtime] physical traffic cage population mismatch');
+      if (after.game?.trafficPhysics?.added !== 4) errors.push('[runtime] bounded physical traffic cage population mismatch');
       if (!after.game?.traffic?.graph?.laneCoverage) errors.push('[runtime] lane-aware traffic coverage missing');
       if (!after.game?.traffic?.graph?.restrictionCoverage) errors.push('[runtime] turn-restriction coverage missing');
       if (after.game?.raceCourse?.source?.data !== 'real OSM road graph') errors.push('[runtime] real-road race provenance missing');
@@ -867,7 +998,8 @@ async function runDemo(context, demo) {
         errors.push(`[runtime] powertrain HUD does not disclose automatic mode: ${automaticHud}`);
       }
       if (after.view?.mode !== 'first') errors.push('[runtime] first-person camera control did not persist');
-      if (!['clear', 'clamped'].includes(after.view?.terrainFloor?.status)
+      if (!['clear', 'clamped', 'clamped-held', 'surface-unavailable-held']
+        .includes(after.view?.terrainFloor?.status)
         || !Number.isFinite(after.view?.terrainFloor?.minimumCameraHeightMeters)
         || !Number.isFinite(after.view?.terrainFloor?.constrainedPosition?.[1])
         || after.view.terrainFloor.constrainedPosition[1]
@@ -1059,15 +1191,16 @@ async function runDemo(context, demo) {
         const game = api.gameRuntime;
         const state = api.getState();
         return {
-          rebaseCount: state.game.origin.rebaseCount,
+          referenceFrameTransformCount: state.game.origin.referenceFrameTransformCount,
+          boundaryResetCount: state.game.boundary.resetCount,
+          streamGeneration: state.game.globe.stream.committed.generation,
         };
       });
       await page.evaluate(() => {
         const game = window.__motorcycleDemo.gameRuntime;
         const state = game.getState();
         const chassis = game.world.getBody(game.rig.bodyIds.chassis);
-        const magnitude = state.origin.rebaseThresholdMeters + 25;
-        const targetX = Math.sign(chassis.position[0] || 1) * magnitude;
+        const targetX = chassis.position[0] + 4_000;
         const translation = targetX - chassis.position[0];
         for (const bodyId of game.rig.bodyIdList) {
           const body = game.world.getBody(bodyId);
@@ -1076,16 +1209,52 @@ async function runDemo(context, demo) {
           }
         }
       });
-      await page.waitForFunction((prior) => (
-        window.__motorcycleDemo?.getState?.().game?.origin?.rebaseCount > prior
-      ), beforeRebase.rebaseCount);
+      await page.waitForFunction((prior) => {
+        const state = window.__motorcycleDemo?.getState?.();
+        return state?.game?.origin?.referenceFrameTransformCount
+            > prior.referenceFrameTransformCount
+          && state?.game?.globe?.stream?.committed?.generation > prior.streamGeneration
+          && state?.game?.regionActivity?.seedRegionActive === false
+          && state?.renderer?.streamingTerrain?.revision
+            === state?.game?.globe?.stream?.committed?.revision;
+      }, beforeRebase, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
       const afterRebase = await page.evaluate(() => {
-        return window.__motorcycleDemo.getState().view.lastOriginRebase;
+        const api = window.__motorcycleDemo;
+        const state = api.getState();
+        const chassis = api.gameRuntime.world.getBody(api.gameRuntime.rig.bodyIds.chassis);
+        return {
+          view: state.view.lastReferenceFrame,
+          origin: state.game.origin,
+          boundary: state.game.boundary,
+          globe: state.game.globe,
+          regionActivity: state.game.regionActivity,
+          renderer: state.renderer.streamingTerrain,
+          surface: api.gameRuntime.sampleSurface(chassis.position),
+        };
       });
-      if (!afterRebase || afterRebase.sequence <= beforeRebase.rebaseCount) {
-        errors.push('[runtime] origin rebase did not publish an atomic camera-frame snapshot');
-      } else if (!(afterRebase.shiftErrorMeters < 1e-6)) {
-        errors.push(`[runtime] camera did not shift atomically with origin rebase: ${afterRebase.shiftErrorMeters.toFixed(6)} m`);
+      if (!afterRebase.view
+        || afterRebase.view.schemaVersion !== 'peercompute.geo.enu-frame-transform.v1'
+        || afterRebase.view.sequence <= beforeRebase.referenceFrameTransformCount) {
+        errors.push('[runtime] globe ENU handoff did not publish an atomic camera-frame snapshot');
+      } else if (!(afterRebase.view.transformErrorMeters < 1e-6)) {
+        errors.push(`[runtime] camera did not follow the globe ENU handoff: ${afterRebase.view.transformErrorMeters.toFixed(6)} m`);
+      }
+      if (afterRebase.boundary.resetCount !== beforeRebase.boundaryResetCount
+        || afterRebase.globe.stream.committed.revision !== afterRebase.renderer.revision) {
+        errors.push('[runtime] globe ENU handoff reset the bike or desynchronized render/collision revisions.');
+      }
+      if (!(afterRebase.globe.stream.committed.generation > beforeRebase.streamGeneration)
+        || afterRebase.regionActivity.seedRegionActive !== false
+        || afterRebase.regionActivity.raceStatus !== 'out-of-region'
+        || afterRebase.regionActivity.trafficStatus !== 'out-of-region'
+        || afterRebase.regionActivity.physicalTrafficActive !== false
+        || afterRebase.surface?.available !== true
+        || afterRebase.surface?.surfaceKind !== 'terrain'
+        || typeof afterRebase.surface?.tileKey !== 'string'
+        || afterRebase.surface?.snapshotRevision
+          !== afterRebase.globe.stream.committed.revision
+        || afterRebase.renderer.activeChunkCount !== 9) {
+        errors.push(`[runtime] motorcycle did not cross onto a committed off-road terrain generation: ${JSON.stringify(afterRebase)}`);
       }
 
       osmControl.invalidResponses = 1;

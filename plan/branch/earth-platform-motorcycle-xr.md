@@ -741,3 +741,71 @@ WXGlobe's NOAA compatibility gate.
   and `https://100.68.165.52:5188/` (RoadVector), with the existing explicitly
   trusted self-signed Tailnet certificate and no Serve/Funnel. Physical-headset
   certification remains NOT RUN.
+
+## User Addendum - 2026-08-25 AKDT - Continuous Cesium Globe, Faster Stable Physics, And Off-Road Mountains
+
+- The ride may no longer be confined to one bounded local region or reset at
+  its edge. Cesium's WGS84/ECEF globe is the persistent world authority while
+  the deterministic motorcycle solver continues in bounded local metres with
+  explicit origin and terrain-window transitions.
+- Stream and cache real terrain around the moving bike with overlap and
+  generation ownership. A committed transition must keep body poses,
+  orientations, velocities, suspension state, tire contact, cameras, and XR
+  locomotion continuous. An unavailable next window must be disclosed and
+  handled safely without pretending fallback relief is real.
+- Allow unrestricted physical off-road travel wherever current terrain is
+  available, including steep and rough mountain terrain. Roads remain optional
+  terrain-draped surface overlays with higher contact precedence inside their
+  footprints; they must not constrain or snap the bike to a route.
+- Improve visible ride smoothness at the physics/interpolation source and raise
+  the stable physical top-speed envelope well beyond the current result.
+  Preserve the six rigid bodies, fixed 120 Hz step, twelve iterations, tire and
+  suspension forces, CCD, traffic collision, and deterministic replay. Pose or
+  velocity clamping, scripted motion, and kinematic vehicle shortcuts remain
+  forbidden.
+- Keep automatic transmission default, preserve all input/view modes and the
+  licensed model, report world/stream/contact/speed truth publicly, and add
+  focused plus built-headless gates. Physical-headset comfort/performance is a
+  separate manual gate; `terminal-browser` is prohibited.
+
+### Architecture clarification
+
+- “Cesium globe” means Cesium/WGS84/ECEF is the canonical planetary position,
+  selection, and far-field authority. Three.js remains the near-field ride and
+  WebXR renderer because Cesium terrain sampling is asynchronous/view-loaded
+  and cannot be the deterministic 120 Hz collision oracle. Both consume the
+  same bounded cached terrain/road tile keys; public state must distinguish
+  globe authority from the local ride renderer rather than claiming Cesium
+  owns the physics canvas.
+- Continuous travel is implemented through atomic streamed tangent frames,
+  not one unlimited flat local grid. Source Web Mercator coverage truthfully
+  ends at approximately `±85.051°`; crossing that limit requires a future polar
+  DEM and must report unsupported terrain rather than silently clamp.
+
+## Implementation Result - 2026-08-25 AKDT - Continuous Globe Terrain And Continuous Tread Physics
+
+- Cesium/WGS84/ECEF now remains RoadVector's global authority while Three.js,
+  WebXR, and the deterministic solver move through bounded ENU frames. A full
+  rigid frame transaction preserves physical state, local radial gravity,
+  renderer chunks, chase/camera-floor state, and the XR locomotion root.
+- The ride publishes immutable z12-z14 Terrarium generations with a 3x3 active
+  collision ring, 5x5 desired prefetch ring, 32 resident chunks, six requests,
+  strict byte/vertex limits, retries, reservations, and exact disposal. It
+  pauses as `stream-wait` before coverage loss and no longer resets at the old
+  local boundary. Real off-road/mountain terrain is physically rideable.
+- Streamed terrain and the seed road fallback share one stable collider and one
+  renderer revision. Roads, buildings, race, and traffic remain a truthful
+  bounded seed overlay in this release; global road streaming is not claimed.
+- A solver-owned analytic tread contact removes wheel-ring phase chatter while
+  retaining 32 ring particles per wheel for inertia and body impacts. The
+  final automatic bike reaches 30.55 m/s, sustains at least 26.09 m/s, and
+  measures 0.118 mm chassis-height deviation without pose/velocity correction.
+- A local-only decoded Terrarium cache reduces one desired window from 225
+  repeated source decodes to 49 unique decodes within an exact 64-entry/16 MiB
+  bound. It coalesces readers, isolates caller abort, cancels orphan work,
+  rejects late completion after teardown, and never enters Yjs.
+- Node 24 verification passes geo-core `87/87`, physics `54/54`, traffic
+  `12/12`, XR `24/24` plus mocked browser, RoadVector `117/117`, production
+  build, static release `17/17`, and rebuilt standalone Playwright/system-
+  Chromium smoke. The owned listener is closed; physical-headset validation is
+  explicitly NOT RUN; `terminal-browser` was not used.

@@ -22,6 +22,7 @@ export function createTerrainCameraFloor(THREE, {
   }
   const cameraWorld = new THREE.Vector3();
   const targetWorld = new THREE.Vector3();
+  let lastValidSurface = null;
   let telemetry = Object.freeze({
     status: 'uninitialized',
     mode: null,
@@ -31,16 +32,88 @@ export function createTerrainCameraFloor(THREE, {
     clearanceMeters: clearance,
   });
 
-  const minimumViewY = ({ position, mode, terrain, originOffset = [0, 0, 0] } = {}) => {
+  const minimumViewY = ({
+    position,
+    mode,
+    terrain,
+    originOffset = [0, 0, 0],
+    sampleHeight = null,
+    sampleSurface = null,
+  } = {}) => {
     if (!['first', 'third', 'xr'].includes(mode)) throw new RangeError('Camera floor mode is invalid.');
     const cameraPosition = finiteVector(position, 'position');
-    if (terrain?.schemaVersion !== 'peercompute.geo.local-terrain-grid.v1'
-      || typeof terrain.sampleLocalHeight !== 'function') {
+    if (sampleHeight !== null && typeof sampleHeight !== 'function') {
+      throw new TypeError('sampleHeight must be a function or null.');
+    }
+    if (sampleSurface !== null && typeof sampleSurface !== 'function') {
+      throw new TypeError('sampleSurface must be a function or null.');
+    }
+    if (!sampleHeight && !sampleSurface
+      && (terrain?.schemaVersion !== 'peercompute.geo.local-terrain-grid.v1'
+      || typeof terrain.sampleLocalHeight !== 'function')) {
       telemetry = Object.freeze({
         status: 'no-terrain', mode, clamped: false, correctionMeters: 0,
         terrainHeightMeters: null, clearanceMeters: clearance,
       });
       return Number.NEGATIVE_INFINITY;
+    }
+    if (sampleSurface || sampleHeight) {
+      const surface = sampleSurface?.(cameraPosition) ?? null;
+      let terrainHeight = Number(surface?.available ? surface.height : sampleHeight?.(cameraPosition));
+      let held = false;
+      if (!Number.isFinite(terrainHeight) && lastValidSurface) {
+        terrainHeight = lastValidSurface.groundPoint[1];
+        held = true;
+      }
+      if (!Number.isFinite(terrainHeight)) {
+        terrainHeight = cameraPosition[1] - clearance;
+        held = true;
+        lastValidSurface = Object.freeze({
+          groundPoint: Object.freeze([cameraPosition[0], terrainHeight, cameraPosition[2]]),
+          surfaceKind: null,
+          tileKey: null,
+          snapshotRevision: null,
+          provisional: true,
+        });
+      } else if (!held) {
+        lastValidSurface = Object.freeze({
+          groundPoint: Object.freeze([cameraPosition[0], terrainHeight, cameraPosition[2]]),
+          surfaceKind: surface?.surfaceKind ?? null,
+          tileKey: surface?.tileKey ?? null,
+          snapshotRevision: surface?.snapshotRevision ?? null,
+          provisional: false,
+        });
+      }
+      if (!Number.isFinite(terrainHeight)) {
+        telemetry = Object.freeze({
+          status: 'surface-unavailable', mode, clamped: false, correctionMeters: 0,
+          terrainHeightMeters: null, clearanceMeters: clearance,
+          sampleMode: 'streaming-composite-unavailable',
+          coordinateSpace: 'current-local-tangent-meters',
+        });
+        return cameraPosition[1];
+      }
+      const minimumCameraHeight = terrainHeight + clearance;
+      telemetry = Object.freeze({
+        status: held
+          ? 'surface-unavailable-held'
+          : cameraPosition[1] < minimumCameraHeight ? 'requires-clamp' : 'clear',
+        mode,
+        clamped: cameraPosition[1] < minimumCameraHeight,
+        correctionMeters: Math.max(0, minimumCameraHeight - cameraPosition[1]),
+        terrainHeightMeters: terrainHeight,
+        minimumCameraHeightMeters: minimumCameraHeight,
+        cameraHeightMeters: cameraPosition[1],
+        clearanceMeters: clearance,
+        sampleMode: held ? 'streaming-composite-held' : 'streaming-composite-surface',
+        sampledSourcePosition: Object.freeze([cameraPosition[0], cameraPosition[2]]),
+        coordinateSpace: 'current-local-tangent-meters',
+        heldLastValidSurface: held,
+        surfaceKind: lastValidSurface?.surfaceKind ?? null,
+        tileKey: lastValidSurface?.tileKey ?? null,
+        snapshotRevision: lastValidSurface?.snapshotRevision ?? null,
+      });
+      return minimumCameraHeight;
     }
     const offset = finiteVector(originOffset, 'originOffset');
     let sourceX = cameraPosition[0] + offset[0];
@@ -79,7 +152,15 @@ export function createTerrainCameraFloor(THREE, {
     return minimumCameraHeight;
   };
 
-  const apply = ({ camera, xrRoot = null, mode, terrain, originOffset = [0, 0, 0] } = {}) => {
+  const apply = ({
+    camera,
+    xrRoot = null,
+    mode,
+    terrain,
+    originOffset = [0, 0, 0],
+    sampleHeight = null,
+    sampleSurface = null,
+  } = {}) => {
     if (!['first', 'third', 'xr'].includes(mode)) throw new RangeError('Camera floor mode is invalid.');
     if (!camera?.getWorldPosition || !camera?.position) throw new TypeError('A Three.js camera is required.');
     const targetObject = mode === 'xr' ? xrRoot : camera;
@@ -91,7 +172,8 @@ export function createTerrainCameraFloor(THREE, {
     camera.updateMatrixWorld?.(true);
     camera.getWorldPosition(cameraWorld);
     const minimumCameraHeight = minimumViewY({
-      position: cameraWorld.toArray(), mode, terrain, originOffset,
+      position: cameraWorld.toArray(), mode, terrain, originOffset, sampleHeight,
+      sampleSurface,
     });
     const correction = Math.max(0, minimumCameraHeight - cameraWorld.y);
     if (correction > 0) {
@@ -105,7 +187,9 @@ export function createTerrainCameraFloor(THREE, {
     }
     telemetry = Object.freeze({
       ...telemetry,
-      status: correction > 0 ? 'clamped' : 'clear',
+      status: telemetry.heldLastValidSurface
+        ? correction > 0 ? 'clamped-held' : 'surface-unavailable-held'
+        : correction > 0 ? 'clamped' : 'clear',
       clamped: correction > 0,
       correctionMeters: correction,
       cameraHeightMeters: cameraWorld.y,
@@ -117,6 +201,48 @@ export function createTerrainCameraFloor(THREE, {
   return Object.freeze({
     apply,
     minimumViewY,
+    reset() {
+      lastValidSurface = null;
+      telemetry = Object.freeze({
+        status: 'uninitialized',
+        mode: null,
+        clamped: false,
+        correctionMeters: 0,
+        terrainHeightMeters: null,
+        clearanceMeters: clearance,
+      });
+      return telemetry;
+    },
+    transformReferenceFrame(transform) {
+      return this.prepareReferenceFrameTransform(transform).commit();
+    },
+    prepareReferenceFrameTransform(transform) {
+      if (!transform || typeof transform.transformPoint !== 'function') {
+        throw new TypeError('Camera-floor reference transform must map points.');
+      }
+      const transformed = lastValidSurface
+        ? Object.freeze(finiteVector(
+          transform.transformPoint(lastValidSurface.groundPoint),
+          'transformed camera-floor point',
+        ))
+        : null;
+      let committed = false;
+      return Object.freeze({
+        schemaVersion: 'peercompute.motorcycle.prepared-camera-floor-transform.v1',
+        commitModel: 'validated-synchronous-noexcept',
+        commit() {
+          if (committed) return transformed !== null;
+          if (lastValidSurface && transformed) {
+            lastValidSurface = Object.freeze({
+              ...lastValidSurface,
+              groundPoint: transformed,
+            });
+          }
+          committed = true;
+          return transformed !== null;
+        },
+      });
+    },
     getTelemetry: () => telemetry,
   });
 }

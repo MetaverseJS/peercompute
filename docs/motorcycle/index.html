@@ -8,7 +8,7 @@
     <meta http-equiv="Permissions-Policy" content="geolocation=(self), xr-spatial-tracking=(self), camera=(), microphone=()" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000300'/%3E%3Cpath d='M8 42h48M14 34l10-12 9 12 9-18 8 18' fill='none' stroke='%2334ff73' stroke-width='4'/%3E%3C/svg%3E" />
     <title>RoadVector // Particle Motorcycle</title>
-    <script type="module" crossorigin src="./assets/index-F1mMw6pk.js"></script>
+    <script type="module" crossorigin src="./assets/index-CDx8Z1sH.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CaOEGIO8.css">
   </head>
   <body>
@@ -46,7 +46,7 @@
 
           <section class="control-block" aria-labelledby="location-heading">
             <h2 id="location-heading">LOCATION // CLICK GLOBE TO START</h2>
-            <p>CLICK OR TAP A DRAWN ROAD ANYWHERE ON THE GLOBE. A PLAYABLE LOCAL ROAD REGION LOADS BEFORE RIDE MODE ENABLES.</p>
+            <p>CLICK OR TAP A DRAWN ROAD ANYWHERE ON THE GLOBE. A SEED ROAD/RACE REGION LOADS BEFORE CONTINUOUS OFF-ROAD TERRAIN RIDING ENABLES.</p>
             <p>ELIGIBLE USER-SELECTED LOCATIONS ARE SHARED WITH PEERS ONLY AS A COARSE 0.1° CELL AFTER LOAD SUCCESS.</p>
             <p>BOUNDED ROAD-TILE + TERRAIN BYTES STAY IN A LOCAL-ONLY STATE MANAGER CACHE; THEY ARE NOT REPLICATED TO PEERS.</p>
             <div class="button-grid button-grid--two">
@@ -62,9 +62,9 @@
           </section>
 
           <section class="control-block">
-            <h2>SCALE // CESIUM GLOBE → LOCAL METERS</h2>
+            <h2>SCALE // CESIUM GLOBE → CONTINUOUS LOCAL TANGENT METERS</h2>
             <button id="world-mode" class="world-mode" type="button" disabled>RIDE THIS REGION</button>
-            <output class="scale-disclosure">HEMISPHERE ≈12,742 KM // LOCAL REGION 2,400 M // 1 UNIT = 1 METER</output>
+            <output class="scale-disclosure">CONTINUOUS GLOBE TERRAIN // 3×3 ACTIVE / 5×5 DESIRED // SEED ROAD OVERLAY 2,400 M // 1 UNIT = 1 METER</output>
           </section>
 
           <section class="control-block">

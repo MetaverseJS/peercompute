@@ -49,6 +49,7 @@ export function initializeContact(contact) {
   contact.longitudinalImpulse = 0;
   contact.lateralImpulse = 0;
   contact.rollingImpulse = 0;
+  contact.positionImpulse = 0;
   contact.muLongitudinal = Math.max(0, contact.muLongitudinal ?? contact.friction ?? 0.8);
   contact.muLateral = Math.max(0, contact.muLateral ?? contact.friction ?? 0.8);
   return contact;
@@ -67,11 +68,25 @@ export function solveContactVelocity(contact, dt, options) {
   if (normalMass <= 0) return;
 
   let targetSpeed = 0;
+  let softness = 0;
   if (contact.penetration > options.contactSlop) {
-    targetSpeed = Math.min(
-      options.maxDepenetrationSpeed,
-      options.baumgarte * (contact.penetration - options.contactSlop) / dt,
-    );
+    const error = contact.penetration - options.contactSlop;
+    if (contact.contactModel === 'compliant') {
+      const denominator = contact.contactDamping + dt * contact.contactStiffness;
+      softness = denominator > 0 ? 1 / (dt * denominator) : 0;
+      const biasFraction = denominator > 0
+        ? dt * contact.contactStiffness / denominator
+        : 0;
+      targetSpeed = Math.min(
+        options.maxDepenetrationSpeed,
+        biasFraction * error / dt,
+      );
+    } else {
+      targetSpeed = Math.min(
+        options.maxDepenetrationSpeed,
+        options.baumgarte * error / dt,
+      );
+    }
   } else if (contact.separation > 0 && contact.separation < options.precontactMargin && normalSpeed < 0) {
     const closeness = 1 - contact.separation / options.precontactMargin;
     targetSpeed = options.precontactSpeed * closeness * closeness * closeness;
@@ -80,7 +95,14 @@ export function solveContactVelocity(contact, dt, options) {
     targetSpeed = Math.max(targetSpeed, -contact.restitution * normalSpeed);
   }
   const oldNormalImpulse = contact.normalImpulse;
-  contact.normalImpulse = Math.max(0, oldNormalImpulse + (targetSpeed - normalSpeed) * normalMass);
+  const softenedNormalMass = softness > 0
+    ? 1 / (1 / normalMass + softness)
+    : normalMass;
+  contact.normalImpulse = Math.max(
+    0,
+    oldNormalImpulse + (targetSpeed - normalSpeed - softness * oldNormalImpulse)
+      * softenedNormalMass,
+  );
   const normalDelta = contact.normalImpulse - oldNormalImpulse;
   if (normalDelta !== 0) {
     applyPairImpulse(
@@ -168,6 +190,30 @@ export function correctContactPosition(contact, options) {
     contact.normal,
   );
   if (mass <= 0) return;
+  if (contact.contactModel === 'compliant') {
+    // XPBD's alpha term keeps this positional solve consistent with the same
+    // physical N/m stiffness used by the implicit velocity spring. This is a
+    // solver constraint, not a body pose clamp.
+    const dt = options.fixedDt;
+    const alpha = 1 / (contact.contactStiffness * dt * dt);
+    const compliantMass = 1 / (1 / mass + alpha);
+    const oldPositionImpulse = contact.positionImpulse;
+    const nextPositionImpulse = Math.max(
+      0,
+      oldPositionImpulse + (error - alpha * oldPositionImpulse) * compliantMass,
+    );
+    const positionDelta = nextPositionImpulse - oldPositionImpulse;
+    contact.positionImpulse = Math.fround(nextPositionImpulse);
+    if (positionDelta === 0) return;
+    applyPairPositionImpulse(
+      contact.bodyA,
+      contact.pointA,
+      contact.bodyB,
+      contact.pointB,
+      vecScale(contact.normal, positionDelta),
+    );
+    return;
+  }
   const correction = Math.min(options.maxPositionCorrection ?? 0.08, error * 0.55);
   applyPairPositionImpulse(
     contact.bodyA,

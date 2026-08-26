@@ -22,6 +22,15 @@ function quaternion(value) {
   return [0, 0, 0, 1];
 }
 
+function finiteTuple(value, size, label) {
+  if ((!Array.isArray(value) && !ArrayBuffer.isView(value)) || value.length < size) {
+    throw new TypeError(`${label} must contain ${size} components`);
+  }
+  const result = Array.from(value).slice(0, size).map(Number);
+  if (!result.every(Number.isFinite)) throw new TypeError(`${label} must be finite`);
+  return result;
+}
+
 function rotateVector(vector, rotation) {
   const [x, y, z] = vector;
   const [qx, qy, qz, qw] = rotation;
@@ -150,9 +159,27 @@ export class ViewRig {
   }
 
   /** Clears chase-camera damping so the next update uses the exact pose. */
-  resetPose({ recenter = false } = {}) {
+  resetPose({ recenter = false, clearOwnedTransforms = false } = {}) {
     this.#assertLive();
+    if (typeof recenter !== 'boolean' || typeof clearOwnedTransforms !== 'boolean') {
+      throw new TypeError('resetPose options must be boolean.');
+    }
     this.#thirdPosition = null;
+    this.#lastConstraint = null;
+    this.#lastXrViewOffsets = null;
+    if (clearOwnedTransforms) {
+      const resetObjects = new Set([
+        this.#cameras.first,
+        this.#cameras.third,
+        this.#xrAnchor,
+      ]);
+      for (const object of resetObjects) {
+        if (!object?.position || !object?.quaternion) continue;
+        setVector(object.position, [0, 0, 0]);
+        setQuaternion(object.quaternion, [0, 0, 0, 1]);
+        object.updateMatrixWorld?.(true);
+      }
+    }
     if (recenter) this.#recenter();
     this.#emit('reset');
     return this.getStatus();
@@ -192,6 +219,89 @@ export class ViewRig {
     }
     this.#emit('origin-shift');
     return deepFreeze({ shift: value, status: this.getStatus() });
+  }
+
+  /**
+   * Moves every application-owned view pose into a new local reference frame.
+   * The supplied transform follows the geo-core ENU convention: points include
+   * translation, vectors do not, and orientations are body-local to frame
+   * quaternions. The headset-controlled XR camera is deliberately untouched;
+   * only its locomotion anchor participates in the handoff.
+   */
+  transformReferenceFrame(transform) {
+    return this.prepareReferenceFrameTransform(transform).commit();
+  }
+
+  /** Validates and stages a view-frame handoff without mutating any pose. */
+  prepareReferenceFrameTransform(transform) {
+    this.#assertLive();
+    for (const method of ['transformPoint', 'transformOrientation']) {
+      if (typeof transform?.[method] !== 'function') {
+        throw new TypeError(`reference-frame transform requires ${method}()`);
+      }
+    }
+    const preparedPoses = [];
+    const preparePose = (object) => {
+      if (!object?.position || !object?.quaternion) return;
+      preparedPoses.push(Object.freeze({
+        object,
+        position: Object.freeze(finiteTuple(
+          transform.transformPoint(vector3(object.position)),
+          3,
+          'transformed view position',
+        )),
+        orientation: Object.freeze(finiteTuple(
+          transform.transformOrientation(quaternion(object.quaternion)),
+          4,
+          'transformed view orientation',
+        )),
+      }));
+    };
+    const preparedThirdPosition = this.#thirdPosition
+      ? Object.freeze(finiteTuple(
+        transform.transformPoint(this.#thirdPosition),
+        3,
+        'transformed chase position',
+      ))
+      : null;
+    const transformedCameras = new Set();
+    for (const camera of [this.#cameras.first, this.#cameras.third]) {
+      if (!camera || transformedCameras.has(camera)) continue;
+      transformedCameras.add(camera);
+      preparePose(camera);
+    }
+    preparePose(this.#xrAnchor);
+    let committed = false;
+    return Object.freeze({
+      schemaVersion: 'peercompute.xr.prepared-view-reference-frame-transform.v1',
+      commitModel: 'validated-synchronous-noexcept',
+      commit: () => {
+        if (committed) return this.getStatus();
+        // Preparation validates and snapshots every owned pose. Runtime commits
+        // this transaction synchronously with no event-loop interleave; if a
+        // caller nevertheless disposed the rig after preparation, commit is a
+        // harmless no-op rather than a late exception after physics advanced.
+        if (this.#disposed) return this.getStatus();
+        if (preparedThirdPosition) this.#thirdPosition = [...preparedThirdPosition];
+        for (const pose of preparedPoses) {
+          setVector(pose.object.position, pose.position);
+          setQuaternion(pose.object.quaternion, pose.orientation);
+          pose.object.updateMatrixWorld?.(true);
+        }
+        this.#lastConstraint = null;
+        committed = true;
+        try {
+          this.#emit('reference-frame-transform');
+        } catch {
+          // A view observer cannot roll back an already committed world/frame
+          // handoff. Pose ownership remains internal and fully committed.
+        }
+        return deepFreeze({
+          schemaVersion: 'peercompute.xr.view-reference-frame-transform.v1',
+          status: this.getStatus(),
+        });
+      },
+    });
   }
 
   #constrain(position, mode) {

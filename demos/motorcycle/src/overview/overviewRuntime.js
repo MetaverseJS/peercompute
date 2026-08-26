@@ -478,10 +478,13 @@ export function createRoadvectorOverviewRuntime({
       locationSource,
       scale: Object.freeze({
         hemisphereDiameterKilometers: 12_742,
-        localRegionDiameterMeters: 2_400,
+        seedRoadOverlayDiameterMeters: 2_400,
         localWorldUnits: 'meters',
         geospatialCoordinates: 'WGS84/ECEF via Cesium',
-        transition: 'discrete',
+        rideTerrain: 'continuous-bounded-tile-stream',
+        activeTerrainTiles: 9,
+        desiredTerrainTiles: 25,
+        transition: 'continuous-enu-stream',
       }),
       relief: Object.freeze({
         status: terrainStatus,
@@ -550,7 +553,7 @@ export function createRoadvectorOverviewRuntime({
         cameraHeightMeters: ROADVECTOR_OVERVIEW_CAMERA_HEIGHT_METERS,
         remotePlayerCount: players.remotePlayerCount,
         remotePlayerColor: '#ff334f',
-        localScaleTransition: 'discrete',
+        localScaleTransition: 'continuous-enu-stream',
       }),
     });
   }

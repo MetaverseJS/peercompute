@@ -49,9 +49,12 @@ test('z5 road selection and Cesium rectangle stay center-out and bounded to the 
   assert.equal(overviewTileWindowBounds({ longitude: 179.99, latitude: 61.2 }).crossesAntimeridian, true);
 });
 
-test('local scale stays metric behind a discrete Cesium-to-ride transition', () => {
+test('local metric physics follows a continuous Cesium-authoritative ENU terrain stream', () => {
   assert.equal(ROADVECTOR_SCALE_DISCLOSURE.worldUnits, 'meters');
-  assert.equal(ROADVECTOR_SCALE_DISCLOSURE.transition, 'discrete-overview-to-local');
+  assert.equal(ROADVECTOR_SCALE_DISCLOSURE.transition, 'cesium-overview-to-continuous-enu-stream');
+  assert.equal(ROADVECTOR_SCALE_DISCLOSURE.seedRoadOverlayDiameterMeters, 2_400);
+  assert.equal(ROADVECTOR_SCALE_DISCLOSURE.streamedTerrainActiveTileCount, 9);
+  assert.equal(ROADVECTOR_SCALE_DISCLOSURE.streamedTerrainDesiredTileCount, 25);
   assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees, 60);
   assert.equal(ROADVECTOR_CAMERA_CONFIG.maximumDesktopPixelRatio, 1.5);
   assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters[0], 0);

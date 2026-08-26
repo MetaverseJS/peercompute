@@ -19,6 +19,7 @@ import {
 } from './render/index.js';
 import { createMotorcycleModelResource } from './render/motorcycleModel.js';
 import { createMotorcycleGameRuntime } from './runtime/gameRuntime.js';
+import { createGlobeSurfaceStream } from './runtime/globeSurfaceStream.js';
 import { loadMotorcycleLocation } from './runtime/locationLoader.js';
 import { createMotorcycleXrPanel } from './runtime/xrPanel.js';
 import {
@@ -26,6 +27,10 @@ import {
   ROADVECTOR_SCALE_DISCLOSURE,
 } from './view/cameraConfig.js';
 import { createTerrainCameraFloor } from './view/terrainCameraFloor.js';
+import {
+  createTerrariumHeightmapCache,
+  loadTerrariumTerrainTile,
+} from './world/terrainGrid.js';
 import './style.css';
 
 const FALLBACK_LOCATION = Object.freeze({
@@ -34,7 +39,11 @@ const FALLBACK_LOCATION = Object.freeze({
   label: 'ANCHORAGE FALLBACK',
 });
 const MAXIMUM_TRAFFIC_VEHICLES = 14;
-const MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES = MAXIMUM_TRAFFIC_VEHICLES;
+// Keep the full deterministic traffic population visible while bounding the
+// expensive particle collision cages around the player. Four physical cages
+// preserve real impacts without making the 120 Hz bike solver carry fourteen
+// off-screen rigid obstacles during globe traversal.
+const MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES = 4;
 const MAXIMUM_FRAME_DELTA_SECONDS = 0.1;
 const FIRST_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.firstOffsetMeters;
 const THIRD_CAMERA_OFFSET = ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters;
@@ -160,12 +169,14 @@ const runtime = {
   lastStep: null,
   lastControl: null,
   lastOriginRebaseView: null,
+  lastReferenceFrameView: null,
   lastInputResetView: null,
   lastCameraTerrainFloor: terrainCameraFloor.getTelemetry(),
   originOffset: [0, 0, 0],
   sourceCacheManager: null,
   roadSourceCache: null,
   terrainSourceCache: null,
+  terrainHeightmapCache: null,
   cachedGeoFetch: null,
   sourceCacheTelemetry: null,
   sourceCacheError: null,
@@ -187,6 +198,7 @@ function sourceCacheSnapshot() {
     backendRoutePolicy: 'fixed-same-origin-or-configured-origin-no-upstream-url-input',
     road: runtime.roadSourceCache?.getStats?.() ?? null,
     terrain: runtime.terrainSourceCache?.getStats?.() ?? null,
+    decodedTerrain: runtime.terrainHeightmapCache?.getTelemetry?.() ?? null,
     transport: runtime.cachedGeoFetch?.getTelemetry?.() ?? runtime.sourceCacheTelemetry,
     error: runtime.sourceCacheError,
   };
@@ -247,6 +259,10 @@ function initializeSourceCaches() {
 }
 
 initializeSourceCaches();
+
+runtime.terrainHeightmapCache = createTerrariumHeightmapCache({
+  fetchImpl: sourceFetch,
+});
 
 runtime.motorcycleModelResource = createMotorcycleModelResource({
   THREE,
@@ -413,6 +429,9 @@ const viewRig = new ViewRig({
       mode,
       terrain: runtime.load?.terrain,
       originOffset: runtime.originOffset,
+      sampleSurface: runtime.game?.surfaceStream
+        ? runtime.game.sampleSurface
+        : null,
     });
   },
   recenter: recenterXrViewer,
@@ -499,6 +518,7 @@ function publicState() {
       provenance: { ...runtime.load.sceneData.provenance },
     } : null,
     game: gameState ? {
+      schemaVersion: gameState.schemaVersion,
       frameCount: gameState.frameCount,
       motorcycle: gameState.motorcycle,
       physics: gameState.physics,
@@ -510,6 +530,9 @@ function publicState() {
       raceCourse: gameState.raceCourse,
       origin: gameState.origin,
       boundary: gameState.boundary,
+      regionActivity: gameState.regionActivity,
+      globe: gameState.globe,
+      lastStep: gameState.lastStep,
       pendingInputEdges: gameState.pendingInputEdges,
       syntheticTraffic: gameState.syntheticTraffic,
       liveTraffic: gameState.liveTraffic,
@@ -521,6 +544,9 @@ function publicState() {
       ...viewRig.getStatus(),
       lastOriginRebase: runtime.lastOriginRebaseView
         ? structuredClone(runtime.lastOriginRebaseView)
+        : null,
+      lastReferenceFrame: runtime.lastReferenceFrameView
+        ? structuredClone(runtime.lastReferenceFrameView)
         : null,
       lastInputReset: runtime.lastInputResetView
         ? structuredClone(runtime.lastInputResetView)
@@ -580,10 +606,14 @@ globalThis.__motorcycleDemo = {
 function teardownWorld({ clearLoad = false } = {}) {
   runtime.worldRenderer?.dispose();
   runtime.game?.dispose();
+  viewRig.resetPose?.({ clearOwnedTransforms: true });
+  runtime.lastCameraTerrainFloor = terrainCameraFloor.reset?.()
+    ?? terrainCameraFloor.getTelemetry();
   runtime.worldRenderer = null;
   runtime.game = null;
   runtime.lastStep = null;
   runtime.lastOriginRebaseView = null;
+  runtime.lastReferenceFrameView = null;
   runtime.lastInputResetView = null;
   runtime.ready = false;
   if (clearLoad) {
@@ -623,6 +653,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
   let pendingGame = null;
   let pendingWorldRenderer = null;
   let pendingModelInstance = null;
+  let pendingSurfaceStream = null;
   try {
     const loaded = await loadMotorcycleLocation({
       geodata,
@@ -637,11 +668,25 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       return null;
     }
     teardownWorld();
+    pendingSurfaceStream = createGlobeSurfaceStream({
+      currentFrame: loaded.terrain.frame,
+      loadTerrainTile: (tile, { signal }) => loadTerrariumTerrainTile({
+        tile,
+        fetchHeightmap: runtime.terrainHeightmapCache.load,
+        signal,
+      }),
+      // Terrain streams continuously for off-road riding. This release keeps
+      // OSM roads, buildings, race, and traffic as one bounded seed overlay;
+      // the exact seed road deck remains the collider's single fallback seam.
+      loadRoadTile: null,
+    });
+    pendingSurfaceStream.update(loaded.location);
     pendingGame = createMotorcycleGameRuntime({
       terrain: loaded.terrain,
       sceneData: loaded.sceneData,
       trafficVehicleCount: MAXIMUM_TRAFFIC_VEHICLES,
       maximumPhysicalTrafficVehicles: MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES,
+      surfaceStream: pendingSurfaceStream,
       controllerOptions: {
         leanAssist: elements.leanAssist.checked,
         automaticTransmission: elements.automaticTransmission.checked,
@@ -660,6 +705,11 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       physicsDebug: PHYSICS_DEBUG,
       motorcycleModelInstance: pendingModelInstance,
     });
+    pendingGame.setReferenceFrameParticipants([
+      pendingWorldRenderer,
+      viewRig,
+      terrainCameraFloor,
+    ]);
     const initial = pendingGame.getState();
     pendingWorldRenderer.update({ alpha: 0, trafficSnapshot: initial.trafficSnapshot });
     runtime.load = loaded;
@@ -668,6 +718,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     runtime.game = pendingGame;
     runtime.worldRenderer = pendingWorldRenderer;
     pendingGame = null;
+    pendingSurfaceStream = null;
     pendingWorldRenderer = null;
     pendingModelInstance = null;
     runtime.ready = true;
@@ -689,12 +740,13 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     elements.provenance.textContent = `OSM ${loaded.sceneData.status.toUpperCase()} // FETCHED ${loaded.envelope.fetchedAt ?? 'UNKNOWN'} // ${loaded.sceneData.provenance.attribution}`;
     elements.trafficStatus.textContent = `${initial.traffic.spawnedVehicleCount} SYNTHETIC // ${initial.trafficPhysics.added} PHYSICAL`;
     elements.raceStatus.textContent = raceStatusText(initial.race, initial.raceCourse);
-    setPlatform('ready', 'REAL ROADS // LICENSED OPTIMIZED MODEL // PHYSICS RIG');
+    setPlatform('ready', 'WGS84 GLOBE STREAM // OFF-ROAD TERRAIN // PHYSICS RIG');
     return publicState();
   } catch (error) {
     pendingWorldRenderer?.dispose();
     if (!pendingWorldRenderer) pendingModelInstance?.release();
     pendingGame?.dispose();
+    if (!pendingGame) pendingSurfaceStream?.dispose();
     if (abortController.signal.aborted || generation !== runtime.generation) return null;
     teardownWorld({ clearLoad: true });
     setError(error);
@@ -762,6 +814,12 @@ function updateHud(time) {
   if (!runtime.game) return;
   const state = runtime.game.getState();
   const bike = state.motorcycle;
+  if (state.globe) {
+    const stream = state.globe.stream;
+    elements.terrainStatus.textContent = stream.state === 'ready'
+      ? `GLOBE TERRAIN ${stream.counts.activeTerrainReady}/${stream.counts.active} // ${stream.counts.resident} RESIDENT`
+      : `${stream.state.toUpperCase()} // TERRAIN ${stream.counts.activeTerrainReady}/${stream.counts.active}`;
+  }
   const speedKph = Math.abs(bike.forwardSpeed) * 3.6;
   const gear = bike.gear === 0 ? 'N' : bike.gear;
   elements.speed.textContent = `${speedKph.toFixed(1)} KM/H`;
@@ -772,10 +830,24 @@ function updateHud(time) {
     .reduce((sum, [, value]) => sum + (Number(value) || 0), 0);
   const droppedMilliseconds = Math.round((state.lastStep?.droppedTime ?? 0) * 1_000);
   elements.physicsStatus.textContent = `${state.physics.contactCount} CONTACTS // ${overflowCount} OVERFLOWS${droppedMilliseconds > 0 ? ` // ${droppedMilliseconds} MS DROP` : ''}`;
-  elements.trafficStatus.textContent = `${state.traffic.spawnedVehicleCount} SYNTHETIC // ${state.trafficPhysics.added} PHYSICAL`;
-  elements.raceStatus.textContent = raceStatusText(state.race, state.raceCourse);
-  const boundary = state.boundary?.active ? ' // BOUNDARY RESET' : '';
-  const rebases = state.origin?.rebaseCount ? ` // REBASE ${state.origin.rebaseCount}` : '';
+  elements.trafficStatus.textContent = state.regionActivity?.trafficStatus === 'out-of-region'
+    ? `${state.traffic.spawnedVehicleCount} SYNTHETIC // PHYSICS CAGES OUT OF REGION`
+    : `${state.traffic.spawnedVehicleCount} SYNTHETIC // ${state.trafficPhysics.added} PHYSICAL`;
+  elements.raceStatus.textContent = state.regionActivity?.raceStatus === 'out-of-region'
+    ? 'SEED ROAD RACE OUT OF REGION // OFF-ROAD FREE RIDE'
+    : raceStatusText(state.race, state.raceCourse);
+  const boundary = state.boundary?.active
+    ? ` // ${state.boundary.action === 'stream-wait'
+      ? 'TERRAIN STREAM WAIT'
+      : state.boundary.action === 'stream-unsupported-polar-coverage'
+        ? 'POLAR TERRAIN UNSUPPORTED'
+        : 'BOUNDARY RESET'}`
+    : '';
+  const rebases = state.origin?.referenceFrameTransformCount
+    ? ` // GLOBE FRAME ${state.origin.referenceFrameTransformCount}`
+    : state.origin?.rebaseCount
+      ? ` // REBASE ${state.origin.rebaseCount}`
+      : '';
   const race = state.race.status === 'ready'
     ? 'RACE READY'
     : state.race.status === 'finished'
@@ -813,6 +885,29 @@ renderer.setAnimationLoop((time, xrFrame) => {
     const viewFrameBeforeStep = viewFrameObject.position.toArray();
     runtime.lastStep = runtime.game.stepFrame(deltaSeconds, control);
     if (runtime.lastStep.resetApplied) viewRig.resetPose?.({ recenter: true });
+    if (runtime.lastStep.referenceFrameTransform) {
+      const transform = runtime.lastStep.referenceFrameTransform;
+      const expected = Array.from(transform.transformPoint(viewFrameBeforeStep));
+      viewFrameObject.updateMatrixWorld?.(true);
+      const viewFrameAfterTransform = viewFrameObject.position.toArray();
+      runtime.lastReferenceFrameView = Object.freeze({
+        sequence: runtime.game.getState().origin.referenceFrameTransformCount,
+        schemaVersion: transform.schema,
+        fromOrigin: transform.fromOrigin,
+        toOrigin: transform.toOrigin,
+        mode: viewRig.getStatus().mode,
+        coordinateSpace: viewModeBeforeStep === 'xr'
+          ? 'xr-anchor-in-world-parent'
+          : 'active-camera-in-world-parent',
+        viewFrameName: viewFrameObject.name || null,
+        cameraBeforeTransform: Object.freeze(viewFrameBeforeStep),
+        cameraAfterTransform: Object.freeze(viewFrameAfterTransform),
+        expectedCameraAfterTransform: Object.freeze(expected),
+        transformErrorMeters: Math.hypot(...viewFrameAfterTransform.map(
+          (value, index) => value - expected[index],
+        )),
+      });
+    }
     if (runtime.lastStep.originRebase) {
       const shift = Array.from(runtime.lastStep.originRebase.shift);
       runtime.originOffset = Array.from(runtime.lastStep.originRebase.offset);
@@ -861,9 +956,14 @@ renderer.setAnimationLoop((time, xrFrame) => {
         ]) ?? null,
       });
       const viewConstraint = viewRig.getStatus().lastConstraint;
+      const floorTelemetry = terrainCameraFloor.getTelemetry();
+      const viewCorrection = viewConstraint?.correction ?? 0;
       runtime.lastCameraTerrainFloor = Object.freeze({
-        ...terrainCameraFloor.getTelemetry(),
-        status: (viewConstraint?.correction ?? 0) > 0 ? 'clamped' : 'clear',
+        ...floorTelemetry,
+        status: floorTelemetry.heldLastValidSurface
+          ? viewCorrection > 0 ? 'clamped-held' : 'surface-unavailable-held'
+          : viewCorrection > 0 ? 'clamped' : floorTelemetry.status,
+        clamped: viewCorrection > 0,
         appliedCorrectionMeters: viewConstraint?.correction ?? 0,
         constrainedPosition: Object.freeze([...(viewConstraint?.position ?? constrainedViewPose.position)]),
         eyeCount: constrainedViewPose.eyeCount ?? null,
@@ -953,12 +1053,13 @@ async function dispose() {
   renderer.setAnimationLoop(null);
   for (const cleanup of runtime.cleanup.splice(0)) cleanup();
   xrPanel?.dispose();
-  viewRig.dispose();
+  teardownWorld();
+  runtime.terrainHeightmapCache?.destroy?.();
   await inputRuntime.dispose();
+  viewRig.dispose();
   await overviewRuntime.dispose();
   await runtime.cachedGeoFetch?.destroy?.();
   await runtime.sourceCacheManager?.destroy?.();
-  teardownWorld();
   runtime.motorcycleModelResource?.dispose?.();
   scene.remove(xrRoot);
   renderer.dispose();
