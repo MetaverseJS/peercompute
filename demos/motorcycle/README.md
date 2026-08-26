@@ -37,6 +37,15 @@ suspension, wheels, tire contacts, and forces remain authoritative. Append
 diagnostics. Full attribution and modification details are packaged in
 `public/models/akira-bike/ATTRIBUTION.md`.
 
+The same bounded 5,000 road segments feed rendering and collision. Each road
+ribbon is clipped against the exact terrain triangles and lifted by one shared
+0.105 m deck clearance; its source footprint is packed into a bounded XZ
+spatial index. A single composite static surface samples the same exact terrain
+plane plus that clearance inside the footprint and the original terrain
+everywhere else, avoiding duplicate road/terrain impulses.
+Physical tire contacts retain the OSM way and segment identifiers, and origin
+rebases translate collider queries back into the immutable source frame.
+
 A manifest-driven 0.12573690675938365 m presentation-only downward offset puts
 the calibrated model minimum at the six-body rig's -1.042 m tire-bottom
 midpoint. This corrects the apparent hover without rescaling the correct 1.67 m
@@ -50,10 +59,13 @@ the authored double-sided glass, so they cannot fall back to two transparent
 draws. Race-gate beams use normal frustum culling; neither optimization changes
 the physics world or the asset's authored opaque materials.
 
-First-, damped third-, and stereo-XR camera placement is constrained against
-the same exact terrain triangles with 0.35 m minimum optical clearance. The
-sampler remains correct through origin rebases; XR correction raises only the
-locomotion root and never overwrites the headset-tracked camera pose.
+First-, centered-behind damped third-, and stereo-XR camera placement is
+constrained against the same exact terrain triangles with 0.35 m minimum
+optical clearance. The sampler remains correct through origin rebases; XR
+correction raises only the locomotion root and never overwrites the
+headset-tracked camera pose. Desktop rendering caps device pixel ratio at 1.5
+to bound fragment work on high-density displays; WebXR continues to use the
+headset compositor's render target.
 
 The map, race course, and traffic are for gameplay and visualization only.
 They are not navigation, live traffic, road-condition, weather-warning, or
@@ -104,10 +116,12 @@ explicit HTTPS API origin and configure matching `GEODATA_CORS_ORIGINS`.
 - Desktop: `W`/up throttle, `A` turns left, `D` turns right, `S` applies the
   service brake (front plus rear), space applies front brake only, down applies
   rear brake only, `Q`/`E` manually shift, `C` changes camera, `H` recenters,
-  and `R` resets. Automatic shifting is enabled by default. Mouse steering and
-  pointer lock are off by default so pointer drift cannot bias A/D; an embedding
-  app may explicitly opt into mouse steering, in which case lock loss clears
-  held controls.
+  and `R` resets. The checked `AUTOMATIC TRANSMISSION` control is the default;
+  it uses the physics RPM/hysteresis gearbox, ignores queued manual shift
+  edges, and keeps the bike in a drive gear. Uncheck it to enable `Q`/`E` and
+  the touch shift buttons. Mouse steering and pointer lock are off by default
+  so pointer drift cannot bias A/D; an embedding app may explicitly opt into
+  mouse steering, in which case lock loss clears held controls.
 - Mobile: independent Pointer Event steering, throttle, front/rear brake,
   shift, view, and reset controls support simultaneous touches.
 - Standard gamepad: left axis steering, triggers for throttle/brake, and
@@ -135,8 +149,8 @@ pressed.
   gyroscopic angular integration, hard suspension travel, and snapshot reset.
 - Motorcycle dynamics: engine/reaction torque, separate and service braking,
   one deterministic filtered actuator state per fixed step, a common
-  curvature/lateral-acceleration target for fork and lean, automatic shifting,
-  steering constraint, suspension springs/dampers, bounded force-based
+  curvature/lateral-acceleration target for fork and lean, explicit automatic
+  or manual shifting, steering constraint, suspension springs/dampers, bounded force-based
   rider-foot parking support, tire slip plus friction ellipse, surface material
   grip, and optional physical lean-assist torque.
 - Race: a bounded deterministic course derived from the local directed road

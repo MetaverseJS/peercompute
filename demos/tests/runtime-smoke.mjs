@@ -703,6 +703,31 @@ async function runDemo(context, demo) {
         const state = window.__motorcycleDemo?.getState?.();
         return state?.displayMode === 'ride' && state.frameCount > 0;
       });
+      await page.waitForFunction(() => {
+        const api = window.__motorcycleDemo;
+        return api?.gameRuntime?.world?.getContacts?.().some((contact) => (
+          contact.type === 'surface'
+          && (contact.metadata?.tire === 'front' || contact.metadata?.tire === 'rear')
+          && contact.metadata?.surfaceKind === 'osm-road'
+          && typeof contact.metadata?.roadSegmentId === 'string'
+        ));
+      }, null, { timeout: 5_000 });
+      const physicalRoadContact = await page.evaluate(() => {
+        const api = window.__motorcycleDemo;
+        const contacts = api.gameRuntime.world.getContacts().filter((contact) => (
+          contact.type === 'surface'
+          && (contact.metadata?.tire === 'front' || contact.metadata?.tire === 'rear')
+          && contact.metadata?.surfaceKind === 'osm-road'
+        ));
+        return {
+          count: contacts.length,
+          tires: [...new Set(contacts.map((contact) => contact.metadata?.tire).filter(Boolean))],
+          surfaceIds: [...new Set(contacts.map((contact) => contact.surfaceId))],
+          wayIds: [...new Set(contacts.map((contact) => contact.metadata?.osmWayId).filter(Boolean))],
+          roadSegmentIds: [...new Set(contacts.map((contact) => contact.metadata?.roadSegmentId).filter(Boolean))],
+          sharedSurfaceObject: api.worldRenderer?.roadSurface === api.gameRuntime?.roadSurface,
+        };
+      });
       const after = await page.evaluate(demo.verify);
       if (!(after.frameCount > 0)) errors.push('[runtime] motorcycle animation did not advance');
       if (after.locationSource !== 'browser-geolocation') errors.push('[runtime] motorcycle did not accept permissioned geolocation');
@@ -721,6 +746,26 @@ async function runDemo(context, demo) {
         errors.push('[runtime] official FHWA NHS nationwide layer did not load and render.');
       }
       if (after.game?.physicsProfile?.authority !== 'deterministic-cpu') errors.push('[runtime] motorcycle physics is not CPU-authoritative');
+      if (physicalRoadContact.count < 1
+        || physicalRoadContact.tires.length < 1
+        || physicalRoadContact.surfaceIds.length !== 1
+        || physicalRoadContact.surfaceIds[0] !== 'real-terrain-surface'
+        || physicalRoadContact.roadSegmentIds.length < 1
+        || physicalRoadContact.sharedSurfaceObject !== true) {
+        errors.push(`[runtime] motorcycle did not physically contact the exact rendered road surface: ${JSON.stringify(physicalRoadContact)}`);
+      }
+      if (after.game?.roadSurface?.geometry?.schemaVersion
+          !== 'peercompute.motorcycle.terrain-draped-road-surface.telemetry.v1'
+        || after.game?.roadSurface?.geometry?.collisionModel !== 'single-composite-static-heightfield'
+        || !(after.game?.roadSurface?.geometry?.triangleCount > 0)
+        || after.game?.roadSurface?.collider?.roadAware !== true
+        || !(after.game?.roadSurface?.collider?.roadHits > 0)
+        || after.renderer?.roads?.terrainDraped !== true
+        || after.renderer?.roads?.collisionModel !== 'single-composite-static-heightfield'
+        || after.renderer?.roads?.surface?.triangleCount
+          !== after.game?.roadSurface?.geometry?.triangleCount) {
+        errors.push('[runtime] shared terrain-draped road render/collision contract is missing.');
+      }
       if (after.game?.traffic?.spawnedVehicleCount !== 14) errors.push('[runtime] synthetic traffic population mismatch');
       if (after.game?.trafficPhysics?.added !== 14) errors.push('[runtime] physical traffic cage population mismatch');
       if (!after.game?.traffic?.graph?.laneCoverage) errors.push('[runtime] lane-aware traffic coverage missing');
@@ -764,6 +809,62 @@ async function runDemo(context, demo) {
       if (after.renderer?.contacts?.renderedContactCount !== 0
         || after.renderer?.contacts?.physicsDebugEnabled !== false) {
         errors.push('[runtime] default renderer exposed debug-only contact geometry.');
+      }
+      if (after.scale?.camera?.thirdOffsetMeters?.[0] !== 0
+        || !(after.scale?.camera?.thirdOffsetMeters?.[2] < 0)
+        || after.scale?.camera?.thirdLookOffsetMeters?.[0] !== 0) {
+        errors.push('[runtime] third-person camera is not centered behind the motorcycle.');
+      }
+      if (after.scale?.camera?.maximumDesktopPixelRatio !== 1.5
+        || !(after.scale?.camera?.appliedDesktopPixelRatio > 0)
+        || after.scale.camera.appliedDesktopPixelRatio > 1.5) {
+        errors.push('[runtime] bounded desktop render pixel ratio is missing.');
+      }
+      if (after.game?.motorcycle?.automaticTransmissionEnabled !== true
+        || after.game?.motorcycle?.transmissionMode !== 'automatic') {
+        errors.push('[runtime] RoadVector did not start in explicit automatic transmission mode.');
+      }
+      const automaticUi = await page.evaluate(() => ({
+        checked: document.querySelector('#automatic-transmission')?.checked,
+        shiftDownDisabled: document.querySelector('#touch-shift-down')?.disabled,
+        shiftUpDisabled: document.querySelector('#touch-shift-up')?.disabled,
+        datasetMode: document.documentElement.dataset.transmissionMode,
+      }));
+      if (!automaticUi.checked
+        || !automaticUi.shiftDownDisabled
+        || !automaticUi.shiftUpDisabled
+        || automaticUi.datasetMode !== 'automatic') {
+        errors.push(`[runtime] automatic transmission UI state drifted: ${JSON.stringify(automaticUi)}`);
+      }
+      await page.uncheck('#automatic-transmission');
+      await page.waitForFunction(() => (
+        window.__motorcycleDemo?.getState?.().game?.motorcycle?.transmissionMode === 'manual'
+      ));
+      const manualUi = await page.evaluate(() => ({
+        checked: document.querySelector('#automatic-transmission')?.checked,
+        shiftDownDisabled: document.querySelector('#touch-shift-down')?.disabled,
+        shiftUpDisabled: document.querySelector('#touch-shift-up')?.disabled,
+        datasetMode: document.documentElement.dataset.transmissionMode,
+      }));
+      if (manualUi.checked
+        || manualUi.shiftDownDisabled
+        || manualUi.shiftUpDisabled
+        || manualUi.datasetMode !== 'manual') {
+        errors.push(`[runtime] manual transmission UI state drifted: ${JSON.stringify(manualUi)}`);
+      }
+      await page.check('#automatic-transmission');
+      await page.waitForFunction(() => {
+        const motorcycle = window.__motorcycleDemo?.getState?.().game?.motorcycle;
+        return motorcycle?.automaticTransmissionEnabled === true
+          && motorcycle?.transmissionMode === 'automatic'
+          && motorcycle?.gear >= 1;
+      });
+      await page.waitForFunction(() => /^AUTO\s/u.test(
+        document.querySelector('#powertrain')?.textContent ?? '',
+      ));
+      const automaticHud = await page.locator('#powertrain').textContent();
+      if (!/^AUTO\s/u.test(automaticHud ?? '')) {
+        errors.push(`[runtime] powertrain HUD does not disclose automatic mode: ${automaticHud}`);
       }
       if (after.view?.mode !== 'first') errors.push('[runtime] first-person camera control did not persist');
       if (!['clear', 'clamped'].includes(after.view?.terrainFloor?.status)
@@ -913,6 +1014,33 @@ async function runDemo(context, demo) {
         window.__motorcycleDemo.reset();
       });
       await page.waitForTimeout(350);
+      await page.waitForFunction(() => (
+        window.__motorcycleDemo?.getState?.().view?.thirdPoseInitialized === true
+      ));
+      const chaseAlignment = await page.evaluate(() => {
+        const api = window.__motorcycleDemo;
+        const state = api.getState();
+        const chassis = api.gameRuntime.world.getBody(api.gameRuntime.rig.bodyIds.chassis);
+        const position = state.view.cameraPose.position;
+        const delta = [
+          position[0] - chassis.position[0],
+          position[1] - chassis.position[1],
+          position[2] - chassis.position[2],
+        ];
+        const [x, y, z, w] = chassis.orientation;
+        const tx = 2 * (-y * delta[2] + z * delta[1]);
+        const ty = 2 * (-z * delta[0] + x * delta[2]);
+        const tz = 2 * (-x * delta[1] + y * delta[0]);
+        return [
+          delta[0] + w * tx + (-y * tz + z * ty),
+          delta[1] + w * ty + (-z * tx + x * tz),
+          delta[2] + w * tz + (-x * ty + y * tx),
+        ];
+      });
+      if (!(Math.abs(chaseAlignment[0]) < 0.05)
+        || !(chaseAlignment[2] < -4.3)) {
+        errors.push(`[runtime] third-person camera is not physically centered behind the bike: ${JSON.stringify(chaseAlignment)}`);
+      }
       const priorInputResetFrame = await page.evaluate(() => (
         window.__motorcycleDemo.getState().view.lastInputReset?.frameCount ?? -1
       ));
@@ -1241,6 +1369,118 @@ async function runDemo(context, demo) {
           imageryLayerCount: initial.imageryLayerCount,
           dataSourceCount: initial.dataSourceCount,
           scenePrimitiveCount: initial.scenePrimitiveCount,
+        })}`);
+      }
+
+      const persistenceA = await page.evaluate(() => {
+        const demoApi = window.__earthDemo;
+        const camera = demoApi.viewer.camera;
+        const state = demoApi.getState();
+        window.__earthRoadPersistencePose = {
+          destination: camera.positionWC.clone(),
+          direction: camera.directionWC.clone(),
+          up: camera.upWC.clone(),
+        };
+        camera.moveRight(60_000);
+        camera.moveEnd.raiseEvent();
+        return {
+          keys: state.osmTelemetry.selection.keys,
+          buildCount: state.osmTelemetry.bufferResidency.buildCount,
+          reuseCount: state.osmTelemetry.bufferResidency.activationReuseCount,
+          heightInvalidationCount: state.osmTelemetry.bufferResidency.heightInvalidationCount,
+          lazyHeightBuildCount: state.osmTelemetry.bufferResidency.lazyHeightBuildCount,
+        };
+      });
+      await page.waitForFunction((priorKeys) => {
+        const state = window.__earthDemo?.getState?.();
+        const telemetry = state?.osmTelemetry;
+        return JSON.stringify(telemetry?.selection?.keys) !== JSON.stringify(priorKeys)
+          && telemetry?.queued === 0
+          && telemetry?.inflight === 0
+          && telemetry?.renderReady === true
+          && telemetry?.bufferResidency?.inactiveTileCount > 0;
+      }, persistenceA.keys, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      const persistenceB = await page.evaluate(() => {
+        const state = window.__earthDemo.getState();
+        return {
+          keys: state.osmTelemetry.selection.keys,
+          buildCount: state.osmTelemetry.bufferResidency.buildCount,
+          reuseCount: state.osmTelemetry.bufferResidency.activationReuseCount,
+          residentTileCount: state.osmTelemetry.bufferResidency.residentTileCount,
+          heightInvalidationCount: state.osmTelemetry.bufferResidency.heightInvalidationCount,
+          heightRefreshBuildCount: state.osmTelemetry.bufferResidency.heightRefreshBuildCount,
+          lazyHeightBuildCount: state.osmTelemetry.bufferResidency.lazyHeightBuildCount,
+        };
+      });
+      const roadRequestsBeforeReturn = sourceCacheControl.roadRequests;
+      await page.evaluate(() => {
+        const demoApi = window.__earthDemo;
+        const camera = demoApi.viewer.camera;
+        const pose = window.__earthRoadPersistencePose;
+        camera.setView({
+          destination: pose.destination,
+          orientation: { direction: pose.direction, up: pose.up },
+        });
+        camera.moveEnd.raiseEvent();
+      });
+      await page.waitForFunction((expectedKeys) => {
+        const state = window.__earthDemo?.getState?.();
+        const telemetry = state?.osmTelemetry;
+        return JSON.stringify(telemetry?.selection?.keys) === JSON.stringify(expectedKeys)
+          && telemetry?.queued === 0
+          && telemetry?.inflight === 0
+          && telemetry?.renderReady === true
+          && telemetry?.bufferResidency?.retiringTileCount === 0;
+      }, persistenceA.keys, { timeout: demo.readyTimeoutMs || defaultReadyTimeoutMs });
+      const persistenceReturn = await page.evaluate(() => {
+        const state = window.__earthDemo.getState();
+        return {
+          buildCount: state.osmTelemetry.bufferResidency.buildCount,
+          reuseCount: state.osmTelemetry.bufferResidency.activationReuseCount,
+          residentTileCount: state.osmTelemetry.bufferResidency.residentTileCount,
+          residentVertexCount: state.osmTelemetry.bufferResidency.residentVertexCount,
+          residentByteLength: state.osmTelemetry.bufferResidency.residentByteLength,
+          maximumRecords: state.osmTelemetry.bufferResidency.maximumRecords,
+          maximumVertices: state.osmTelemetry.bufferResidency.maximumVertices,
+          maximumBytes: state.osmTelemetry.bufferResidency.maximumBytes,
+          heightInvalidationCount: state.osmTelemetry.bufferResidency.heightInvalidationCount,
+          heightRefreshBuildCount: state.osmTelemetry.bufferResidency.heightRefreshBuildCount,
+          lazyHeightBuildCount: state.osmTelemetry.bufferResidency.lazyHeightBuildCount,
+          inactiveResidentsSubmitted: state.osmTelemetry.bufferResidency.inactiveResidentsSubmitted,
+          model: state.osmTelemetry.bufferResidency.model,
+          renderReady: state.osmTelemetry.renderReady,
+          retiringTileCount: state.osmTelemetry.bufferResidency.retiringTileCount,
+        };
+      });
+      const heightDependenciesChanged = (
+        persistenceReturn.heightInvalidationCount > persistenceA.heightInvalidationCount
+      );
+      const exactReusePath = !heightDependenciesChanged
+        && persistenceReturn.buildCount === persistenceB.buildCount
+        && persistenceReturn.reuseCount > persistenceB.reuseCount;
+      const heightRefreshPath = heightDependenciesChanged
+        && (
+          persistenceReturn.lazyHeightBuildCount > persistenceB.lazyHeightBuildCount
+          || persistenceReturn.heightRefreshBuildCount > persistenceB.heightRefreshBuildCount
+        );
+      if (persistenceReturn.model !== 'bounded-compiled-buffer-lru-with-detached-inactive-residents'
+        || persistenceReturn.inactiveResidentsSubmitted !== false
+        || (!exactReusePath && !heightRefreshPath)
+        || !(persistenceReturn.residentTileCount >= persistenceB.residentTileCount)
+        || persistenceReturn.residentTileCount > persistenceReturn.maximumRecords
+        || !(persistenceReturn.residentVertexCount > 0)
+        || persistenceReturn.residentVertexCount > persistenceReturn.maximumVertices
+        || !(persistenceReturn.residentByteLength > 0)
+        || persistenceReturn.residentByteLength > persistenceReturn.maximumBytes
+        || persistenceReturn.renderReady !== true
+        || persistenceReturn.retiringTileCount !== 0
+        || sourceCacheControl.roadRequests !== roadRequestsBeforeReturn) {
+        errors.push(`[runtime] Earth did not reuse persisted compiled road buffers on A→B→A camera return: ${JSON.stringify({
+          a: persistenceA,
+          b: persistenceB,
+          returned: persistenceReturn,
+          roadRequestsBeforeReturn,
+          roadRequestsAfterReturn: sourceCacheControl.roadRequests,
         })}`);
       }
 

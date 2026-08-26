@@ -53,6 +53,10 @@ test('local scale stays metric behind a discrete Cesium-to-ride transition', () 
   assert.equal(ROADVECTOR_SCALE_DISCLOSURE.worldUnits, 'meters');
   assert.equal(ROADVECTOR_SCALE_DISCLOSURE.transition, 'discrete-overview-to-local');
   assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees, 60);
+  assert.equal(ROADVECTOR_CAMERA_CONFIG.maximumDesktopPixelRatio, 1.5);
+  assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters[0], 0);
+  assert.ok(ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters[2] < 0);
+  assert.equal(ROADVECTOR_CAMERA_CONFIG.thirdLookOffsetMeters[0], 0);
   assert.ok(Math.hypot(...ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters) < 5.5);
   assert.ok(ROADVECTOR_CAMERA_CONFIG.fogDensityPerMeter <= 0.001);
 });

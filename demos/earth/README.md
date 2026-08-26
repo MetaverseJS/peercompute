@@ -109,10 +109,18 @@ centerline-only `water_lines` (including narrow streams) are intentionally
 outside this surface-only layer. One camera-bounded Shortbread scheduler feeds
 immutable `Cesium.BufferPolygonCollection` and
 `Cesium.BufferPolylineCollection` snapshots: at most 24 active tiles, six
-concurrent requests, a 96-tile decoded LRU, 2 MiB per tile, 192 MiB per
-layer-session, 25,000 decoded features per tile, and 4,000,000 active vertices.
-The aggregate byte counter is a lifetime session budget, not resident-cache
-accounting. Cesium is pinned to exact `1.144.0` because the high-throughput
+concurrent requests, a 96-record decoded-and-compiled LRU, 2 MiB per source
+tile, 25,000 decoded features per tile, and 4,000,000 resident vertices.
+Inactive compiled buffers are detached from Cesium but remain resident, so an
+unchanged-height A→B→A camera move reattaches the exact prior buffer without
+another fetch, decode, or geometry build. A 192 MiB compiled-buffer cap evicts
+and destroys the least-recent inactive resident before admission. Height
+refreshes mark every compiled resident stale, rebuild active tiles eagerly,
+and lazily exact-compare/rebuild an inactive tile when it is revisited. That
+keeps inactive buffers resident without reusing stale elevations or requiring
+a source refetch. The separate 192 MiB source response counter remains a
+lifetime session budget rather than resident-cache accounting. Cesium is
+pinned to exact `1.144.0` because the high-throughput
 Buffer geometry API is explicitly experimental and is not covered by Cesium's
 normal deprecation policy.
 

@@ -1313,3 +1313,44 @@ The root node should exist on a domain secured with SSL enabling all executable 
   commit `99779eec57f8`; the only subsequent repository change is this durable
   commit/ICC closure record. Nothing is pushed, and physical-headset testing
   remains an explicit manual gate rather than an implementation blocker.
+
+## RoadVector camera/road/automatic and EarthGrid residency snapshot - 2026-08-25 AKDT
+
+- Active task: `roadvector-camera-collision-auto-earthgrid-persistence-20260825`.
+- Reproduce the chase-camera skew, road-contact mismatch, gearbox
+  discoverability, and EarthGrid geometry churn in the running private apps.
+- Center the chase view, share one terrain-draped road surface between rendering
+  and physical tire contact, and expose a default automatic/manual gearbox mode
+  without weakening the six-body 120 Hz/twelve-iteration simulation.
+- Retain bounded compiled Shortbread buffers across view selections so a warm
+  revisit does not reconstruct road geometry; preserve source-cache, vertex,
+  resident-resource, height-revision, and terminal-state truth.
+- Finish with focused/aggregate tests, measured keyboard driving and private
+  browser proof, fresh EarthGrid/RoadVector artifacts, docs, cleanup, ICC gates,
+  and a coherent local commit. Physical-headset evidence remains NOT RUN unless
+  real hardware is used.
+
+## RoadVector camera/road/automatic and EarthGrid residency result - 2026-08-25 AKDT
+
+- COMPLETE: RoadVector's chase camera is centered on local X with a negative-Z
+  trailing offset and a centered look target. Desktop device pixel ratio is
+  capped at `1.5` to bound high-density fragment work; WebXR keeps its own
+  compositor render target.
+- COMPLETE: one bounded terrain-draped road representation now supplies both
+  the rendered triangles and the single composite terrain/road heightfield.
+  The six-body motorcycle reaches the road through ordinary fixed-step tire
+  contacts, suspension, friction, and impulses; contacts retain OSM way and
+  segment metadata, and no pose/velocity road constraint was introduced.
+- COMPLETE: automatic transmission is explicit, enabled by default, visible in
+  the HUD/controls/public state, and switchable to manual. Switching modes
+  clears queued one-shot shifts; automatic ignores manual shift edges and
+  reset preserves the selected mode.
+- COMPLETE: decoded Shortbread records retain bounded compiled Cesium buffers.
+  Unchanged A→B→A selections reattach exact resident buffers; height changes
+  mark every resident stale, rebuild active records eagerly, and rebuild stale
+  inactive records lazily without another source request. Resident vertex and
+  byte caps evict/destroy least-recent inactive buffers deterministically.
+- VERIFIED: aggregate unit, production build/static, generated browser smoke,
+  and direct private HTTPS proofs pass. Test listeners and owned TLS relays are
+  closed; the two requested direct private app services remain active. Physical
+  headset behavior/performance remains NOT RUN and is not certified.

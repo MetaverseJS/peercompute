@@ -7,6 +7,11 @@ import { normalizeOverpassRegion } from '../../../services/geodata/src/osm/norma
 import { createOverpassFixture } from '../../../services/geodata/test/fixture.js';
 import { createMotorcycleGameRuntime } from '../src/runtime/gameRuntime.js';
 import { createTrafficCollisionCloud, trafficPose } from '../src/runtime/trafficPhysics.js';
+import {
+  createTerrainDrapedRoadSurface,
+  MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS,
+} from '../src/world/roadSurface.js';
+import { createRoadTerrainSurface } from '../src/world/roadSurfaceCollider.js';
 import { createMotorcycleSceneData } from '../src/world/sceneData.js';
 import { createDerivedFlatTerrainGrid } from '../src/world/terrainGrid.js';
 
@@ -94,11 +99,156 @@ test('composes the six-body motorcycle, real road graph, terrain contact, and sy
   assert.equal(state.physicsProfile.solverIterations, 12);
   assert.equal(state.physicsProfile.maxSubSteps, 4);
   assert.equal(state.physics.overflows.overflowed, false);
+  assert.equal(state.roadSurface.geometry.collisionModel, 'single-composite-static-heightfield');
+  assert.equal(state.roadSurface.geometry.deckClearanceMeters, MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS);
+  assert.equal(state.roadSurface.collider.roadAware, true);
   assert.ok(runtime.world.getSnapshot().bodies.every((body) => (
     [...body.position, ...body.orientation, ...body.linearVelocity, ...body.angularVelocity].every(Number.isFinite)
   )));
   runtime.dispose();
   assert.equal(runtime.getState().disposed, true);
+});
+
+test('one bounded terrain-draped road model supplies exact render height and physical tire contact', () => {
+  const { terrain, sceneData } = sceneFixture();
+  const roadSurface = createTerrainDrapedRoadSurface(terrain, sceneData.roadSegments);
+  assert.equal(Object.isFrozen(roadSurface), true);
+  assert.equal(Object.isFrozen(roadSurface.groups), true);
+  const surfaceTelemetry = roadSurface.getTelemetry();
+  assert.equal(surfaceTelemetry.elevationModel, 'exact-terrain-triangle-plus-shared-deck-clearance');
+  assert.equal(surfaceTelemetry.collisionModel, 'single-composite-static-heightfield');
+  assert.ok(surfaceTelemetry.triangleCount > 0);
+  assert.equal(surfaceTelemetry.collisionFootprintCount, surfaceTelemetry.renderedSourceSegmentCount);
+  assert.ok(surfaceTelemetry.spatialReferenceCount > 0);
+  assert.ok(surfaceTelemetry.maximumCandidatesPerBin > 0);
+
+  const sourceSegment = sceneData.roadSegments.find((segment) => {
+    const x = (segment.from[0] + segment.to[0]) / 2;
+    const z = (segment.from[2] + segment.to[2]) / 2;
+    return roadSurface.sampleLocalSurface(x, z);
+  });
+  assert.ok(sourceSegment);
+  const x = (sourceSegment.from[0] + sourceSegment.to[0]) / 2;
+  const z = (sourceSegment.from[2] + sourceSegment.to[2]) / 2;
+  const roadSample = roadSurface.sampleLocalSurface(x, z);
+  const terrainSample = terrain.sampleLocalSurface(x, z);
+  assert.equal(roadSample.surfaceKind, 'osm-road');
+  assert.ok(
+    Math.abs(roadSample.height - terrainSample.height - MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS) < 2e-4,
+  );
+
+  const collider = createRoadTerrainSurface(terrain, { roadSurface });
+  const radius = 0.2;
+  const contact = collider.sampleSphere({ center: [x, roadSample.height + radius, z], radius });
+  assert.ok(Math.abs(contact.signedDistance) < 2e-4);
+  assert.equal(contact.metadata.surfaceKind, 'osm-road');
+  assert.equal(contact.metadata.roadSegmentId, roadSample.roadSegmentId);
+  assert.equal(contact.metadata.roadDeckClearanceMeters, MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS);
+
+  let offRoad = null;
+  for (let row = 0; row <= 16 && !offRoad; row += 1) {
+    for (let column = 0; column <= 16; column += 1) {
+      const candidateX = terrain.localBounds.minX
+        + (terrain.localBounds.maxX - terrain.localBounds.minX) * column / 16;
+      const candidateZ = terrain.localBounds.minZ
+        + (terrain.localBounds.maxZ - terrain.localBounds.minZ) * row / 16;
+      if (!roadSurface.containsLocalRoad(candidateX, candidateZ)
+        && terrain.sampleLocalSurface(candidateX, candidateZ)) {
+        offRoad = [candidateX, candidateZ];
+        break;
+      }
+    }
+  }
+  assert.ok(offRoad, 'fixture must expose ordinary terrain outside a road footprint');
+  const offRoadHeight = terrain.sampleLocalHeight(...offRoad);
+  const terrainContact = collider.sampleSphere({
+    center: [offRoad[0], offRoadHeight + radius, offRoad[1]],
+    radius,
+  });
+  assert.ok(Math.abs(terrainContact.signedDistance) < 2e-4);
+  assert.equal(terrainContact.metadata.surfaceKind, 'terrain');
+  assert.equal(terrainContact.metadata.roadSegmentId, null);
+});
+
+test('composite road sweep uses one endpoint sample for slow motion and bounded adaptive CCD', () => {
+  const { terrain, sceneData } = sceneFixture();
+  const roadSurface = createTerrainDrapedRoadSurface(terrain, sceneData.roadSegments);
+  const sourceSegment = sceneData.roadSegments.find((segment) => roadSurface.sampleLocalSurface(
+    (segment.from[0] + segment.to[0]) / 2,
+    (segment.from[2] + segment.to[2]) / 2,
+  ));
+  assert.ok(sourceSegment);
+  const x = (sourceSegment.from[0] + sourceSegment.to[0]) / 2;
+  const z = (sourceSegment.from[2] + sourceSegment.to[2]) / 2;
+  const height = roadSurface.sampleLocalSurface(x, z).height;
+  const radius = 0.2;
+  const collider = createRoadTerrainSurface(terrain, { roadSurface });
+  const before = collider.getTelemetry();
+
+  for (let index = 0; index < 64; index += 1) {
+    const miss = collider.sweepSphere({
+      from: [x, height + radius + 1, z],
+      to: [x + 0.001, height + radius + 1, z],
+      radius,
+    });
+    assert.equal(miss.hit, false);
+    assert.ok(Number.isFinite(miss.signedDistance));
+  }
+  const slow = collider.getTelemetry();
+  assert.equal(slow.sweepQueries - before.sweepQueries, 64);
+  assert.equal(slow.sampleQueries - before.sampleQueries, 64);
+  assert.equal(slow.sweepSampleCount - before.sweepSampleCount, 64);
+  assert.equal(slow.endpointOnlySweepCount - before.endpointOnlySweepCount, 64);
+  assert.equal(slow.adaptiveSweepCount - before.adaptiveSweepCount, 0);
+
+  const crossing = collider.sweepSphere({
+    from: [x, height + radius + 2, z],
+    to: [x, height - radius - 2, z],
+    radius,
+  });
+  assert.equal(crossing.hit, true);
+  assert.equal(crossing.swept, true);
+  assert.ok(crossing.toi > 0 && crossing.toi <= 1);
+  const adaptive = collider.getTelemetry();
+  assert.equal(adaptive.adaptiveSweepCount - slow.adaptiveSweepCount, 1);
+  assert.equal(adaptive.maximumSweepSegmentsUsed, 8);
+  assert.equal(adaptive.maximumSweepSegments, 8);
+  assert.ok(adaptive.sweepSampleCount - slow.sweepSampleCount <= 8);
+});
+
+test('parked six-body tires settle through road impulses on the shared OSM deck', () => {
+  const runtime = createMotorcycleGameRuntime({
+    ...sceneFixture(),
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  for (let sequence = 1; sequence <= 60; sequence += 1) {
+    runtime.stepFrame(1 / 60, control(sequence));
+  }
+  const tireContacts = runtime.world.getContacts().filter((contact) => contact.metadata?.tire);
+  assert.ok(tireContacts.length > 0);
+  assert.ok(tireContacts.every((contact) => contact.surfaceId === 'real-terrain-surface'));
+  assert.ok(tireContacts.every((contact) => contact.metadata.surfaceKind === 'osm-road'));
+  assert.ok(tireContacts.every((contact) => typeof contact.metadata.roadSegmentId === 'string'));
+  assert.ok(tireContacts.some((contact) => contact.normalImpulse > 0));
+  const state = runtime.getState();
+  assert.equal(Object.isFrozen(runtime.roadSurface), true);
+  assert.ok(state.roadSurface.collider.roadHits > 0);
+  assert.equal(
+    state.roadSurface.collider.sampleQueries,
+    state.roadSurface.collider.sweepSampleCount,
+    'sweep misses retain their endpoint distance instead of triggering a duplicate fallback query',
+  );
+  assert.ok(
+    state.roadSurface.collider.sampleQueries / state.frameCount < 300,
+    'stationary player surface work remains bounded below 300 height samples per render frame',
+  );
+  assert.ok(
+    state.roadSurface.collider.endpointOnlySweepCount
+      > state.roadSurface.collider.adaptiveSweepCount,
+  );
+  assert.equal(state.physics.overflows.overflowed, false);
+  runtime.dispose();
 });
 
 test('runtime reset coordinates traffic RNG state and controller snapshot topology', () => {
@@ -242,6 +392,7 @@ test('queues one-shot shift edges across zero-substep frames and applies reset a
     trafficVehicleCount: 2,
     maximumPhysicalTrafficVehicles: 2,
   });
+  assert.equal(runtime.setAutomaticTransmission(false).transmissionMode, 'manual');
   const first = runtime.stepFrame(1 / 240, control(1, { shiftDelta: 1 }));
   assert.equal(first.physicsSubsteps, 0);
   assert.equal(runtime.getState().motorcycle.gear, 1);
@@ -279,6 +430,24 @@ test('queues one-shot shift edges across zero-substep frames and applies reset a
   runtime.dispose();
 });
 
+test('changing transmission mode clears queued one-shot shift edges', () => {
+  const runtime = createMotorcycleGameRuntime({
+    ...sceneFixture(),
+    trafficVehicleCount: 1,
+    maximumPhysicalTrafficVehicles: 0,
+  });
+  const queued = runtime.stepFrame(1 / 240, control(1, { shiftDelta: 1 }));
+  assert.equal(queued.physicsSubsteps, 0);
+  assert.deepEqual(runtime.getState().pendingInputEdges.shifts, [1]);
+  const manual = runtime.setAutomaticTransmission(false);
+  assert.equal(manual.transmissionMode, 'manual');
+  assert.equal(runtime.getState().pendingInputEdges.shiftCount, 0);
+  const automatic = runtime.setAutomaticTransmission(true);
+  assert.equal(automatic.transmissionMode, 'automatic');
+  assert.equal(runtime.getState().pendingInputEdges.shiftCount, 0);
+  runtime.dispose();
+});
+
 test('rebases the complete physics frame and fails closed at the bounded terrain edge', () => {
   const fixture = sceneFixture();
   const runtime = createMotorcycleGameRuntime({
@@ -309,6 +478,11 @@ test('rebases the complete physics frame and fails closed at the bounded terrain
   assert.equal(unreBased.originRebase, null);
   assert.equal(runtime.getState().origin.rebaseCount, 1);
   assert.ok(Math.abs(runtime.getState().origin.offset[0] - rebased.originRebase.shift[0]) < 1e-4);
+  assert.deepEqual(
+    runtime.getState().roadSurface.collider.originOffset,
+    runtime.getState().origin.offset,
+    'composite road/terrain queries join the same origin-rebase transaction',
+  );
   assert.ok(Math.abs(runtime.world.getBody(runtime.rig.bodyIds.chassis).position[0]) < 2);
   const offset = runtime.getState().origin.offset;
   const rebasedBodies = new Map(runtime.world.getSnapshot().bodies.map((body) => [body.id, body]));

@@ -16,6 +16,7 @@ import {
   createTopoTerrainMaterial,
 } from './materials.js';
 import { createTerrainNurbsContourGeometry } from './nurbs.js';
+import { MOTORCYCLE_ROAD_SURFACE_SCHEMA } from '../world/roadSurface.js';
 
 function boundedLimit(value, fallback, maximum, label) {
   const selected = value ?? fallback;
@@ -111,6 +112,7 @@ export function groupRoadSegmentsByStyle(roadSegments) {
 
 export function createRoadVisuals(THREE, roadSegments, {
   maximumRoadSegments = MOTORCYCLE_RENDER_LIMITS.maximumRoadSegments,
+  roadSurface = null,
 } = {}) {
   const limit = boundedLimit(
     maximumRoadSegments,
@@ -121,14 +123,38 @@ export function createRoadVisuals(THREE, roadSegments, {
   const requested = Array.isArray(roadSegments) ? roadSegments.length : 0;
   if (!Array.isArray(roadSegments)) throw new TypeError('Road segments must be an array.');
   const selected = roadSegments.slice(0, limit);
+  if (roadSurface !== null && roadSurface?.schemaVersion !== MOTORCYCLE_ROAD_SURFACE_SCHEMA) {
+    throw new TypeError('roadSurface must be a canonical terrain-draped road surface.');
+  }
+  const surfaceTelemetry = roadSurface?.getTelemetry() ?? null;
+  if (surfaceTelemetry && surfaceTelemetry.selectedSegmentCount > limit) {
+    throw new RangeError('The shared road surface exceeds maximumRoadSegments for this renderer.');
+  }
   const group = new THREE.Group();
   group.name = 'motorcycle-osm-road-ribbons';
   let rendered = 0;
   let invalid = 0;
-  for (const style of groupRoadSegmentsByStyle(selected)) {
-    const geometry = createRoadRibbonGeometry(THREE, style.segments);
+  let renderedPatches = 0;
+  let renderedTriangles = 0;
+  const styles = roadSurface
+    ? roadSurface.groups.map((surfaceGroup) => ({
+      key: surfaceGroup.key,
+      category: surfaceGroup.category,
+      color: roadCategoryColor(surfaceGroup.category, surfaceGroup.color),
+      sourceAuthoritative: surfaceGroup.sourceAuthoritative,
+      geometrySource: surfaceGroup,
+    }))
+    : groupRoadSegmentsByStyle(selected).map((style) => ({
+      ...style,
+      sourceAuthoritative: style.segments.every((segment) => segment.sourceAuthoritative === true),
+      geometrySource: style.segments,
+    }));
+  for (const style of styles) {
+    const geometry = createRoadRibbonGeometry(THREE, style.geometrySource);
     rendered += geometry.userData.renderedSegmentCount;
     invalid += geometry.userData.invalidSegmentCount;
+    renderedPatches += geometry.userData.renderedPatchCount ?? geometry.userData.renderedSegmentCount;
+    renderedTriangles += geometry.userData.triangleCount ?? geometry.index?.count / 3 ?? 0;
     if (geometry.userData.renderedSegmentCount === 0) {
       geometry.dispose();
       continue;
@@ -146,8 +172,12 @@ export function createRoadVisuals(THREE, roadSegments, {
       category: style.category,
       color: style.color,
       segmentCount: geometry.userData.renderedSegmentCount,
-      sourceAuthoritative: style.segments.every((segment) => segment.sourceAuthoritative === true),
+      sourceAuthoritative: style.sourceAuthoritative,
       navigationGrade: false,
+      terrainDraped: geometry.userData.terrainDraped === true,
+      collisionAuthority: geometry.userData.terrainDraped === true
+        ? 'shared-static-road-terrain-heightfield'
+        : 'terrain-only',
     };
     group.add(mesh);
   }
@@ -156,8 +186,15 @@ export function createRoadVisuals(THREE, roadSegments, {
     requestedSegmentCount: requested,
     selectedSegmentCount: selected.length,
     renderedSegmentCount: rendered,
+    renderedPatchCount: renderedPatches,
+    renderedTriangleCount: renderedTriangles,
     rendererCapOmittedCount: Math.max(0, requested - selected.length),
-    invalidOmittedCount: invalid,
+    invalidOmittedCount: surfaceTelemetry?.invalidOmittedCount ?? invalid,
+    outsideTerrainOmittedCount: surfaceTelemetry?.outsideTerrainOmittedCount ?? 0,
+    terrainDraped: Boolean(roadSurface),
+    deckClearanceMeters: surfaceTelemetry?.deckClearanceMeters ?? null,
+    collisionModel: surfaceTelemetry?.collisionModel ?? 'terrain-only',
+    surfaceTelemetry,
   };
   return group;
 }

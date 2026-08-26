@@ -2,6 +2,10 @@ import { MOTORCYCLE_RENDER_LIMITS } from './constants.js';
 import { createContactVisuals, createMotorcycleVisuals, createTrafficVisuals } from './dynamicWorld.js';
 import { createRaceVisuals } from './raceVisuals.js';
 import { createBuildingVisuals, createRoadVisuals, createTerrainVisual } from './staticWorld.js';
+import {
+  createTerrainDrapedRoadSurface,
+  MOTORCYCLE_ROAD_SURFACE_SCHEMA,
+} from '../world/roadSurface.js';
 
 function clonePlain(value) {
   if (value === null || value === undefined || typeof value !== 'object') return value;
@@ -66,6 +70,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     physicsDebug = false,
     terrainMaterial = {},
     motorcycleModelInstance,
+    roadSurface = null,
   } = configuration;
   const physicsWorld = configuration.physicsWorld ?? configuration.world;
   if (typeof scene?.add !== 'function' || typeof scene?.remove !== 'function') {
@@ -77,6 +82,14 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
   if (sceneData?.schemaVersion !== 'peercompute.motorcycle.scene-data.v1') {
     throw new TypeError('Motorcycle world renderer requires canonical motorcycle scene data.');
   }
+  if (roadSurface !== null && roadSurface?.schemaVersion !== MOTORCYCLE_ROAD_SURFACE_SCHEMA) {
+    throw new TypeError('Motorcycle world renderer requires a canonical terrain-draped road surface.');
+  }
+  const resolvedRoadSurface = roadSurface ?? createTerrainDrapedRoadSurface(
+    terrain,
+    sceneData.roadSegments,
+    { maximumRoadSegments },
+  );
   const root = new THREE.Group();
   root.name = 'motorcycle-world-renderer';
   root.userData = {
@@ -91,7 +104,10 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
     maximumNurbsCurves: MOTORCYCLE_RENDER_LIMITS.maximumTerrainNurbsCurves,
     maximumSampledVertices: MOTORCYCLE_RENDER_LIMITS.maximumTerrainContourVertices,
   });
-  const roads = createRoadVisuals(THREE, sceneData.roadSegments, { maximumRoadSegments });
+  const roads = createRoadVisuals(THREE, sceneData.roadSegments, {
+    maximumRoadSegments,
+    roadSurface: resolvedRoadSurface,
+  });
   const buildings = createBuildingVisuals(THREE, sceneData.buildings, { maximumBuildings });
   const motorcycle = createMotorcycleVisuals(THREE, physicsWorld, rig, {
     maximumMotorcycleParticles,
@@ -156,6 +172,13 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
         ),
         provenance: clonePlain(sceneData.provenance ?? null),
         navigationGrade: false,
+        terrainDraped: roadCounts.terrainDraped,
+        deckClearanceMeters: roadCounts.deckClearanceMeters,
+        collisionModel: roadCounts.collisionModel,
+        renderedPatchCount: roadCounts.renderedPatchCount,
+        renderedTriangleCount: roadCounts.renderedTriangleCount,
+        outsideTerrainOmittedCount: roadCounts.outsideTerrainOmittedCount,
+        surface: clonePlain(roadCounts.surfaceTelemetry),
       },
       buildings: {
         sourceFeatureCount: Number(dataCounts.sourceBuildings) || 0,
@@ -194,6 +217,7 @@ export function createMotorcycleWorldRenderer(threeOrOptions, options = undefine
 
   const publicApi = {
     root,
+    roadSurface: resolvedRoadSurface,
     update({
       alpha = 0,
       trafficSnapshot = null,

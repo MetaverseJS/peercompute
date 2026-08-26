@@ -299,7 +299,11 @@ function contentLength(response) {
 }
 
 async function fetchBoundedText(fetchImpl, url, maximumBytes, signal) {
-  const response = await fetchImpl(url, { cache: 'force-cache', credentials: 'same-origin', signal });
+  // The manifest and GLB use stable public paths. Revalidate them so a client
+  // which visited an older release cannot combine stale calibration/model
+  // bytes with a freshly deployed JavaScript validator. Conditional requests
+  // still avoid transferring an unchanged 7.5 MB GLB.
+  const response = await fetchImpl(url, { cache: 'no-cache', credentials: 'same-origin', signal });
   if (!response?.ok) throw new Error(`Motorcycle model manifest request failed (${response?.status ?? 'network'}).`);
   const declared = contentLength(response);
   if (declared !== null && declared > maximumBytes) throw new RangeError('Motorcycle model manifest exceeds its byte cap.');
@@ -310,7 +314,7 @@ async function fetchBoundedText(fetchImpl, url, maximumBytes, signal) {
 }
 
 async function fetchBoundedBuffer(fetchImpl, url, expectedBytes, maximumBytes, signal) {
-  const response = await fetchImpl(url, { cache: 'force-cache', credentials: 'same-origin', signal });
+  const response = await fetchImpl(url, { cache: 'no-cache', credentials: 'same-origin', signal });
   if (!response?.ok) throw new Error(`Motorcycle model request failed (${response?.status ?? 'network'}).`);
   const declared = contentLength(response);
   if (declared !== null && declared > maximumBytes) throw new RangeError('Motorcycle model exceeds its byte cap.');

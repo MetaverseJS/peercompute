@@ -5,6 +5,10 @@ import * as THREE from 'three';
 
 import { createMotorcyclePhysics } from '../../../shared/physics/vehicle/index.js';
 import { deriveRoadRaceCourse } from '../../src/race/index.js';
+import {
+  createTerrainDrapedRoadSurface,
+  MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS,
+} from '../../src/world/roadSurface.js';
 import { createSquareLoopGraph } from '../race/fixtures.mjs';
 
 import {
@@ -362,6 +366,52 @@ test('terrain and category road helpers produce finite Three r182 geometry and d
   material.dispose();
 });
 
+test('terrain-draped road triangles are deterministic and identical to the shared collision surface', () => {
+  const terrain = makeTerrain();
+  const roads = makeRoadSegments();
+  const first = createTerrainDrapedRoadSurface(terrain, roads);
+  const second = createTerrainDrapedRoadSurface(terrain, roads);
+  assert.deepEqual(first.getTelemetry(), second.getTelemetry());
+  assert.equal(first.getTelemetry().renderedSourceSegmentCount, 3);
+  assert.equal(first.getTelemetry().deckClearanceMeters, MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS);
+  assert.ok(first.getTelemetry().triangleCount > roads.length * 2);
+  assert.ok(first.getTelemetry().maximumCandidatesPerBin > 0);
+  assert.equal(first.groups.length, 3);
+
+  for (let index = 0; index < first.groups.length; index += 1) {
+    const group = first.groups[index];
+    assert.deepEqual(Array.from(group.positions), Array.from(second.groups[index].positions));
+    assert.deepEqual(Array.from(group.indices), Array.from(second.groups[index].indices));
+    const geometry = createRoadRibbonGeometry(THREE, group);
+    assert.equal(geometry.userData.terrainDraped, true);
+    assert.equal(geometry.userData.triangleCount, group.triangleCount);
+    const positions = geometry.getAttribute('position');
+    for (let vertex = 0; vertex < positions.count; vertex += 1) {
+      const x = positions.getX(vertex);
+      const y = positions.getY(vertex);
+      const z = positions.getZ(vertex);
+      const sample = first.sampleLocalSurface(x, z);
+      assert.ok(sample, `missing shared road sample at rendered vertex ${index}/${vertex}`);
+      assert.ok(Math.abs(sample.height - y) < 2e-4, `${sample.height} != ${y}`);
+    }
+    geometry.dispose();
+  }
+
+  const overlapping = createTerrainDrapedRoadSurface(terrain, [
+    { ...roads[0], id: 'stable-first' },
+    { ...roads[0], id: 'stable-second' },
+  ]);
+  const midpoint = [
+    (roads[0].from[0] + roads[0].to[0]) / 2,
+    (roads[0].from[2] + roads[0].to[2]) / 2,
+  ];
+  assert.equal(overlapping.sampleLocalSurface(...midpoint).roadSegmentId, 'stable-first');
+  assert.throws(
+    () => createTerrainDrapedRoadSurface(terrain, roads, { maximumRoadTriangles: 0 }),
+    (error) => error.code === 'ERR_MOTORCYCLE_ROAD_SURFACE_CAP',
+  );
+});
+
 test('building extrusion preserves source height and triangulates an interior hole', () => {
   const geometry = createBuildingGeometry(THREE, makeBuilding());
   assert.equal(geometryHasOnlyFiniteAttributes(geometry), true);
@@ -476,6 +526,12 @@ test('world renderer uses transparent NURBS terrain and a licensed optimized mot
   assert.equal(initial.roads.renderedSegmentCount, 2);
   assert.equal(initial.roads.rendererCapOmittedCount, 1);
   assert.equal(initial.roads.totalKnownOmittedCount, 3);
+  assert.equal(initial.roads.terrainDraped, true);
+  assert.equal(initial.roads.deckClearanceMeters, MOTORCYCLE_ROAD_DECK_CLEARANCE_METERS);
+  assert.equal(initial.roads.collisionModel, 'single-composite-static-heightfield');
+  assert.ok(initial.roads.renderedPatchCount >= initial.roads.renderedSegmentCount);
+  assert.ok(initial.roads.renderedTriangleCount > 0);
+  assert.strictEqual(renderer.roadSurface.getTelemetry(), renderer.roadSurface.telemetry);
   assert.equal(initial.buildings.renderedBuildingCount, 1);
   assert.equal(initial.buildings.sceneOmittedCount, 2);
   assert.equal(initial.motorcycle.componentCount, 6);
@@ -513,7 +569,11 @@ test('world renderer uses transparent NURBS terrain and a licensed optimized mot
 
   const roadColors = [];
   renderer.root.getObjectByName('motorcycle-osm-road-ribbons').traverse((object) => {
-    if (object.isMesh) roadColors.push(object.material.color.getHex());
+    if (object.isMesh) {
+      roadColors.push(object.material.color.getHex());
+      assert.equal(object.userData.terrainDraped, true);
+      assert.equal(object.userData.collisionAuthority, 'shared-static-road-terrain-heightfield');
+    }
   });
   assert.equal(new Set(roadColors).size, 2, 'rendered road categories retain distinct neon colors');
   const modelBike = renderer.root.getObjectByName('motorcycle-licensed-model-bike');

@@ -220,7 +220,9 @@ export class MotorcycleController {
     this.world = world;
     this.rig = rig;
     this.config = Object.freeze({ ...DEFAULT_CONFIG, ...options });
-    this.gear = clamp(options.initialGear ?? 1, 0, this.config.gearRatios.length - 1);
+    this.automaticTransmissionEnabled = Boolean(this.config.automaticTransmission);
+    const initialGear = clamp(options.initialGear ?? 1, 0, this.config.gearRatios.length - 1);
+    this.gear = this.automaticTransmissionEnabled ? Math.max(1, initialGear) : initialGear;
     this.engineRpm = this.config.idleRpm;
     this.actuators = createActuatorState();
     this.automaticShiftCooldown = 0;
@@ -285,7 +287,7 @@ export class MotorcycleController {
     if (control.sequence === this.lastSequence) return false;
     this.lastSequence = control.sequence;
     let shifted = false;
-    if (control.shiftDelta !== 0) {
+    if (!this.automaticTransmissionEnabled && control.shiftDelta !== 0) {
       this.gear = clamp(
         this.gear + control.shiftDelta,
         0,
@@ -333,7 +335,7 @@ export class MotorcycleController {
 
   #updateAutomaticGearbox(control, dt, manualShifted) {
     this.automaticShiftCooldown = Math.max(0, this.automaticShiftCooldown - dt);
-    if (!this.config.automaticTransmission || manualShifted || control.clutch > 0.05 || this.gear === 0) {
+    if (!this.automaticTransmissionEnabled || manualShifted || control.clutch > 0.05 || this.gear === 0) {
       return false;
     }
     if (this.automaticShiftCooldown > 0) return false;
@@ -675,9 +677,20 @@ export class MotorcycleController {
     this.leanAssistEnabled = Boolean(enabled);
   }
 
+  setAutomaticTransmission(enabled) {
+    this.automaticTransmissionEnabled = Boolean(enabled);
+    if (this.automaticTransmissionEnabled && this.gear === 0) this.gear = 1;
+    this.automaticShiftCooldown = 0;
+    return this.getTelemetry();
+  }
+
   setGear(gear) {
     if (!Number.isInteger(gear)) throw new TypeError('gear must be an integer');
-    this.gear = clamp(gear, 0, this.config.gearRatios.length - 1);
+    this.gear = clamp(
+      gear,
+      this.automaticTransmissionEnabled ? 1 : 0,
+      this.config.gearRatios.length - 1,
+    );
     this.automaticShiftCooldown = this.config.automaticShiftCooldownSeconds;
   }
 
@@ -700,6 +713,10 @@ export class MotorcycleController {
   getTelemetry() {
     return {
       ...this.telemetry,
+      gear: this.gear,
+      engineRpm: Math.fround(this.engineRpm),
+      automaticTransmissionEnabled: this.automaticTransmissionEnabled,
+      transmissionMode: this.automaticTransmissionEnabled ? 'automatic' : 'manual',
       controls: { ...this.controls },
       actuators: { ...this.telemetry.actuators },
       tires: {

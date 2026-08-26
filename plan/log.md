@@ -59264,3 +59264,165 @@ and performance, and retain a physics-based motorcycle.
 - Remaining limitation is unchanged: physical-headset enter/exit/re-enter,
   hands/controllers/haptics, comfort, and frame timing are NOT RUN. The private
   URL uses a self-signed IP certificate that must be trusted explicitly.
+
+## 2026-08-25 15:37:22 AKDT - Center chase camera, make roads physical, expose automatic mode, persist EarthGrid road buffers (intake)
+
+### Prompt
+
+- The user reported that RoadVector's third-person camera is offset to the
+  side, the motorcycle does not collide with the road, and shifting should not
+  be required in automatic mode. They also reported that EarthGrid redraws all
+  roads after a view change and asked for persistence.
+
+### Actions and evidence so far
+
+- Opened ICC task
+  `roadvector-camera-collision-auto-earthgrid-persistence-20260825`, replaced
+  the generic generated plan with four task-scoped items and seven gates, ran
+  scoped `agent-preflight` (PASS `6/6`, only the repository's missing
+  `origin/master` warning), and published the conflict-free root edit lease.
+- ICC command discovery had three harmless failures: `icc repo-resolve` is not
+  a command, `icc resolve --path` is not a valid CLI form, and `icc list
+  --format json` is unsupported. The documented full-path ICC CLI and
+  registered repo `peercompute` succeeded.
+- Opened RoadVector in terminal-browser through an owned localhost TLS relay.
+  A cached 5,228-byte pre-grounding model manifest first failed closed; after
+  refreshing the cache, the current 5,607-byte manifest and verified
+  7,508,640-byte model loaded. This exposed an asset cache-version regression
+  to close rather than hide.
+- Entered the real Anchorage ride. Public state proves the chase offset is
+  `[1.8, 2.1, -4.4]`; the live camera is visibly over the bike's side. The
+  physical runtime reports six terrain contacts, but the only collider samples
+  terrain while road vertices are independently raised by `0.08 + 0.025 =
+  0.105 m`.
+- Opened EarthGrid through a second owned localhost TLS relay. At Anchorage the
+  z8 selection rendered 718 road curves / 75,391 buffer vertices at revision
+  4. Moving to tile `8/25/72` produced revision 7; returning to cached tile
+  `8/21/72` made no new request but rebuilt its buffers at revision 9. This is
+  the reported warm-view redraw, not a source-fetch miss.
+
+### Files touched
+
+- `plan/branch/earth-platform-motorcycle-xr.md`
+- `plan/plan.md`
+- `plan/tests.md`
+- `plan/log.md`
+
+### Commands run
+
+- ICC `work`, `assistant-status`, `task-show`, `task-plan`, `agent-preflight`,
+  and `agent-session` through the configured full-path CLI.
+- `terminal-browser open/action` against the direct private RoadVector and
+  EarthGrid services through owned `socat` TLS relays on `127.0.0.1:5193` and
+  `127.0.0.1:5194`.
+- Focused `rg`/`sed` source inspection plus live `window.__motorcycleDemo` and
+  `window.__earthDemo` state probes.
+
+### Current status / open work
+
+- Diagnosis is in progress. No production source has been changed yet.
+- Open: road-surface implementation, camera centering, transmission UI/API,
+  compiled-buffer residency/height invalidation, deterministic tests, browser
+  driving, artifact rebuild, aggregate gates, docs result, cleanup, and commit.
+- Physical-headset testing is NOT RUN.
+
+## 2026-08-25 16:39:33 AKDT - Centered chase, physical road, automatic mode, and EarthGrid residency completion
+
+### Prompt and result
+
+- This completes the exact 2026-08-25 15:37:22 AKDT prompt: center the
+  third-person RoadVector camera, make the motorcycle physically collide with
+  the road, expose automatic transmission, and persist EarthGrid road geometry
+  across view changes.
+- All four changes are implemented. The RoadVector particle solver remains
+  fixed-step/six-body/force-and-contact based. EarthGrid now retains compiled
+  buffers within explicit record/vertex/byte caps and distinguishes exact reuse
+  from a required lazy rebuild after terrain-height invalidation.
+
+### Concrete implementation and files touched
+
+- Camera/AUTO/UI: `demos/motorcycle/src/view/cameraConfig.js`, `src/main.js`,
+  `index.html`, `demos/shared/physics/vehicle/motorcycleController.js`,
+  `demos/motorcycle/src/runtime/gameRuntime.js`, and their vehicle/runtime/
+  overview regressions. The chase X offset and look X are `0`; desktop DPR is
+  capped at `1.5`; AUTO is default/mutable and mode switches clear queued shifts.
+- Physical road: new `demos/motorcycle/src/world/roadSurface.js`, updated
+  `roadSurfaceCollider.js`, render `geometry.js` / `staticWorld.js` /
+  `worldRenderer.js`, and runtime/renderer tests. One 5,000-segment-bounded,
+  terrain-draped representation supplies 24,920 rendered triangles and the
+  composite surface lookup with shared `0.105 m` clearance.
+- EarthGrid: `packages/geo-core/src/vector/shortbreadGeometry.js` and its test
+  retain detached inactive compiled buffers, reattach exact unchanged buffers,
+  mark every resident stale after a height refresh, rebuild active buffers
+  eagerly, and lazily exact-compare/replace an inactive buffer upon return.
+- Release/docs: RoadVector/Earth/root READMEs, this branch/plan/tests/log,
+  `demos/tests/runtime-smoke.mjs`, `demo-release.test.js`, regenerated
+  `docs/earth/**` and `docs/motorcycle/**`, plus a refreshed centered-behind
+  `docs/assets/motorcycle.png`.
+- The stale manifest/GLB mismatch found during intake was closed by making the
+  same-origin model manifest and GLB verification fetches `no-cache`; the
+  immutable runtime owner still shares verified GPU resources after admission.
+
+### Commands and executable results
+
+- Node requirement: `node --version` -> `v24.18.0`.
+- PASS: model plus vehicle focused tests `27/27`; `npm --prefix
+  demos/motorcycle test` `80/80`; `npm run test:physics` `44/44`.
+- PASS: EarthGrid Shortbread focused `26/26`; full geo-core `84/84`; syntax and
+  scoped ICC guards. A corrective audit split exact unchanged-height reuse from
+  lazy changed-height replacement without changing the public telemetry schema.
+- PASS: `npm run test:earth-platform:unit`: geo-core `84`, geodata `60`, Earth
+  `48`, WXGlobe `28`, XR `23` plus browser smoke, physics `44`, traffic `12`,
+  and RoadVector `80`, all with zero failures.
+- PASS: parallel `npm run build:earth` / `npm run build:motorcycle`; combined
+  ports/static test `44/44`; focused generated runtime smoke for Earth and
+  RoadVector on `127.0.0.1:43980`; full `npm run test:earth-platform:release`
+  rebuilt all three Cesium demos and passed WXGlobe/Earth/RoadVector smoke on
+  `127.0.0.1:43947`. Both temporary listeners closed.
+- PASS direct private RoadVector `https://100.68.165.52:5188/`: secure browser
+  context, no page/console/fatal errors, actual chase-local camera offset
+  `[0.00998, 2.06755, -4.55727]`, AUTO state, and three current physical road
+  contacts spanning both front and rear tires. Screenshot refresh reported five
+  tire contacts and `44` calls / `193,354` triangles.
+- PASS direct private EarthGrid `https://100.68.165.52:5187/`: z8 A→B→A kept
+  source requests at `7`, kept compiled builds at `7`, incremented activation
+  reuse `0→2`, and ended ready with seven resident tiles, 266,413 vertices, and
+  7,390,098 bytes. No browser errors occurred.
+- PASS: `node --check` on edited runtime/build gates and `git diff --check`.
+
+### Failures, performance evidence, cleanup, and limitations
+
+- The repository Playwright package lacked its versioned bundled Chromium, so
+  the private probes initially failed before launch. They were rerun with the
+  installed Kubuntu `/snap/bin/chromium`; no dependency downgrade/install was
+  performed.
+- The first RoadVector probe read a nonexistent public chassis-position field;
+  the corrected probe used the authoritative chassis body from `gameRuntime`.
+  The first Earth probe incorrectly required GPU geometry at the intentional
+  z0 `viewDeferred` whole-world state; the corrected probe moved to z8 before
+  evaluating compiled-buffer persistence. A separate 400 km/lower-zoom private
+  probe exceeded 90 seconds, confirming broad-view performance remains rough.
+- Road surface lookup was initially about nine samples per sphere sweep. The
+  final bounded adaptive sweep uses `14,819` samples for `14,760` sweeps
+  (`1.004x`), produces physical tire contacts, and measures about `5.67 ms` per
+  physics substep with fourteen traffic cages in the exact Node fixture.
+- Isolated headless system Chromium still measured only `24` rAF callbacks in
+  `5.091 s` (`4.71 fps`) while software-rendering the RoadVector scene, although
+  physics alone remained near 88 simulated frames/s. A `1.5` desktop DPR cap
+  reduces high-density fragment work, but this probe is not hardware-GPU or
+  headset certification; further render/LOD optimization remains worthwhile.
+- Vite retains expected large-entry warnings (Earth about 5.29 MB; RoadVector
+  about 6.37 MB minified). The direct apps use the existing self-signed Tailnet
+  certificate and therefore require explicit trust; no Serve/Funnel is used.
+- Closed the terminal-browser instance, owned TLS relays `5193/5194`, and test
+  listeners `43947/43980`. Direct requested services `5187/5188` and loopback
+  geodata `8788` remain running for handoff.
+- The first repo-wide ICC guard rejected Vite's deletion of five previously
+  tracked inactive hashed bundles. Those exact HEAD artifacts were restored as
+  unreferenced historical files; current HTML still references only the fresh
+  hashes. The rerun passed with no violations, warnings, rollback risks, or
+  deleted paths.
+- NOT RUN: physical headset enter/exit/re-enter, controllers/hands/haptics,
+  comfort, and headset frame timing. No physical-headset or sustained 60 fps
+  certification is claimed. ICC final reconciliation and the required local
+  coherent commit follow this entry; nothing will be pushed.

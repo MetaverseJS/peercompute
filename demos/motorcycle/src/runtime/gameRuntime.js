@@ -8,6 +8,7 @@ import {
   createRoadRaceSession,
   deriveRoadRaceCourse,
 } from '../race/index.js';
+import { createTerrainDrapedRoadSurface } from '../world/roadSurface.js';
 import { createRoadTerrainSurface } from '../world/roadSurfaceCollider.js';
 import {
   addTrafficPhysicsBodies,
@@ -79,7 +80,8 @@ export function createMotorcycleGameRuntime({
   if (selectedBoundaryMargin * 2 >= minimumTerrainSpan) {
     throw new RangeError('boundaryMarginMeters must leave a usable terrain interior.');
   }
-  const terrainSurface = createRoadTerrainSurface(terrain);
+  const roadSurface = createTerrainDrapedRoadSurface(terrain, sceneData.roadSegments);
+  const terrainSurface = createRoadTerrainSurface(terrain, { roadSurface });
   world.addSurfaceCollider(terrainSurface);
 
   const raceCourse = deriveRoadRaceCourse(sceneData.localGraph, {
@@ -252,6 +254,10 @@ export function createMotorcycleGameRuntime({
     syntheticTraffic: true,
     liveTraffic: false,
     terrainSource: terrain.source,
+    roadSurface: Object.freeze({
+      geometry: roadSurface.getTelemetry(),
+      collider: terrainSurface.getTelemetry(),
+    }),
     osmProvenance: sceneData.provenance,
     operationalUse: false,
     physicsProfile: Object.freeze({
@@ -266,6 +272,7 @@ export function createMotorcycleGameRuntime({
     world,
     rig,
     controller,
+    roadSurface,
     traffic,
     trafficPhysics,
     race,
@@ -376,6 +383,12 @@ export function createMotorcycleGameRuntime({
       return Object.freeze({ ...lastStep, trafficSnapshot });
     },
     reset,
+    setAutomaticTransmission(enabled) {
+      assertLive();
+      pendingShiftEdges.splice(0);
+      controller.setAutomaticTransmission(enabled);
+      return controller.getTelemetry();
+    },
     runTrafficImpactScenario,
     getState,
     dispose() {

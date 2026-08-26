@@ -1,3 +1,5 @@
+import { MOTORCYCLE_ROAD_STYLE_GROUP_SCHEMA } from '../world/roadSurface.js';
+
 function finite(value, label) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(`${label} must be finite.`);
@@ -84,6 +86,28 @@ export function createTerrainGeometry(THREE, terrain) {
 
 export function createRoadRibbonGeometry(THREE, roadSegments) {
   assertThree(THREE, ['BufferGeometry', 'BufferAttribute']);
+  if (roadSegments?.schemaVersion === MOTORCYCLE_ROAD_STYLE_GROUP_SCHEMA) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.name = `motorcycle-terrain-draped-road-${roadSegments.category}-geometry`;
+    geometry.setAttribute('position', new THREE.BufferAttribute(roadSegments.positions, 3));
+    geometry.setIndex(new THREE.BufferAttribute(roadSegments.indices, 1));
+    if (roadSegments.positions.length > 0) {
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+    }
+    geometry.userData = {
+      terrainDraped: true,
+      elevationModel: 'exact-terrain-triangle-plus-shared-deck-clearance',
+      requestedSegmentCount: roadSegments.sourceSegmentCount,
+      renderedSegmentCount: roadSegments.sourceSegmentCount,
+      renderedPatchCount: roadSegments.patchCount,
+      triangleCount: roadSegments.triangleCount,
+      vertexCount: roadSegments.vertexCount,
+      invalidSegmentCount: 0,
+    };
+    return geometry;
+  }
   if (!Array.isArray(roadSegments)) throw new TypeError('Road segments must be an array.');
   const positions = [];
   const indices = [];

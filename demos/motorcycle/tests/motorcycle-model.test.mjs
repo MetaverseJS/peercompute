@@ -255,7 +255,9 @@ test('resource owner shares immutable GPU assets across handles and disposes exa
   material.dispose = () => { disposeCounts.material += 1; };
   const sourceScene = new THREE.Group();
   sourceScene.add(new THREE.Mesh(geometry, material));
-  const fetchImpl = async (url) => {
+  const fetchRequests = [];
+  const fetchImpl = async (url, options) => {
+    fetchRequests.push({ url, options: { ...options } });
     if (url.endsWith('manifest.json')) return responseForText(manifestText);
     if (url.endsWith('model.glb')) return responseForBuffer(modelBuffer);
     throw new Error(`Unexpected fixture URL: ${url}`);
@@ -286,6 +288,11 @@ test('resource owner shares immutable GPU assets across handles and disposes exa
     resource.createInstance({ visible: false }),
   ]);
   assert.equal(disposeCounts.parse, 1);
+  assert.equal(fetchRequests.length, 2);
+  for (const request of fetchRequests) {
+    assert.equal(request.options.cache, 'no-cache');
+    assert.equal(request.options.credentials, 'same-origin');
+  }
   assert.notEqual(first.root, second.root);
   const firstMesh = first.root.getObjectByProperty('isMesh', true);
   const secondMesh = second.root.getObjectByProperty('isMesh', true);

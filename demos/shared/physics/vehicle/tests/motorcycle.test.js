@@ -454,7 +454,11 @@ test('two-metre landing respects hard suspension travel and recovers to finite s
 });
 
 test('shift edges execute once per sequence even with multiple physics substeps', () => {
-  const game = createMotorcyclePhysics({ worldOptions: { gravity: [0, 0, 0], maxParticles: 512 } });
+  const game = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+    controllerOptions: { automaticTransmission: false },
+  });
+  assert.equal(game.controller.getTelemetry().transmissionMode, 'manual');
   assert.equal(game.controller.getTelemetry().gear, 1);
   game.stepFrame(1 / 60, { sequence: 10, shiftDelta: 1 });
   assert.equal(game.controller.getTelemetry().gear, 2);
@@ -464,6 +468,39 @@ test('shift edges execute once per sequence even with multiple physics substeps'
   assert.equal(game.controller.getTelemetry().gear, 3);
   game.stepFrame(1 / 60, { sequence: 12, reset: true });
   assert.equal(game.world.stepCount, 2, 'reset edge is consumed once before two fixed substeps');
+  game.dispose();
+});
+
+test('automatic transmission is explicit, ignores manual shifts, and survives reset mode changes', () => {
+  const game = createMotorcyclePhysics({
+    worldOptions: { gravity: [0, 0, 0], maxParticles: 512 },
+  });
+  let telemetry = game.controller.getTelemetry();
+  assert.equal(telemetry.automaticTransmissionEnabled, true);
+  assert.equal(telemetry.transmissionMode, 'automatic');
+  assert.equal(telemetry.gear, 1);
+
+  game.stepFrame(1 / 120, { sequence: 1, shiftDelta: 1 });
+  assert.equal(game.controller.getTelemetry().gear, 1, 'AUTO ignores manual shift edges');
+
+  telemetry = game.controller.setAutomaticTransmission(false);
+  assert.equal(telemetry.automaticTransmissionEnabled, false);
+  assert.equal(telemetry.transmissionMode, 'manual');
+  game.stepFrame(1 / 120, { sequence: 2, shiftDelta: -1 });
+  assert.equal(game.controller.getTelemetry().gear, 0);
+
+  telemetry = game.controller.setAutomaticTransmission(true);
+  assert.equal(telemetry.transmissionMode, 'automatic');
+  assert.equal(telemetry.gear, 1, 'enabling AUTO selects first from neutral');
+  game.controller.setGear(0);
+  assert.equal(game.controller.getTelemetry().gear, 1, 'AUTO cannot be put back into neutral');
+
+  game.controller.setAutomaticTransmission(false);
+  game.reset();
+  telemetry = game.controller.getTelemetry();
+  assert.equal(telemetry.automaticTransmissionEnabled, false);
+  assert.equal(telemetry.transmissionMode, 'manual');
+  assert.equal(telemetry.gear, 1);
   game.dispose();
 });
 

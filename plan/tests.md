@@ -2594,3 +2594,60 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   gate requires positive forced-single-pass material count, zero two-pass
   transparent count, the grounding offset, model/physics authority separation,
   and all existing ride/data/overflow contracts.
+
+## Centered chase, physical road deck, automatic mode, and resident geometry strategy - 2026-08-25 AKDT
+
+- Camera: assert the third-person local X offset and look-target X are centered,
+  the camera remains behind the bike on negative local Z, terrain clearance
+  still applies, and built public state reports the same values.
+- Road contact: build a bounded spatial road-surface index, terrain-drape the
+  rendered strip from that same model, and prove tire surface contacts resolve
+  on the road deck with finite impulses/friction before and after origin rebase.
+  Pose/velocity corrections are forbidden.
+- Transmission: prove automatic is default, shifts under physical load, can be
+  switched to manual and back (including neutral recovery), survives reset,
+  ignores manual shift edges while automatic, and is visible in UI/public state.
+- EarthGrid: reproduce view A -> B -> A with no second network request, then
+  require compiled-buffer identity/reuse on A's return, atomic old-view retention
+  while B loads, exact resident tile/vertex/byte telemetry, LRU destruction at
+  caps, and invalidation when terrain height dependencies change.
+- Release: rerun geo-core, EarthGrid, physics, RoadVector, static build checks,
+  and built runtime smoke; then drive both direct private HTTPS apps and record
+  frame/contact/gear/residency evidence. Physical headset remains NOT RUN.
+
+## Centered chase, physical road deck, automatic mode, and resident geometry executed evidence - 2026-08-25 AKDT
+
+- PASS: camera/config tests require local chase X `0`, negative trailing Z,
+  centered look X, and desktop pixel-ratio cap `1.5`. Built browser inversion
+  of the live chassis quaternion measured local camera offset approximately
+  `[0.010, 2.068, -4.557]` after driving.
+- PASS: RoadVector `80/80` and physics `44/44`. Road tests prove shared render/
+  collider geometry, exact `0.105 m` terrain-relative deck clearance, on-road
+  and off-road samples, bounded adaptive sphere sweeps, front/rear tire contact,
+  origin rebase, and no capacity overflow. AUTO/manual controller and runtime
+  queue-clearing paths are deterministic.
+- PASS: the composite collider's Anchorage probe used `14,819` surface samples
+  for `14,760` sweeps (`1.004x`), produced physical OSM tire contacts, and ran
+  about `5.67 ms` per 120 Hz substep with fourteen traffic cages in the scoped
+  Node benchmark.
+- PASS: Shortbread focused `26/26` and full geo-core `84/84`. Tests separately
+  prove exact object reuse/no fetch/build when height dependencies are unchanged,
+  lazy replacement/no fetch after a changed shared resolver, atomic old-view
+  retention, hard resident vertex/byte eviction, teardown, and truthful counts.
+- PASS: `npm run test:earth-platform:unit` completed geo-core `84/84`, geodata
+  `60/60`, Earth `48/48`, WXGlobe `28/28`, XR `23/23` plus mocked browser,
+  physics `44/44`, traffic `12/12`, and RoadVector `80/80`.
+- PASS: combined static release `44/44`; focused generated Earth/RoadVector
+  smoke on owned port `43980`; full `npm run test:earth-platform:release`
+  including WXGlobe/Earth/RoadVector built smoke on owned port `43947`. Both
+  listeners closed after teardown.
+- PASS: direct private RoadVector had centered chase, explicit AUTO, three
+  current OSM tire contacts spanning front/rear, one shared render/collider,
+  and zero page/console/fatal errors. Direct private Earth z8 A→B→A held source
+  `requested=7` and compiled `buildCount=7`, incremented activation reuse `0→2`,
+  and retained seven resident buffers / 266,413 vertices / 7,390,098 bytes.
+- LIMITATION: system-Chromium software rendering measured only `4.71` rAF/s
+  for RoadVector even though isolated physics remained near `88` simulated
+  frames/s and road collision sampling was bounded. This is not a headset or
+  hardware-GPU result. Physical headset enter/exit/re-enter, hands/controllers,
+  haptics, comfort, and frame timing remain NOT RUN.

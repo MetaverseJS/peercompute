@@ -997,8 +997,16 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
     > layer.getTelemetry().tessellation.sourcePolylineCoordinateCount);
 
   const presentedRevision = firstTelemetry.readiness.revision;
+  const noChangeRefresh = layer.refreshHeights();
+  assert.equal(noChangeRefresh.revision, presentedRevision);
+  assert.equal(noChangeRefresh.replacedTileCount, 0);
+  assert.equal(noChangeRefresh.reusedTileCount, 1);
+  assert.equal(layer.scenePrimitive.orderedTiles[0], tileGeometry);
+  assert.equal(tileGeometry.isDestroyed(), false);
+  terrainHeight = 101;
   const pendingRefresh = layer.refreshHeights();
   assert.ok(pendingRefresh.revision > presentedRevision);
+  assert.equal(pendingRefresh.replacedTileCount, 1);
   assert.equal(tileGeometry.isDestroyed(), true);
   const failedTile = layer.scenePrimitive.orderedTiles[0];
   for (const category of failedTile.categories) category.collection.update = () => {};
@@ -1045,16 +1053,43 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
   assert.equal(layer.scenePrimitive.orderedTiles[0], stableTile, 'failed height refresh keeps the old tile atomically');
   assert.equal(stableTile.isDestroyed(), false);
   terrainHeight = 100;
+  const repairedBeforeMove = layer.refreshHeights();
+  assert.equal(repairedBeforeMove.replacedTileCount, 1);
+  const residentWestTile = layer.scenePrimitive.orderedTiles[0];
 
   harness.setRectangle(radiansRectangle(100, 35, 120, 55));
   harness.moveEnd.raiseEvent();
+  const pendingEast = layer.getTelemetry();
+  assert.equal(pendingEast.geometry.tileCount, 0, 'retiring geometry is excluded from current-view counts');
+  assert.equal(pendingEast.missingDesiredTileCount, 1);
+  assert.equal(pendingEast.bufferResidency.retiringTileCount, 1);
+  assert.equal(layer.scenePrimitive.orderedTiles[0], residentWestTile, 'old visuals remain attached while the next tile loads');
   await layer.waitForIdle();
   assert.equal(requestedUrls.length, 2);
+  const eastTile = layer.scenePrimitive.orderedTiles[0];
+  const eastTelemetry = layer.getTelemetry();
+  assert.equal(residentWestTile.isDestroyed(), false, 'an inactive compiled tile remains resident');
+  assert.equal(eastTelemetry.geometry.tileCount, 1);
+  assert.equal(eastTelemetry.bufferResidency.residentTileCount, 2);
+  assert.equal(eastTelemetry.bufferResidency.activeTileCount, 1);
+  assert.equal(eastTelemetry.bufferResidency.inactiveTileCount, 1);
+  assert.equal(eastTelemetry.bufferResidency.attachedTileCount, 1);
+  assert.equal(eastTelemetry.bufferResidency.retiringTileCount, 0);
+  const buildCountBeforeRevisit = eastTelemetry.bufferResidency.buildCount;
+  const reuseCountBeforeRevisit = eastTelemetry.bufferResidency.activationReuseCount;
   harness.setRectangle(radiansRectangle(-120, 35, -100, 55));
   harness.moveEnd.raiseEvent();
   await layer.waitForIdle();
   assert.equal(requestedUrls.length, 2, 'returning to a decoded tile is an LRU cache hit');
-  assert.ok(layer.getTelemetry().cacheHits >= 1);
+  const revisitedWest = layer.getTelemetry();
+  assert.equal(layer.scenePrimitive.orderedTiles[0], residentWestTile, 'revisit reattaches the exact compiled buffer object');
+  assert.equal(residentWestTile.isDestroyed(), false);
+  assert.equal(revisitedWest.bufferResidency.buildCount, buildCountBeforeRevisit);
+  assert.equal(revisitedWest.bufferResidency.activationReuseCount, reuseCountBeforeRevisit + 1);
+  assert.equal(revisitedWest.bufferResidency.residentTileCount, 2);
+  assert.equal(revisitedWest.geometry.tileCount, 1, 'inactive residents remain excluded from readiness geometry');
+  assert.equal(revisitedWest.renderReady, false, 'reattached geometry requires current-revision presentation');
+  assert.ok(revisitedWest.cacheHits >= 1);
 
   harness.setRectangle(radiansRectangle(-120, -55, -100, -35));
   harness.moveEnd.raiseEvent();
@@ -1062,11 +1097,15 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
   assert.equal(requestedUrls.length, 3);
   assert.equal(layer.getTelemetry().cached, 2);
   assert.equal(layer.getTelemetry().evicted, 1);
+  assert.equal(eastTile.isDestroyed(), true, 'decoded LRU eviction destroys its inactive compiled resident');
+  assert.equal(layer.getTelemetry().bufferResidency.evictionCount, 1);
 
   harness.setRectangle(radiansRectangle(100, 35, 120, 55));
   harness.moveEnd.raiseEvent();
   await layer.waitForIdle();
   assert.equal(requestedUrls.length, 4, 'the least-recent inactive decoded tile was evicted and fetched again');
+  assert.notEqual(layer.scenePrimitive.orderedTiles[0], eastTile);
+  assert.equal(residentWestTile.isDestroyed(), true, 'the next decoded LRU eviction releases the other inactive resident');
   assert.ok(harness.renderRequests > 0);
 
   layer.show = false;
@@ -1078,12 +1117,187 @@ test('camera lifecycle submits ordered buffers, confirms postRender, reuses LRU 
   layer.scenePrimitive.update({});
   harness.postRender.raiseEvent();
   assert.equal(latestTelemetry.renderReady, true);
+  const residentAtDestroy = [...layer.cache.values()]
+    .map((record) => record.bufferGeometry)
+    .filter(Boolean);
   layer.destroy();
+  assert.ok(residentAtDestroy.length > 0);
+  assert.ok(residentAtDestroy.every((buffer) => buffer.isDestroyed()), 'teardown destroys active and inactive residents');
   assert.equal(layer.isDestroyed, true);
   assert.equal(harness.dataSources.length, 0);
   assert.equal(harness.primitives.length, 0);
   assert.equal(harness.credits.size, 0);
   assert.equal(layer.dataSource, null);
+});
+
+test('marks inactive compiled residents stale and rebuilds changed heights lazily on revisit', async () => {
+  const harness = makeViewer({ mode: 'a' });
+  const tileA = Object.freeze({ x: 0, y: 0, z: 1, key: '1/0/0' });
+  const tileB = Object.freeze({ x: 1, y: 0, z: 1, key: '1/1/0' });
+  let terrainHeight = 10;
+  let requestCount = 0;
+  const layer = new ShortbreadGeometryLayer(Cesium, {
+    viewer: harness.viewer,
+    tileJson,
+    maximumActiveTiles: 1,
+    maximumCachedTiles: 2,
+    maximumConcurrentRequests: 1,
+    fetchImpl: async () => {
+      requestCount += 1;
+      return response([1]);
+    },
+    decodeTile: stubDecode,
+    commandsFromTile: (decoded) => roadOnlyCommands(decoded.x === 0 ? -90 : 90),
+    tileSelector: (rectangle) => tileSelection([rectangle.mode === 'a' ? tileA : tileB], 1),
+    heightResolver: () => terrainHeight,
+  });
+  const firstRoadHeight = (tileGeometry) => {
+    const road = tileGeometry.getCategory('road').collection.get(0, new Cesium.BufferPolyline());
+    const position = Cesium.Cartesian3.unpack(road.getPositions(), 0, new Cesium.Cartesian3());
+    return Cesium.Ellipsoid.WGS84.cartesianToCartographic(position).height;
+  };
+
+  await layer.start();
+  await layer.waitForIdle();
+  const firstA = layer.scenePrimitive.orderedTiles[0];
+  assert.ok(Math.abs(firstRoadHeight(firstA) - 12) < 1e-5);
+
+  harness.setRectangle({ mode: 'b' });
+  harness.moveEnd.raiseEvent();
+  await layer.waitForIdle();
+  const firstB = layer.scenePrimitive.orderedTiles[0];
+  const beforeRefresh = layer.getTelemetry().bufferResidency;
+  assert.equal(requestCount, 2);
+  assert.equal(beforeRefresh.residentTileCount, 2);
+  assert.equal(firstA.isDestroyed(), false);
+
+  terrainHeight = 20;
+  const heightRefresh = layer.refreshHeights();
+  const refreshedB = layer.scenePrimitive.orderedTiles[0];
+  const afterRefresh = layer.getTelemetry().bufferResidency;
+  assert.equal(heightRefresh.rebuiltTileCount, 1, 'only current B is rebuilt eagerly');
+  assert.equal(heightRefresh.replacedTileCount, 1);
+  assert.equal(firstB.isDestroyed(), true);
+  assert.notEqual(refreshedB, firstB);
+  assert.equal(firstA.isDestroyed(), false, 'inactive A remains compiled and detached while stale');
+  assert.equal(layer.cache.get(tileA.key).bufferGeometry, firstA);
+  assert.equal(layer.cache.get(tileA.key).heightStale, true);
+  assert.equal(layer.cache.get(tileB.key).heightStale, false);
+  assert.equal(afterRefresh.heightInvalidationCount, beforeRefresh.heightInvalidationCount + 2);
+  assert.equal(afterRefresh.heightRefreshBuildCount, beforeRefresh.heightRefreshBuildCount + 1);
+  assert.equal(afterRefresh.heightRefreshReplacementCount, beforeRefresh.heightRefreshReplacementCount + 1);
+  assert.equal(afterRefresh.lazyHeightBuildCount, beforeRefresh.lazyHeightBuildCount);
+
+  const buildsBeforeRevisit = afterRefresh.buildCount;
+  const reusesBeforeRevisit = afterRefresh.activationReuseCount;
+  harness.setRectangle({ mode: 'a' });
+  harness.moveEnd.raiseEvent();
+  await layer.waitForIdle();
+  const refreshedA = layer.scenePrimitive.orderedTiles[0];
+  const afterRevisit = layer.getTelemetry().bufferResidency;
+  assert.equal(requestCount, 2, 'lazy height correction reuses A\'s decoded plan without refetching');
+  assert.notEqual(refreshedA, firstA, 'changed resolver output replaces stale A during activation');
+  assert.equal(firstA.isDestroyed(), true);
+  assert.ok(Math.abs(firstRoadHeight(refreshedA) - 22) < 1e-5);
+  assert.equal(layer.cache.get(tileA.key).heightStale, false);
+  assert.equal(afterRevisit.buildCount, buildsBeforeRevisit + 1);
+  assert.equal(afterRevisit.activationReuseCount, reusesBeforeRevisit);
+  assert.equal(afterRevisit.lazyHeightBuildCount, afterRefresh.lazyHeightBuildCount + 1);
+  assert.equal(afterRevisit.lazyHeightReplacementCount, afterRefresh.lazyHeightReplacementCount + 1);
+  assert.equal(afterRevisit.residentTileCount, 2);
+  assert.equal(refreshedB.isDestroyed(), false, 'the already-correct B replacement remains resident');
+  layer.destroy();
+});
+
+test('evicts inactive compiled LRU buffers at resident vertex and byte caps without refetching decoded plans', async (t) => {
+  const tileA = Object.freeze({ x: 0, y: 0, z: 1, key: '1/0/0' });
+  const tileB = Object.freeze({ x: 1, y: 0, z: 1, key: '1/1/0' });
+  const probePlan = planShortbreadGeometry(roadOnlyCommands(-90), tileA);
+  const probe = createShortbreadBufferTileGeometry(Cesium, probePlan);
+  const oneTileVertices = probe.vertexCount;
+  const oneTileBytes = probe.byteLength;
+  probe.destroy();
+
+  const scenarios = [
+    Object.freeze({
+      name: 'vertex cap',
+      options: Object.freeze({ maximumActiveVertices: oneTileVertices * 2 - 1 }),
+      maximumVertices: oneTileVertices * 2 - 1,
+      maximumBytes: SHORTBREAD_GEOMETRY_LIMITS.maximumResidentBytes,
+    }),
+    Object.freeze({
+      name: 'byte cap',
+      options: Object.freeze({
+        maximumActiveVertices: oneTileVertices * 2,
+        maximumResidentBytes: oneTileBytes * 2 - 1,
+      }),
+      maximumVertices: oneTileVertices * 2,
+      maximumBytes: oneTileBytes * 2 - 1,
+    }),
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const harness = makeViewer({ mode: 'a' });
+      let requestCount = 0;
+      const layer = new ShortbreadGeometryLayer(Cesium, {
+        viewer: harness.viewer,
+        tileJson,
+        maximumActiveTiles: 1,
+        maximumCachedTiles: 2,
+        maximumConcurrentRequests: 1,
+        ...scenario.options,
+        fetchImpl: async () => {
+          requestCount += 1;
+          return response([1]);
+        },
+        decodeTile: stubDecode,
+        commandsFromTile: (decoded) => roadOnlyCommands(decoded.x === 0 ? -90 : 90),
+        tileSelector: (rectangle) => tileSelection([rectangle.mode === 'a' ? tileA : tileB], 1),
+      });
+      await layer.start();
+      await layer.waitForIdle();
+      const firstA = layer.scenePrimitive.orderedTiles[0];
+      assert.equal(firstA.vertexCount, oneTileVertices);
+      assert.equal(firstA.byteLength, oneTileBytes);
+
+      harness.setRectangle({ mode: 'b' });
+      harness.moveEnd.raiseEvent();
+      await layer.waitForIdle();
+      const firstB = layer.scenePrimitive.orderedTiles[0];
+      const afterB = layer.getTelemetry();
+      assert.equal(requestCount, 2);
+      assert.equal(afterB.cached, 2, 'compiled eviction retains the decoded tile plan');
+      assert.equal(afterB.bufferResidency.maximumRecords, 2);
+      assert.equal(afterB.bufferResidency.maximumVertices, scenario.maximumVertices);
+      assert.equal(afterB.bufferResidency.maximumBytes, scenario.maximumBytes);
+      assert.equal(afterB.bufferResidency.residentTileCount, 1);
+      assert.equal(afterB.bufferResidency.activeTileCount, 1);
+      assert.equal(afterB.bufferResidency.inactiveTileCount, 0);
+      assert.equal(afterB.bufferResidency.evictionCount, 1);
+      assert.equal(afterB.bufferResidency.evictedVertexCount, oneTileVertices);
+      assert.equal(afterB.bufferResidency.evictedByteLength, oneTileBytes);
+      assert.equal(firstA.isDestroyed(), true);
+      assert.equal(layer.cache.has(tileA.key), true);
+      assert.equal(layer.cache.get(tileA.key).bufferGeometry, null);
+
+      const buildsBeforeARevisit = afterB.bufferResidency.buildCount;
+      const reusesBeforeARevisit = afterB.bufferResidency.activationReuseCount;
+      harness.setRectangle({ mode: 'a' });
+      harness.moveEnd.raiseEvent();
+      await layer.waitForIdle();
+      const revisitedA = layer.scenePrimitive.orderedTiles[0];
+      const afterARevisit = layer.getTelemetry();
+      assert.equal(requestCount, 2, 'revisiting a compiled-evicted tile rebuilds its retained decoded plan');
+      assert.notEqual(revisitedA, firstA);
+      assert.equal(firstB.isDestroyed(), true);
+      assert.equal(afterARevisit.bufferResidency.buildCount, buildsBeforeARevisit + 1);
+      assert.equal(afterARevisit.bufferResidency.activationReuseCount, reusesBeforeARevisit);
+      assert.equal(afterARevisit.bufferResidency.evictionCount, 2);
+      assert.equal(afterARevisit.bufferResidency.residentTileCount, 1);
+      layer.destroy();
+    });
+  }
 });
 
 test('settles a valid empty tile without claiming GPU geometry submission or presentation', async () => {
@@ -1567,6 +1781,11 @@ test('fails closed on byte, active-vertex, buffer-transaction, and hard lifecycl
     tileJson,
     maximumConcurrentRequests: SHORTBREAD_GEOMETRY_LIMITS.maximumConcurrentRequests + 1,
   }), /maximumConcurrentRequests/);
+  assert.throws(() => new ShortbreadGeometryLayer(Cesium, {
+    viewer: makeViewer(radiansRectangle(-10, -10, 10, 10)).viewer,
+    tileJson,
+    maximumResidentBytes: SHORTBREAD_GEOMETRY_LIMITS.maximumResidentBytes + 1,
+  }), /maximumResidentBytes/);
   assert.throws(() => new ShortbreadGeometryLayer(Cesium, {
     viewer: makeViewer(radiansRectangle(-10, -10, 10, 10)).viewer,
     tileJson,

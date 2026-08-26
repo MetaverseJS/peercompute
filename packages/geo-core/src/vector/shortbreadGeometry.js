@@ -36,6 +36,7 @@ export const SHORTBREAD_GEOMETRY_LIMITS = Object.freeze({
   maximumActiveTiles: 24,
   maximumConcurrentRequests: 6,
   maximumCachedTiles: 96,
+  maximumResidentBytes: 192 * 1024 * 1024,
   maximumTileBytes: 2 * 1024 * 1024,
   maximumTotalBytes: 192 * 1024 * 1024,
   maximumFeaturesPerTile: SHORTBREAD_MAXIMUM_FEATURES_PER_TILE,
@@ -1640,6 +1641,90 @@ class ShortbreadBufferTileGeometry {
   isDestroyed() { return this.destroyed; }
 }
 
+function typedArraysEqual(left, right) {
+  if (!ArrayBuffer.isView(left) || !ArrayBuffer.isView(right)
+    || left.constructor !== right.constructor || left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (!Object.is(left[index], right[index])) return false;
+  }
+  return true;
+}
+
+function plainRecordsEqual(left, right) {
+  const leftKeys = Object.keys(left ?? {}).sort();
+  const rightKeys = Object.keys(right ?? {}).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (let index = 0; index < leftKeys.length; index += 1) {
+    const key = leftKeys[index];
+    if (key !== rightKeys[index] || !Object.is(left[key], right[key])) return false;
+  }
+  return true;
+}
+
+function materialsEqual(left, right) {
+  return left.color.toRgba() === right.color.toRgba()
+    && left.outlineColor.toRgba() === right.outlineColor.toRgba()
+    && left.outlineWidth === right.outlineWidth
+    && (left.width === undefined || left.width === right.width);
+}
+
+function bufferCategoriesEqual(Cesium, left, right) {
+  if (left.kind !== right.kind
+    || left.primitiveCount !== right.primitiveCount
+    || left.vertexCount !== right.vertexCount
+    || left.byteLength !== right.byteLength
+    || left.allowPicking !== right.allowPicking
+    || left.blend !== right.blend
+    || left.linePassCount !== right.linePassCount
+    || left.elevationOffsetMeters !== right.elevationOffsetMeters) {
+    return false;
+  }
+  const polygon = left.kind === 'water-surface';
+  const Primitive = polygon ? Cesium.BufferPolygon : Cesium.BufferPolyline;
+  const Material = polygon ? Cesium.BufferPolygonMaterial : Cesium.BufferPolylineMaterial;
+  const leftPrimitive = new Primitive();
+  const rightPrimitive = new Primitive();
+  const leftMaterial = new Material();
+  const rightMaterial = new Material();
+  for (let index = 0; index < left.primitiveCount; index += 1) {
+    left.collection.get(index, leftPrimitive);
+    right.collection.get(index, rightPrimitive);
+    if (leftPrimitive.featureId !== rightPrimitive.featureId
+      || leftPrimitive.show !== rightPrimitive.show
+      || !typedArraysEqual(leftPrimitive.getPositions(), rightPrimitive.getPositions())
+      || !materialsEqual(
+        leftPrimitive.getMaterial(leftMaterial),
+        rightPrimitive.getMaterial(rightMaterial),
+      )) {
+      return false;
+    }
+    if (polygon && (!typedArraysEqual(leftPrimitive.getHoles(), rightPrimitive.getHoles())
+      || !typedArraysEqual(leftPrimitive.getTriangles(), rightPrimitive.getTriangles()))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bufferTileGeometriesEqual(Cesium, left, right) {
+  if (!left || !right || left.isDestroyed() || right.isDestroyed()
+    || left.tileKey !== right.tileKey
+    || left.primitiveCount !== right.primitiveCount
+    || left.vertexCount !== right.vertexCount
+    || left.byteLength !== right.byteLength
+    || left.collectionCount !== right.collectionCount
+    || !plainRecordsEqual(left.elevationOffsetsMeters, right.elevationOffsetsMeters)
+    || !plainRecordsEqual(left.heightResolution, right.heightResolution)) {
+    return false;
+  }
+  for (let index = 0; index < left.categories.length; index += 1) {
+    if (!bufferCategoriesEqual(Cesium, left.categories[index], right.categories[index])) return false;
+  }
+  return true;
+}
+
 export function createShortbreadBufferTileGeometry(Cesium, plan, {
   heightResolver = null,
   categoryElevationOffsetsMeters,
@@ -1821,13 +1906,19 @@ class ShortbreadBufferScenePrimitive {
     this.revision += 1;
   }
 
-  removeTile(tileKey) {
+  detachTile(tileKey) {
     const tileGeometry = this.tiles.get(tileKey);
-    if (!tileGeometry) return false;
+    if (!tileGeometry) return null;
     this.tiles.delete(tileKey);
     this.orderedTiles = [...this.tiles.values()].sort((left, right) => left.tileKey.localeCompare(right.tileKey));
-    tileGeometry.destroy();
     this.revision += 1;
+    return tileGeometry;
+  }
+
+  removeTile(tileKey) {
+    const tileGeometry = this.detachTile(tileKey);
+    if (!tileGeometry) return false;
+    tileGeometry.destroy();
     return true;
   }
 
@@ -2059,6 +2150,30 @@ function activeGeometryCounts(records) {
   return Object.freeze(counts);
 }
 
+function residentGeometryCounts(records) {
+  const counts = {
+    tileCount: 0,
+    activeTileCount: 0,
+    inactiveTileCount: 0,
+    attachedTileCount: 0,
+    retiringTileCount: 0,
+    bufferVertexCount: 0,
+    bufferByteLength: 0,
+  };
+  for (const record of records.values()) {
+    const geometry = record.bufferGeometry;
+    if (!geometry || geometry.isDestroyed()) continue;
+    counts.tileCount += 1;
+    if (record.active) counts.activeTileCount += 1;
+    else counts.inactiveTileCount += 1;
+    if (record.attached) counts.attachedTileCount += 1;
+    if (record.retiring) counts.retiringTileCount += 1;
+    counts.bufferVertexCount += geometry.vertexCount;
+    counts.bufferByteLength += geometry.byteLength;
+  }
+  return Object.freeze(counts);
+}
+
 export class ShortbreadGeometryLayer {
   constructor(Cesium, {
     viewer,
@@ -2129,6 +2244,7 @@ export class ShortbreadGeometryLayer {
     this.credit = new Cesium.Credit(OSM_ATTRIBUTION_HTML, true);
     this.cache = new Map();
     this.activeRecords = new Map();
+    this.retiringRecords = new Map();
     this.inflight = new Map();
     this.queue = [];
     this.queueKeys = new Set();
@@ -2154,6 +2270,20 @@ export class ShortbreadGeometryLayer {
     this.coalesced = 0;
     this.cacheHits = 0;
     this.evicted = 0;
+    this.bufferBuildCount = 0;
+    this.bufferReuseCount = 0;
+    this.bufferEvictionCount = 0;
+    this.bufferEvictedVertexCount = 0;
+    this.bufferEvictedByteLength = 0;
+    this.retainedVisualTransitionCount = 0;
+    this.heightRefreshCount = 0;
+    this.heightRefreshBuildCount = 0;
+    this.heightRefreshReplacementCount = 0;
+    this.heightRefreshNoopCount = 0;
+    this.heightInvalidationCount = 0;
+    this.lazyHeightBuildCount = 0;
+    this.lazyHeightReplacementCount = 0;
+    this.activeSelectionRetainCount = 0;
     this.capRejected = 0;
     this.responseBytes = 0;
     this.reservedResponseBytes = 0;
@@ -2273,7 +2403,8 @@ export class ShortbreadGeometryLayer {
       this.queue = [];
       this.queueKeys.clear();
       this.desiredKeys.clear();
-      for (const record of [...this.activeRecords.values()]) this.#deactivate(record);
+      for (const record of [...this.activeRecords.values()]) this.#deactivate(record, { destroy: true });
+      for (const record of [...this.retiringRecords.values()]) this.#deactivate(record, { destroy: true });
       this.viewer.creditDisplay?.removeStaticCredit?.(this.credit);
       if (this.scenePrimitiveAdded) {
         this.viewer.scene.primitives.remove(this.scenePrimitive);
@@ -2306,7 +2437,7 @@ export class ShortbreadGeometryLayer {
     );
 
     for (const [key, record] of this.activeRecords) {
-      if (!this.desiredKeys.has(key)) this.#deactivate(record);
+      if (!this.desiredKeys.has(key)) this.#retire(record);
     }
     const retainedQueue = [];
     this.queueKeys.clear();
@@ -2325,8 +2456,12 @@ export class ShortbreadGeometryLayer {
     for (const tile of selection.tiles) {
       const cached = this.cache.get(tile.key);
       if (cached) {
-        this.cacheHits += 1;
         this.#touch(cached);
+        if (cached.active) {
+          this.activeSelectionRetainCount += 1;
+          continue;
+        }
+        this.cacheHits += 1;
         try {
           this.#activate(cached);
           this.activationRejectedKeys.delete(cached.key);
@@ -2351,6 +2486,7 @@ export class ShortbreadGeometryLayer {
       }
     }
     this.#pump();
+    this.#reconcileRetiringAttachments();
     this.#emitTelemetry();
     return selection;
   }
@@ -2358,7 +2494,13 @@ export class ShortbreadGeometryLayer {
   refreshHeights() {
     if (this.destroyed) throw new Error('Shortbread geometry layer is destroyed.');
     if (!this.started) throw new Error('Shortbread geometry layer must be started before refreshing heights.');
+    this.heightRefreshCount += 1;
     const records = [...this.activeRecords.values()].sort((left, right) => left.key.localeCompare(right.key));
+    for (const record of this.cache.values()) {
+      if (!record.bufferGeometry || record.heightStale) continue;
+      record.heightStale = true;
+      this.heightInvalidationCount += 1;
+    }
     const replacements = [];
     let remainingVertices = this.limits.maximumActiveVertices;
     try {
@@ -2382,6 +2524,8 @@ export class ShortbreadGeometryLayer {
             vertexCapErrorCode: 'ERR_SHORTBREAD_ACTIVE_VERTEX_CAP',
           }),
         };
+        this.bufferBuildCount += 1;
+        this.heightRefreshBuildCount += 1;
         remainingVertices -= replacement.bufferGeometry.vertexCount;
         replacements.push(replacement);
       }
@@ -2389,12 +2533,44 @@ export class ShortbreadGeometryLayer {
       for (const replacement of replacements) replacement.bufferGeometry.destroy();
       throw error;
     }
-    this.scenePrimitive.replaceTiles(replacements.map(({ bufferGeometry }) => bufferGeometry));
-    for (const { record, bufferGeometry } of replacements) record.bufferGeometry = bufferGeometry;
-    this.viewer.scene.requestRender?.();
+    const changed = [];
+    for (const replacement of replacements) {
+      if (bufferTileGeometriesEqual(
+        this.Cesium,
+        replacement.record.bufferGeometry,
+        replacement.bufferGeometry,
+      )) {
+        replacement.bufferGeometry.destroy();
+        this.heightRefreshNoopCount += 1;
+      } else {
+        changed.push(replacement);
+      }
+    }
+    try {
+      const vertexDelta = changed.reduce((total, { record, bufferGeometry }) => (
+        total + bufferGeometry.vertexCount - (record.bufferGeometry?.vertexCount ?? 0)
+      ), 0);
+      const byteDelta = changed.reduce((total, { record, bufferGeometry }) => (
+        total + bufferGeometry.byteLength - (record.bufferGeometry?.byteLength ?? 0)
+      ), 0);
+      this.#makeResidentRoom(vertexDelta, byteDelta, new Set(records));
+      this.scenePrimitive.replaceTiles(changed.map(({ bufferGeometry }) => bufferGeometry));
+    } catch (error) {
+      for (const replacement of changed) {
+        if (!replacement.bufferGeometry.isDestroyed()) replacement.bufferGeometry.destroy();
+      }
+      throw error;
+    }
+    for (const { record, bufferGeometry } of changed) record.bufferGeometry = bufferGeometry;
+    for (const record of records) record.heightStale = false;
+    this.heightRefreshReplacementCount += changed.length;
+    if (changed.length > 0) this.viewer.scene.requestRender?.();
     this.#emitTelemetry();
     return Object.freeze({
       tileCount: replacements.length,
+      rebuiltTileCount: replacements.length,
+      replacedTileCount: changed.length,
+      reusedTileCount: replacements.length - changed.length,
       revision: this.scenePrimitive.revision,
     });
   }
@@ -2591,12 +2767,14 @@ export class ShortbreadGeometryLayer {
         .finally(() => {
           this.inflight.delete(tile.key);
           this.#pump();
+          this.#reconcileRetiringAttachments();
           this.#emitTelemetry();
           this.#resolveIdle();
         });
       request.promise = promise;
       this.inflight.set(tile.key, request);
     }
+    this.#reconcileRetiringAttachments();
     this.#resolveIdle();
   }
 
@@ -2667,12 +2845,22 @@ export class ShortbreadGeometryLayer {
       },
     });
     if (signal.aborted || this.destroyed || !this.desiredKeys.has(tile.key)) throw abortError();
-    const record = { key: tile.key, tile, plan, bufferGeometry: null, active: false };
+    const record = {
+      key: tile.key,
+      tile,
+      plan,
+      bufferGeometry: null,
+      active: false,
+      attached: false,
+      retiring: false,
+      heightStale: false,
+    };
     this.#remember(record);
     try {
       this.#activate(record);
       this.loaded += 1;
     } catch (error) {
+      this.#discardBuffer(record);
       this.cache.delete(record.key);
       throw error;
     }
@@ -2693,8 +2881,87 @@ export class ShortbreadGeometryLayer {
     while (this.cache.size > this.limits.maximumCachedTiles) {
       const candidate = [...this.cache.values()].find((record) => !record.active);
       if (!candidate) break;
+      this.#discardBuffer(candidate, { evicted: true });
       this.cache.delete(candidate.key);
       this.evicted += 1;
+    }
+  }
+
+  #createBufferGeometry(record, maximumVertices) {
+    const bufferGeometry = createShortbreadBufferTileGeometry(this.Cesium, record.plan, {
+      heightResolver: this.heightResolver,
+      categoryElevationOffsetsMeters: this.categoryElevationOffsetsMeters,
+      ellipsoid: this.ellipsoid,
+      maximumVertices,
+      maximumWaterRoadIntersectionTestsPerTile: (
+        this.limits.maximumWaterRoadIntersectionTestsPerTile
+      ),
+      maximumPolygonSourceRingsPerSurface: (
+        this.limits.maximumPolygonSourceRingsPerSurface
+      ),
+      maximumPolygonSourcePositionsPerSurface: (
+        this.limits.maximumPolygonSourcePositionsPerSurface
+      ),
+      vertexCapErrorCode: 'ERR_SHORTBREAD_ACTIVE_VERTEX_CAP',
+    });
+    this.bufferBuildCount += 1;
+    return bufferGeometry;
+  }
+
+  #discardBuffer(record, { evicted = false, requestRender = true } = {}) {
+    const bufferGeometry = record?.bufferGeometry;
+    if (!bufferGeometry) return false;
+    let detached = false;
+    if (record.attached) {
+      this.scenePrimitive.detachTile(record.key);
+      record.attached = false;
+      detached = true;
+    }
+    record.retiring = false;
+    this.retiringRecords.delete(record.key);
+    if (!bufferGeometry.isDestroyed()) bufferGeometry.destroy();
+    record.bufferGeometry = null;
+    record.heightStale = false;
+    if (evicted) {
+      this.bufferEvictionCount += 1;
+      this.bufferEvictedVertexCount += bufferGeometry.vertexCount;
+      this.bufferEvictedByteLength += bufferGeometry.byteLength;
+    }
+    if (detached && requestRender) this.viewer.scene?.requestRender?.();
+    return true;
+  }
+
+  #makeResidentRoom(vertexDelta, byteDelta, protectedRecords = new Set()) {
+    let resident = residentGeometryCounts(this.cache);
+    let projectedVertices = resident.bufferVertexCount + vertexDelta;
+    let projectedBytes = resident.bufferByteLength + byteDelta;
+    while (projectedVertices > this.limits.maximumActiveVertices
+      || projectedBytes > this.limits.maximumResidentBytes) {
+      const candidate = [...this.cache.values()].find((record) => (
+        !record.active
+        && !protectedRecords.has(record)
+        && record.bufferGeometry
+        && !record.bufferGeometry.isDestroyed()
+      ));
+      if (!candidate) break;
+      const { vertexCount, byteLength } = candidate.bufferGeometry;
+      this.#discardBuffer(candidate, { evicted: true });
+      projectedVertices -= vertexCount;
+      projectedBytes -= byteLength;
+    }
+    if (projectedVertices > this.limits.maximumActiveVertices) {
+      throw codedError(
+        RangeError,
+        'ERR_SHORTBREAD_RESIDENT_VERTEX_CAP',
+        `Shortbread compiled residency exceeds the ${this.limits.maximumActiveVertices}-vertex cap.`,
+      );
+    }
+    if (projectedBytes > this.limits.maximumResidentBytes) {
+      throw codedError(
+        RangeError,
+        'ERR_SHORTBREAD_RESIDENT_BYTE_CAP',
+        `Shortbread compiled residency exceeds the ${this.limits.maximumResidentBytes}-byte cap.`,
+      );
     }
   }
 
@@ -2702,39 +2969,59 @@ export class ShortbreadGeometryLayer {
     if (record.active || !this.desiredKeys.has(record.key)) return false;
     const active = activeGeometryCounts(this.activeRecords);
     const remainingVertices = this.limits.maximumActiveVertices - active.bufferVertexCount;
-    if (record.plan.counts.vertexCount > remainingVertices) {
+    if ((record.bufferGeometry?.vertexCount ?? record.plan.counts.vertexCount) > remainingVertices) {
       throw codedError(
         RangeError,
         'ERR_SHORTBREAD_ACTIVE_VERTEX_CAP',
         `Shortbread active geometry exceeds the ${this.limits.maximumActiveVertices}-vertex cap.`,
       );
     }
-    let bufferGeometry;
+    const residentBuffer = record.bufferGeometry;
+    let bufferGeometry = residentBuffer;
+    let replacement = null;
+    let reused = Boolean(residentBuffer);
     try {
-      bufferGeometry = createShortbreadBufferTileGeometry(this.Cesium, record.plan, {
-        heightResolver: this.heightResolver,
-        categoryElevationOffsetsMeters: this.categoryElevationOffsetsMeters,
-        ellipsoid: this.ellipsoid,
-        maximumVertices: remainingVertices,
-        maximumWaterRoadIntersectionTestsPerTile: (
-          this.limits.maximumWaterRoadIntersectionTestsPerTile
-        ),
-        maximumPolygonSourceRingsPerSurface: (
-          this.limits.maximumPolygonSourceRingsPerSurface
-        ),
-        maximumPolygonSourcePositionsPerSurface: (
-          this.limits.maximumPolygonSourcePositionsPerSurface
-        ),
-        vertexCapErrorCode: 'ERR_SHORTBREAD_ACTIVE_VERTEX_CAP',
-      });
-      this.scenePrimitive.addTile(bufferGeometry);
+      if (!residentBuffer || record.heightStale) {
+        replacement = this.#createBufferGeometry(record, remainingVertices);
+        if (record.heightStale) this.lazyHeightBuildCount += 1;
+        if (residentBuffer && bufferTileGeometriesEqual(this.Cesium, residentBuffer, replacement)) {
+          replacement.destroy();
+          replacement = null;
+          record.heightStale = false;
+          this.heightRefreshNoopCount += 1;
+        } else {
+          const vertexDelta = replacement.vertexCount - (residentBuffer?.vertexCount ?? 0);
+          const byteDelta = replacement.byteLength - (residentBuffer?.byteLength ?? 0);
+          this.#makeResidentRoom(vertexDelta, byteDelta, new Set([record]));
+          if (record.attached && residentBuffer) {
+            this.scenePrimitive.replaceTiles([replacement]);
+          } else {
+            this.scenePrimitive.addTile(replacement);
+            record.attached = true;
+            if (residentBuffer && !residentBuffer.isDestroyed()) residentBuffer.destroy();
+          }
+          bufferGeometry = replacement;
+          record.bufferGeometry = replacement;
+          replacement = null;
+          reused = false;
+          if (residentBuffer) this.lazyHeightReplacementCount += 1;
+          record.heightStale = false;
+        }
+      }
+      if (!record.attached) {
+        this.scenePrimitive.addTile(bufferGeometry);
+        record.attached = true;
+      }
     } catch (error) {
-      if (bufferGeometry && !bufferGeometry.isDestroyed()) bufferGeometry.destroy();
+      if (replacement && !replacement.isDestroyed()) replacement.destroy();
       throw error;
     }
     record.bufferGeometry = bufferGeometry;
     record.active = true;
+    record.retiring = false;
     this.activeRecords.set(record.key, record);
+    this.retiringRecords.delete(record.key);
+    if (reused) this.bufferReuseCount += 1;
     this.activationRejectedKeys.delete(record.key);
     this.terminalFailedKeys.delete(record.key);
     this.#touch(record);
@@ -2742,13 +3029,57 @@ export class ShortbreadGeometryLayer {
     return true;
   }
 
-  #deactivate(record) {
-    if (!record?.active) return;
-    this.scenePrimitive.removeTile(record.key);
-    record.bufferGeometry = null;
+  #retire(record) {
+    if (!record?.active) return false;
     record.active = false;
     this.activeRecords.delete(record.key);
-    this.viewer.scene?.requestRender?.();
+    if (record.attached) {
+      record.retiring = true;
+      this.retiringRecords.set(record.key, record);
+      this.retainedVisualTransitionCount += 1;
+    }
+    return true;
+  }
+
+  #deactivate(record, { destroy = false } = {}) {
+    if (!record) return false;
+    record.active = false;
+    this.activeRecords.delete(record.key);
+    record.retiring = false;
+    this.retiringRecords.delete(record.key);
+    let detached = false;
+    if (record.attached) {
+      this.scenePrimitive.detachTile(record.key);
+      record.attached = false;
+      detached = true;
+    }
+    if (destroy) this.#discardBuffer(record, { requestRender: false });
+    if (detached) this.viewer.scene?.requestRender?.();
+    return detached;
+  }
+
+  #reconcileRetiringAttachments() {
+    if (this.retiringRecords.size === 0) return false;
+    const desiredComplete = [...this.desiredKeys].every((key) => this.activeRecords.has(key));
+    const lifecycleSettled = this.queue.length === 0 && this.inflight.size === 0;
+    if (!desiredComplete && !lifecycleSettled) return false;
+    let detached = false;
+    for (const record of [...this.retiringRecords.values()]) {
+      if (record.active && this.desiredKeys.has(record.key)) {
+        record.retiring = false;
+        this.retiringRecords.delete(record.key);
+        continue;
+      }
+      if (record.attached) {
+        this.scenePrimitive.detachTile(record.key);
+        record.attached = false;
+        detached = true;
+      }
+      record.retiring = false;
+      this.retiringRecords.delete(record.key);
+    }
+    if (detached) this.viewer.scene?.requestRender?.();
+    return detached;
   }
 
   #recordError(error) {
@@ -2779,6 +3110,7 @@ export class ShortbreadGeometryLayer {
 
   getTelemetry() {
     const geometry = activeGeometryCounts(this.activeRecords);
+    const residency = residentGeometryCounts(this.cache);
     const viewDeferred = geometry.deferredTileCount > 0
       && geometry.deferredTileCount === geometry.tileCount;
     const bufferCountsExact = geometry.bufferPrimitiveCount === geometry.entityCount
@@ -2804,10 +3136,12 @@ export class ShortbreadGeometryLayer {
     const settledTerminalFailure = lifecycleIdle && this.terminalFailedKeys.size > 0;
     const settledActivationFailure = lifecycleIdle && this.activationRejectedKeys.size > 0;
     const settledEmpty = lifecycleIdle && missingDesiredTileCount === 0
+      && residency.retiringTileCount === 0
       && !settledTerminalFailure && geometry.tileCount > 0 && geometry.bufferPrimitiveCount === 0;
     const renderReady = this.started && this.scenePrimitiveAdded && this.scenePrimitive.show
       && cpuGeometryValidated && gpuPresentedFrame && !currentRevisionRenderFailed
-      && !settledTerminalFailure && missingDesiredTileCount === 0;
+      && !settledTerminalFailure && missingDesiredTileCount === 0
+      && residency.retiringTileCount === 0;
     const heightResolutionMode = this.heightResolver
       ? geometry.unresolvedFallbackCoordinateCount > 0 || geometry.fallbackInlandWaterBodyCount > 0
         ? 'flat-native-water-and-sync-terrain-with-zero-fallback'
@@ -2970,6 +3304,37 @@ export class ShortbreadGeometryLayer {
       queued: this.queue.length,
       inflight: this.inflight.size,
       cached: this.cache.size,
+      bufferResidency: Object.freeze({
+        schemaVersion: 'peercompute.geo.shortbread-buffer-residency.v1',
+        model: 'bounded-compiled-buffer-lru-with-detached-inactive-residents',
+        scope: 'layer-session',
+        inactiveResidentsSubmitted: false,
+        retiringVisualsSubmittedUntilDesiredSelectionSettles: true,
+        maximumRecords: this.limits.maximumCachedTiles,
+        maximumVertices: this.limits.maximumActiveVertices,
+        maximumBytes: this.limits.maximumResidentBytes,
+        residentTileCount: residency.tileCount,
+        activeTileCount: residency.activeTileCount,
+        inactiveTileCount: residency.inactiveTileCount,
+        attachedTileCount: residency.attachedTileCount,
+        retiringTileCount: residency.retiringTileCount,
+        residentVertexCount: residency.bufferVertexCount,
+        residentByteLength: residency.bufferByteLength,
+        buildCount: this.bufferBuildCount,
+        activationReuseCount: this.bufferReuseCount,
+        evictionCount: this.bufferEvictionCount,
+        evictedVertexCount: this.bufferEvictedVertexCount,
+        evictedByteLength: this.bufferEvictedByteLength,
+        retainedVisualTransitionCount: this.retainedVisualTransitionCount,
+        activeSelectionRetainCount: this.activeSelectionRetainCount,
+        heightRefreshCount: this.heightRefreshCount,
+        heightRefreshBuildCount: this.heightRefreshBuildCount,
+        heightRefreshReplacementCount: this.heightRefreshReplacementCount,
+        heightRefreshNoopCount: this.heightRefreshNoopCount,
+        heightInvalidationCount: this.heightInvalidationCount,
+        lazyHeightBuildCount: this.lazyHeightBuildCount,
+        lazyHeightReplacementCount: this.lazyHeightReplacementCount,
+      }),
       responseBytes: this.responseBytes,
       reservedResponseBytes: this.reservedResponseBytes,
       aggregateBudgetScope: 'layer-session-lifetime',
@@ -2996,6 +3361,7 @@ export class ShortbreadGeometryLayer {
         presentedRevision: this.scenePrimitive.presentedRevision,
         pending: !settledEmpty && !settledTerminalFailure && !currentRevisionRenderFailed
           && (this.queue.length > 0 || this.inflight.size > 0 || missingDesiredTileCount > 0
+            || residency.retiringTileCount > 0
             || (geometry.bufferPrimitiveCount > 0 && !gpuPresentedFrame)),
         settledEmpty,
         viewDeferred,
@@ -3005,6 +3371,7 @@ export class ShortbreadGeometryLayer {
         missingDesiredTileCount,
         activationRejectedTileCount: this.activationRejectedKeys.size,
         terminalFailedTileCount: this.terminalFailedKeys.size,
+        retiringTileCount: residency.retiringTileCount,
         renderFailed: currentRevisionRenderFailed,
         gpuSubmittedFrame,
         gpuPresentedFrame,
@@ -3091,7 +3458,9 @@ export class ShortbreadGeometryLayer {
     this.desiredKeys.clear();
     this.activationRejectedKeys.clear();
     this.terminalFailedKeys.clear();
-    for (const record of [...this.activeRecords.values()]) this.#deactivate(record);
+    for (const record of [...this.cache.values()]) this.#deactivate(record, { destroy: true });
+    this.activeRecords.clear();
+    this.retiringRecords.clear();
     this.cache.clear();
     this.viewer.creditDisplay?.removeStaticCredit?.(this.credit);
     if (this.scenePrimitiveAdded && this.viewer.scene.primitives.contains?.(this.scenePrimitive)) {

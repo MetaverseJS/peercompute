@@ -71,6 +71,7 @@ const elements = Object.freeze({
   resetBike: document.querySelector('#reset-bike'),
   enterXr: document.querySelector('#enter-xr'),
   leanAssist: document.querySelector('#lean-assist'),
+  automaticTransmission: document.querySelector('#automatic-transmission'),
   provenance: document.querySelector('#provenance'),
   touchSteer: document.querySelector('#touch-steer'),
   touchThrottle: document.querySelector('#touch-throttle'),
@@ -105,7 +106,10 @@ scene.add(new THREE.HemisphereLight(0x7aff9a, 0x001105, 1.1));
 scene.add(new THREE.DirectionalLight(0xffffff, 0.45));
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
+renderer.setPixelRatio(Math.min(
+  globalThis.devicePixelRatio || 1,
+  ROADVECTOR_CAMERA_CONFIG.maximumDesktopPixelRatio,
+));
 renderer.setSize(globalThis.innerWidth, globalThis.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
@@ -316,6 +320,16 @@ function setLeanAssist(enabled) {
   if (runtime.game) runtime.game.controller.leanAssistEnabled = active;
 }
 
+function setAutomaticTransmission(enabled) {
+  const active = Boolean(enabled);
+  elements.automaticTransmission.checked = active;
+  elements.touchShiftDown.disabled = active;
+  elements.touchShiftUp.disabled = active;
+  document.documentElement.dataset.transmissionMode = active ? 'automatic' : 'manual';
+  inputRuntime?.clearControls?.();
+  return runtime.game?.setAutomaticTransmission?.(active) ?? null;
+}
+
 function formatRaceSeconds(seconds) {
   const value = Number(seconds);
   if (!Number.isFinite(value) || value < 0) return '--:--.---';
@@ -447,7 +461,10 @@ function publicState() {
       camera: {
         firstPersonFovDegrees: ROADVECTOR_CAMERA_CONFIG.firstPersonFovDegrees,
         thirdPersonFovDegrees: ROADVECTOR_CAMERA_CONFIG.thirdPersonFovDegrees,
+        maximumDesktopPixelRatio: ROADVECTOR_CAMERA_CONFIG.maximumDesktopPixelRatio,
+        appliedDesktopPixelRatio: renderer.getPixelRatio(),
         thirdOffsetMeters: [...ROADVECTOR_CAMERA_CONFIG.thirdOffsetMeters],
+        thirdLookOffsetMeters: [...ROADVECTOR_CAMERA_CONFIG.thirdLookOffsetMeters],
         fogDensityPerMeter: ROADVECTOR_CAMERA_CONFIG.fogDensityPerMeter,
         minimumTerrainClearanceMeters: ROADVECTOR_CAMERA_CONFIG.minimumTerrainClearanceMeters,
       },
@@ -486,6 +503,7 @@ function publicState() {
       motorcycle: gameState.motorcycle,
       physics: gameState.physics,
       physicsProfile: gameState.physicsProfile,
+      roadSurface: gameState.roadSurface,
       traffic: gameState.traffic,
       trafficPhysics: gameState.trafficPhysics,
       race: gameState.race,
@@ -528,6 +546,7 @@ globalThis.__motorcycleDemo = {
     viewRig.setMode(mode);
   },
   toggleCamera: () => viewRig.toggle(),
+  setAutomaticTransmission,
   setDisplayMode,
   enterRide: () => setDisplayMode('ride'),
   showOverview: () => setDisplayMode('overview'),
@@ -552,6 +571,7 @@ globalThis.__motorcycleDemo = {
     return frames[name];
   },
   get gameRuntime() { return runtime.game; },
+  get worldRenderer() { return runtime.worldRenderer; },
   get renderer() { return renderer; },
   get cesiumViewer() { return overviewRuntime.viewer; },
   get scene() { return scene; },
@@ -622,7 +642,10 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       sceneData: loaded.sceneData,
       trafficVehicleCount: MAXIMUM_TRAFFIC_VEHICLES,
       maximumPhysicalTrafficVehicles: MAXIMUM_PHYSICAL_TRAFFIC_VEHICLES,
-      controllerOptions: { leanAssist: elements.leanAssist.checked },
+      controllerOptions: {
+        leanAssist: elements.leanAssist.checked,
+        automaticTransmission: elements.automaticTransmission.checked,
+      },
     });
     pendingWorldRenderer = createMotorcycleWorldRenderer({
       THREE,
@@ -631,6 +654,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
       sceneData: loaded.sceneData,
       world: pendingGame.world,
       rig: pendingGame.rig,
+      roadSurface: pendingGame.roadSurface,
       raceCourse: pendingGame.raceCourse,
       maximumTrafficVehicles: MAXIMUM_TRAFFIC_VEHICLES,
       physicsDebug: PHYSICS_DEBUG,
@@ -647,6 +671,7 @@ async function loadLocation(location, { source = 'manual' } = {}) {
     pendingWorldRenderer = null;
     pendingModelInstance = null;
     runtime.ready = true;
+    setAutomaticTransmission(elements.automaticTransmission.checked);
     runtime.frameCount = 0;
     runtime.lastStep = null;
     runtime.originOffset = [0, 0, 0];
@@ -740,7 +765,8 @@ function updateHud(time) {
   const speedKph = Math.abs(bike.forwardSpeed) * 3.6;
   const gear = bike.gear === 0 ? 'N' : bike.gear;
   elements.speed.textContent = `${speedKph.toFixed(1)} KM/H`;
-  elements.powertrain.textContent = `${gear} // ${Math.round(bike.engineRpm).toLocaleString()} RPM`;
+  const transmission = bike.transmissionMode === 'manual' ? 'MANUAL' : 'AUTO';
+  elements.powertrain.textContent = `${transmission} ${gear} // ${Math.round(bike.engineRpm).toLocaleString()} RPM`;
   const overflowCount = Object.entries(state.physics.overflows ?? {})
     .filter(([key]) => key !== 'overflowed')
     .reduce((sum, [, value]) => sum + (Number(value) || 0), 0);
@@ -755,7 +781,7 @@ function updateHud(time) {
     : state.race.status === 'finished'
       ? `FINISH ${formatRaceSeconds(state.race.timing.finishTimeSeconds)}`
       : `LAP ${state.race.laps.current}/${state.race.laps.total} · GATE ${(state.race.progress.expectedGateIndex ?? state.raceCourse.gates.length - 1) + 1}/${state.raceCourse.gates.length}`;
-  elements.hud.textContent = `${race} // ${speedKph.toFixed(1)} KM/H // GEAR ${gear} // ${Math.round(bike.engineRpm)} RPM // ${viewRig.getStatus().mode.toUpperCase()}${rebases}${boundary}`;
+  elements.hud.textContent = `${race} // ${speedKph.toFixed(1)} KM/H // ${transmission} GEAR ${gear} // ${Math.round(bike.engineRpm)} RPM // ${viewRig.getStatus().mode.toUpperCase()}${rebases}${boundary}`;
 }
 
 let previousTime = null;
@@ -898,6 +924,9 @@ addListener(elements.worldMode, 'click', () => {
 });
 addListener(elements.resetBike, 'click', resetBike);
 addListener(elements.leanAssist, 'change', () => setLeanAssist(elements.leanAssist.checked));
+addListener(elements.automaticTransmission, 'change', () => {
+  setAutomaticTransmission(elements.automaticTransmission.checked);
+});
 addListener(elements.enterXr, 'click', async () => {
   try {
     if (inputRuntime.sessions?.getStatus().presenting) await inputRuntime.exitXR();

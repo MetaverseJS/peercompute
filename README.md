@@ -82,11 +82,20 @@ runtime metadata to NetViz.
   Shortbread and default AWS Terrarium source bytes use a bounded local-only
   `StateManager` artifact tier outside Yjs plus fixed, byte-bounded same-origin
   backend cache routes; source bytes and tile keys are never peer-replicated.
+  Decoded Shortbread plans and their bounded compiled Cesium buffers share a
+  96-record resident LRU, so returning to a prior camera view with unchanged
+  height dependencies reattaches exact geometry instead of redrawing or
+  refetching its roads; changed height dependencies rebuild lazily without a
+  source refetch.
 - **Particle motorcycle and real-road racing**: RoadVector uses a deterministic
   120 Hz CPU particle-rigid solver, six-component motorcycle, tire/suspension
   dynamics, a race course derived from real connected OSM ways, lane- and
   restriction-aware synthetic traffic with collision cages, local-origin
-  rebasing, and first/third-person views. It opens on a CesiumJS north-up AWS
+  rebasing, an explicit physics-based automatic/manual gearbox, and centered
+  first/third-person views. Its terrain-draped road ribbons and single
+  composite collider share the exact terrain-plane plus road-deck contract, so
+  tire contacts occur on the visible OSM road and retain source way/segment metadata.
+  It opens on a CesiumJS north-up AWS
   topographic hemisphere, overlays a bounded regional OSM major-road window,
   adds a persistent official FHWA/U.S. DOT National Highway System overview
   for Alaska and the United States, accepts globe clicks as bounded local ride

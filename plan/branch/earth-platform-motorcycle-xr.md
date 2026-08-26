@@ -699,3 +699,45 @@ WXGlobe's NOAA compatibility gate.
   release `17/17`, and rebuilt RoadVector browser smoke on owned port `43978`
   pass. Independent blocker-only source audit is clean. Physical-headset
   comfort/performance remains NOT RUN.
+
+## User Addendum - 2026-08-25 AKDT - Centered Chase, Physical Roads, Automatic Mode, And Resident EarthGrid Roads
+
+- Center RoadVector's third-person chase camera directly behind the physical
+  motorcycle. Presentation calibration may not introduce a permanent lateral
+  camera offset.
+- Make the rendered local road deck and the particle motorcycle share one
+  bounded, terrain-draped physical surface. Tire/road response remains fixed-
+  step contact, friction, suspension, and force/torque based; no pose or
+  velocity clamping to a road path is allowed.
+- Expose an explicit automatic-transmission mode, enabled by default, so a
+  rider can accelerate and brake without manual shifts. Manual mode may remain
+  available, but state and shift behavior must be visible and deterministic.
+- Preserve already compiled EarthGrid Shortbread geometry across camera
+  selections within explicit resident tile/vertex/byte caps. A warm revisit
+  reuses compiled buffers; height revisions and eviction remain truthful.
+- Reproduce all four reports in the private browser apps, add deterministic
+  regressions, rebuild both generated demos, and retain direct Tailnet HTTPS.
+  Physical-headset validation remains a separate manual gate.
+
+## Completion Result - 2026-08-25 AKDT - Centered Chase, Physical Roads, Automatic Mode, And Resident EarthGrid Roads
+
+- RoadVector's third-person camera now trails on the motorcycle centerline.
+  The production browser gate verifies both configuration and the inverse-
+  transformed live camera pose; terrain clearance and origin rebasing remain.
+- The exact bounded road surface is shared between Three rendering and one
+  composite particle heightfield. Front and rear tires physically contact the
+  rendered deck and retain OSM provenance. Adaptive CCD retains a maximum of
+  eight sweep segments but stationary/normal motion ordinarily samples only
+  its endpoint; the fixed 120 Hz/twelve-iteration authority is unchanged.
+- Automatic transmission is a first-class mutable physics mode and defaults on.
+  HUD, checkbox, touch-shift availability, public state, reset behavior, manual
+  fallback, and queued shift-edge cleanup are all executable contracts.
+- EarthGrid keeps inactive compiled Shortbread buffers detached but resident.
+  Exact reuse is allowed only when their height dependency is unchanged; a
+  height refresh marks residents stale, rebuilds active geometry eagerly, and
+  lazily rebuilds stale inactive geometry on return without another road fetch.
+- Aggregate unit/release/browser gates pass and current generated artifacts are
+  rebuilt. Direct private URLs remain `https://100.68.165.52:5187/` (EarthGrid)
+  and `https://100.68.165.52:5188/` (RoadVector), with the existing explicitly
+  trusted self-signed Tailnet certificate and no Serve/Funnel. Physical-headset
+  certification remains NOT RUN.
