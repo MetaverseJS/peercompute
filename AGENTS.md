@@ -45,3 +45,8 @@ the user's terminal. Run browser validation headlessly. When the user should
 inspect a demo, expose it on a Tailscale-reachable HTTPS address, verify that
 exact link, and paste the link so it can be opened from a phone or laptop.
 Close any accidental terminal-browser split immediately.
+
+Do not invoke the `terminal-browser` skill, tool, or CLI command at all. This
+prohibition also applies when it could run headlessly. If browser validation is
+necessary, use separate non-interactive headless automation that never opens,
+splits, or otherwise changes the user's terminal layout.

@@ -59437,3 +59437,41 @@ and performance, and retain a physics-based motorcycle.
 - This append-only commit record is the sole change after that implementation
   clean point and is committed separately as the final documentation/ICC
   closure. Physical-headset validation remains NOT RUN.
+
+## 2026-08-25 20:08:44 AKDT - Permanently prohibit terminal-browser use
+
+### Prompt and result
+
+- Exact prompt: `that should be in your agents.md file`
+- Appended an unambiguous repository working agreement to `AGENTS.md`: do not
+  invoke the `terminal-browser` skill, tool, or CLI command, including for
+  headless use. Any necessary browser validation must instead use separate
+  non-interactive headless automation that never changes the user's terminal
+  layout.
+- The existing broader instruction to avoid in-terminal browser splits remains
+  intact. No application source, generated artifact, dependency, runtime
+  service, or external state was changed.
+
+### Files, commands, validation, and open questions
+
+- Files touched: `AGENTS.md`, `plan/log.md`.
+- Reviewed `AGENTS.md`, `plan/plan.md`, and the current tail of `plan/log.md`;
+  checked the clean branch state with `git status --short --branch`; captured
+  the prompt timestamp with `date --iso-8601=seconds`.
+- Applied the documentation changes with `apply_patch`, staged only these two
+  files with `git add AGENTS.md plan/log.md`, and created the local clean-point
+  commit with subject `docs: prohibit terminal-browser use`. The final log
+  correction was folded into that same commit with `git commit --amend
+  --no-edit`; nothing was pushed.
+- Validation: policy text presence and whitespace integrity were checked with
+  a literal `rg` query and `git diff --check`; this documentation-only change
+  has no executable test surface.
+- Failure and cleanup: the first `rg` attempt put the backticked tool name in an
+  unsafe double-quoted shell pattern, so the shell executed it as command
+  substitution. The returned instance identified exact PID `404307`. I
+  inspected that PID with `ps`, terminated it directly with `kill 404307`
+  without invoking the browser tool again, and confirmed the PID was gone.
+  This failure is why the permanent prohibition is now explicit rather than
+  relying only on the earlier terminal-layout wording.
+- Open questions: none. The terminal-browser prohibition remains in force
+  unless the user explicitly changes this working agreement later.
