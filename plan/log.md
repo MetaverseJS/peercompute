@@ -59773,3 +59773,133 @@ and performance, and retain a physics-based motorcycle.
   implementation, tests, documentation, and current generated RoadVector
   artifact as `2eb29f2be4361ab2c696fc929b95ab3485a85e90`
   (`feat(motorcycle): stream continuous globe terrain`). Nothing was pushed.
+
+
+## 2026-09-14 - Overall PeerCompute state survey
+
+### Prompt, scope, and initial state
+
+- User prompt: “can you take a survey of the current state of peercompute and
+  determine where we sit in the overall plan?”
+- Exact message timestamp is not exposed by this session. First clock
+  observation at intake was `2026-09-14T10:52:08-08:00` (AKDT); this is the
+  observed intake time, not a fabricated exact message-delivery timestamp.
+- Initial branch `ulg`, clean at
+  `aaa729ebd8330a1f73263948a38fb098f633f246`, last commit
+  `2026-08-25T22:54:29-08:00`, 27 ahead of locally stored `origin/ulg`.
+  No fetch, push, branch switch, source implementation, or deployment requested.
+- Read AGENTS.md, mission-control/AGENTS.md, the ICC control-plane skill and
+  evidence/planning/verification references, plan headings and focused sections,
+  the latest log entries, implementation-status, README, branch plans, package
+  scripts, live source, and the June/August validation records. No subagents or
+  optional model proposal workers were launched.
+
+### ICC and survey findings
+
+- Resolved `peercompute` through `codebase_repo_list`, then invoked query-only
+  `codebase_work` with `mode=status`, `no_write=true`, and bounded survey goal
+  `peercompute-state-survey-20260914`. This was a preview, not a saved task or
+  permission to implement the dossier's suggested work.
+- `codebase_status(check_staleness=true)` and `codebase_source_drift` found
+  matching HEAD/source fingerprints and zero drift before documentation edits.
+  CLI `/home/cos/projects/infinite_context_coder/bin/icc freshness --repo
+  peercompute --format markdown` reported current index/memory; optional
+  graph/search stores were not built, substrate provenance was file-count-based.
+- Queried `codebase_project_commands` and `codebase_project_verify_plan`, then
+  inspected actual package scripts before selecting bounded existing checks.
+  The dossier's generic target audit returned FAIL; a separate untargeted
+  `codebase_production_audit` returned WARN with shell/Python heuristics, two
+  parser blind spots, and stale saved tasks. Neither is a scientific or roadmap
+  completion score. No repo-local `.icc` enforcement directory exists.
+- Main conclusion: advanced prototype. Original roadmap stages 1–2 are
+  substantially implemented, stage 3 remains partial, and much of stage 4's
+  local worker/WASM/WebGPU work is already implemented. Resource-driven
+  clustering/placement and scientifically calibrated cross-scale simulation
+  remain unfinished. EarthGrid/RoadVector is the latest completed source slice.
+- Corrected the interpretation of stale TODOs: topology IDs, snapshot shards,
+  warm-delta publication, local scheduling, GPU-hub paths, and Fano scaffolding
+  exist. Per-shard Yjs replication is still not proven: the live provider syncs
+  a Y.Doc on its configured topic. TopologyController selects by supplied spatial
+  metrics and caps rather than implementing the planned measured resource-based
+  clustering/leader-election system. The proposed Deno root package is absent;
+  legacy Deno relay files do not implement it.
+- Live source also retains empty ComputeManager `distributeTask`/`cancelTask`
+  methods; actual graph execution/cancellation and NodeKernel remote transport
+  must be distinguished from these older scaffold APIs.
+- RoadVector streams terrain but explicitly uses `loadRoadTile: null` and keeps
+  road/building/race/traffic data as its seed overlay. Coarse PeerCompute presence
+  is not evidence of shared riding physics. Polar terrain and physical-headset
+  validation remain open. Recorded multiplayer/ULG browser failures remain
+  unclosed evidence items; none was presented as newly reproduced today.
+
+### Commands and fresh verification
+
+- Node `v24.18.0`; no version switch or dependency reinstall needed.
+- `npm --prefix peercompute run test:unit`: FAIL, 213 passed / 214, no skips,
+  about 35.7 s. The staged ULG Eshkol tensor-runtime test expected `accepted`
+  but received `blocked` at serviceOrchestration.test.js:4137.
+- `npm --prefix demos/multiscale test`: PASS 206/206, about 5.4 s, including
+  a fresh temporary production worker build with import-closure validation.
+- Existing root scripts, run sequentially for Earth/game/backend coverage:
+  `npm run test:geo-core` PASS 87/87; `npm run test:geodata` PASS 60/60;
+  `npm run test:earth` PASS 48/48; `npm run test:wxglobe` PASS 28/28;
+  `npm run test:xr` PASS 24/24; `npm run test:physics` PASS 54/54 (51.2 s);
+  `npm run test:traffic` PASS 12/12; `npm run test:motorcycle` PASS 117/117;
+  `npm run test:backend` PASS 24/24. Total across all 11 commands:
+  873 passed, one failed, zero skipped / 874 tests.
+- Isolated the failed fixture path without editing source. A temporary Node
+  probe reuses the staged test's adapter submission and prints its result.
+  `node /tmp/peercompute-survey-20260914-eshkol-probe.mjs` confirms
+  `eshkol-tensor-runtime-candidate-changed-bytes-mismatch` and
+  `eshkol-tensor-runtime-candidate-output-tensors-mismatch`: 16 changed bytes
+  versus 64 declared, closure[0] 0.00125 versus 0.010900000000000002, residual
+  0.0025 versus 0.10800000000000001. Input JSON/WASM come from the sibling ULG
+  checkout's public/service-assets/eshkol/closures/magnetar-closure directory.
+  The adapter rejects inconsistent output; identifying which producer/fixture/
+  consumer needs correction is follow-up work, not resolved by this survey.
+- Raw test logs and diagnostic script/output are external under
+  `/tmp/peercompute-survey-20260914-*`. No runtime artifacts were added to Git.
+- Routine inspection used `rg`, `rg --files`, `sed`, `tail`, `wc`, `cat`,
+  `git status --short --branch`, `git log`, `git diff --stat`, and
+  `git diff --check`. An initial unbounded plan read was output-truncated, so
+  subsequent review used headings and focused ranges. Initial guessed manager/
+  presence paths were absent; `rg --files` resolved the actual paths before
+  drawing conclusions. `ls -a .icc` confirmed absence (exit 2).
+- NOT RUN: aggregate demo builds, browser/XR mock smoke, real WebGPU/browser/P2P
+  gates, live source/HTTPS checks, chaos matrices, physical-headset testing,
+  and scientific reference benchmarks. No terminal-browser, browser panes,
+  or persistent demo services were used. All selected test commands completed.
+
+### Documentation and recommended continuation
+
+- Added `plan/reports/2026-09-14-project-state-survey.md` with roadmap mapping,
+  source evidence, boundaries, baseline results, and recommended milestones.
+- Updated `plan/implementation-status.md` with overall current status while
+  preserving/labelling the June ULG checkpoint as historical; added a current
+  assessment to `plan/plan.md`, fresh evidence/strategy to `plan/tests.md`, and
+  a current survey link/baseline to root `README.md`. This log is the sixth
+  documentation file touched. Existing instruction sections remain intact.
+- Recommended core continuation: reconcile the staged handoff baseline and
+  rerun focused remote-placement/multiplayer gates, then prove one deterministic
+  workload across LAN/WAN peers with measured placement, validated warm-state
+  results, peer-loss recovery, and NetViz evidence. Root service, science, and
+  further RoadVector work retain their separate acceptance boundaries. No new
+  implementation campaign was started.
+
+### Documentation acceptance at 2026-09-14T11:05:05-08:00
+
+- PASS: all 20 new survey links resolve; all four README/plan/status entry
+  points link to the report. Raw-log totals were independently recomputed as
+  874 tests, 873 passes, one failure, zero skips. `git diff --check` passed.
+- PASS: ICC `codebase_guard_diff` accepted the six documentation files, with
+  one added file, five modified files, and no deleted files.
+- Executed CLI `icc reindex --repo peercompute --full`: all six steps passed
+  (index, memory, graph, FTS, substrate, Git history), in 84.5 seconds. The
+  installed CLI explicitly ran `icc build-git-history --repo peercompute` as
+  part of this full refresh. `codebase_status(check_staleness=true)` then
+  proved matching live fingerprints; the cheap dirty-worktree notice did not
+  indicate content drift.
+- Preparing the bounded local documentation commit after all selected tests
+  have settled. The commit records the failed application baseline; it does
+  not claim a green release. Final post-commit ICC refresh/HEAD verification
+  will be performed outside the repository, with no further source changes.

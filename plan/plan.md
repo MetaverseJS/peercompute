@@ -14,6 +14,27 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+### Overall Roadmap Assessment - 2026-09-14 AKDT
+
+- Current survey: [project state and roadmap](reports/2026-09-14-project-state-survey.md).
+  The browser runtime, local compute, and EarthGrid/RoadVector implementation
+  are substantial. Original roadmap stages 1–2 are substantially implemented;
+  stage 3 (scale/self-organization) is partial, while much of stage 4's local
+  worker/WASM/WebGPU runtime already exists. General distributed placement and
+  scientifically validated multiscale coupling remain unfinished.
+- Fresh baseline: 873 passing tests and one failure across 11 commands.
+  The core staged Eshkol/ULG artifact test rejects mismatched tensor outputs
+  and 16 changed bytes versus 64 expected. Multiscale and all eight Earth/game
+  Node suites pass. Browser/network/chaos/headset evidence was not rerun.
+- Read older TODOs against the survey: topology IDs, snapshot sharding,
+  warm-delta publishing, scheduling, GPU-hub paths, and the Fano scaffold already
+  exist. General per-shard Yjs synchronization and measured resource-driven
+  clustering are still open; implemented primitives do not close those goals.
+- Recommended next core milestone: restore the reproducible handoff/network
+  baseline, then prove one measured, validated workload across LAN/WAN peers
+  with placement, peer-loss recovery, warm-state result admission, and NetViz
+  evidence. This assessment does not authorize or start that implementation.
+
 ### Active Earth Platform And Motorcycle Roadmap - 2026-08-23 AKDT
 
 - Build `services/geodata`, a bounded generic real-data service for source

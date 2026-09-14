@@ -1,8 +1,33 @@
 # Implementation Status
 
-Updated: 2026-06-08 10:23:44 AKDT
+Updated: 2026-09-14 AKDT
 
-## Current Focus
+## Current Overall Assessment
+
+PeerCompute is an advanced prototype with substantial browser networking,
+state, worker/WASM/WebGPU compute, service orchestration, and Earth/game
+foundations. Automatic resource-driven network organization, general distributed
+execution hardening, the optional Deno root service, and calibrated scientific
+multiscale coupling remain incomplete.
+
+The latest implementation checkpoint is August 25's continuous RoadVector
+terrain riding, following the EarthGrid/geodata/geo-core/physics/XR platform.
+Roads/buildings/race/traffic remain seed-region-bound; physical-headset checks
+remain unrun. Coarse player presence does not imply synchronized riding physics.
+
+The September 14 survey ran 874 tests: 873 passed and one staged Eshkol/ULG
+artifact candidate failed on output/changed-byte mismatches. Multiscale passed
+206/206 and all eight Earth/game Node suites passed 430/430. The backend/static
+release suite passed 24/24. Browser, network, live-source, and headset gates were
+not rerun. The old ULG-only checkpoint below is retained as historical evidence.
+
+See [the full survey](reports/2026-09-14-project-state-survey.md) for original
+roadmap mapping, source evidence, current failures, stale TODOs, and recommended
+next milestones. Fresh validation is also recorded in [tests.md](tests.md).
+
+## Historical ULG Checkpoint — 2026-06-08 10:23:44 AKDT
+
+## Historical Focus
 - ULG magnetar handoff orchestration across PeerCompute, Eshkol, MoonLab, and the ULG demo.
 
 ## Completed In This Checkpoint
@@ -364,7 +389,7 @@ Updated: 2026-06-08 10:23:44 AKDT
   affordance propagation, and false scientific/full-physics/material/EOS/SPH/
   phase-change readiness.
 
-## Next
+## Historical Next Steps
 - Promote the production handler runtime smoke into validated production
   physics only after full-physics validation artifacts, calibrated magnetar
   outputs, and named tolerance evidence exist.

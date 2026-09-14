@@ -1,5 +1,37 @@
 ## PeerCompute Test Strategy
 
+### Repository survey baseline - 2026-09-14 AKDT
+
+- Scope: run existing deterministic Node and static-release gates against
+  `aaa729ebd8330a1f73263948a38fb098f633f246` on Node `v24.18.0` while surveying
+  the roadmap. No application code changed. Distinguish this baseline from
+  browser/WebGPU/network/scientific acceptance and historical release results.
+- `npm --prefix peercompute run test:unit`: FAIL, 213/214 pass, zero skipped.
+  `serviceOrchestration.test.js`'s staged Eshkol tensor-runtime candidate reads
+  JSON/WASM from the sibling ULG checkout. The adapter reports changed-byte and
+  output-tensor mismatch; a read-only reproduction confirms 16 changed bytes
+  versus 64 declared and different closure/residual outputs. Keep this failure
+  visible until the producer/fixture/consumer contract is reconciled.
+- `npm --prefix demos/multiscale test`: PASS 206/206, including its temporary
+  production worker build/import-closure test.
+- Earth/game commands PASS: `npm run test:geo-core` 87/87;
+  `npm run test:geodata` 60/60; `npm run test:earth` 48/48;
+  `npm run test:wxglobe` 28/28; `npm run test:xr` 24/24;
+  `npm run test:physics` 54/54; `npm run test:traffic` 12/12;
+  `npm run test:motorcycle` 117/117. Combined: 430/430.
+- `npm run test:backend`: PASS 24/24, including static demo-release checks.
+- Total: 873 passed, one failed, zero skipped across 874 tests / 11 commands.
+  Raw command output and the diagnostic probe remain outside the repository in
+  `/tmp/peercompute-survey-20260914-*`.
+- NOT RUN: aggregate builds, mocked browser XR, runtime smoke/P2P, actual WebGPU
+  execution, external live-source/private-HTTPS checks, chaos matrices, physical
+  headset checks, and scientific reference validation. Historical evidence
+  below is not a fresh pass for these gates.
+- Documentation-only acceptance: inspect source-backed claims, preserve prior
+  instructions/history, validate new relative links, run `git diff --check`,
+  and inspect the ICC guard. A documentation commit does not close the failing
+  application baseline. See [survey](reports/2026-09-14-project-state-survey.md).
+
 ### Earth platform, geodata, motorcycle, and WebXR gate - 2026-08-23 AKDT
 
 - `services/geodata` pure/inject tests must cover strict bbox latitude/order/

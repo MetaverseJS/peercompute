@@ -2,7 +2,15 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Current Status - August 23, 2026
+## Current Status - September 14, 2026
+
+The [current state survey](plan/reports/2026-09-14-project-state-survey.md)
+maps the implementation to the overall roadmap. The runtime and Earth/game
+foundations are substantial; automatic resource-driven network organization and
+calibrated multiscale science remain unfinished. Fresh checks passed 873 of 874
+tests; one staged Eshkol/ULG artifact failed its tensor-output contract. Browser,
+network, and headset release gates were not rerun for this survey.
+
 PeerCompute currently ships as a browser-first P2P runtime plus a set of
 production-shaped demos, validation harnesses, and deployment scripts. It is no
 longer only a relay/chat experiment: the repo has usable networking, state,
@@ -130,9 +138,10 @@ runtime metadata to NetViz.
   gates, source transfer/target mutation preflights, proxy worker-write
   execution/verification, and explicit scientific-readiness blockers.
 
-### Validation Snapshot
+### Recorded Release Validation Through August 2026
 
-Recent focused validation is green without running the full chaos lab:
+The following records describe the August release slices. The September survey
+above contains the newer test baseline; the full chaos lab remains open.
 
 - WXGlobe selectively ports the useful Cesium terrain work from
   `origin/3drtma` without its retired RTMA/GRIB pipeline. Its default NOAA
