@@ -18,8 +18,8 @@ const files = [
   { path: 'verify_artifact.py', size: 1217, gitBlobSha1: '15dd7292eb203b06e0df3640f9ae04fff09706ef' }
 ];
 const executionReason = 'The current browser ComputeManager inference adapter accepts Transformers.js ONNX packages; '
-  + 'this GGUF package requires a llama.cpp runtime adapter. The tested Chrome/NVIDIA WebGPU device lacks shader-f16, '
-  + 'which the reviewed llama.cpp WebGPU backend requires. GGUF execution remains unavailable on this tested path; '
+  + 'this GGUF package requires a separate managed llama.cpp runtime adapter that is not implemented yet. '
+  + 'Browser/GPU compatibility and actual model execution still require validation; '
   + 'the package is supported for storage and distribution.';
 function freeze(value) {
   for (const child of Object.values(value)) if (child && typeof child === 'object') freeze(child);

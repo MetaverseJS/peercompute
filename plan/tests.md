@@ -81,6 +81,19 @@ model/runtime identity, resource limits, and full completion criteria.
   Artifact suite **30/30**. Evidence: /tmp/peercompute-qwen38-27b-final-evidence.json.
   This proves local large-file storage, not a full 14 GB browser peer transfer
   or GGUF execution. Those remain separate acceptance scopes.
+- FP16 diagnosis follow-up: compare default headless Chrome, the existing Vulkan
+  launch, that launch plus the isolated NVIDIA Dawn f16 override, and a minimal
+  Vulkan launch. Check adapter features and request a shader-f16 device, then
+  compile/dispatch/read back an actual16x16 f16 matrix multiply against exact CPU
+  results, on the page and in a worker. The existing Vulkan launch lacks f16;
+  adding the override passes worker arithmetic with zero error. Raw Vulkan
+  reports shaderFloat16=true. Evidence: /tmp/peercompute-f16-probe.json and
+  /tmp/peercompute-nvidia-vulkaninfo.txt. Browser startup can initially return a
+  null adapter; the diagnostic repeats bounded adapter discovery. This small
+  shader check does not replace full-model correctness or browser conformance.
+  Final repeat passes on both page and worker with the override; default and
+  minimal headless launches return no adapter. Catalog wording regression and
+  artifact suite30/30 pass after the correction; no execution gate changed.
 - New requested-model gates: verify complete pinned Qwen2B q4 ONNX external-data
   closure, per-architecture budget and actual image-based worker execution;
   import the exact 27B GGUF by streaming hash/CID with bounded memory and explicit

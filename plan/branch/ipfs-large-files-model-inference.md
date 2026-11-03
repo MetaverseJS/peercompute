@@ -76,6 +76,15 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   need a pinned compatibility spike for all tensor types, architecture, file-size
   limits and ComputeManager ownership. Enable execution only after that proof.
   A future native selected-peer executor is a separate execution placement path.
+- November3 FP16 diagnosis correction: the exact Chrome155.0.8059.84 Dawn revision
+  `42d0e90fe3552a2a8e95ca8e506bc19bbda12729` gates NVIDIA Vulkan shader-f16 because
+  of conformance failures (Chromium42251215). NVIDIA595.91.07 reports native
+  shaderFloat16 and16-bit storage support. Adding only
+  `--enable-dawn-features=vulkan_enable_f16_on_nvidia` to the existing Vulkan
+  validation launch exposes shader-f16 and passes an actual16x16 FP16 matrix
+  multiply in a worker with zero error. This removes the inference that the GPU
+  lacks FP16; it does not qualify the full model or authorize default driver
+  workaround overrides. Missing managed GGUF integration remains the primary gap.
 - Large-model validation must account for cached source plus UnixFS blocks and
   preserve free disk space. Browser storage quotas and GPU memory envelopes are
   explicit budgets, not hardware-capacity claims. Keep all downloaded artifacts

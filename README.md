@@ -28,9 +28,12 @@ storage and hosting. All 11 files (14.20 GB total) are verified and pinned;
 persistent reopen and reads across the 2 GiB/4 GiB boundaries and EOF pass.
 Peak CLI import RSS was 237.6 MB. The stable manifest is
 `bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q`.
-Browser execution is disabled:
-it needs a separate managed GGUF runtime adapter, and the tested browser also
-lacks the shader-f16 feature required by the inspected llama.cpp WebGPU backend.
+Browser execution is disabled because the managed GGUF runtime adapter is not
+implemented. The tested Chrome155/NVIDIA595.91.07 Vulkan configuration gates
+`shader-f16`; an isolated run with Dawn's NVIDIA f16 override exposed the feature
+and passed an actual FP16 worker matrix multiply. This is a browser/driver
+qualification issue, not missing GPU hardware support. Full GGUF generation,
+memory use and cleanup still need validation; the override is not enabled by default.
 The importer retains sources, blocks and manifests outside Git.
 
 ```sh

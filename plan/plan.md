@@ -48,7 +48,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
   steering adds the fully four-bit multimodal Qwen2B (now hardware verified) and
   the exact 14.2GB GeoRefine27B GGUF. The GGUF passes full durable import, pinned
   manifest verification and persistent reopen/ranges; its execution remains gated on a separate
-  managed runtime adapter and compatible GPU features.
+  managed runtime adapter and browser/driver qualification. A November3 follow-up
+  reproduced shader-f16 availability and correct worker FP16 arithmetic with an
+  isolated Dawn NVIDIA override; the earlier absence was a browser policy gate,
+  not a missing hardware capability. Full GGUF execution remains unverified.
   Remote inference and the broader parent gates remain open. The September
   baseline is historical.
 
