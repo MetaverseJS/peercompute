@@ -1,6 +1,7 @@
 import { MODEL_POLICY, abortError, throwIfAborted, validateArtifactPath } from './modelManifest.js';
 
-const PROTOCOL = 'peercompute.model-artifact-read.v1';
+export const ARTIFACT_READ_PROTOCOL = 'peercompute.model-artifact-read.v1';
+const PROTOCOL = ARTIFACT_READ_PROTOCOL;
 
 function subscribe(port, listener) {
   const receive = (event) => listener(event.data);
@@ -100,6 +101,7 @@ export function serveArtifactPort(port, { store, manifest, chunkBytes = MODEL_PO
     async close() {
       if (closed) return;
       closed = true;
+      try { send(port, { type: 'closed', message: 'Artifact bridge closed' }); } catch { /* Peer may already be gone. */ }
       unsubscribe();
       await Promise.all([...reads.keys()].map((id) => stop(id, 'Artifact bridge closed')));
       port.close();

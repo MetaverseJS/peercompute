@@ -90,6 +90,46 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   explicit budgets, not hardware-capacity claims. Keep all downloaded artifacts
   outside Git and avoid making a14.2GB browser duplicate just to render a catalog.
 
+### Managed GGUF implementation authorization — November3,13:58:59 AKST
+
+- User asked how to support GGUF, confirmed WebGPU support, then authorized
+  implementation with “alright go for it”. Continue this feature branch and
+  retain the live preview and no-merge constraint.
+- Add a trusted runtime definition beside Transformers.js, reusing the host
+  service's affinity, admission, cancellation and cleanup. Use fixed task module
+  peercompute:gguf-inference; model manifests remain data only.
+- Pin published @wllama/wllama3.8.1 (repository master has newer unpublished
+  source). Generate a reproducible same-worker adapter from its shipped engine
+  and glue into ignored dependency files; keep generator/source hashes in Git.
+  Avoid the public wrapper's unmanaged worker creation. Disable pthread spawn,
+  require the build's shared-memory/JSPI/memory64 capabilities and actual WebGPU.
+- Reuse StateManager's verified range reads through a bounded MessagePort client.
+  Keep the artifact bridge alive for the entire GGUF residency, independent of
+  the load operation's abort signal. No whole14.2GB Blob/ArrayBuffer materialization.
+- Native wllama exit does not prove context disposal in this build; acknowledge
+  termination of the actual owned worker before releasing admission/affinity.
+  Preserve failed-stop handles and resource reservations for cleanup retry.
+- Validate a pinned Qwen3.5-0.8B Q4_K_M GGUF before the exact27B mixed GGUF.
+  Browser test flags may explicitly enable the diagnosed NVIDIA f16 override;
+  never infer full model correctness from the small FP16 probe. Prove actual GPU
+  work, warm reuse, cancellation, unload and origin-blocked CID reads.
+- Measure CPU and GPU placement: published WASM maximum heap4GiB and available
+  VRAM constrain partial offload. Use explicit layer/context/batch settings and
+  report actual offloaded layers. A model must not silently run entirely on CPU.
+- Implemented checkpoint: the pinned engine runs directly in the managed
+  worker, with no nested worker or whole-file allocation. Small Qwen passes
+  real GPU generation, exact arithmetic, warm reuse, cancellation, unload and
+  source-blocked browser restart. Native failure cleanup and bounded range
+  reads pass32 focused tests. Exact27B now passes real text generation,
+  arithmetic and warm reuse on RTX5060Ti16GB at56/66 GPU layers,512 context and
+  64 batch. Its143.3s load used bounded verified Node-store ranges. Cancellation
+  terminates the worker and releases admission; it does not retain this large
+  model warm. Full14GB browser transfer/persistence remain separate gates.
+- Clarify the CID actions as **Download from peers**, **Share with peers** and
+  **Stop sharing**. A CID identifies content; download requires an online
+  provider and saves verified local content. Publication and GPU load are
+  separate explicit actions. An unserved server filesystem cache is not a seed.
+
 ### Laptop review handoff — November3,12:51:32 AKST
 
 - Make Local Model Console the second overview card, then expose the overview
@@ -490,7 +530,7 @@ phases with remaining exit criteria stay open. Each slice updates this file, `pl
 | --- | --- | --- |
 | .0–.2 | Pinned dependencies, StateManager store, lifecycle/unit checks, 128 MiB and complete SmolVLM package reseeding across independent browser contexts; actual WebGPU worker inference. | Two physical hosts, broader churn and measured transport peaks. |
 | .3 | External-cache importer and exact pinned packages; requested 27B passes full hash/import/manifest verification, persistence and ranges beyond 4 GiB. | Two always-on seed providers, operator lifecycle and seed-loss acceptance. |
-| .4 | Four real models, image dependence, warm reuse, cooperative cancel, unload and source-off restart; worker failure/accounting regressions. | Actual GPU-loss/render-preemption and resource-contention acceptance; managed GGUF adapter. |
+| .4 | Four ONNX models plus small GGUF, image dependence for all three vision models, warm reuse, cooperative cancel, unload and source-off restart. Exact27B generation/arithmetic/warm reuse from Node-store ranges, forced cancellation and release; worker failure/accounting regressions. | Exact27B browser persistence/peer transfer; actual GPU-loss/render-preemption and resource-contention acceptance. |
 | .5 | Ownership and protocol plan retained. | Remote inference implementation and physical-peer acceptance. |
 | .6 | Inference console, CubeChat/Earth agents, nested production builds, second overview card and trusted Tailnet preview connected to Secret Workshop. | NetViz artifact/model telemetry and full chaos/release gates. |
 

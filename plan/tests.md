@@ -101,6 +101,75 @@ model/runtime identity, resource limits, and full completion criteria.
   Two physical hosts, durable always-on seeds, renderer preemption and remote
   inference remain separate acceptance gates. A catalog entry, mock, or isolated
   ORT Add graph cannot close actual-model execution gates.
+- Authorized GGUF implementation validation: the shared host lifecycle must keep
+  CID range access alive after load, terminate the owned worker before releasing
+  native residency, and retain admission/affinity on failed termination. New
+  ggufService tests4/4 plus existing ONNX31/31 pass. The bounded GGUF range client
+  adds12 passing tests for >4GiB offsets, cancellation, queue/credit bounds,
+  truncation and host closure; pinned catalog tests3/3 pass (combined50/50).
+  Engine unit tests and actual small-Qwen/27B WebGPU receipts are separate gates.
+  Large-model harness should read the existing verified Node artifact store to
+  avoid a redundant14GB browser copy on this machine; label that scope explicitly.
+  Browser IndexedDB persistence/restart and actual peer transfer remain distinct
+  from that loopback artifact-range test.
+- Managed GGUF focused suite **32/32 PASS**: 12 reader, 13 native/runtime,
+  4 host-service and 3 catalog tests. Native ABI tests cover mixed BigInt/Number
+  arguments and null pointers; failure tests quarantine native traps and GPU
+  completion errors, reject late tokens after cancellation, and retain resource
+  reservations when worker termination fails. Command: `npm run test:gguf`;
+  receipt `/tmp/peercompute-gguf-final-focused.log`.
+- Small Qwen3.5-0.8B Q4_K_M **actual WebGPU PASS** on Chrome155/RTX5060Ti with
+  the explicit NVIDIA f16 override. All 26 layers offloaded; greeting and exact
+  arithmetic answer `4`, warm reuse, cooperative cancel and acknowledged unload
+  with zero retained admission pass. Browser import/persistence/restart with
+  the source blocked passes: 554 source requests and579,629,622 bytes total,
+  unchanged across generation and restart. Evidence:
+  `/tmp/peercompute-gguf-small-browser-20261103.json`. A subsequent actual-GPU
+  run validates the final4MiB native read batching (256KiB wire credit), with
+  10.99s load and the same inference/lifecycle gates:
+  `/tmp/peercompute-gguf-small-4mib-native-20261103.json`. The latter reads the
+  existing Node artifact store through a loopback range bridge; it does not
+  independently establish browser persistence or network transfer.
+- GGUF integration regression checkpoint: **336/337 core**, only the existing
+  ULG Eshkol tensor-contract failure at serviceOrchestration.test.js:4137;
+  `/tmp/peercompute-gguf-core-final.log`. The final queue-loss guard was added
+  afterward and is covered by the32/32 focused pass. Static demo checks49/49,
+  legacy core Webpack, all14 existing demo Vite builds, and inference Vite build
+  pass. Build receipts: `/tmp/peercompute-gguf-builds/results.json`,
+  `/tmp/peercompute-gguf-webpack-build.log`,
+  `/tmp/peercompute-gguf-inference-final-build.log`. Existing bundle-size and
+  import-splitting warnings remain.
+- Exact GeoRefine27B **actual WebGPU generation PASS**:
+  `/tmp/peercompute-gguf-27b-56layers-20261103.json`, finished23:26:46.591Z.
+  Command: `GGUF_MODEL_ID=qwen3.8-27b-georefine-d14-gguf GGUF_ARTIFACT_MODE=external
+  GGUF_GPU_LAYERS=56 GGUF_NVIDIA_F16_OVERRIDE=1 GGUF_SKIP_RESTART=1
+  GGUF_EVIDENCE_PATH=/tmp/peercompute-gguf-27b-56layers-20261103.json
+  node peercompute/tests/runtime/gguf-inference.mjs` (environment assignments
+  belong on one shell command). Context512/batch64/threads1;143.335s load.
+  First and warm requests return `Hello!` on worker-1, each with6,722 actual GPU
+  dispatches/190 submissions. Arithmetic returns exactly `4`, with5,006
+  dispatches/270 submissions. Offload56/66; native CPU model2,618,545,930bytes,
+  GPU model11,331,226,829bytes and WASM3,579,052,032bytes. Sampled whole-device
+  peak13,823MiB includes other applications; after cleanup it returns2736MiB.
+  Cancellation required worker termination (not cooperative warm retention),
+  then service is idle and active CPU/GPU admission leases are zero. No page,
+  bridge or external-request errors. The bounded bridge served14,346,125,312
+  bytes, peak one HTTP read, ≤1MiB HTTP ranges and4MiB worker buffering.
+  This proves managed inference from the retained verified Node store; restart
+  was explicitly skipped, and no14GB browser IndexedDB or peer transfer is
+  claimed. The small-model browser restart gate above remains independent.
+- Existing ONNX regression after the GGUF changes **PASS**:
+  `MODEL_IDS=smolvlm-256m-q4 MODEL_EVIDENCE_PATH=/tmp/peercompute-onnx-after-gguf-20261103.json
+  node peercompute/tests/runtime/model-inference.mjs`. Red and blue images
+  produce the corresponding answers, with3,605/1,694 real GPU dispatches;
+  cooperative cancellation, unload and source-blocked browser restart pass.
+  No external requests or page errors. The owned test processes are closed.
+- Final live preview **PASS**, `/tmp/peercompute-gguf-final-preview.json`:
+  exact Tailnet HTTPS console, cross-origin isolation, Secret Workshop connected,
+  six choices, both services idle, zero weight requests/page errors. With GPU
+  disabled, GGUF load is correctly blocked while ONNX selection remains enabled;
+  the machine-qualified56-layer hint is visible. Final inference production
+  build passes9.12s; `/tmp/peercompute-inference-gguf-final-build.log`.
 
 - Generic artifact tests: deterministic UnixFS/CID imports; streaming 128 MiB
   fixture and opt-in >2 GiB fixture; per-block and whole-file integrity;

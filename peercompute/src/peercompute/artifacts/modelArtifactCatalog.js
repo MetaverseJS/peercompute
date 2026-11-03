@@ -17,10 +17,9 @@ const files = [
   { path: 'tokenizer_config.json', size: 17928, gitBlobSha1: '5de744b3fca2129d7186979ae47c06be33903243' },
   { path: 'verify_artifact.py', size: 1217, gitBlobSha1: '15dd7292eb203b06e0df3640f9ae04fff09706ef' }
 ];
-const executionReason = 'The current browser ComputeManager inference adapter accepts Transformers.js ONNX packages; '
-  + 'this GGUF package requires a separate managed llama.cpp runtime adapter that is not implemented yet. '
-  + 'Browser/GPU compatibility and actual model execution still require validation; '
-  + 'the package is supported for storage and distribution.';
+const executionReason = 'This catalog supports verified storage and distribution. '
+  + 'Execution is admitted separately by the managed llama.cpp runtime and GGUF model catalog '
+  + 'after browser capability and resource checks.';
 function freeze(value) {
   for (const child of Object.values(value)) if (child && typeof child === 'object') freeze(child);
   return Object.freeze(value);

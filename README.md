@@ -28,22 +28,46 @@ storage and hosting. All 11 files (14.20 GB total) are verified and pinned;
 persistent reopen and reads across the 2 GiB/4 GiB boundaries and EOF pass.
 Peak CLI import RSS was 237.6 MB. The stable manifest is
 `bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q`.
-Browser execution is disabled because the managed GGUF runtime adapter is not
-implemented. The tested Chrome155/NVIDIA595.91.07 Vulkan configuration gates
-`shader-f16`; an isolated run with Dawn's NVIDIA f16 override exposed the feature
-and passed an actual FP16 worker matrix multiply. This is a browser/driver
-qualification issue, not missing GPU hardware support. Full GGUF generation,
-memory use and cleanup still need validation; the override is not enabled by default.
-The importer retains sources, blocks and manifests outside Git.
+The managed GGUF backend uses pinned wllama3.8.1/llama.cpp inside the existing
+ComputeManager worker. Qwen3.5-0.8B Q4_K_M passes actual WebGPU generation,
+arithmetic, warm reuse, cancellation, unload and browser restart with its weight
+source blocked. Its manifest is
+`bafkreicrnbwq66gumluojiqqpy2lrcxcpqwrcaz2ludsbqz6u5kvk5vxui`.
+The exact27B also passes text generation, arithmetic and warm reuse on the
+RTX5060Ti16GB with56 GPU layers,512 context and64 batch. Loading took143.3s;
+WASM memory was3.33GiB and native GPU model buffers11.33GB. Cancellation required
+worker termination and released all reservations. This test used bounded ranges
+from the verified local Node artifact store; full14GB browser peer transfer and
+browser persistence are separate, unproven gates for this model.
+Both GGUF catalog candidates are text-only; the four ONNX models remain available.
+
+The GGUF build requires cross-origin isolation, shared WebAssembly memory64,
+JSPI, and a hardware adapter exposing shader-f16. The standalone console sets
+COOP/COEP headers. Its GPU-layer control is separate from local storage quotas;
+configured CPU/GPU envelopes do not measure available VRAM. Published WASM heap
+maximum is4GiB, so CPU fallback is not an unlimited-memory escape path.
+Chrome155/NVIDIA595.91.07 Vulkan tests explicitly use the diagnosed NVIDIA f16
+override; it is not enabled by the application. Browser/driver correctness must
+be qualified on the chosen device.
+
+`npm install` prepares hash-checked static engine/glue modules in ignored
+node_modules; `npm run prepare:gguf` regenerates them. Models are read through
+bounded CID ranges; no whole14GB JavaScript buffer is needed. Terminating the
+owned worker acknowledges native disposal before memory leases are released.
+The importer retains sources, blocks and manifests outside Git. The generic
+MODEL_ARTIFACT_CATALOG describes storage; GGUF_MODEL_CATALOG describes runtime
+candidates and capability requirements.
 
 ```sh
 npm run import:artifact -- --model smolvlm-256m-q4
 npm run import:artifact -- --model qwen3-0.6b-q4
 npm run import:artifact -- --model qwen3.5-2b-q4
+npm run import:artifact -- --model qwen3.5-0.8b-q4-k-m-gguf
 npm run import:artifact -- --model qwen3.8-27b-georefine-d14-gguf --quota-bytes 25769803776
 npm run import:artifact -- --directory /path/to/files
 npm run test:artifacts
 npm run test:inference
+npm run test:gguf
 npm run test:artifacts:browser
 npm run dev:inference
 ```
@@ -66,9 +90,11 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically;
-publishing a retained package still requires **Host CID for peers**. Start with
+publishing a retained package still requires **Share with peers**. **Download
+from peers** retrieves and verifies the package identified by a CID from an
+online provider; saving it locally does not automatically publish it. Start with
 SmolVLM256M, choose **Import pinned HF package**, then **Load on this GPU**.
-Final core regression: 305/306 passing, with the same pre-existing ULG Eshkol
+Latest core regression: 336/337 passing, with the same pre-existing ULG Eshkol
 tensor-contract failure. See [test evidence and remaining gates](plan/tests.md).
 
 ## Current Status - September 14, 2026

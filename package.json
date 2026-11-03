@@ -22,6 +22,8 @@
     "demos/inference"
   ],
   "scripts": {
+    "prepare:gguf": "node scripts/prepare-gguf-runtime.mjs",
+    "postinstall": "node scripts/prepare-gguf-runtime.mjs",
     "test:geo-core": "npm --prefix packages/geo-core test",
     "test:geodata": "npm --prefix services/geodata test",
     "test:earth": "npm --prefix demos/earth test",
@@ -109,10 +111,13 @@
     "test:artifacts": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/ipfsArtifactTransport.test.js peercompute/tests/unit/stateManager.artifacts.test.js",
     "test:inference": "node --test peercompute/tests/unit/modelInference.test.js peercompute/tests/unit/computeManager.residency.test.js peercompute/tests/unit/resourceLeaseBroker.test.js demos/tests/agents.test.js",
     "test:artifacts:browser": "node peercompute/tests/runtime/ipfs-artifacts.mjs",
-    "test:inference:browser": "node peercompute/tests/runtime/model-inference.mjs"
+    "test:inference:browser": "node peercompute/tests/runtime/model-inference.mjs",
+    "test:gguf": "node --test peercompute/tests/unit/ggufArtifactReader.test.js peercompute/tests/unit/ggufRuntime.test.js peercompute/tests/unit/ggufService.test.js peercompute/tests/unit/ggufCatalog.test.js",
+    "test:gguf:browser": "node peercompute/tests/runtime/gguf-inference.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "esbuild": "0.25.12",
     "geojson-vt": "^4.0.3",
     "mapshaper": "^0.7.55",
     "vite": "^6.4.1",

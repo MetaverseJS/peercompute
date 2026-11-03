@@ -7,6 +7,8 @@ export default defineConfig(({ command }) => ({
   base: './',
   worker: { format: 'es' },
   server: { host: '0.0.0.0', port: 5189, https: command === 'serve' ? ensureDevHttpsCert() : undefined,
+    headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
     fs: { allow: [fileURLToPath(new URL('../../', import.meta.url))] } },
+  preview: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } },
   build: { target: 'esnext', outDir: fileURLToPath(new URL('../../docs/inference', import.meta.url)), emptyOutDir: true },
 }));

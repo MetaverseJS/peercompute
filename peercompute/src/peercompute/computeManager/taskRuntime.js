@@ -10,6 +10,9 @@ async function importTaskModule(modulePath) {
   if (modulePath === 'peercompute:model-inference') {
     return import('../inference/modelTask.js');
   }
+  if (modulePath === 'peercompute:gguf-inference') {
+    return import('../inference/gguf/modelTask.js');
+  }
 
   return import(
     /* webpackChunkName: "compute-task" */

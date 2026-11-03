@@ -21,23 +21,33 @@ export async function mountInferencePanel({ container = document.body, stateMana
   status.setAttribute('role', 'status'); panel.append(status);
   const select = element('select'); select.setAttribute('aria-label', 'Approved model package');
   for (const entry of Object.values(MODEL_CATALOG)) {
-    const option = element('option', `${entry.name} · ${(entry.totalBytes / 1024 ** 2).toFixed(0)} MiB${entry.capabilities?.browserInference === false ? ' · storage only' : ''}`);
+    const option = element('option', `${entry.name} · ${(entry.totalBytes / 1024 ** 2).toFixed(0)} MiB${entry.capabilities?.requiresCapabilityCheck ? ' · check GPU support' : entry.capabilities?.browserInference === false ? ' · storage only' : ''}`);
     option.value = entry.id; select.append(option);
   }
   select.value = 'smolvlm-256m-q4';
   const acquire = element('button', 'Import pinned HF package');
   const row = element('div', undefined, 'pc-inference-row'); row.append(select, acquire); panel.append(row);
   const capability = element('p', '', 'pc-inference-note'); panel.append(capability);
+  const gpuLayers = element('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
+  gpuLayers.setAttribute('aria-label', 'GGUF GPU layer limit');
+  const ggufSettings = element('label', 'GGUF GPU layer limit (99999 = all; partial offload also uses CPU memory) ');
+  ggufSettings.append(gpuLayers); ggufSettings.hidden = true; panel.append(ggufSettings);
+  const measuredGguf = element('p', 'Tested 27B configuration: RTX 5060 Ti (16 GB), 56 GPU layers and a 512-token context. A compatible browser is required; other devices need their own memory limit.', 'pc-inference-note');
+  measuredGguf.hidden = true; panel.append(measuredGguf);
   const quota = element('select'); quota.setAttribute('aria-label', 'Local artifact storage limit');
   for (const bytes of STORAGE_QUOTAS) { const option = element('option', `${bytes / 1024 ** 3} GiB local limit`); option.value = String(bytes); quota.append(option); }
   const quotaRow = element('div', undefined, 'pc-inference-row'); quotaRow.append(element('label', 'Local artifact storage '), quota); panel.append(quotaRow);
   const cid = element('input'); cid.placeholder = 'Model manifest CID'; cid.setAttribute('aria-label', 'Model manifest CID');
+  cid.title = 'The CID identifies a verified model package. Paste one from a peer or import a pinned package.';
   const load = element('button', 'Load on this GPU');
-  const fetchPeer = element('button', 'Fetch CID from peers'); fetchPeer.disabled = !networkManager;
+  const fetchPeer = element('button', 'Download from peers'); fetchPeer.disabled = !networkManager;
+  fetchPeer.title = 'Download and retain the package identified by this CID. A peer sharing it must be online. Load the model separately to run it.';
   const unload = element('button', 'Unload');
-  const publish = element('button', 'Host CID for peers'); publish.disabled = !networkManager;
-  const withdraw = element('button', 'Withdraw CID'); withdraw.disabled = !networkManager;
+  const publish = element('button', 'Share with peers'); publish.disabled = !networkManager;
+  publish.title = 'Explicitly share this verified package while this browser and its artifact network are running.';
+  const withdraw = element('button', 'Stop sharing'); withdraw.disabled = !networkManager;
   const cidRow = element('div', undefined, 'pc-inference-row'); cidRow.append(cid, load, fetchPeer, unload, publish, withdraw); panel.append(cidRow);
+  panel.append(element('p', 'A CID identifies a package. Downloading from peers requires an online peer already sharing that package.', 'pc-inference-note'));
   const relay = element('input'); relay.placeholder = 'Relay multiaddress /dns4/…/tcp/…/wss/p2p/…';
   relay.setAttribute('aria-label', 'Artifact relay multiaddress');
   const connect = element('button', 'Connect artifact network');
@@ -97,10 +107,32 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     await operationDone;
   }
-  const updateCapability = () => {
+  let capabilityRevision = 0;
+  const updateCapability = async () => {
+    const revision = ++capabilityRevision;
     const entry = MODEL_CATALOG[select.value];
     const canRun = entry.capabilities?.browserInference !== false;
+    const isGguf = entry.model.runtime === 'llama.cpp';
+    ggufSettings.hidden = !isGguf;
+    measuredGguf.hidden = entry.id !== 'qwen3.8-27b-georefine-d14-gguf';
+    const resident = runtime.service.getStatus();
+    capture.disabled = isGguf || (resident.runtime === 'llama.cpp' && resident.status !== 'idle');
+    if (capture.disabled) capture.checked = false;
     load.disabled = !canRun;
+    if (isGguf && canRun) {
+      load.disabled = true;
+      capability.textContent = 'Checking isolated browser, WebAssembly and WebGPU support. No model download starts automatically.';
+      try {
+        await runtime.checkGgufCapabilities();
+        if (disposed || revision !== capabilityRevision) return;
+        load.disabled = false;
+        capability.textContent = 'GGUF text runtime available. Context is limited to 512 tokens. Model loading still requires enough GPU and CPU memory; the storage limit does not reserve GPU memory.';
+      } catch (error) {
+        if (disposed || revision !== capabilityRevision) return;
+        capability.textContent = `GGUF storage and hosting are available; local execution cannot start: ${error.message}`;
+      }
+      return;
+    }
     capability.textContent = canRun ? 'Text and supported image requests run locally after loading.'
       : 'This GGUF package can be pinned and hosted. Local execution is unavailable in the current browser adapter. Import requires a larger storage limit and starts only when clicked.';
   };
@@ -118,7 +150,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (autoConnect && !relay.value.trim() && !runtime.networkManager) await runtime.connectBackend({ signal });
     else await runtime.connect(relay.value.trim(), { signal });
     fetchPeer.disabled = publish.disabled = withdraw.disabled = false;
-    networkRow.remove(); status.textContent = 'Artifact network connected. Hosting requires Host CID.';
+    networkRow.remove(); status.textContent = 'Artifact network connected. Choose Share with peers to make a package available.';
   });
   publish.onclick = () => run(async () => {
     await runtime.publish(cid.value.trim()); status.textContent = `Hosting pinned CID for peers: ${cid.value.trim()}`;
@@ -132,7 +164,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
   });
   load.onclick = () => run(async (signal) => {
     invalidateActions();
-    const result = await runtime.load(cid.value.trim(), { signal, onProgress: progress });
+    const result = await runtime.load(cid.value.trim(), { signal, onProgress: progress,
+      ggufGpuLayers: Number(gpuLayers.value) });
+    capture.disabled = runtime.service.getStatus().runtime === 'llama.cpp';
+    if (capture.disabled) capture.checked = false;
     status.textContent = `Resident on worker ${result.workerId} · ${result.adapter.vendor} ${result.adapter.architecture}`;
     history.length = 0;
   });
@@ -142,6 +177,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   });
   unload.onclick = () => run(async () => {
     invalidateActions(); await runtime.service.unloadModel(); history.length = 0;
+    void updateCapability();
     status.textContent = 'Model unloaded; pinned files retained.';
   });
   file.onchange = () => run(async (signal) => {
@@ -157,7 +193,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   send.onclick = () => run(async (signal) => {
     const text = prompt.value.trim(); if (!text) return;
     invalidateActions();
-    const context = await getContext?.({ includeImage: capture.checked });
+    const includeImage = capture.checked && runtime.service.getStatus().runtime !== 'llama.cpp';
+    const context = await getContext?.({ includeImage });
     const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
     const instructions = String(actions?.instructions ?? '').slice(0, 8000);
     const messages = [
@@ -171,7 +208,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     status.textContent = 'Generating locally…';
     try {
       const result = await runtime.service.generate({ requestId, messages, signal,
-        image: capture.checked && typeof context === 'object' ? context.image : undefined,
+        image: includeImage && typeof context === 'object' ? context.image : undefined,
         maxNewTokens: 128, onToken: (chunk) => { reply.textContent += chunk; trimTranscript(); } });
       reply.textContent = `MODEL > ${result.text}`;
       history.push({ role: 'user', content: text }, { role: 'assistant', content: result.text });
@@ -210,7 +247,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       try {
         await runtime.connectBackend({ signal });
         fetchPeer.disabled = publish.disabled = withdraw.disabled = false; networkRow.remove();
-        status.textContent = 'Secret Workshop connected. Import or fetch a package; Host CID explicitly enables serving.';
+        status.textContent = 'Secret Workshop connected. Import or download a package; Share with peers makes it available while you stay online.';
       } catch (error) {
         if (!signal.aborted) status.textContent = `Local inference ready. Backend connection failed: ${error.message}`;
       }

@@ -475,7 +475,7 @@ test('storage-only GGUF catalog pins the exact published closure without admitti
   assert.equal(model.model.architecture, 'qwen3_5');
   assert.equal(model.model.executionStatus, undefined);
   assert.equal(model.model.executionReason, undefined);
-  assert.match(model.capabilities.executionReason, /managed llama\.cpp runtime adapter.*not implemented/u);
+  assert.match(model.capabilities.executionReason, /Execution is admitted separately by the managed llama\.cpp runtime/u);
   assert.deepEqual(model.files.map((file) => file.path), ['.gitattributes', 'LICENSE', 'NOTICE',
     'Qwen3.8-27B-GeoRefine-D14-abl-MIXED-IQ4_XS.gguf', 'README.md', 'artifact-manifest.json',
     'chat_template.jinja', 'config.json', 'generation_config.json', 'tokenizer_config.json', 'verify_artifact.py']);

@@ -21,7 +21,8 @@ function workerWasTerminated(error) {
 /** Host-side lifecycle/admission facade. All inference runs through ComputeManager. */
 export class ModelInferenceService {
   constructor({ computeManager, artifactStore, admission, runtimeAssets, resourceEstimate,
-    moduleUrl = 'peercompute:model-inference',
+    runtimeDefinition = null, runtimeOptions = {},
+    moduleUrl = runtimeDefinition?.moduleUrl ?? 'peercompute:model-inference',
     baseUrl = globalThis.location?.href,
     createChannel = () => new MessageChannel(),
     loadTimeoutMs = 300_000, generationTimeoutMs = 120_000,
@@ -47,7 +48,20 @@ export class ModelInferenceService {
     this.computeManager = computeManager;
     this.artifactStore = artifactStore;
     this.admission = admission;
-    this.runtimeAssets = validateRuntimeAssets(runtimeAssets, baseUrl);
+    // Definitions come from trusted application code selected by ComputeManager,
+    // never from an artifact manifest or a peer-supplied module location.
+    this.runtimeDefinition = runtimeDefinition ?? {
+      id: 'transformers.js', validateManifest: validateModelManifest, validateRuntimeAssets,
+    };
+    if (typeof this.runtimeDefinition.validateManifest !== 'function'
+        || typeof this.runtimeDefinition.validateRuntimeAssets !== 'function') {
+      throw new Error('A trusted model runtime definition is required');
+    }
+    this.runtimeAssets = this.runtimeDefinition.validateRuntimeAssets(runtimeAssets, baseUrl);
+    if (!this.runtimeDefinition.validateRuntimeOptions && Object.keys(runtimeOptions).length) {
+      throw new Error('This model runtime does not accept runtime options');
+    }
+    this.runtimeOptions = this.runtimeDefinition.validateRuntimeOptions?.(runtimeOptions) ?? {};
     this.resourceEstimate = typeof resourceEstimate === 'function' ? resourceEstimate : { ...resourceEstimate };
     this.moduleUrl = String(moduleUrl);
     this.createChannel = createChannel;
@@ -79,7 +93,7 @@ export class ModelInferenceService {
       try {
         const source = this.artifactStore.getManifest
           ? await this.artifactStore.getManifest(manifestCid, { signal: operation.controller.signal }) : manifest;
-        const validated = validateModelManifest(source);
+        const validated = this.runtimeDefinition.validateManifest(source);
         entry.manifest = validated.manifest;
         const estimate = typeof this.resourceEstimate === 'function'
           ? await this.resourceEstimate(entry.manifest, validated) : this.resourceEstimate;
@@ -104,7 +118,8 @@ export class ModelInferenceService {
         const result = await this.computeManager.submitTask({
           id: `${sessionId}-load`, module: this.moduleUrl, exportName: 'handleModelTask',
           data: { command: 'load', sessionId, manifestCid, manifest: entry.manifest,
-            artifactPort: port2, runtimeAssets: this.runtimeAssets, collectGpuEvidence: this.collectGpuEvidence },
+            artifactPort: port2, runtimeAssets: this.runtimeAssets, runtimeOptions: this.runtimeOptions,
+            collectGpuEvidence: this.collectGpuEvidence },
           affinityKey: entry.affinityKey, requireWorker: true, transferables: [port2],
           signal: operation.controller.signal, onProgress,
         });
@@ -128,8 +143,10 @@ export class ModelInferenceService {
         throw error;
       } finally {
         operation.dispose();
-        await entry.bridge?.close();
-        entry.bridge = null;
+        if (!this.runtimeDefinition.retainArtifactBridge) {
+          await entry.bridge?.close();
+          entry.bridge = null;
+        }
         entry.loadController = null;
       }
     };
@@ -146,6 +163,7 @@ export class ModelInferenceService {
       validateSessionId(requestId);
       validateImageInput(image);
       messages = normalizeModelMessages({ messages, prompt });
+      this.runtimeDefinition.validateGenerationInput?.({ image, messages, maxNewTokens });
       prompt = undefined;
       if (!Number.isInteger(maxNewTokens) || maxNewTokens < 1 || maxNewTokens > MODEL_POLICY.maxNewTokens) {
         throw new Error('Generation exceeds its output-token budget');
@@ -244,6 +262,7 @@ export class ModelInferenceService {
 
   getStatus() {
     return { status: this.session?.status ?? (this.closed ? 'closed' : 'idle'),
+      runtime: this.runtimeDefinition.id,
       sessionId: this.session?.sessionId ?? null, manifestCid: this.session?.manifestCid ?? null,
       activeRequestId: this.active?.requestId ?? null, queuedRequests: this.queue.length,
       artifactReads: this.session?.bridge?.getStats() ?? null,
@@ -303,6 +322,14 @@ export class ModelInferenceService {
     if (this.session !== entry) return { sessionId: entry.sessionId, status: 'unloaded' };
     const operation = operationSignal(undefined, this.generationTimeoutMs);
     try {
+      if (this.runtimeDefinition.terminateOnUnload) {
+        // Some native runtimes retain allocations on their exit API. A successful
+        // owned-worker stop is the disposal acknowledgement for that entire realm.
+        await this.computeManager.terminateWorkerAffinity(entry.affinityKey, { reason: 'Model runtime unloaded' });
+        await this.#release(entry);
+        this.session = null;
+        return { sessionId: entry.sessionId, status: 'unloaded', workerTerminated: true };
+      }
       const result = await this.computeManager.submitTask({ id: `${entry.sessionId}-unload`,
         module: this.moduleUrl, exportName: 'handleModelTask', data: { command: 'unload', sessionId: entry.sessionId },
         affinityKey: entry.affinityKey, requireWorker: true, signal: operation.controller.signal });

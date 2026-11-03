@@ -43,15 +43,21 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Status: **implementation in progress** on `feature/ipfs-artifacts-webgpu`.
   Verified UnixFS storage, independent-browser WebRTC transfer/reseeding, and
   actual Qwen3-0.6B / SmolVLM256M / SmolVLM500M / Qwen3.5-2B generation in managed NVIDIA
-  workers. Both vision models distinguish image inputs. Local demo-agent panels
+  workers. All three vision models distinguish image inputs. Local demo-agent panels
   add bounded scene context and explicitly applied typed actions. November3 user
   steering adds the fully four-bit multimodal Qwen2B (now hardware verified) and
   the exact 14.2GB GeoRefine27B GGUF. The GGUF passes full durable import, pinned
-  manifest verification and persistent reopen/ranges; its execution remains gated on a separate
-  managed runtime adapter and browser/driver qualification. A November3 follow-up
+  manifest verification and persistent reopen/ranges. A November3 follow-up
   reproduced shader-f16 availability and correct worker FP16 arithmetic with an
   isolated Dawn NVIDIA override; the earlier absence was a browser policy gate,
-  not a missing hardware capability. Full GGUF execution remains unverified.
+  not a missing hardware capability. The authorized managed GGUF adapter now
+  runs pinned wllama3.8.1 inside the existing ComputeManager worker with bounded
+  CID reads. Qwen3.5-0.8B Q4_K_M passes actual GPU generation, arithmetic, warm
+  reuse, cancellation, unload and browser restart with its source blocked.
+  The exact27B also passes real generation, arithmetic and warm reuse with56
+  GPU layers on RTX5060Ti16GB, using bounded ranges from the verified Node store.
+  Cancellation uses acknowledged worker termination and releases residency.
+  Its full14GB browser peer transfer/persistence remain separate open gates.
   Remote inference and the broader parent gates remain open. The September
   baseline is historical.
 

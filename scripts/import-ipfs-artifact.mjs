@@ -13,9 +13,11 @@ import { FileSystemArtifactBackend } from '../peercompute/src/peercompute/artifa
 import { ARTIFACT_MANIFEST_SCHEMA, normalizeArtifactManifest } from '../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { MODEL_CATALOG, modelFileUrl as inferenceModelFileUrl } from '../peercompute/src/peercompute/inference/modelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
+import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 
-export const IMPORT_MODEL_CATALOG = Object.freeze({ ...MODEL_CATALOG, ...MODEL_ARTIFACT_CATALOG });
-const modelFileUrl = (id, path) => MODEL_CATALOG[id] ? inferenceModelFileUrl(id, path) : modelArtifactFileUrl(id, path);
+export const IMPORT_MODEL_CATALOG = Object.freeze({ ...MODEL_CATALOG, ...GGUF_MODEL_CATALOG, ...MODEL_ARTIFACT_CATALOG });
+const modelFileUrl = (id, path) => MODEL_CATALOG[id] ? inferenceModelFileUrl(id, path)
+  : GGUF_MODEL_CATALOG[id] ? ggufModelFileUrl(id, path) : modelArtifactFileUrl(id, path);
 
 const repositoryDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_ARTIFACT_CACHE = join(homedir(), '.cache', 'peercompute-artifacts');
