@@ -15,3 +15,12 @@ https://github.com/dgriebel2014/VideoDBProject
 ### Legacy or archived
 - PeerJS, Gun.js, Trystero, simple-peer (evaluated; not in runtime path).
 - y-libp2p (not used; replaced by PeerComputeProvider).
+
+### Planned IPFS and model inference references - 2026-11-03
+
+The [IPFS-01 plan](../branch/ipfs-large-files-model-inference.md) records checked
+primary sources, exact candidate versions/revisions, and implementation gates for
+Helia/UnixFS/Bitswap, browser storage, trusted gateway verification, Transformers.js,
+ONNX Runtime Web, and small Qwen model packaging. These are researched candidates,
+not installed capabilities. WebLLM is an evaluated alternative, not a selected
+second runtime.

@@ -14,6 +14,27 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+### IPFS Large Files And Model Inference TODO - 2026-11-03 AKST
+
+- [ ] **IPFS-01:** Add generic persistent IPFS file storage, verified streaming
+  transfer, explicit pins, and peer hosting; use it to distribute a complete,
+  revision-pinned small Qwen package and execute inference through an existing
+  ComputeManager worker. Follow with whole-request remote inference on an
+  explicitly selected capable peer.
+- The [implementation plan](branch/ipfs-large-files-model-inference.md) defines
+  IPFS-01.0–.6, source seams, dependency/runtime spikes, ownership, bounded memory,
+  durable seed hosts, model provenance, cancellation, and acceptance tests.
+- First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
+  the same file from B with origin/gateway fallback blocked. Separate storage
+  contexts prevent a shared browser cache from masquerading as peer hosting.
+- Initial model candidate: Qwen3-0.6B ONNX q4f16 through Transformers.js, with the
+  whole model resident on one WebGPU peer. Distributed storage is separate from
+  multi-GPU tensor parallelism. Preserve existing small local artifact caches;
+  large blocks and private inference content stay outside Yjs/pubsub.
+- Status: **plan only, implementation pending**. No model weights downloaded,
+  dependencies installed, runtime changed, or new application tests run for this
+  planning prompt. The September test baseline below remains historical.
+
 ### Overall Roadmap Assessment - 2026-09-14 AKDT
 
 - Current survey: [project state and roadmap](reports/2026-09-14-project-state-survey.md).

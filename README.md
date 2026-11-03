@@ -2,6 +2,15 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
+## Planned: IPFS Files And Model Inference - November 3, 2026
+
+[IPFS-01](plan/branch/ipfs-large-files-model-inference.md) plans generic persistent
+IPFS artifacts, peer hosting and durable pins, followed by small Qwen inference
+in resident PeerCompute WebGPU workers. It includes a revision-pinned model
+candidate, integration boundaries, and tests proving peers can reseed files after
+the original host leaves. This is planned work; IPFS and model inference are not
+implemented yet. The implementation survey and test results below are historical.
+
 ## Current Status - September 14, 2026
 
 The [current state survey](plan/reports/2026-09-14-project-state-survey.md)

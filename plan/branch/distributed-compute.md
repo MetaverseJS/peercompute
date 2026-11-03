@@ -104,3 +104,17 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 2) Write MetricsManager stub and publish local metrics.
 3) Add a simple CA rule set for LAN clustering.
 4) Integrate placement hints into NetworkScheduler.
+
+## Added Workload: IPFS Artifacts And Model Inference - 2026-11-03
+
+- [IPFS-01](ipfs-large-files-model-inference.md) is the concrete plan for generic
+  verified large-file storage/hosting and small Qwen inference through the
+  existing ComputeManager and service abstractions. All phases are pending.
+- Add artifact locality, cold-load cost, residency, GPU/KV budget, and measured
+  inference throughput to placement inputs when the basic service is proven.
+  A browser storing weights and a peer able to execute them are different roles.
+- First run the entire model on one admitted peer; then route whole requests
+  over authenticated streams. Storage replication does not establish tensor
+  parallelism, honest remote computation, or a completed self-organizing network.
+- The optional Deno root service remains independent. Durable IPFS providers can
+  be operator-run standard nodes without changing relay or geodata ownership.

@@ -47,3 +47,14 @@ Status: active; hierarchical shared state store.
 ## Open Questions
 - When to adopt binary encoding (CBOR) for deltas?
 - What is the conflict authority: per-task, per-room, or global?
+
+## Planned Large-Artifact Boundary - 2026-11-03
+
+[IPFS-01](../branch/ipfs-large-files-model-inference.md) proposes a separate
+block-oriented local artifact store exposed through StateManager handles and
+owned by NodeKernel's optional ArtifactManager. Keep current small-file
+LocalArtifactCache behavior. Shared DataState may carry approved bounded manifest
+CIDs, availability, and lifecycle summaries; file blocks, weight arrays, private
+prompts, and token histories must not enter Yjs replication. Residency and read
+leases protect local data until actual unload/read completion. This describes
+planned work and does not change today's commit contract or implementation.

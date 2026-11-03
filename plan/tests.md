@@ -1,5 +1,45 @@
 ## PeerCompute Test Strategy
 
+### Planned IPFS artifact and model gates - 2026-11-03 AKST
+
+Status: **prospective; not implemented or run in this planning change**. The
+[IPFS-01 plan](branch/ipfs-large-files-model-inference.md) owns the exact phases,
+model/runtime identity, resource limits, and full completion criteria.
+
+- Generic artifact tests: deterministic UnixFS/CID imports; streaming 128 MiB
+  fixture and opt-in >2 GiB fixture; per-block and whole-file integrity;
+  path/manifest/DAG/size bounds; ranges; resume; crash recovery; dedup; reader
+  leases; pin-aware GC; cross-tab coordination; quota denial/exhaustion. Measure
+  transient transport memory independently from model-loader allocations.
+- Genuine hosting: independent BrowserContexts/profiles and peer identities,
+  empty receiver storage, A imports → B fetches → A closes → fresh C fetches
+  from B. Block origin/public gateway fallback and assert actual IPFS serving
+  counters. Pages within one context can share IndexedDB and are insufficient
+  evidence. Add durable seed restart, one-provider loss, and all-providers-gone
+  cases; browser cache retention does not establish durable network availability.
+- Model/compute: exact revision and complete variant closure, approved runtime,
+  actual WebGPU generation, second request with resident weights, cold worker/
+  reload with HF and public runtime CDNs blocked, required-worker readiness,
+  bounded token streams/queues and slow-consumer overflow, abort during download/
+  load/generation including late load completion, unload, lease retention/renewal
+  past TTL and no double-counted GPU units,
+  acknowledged cancellation, hard-stop recovery, device loss, resize/preemption,
+  rendering contention, and full NodeKernel shutdown. Mock/software GPU tests
+  alone cannot establish hardware support or throughput.
+- Remote inference: authenticated streams, selected authorized peer/model,
+  backpressure, bounded parameters, deadlines, duplicate/late packets, provider
+  and requester loss, explicit partial-output semantics, and no prompt/token
+  content in Yjs, pubsub, public telemetry, or ordinary logs.
+- Release: nested-path Vite worker/WASM closure, local pinned runtime assets,
+  cache/fetch policy, adapter range/HEAD behavior where exposed, a non-LLM file
+  consumer, NetViz artifact/model state, and bounded loss/latency/churn tests.
+  Existing core artifact/service/worker/network tests, Multiscale worker builds,
+  and changed demo/static-release checks remain regression gates. Revisit the
+  historical Eshkol failure explicitly; do not relabel it as passing.
+- Planning-only validation: source/reference review, relative-link checks,
+  preserved instructions/history, `git diff --check`, and ICC guard. No runtime
+  tests or performance claims are implied by this documentation acceptance.
+
 ### Repository survey baseline - 2026-09-14 AKDT
 
 - Scope: run existing deterministic Node and static-release gates against

@@ -1,6 +1,15 @@
 # Implementation Status
 
-Updated: 2026-09-14 AKDT
+Updated: 2026-11-03 AKST (planning update; implementation assessment unchanged)
+
+## Planned IPFS Capability
+
+[IPFS-01](branch/ipfs-large-files-model-inference.md) adds the proposed generic
+large-file/IPFS hosting layer and a small Qwen WebGPU inference workload using
+existing compute orchestration. All implementation phases remain pending. This
+planning review changed no runtime code, installed no dependencies, downloaded
+no weights, and did not rerun application tests. The assessment and September
+test results below remain the last recorded implementation baseline.
 
 ## Current Overall Assessment
 

@@ -59903,3 +59903,153 @@ and performance, and retain a physics-based motorcycle.
   have settled. The commit records the failed application baseline; it does
   not claim a green release. Final post-commit ICC refresh/HEAD verification
   will be performed outside the repository, with no further source changes.
+
+
+## 2026-11-02 09:35:17 AKST - Changes since the prior session
+
+- Prompt: “have there been any changes since our last session?” Exact message
+  delivery time is unavailable; the first observed intake time was
+  `2026-11-02T09:35:17-09:00`.
+- Read AGENTS.md, the ICC skill, plan/plan.md, and the prior plan/log.md entry.
+  Ran `git status --short --branch`, `git log -n 16` with ISO dates,
+  `git rev-list --count 3d490490..HEAD`, `git diff --stat 3d490490`,
+  `git log --all --since=2026-09-14T11:06:00-08:00`,
+  `git rev-parse origin/ulg`, and
+  `timeout 15s git ls-remote --heads origin refs/heads/ulg`.
+- Result: zero new commits, no preexisting working-tree changes, and no newer
+  commits on locally known refs. HEAD remains September 14's survey commit
+  `3d49049085b14a98a99ddf115b26cd008b13e4ec`. The live remote `ulg` ref still
+  matches stored origin/ulg at `861abd5b66bdd4d52e7737b0f8cbe4e0a1832797`;
+  the local branch is still 28 commits ahead. Other live remote branches were
+  not queried. Node remains `v24.18.0`.
+- ICC query-only repo resolution, assistant-status, and source-drift confirm
+  fresh evidence and zero drift at intake. Existing stale task recommendations
+  were not treated as new implementation work.
+- No application tests rerun: this is a Git/source comparison, not a new test
+  baseline. September's 873-pass/one-failure result remains historical; sibling
+  ULG artifacts, dependencies, running services, and deployments were not audited.
+- Only file touched is this required per-prompt log entry. No source, plan
+  milestones, runtime artifacts, branches, or deployments changed. No servers
+  were started. `git diff --check` validates this documentation-only addition.
+
+## 2026-11-03 10:35:36 AKST - Repository review and IPFS large-file/model plan
+
+### Prompt and scope
+
+- Prompt: “read everything in the repo. and then come up with a todo item and
+  plan for adding ipfs support for large files generally one example is
+  huggingface models like some of the smaller qwens. we want to be able to run
+  these models on top of the webgpu peercompute structure and have them hosted
+  over ipfs by the network.” Exact message delivery time is unavailable; the
+  first observed intake time was `2026-11-03T10:35:36-09:00`.
+- Scope is repository survey, primary-source research, and a concrete TODO/plan.
+  No runtime implementation, package installation, model download, remote push,
+  or deployment is implied. Initial HEAD was `3d49049085b14a98a99ddf115b26cd008b13e4ec`,
+  branch `ulg` ahead 28. The preexisting 28-line November 2 log entry was preserved.
+  Node is `v24.18.0`; no version change or dependency reinstall was necessary.
+
+### Inspection and research
+
+- Read root AGENTS.md, mission-control instructions, the ICC control-plane skill
+  and evidence/planning/verification references, plan/plan.md, plan/log.md, branch
+  goals, test strategy, architecture documents, implementation status, package/
+  workspace/build configuration, and relevant source/test paths. Used `git ls-files`
+  with a Python inventory: 4,373 tracked files, 173,214,385 bytes. Inventoried the
+  entire tree; generated bundles, copied vendor assets, binary assets/PDFs,
+  lockfile bodies, credentials, and runtime dumps were not read line by line.
+- Three native read-only review agents handled independent core/artifact,
+  demo/build/test, and official inference-runtime research, as directed by the
+  ICC skill's native-agent workflow. No agents edited files and no concurrent
+  edit leases were necessary. Core scan covered 176 authored text files /
+  68,214 lines. Demo/build scan covered 487 authored text/source candidates /
+  10,745,312 bytes across all 14 demos, shared code, lab, scripts, and Vite configs.
+  Root review included structural scans of all plan Markdown and targeted history
+  searches over the full log. This is broad coverage with focused deep source
+  review, not a claim of semantic interpretation of every generated/binary file.
+- Routine commands: `rg --files`, `rg -n`, `git ls-files`, Python inventory and
+  bounded structural scans, `sed`, `cat`, `tail`, `git status --short --branch`,
+  `git diff --stat`, and `node --version`. Large combined reads sometimes truncated
+  tool output; relevant architecture/source paths were reread in bounded ranges.
+- Confirmed the current LocalArtifactCache copies whole files and defaults to
+  8 MiB/item and 32 MiB total; DataState commits enter Yjs; sendToPeer uses pubsub;
+  compute handlers are one-shot; task cancellation is incomplete; supervisor/
+  broker integration requires explicit lifecycle ownership. A lease timeout or
+  removed task record does not dispose a resident model/GPU allocation.
+- Official web research checked IPFS browser/pinning/Bitswap/UnixFS/trustless
+  gateway docs, versioned Helia source, npm package metadata, immutable Hugging
+  Face model file metadata, Transformers.js 4.3.2 source, ORT docs, and WebLLM
+  0.2.87 sources. No model weights were fetched. Exact citations are recorded in
+  the new branch plan. Metadata/source scratch files stay outside Git under
+  `/tmp/peercompute-ipfs-plan-20261103-*`.
+- Selected candidate: Qwen3-0.6B ONNX q4f16, revision-pinned 569,789,750-byte
+  weight file with recorded LFS SHA-256; Transformers.js fetch injection is the
+  initial adapter. This remains a candidate until actual browser/GPU testing.
+- Rejected an obsolete integration assumption: Helia 7 accepts libp2p creation
+  options and owns node creation/shutdown, not a borrowed running node. Plan uses
+  separately owned artifact networking with authenticated identity binding and
+  bounded lifecycle until a supported shared-node composition is proven.
+- Reviews tightened lease renewal/expiry quarantine and GPU-unit accounting;
+  loader-owned abort controllers; late-load cancellation; synchronous streamer
+  overflow behavior; explicit WebGPU/dtype; and cold-worker tests blocking runtime
+  CDNs as well as HF. Existing same-BrowserContext P2P tests can share IndexedDB;
+  new hosting gates require separate contexts/profiles and A→B→fresh-C reseeding.
+
+### ICC and durable planning state
+
+- Used query-only MCP repo resolution, source-drift, status, and `codebase_work`
+  before planning. Initial drift was only the preserved November 2 log entry.
+- Ran `/home/cos/projects/infinite_context_coder/bin/icc freshness --repo peercompute`
+  and `reindex --repo peercompute --full`. Full refresh completed all six installed
+  steps, including Git history, in about 81.5 seconds. Output is external at
+  `/tmp/peercompute-ipfs-plan-20261103-refresh.log`.
+- Persisted CLI `work --repo peercompute --task-id
+  ipfs-large-artifacts-webgpu-inference-plan-20261103 --mode plan` with bounded
+  no-context/no-memory/no-doc-memory/no-repo-substrate/no-quality/no-feature-map
+  flags; task/plan/work artifacts exist under the external ICC cache. Query-only
+  previews alone were not treated as saved tasks.
+- Inspected nested generic oracle/runtime risks and optional proposal-worker
+  unavailability. They do not establish IPFS readiness and do not authorize
+  unrelated repairs. Auto-generated runtime recommendations were retained as
+  out-of-scope/skipped items with unclaimed gates; `task-plan --merge-existing`
+  records the documentation slice and pending IPFS-01.0–.6 implementation items.
+- One bare `icc work --help` failed because `icc` is not in this shell's PATH;
+  subsequent commands use the portable absolute CLI path. No repository edit was
+  needed. No optional proposal worker was used to write source or make decisions.
+
+### Documentation changes and continuation
+
+- Added `plan/branch/ipfs-large-files-model-inference.md`: IPFS-01 TODO, source
+  seam survey, generic manifests/block store, verified streaming/pins/resume/GC,
+  browser hosting versus durable seeds, precise model/runtime candidate,
+  resident service lifecycle, remote-request boundary, policy limits, phased
+  deliverables, primary sources, and acceptance criteria.
+- Updated `plan/plan.md`, `plan/tests.md`, `plan/implementation-status.md`,
+  `plan/branch/distributed-compute.md`, `plan/arch/arch.md`,
+  `plan/arch/datastate.md`, `plan/refs/refs.md`, root `README.md`, and this log.
+  Preserved instruction sections and historical records. All runtime feature
+  phases remain pending; the September test evidence is explicitly historical.
+- Next implementation slice is dependency/lifecycle/runtime compatibility
+  (IPFS-01.0), followed by the generic artifact store contract (.1). Local model
+  execution follows real file hosting; remote inference follows resident local
+  execution. Tensor parallelism, training, private-content encryption, and the
+  optional Deno root service are outside this milestone.
+- NOT RUN: application suites, builds, actual WebGPU/browser/network/chaos gates,
+  model inference, model imports, or deployment checks. No browser or persistent
+  service was started. The historical staged Eshkol mismatch remains unresolved.
+  Documentation verification and commit outcome are recorded below after checks.
+
+### Documentation acceptance - 2026-11-03 AKST
+
+- PASS: `python3 /tmp/peercompute-ipfs-plan-20261103-check-docs.py` verified exactly
+  10 documentation files, all 12 added relative links, seven pending phase rows,
+  referenced source seams, preserved first-line instructions/headers, unchanged
+  historical log content, the retained November 2 entry, and `git diff --check`.
+- PASS: ICC `codebase_guard_diff` accepted one added and nine modified documents,
+  no deletions, no violations, no warnings, and no rollback risks. Independent
+  core and inference reviewers' concrete corrections were incorporated before
+  this check. No runtime acceptance result was fabricated from documentation.
+- Preparing a local documentation commit after the final repeated diff/guard
+  check. Post-commit ICC refresh, freshness verification, a planning-only attempt,
+  and a continuation handoff will be stored outside the repository. All seven
+  implementation phases remain pending; only this research/documentation slice
+  is eligible for a verified status. No push is authorized or performed.
