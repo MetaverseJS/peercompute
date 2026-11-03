@@ -60150,3 +60150,178 @@ and performance, and retain a physics-based motorcycle.
   links, preserved instructions/history, consistent StateManager ownership, and
   `git diff --check`; ICC guard passed with no warnings/violations. Preparing the
   local clarification commit before dependency/source implementation begins.
+
+## 2026-11-03 12:00:46 AKST - Add small multimodal demo-agent support
+
+- Prompt: “can you also add support for some other small multimodal models that
+  could theoretically act as agents you can interact with inside some of the
+  other peercompute demos?” Exact delivery time is unavailable; first observed
+  intake was `2026-11-03T12:00:46-09:00`. This extends the active implementation.
+- Added vision+text capability to the planned inference adapter and tasked its
+  leased agent with bounded image inputs/processor loading in the existing
+  managed worker. Researching official SmolVLM 256M/500M revision-pinned ONNX
+  exports and per-module quantization. Root will implement the reusable demo
+  context/action adapter, with explicit registered actions and no generated-code
+  execution. Actual model support requires browser/GPU validation.
+- Current implementation evidence: core baseline 213/214 pass; the same staged
+  Eshkol artifact mismatch remains. Independent external probes proved three-peer
+  Bitswap reseeding, IndexedDB reopen, browser WebRTC transfer, real NVIDIA
+  module-worker GPU dispatch, Transformers fetch interception, and an ORT Add
+  graph on GPU. These are isolated compatibility results, not yet manager-integrated
+  Qwen or multimodal acceptance. Hardware browser lacks exposed shader-f16;
+  selected next Qwen trial is q4, 919,096,585 bytes at the same pinned revision.
+- Published non-overlapping ICC leases for artifact store, IPFS transport,
+  inference module, and root integration after passing preflight. Initial early
+  preflight failed only because CLI work had not yet saved its task; reran after
+  persistence and passed. An early attempt to parse the still-running work output
+  raised JSONDecodeError; waited for completion before consuming it.
+- Installed pinned artifact/IPFS/Transformers dependencies and test IndexedDB
+  package under Node 24.18.0. npm reported existing/new transitive audit findings
+  and pending install-script approvals; no broad audit fix or script approval
+  was applied. Validate actual required browser/native paths before changing
+  dependency policy. Root owns package/lockfile changes.
+
+## 2026-11-03 12:12:08 AKST - Implementation progress request
+
+- Prompt: “how's it going?” Exact delivery time is unavailable; first clock
+  observation after intake was `2026-11-03T12:12:08-09:00`. Reported verified
+  storage/reseeding and GPU foundations, the active feature branch, and the
+  remaining actual-model/managed-worker/demo-agent acceptance. Continued the
+  authorized implementation; this prompt does not cancel that work.
+- Current scoped evidence: `node --test peercompute/tests/unit/artifactStore.test.js`
+  passes 18/18; inference adapter tests pass 13/13; worker/WASM/commit-delta
+  regression command passes 43/43. Real browser IPFS harness passes with three
+  independent contexts and retained IndexedDB identity/blocks after reload.
+  Evidence remains generic fixtures/isolated GPU runtime, not actual model inference.
+- Added managed worker progress/cancellation/reservation, fixed built-in lazy
+  inference-module dispatch, and explicit resident-worker termination for partial
+  ORT initialization failures. Files: computeManager/{ComputeManager,taskRuntime,
+  computeWorker,workerTaskHost}.js. Focused new residency tests follow.
+- ICC assistant-status confirmed expected source drift and no lease conflicts;
+  renewed all four leases after two became heartbeat-stale before their nominal
+  TTL. Earlier npm-utils repair completed successfully: @libp2p/utils 7.4.5 fixes
+  the concrete missing circuitRelayAddressesLast export in the resolved libp2p set.
+  Updated plan.md to reflect implementation rather than the prior plan-only state.
+- Implemented StateManager/DataState artifact registration, root-bound network
+  reads, publish/withdraw delegation and drain-before-close; NodeKernel optional
+  initialization and ComputeManager-owned model services; ResourceLeaseBroker
+  resident accounting/renewal and ResidentModelAdmission. New tests initially
+  failed because the cleanup test assumed a nonexistent Y.Doc.isDestroyed field;
+  changed the test to observe Yjs's actual destroy event. Integration 18/18 and
+  manager regression 61/61 then passed. The all-core run completed 277/278; the
+  baseline ULG Eshkol mismatch remains the only failure.
+- Added bounded scene JSON, explicit single-use typed action proposals, bounded
+  image capture, and lazy agent launchers for CubeChat and EarthGrid. The four
+  behavioral agent tests pass. Demo builds/browser checks follow after the shared
+  inference panel is complete. No model loads on ordinary demo startup.
+- Network discovery/serving tests pass 5/5 and the focused existing network scope
+  passes 49/49. The 128 MiB browser gate passed with 134,243,523 actual DAG payload
+  bytes per transfer, A exits / B reloads / C fetches and zero public requests. Its first
+  attempt hit the owned test relay's five-connections-per-host limiter before
+  transfer; raised only that harness's local participant limit and reran.
+- Added explicit @libp2p/config 1.1.40, @libp2p/crypto 5.1.13 and ipfs-unixfs 13.1.2
+  dependencies plus inference workspace/import/test scripts. No audit-wide fixes.
+  SmolVLM 256M's 15 files / 268,763,564 bytes imported with real manifest CID. Storage
+  review found exporter 16's unbounded reader queue; replaced it with a tested
+  pull walker. An initial report of 894 MB peak RSS was subsequently traced to
+  inherited kernel maxRSS from the tool launcher (a fresh 46.7 MB Node process
+  reported the same 894 MB historical peak); it is not evidence of importer memory
+  use. Replaced that metric with sampled process.memoryUsage RSS. Cached Smol
+  observed about 165 MB. The independently proven exporter read-ahead bug was real.
+  Qwen's 11 files / 932,680,786 bytes then imported in 82.9 s as manifest
+  bafkreihffolxaess6g3df2lzjiac5cpokwfnfhddbzjf22xfmkvhmrjaja.
+- ICC source drift exposed a registration gap: global skip-dir `artifacts`
+  excluded the new production storage folder. Re-registered only peercompute,
+  preserving other exclusions and the explicit net-chaos-lab/artifacts exclusion,
+  while removing that broad directory exclusion. Full refresh follows the clean
+  slice. One incorrect `repo-register --help` attempt exited 2; discovered and used
+  the actual `register` command. No ICC implementation files changed.
+- Routine failed reads: DataState was initially sought in a nonexistent nested
+  directory, then read from its actual stateManager/DataState.js path; package
+  CJS resolution of @libp2p/crypto failed due exports, so inspected its installed
+  package.json. One combined patch had a stale NodeKernel log-line context and
+  applied no changes; corrected and reran it. No permissions or scope changed.
+
+## 2026-11-03 12:41:05 AKST - Second implementation progress request
+
+- Prompt: “how's it going?” Exact delivery time is unavailable; first observed
+  clock reading after intake was `2026-11-03T12:41:05-09:00`. Reported all three
+  actual models generating through ComputeManager-owned NVIDIA workers, successful
+  real-model IPFS reseeding, and the remaining demo/build integration fixes.
+- Actual model evidence: SmolVLM256M generated a correct red-image answer with
+  3,605 GPU dispatches; Qwen generated a greeting with 3,278 dispatches; SmolVLM500M
+  answered “Red.” with 2,547 dispatches. Warm reuse, cancellation, unload, and
+  persistent browser restart passed with no external requests/page errors.
+  Evidence: /tmp/peercompute-all-models-hardware-20261103.json. Final-source image
+  dependence and instrument restoration repeat is running separately.
+- Fixed a concrete Transformers metadata interaction: get_file_metadata reads
+  Content-Length without consuming/cancelling Response bodies. Eager bridge
+  reader reservation exhausted all four credits and stalled loading. Readers now
+  open only when the body is pulled; metadata-only requests consume no file lease.
+  A previous five-minute run timed out and retained its failure evidence at
+  /tmp/peercompute-smolvlm256-hardware-20261103-queued.json. No CPU fallback was added.
+- Real SmolVLM256M network gate passed: 15 files, 268,763,564 file bytes,
+  1,052 unique blocks / 268,819,304 payload bytes, exact CLI manifest CID; A exits,
+  B reloads, C receives every verified file over WebRTC, no origin/public HTTP.
+- Read-only independent review reproduced five worker issues: queued affinity
+  migration after failure, false termination acknowledgment, hanging failed hard
+  cancellation, admission during concurrent teardown, and missing per-task worker
+  bootstrap deadline. Fixed these and added reproducing regressions; 55 worker
+  tests and the combined 124-test foundation scope pass. NodeKernel now retains
+  managers/storage for cleanup retry when worker or network stop is unacknowledged.
+- Production builds: EarthGrid and CubeChat passed outside Git. The first
+  CubeChat build exposed a Vite @peercompute alias collision with the temporary
+  @peercompute/artifact-noise package alias; renamed it peercompute-artifact-noise
+  and rebuilt successfully. NetViz exposed Vite's IIFE worker default rejecting
+  lazy model code splitting; module-worker output fixes that, and the same setting
+  is being applied and validated across existing demos. Static demo checks49/49.
+- Core legacy Webpack build exposed one new dependency browser-bundling error;
+  investigation follows. A CubeChat panel startup check also needs diagnosis.
+  All work remains on the authorized feature branch; no push or deployment.
+
+## 2026-11-03 12:43:31 AKST - Requested 27B GGUF and 4-bit multimodal Qwen 2B
+
+- Prompt: “include support for https://huggingface.co/Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF and also a 4 bit quantized multimodal qwen 2b”. Exact delivery timestamp is unavailable; first observed intake clock was 2026-11-03T21:43:31Z. This extends the active feature branch and does not replace the generic IPFS / managed-worker effort.
+- Verified the requested GGUF repository through the Hugging Face API: revision 5ce3fd841676adf2c1a10d7193637d46007e88f7, one 14,199,740,480-byte MIXED-IQ4_XS weight file, SHA-256 afe9e0cb33a232fe4735635e9cbb95a2f3fa4d8de2990de0d5fdb9e8a979299d. Storage and execution are separate capabilities; Transformers.js consumes ONNX, so GGUF needs a separately verified runtime adapter. No 27B weights downloaded at intake.
+- Delegated pinned Qwen 2B ONNX q4 selection and actual managed-worker acceptance to the inference agent; delegated current GGUF/WebGPU compatibility research to the transport agent after all remaining demo builds passed. Continued using direct ICC assistant-status and non-overlapping agent leases; all four leases renewed before new edits. Repository evidence is expected to be stale from ongoing source changes, with zero lease conflicts.
+- Final initial-model hardware evidence passed at /tmp/peercompute-all-models-hardware-20261103-admitted.json: Qwen3 0.6B and both SmolVLMs use actual NVIDIA device dispatches, warm reuse, cooperative cancellation, cleanup, and source-off browser restart. Both vision models change their answer from red to blue when image pixels change. Focused inference tests27/27. This evidence applies to the tested Chrome155/RTX5060Ti environment.
+- All eleven remaining Vite demo builds passed; results and exact commands are /tmp/peercompute-ipfs-builds/results.json. Existing bundle-size and mixed static/dynamic import warnings remain. EarthGrid panel lifecycle passed headlessly. CubeChat showed a real overlay stacking defect: its settings panel intercepted agent controls. Raised the shared launcher's button/shell above existing demo menu layers; a normal-path browser repeat follows.
+- Files touched in this continuation: demos/shared/agents/launcher.js, peercompute/webpack.config.js, and plan/log.md. Added the specific node:stream browser replacement required by Helia in the legacy Webpack build; npm --prefix peercompute run build is rerunning with output /tmp/peercompute-ipfs-implementation-20261103-core-build-retry.log. No broad Node polyfill or dependency-audit changes.
+
+## 2026-11-03 12:51:32 AKST - Second overview card and internal laptop preview
+
+- Prompt: “you should make this the second demo panel in the peercompute demo overview page. then give me a link so I can try it out from my laptop you can host it internally on the tailscale network by launching it with ssl support on 0.0.0.0 and have it connect to the secretworkshop.net backend. if it looks good we'll merge it back into ulg.” Exact delivery time is unavailable; first observed intake clock was2026-11-03T21:51:32Z.
+- Moved Local Model Console to the second overview card in docs/index.html, added its terminal-style thumbnail and corrected sequential card animation indices. Preserve the feature branch for review; this instruction does not authorize merging into ulg yet.
+- Inspected existing listeners and Tailnet configuration. Port5173 belongs to the separate ulg checkout, and existing Tailscale443 has an unrelated handler; preserved both. Requested a trusted certificate for fastbox.tail5c077c.ts.net with tailscale cert, saving key/cert outside Git under ~/.cache/peercompute-preview/tls. Added SSL_CERT/SSL_KEY support to scripts/https.mjs after ICC preflight/lease update.
+- Launched owned overview4173 and inference5189 processes bound to0.0.0.0 with TLS. PIDs, commands and logs are outside Git at ~/.cache/peercompute-preview/processes.json. These are the requested user preview processes and should remain running at handoff; disposable validation browsers/servers still close. Exact HTTPS link and headless UI/backend checks follow.
+- Verified the Secret Workshop production relay config endpoint returns WSS bootstrap peers and WebRTC configuration. Inference agent is adding automatic standalone connection, with local use retained if connection fails and no automatic artifact publication. Never copy runtime TURN credentials into this repository or logs.
+- Core Webpack retry passed with three bundle-size/circular-chunk warnings. All49 demo/static-agent checks pass. Normal CubeChat overlay path and EarthGrid panel lifecycle now pass headlessly, including disposal/unload and reopen, with zero page errors or unsolicited model requests.
+- Preview evidence: both exact Tailnet URLs return HTTP200 with certificate verification0; headless navigation confirms inference is the second card, secureContext=true, navigator.gpu exposed, no page errors. Initial click automation waited forever for the overview's intentionally animated card to stabilize; reran using the existing prefers-reduced-motion behavior. Updated the existing tile-order assertion for the requested new second card; all49 checks pass again.
+- Production backend proof passed at https://fastbox.tail5c077c.ts.net:5189/: two independent browser contexts each connected application and artifact libp2p nodes to Secret Workshop over WSS, A explicitly published a97-byte fixture, B discovered its double-signed provider and fetched/verified actual Bitswap bytes over WebRTC. Withdrew the fixture, disposed runtimes and closed the validation browser. Evidence /tmp/peercompute-secretworkshop-live-network.json. The existing CubeChat HTTP preview rewrites WSS to WS; that explains its earlier strict-gater failure, but HTTPS preserves WSS and passes. No transport allowlist was weakened.
+- Latest full core suite: npm --prefix peercompute run test:unit passed294/295 in35.9s; the same baseline ULG Eshkol staged tensor-contract mismatch is the sole failure (/tmp/peercompute-ipfs-core-checkpoint-final.log). No newly introduced failure observed. Actual Qwen2B import completed14 files /1,771,280,684 bytes in240.1s with190,464,000-byte sampled peak RSS; CID bafkreihbfj2knzj47dmtsltvdvjlh7jlxbz32fgwibq4rp7guj4i7lixda. GPU acceptance is running.
+- ICC full refresh completed. Production audit remains fail: existing oversized ComputeManager/NetworkManager, incomplete parent task, and generic runtime failure_free classification of the intentionally tested AbortError/cancelled task counters. Inspected those trace locations; they are asserted cancellation behavior, not an unhandled inference failure. The selected oracle is generic with target_matched=false, so its generic complete verdict is not feature completion. First audit call rejected /tmp evidence outside allowed roots; copied stable receipts into ~/.cache/icc/repos/peercompute/runtime/ipfs-artifacts-20261103 and reran. Preserve these findings rather than suppressing gates.
+- Qwen2B fully-q4 hardware trial loaded and generated with2,745 actual GPU dispatches per image, but answered pink/purple for red/blue. A repeat using saturated RGB red/blue still called blue purple. Kept both failed image-correctness receipts; enable_thinking=false was already active and EOS occurred after2tokens, so truncation is not the cause. Testing an explicitly labeled q4 language /fp32 vision variant at the same pinned revision (2,878,946,480-byte package) rather than weakening the image assertion. It needs a3GiB package cap; configured8GiB CPU/GPU envelopes remain estimates.
+- Exact27B import is running with24GiB block quota and8GiB free-disk reserve, verified per-file hashes and backpressure. Added CLI preflight for payload/disk needs before network fetch, periodic free-space checks, and quota-derived traversal bounds. Storage tests29/29 include a sparse logical4.56GB UnixFS file with verified ranges crossing2^31 and2^32. Combined artifact/network/state scope38/38. HTTP temporary-file retries restart download; missing-block IPFS fetch resumes, while unknown-CID imports replay source and deduplicate blocks. Do not describe that as HTTP byte-range resume.
+- Found a combined-model hosting limit: discovery used a fixed65,536-block publication cap although24GiB storage admits102,400 traversed blocks; all requested packages together exceed the old publication cap. Transport agent reactivated its ICC lease after preflight to add a bounded policy and deduplicated restoration. Exact27B alone fits the original cap; the fix covers combined hosting.
+- GGUF UI headless guard passed:4GiB rejects the package before any model request, explicit24GiB updates local limits, and execution stays disabled. Library entry point now exports the browser-safe artifact catalog. A first export patch referenced a nonexistent anchor and applied nothing; corrected to the actual ArtifactStore export. Latest inference production build passed outside Git; core Webpack repeat also passed with existing warnings.
+
+## 2026-11-03 13:07:16 AKST - Hosting-limit explanation during active implementation
+
+- Prompt: “can you explain what the hosting limit is and what the implications are?” Exact delivery timestamp is unavailable; first observed intake clock was2026-11-03T22:07:16Z. Explained the cap on unique published IPFS blocks, its approximately16GiB payload scale at65,536×256KiB, why a24GiB store could retain more than it could publish, and the distinction between publication, persistence, online availability and GPU residency.
+- The completed fix follows live storage traversal policy (default65,536;24GiB policy102,400), permits an explicit bounded discovery.maximumPublicBlocks override and imposes a131,072 hard maximum. Shared blocks count once. Restore discards rejected-root prefixes; failed persisted admission preserves current publication. Focused transport suite9/9, including65,537 synthetic verified CIDs; git diff --check passes. Transport agent ended its lease and all checks. No actual combined18GB browser hosting claim is implied by these synthetic bound tests.
+- Qwen vision diagnosis found a concrete preprocessing mismatch, not evidence that q4 quantization itself is unusable. The pinned Qwen config omits do_normalize; installed Transformers.js4.3.2 leaves it undefined/falsy, while the upstream Qwen processor defaults to normalization. Actual processor probes showed pure red/blue reaching the vision encoder as [1,0,0]/[0,0,1], instead of [1,-1,-1]/[-1,-1,1]. Added a qwen3_5-only default that preserves explicit false and verified normalized tensors/grid; receipt /tmp/peercompute-qwen35-processor-normalization-proof.json. Focused model suite31/31; fully-q4 hardware repeat is running. The higher-precision experiment also failed before this correction and remains recorded.
+- Exact27B download completed at22:10:35Z; all14,199,740,480 bytes matched the pinned SHA-256 before source promotion. Durable UnixFS import is proceeding at roughly22MB/s with per-file/directory fsync and under200MB observed process RSS. Persistent reopen/range verification remains required before claiming this large-file gate passed.
+- Corrected all-q4 Qwen2B acceptance passed at22:16:01Z: Red/Blue outputs,2,745 actual GPU dispatches per image, warm reuse, cooperative cancellation, unload and retained-IDB/source-off browser restart, no external requests/page errors. Removed the higher-precision experimental catalog option and its larger policy; retained failure receipts and verified prefetched files outside Git. Final focused inference31/31 and production build pass. Final full core302/303 retains only the historical ULG failure.
+- Updated the branch plan to match implemented choices: manager-owned service factory instead of the existing one-shot registry adapter; one conservative resident envelope including transient generation costs; actual q4 admission rather than the initial q4f16 proposal. Recorded which phase slices pass and which broader remote/seed/renderer/NetViz gates remain. This is not completion of the full IPFS-01 parent.
+
+## 2026-11-03 13:22:43 AKST - Preview URL reminder
+
+- Prompt: “what's the preview url?” Exact delivery timestamp is unavailable; first observed intake clock was2026-11-03T22:22:43Z. Returned https://fastbox.tail5c077c.ts.net:5189/ and the second card at https://fastbox.tail5c077c.ts.net:4173/?dev=1, with the Tailscale connection requirement. Preview servers remain running at the user's request.
+- Final browser check passed on those exact addresses: four inference models plus storage-only27B, Secret Workshop connection, secure context, quota rejection before any HF model request, no page errors. Evidence /tmp/peercompute-tailnet-preview-final.json. First version of this check compared rendered innerText to mixed-case text, but existing CSS uppercases titles; corrected to DOM textContent without changing the page. Disposed the validation runtime/browser.
+- The durable27B file import completed around22:22:14Z and passed its second streaming SHA check; CLI is verifying the full manifest, followed by persistent reopen/ranges and stable catalog metadata finalization. No merge into ulg or push has occurred.
+- Final27B gate PASS at22:28:16Z:11 files /14,199,795,689 bytes, canonical pinned manifest bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q. The earlier transient manifest carried volatile capability text in its model metadata; finalization removed that text from canonical metadata, verified the new manifest and unpinned the transient root without copying payloads. Persistent reopen and exact131,072-byte ranges at2,147,483,617 /4,294,967,265 /14,199,609,408 matched the source, crossing2GiB/4GiB and ending at EOF. Cold run1,763.1s/237,568,000-byte sampledpeakRSS; reopen/fullreverification179.5s/189,874,176-byte peakRSS. Shared store17,660,516,414 bytes,67,824 blocks,62roots;16,849,051,648 bytes disk free, above8GiB reserve. Evidence /tmp/peercompute-qwen38-27b-final-evidence.json. Storage agent ended its lease; no import processes remain. No claim of full27B browser transfer or execution.
+- Final read-only lifecycle review reproduced a real same-origin multi-tab issue: two distinct application nodes could concurrently start artifact nodes with the same saved peer identity. Receipt /tmp/peercompute-same-store-tabs-before.json. Transport agent is adding lifetime per-store network ownership and stop-acknowledgment retention under a fresh non-overlapping ICC lease. Local storage/inference should remain available in the second tab; this is the remaining source correction before checkpoint.
+- Ownership fix verified: persistent transports acquire an exclusive, fail-fast lifetime Web Lock before using identity; memory stores use backend-scoped ownership. Node and lock handles survive stop failure, and NetworkManager retains failed startup cleanup for retry. Same-context tab2 is denied a duplicate network identity while local import/read and inference service remain available; after tab1 disposes, tab2 reconnects with the persisted identity. Independent BrowserContexts still connect concurrently. Actual HTTPS receipt /tmp/peercompute-same-store-tabs-after.json; transport12/12. Changed only networkManager/{IpfsArtifactTransport,NetworkManager}.js and the transport unit test for this correction. Agent ended its lease; no owned test browser/server remains.
+- Final validation commands: npm --prefix peercompute run test:unit →305/306, same pre-existing ULG Eshkol failure; npm --prefix demos/inference run build -- --outDir /home/cos/.cache/peercompute-preview/inference-dist →PASS9.01s; npm --prefix peercompute run build →PASS17.879s with the existing three bundle-size/circular-chunk warnings. Tests/source are frozen. Earlier39/39 artifact+transport,31/31 inference,49/49 demo/static checks and actual-model/large-file receipts retain their stated scopes. Staged source contains no weights, credentials or generated build artifacts.
+- Final checkpoint preparation: update the durable ICC plan/attempt, refresh indexes and memory, run content-based freshness and staged guard, then create a local commit. ICC's generic audit still carries the documented baseline oversized-manager and expected-cancellation classification findings; no unrelated failure is being relabeled as passing. Leave only the authorized overview4173 and inference5189 previews running, with trusted TLS and the Secret Workshop backend. No merge or push.
+- Checkpoint evidence at2026-11-03T22:37:26Z: full ICC refresh completed in93.025s; content-based status PASS with matching source fingerprints and no drift. Direct CLI guard-diff --staged inspected all83 staged paths with zero violations and one replacement-size warning (212 policy-counted deleted lines versus200 threshold, with9,206 replacement implementation lines). This warning is retained. Both exact preview URLs again returnedHTTP200/TLS verification0. The local checkpoint records the validated implementation slice; broader parent gates and the historical core failure remain open. Post-commit ICC Git-history/metadata refresh and durable attempt/handoff follow without source changes.

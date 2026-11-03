@@ -88,6 +88,7 @@ export class ResourceLeaseBroker {
 
   async requestLease(spec = {}) {
     this.expireLeases();
+    if (spec.leaseId && this.leases.has(spec.leaseId)) throw new Error('Resource lease ID already exists');
     const kind = normalizeResourceKind(spec.resourceKind || spec.kind || spec.type);
     const pool = this.pools.get(kind);
     if (!pool || pool.units <= 0) {
@@ -133,6 +134,7 @@ export class ResourceLeaseBroker {
       memoryBytes,
       deviceId,
       preemptable: spec.preemptable !== false,
+      resident: spec.resident === true,
       createdAt,
       expiresAt: normalizePositiveInteger(spec.expiresAt, createdAt + ttlMs, createdAt),
       status: 'active',
@@ -144,6 +146,14 @@ export class ResourceLeaseBroker {
 
   async releaseLease(leaseId) {
     return this.#mark(leaseId, 'released', 'releasedAt');
+  }
+
+  async renewLease(leaseId, { ttlMs = this.defaultTtlMs } = {}) {
+    this.expireLeases();
+    const lease = this.leases.get(leaseId);
+    if (!lease || lease.status !== 'active') throw new Error('Resource lease is no longer active');
+    lease.expiresAt = this.now() + normalizePositiveInteger(ttlMs, this.defaultTtlMs);
+    return clonePlain(lease);
   }
 
   async revokeLease(leaseId) {
@@ -252,13 +262,13 @@ export class ResourceLeaseBroker {
 
   #activeUnits(kind) {
     return [...this.leases.values()]
-      .filter((lease) => lease.status === 'active' && lease.resourceKind === kind)
+      .filter((lease) => this.#occupiesCapacity(lease) && lease.resourceKind === kind)
       .reduce((total, lease) => total + lease.units, 0);
   }
 
   #activeMemoryBytes(kind) {
     return [...this.leases.values()]
-      .filter((lease) => lease.status === 'active' && lease.resourceKind === kind)
+      .filter((lease) => this.#occupiesCapacity(lease) && lease.resourceKind === kind)
       .reduce((total, lease) => total + lease.memoryBytes, 0);
   }
 
@@ -269,6 +279,7 @@ export class ResourceLeaseBroker {
         lease.status === 'active'
         && lease.resourceKind === kind
         && lease.preemptable
+        && !lease.resident
         && lease.priority < priority
       ))
       .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt);
@@ -286,10 +297,16 @@ export class ResourceLeaseBroker {
   #mark(leaseId, status, timestampField) {
     const lease = this.leases.get(leaseId);
     if (!lease) return undefined;
-    if (lease.status === 'active') {
+    if (lease.status === 'active' || (lease.resident && status === 'released' && lease.status !== 'released')) {
       lease.status = status;
       lease[timestampField] = this.now();
     }
     return clonePlain(lease);
+  }
+
+  #occupiesCapacity(lease) {
+    // Expiration/revocation is not evidence that resident GPU allocations ended.
+    // Only the owner may release after disposal or worker termination completes.
+    return lease.status === 'active' || (lease.resident && lease.status !== 'released');
   }
 }

@@ -32,16 +32,25 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Ownership: StateManager manages artifact storage/manifests/pins/availability;
   NetworkManager discovers providers and transfers blocks; ComputeManager runs
   inference in its managed WebGPU worker. NodeKernel wires these managers.
-- Initial model candidate: Qwen3-0.6B ONNX q4f16 through Transformers.js, with the
+- Initial model candidate: Qwen3-0.6B ONNX q4 through Transformers.js (q4f16 only
+  on adapters exposing shader-f16), with the
   whole model resident on one WebGPU peer. Actual inference must execute inside
   a WebGPU-capable compute worker owned and managed by ComputeManager;
   Transformers.js/ONNX Runtime initialize in that worker and dispatch GPU work
   there. Distributed storage is separate from
   multi-GPU tensor parallelism. Preserve existing small local artifact caches;
   large blocks and private inference content stay outside Yjs/pubsub.
-- Status: **plan only, implementation pending**. No model weights downloaded,
-  dependencies installed, runtime changed, or new application tests run for this
-  planning prompt. The September test baseline below remains historical.
+- Status: **implementation in progress** on `feature/ipfs-artifacts-webgpu`.
+  Verified UnixFS storage, independent-browser WebRTC transfer/reseeding, and
+  actual Qwen3-0.6B / SmolVLM256M / SmolVLM500M / Qwen3.5-2B generation in managed NVIDIA
+  workers. Both vision models distinguish image inputs. Local demo-agent panels
+  add bounded scene context and explicitly applied typed actions. November3 user
+  steering adds the fully four-bit multimodal Qwen2B (now hardware verified) and
+  the exact 14.2GB GeoRefine27B GGUF. The GGUF passes full durable import, pinned
+  manifest verification and persistent reopen/ranges; its execution remains gated on a separate
+  managed runtime adapter and compatible GPU features.
+  Remote inference and the broader parent gates remain open. The September
+  baseline is historical.
 
 ### Overall Roadmap Assessment - 2026-09-14 AKDT
 

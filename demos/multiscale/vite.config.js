@@ -11,6 +11,7 @@ const demosSharedRoot = path.resolve(__dirname, '../shared');
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  worker: { format: 'es' },
   server: {
     port: 5185,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

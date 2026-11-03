@@ -1009,6 +1009,10 @@ export class ComputeManager {
     this.taskGraphCache = new Map();
     this.taskGraphCacheArtifacts = new Map();
     this.workerAffinities = new Map();
+    this.residentWorkerAffinities = new Set();
+    this.workerTerminationFailures = new Map();
+    this.modelServices = new Set();
+    this.resourceBroker = config.resourceBroker || null;
     this.workerIds = new WeakMap();
     this.workerBootstrap = new WeakMap();
     this.workerRequirementError = null;
@@ -1207,6 +1211,7 @@ export class ComputeManager {
    * @returns {Promise<void>}
    */
   async initialize() {
+    if (this.destroying) throw new Error('ComputeManager is shutting down');
     if (this.workerRequirementError) throw this.workerRequirementError;
     if (this.workerInitializationPromise) return this.workerInitializationPromise;
     if (this.initialized) return;
@@ -1280,34 +1285,51 @@ export class ComputeManager {
    * @returns {Promise<void>}
    */
   async destroy() {
+    if (this.destroyingPromise) return this.destroyingPromise;
+    this.destroying = true;
     this.workerLifecycleRevision += 1;
+    this.destroyingPromise = this._destroyManagedRuntime();
+    try { return await this.destroyingPromise; }
+    finally { this.destroyingPromise = null; this.destroying = false; }
+  }
+
+  async _destroyManagedRuntime() {
     clearTimeout(this.scaleDownTimer);
     this.scaleDownTimer = null;
-
-    const error = this.workerRequirementError || Object.assign(
-      new Error('ComputeManager was destroyed before pending work completed'),
-      {
-        name: 'ComputeManagerDestroyedError',
-        code: 'ERR_COMPUTE_MANAGER_DESTROYED'
-      }
-    );
-
-    for (const worker of [...this.workers]) {
-      this._markWorkerBootstrapFailed(worker, error);
-      this._removeWorker(worker);
-    }
-    for (const [taskId, task] of this.activeTasks.entries()) {
-      this.activeTasks.delete(taskId);
-      this._rejectTaskGpuResidentLaneLease(task, error.code);
-      task.reject?.(error);
-    }
-    while (this.taskQueue.length > 0) {
+    const error = Object.assign(new Error('ComputeManager was destroyed before pending work completed'), {
+      name: 'ComputeManagerDestroyedError', code: 'ERR_COMPUTE_MANAGER_DESTROYED'
+    });
+    while (this.taskQueue.length) {
       const task = this.taskQueue.shift();
       this._rejectTaskGpuResidentLaneLease(task, error.code);
-      task.reject?.(error);
+      task.reject(error);
     }
-
+    const retry = [];
+    for (const service of this.modelServices) {
+      try { await service.dispose(); } catch { retry.push(service); }
+    }
+    const failures = [];
+    for (const worker of [...this.workers]) {
+      this._markWorkerBootstrapFailed(worker, error);
+      if (!this._removeWorker(worker)) failures.push(this.workerTerminationFailures.get(worker));
+    }
+    for (const [taskId, task] of this.activeTasks) {
+      if (task.worker && this.workers.includes(task.worker)) continue;
+      this.activeTasks.delete(taskId);
+      this._rejectTaskGpuResidentLaneLease(task, error.code);
+      task.reject?.(Object.assign(new Error(error.message), {
+        name: error.name, code: error.code, workerTerminated: Boolean(task.worker)
+      }));
+    }
+    for (const service of retry) {
+      try { await service.dispose(); } catch (cleanupError) { failures.push(cleanupError); }
+    }
+    if (failures.length) {
+      // Retain sessions, affinities and leases so an explicit cleanup retry is possible.
+      throw new AggregateError(failures, 'ComputeManager cleanup is incomplete');
+    }
     this.workerAffinities.clear();
+    this.residentWorkerAffinities.clear();
     this.activeTaskGraphs.clear();
     this.commitDeltaHandler = null;
     this.initialized = false;
@@ -1315,6 +1337,36 @@ export class ComputeManager {
     this.workerInitializationPromise = null;
     this.workerBootstrap = new WeakMap();
     this.workerIds = new WeakMap();
+    this.modelServices.clear();
+  }
+
+  /** Create a managed model lifecycle with one shared broker per ComputeManager. */
+  async createModelInferenceService({ artifactStore, resourceBroker, resourceBudgets, ...options } = {}) {
+    if (this.destroying) throw new Error('ComputeManager is shutting down');
+    const lifecycle = this.workerLifecycleRevision;
+    const [{ ModelInferenceService }, { ResourceLeaseBroker }, { ResidentModelAdmission }] = await Promise.all([
+      import('../inference/ModelInferenceService.js'),
+      import('../serviceOrchestration/ResourceLeaseBroker.js'),
+      import('../serviceOrchestration/ResidentModelAdmission.js')
+    ]);
+    if (this.destroying || lifecycle !== this.workerLifecycleRevision) throw new Error('ComputeManager shutdown interrupted service creation');
+    if (resourceBroker && this.resourceBroker && resourceBroker !== this.resourceBroker) {
+      throw new Error('Model sessions must share the ComputeManager resource broker');
+    }
+    if (!this.resourceBroker) {
+      if (!resourceBroker && !resourceBudgets) throw new Error('Configure inference CPU/GPU resource budgets');
+      this.resourceBroker = resourceBroker || new ResourceLeaseBroker({ capacities: resourceBudgets });
+    }
+    const service = new ModelInferenceService({ ...options, artifactStore,
+      computeManager: this, admission: new ResidentModelAdmission({ broker: this.resourceBroker }) });
+    this.modelServices.add(service);
+    const dispose = service.dispose.bind(service);
+    service.dispose = async () => {
+      const result = await dispose();
+      this.modelServices.delete(service);
+      return result;
+    };
+    return service;
   }
 
   async refreshGpuLimits() {
@@ -1357,6 +1409,11 @@ export class ComputeManager {
    */
   async submitTask(task) {
     if (!task) throw new Error('Task is required');
+    const shutdownUnload = task.module === 'peercompute:model-inference' && task.data?.command === 'unload'
+      && [...this.modelServices].some((service) => service.session?.affinityKey === task.affinityKey);
+    if (this.destroying && !shutdownUnload) throw new Error('ComputeManager is shutting down');
+    const submissionLifecycle = this.workerLifecycleRevision;
+    task.signal?.throwIfAborted();
 
     const runtime = typeof task.runtime === 'string'
       ? task.runtime.trim().toLowerCase()
@@ -1380,10 +1437,20 @@ export class ComputeManager {
     }
     if (this.workerRequirementError) throw this.workerRequirementError;
 
+    task.signal?.throwIfAborted();
+    if ((this.destroying && !shutdownUnload) || submissionLifecycle !== this.workerLifecycleRevision) {
+      throw new Error('ComputeManager shutdown interrupted task submission');
+    }
+    if (task.requireWorker === true && !this._supportsWorkers()) {
+      throw this._createRequiredWorkerError('this task requires worker execution');
+    }
     const idSource = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
     const id = task.id || idSource;
+    if (this.activeTasks.has(id) || this.taskQueue.some((entry) => entry.id === id)) {
+      throw new Error(`Compute task id is already active: ${id}`);
+    }
     const runtimeStats = this._runtimeStats(runtime);
     runtimeStats.submitted += 1;
     this.stats.totalTasksSubmitted += 1;
@@ -1415,23 +1482,64 @@ export class ComputeManager {
       webgpu: task.webgpu,
       suppressCommitDelta: task.suppressCommitDelta === true || task.commitDelta === false,
       returnEnvelope: task.returnEnvelope === true || task.returnRawResult === true,
+      requireWorker: task.requireWorker === true,
       affinityKey: task.affinityKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey
     };
+    if (payload.requireWorker && (gpuResidentLane?.localExecution === 'inline' || placement.requestedPlacement !== 'local' && !placement.advisory)) {
+      throw this._createRequiredWorkerError('required local worker conflicts with requested placement');
+    }
+    if (payload.affinityKey && this.residentWorkerAffinities.has(payload.affinityKey)
+        && !this.workerAffinities.has(payload.affinityKey)) {
+      throw Object.assign(new Error('Resident worker was terminated'), {
+        workerTerminated: true, code: 'ERR_COMPUTE_WORKER_TERMINATED'
+      });
+    }
 
     this._ensureTargetWorkers({ reason: 'task-demand' });
     if (this.workerRequirementError) throw this.workerRequirementError;
 
     return new Promise((resolve, reject) => {
+      const control = { settled: false, cancelRequested: false, timer: null, bootstrapTimer: null };
+      let complete;
+      const completion = new Promise((done) => { complete = done; });
+      const onAbort = () => { void this.cancelTask(id).catch(() => {}); };
+      const finish = (callback, value) => {
+        if (control.settled) return;
+        control.settled = true;
+        clearTimeout(control.timer);
+        clearTimeout(control.bootstrapTimer);
+        task.signal?.removeEventListener('abort', onAbort);
+        callback(value);
+        complete();
+      };
       const wrapped = {
         id,
         payload,
-        resolve,
-        reject,
+        control,
+        completion,
+        resolve: (value) => finish(resolve, value),
+        reject: (error) => finish(reject, error),
+        onProgress: typeof task.onProgress === 'function' ? task.onProgress : null,
+        transferables: Array.isArray(task.transferables) ? task.transferables : [],
         submittedAt: nowMs(),
         runtime,
         taskFamily,
         placement
       };
+      if (payload.requireWorker && !this.workers.some((worker) => this.workerBootstrap.get(worker)?.status === 'ready')) {
+        control.bootstrapTimer = setTimeout(() => {
+          const index = this.taskQueue.findIndex((entry) => entry.id === id);
+          if (index < 0) return;
+          this.taskQueue.splice(index, 1);
+          this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
+          wrapped.reject(this._createRequiredWorkerError('task worker readiness timed out'));
+        }, this.config.workerBootstrapTimeoutMs);
+      }
+      task.signal?.addEventListener('abort', onAbort, { once: true });
+      if (task.signal?.aborted) {
+        wrapped.reject(task.signal.reason || new DOMException('Compute task cancelled', 'AbortError'));
+        return;
+      }
       if (this._dispatchToPlacementExecutor(wrapped)) return;
       if (this._dispatchToWorker(wrapped)) return;
       this.taskQueue.push(wrapped);
@@ -1969,10 +2077,152 @@ export class ComputeManager {
    * @param {string} taskId - Task ID to cancel
    * @returns {Promise<void>}
    */
-  async cancelTask(taskId) {
-    // TODO: Find task in active tasks
-    // TODO: Terminate worker executing task
-    // TODO: Clean up resources
+  async cancelTask(taskId, options = {}) {
+    const queuedIndex = this.taskQueue.findIndex((entry) => entry.id === taskId);
+    const task = queuedIndex >= 0 ? this.taskQueue[queuedIndex] : this.activeTasks.get(taskId);
+    if (!task) return { cancelled: false, status: 'not-found' };
+    if (!task.control) return { cancelled: false, status: 'unsupported-executor' };
+    if (task.control.cancelRequested) {
+      return task.control.cancellation;
+    }
+    if (queuedIndex < 0 && !task.worker) return { cancelled: false, status: 'unsupported-executor' };
+    task.control.cancelRequested = true;
+    const error = Object.assign(new Error(String(options.reason || 'Compute task cancelled')), {
+      name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED'
+    });
+    let rejectStop;
+    const stopFailed = new Promise((_, reject) => { rejectStop = reject; });
+    task.control.cancellation = Promise.race([task.completion, stopFailed]).then(() => ({
+      cancelled: true, status: 'settled', workerTerminated: Boolean(error.workerTerminated)
+    }));
+    if (queuedIndex >= 0) {
+      this.taskQueue.splice(queuedIndex, 1);
+      this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
+      task.reject(error);
+      this._scheduleNext();
+      return { cancelled: true, status: 'cancelled-queued' };
+    }
+    const hardStop = () => {
+      if (task.control.settled) return;
+      if (!this._removeWorker(task.worker)) {
+        clearTimeout(task.control.timer);
+        task.control.cancelRequested = false;
+        rejectStop(this.workerTerminationFailures.get(task.worker));
+        // Keep the original task and resident admission live; cancellation can retry.
+        return;
+      }
+      this.activeTasks.delete(taskId);
+      error.workerTerminated = true;
+      this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+      task.reject(error);
+      this._ensureTargetWorkers({ reason: 'cancelled-worker' });
+      this._scheduleNext();
+    };
+    task.control.timer = setTimeout(hardStop, normalizeInteger(options.timeoutMs, 2000, 1, 60000));
+    try { task.worker.postMessage({ type: 'cancel', id: taskId }); } catch { hardStop(); }
+    return task.control.cancellation;
+  }
+
+  /** Reserve a managed worker for a resident runtime until explicit disposal. */
+  async reserveWorkerAffinity(affinityKey) {
+    if (this.destroying) throw new Error('ComputeManager is shutting down');
+    const lifecycle = this.workerLifecycleRevision;
+    const key = String(affinityKey || '').trim();
+    if (!key) throw new TypeError('Worker affinity key is required');
+    if (!this.initialized) await this.initialize();
+    if (this.destroying || lifecycle !== this.workerLifecycleRevision) throw new Error('ComputeManager shutdown interrupted reservation');
+    if (!this._supportsWorkers()) throw this._createRequiredWorkerError('resident sessions require workers');
+    if (this.residentWorkerAffinities.has(key)) {
+      const state = this.getWorkerAffinityState(key);
+      const failure = this.workerTerminationFailures.get(this.workerAffinities.get(key));
+      if (failure) throw failure;
+      if (!state.workerId) throw Object.assign(new Error('Resident worker was terminated'), {
+        workerTerminated: true, code: 'ERR_COMPUTE_WORKER_TERMINATED'
+      });
+      return state;
+    }
+    if (this.residentWorkerAffinities.size >= this.workerPolicy.maxWorkers) {
+      throw new Error('Resident worker capacity exceeded');
+    }
+    const busy = new Set([...this.activeTasks.values()].map((task) => task.worker));
+    const assigned = new Set(this.workerAffinities.values());
+    let worker = this.workers.find((entry) => !busy.has(entry) && !assigned.has(entry));
+    if (!worker && this.workers.length < this.workerPolicy.maxWorkers) worker = this._spawnWorker();
+    if (!worker) throw new Error('No unassigned worker available for resident session');
+    this.workerAffinities.set(key, worker);
+    this.residentWorkerAffinities.add(key);
+    let timer;
+    try {
+      await Promise.race([
+        this.workerBootstrap.get(worker)?.promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(this._createRequiredWorkerError('resident worker readiness timed out')), this.config.workerBootstrapTimeoutMs);
+        })
+      ]);
+      if (!this.workers.includes(worker) || this.workerBootstrap.get(worker)?.protocolVersion !== 2) {
+        throw this._createRequiredWorkerError('resident worker needs managed task protocol version 2');
+      }
+      return this.getWorkerAffinityState(key);
+    } catch (error) {
+      error.workerTerminated = this._removeWorker(worker);
+      if (error.workerTerminated) {
+        this.residentWorkerAffinities.delete(key);
+        this.workerAffinities.delete(key);
+      } else {
+        throw this.workerTerminationFailures.get(worker);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  getWorkerAffinityState(affinityKey) {
+    const worker = this.workerAffinities.get(affinityKey);
+    return { affinityKey, reserved: this.residentWorkerAffinities.has(affinityKey), workerId: worker ? this._workerId(worker) : null };
+  }
+
+  /** Destroy one owned resident runtime before its memory admission is released. */
+  async terminateWorkerAffinity(affinityKey, { reason = 'Resident runtime terminated' } = {}) {
+    if (!this.residentWorkerAffinities.has(affinityKey)) {
+      throw new Error('Cannot terminate an unreserved worker affinity');
+    }
+    const worker = this.workerAffinities.get(affinityKey);
+    if (worker) {
+      // Browser Worker.terminate() synchronously requests immediate termination.
+      // If it throws, preserve ownership and let the caller retain its lease.
+      if (!this._removeWorker(worker)) throw this.workerTerminationFailures.get(worker);
+    }
+    const error = Object.assign(new Error(String(reason)), {
+      code: 'ERR_COMPUTE_WORKER_TERMINATED', workerTerminated: true
+    });
+    for (const [id, task] of this.activeTasks) {
+      if (task.payload?.affinityKey !== affinityKey) continue;
+      this.activeTasks.delete(id);
+      this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+      task.reject(error);
+    }
+    this.taskQueue = this.taskQueue.filter((task) => {
+      if (task.payload?.affinityKey !== affinityKey) return true;
+      this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
+      task.reject(error);
+      return false;
+    });
+    this._ensureTargetWorkers({ reason: 'resident-runtime-terminated' });
+    this._scheduleNext();
+    return { affinityKey, workerTerminated: true };
+  }
+
+  async releaseWorkerAffinity(affinityKey) {
+    const failure = this.workerTerminationFailures.get(this.workerAffinities.get(affinityKey));
+    if (failure) throw failure;
+    if ([...this.activeTasks.values(), ...this.taskQueue].some((task) => task.payload?.affinityKey === affinityKey)) {
+      throw new Error('Cannot release a worker affinity while its task is active');
+    }
+    this.residentWorkerAffinities.delete(affinityKey);
+    this.workerAffinities.delete(affinityKey);
+    this._retireIdleWorkers();
+    this._scheduleNext();
   }
 
   cancelTaskGraph(graphId, reason = 'cancelTaskGraph') {
@@ -2754,7 +3004,7 @@ export class ComputeManager {
       this._removeWorker(worker);
     }
     for (const [taskId, task] of this.activeTasks.entries()) {
-      this.activeTasks.delete(taskId);
+      if (!this.workers.includes(task.worker)) this.activeTasks.delete(taskId);
       this._rejectTaskGpuResidentLaneLease(task, requiredWorkerError.code);
       this._recordTaskCompletion(task, {
         ok: false,
@@ -2762,10 +3012,10 @@ export class ComputeManager {
         errorKind: 'required-worker-unavailable',
         errorMessage: requiredWorkerError.message
       });
-      task.reject(requiredWorkerError);
+      task.reject(Object.assign(new Error(requiredWorkerError.message), { name: requiredWorkerError.name,
+        code: requiredWorkerError.code, workerTerminated: !this.workers.includes(task.worker) }));
     }
     this._rejectQueuedTasksForRequiredWorkerFailure(requiredWorkerError);
-    this.workerAffinities.clear();
     return requiredWorkerError;
   }
 
@@ -2884,7 +3134,8 @@ export class ComputeManager {
         errorKind: 'required-worker-unavailable',
         errorMessage: error.message
       });
-      task.reject(error);
+      task.reject(Object.assign(new Error(error.message), { name: error.name, code: error.code,
+        workerTerminated: !this.workerAffinities.has(task.payload?.affinityKey) }));
     }
   }
 
@@ -4180,6 +4431,16 @@ export class ComputeManager {
   }
 
   _removeWorker(worker, { terminate = true } = {}) {
+    if (terminate) {
+      try { worker.terminate(); }
+      catch (cause) {
+        this.workerTerminationFailures.set(worker, Object.assign(new Error('Owned worker termination failed', { cause }), {
+          code: 'ERR_COMPUTE_WORKER_TERMINATION_FAILED', workerTerminated: false
+        }));
+        return false;
+      }
+    }
+    this.workerTerminationFailures.delete(worker);
     this._markWorkerBootstrapRetired(worker);
     const bootstrapRecord = this.workerBootstrap.get(worker);
     worker.onmessage = null;
@@ -4209,11 +4470,7 @@ export class ComputeManager {
         this.workerAffinities.delete(key);
       }
     }
-    if (terminate) {
-      try {
-        worker.terminate?.();
-      } catch {}
-    }
+    return true;
   }
 
   _recordWorkerResize({
@@ -4272,6 +4529,7 @@ export class ComputeManager {
     for (const worker of [...this.workers].reverse()) {
       if (this.workers.length <= this.targetWorkerCount) break;
       if (busyWorkers.has(worker)) continue;
+      if ([...this.residentWorkerAffinities].some((key) => this.workerAffinities.get(key) === worker)) continue;
       this._removeWorker(worker);
       this.workerRetirements += 1;
     }
@@ -4412,10 +4670,16 @@ export class ComputeManager {
   _dispatchToWorker(task) {
     if (this._requiresInlineExecution(task)) return false;
     const affinityKey = task.payload?.affinityKey;
+    if (affinityKey && this.residentWorkerAffinities.has(affinityKey) && !this.workerAffinities.has(affinityKey)) {
+      this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
+      task.reject(Object.assign(new Error('Resident worker was terminated'), {
+        code: 'ERR_COMPUTE_WORKER_TERMINATED', workerTerminated: true
+      }));
+      return true;
+    }
     const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
-    const dispatchableWorkers = this.config.requireWorkers
-      ? this.workers.filter((entry) => this.workerBootstrap.get(entry)?.status === 'ready')
-      : this.workers;
+    const dispatchableWorkers = this.workers.filter((entry) => !this.workerTerminationFailures.has(entry)
+      && (!(this.config.requireWorkers || task.payload?.requireWorker) || this.workerBootstrap.get(entry)?.status === 'ready'));
     let worker = null;
 
     if (affinityKey && this.workerAffinities.has(affinityKey)) {
@@ -4433,14 +4697,16 @@ export class ComputeManager {
 
     if (!worker) {
       const assignedWorkers = new Set(this.workerAffinities.values());
-      worker = dispatchableWorkers.find((entry) => !busyWorkers.has(entry) && !assignedWorkers.has(entry))
-        || dispatchableWorkers.find((entry) => !busyWorkers.has(entry));
+      const reservedWorkers = new Set([...this.residentWorkerAffinities].map((key) => this.workerAffinities.get(key)));
+      const eligible = dispatchableWorkers.filter((entry) => !busyWorkers.has(entry) && !reservedWorkers.has(entry));
+      worker = eligible.find((entry) => !assignedWorkers.has(entry)) || eligible[0];
       if (worker && affinityKey) {
         this.workerAffinities.set(affinityKey, worker);
       }
     }
 
     if (!worker) return false;
+    clearTimeout(task.control?.bootstrapTimer);
     const workerId = this._workerId(worker) || 'worker-unknown';
     const startedTask = {
       ...task,
@@ -4452,7 +4718,7 @@ export class ComputeManager {
     this._recordExecutorStart(workerId, startedTask, { kind: 'worker' });
     this.activeTasks.set(task.id, startedTask);
     try {
-      worker.postMessage({ type: 'run', ...task.payload });
+      worker.postMessage({ type: 'run', ...task.payload, workerId }, task.transferables || []);
     } catch (error) {
       this._handleWorkerFailure(worker, error);
     }
@@ -4512,6 +4778,10 @@ export class ComputeManager {
   }
 
   async _executeInline(task) {
+    if (task.payload?.requireWorker) {
+      task.reject(this._createRequiredWorkerError('inline execution is prohibited for this task'));
+      return;
+    }
     task.startedAt = nowMs();
     task.executionMode ||= 'inline';
     this._recordExecutorStart(this.inlineExecutorId, task, { kind: 'inline' });
@@ -4548,12 +4818,31 @@ export class ComputeManager {
     if (!this.workers.includes(worker)) return;
     const { id, type, result, error } = message || {};
     if (type === 'ready') {
+      const bootstrap = this.workerBootstrap.get(worker);
+      if (bootstrap) bootstrap.protocolVersion = message.protocolVersion || 1;
       this._markWorkerBootstrapped(worker);
       this._scheduleNext();
       return;
     }
     const task = this.activeTasks.get(id);
-    if (!task) return;
+    if (!task || task.worker !== worker) return;
+    if (type === 'progress') {
+      if (!task.control?.cancelRequested) {
+        try { task.onProgress?.(message.value); }
+        catch { void this.cancelTask(id, { reason: 'Compute progress consumer failed' }); }
+      }
+      return;
+    }
+    if (type !== 'result' && type !== 'error') return;
+
+    if (task.control?.cancelRequested) {
+      this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+      task.reject(Object.assign(new Error('Compute task cancelled'), { name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED' }));
+      this.activeTasks.delete(id);
+      this._retireIdleWorkers();
+      this._scheduleNext();
+      return;
+    }
 
     if (type === 'result') {
       let finalResult = result;
@@ -4569,7 +4858,9 @@ export class ComputeManager {
         : finalResult);
     } else if (type === 'error') {
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
-      task.reject(new Error(error || 'Worker task failed'));
+      task.reject(Object.assign(new Error(error || 'Worker task failed'), {
+        name: message.name || 'Error', ...(message.code ? { code: message.code } : {})
+      }));
     }
     this.activeTasks.delete(id);
     this._retireIdleWorkers();
@@ -4589,16 +4880,24 @@ export class ComputeManager {
       return;
     }
 
-    this._removeWorker(worker);
+    const terminated = this._removeWorker(worker);
     const stranded = [];
     for (const [taskId, task] of this.activeTasks.entries()) {
       if (task.worker !== worker) continue;
-      this.activeTasks.delete(taskId);
+      if (terminated) this.activeTasks.delete(taskId);
       stranded.push(task);
     }
 
-    console.warn('[ComputeManager] Worker error; falling back to inline execution', error);
+    console.warn('[ComputeManager] Worker failed; recovering eligible tasks', error);
     stranded.forEach((task) => {
+      if (!terminated || task.payload?.requireWorker || task.control?.cancelRequested) {
+        const failure = terminated
+          ? Object.assign(new Error(error?.message || 'Managed worker terminated'), { workerTerminated: true, code: 'ERR_COMPUTE_WORKER_TERMINATED' })
+          : this.workerTerminationFailures.get(worker);
+        this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+        task.reject(failure);
+        return;
+      }
       if (this.workers.length > 0 && this._dispatchToWorker(task)) {
         return;
       }
@@ -4651,7 +4950,7 @@ export class ComputeManager {
 
   _ensureTargetWorkers({ reason = 'task-demand' } = {}) {
     if (this.workerRequirementError) return this.workers.length;
-    if (!this.initialized || !this._supportsWorkers()) return this.workers.length;
+    if (this.destroying || !this.initialized || !this._supportsWorkers()) return this.workers.length;
     const desired = normalizeInteger(
       this.targetWorkerCount,
       this.workerPolicy.targetWorkers,

@@ -687,6 +687,15 @@ export class NodeKernel {
       });
       console.log('[NodeKernel] StateManager initialized');
 
+      // Optional large-file storage is owned by StateManager; the network borrows it.
+      if (this.config.artifacts?.enabled === true) {
+        const store = this.stateManager.createArtifactStore(this.config.artifacts.store || {});
+        await store.open();
+        if (this.config.artifacts.network !== false) {
+          await this.networkManager.createArtifactTransport(store, this.config.artifacts.network || {});
+        }
+      }
+
       if (this.config.enableWarmDeltaProvider) {
         this.networkManager.registerWarmDeltaProvider(() => this.stateManager.getWarmDeltas());
       }
@@ -711,6 +720,10 @@ export class NodeKernel {
         this.stateManager?.commitDelta?.(delta);
       });
       console.log('[NodeKernel] ComputeManager initialized');
+
+      if (this.config.modelInference?.enabled === true) {
+        this.modelInference = await this.createModelInferenceService(this.config.modelInference);
+      }
       
       this.isInitialized = true;
       console.log('[NodeKernel] Initialization complete');
@@ -753,15 +766,24 @@ export class NodeKernel {
     }
     if (computeManager?.destroy) {
       await attempt('compute-manager', () => computeManager.destroy());
+      if (cleanupErrors.some((error) => error.cleanupPhase === 'compute-manager')) {
+        // An unacknowledged worker stop may still hold artifact read handles.
+        // Preserve managers and storage so stop() can retry cleanup safely.
+        throw new AggregateError(cleanupErrors, 'NodeKernel compute cleanup is incomplete; managers retained for retry');
+      }
     }
     if (networkManager?.disconnect) {
       await attempt('network-manager', () => networkManager.disconnect());
+      if (cleanupErrors.some((error) => error.cleanupPhase === 'network-manager')) {
+        throw new AggregateError(cleanupErrors, 'NodeKernel network cleanup is incomplete; storage retained for retry');
+      }
     }
     if (stateManager?.destroy) {
       await attempt('state-manager', () => stateManager.destroy());
     }
 
     this.computeManager = null;
+    this.modelInference = null;
     this.networkManager = null;
     this.stateManager = null;
     this.gpuHub = null;
@@ -3064,6 +3086,13 @@ export class NodeKernel {
    */
   getStateManager() {
     return this.stateManager;
+  }
+
+  async createModelInferenceService({ storeName = 'default', ...options } = {}) {
+    if (!this.computeManager) throw new Error('ComputeManager is not initialized');
+    const artifactStore = this.stateManager?.getArtifactStore(storeName);
+    if (!artifactStore) throw new Error(`StateManager artifact store ${storeName} is not configured`);
+    return this.computeManager.createModelInferenceService({ ...options, artifactStore });
   }
 
   /**

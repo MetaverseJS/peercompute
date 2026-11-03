@@ -2,14 +2,71 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
-## Planned: IPFS Files And Model Inference - November 3, 2026
+## IPFS Files And Model Inference - November 3, 2026
 
-[IPFS-01](plan/branch/ipfs-large-files-model-inference.md) plans generic persistent
-IPFS artifacts, peer hosting and durable pins, followed by small Qwen inference
-in resident PeerCompute WebGPU workers. It includes a revision-pinned model
-candidate, integration boundaries, and tests proving peers can reseed files after
-the original host leaves. This is planned work; IPFS and model inference are not
-implemented yet. The implementation survey and test results below are historical.
+[IPFS-01](plan/branch/ipfs-large-files-model-inference.md) is being implemented on
+`feature/ipfs-artifacts-webgpu`. StateManager owns verified UnixFS/IPFS blocks,
+IndexedDB persistence, manifests, pins and GC. NetworkManager discovers signed
+providers and serves explicitly published artifacts. ComputeManager owns model
+workers, residency, cancellation and CPU/GPU admission.
+
+The authenticated browser reseeding test passes with a 128 MiB file: A supplies
+B, A exits, B reloads its IndexedDB copy, and C fetches from B over WebRTC with
+public HTTP fallback blocked. Browser hosting requires an active reachable peer;
+local persistence alone does not provide always-on network hosting.
+
+Qwen3-0.6B q4, SmolVLM 256M/500M q4, and multimodal Qwen3.5-2B q4 pass generation in
+ComputeManager-owned WebGPU workers on Chrome155/RTX5060Ti, including warm reuse,
+cancellation, unload and browser restart with external model requests blocked.
+All three vision models distinguish red and blue image inputs. The complete SmolVLM256M
+package also passes the independent-peer reseeding test. CubeChat and EarthGrid
+expose an optional local-agent panel with bounded scene context and image capture;
+model-proposed demo actions require an explicit apply button.
+
+The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
+storage and hosting. All 11 files (14.20 GB total) are verified and pinned;
+persistent reopen and reads across the 2 GiB/4 GiB boundaries and EOF pass.
+Peak CLI import RSS was 237.6 MB. The stable manifest is
+`bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q`.
+Browser execution is disabled:
+it needs a separate managed GGUF runtime adapter, and the tested browser also
+lacks the shader-f16 feature required by the inspected llama.cpp WebGPU backend.
+The importer retains sources, blocks and manifests outside Git.
+
+```sh
+npm run import:artifact -- --model smolvlm-256m-q4
+npm run import:artifact -- --model qwen3-0.6b-q4
+npm run import:artifact -- --model qwen3.5-2b-q4
+npm run import:artifact -- --model qwen3.8-27b-georefine-d14-gguf --quota-bytes 25769803776
+npm run import:artifact -- --directory /path/to/files
+npm run test:artifacts
+npm run test:inference
+npm run test:artifacts:browser
+npm run dev:inference
+```
+
+Default CLI cache: `~/.cache/peercompute-artifacts`; quota: 4 GiB. The filesystem
+backend permits one owner at a time and leaves a lock after a crash for explicit
+operator recovery. Browser stores require Web Locks and default to a 2 GiB block
+quota. These are payload budgets, not estimates of free browser storage or VRAM.
+The model console starts at 4 GiB and offers explicit 4/8/24 GiB storage limits.
+Publication separately caps the number of unique served blocks: 65,536 by
+default, following the store's traversal policy up to a hard ceiling of 131,072.
+The demo's explicit 24 GiB setting admits 102,400 traversed/published blocks, so
+the requested collection can exceed the old publication cap of about 16 GiB.
+Shared blocks count once; quota and complete-root verification still apply.
+One tab at a time owns artifact networking for a persistent store; other tabs
+can still use local storage and inference, then connect after that owner stops.
+
+For an internal preview, run `npm run docs:dev` (overview4173) and
+`npm run dev:inference` (console5189). Both bind to `0.0.0.0` with HTTPS; set
+`SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
+cross-device use. The overview's second card opens the console. The standalone
+console connects to the configured Secret Workshop backend automatically;
+publishing a retained package still requires **Host CID for peers**. Start with
+SmolVLM256M, choose **Import pinned HF package**, then **Load on this GPU**.
+Final core regression: 305/306 passing, with the same pre-existing ULG Eshkol
+tensor-contract failure. See [test evidence and remaining gates](plan/tests.md).
 
 ## Current Status - September 14, 2026
 

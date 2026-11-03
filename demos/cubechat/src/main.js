@@ -14,6 +14,8 @@ import {
   normalizeWorldTheme
 } from './world/themes.js';
 import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
+import { installDemoAgentLauncher } from '../../shared/agents/launcher.js';
+import { boundedSceneContext, createDemoAgentActions, captureAgentImage } from '../../shared/agents/DemoAgent.js';
 import {
   bindPeercomputeBotSettingsControls,
   createPeercomputeBotHost,
@@ -617,6 +619,32 @@ class CubeChat {
       this.initVR();
 
       this._registerBotBridge();
+      if (!this.botLaunch.enabled) {
+        const actions = createDemoAgentActions([{
+          name: 'setLocalTheme', description: `{"theme":one of ${JSON.stringify(WORLD_THEMES.map((theme) => theme.id))}}; changes only your local view`,
+          validate: (args) => args && Object.keys(args).length === 1 && WORLD_THEMES.some((theme) => theme.id === args.theme),
+          apply: ({ theme }) => this._setWorldThemeLocal(theme)
+        }]);
+        this.agentLauncher = installDemoAgentLauncher({
+          beforeOpen: () => this._exitPointerLock(),
+          getOptions: () => ({
+            stateManager: this.network.node.getStateManager(),
+            computeManager: this.network.node.getComputeManager(),
+            networkManager: this.network.node.getNetworkManager(),
+            actions,
+            getContext: ({ includeImage = false } = {}) => {
+              const text = boundedSceneContext({ demo: 'CubeChat', theme: this.worldTheme,
+                peerCount: this.remotePlayers.size,
+                position: this.network.localPlayer?.position
+                  ? ['x', 'y', 'z'].map((axis) => Number(this.network.localPlayer.position[axis])) : null,
+                availableThemes: WORLD_THEMES.map((theme) => theme.id) });
+              if (!includeImage) return { text };
+              this.scene.renderer.render(this.scene.scene, this.scene.camera);
+              return { text, image: captureAgentImage(this.scene.renderer.domElement) };
+            }
+          })
+        });
+      }
       this.botRuntime = maybeStartPeercomputeLocalBotRuntime({
         demoId: 'cubechat',
         bridgeId: 'cubechat',
@@ -1866,6 +1894,7 @@ class CubeChat {
 
   // Clean up on page unload
   destroy() {
+    void this.agentLauncher?.dispose().catch((error) => console.warn('Agent cleanup failed', error));
     this.stopScreenShare();
     if (this.worldThemeStateUnsubscribe) {
       try {

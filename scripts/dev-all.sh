@@ -196,8 +196,9 @@ echo "  daddygo:    https://$(to_url_host "$overview_host"):5181/"
 echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
+echo "  inference:  https://$(to_url_host "$overview_host"):5189/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,inference \
   "npm run dev:relay" \
   "GEODATA_ALLOW_PUBLIC_OVERPASS=1 npm --prefix \"$repo_root/services/geodata\" start" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
@@ -213,4 +214,5 @@ echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
   "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/fano-reactor\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/schrodinger\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args"
+  "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/inference\" run dev -- $vite_extra_args"

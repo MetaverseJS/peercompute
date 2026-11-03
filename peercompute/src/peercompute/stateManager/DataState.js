@@ -26,6 +26,7 @@ export class DataState {
     // Local source-artifact caches are intentionally not stored in `state`.
     // The registry is process-local and therefore cannot enter Yjs replication.
     this.localArtifactCaches = new Map();
+    this.artifactStores = new Map();
   }
 
   _getNamespaceMap(namespace) {
@@ -152,5 +153,31 @@ export class DataState {
     const caches = [...this.localArtifactCaches.values()];
     this.localArtifactCaches.clear();
     await Promise.allSettled(caches.map((cache) => cache?.destroy?.()));
+  }
+
+  registerArtifactStore(store) {
+    if (this.artifactStores.has(store.name)) throw new Error(`Artifact store ${store.name} is already registered`);
+    this.artifactStores.set(store.name, store);
+    return store;
+  }
+
+  getArtifactStore(name = 'default') { return this.artifactStores.get(name) || null; }
+
+  unregisterArtifactStore(store) {
+    if (this.artifactStores.get(store.name) === store) this.artifactStores.delete(store.name);
+  }
+
+  getArtifactStoreStats() {
+    const stores = [...this.artifactStores.values()].map((store) => store.getStats());
+    return { stores: stores.length,
+      storedBytes: stores.reduce((sum, stats) => sum + stats.storedBytes, 0),
+      pending: stores.reduce((sum, stats) => sum + stats.pending, 0) };
+  }
+
+  async destroyArtifactStores() {
+    const results = await Promise.allSettled([...this.artifactStores.values()].map((store) => store.destroy()));
+    const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Artifact storage cleanup failed');
+    this.artifactStores.clear();
   }
 }

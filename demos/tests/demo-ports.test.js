@@ -8,6 +8,7 @@ const repoRoot = path.resolve(process.cwd());
 const demosRoot = path.join(repoRoot, 'demos');
 
 const demoSpecs = [
+  { name: 'inference', requiresRelayConfig: false, entryCandidates: ['index.html'] },
   {
     name: 'hyperborea',
     requiresRelayConfig: true,

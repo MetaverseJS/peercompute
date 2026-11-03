@@ -5,9 +5,93 @@ record implementation decisions and results in ../log.md and ../tests.md.
 
 # IPFS large files and WebGPU model inference
 
-Updated: 2026-11-03 AKST. Status: **planned; implementation has not started**.
+Updated: 2026-11-03 AKST. Status: **implementation in progress** on
+`feature/ipfs-artifacts-webgpu`; acceptance gates remain open.
 Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
 [distributed compute](distributed-compute.md).
+
+## Implementation checkpoint — November 3, 2026
+
+- Implemented StateManager-owned ArtifactStore with canonical manifests,
+  incremental file hashing, verified UnixFS blocks, persistent IndexedDB or
+  exclusive Node filesystem backends, explicit pins, quotas, reader-safe GC and
+  missing-block resume. Binary content and model conversations stay outside Yjs.
+- Implemented optional NetworkManager IPFS transport using Helia/libp2p/Bitswap
+  and connected-peer discovery. Both application and artifact identities sign
+  bounded scope/recipient/root/nonce/expiry records. Only explicitly approved
+  complete roots are served; approval and identity survive browser reload.
+  A lifetime ownership lock prevents two tabs sharing a persistent store from
+  starting competing artifact nodes with that saved identity. Failed shutdown
+  retains ownership for retry; storage and local inference remain independent.
+- The 128 MiB three-context browser reseeding gate passes after the original
+  host exits and the surviving host reloads, with no public HTTP fallback.
+- ComputeManager now supports protocol-v2 worker progress, cooperative abort,
+  targeted forced termination, protected resident affinity and model-service
+  ownership. One shared broker accounts for resident CPU/GPU envelopes; expiry
+  or revocation does not free allocations until disposal/termination acknowledgment.
+  Initial residents are non-preemptable: rendering-driven eviction is still open.
+- Added a pinned model catalog, external-cache CLI importer, and vision+text
+  adapters for SmolVLM 256M/500M alongside Qwen3-0.6B. SmolVLM256M imports as
+  `bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou`.
+  All three initial models now pass actual managed-worker generation, warm reuse,
+  cooperative cancellation, unload and source-off restart on Chrome155/NVIDIA
+  RTX5060Ti. Both vision models distinguish red and blue images. The complete
+  SmolVLM256M package also passes independent-browser IPFS reseeding.
+- Qwen q4 is the hardware trial variant because the tested Chrome/NVIDIA worker
+  adapter does not expose shader-f16. q4f16 remains conditional. The original
+  source-seam findings below describe the pre-implementation survey.
+- Found exporter16's asynchronous content queue could run ahead of a stalled
+  reader. Replaced content iteration with bounded pull-driven DAG traversal;
+  kept the exporter for root metadata. CLI uses native HTTPS stream backpressure.
+- Dependencies are pinned for this slice; the resolved libp2p3.5.1 set required
+  @libp2p/utils7.4.5 rather than the old global7.0.9 override. Existing network
+  regressions and actual browser WebRTC/Bitswap checks passed with this set.
+- Remaining parent scope includes operator seed lifecycle, two-host/>2GiB
+  acceptance, whole-request remote inference, rendering contention/preemption,
+  NetViz model telemetry and final release verification. Do not close IPFS-01
+  merely because storage or mocked inference checks pass.
+
+### Additional requested models — November3,12:43:31 AKST
+
+- Add a four-bit multimodal Qwen of approximately2B parameters for the same
+  worker and demo-agent flow. Candidate: official
+  `onnx-community/Qwen3.5-2B-ONNX-OPT`, revision
+  `ed446636739bf426e73c5a00714fd8e010d36c21`;14 files /1,771,280,684 bytes, including
+  three q4 graphs and their three external-data files. Pin every digest, validate
+  the qwen3_5 architecture and module closure, bound preprocessing/context, and
+  measure actual image-dependent execution before claiming support.
+  This gate now passes for the fully-q4 variant on the tested Chrome/NVIDIA
+  configuration. Restoring Qwen's missing normalization default corrected the
+  observed color errors; no higher-precision vision variant is required.
+- Include the exact requested
+  `Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF`, revision
+  `5ce3fd841676adf2c1a10d7193637d46007e88f7`. Its
+  `Qwen3.8-27B-GeoRefine-D14-abl-MIXED-IQ4_XS.gguf` is14,199,740,480 bytes with
+  SHA-256`afe9e0cb33a232fe4735635e9cbb95a2f3fa4d8de2990de0d5fdb9e8a979299d`.
+  The sidecar identifies Qwen3.5 architecture and multiple quantization types,
+  including IQ3_S; its upstream runtime qualification is explicitly untested.
+- Implement its format-independent import, verified pinning and hosting catalog
+  separately from the ONNX execution allowlist. Do not rewrite or convert these
+  exact requested weights silently. Current GGUF browser WebGPU implementations
+  need a pinned compatibility spike for all tensor types, architecture, file-size
+  limits and ComputeManager ownership. Enable execution only after that proof.
+  A future native selected-peer executor is a separate execution placement path.
+- Large-model validation must account for cached source plus UnixFS blocks and
+  preserve free disk space. Browser storage quotas and GPU memory envelopes are
+  explicit budgets, not hardware-capacity claims. Keep all downloaded artifacts
+  outside Git and avoid making a14.2GB browser duplicate just to render a catalog.
+
+### Laptop review handoff — November3,12:51:32 AKST
+
+- Make Local Model Console the second overview card, then expose the overview
+  and demo on trusted HTTPS bound to0.0.0.0 and reachable over Tailscale.
+- Standalone demo connects to the existing secretworkshop.net backend using its
+  production relay configuration. Keep local model use available on network
+  failure and require explicit model hosting publication.
+- Verify the exact handoff URLs, secure-context WebGPU availability, panel startup
+  and actual backend connection. Leave only the requested preview servers running.
+- Keep feature/ipfs-artifacts-webgpu separate from ulg until user review and an
+  explicit merge instruction. No push, public deployment or merge is implied.
 
 ## Requested outcome and roadmap position
 
@@ -307,19 +391,22 @@ does not support its WebGPU execution provider. Initially set `numThreads=1` for
 WASM support work to keep helper threads within the declared worker budget;
 additional CPU threads require explicit accounting and compatibility tests.
 
-Register a `ModelInferenceService` through ComputeServiceRegistry and the existing
-ComputeManagerServiceAdapter. Inject NodeKernel's existing ComputeManager; do not
-create another task pool or a convenience inference worker hidden inside a worker.
-Provide explicit `loadModel`, `generate`, `cancel`, `unloadModel`, and status APIs.
-Bind each loaded session to an affinity worker until acknowledged disposal.
+The implemented entry point is `ComputeManager.createModelInferenceService()`;
+NodeKernel can construct it using its existing managers. The generic registry
+adapter currently describes one-shot work, so resident session ownership stays
+with this manager factory rather than being forced through that adapter.
+`loadModel`, `generate`, `cancel`, `unloadModel`, and status operate on the same
+managed worker pool. Each loaded session keeps affinity until acknowledged
+disposal. Registry exposure for remote services is later work.
 
 - Extend task/worker messaging compatibly for progress, token chunks, AbortSignal
   propagation, request/session IDs, bounded queues, readiness, and terminal
   completion. Existing one-shot module handlers must continue to work. Supervisor
   startup must await readiness and reject pending work on worker failure/shutdown.
 - The inference worker initially owns its runtime's GPUDevice. Reserve GPU/CPU
-  capacity via ResourceLeaseBroker for **the entire model residency**, plus
-  separate transient load/KV/generation/transfer reservations. Weight memory does
+  capacity via ResourceLeaseBroker for **the entire model residency**. The initial
+  implementation uses one conservative envelope covering load/KV/generation;
+  separately measured sub-reservations remain future work. Weight memory does
   not become free after each reply. WebGPU does not expose reliable free VRAM;
   use conservative policy budgets and measured envelopes, not invented capacity.
 - Add residency renewal and safe expiry: today's broker defaults to a 30-second
@@ -330,8 +417,9 @@ Bind each loaded session to an affinity worker until acknowledged disposal.
   execution reservation with memory sub-reservations, or an equivalent explicitly
   tested accounting model; current `requestLease` enforces a minimum unit of one.
 - Require actual WebGPU support and model-required features (including
-  `shader-f16` for the selected variant), fail admission clearly if unsupported,
-  and load with `{ device: 'webgpu', dtype: 'q4f16' }`; callers cannot override the
+  `shader-f16` for variants using half precision), fail admission if unsupported,
+  and load the verified variant with `{ device: 'webgpu', dtype: 'q4' }`;
+  callers cannot override the
   admitted provider. Verify actual GPU execution. CPU tokenization/helper operators are allowed;
   silent replacement of the inference backend with CPU is not a passing gate.
 - Use the runtime's streamer and interruptible stopping criteria for bounded
@@ -385,8 +473,17 @@ reject over-budget work before allocation; P0 may tighten them with measurements
 
 ## Ordered implementation TODOs
 
-Every item is **pending**. Each slice updates this file, `plan/log.md`, and
+The current implementation has passed the local/browser slices below. Parent
+phases with remaining exit criteria stay open. Each slice updates this file, `plan/log.md`, and
 `plan/tests.md`, runs its relevant gates, and reaches a local validated commit.
+
+| Phase | Verified checkpoint | Remaining broader gate |
+| --- | --- | --- |
+| .0–.2 | Pinned dependencies, StateManager store, lifecycle/unit checks, 128 MiB and complete SmolVLM package reseeding across independent browser contexts; actual WebGPU worker inference. | Two physical hosts, broader churn and measured transport peaks. |
+| .3 | External-cache importer and exact pinned packages; requested 27B passes full hash/import/manifest verification, persistence and ranges beyond 4 GiB. | Two always-on seed providers, operator lifecycle and seed-loss acceptance. |
+| .4 | Four real models, image dependence, warm reuse, cooperative cancel, unload and source-off restart; worker failure/accounting regressions. | Actual GPU-loss/render-preemption and resource-contention acceptance; managed GGUF adapter. |
+| .5 | Ownership and protocol plan retained. | Remote inference implementation and physical-peer acceptance. |
+| .6 | Inference console, CubeChat/Earth agents, nested production builds, second overview card and trusted Tailnet preview connected to Secret Workshop. | NetViz artifact/model telemetry and full chaos/release gates. |
 
 | ID | Work and main file targets | Exit gate |
 | --- | --- | --- |
@@ -398,14 +495,14 @@ Every item is **pending**. Each slice updates this file, `plan/log.md`, and
 | IPFS-01.5 | Authenticated remote inference protocol, registered-model admission, explicit peer selection, limited placement hooks and NetViz metadata. | Two physical capable peers serve and request bounded generation; output/cancel/backpressure/peer-loss behavior proven; no prompt/token leakage to shared state. |
 | IPFS-01.6 | `demos/inference` retro-terminal artifact/model console, generic non-LLM consumer, workspace/dev/build/gallery/static-test registration, nested Vite worker/runtime packaging, bounded chaos regression. | Production build works at a nested HTTPS path with no live HF dependency; same files reseed to fresh peers; NetViz distinguishes fetching/hosting/loaded/running; existing relevant suites and release checks pass. |
 
-Suggested first implementation slice: IPFS-01.0 followed by the generic store
-contract in IPFS-01.1. Do not begin with a standalone chat UI that bypasses
-ComputeManager, or treat loading a model from an HTTP gateway as network hosting.
+The implemented first slice follows compatibility → generic store → peer
+transfer → managed inference. Preserve that separation: a standalone chat worker
+or an HTTP gateway download does not establish managed execution or peer hosting.
 
 ## Acceptance tests and completion definition
 
-The detailed matrix is part of [the test strategy](../tests.md). No tests listed
-in this section have been implemented or executed by this planning change.
+The detailed matrix is part of [the test strategy](../tests.md). The checkpoint
+above and dated test receipts distinguish executed gates from remaining plans.
 
 1. **Generic large-file hosting:** A imports a deterministic 128 MiB file, B with
    empty storage retrieves and verifies it over actual IPFS block exchange. Close
@@ -496,3 +593,23 @@ throughput, production-readiness, or multi-GPU claim is earned by planning alone
   file/model limits. Ensure chosen import and range APIs genuinely stream.
 - Select operator seed locations, quotas, and retention during deployment work.
   No external service, paid pinning account, or live deployment is created here.
+
+## Added Scope: Small Multimodal Demo Agents - 2026-11-03
+
+Support small vision-and-text models alongside Qwen through the same artifact
+and managed-worker path. Evaluate revision-pinned SmolVLM 256M and 500M ONNX
+packages, including their image processors, tokenizer/configuration, and exact
+per-module weight variants. Record supported input modalities, runtime adapter,
+dtype map, required GPU features, and measured admission envelope in the approved
+model catalog. Candidate support is not a claim of proven generation until the
+actual browser/GPU gate runs.
+
+Add a reusable demo-agent session that supplies bounded text, structured scene
+context, and optional resized image frames to ModelInferenceService. Keep context
+and conversation local to the chosen execution session. Register demo-owned
+actions with schemas and validation; model output proposes data, never executable
+JavaScript, module URLs, or unrestricted tool calls. Bound steps, output, image
+dimensions, queued requests, and observation cadence; allow the user to stop it.
+Demonstrate integration through a narrow existing-demo adapter and the inference
+console, with image-dependent behavior and rejected unknown/invalid actions.
+Avoid granting models authority over arbitrary shared state or network messages.

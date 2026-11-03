@@ -677,6 +677,12 @@ export class NetworkManager {
     );
 
     this.libp2p = null;
+    this.artifactTransport = null;
+    this.artifactDiscovery = null;
+    this.artifactStarting = null;
+    this.artifactPendingStore = null;
+    this.artifactStopping = null;
+    this._applicationPrivateKey = null;
     this.peerId = null;
     this.isConnected = false;
     this.joinedAt = null;
@@ -968,7 +974,8 @@ export class NetworkManager {
       : webRTC();
     const relayTransport = circuitRelayTransport();
     this.relayTransport = relayTransport;
-    const privateKey = useGossipsub ? await generateKeyPair('Ed25519') : null;
+    const privateKey = await generateKeyPair('Ed25519');
+    this._applicationPrivateKey = privateKey;
 
     const connectionManagerConfig = {
       minConnections: 0,
@@ -1040,7 +1047,7 @@ export class NetworkManager {
       debugWarn('[NetworkManager] Libp2p init failed', err?.message || err);
       throw err;
     }
-    if (privateKey && this.libp2p?.peerId) {
+    if (useGossipsub && privateKey && this.libp2p?.peerId) {
       this.libp2p.peerId.privateKey = privateKeyToProtobuf(privateKey);
       this.libp2p.peerId.publicKey = publicKeyToProtobuf(privateKey.publicKey);
     }
@@ -1148,6 +1155,7 @@ export class NetworkManager {
   }
 
   async disconnect() {
+    await this._stopArtifactTransport();
     this.isConnected = false;
     this._stopScheduler();
     this._clearPresenceTimer();
@@ -1180,6 +1188,89 @@ export class NetworkManager {
     this.relayReservationPeers.clear();
     this.firstDirectUpgradeAt = null;
     this.peerId = null;
+  }
+
+  async createArtifactTransport(store, options = {}) {
+    if (this.artifactStopping) await this.artifactStopping;
+    if (this.artifactTransport) {
+      if (this.artifactTransport.store !== store) throw new Error('Artifact transport already owns a different store');
+      if (this.artifactTransport.requiresCleanup) throw new Error('Artifact transport cleanup must succeed before restarting');
+      return this.artifactTransport;
+    }
+    if (this.artifactStarting) {
+      if (this.artifactPendingStore !== store) throw new Error('Artifact transport is starting with a different store');
+      return this.artifactStarting;
+    }
+    if (!this.libp2p || !this._applicationPrivateKey) throw new Error('Initialize NetworkManager before enabling artifacts');
+    this.artifactPendingStore = store;
+    this.artifactStarting = (async () => {
+      const [{ IpfsArtifactTransport }, { ArtifactProviderDiscovery }] = await Promise.all([
+        import('./IpfsArtifactTransport.js'), import('./ArtifactProviderRecord.js')
+      ]);
+      const transport = new IpfsArtifactTransport({
+        store, relayAddresses: this.config.bootstrapPeers || [],
+        rtcConfiguration: { iceServers: [], ...this.config.webrtc?.rtcConfiguration },
+        allowInsecureLocalConnections: this.config.allowLocalDial === true,
+        ...options,
+        store
+      });
+      transport.setPublicBlockCids([]);
+      let discovery;
+      try {
+        await transport.start();
+        discovery = new ArtifactProviderDiscovery(this, transport, store, options.discovery);
+        await discovery.start();
+        this.artifactTransport = transport;
+        this.artifactDiscovery = discovery;
+        return transport;
+      } catch (error) {
+        await discovery?.stop().catch(() => {});
+        try { await transport.stop(); }
+        catch (cleanupError) {
+          this.artifactTransport = transport;
+          this.artifactDiscovery = discovery ?? null;
+          throw new AggregateError([error, cleanupError], 'Artifact transport startup cleanup failed');
+        }
+        throw error;
+      }
+    })();
+    try { return await this.artifactStarting; } finally { this.artifactStarting = null; this.artifactPendingStore = null; }
+  }
+
+  getArtifactTransport() { return this.artifactTransport; }
+
+  async announceArtifact(cid) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.announce(cid);
+  }
+
+  async findArtifactProviders(cid, options) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.find(cid, options);
+  }
+
+  async withdrawArtifact(cid) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.withdraw(cid);
+  }
+
+  async fetchArtifactBlock(cid, options) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.fetchBlock(cid, options);
+  }
+
+  async _stopArtifactTransport() {
+    if (this.artifactStopping) return this.artifactStopping;
+    this.artifactStopping = (async () => {
+      if (this.artifactStarting) await this.artifactStarting.catch(() => {});
+      try { await this.artifactDiscovery?.stop(); }
+      finally {
+        this.artifactDiscovery = null;
+        await this.artifactTransport?.stop();
+        this.artifactTransport = null;
+      }
+    })();
+    try { await this.artifactStopping; } finally { this.artifactStopping = null; }
   }
 
   async sendToPeer(peerId, message) {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
 import {
   ComputeServiceRegistry,
   RESOURCE_LEASE_SCHEMA,
@@ -36,6 +37,53 @@ function createRegistry() {
     }
   ]);
 }
+
+test('expired resident memory stays counted until disposal acknowledgment releases it', async () => {
+  let now = 1000;
+  const broker = new ResourceLeaseBroker({ now: () => now,
+    capacities: { cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 1024 } } });
+  const admission = new ResidentModelAdmission({ broker });
+  const lease = await admission.acquire({ sessionId: 'resident', manifestCid: 'test', estimatedCpuBytes: 500, estimatedGpuBytes: 600 });
+  try {
+    lease.assertActive();
+    await assert.rejects(broker.requestLease({ kind: 'gpu', priorityClass: 'render' }), /quota exceeded/);
+    now += 31_000;
+    broker.expireLeases();
+    assert.throws(() => lease.assertActive(), /expired or was revoked/);
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 600);
+    await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+  } finally { await lease.release(); }
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+  assert.equal((await broker.requestLease({ kind: 'gpu' })).status, 'active');
+});
+
+test('resident admission rolls back CPU reservation when GPU memory is unavailable', async () => {
+  const broker = new ResourceLeaseBroker({ capacities: {
+    cpu: { units: 2, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 100 }
+  } });
+  const admission = new ResidentModelAdmission({ broker });
+  await assert.rejects(admission.acquire({ sessionId: 'model', estimatedCpuBytes: 500, estimatedGpuBytes: 200 }), /memory quota/);
+  assert.equal(broker.reportPressure().pools.cpu.activeMemoryBytes, 0);
+});
+
+test('resident revocation and quarantine retain capacity, and lease renewal preserves ownership', async () => {
+  let now = 100;
+  const broker = new ResourceLeaseBroker({ now: () => now, capacities: { gpu: { units: 1, memoryBytes: 1000 } } });
+  const lease = await broker.requestLease({ resident: true, memoryBytes: 400, ttlMs: 10 });
+  now += 5;
+  await broker.renewLease(lease.leaseId, { ttlMs: 100 });
+  now += 20;
+  assert.equal(broker.expireLeases().length, 0);
+  await broker.revokeLease(lease.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 400);
+  await broker.releaseLease(lease.leaseId);
+  const other = await broker.requestLease({ resident: true, memoryBytes: 500 });
+  broker.quarantineResource();
+  broker.clearQuarantine();
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 500);
+  await broker.releaseLease(other.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+});
 
 test('ResourceLeaseBroker preempts lower-priority GPU leases for render work', async () => {
   let now = 1_000;

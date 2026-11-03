@@ -11,6 +11,7 @@ const disableOpen = process.env.PEERCOMPUTE_NO_OPEN === '1';
 export default defineConfig(({ command }) => ({
   root: __dirname,
   base: './',
+  worker: { format: 'es' },
   build: {
     outDir: path.resolve(docsRoot, 'webgpuphys'),
     emptyOutDir: true,

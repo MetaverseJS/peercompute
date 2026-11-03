@@ -18,7 +18,8 @@
     "demos/schrodinger",
     "demos/universes",
     "demos/webgpuphys",
-    "demos/sneakywoods"
+    "demos/sneakywoods",
+    "demos/inference"
   ],
   "scripts": {
     "test:geo-core": "npm --prefix packages/geo-core test",
@@ -99,9 +100,16 @@
     "build:schrodinger": "npm --prefix demos/schrodinger run build",
     "build:netviz": "npm --prefix demos/netviz run build",
     "build:peercompute": "npm --prefix peercompute run build",
-    "build:demos": "npm run build:hyperborea && npm run build:cubechat && npm run build:planetgen && npm run build:wxglobe && npm run build:earth && npm run build:motorcycle && npm run build:multiscale && npm run build:universes && npm run build:webgpuphys && npm run build:sneakywoods && npm run build:daddygo && npm run build:fano-reactor && npm run build:schrodinger && npm run build:netviz",
+    "build:demos": "npm run build:hyperborea && npm run build:cubechat && npm run build:planetgen && npm run build:wxglobe && npm run build:earth && npm run build:motorcycle && npm run build:multiscale && npm run build:universes && npm run build:webgpuphys && npm run build:sneakywoods && npm run build:daddygo && npm run build:fano-reactor && npm run build:schrodinger && npm run build:netviz && npm run build:inference",
     "build:all": "bash scripts/build-all.sh",
-    "build": "npm run build:all"
+    "build": "npm run build:all",
+    "dev:inference": "npm --prefix demos/inference run dev -- --host",
+    "build:inference": "npm --prefix demos/inference run build",
+    "import:artifact": "node scripts/import-ipfs-artifact.mjs",
+    "test:artifacts": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/ipfsArtifactTransport.test.js peercompute/tests/unit/stateManager.artifacts.test.js",
+    "test:inference": "node --test peercompute/tests/unit/modelInference.test.js peercompute/tests/unit/computeManager.residency.test.js peercompute/tests/unit/resourceLeaseBroker.test.js demos/tests/agents.test.js",
+    "test:artifacts:browser": "node peercompute/tests/runtime/ipfs-artifacts.mjs",
+    "test:inference:browser": "node peercompute/tests/runtime/model-inference.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
@@ -111,10 +119,10 @@
     "vt-pbf": "^3.1.3"
   },
   "dependencies": {
-    "@libp2p/utils": "^7.0.9",
+    "@libp2p/utils": "7.4.5",
     "three": "^0.182.0"
   },
   "overrides": {
-    "@libp2p/utils": "^7.0.9"
+    "@libp2p/utils": "7.4.5"
   }
 }

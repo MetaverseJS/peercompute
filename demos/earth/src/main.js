@@ -12,6 +12,8 @@ import {
   WEB_MERCATOR_MAX_LATITUDE
 } from '@peercompute/geo-core';
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
+import { installDemoAgentLauncher } from '../../shared/agents/launcher.js';
+import { boundedSceneContext, createDemoAgentActions, captureAgentImage } from '../../shared/agents/DemoAgent.js';
 
 import { GeodataClient, resolveEarthGeodataBaseUrl } from './api.js';
 import {
@@ -1002,6 +1004,30 @@ async function start() {
     showRenderLoopErrors: false
   });
   runtime.viewer = viewer;
+  const agentActions = createDemoAgentActions([{
+    name: 'resetView', description: '{}; return the local camera to the whole Earth',
+    validate: (args) => args && Object.keys(args).length === 0 && Boolean(runtime.viewer),
+    apply: () => {
+      viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-20, 16, 21_000_000),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 } });
+      viewer.scene.requestRender();
+    }
+  }]);
+  const agentLauncher = installDemoAgentLauncher({ getOptions: () => ({
+    stateManager: runtime.sourceCacheManager || undefined,
+    actions: agentActions,
+    getContext: ({ includeImage = false } = {}) => {
+      const camera = viewer.camera.positionCartographic;
+      const text = boundedSceneContext({ demo: 'EarthGrid', terrain: runtime.terrainSource,
+        terrainStatus: runtime.terrainStatus, weather: runtime.weatherStatus,
+        camera: { latitude: Number(Cesium.Math.toDegrees(camera.latitude).toFixed(3)),
+          longitude: Number(Cesium.Math.toDegrees(camera.longitude).toFixed(3)), height: Math.round(camera.height) } });
+      if (!includeImage) return { text };
+      viewer.render();
+      return { text, image: captureAgentImage(viewer.scene.canvas) };
+    }
+  }) });
+  runtime.cleanup.push(() => { agentActions.invalidate(); void agentLauncher.dispose().catch(console.warn); });
   viewer.scene.canvas.setAttribute('role', 'application');
   viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth with actual water, road, building-wire, and terrain-contour geometry plus optional source weather imagery.');
   viewer.scene.canvas.tabIndex = 0;

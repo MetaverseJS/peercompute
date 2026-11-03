@@ -1,10 +1,93 @@
 ## PeerCompute Test Strategy
 
-### Planned IPFS artifact and model gates - 2026-11-03 AKST
+### IPFS artifact and model gates - 2026-11-03 AKST
 
-Status: **prospective; not implemented or run in this planning change**. The
+Status: **implementation underway; evidence below is scoped**. The
 [IPFS-01 plan](branch/ipfs-large-files-model-inference.md) owns the exact phases,
 model/runtime identity, resource limits, and full completion criteria.
+
+- 2026-11-03 implementation checkpoint: core suite **277/278**; only the same
+  baseline staged ULG Eshkol tensor-contract failure remains. Manager-focused
+  suite **61/61**, worker review regressions **55/55**, inference adapter
+  **27/27**, demo-agent contracts **4/4**. Combined foundation scope **124/124**
+  preceded the added config-architecture guard; exact counts are command scoped.
+- `IPFS_ARTIFACT_BYTES=134217728 node peercompute/tests/runtime/ipfs-artifacts.mjs`
+  **PASS**: three independent browser contexts, signed application/artifact
+  identity discovery, A exits, B reloads and restores approved publication and
+  identity, C retrieves 134,217,728 file bytes / 134,243,523 DAG payload bytes
+  over WebRTC, zero public HTTP requests. Fixture generation and comparison
+  stream unique chunks and incremental hashes. All owned test processes closed.
+- Storage tests additionally exercise a filesystem backend and pull-driven
+  multilevel UnixFS range traversal. A paused-reader block-count assertion
+  detects read-ahead buffering; RSS alone is not a sufficient backpressure test.
+- `IPFS_ARTIFACT_MODEL=smolvlm-256m-q4 node peercompute/tests/runtime/ipfs-artifacts.mjs`
+  **PASS**: exact CLI model CID, all15 files /268,763,564 bytes,1,052 unique
+  blocks /268,819,304 transferred DAG bytes per hop, independent browser stores,
+  A exits /B reloads /C fetches, all per-file SHA-256 digests match, no public HTTP.
+- Actual model gate **PASS** for Qwen3-0.6B q4 and both SmolVLM q4 models:
+  /tmp/peercompute-all-models-hardware-20261103-admitted.json. Chrome155 with the
+  NVIDIA Blackwell adapter; ORT-owned device instrumentation counts actual GPU
+  compute dispatches (3,278 /3,605 /2,547 respectively), not merely adapter
+  detection or a requested execution-provider string. Warm reuse, cooperative
+  cancellation, unload, source-off restart and red-to-blue image-dependence pass.
+  No page errors or external model/runtime requests. q4f16 is unverified.
+- Qwen3.5-2B **fully q4 hardware acceptance PASS** after restoring the upstream
+  image-normalization default omitted by the pinned export: exact package CID
+  `bafkreihbfj2knzj47dmtsltvdvjlh7jlxbz32fgwibq4rp7guj4i7lixda`, worker-1 on NVIDIA
+  Blackwell, red→Red and blue→Blue, 2,745 GPU dispatches per request, warm reuse,
+  cooperative cancel, unload and source-off browser restart. Zero external
+  requests/page errors. Evidence:
+  /tmp/peercompute-qwen35-2b-hardware-20261103-normalized.json.
+  The actual installed image processor regression checks normalized channel
+  values and grid shape; explicit do_normalize=false remains respected.
+- Latest expanded core suite: **302/303**; only the same historical ULG Eshkol
+  failure remains (/tmp/peercompute-ipfs-core-final.log). Artifact and transport
+  combined checks **39/39** after source-prefetch and publication-bound changes.
+- Final checkpoint after the multi-tab ownership correction: **305/306 core
+  tests pass**, with only that same ULG Eshkol baseline failure. Transport scope
+  **12/12**; final inference Vite build and core Webpack build pass (existing
+  bundle-size warnings). Log: /tmp/peercompute-ipfs-core-ownership-final.log.
+- Same-store browser ownership gate **PASS**: a second same-origin tab cannot
+  start a competing artifact node with the persisted identity; local import/read
+  and inference service remain available. After acknowledged owner disposal, it
+  reconnects with the retained identity. Independent BrowserContexts connect
+  concurrently with distinct identities. Failed stops/startup cleanup retain
+  ownership for retry. Evidence: /tmp/peercompute-same-store-tabs-after.json.
+- Core Webpack and all existing Vite demo production builds pass. Legacy
+  Webpack needed a specific node:stream replacement; Vite workers need ES module
+  output for lazy inference chunks. Bundle-size/import-splitting warnings remain.
+  EarthGrid panel lifecycle passes; CubeChat's overlay stacking fix is under
+  headless repeat. Static demo and agent checks **49/49**.
+- Latest full-core checkpoint: **294/295**, with only the pre-existing staged
+  ULG Eshkol tensor-contract mismatch. Exact log:
+  /tmp/peercompute-ipfs-core-checkpoint-final.log. CubeChat overlay repeat now passes.
+- Tailnet preview: exact overview4173 and inference5189 HTTPS URLs validate their
+  certificates; browser click-through confirms the requested second card and
+  secure context. Two independent contexts connect both app and artifact nodes
+  to Secret Workshop over WSS, discover the authenticated provider and transfer
+  a97-byte fixture through Bitswap/WebRTC. Fixture withdrawn and validation
+  browsers closed. Evidence: /tmp/peercompute-secretworkshop-live-network.json.
+- Expanded publication-bound tests **9/9**: live quota policy, explicit/hard caps,
+  65,537 unique synthetic CIDs, shared-block restore deduplication, corrupt or
+  over-limit root rollback, and failed persistence preserving the old catalog.
+  This validates bounded admission; it is not a full18GB browser transfer run.
+- Real large-file gate **PASS** for the exact requested 27B GGUF: 11 files,
+  14,199,795,689 total bytes, full download and UnixFS import SHA-256 checks,
+  complete pinned manifest verification, persistent filesystem reopen, and
+  131,072-byte reads crossing 2^31, 2^32 and ending exactly at EOF. Stable manifest:
+  `bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q`.
+  Cold import/verification took 1,763.1 s with 237,568,000-byte sampled peak RSS;
+  canonical reopen/reverification took 179.5 s with 189,874,176-byte peak RSS.
+  Artifact suite **30/30**. Evidence: /tmp/peercompute-qwen38-27b-final-evidence.json.
+  This proves local large-file storage, not a full 14 GB browser peer transfer
+  or GGUF execution. Those remain separate acceptance scopes.
+- New requested-model gates: verify complete pinned Qwen2B q4 ONNX external-data
+  closure, per-architecture budget and actual image-based worker execution;
+  import the exact 27B GGUF by streaming hash/CID with bounded memory and explicit
+  quota, and independently qualify a compatible runtime before enabling execution.
+  Two physical hosts, durable always-on seeds, renderer preemption and remote
+  inference remain separate acceptance gates. A catalog entry, mock, or isolated
+  ORT Add graph cannot close actual-model execution gates.
 
 - Generic artifact tests: deterministic UnixFS/CID imports; streaming 128 MiB
   fixture and opt-in >2 GiB fixture; per-block and whole-file integrity;

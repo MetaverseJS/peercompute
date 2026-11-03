@@ -8,6 +8,7 @@ export default defineConfig(({ mode, command }) => {
     const docsRoot = path.resolve(__dirname, '../../docs');
     return {
       base: './',
+      worker: { format: 'es' },
       build: {
         outDir: path.resolve(docsRoot, 'universes'),
         emptyOutDir: true,

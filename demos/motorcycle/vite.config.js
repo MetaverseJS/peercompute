@@ -15,6 +15,7 @@ const cesiumBuildRoot = path.join(cesiumPackageRoot, 'Build', 'Cesium');
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  worker: { format: 'es' },
   define: {
     CESIUM_BASE_URL: JSON.stringify('./cesium/'),
   },

@@ -87,6 +87,7 @@ test('backend launcher and systemd wiring include relay + turn stack', () => {
 test('docs index includes all demos and screenshots', () => {
   const html = read('docs/index.html');
   const requiredLinks = [
+    './inference/',
     './hyperborea/',
     './cubechat/',
     './sneakywoods/',
@@ -127,6 +128,7 @@ test('docs overview keeps expected tile order', () => {
   const names = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((match) => match[1]);
   const expected = [
     'PeerCompute (GitHub)',
+    'Local Model Console',
     'CubeChat',
     'Universes',
     'Multiscale Ladder',

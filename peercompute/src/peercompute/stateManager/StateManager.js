@@ -11,6 +11,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { PeerComputeProvider } from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
 import { LocalArtifactCache } from './LocalArtifactCache.js';
+import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -188,6 +189,7 @@ export class StateManager {
    * @returns {LocalArtifactCache}
    */
   createLocalArtifactCache(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
     const cache = new LocalArtifactCache({
       ...options,
       onDestroy: (destroyedCache) => {
@@ -204,6 +206,43 @@ export class StateManager {
 
   getLocalArtifactCache(name) {
     return this.dataState.getLocalArtifactCache(name);
+  }
+
+  /** Binary blocks and local metadata remain outside the replicated Y.Doc. */
+  createArtifactStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.getArtifactStore(name)) throw new Error(`Artifact store ${name} is already registered`);
+    const store = new ArtifactStore({ ...options, name, onDestroy: (closed) => {
+      this.dataState.unregisterArtifactStore(closed);
+      options.onDestroy?.(closed);
+    } });
+    return this.dataState.registerArtifactStore(store);
+  }
+
+  getArtifactStore(name = 'default') { return this.dataState.getArtifactStore(name); }
+
+  async ensureArtifact(cid, { storeName = 'default', signal } = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const store = this.getArtifactStore(storeName);
+    if (!store) throw new Error(`Artifact store ${storeName} is not configured`);
+    return store.ensureLocal(cid, { signal, fetchBlock: (blockCid, options = {}) => {
+      if (!this.networkManager?.fetchArtifactBlock) throw new Error('Artifact networking is not configured');
+      return this.networkManager.fetchArtifactBlock(blockCid, { ...options, artifactCid: cid });
+    } });
+  }
+
+  async publishArtifact(cid) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    if (!this.networkManager?.announceArtifact) throw new Error('Artifact networking is not configured');
+    return this.networkManager.announceArtifact(cid);
+  }
+
+  async unpublishArtifact(cid, { storeName = 'default', unpin = false } = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    if (!this.networkManager?.withdrawArtifact) throw new Error('Artifact networking is not configured');
+    await this.networkManager.withdrawArtifact(cid);
+    if (unpin) await this.getArtifactStore(storeName)?.unpin(cid);
   }
 
   getWarmDeltas(namespace) {
@@ -908,20 +947,25 @@ export class StateManager {
    * @returns {Promise<void>}
    */
   async destroy() {
-    try {
+    if (this.destroying) return this.destroying;
+    this.destroyed = true;
+    this.destroying = (async () => {
+      const errors = [];
+      const cleanup = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
       // Local artifact bytes live outside Yjs but remain owned by this manager.
       // Destroy handles without deleting their optional persistent records.
-      await this.dataState.destroyLocalArtifactCaches();
+      await cleanup(() => this.dataState.destroyArtifactStores());
+      await cleanup(() => this.dataState.destroyLocalArtifactCaches());
 
       // Cleanup libp2p provider
       if (this.libp2pProvider) {
-        this.libp2pProvider.destroy();
+        await cleanup(() => this.libp2pProvider.destroy());
         this.libp2pProvider = null;
       }
       
       // Cleanup IndexedDB provider
       if (this.indexeddbProvider) {
-        this.indexeddbProvider.destroy();
+        await cleanup(() => this.indexeddbProvider.destroy());
         this.indexeddbProvider = null;
       }
       
@@ -930,15 +974,14 @@ export class StateManager {
       this.globalSubscribers.clear();
       
       // Destroy Yjs document
-      this.ydoc.destroy();
+      await cleanup(() => this.ydoc.destroy());
       
       this.isInitialized = false;
       console.log('[StateManager] Destroyed');
       
-    } catch (error) {
-      console.error('[StateManager] Destroy failed:', error);
-      throw error;
-    }
+      if (errors.length) throw new AggregateError(errors, 'StateManager cleanup failed');
+    })();
+    return this.destroying;
   }
 
   /**
@@ -990,6 +1033,7 @@ export class StateManager {
    */
   getStats() {
     const localArtifactCaches = this.dataState.getLocalArtifactCacheStats();
+    const artifacts = this.dataState.getArtifactStoreStats();
     return {
       isInitialized: this.isInitialized,
       keyCount: this.state.size,
@@ -1003,7 +1047,10 @@ export class StateManager {
       localArtifactCacheCount: localArtifactCaches.caches,
       localArtifactCacheEntryCount: localArtifactCaches.entries,
       localArtifactCacheResidentBytes: localArtifactCaches.residentBytes,
-      localArtifactCachePendingCount: localArtifactCaches.pending
+      localArtifactCachePendingCount: localArtifactCaches.pending,
+      artifactStoreCount: artifacts.stores,
+      artifactStoredBytes: artifacts.storedBytes,
+      artifactPendingCount: artifacts.pending
     };
   }
 }

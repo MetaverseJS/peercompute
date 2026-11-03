@@ -13,6 +13,7 @@ export {
   RESOURCE_PRESSURE_SCHEMA,
   ResourceLeaseBroker
 } from './ResourceLeaseBroker.js';
+export { ResidentModelAdmission } from './ResidentModelAdmission.js';
 export {
   WORKER_SUPERVISOR_TELEMETRY_SCHEMA,
   WorkerSupervisor
