@@ -53,3 +53,20 @@ Status: active; coordinates DataState and State Workers.
 
 ## Open Questions
 - How to version large binary payloads without churn?
+
+## Planned IPFS Artifact Ownership - 2026-11-03
+
+[IPFS-01](../branch/ipfs-large-files-model-inference.md) places the optional
+ArtifactService/ArtifactStore under StateManager ownership. It manages verified
+binary blocks, immutable manifests/CIDs, local completeness, pins, quota, GC,
+read leases, and restart recovery outside the Y.Doc and y-indexeddb state store.
+Only policy-approved compact descriptors may enter shared state.
+
+NetworkManager discovers providers and transfers/serves blocks through that store
+contract. ComputeManager consumes bounded artifact read handles and owns the
+resident model's worker/GPU resources; persisted availability and GPU residency
+are different states. NodeKernel injects the transport and orders lifecycle:
+restore before advertising; withdraw/drain serving before store teardown. Local
+artifact access must work without active networking/Yjs. Test ownership, startup
+rollback, restart/reannouncement, transfer/GC races, and complete teardown.
+This is planned work, not a description of currently exported artifact APIs.

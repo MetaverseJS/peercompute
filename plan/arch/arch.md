@@ -20,9 +20,10 @@ This file and the arch folder contain a description of the current and future ar
 
 ###Future arch
 - Planned [IPFS artifact and inference layer](../branch/ipfs-large-files-model-inference.md):
-  optional NodeKernel-owned ArtifactManager, local persistent verified block store,
-  NetworkManager-coordinated IPFS transport, and resident model services using
-  the existing ComputeManager. Publish compact descriptors only; blocks and
+  optional StateManager-owned ArtifactService and local persistent verified block
+  store, NetworkManager-owned IPFS transport, and resident model services using
+  the existing ComputeManager. NodeKernel wires their lifecycles. Publish compact
+  descriptors only; blocks and
   private inference streams remain outside Yjs/pubsub. This is not implemented.
 - Expand topology modes (authority-hosted, mesh snapshots, hybrid) with clear authority election rules.
 - Add interest management, backpressure, and optional binary encoding (CBOR).

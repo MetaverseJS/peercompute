@@ -51,8 +51,9 @@ Status: active; hierarchical shared state store.
 ## Planned Large-Artifact Boundary - 2026-11-03
 
 [IPFS-01](../branch/ipfs-large-files-model-inference.md) proposes a separate
-block-oriented local artifact store exposed through StateManager handles and
-owned by NodeKernel's optional ArtifactManager. Keep current small-file
+block-oriented local artifact store owned by StateManager's optional ArtifactService
+and exposed through StateManager handles. NetworkManager owns IPFS transport;
+NodeKernel coordinates manager lifecycles. Keep current small-file
 LocalArtifactCache behavior. Shared DataState may carry approved bounded manifest
 CIDs, availability, and lifecycle summaries; file blocks, weight arrays, private
 prompts, and token histories must not enter Yjs replication. Residency and read

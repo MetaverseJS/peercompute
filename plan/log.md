@@ -60053,3 +60053,100 @@ and performance, and retain a physics-based motorcycle.
   and a continuation handoff will be stored outside the repository. All seven
   implementation phases remain pending; only this research/documentation slice
   is eligible for a verified status. No push is authorized or performed.
+
+## 2026-11-03 11:40:26 AKST - Clarify managed WebGPU inference execution
+
+- Prompt: “it will need to run the actual code via a webgpu compute worker and
+  be managed by the compute manager. is that the right approach with
+  transformers.js?” Exact delivery time is unavailable; first observed intake
+  time was `2026-11-03T11:40:26-09:00`.
+- Read plan/plan.md and this log; resumed ICC with query-only assistant-status
+  and source-drift. Initial tree was clean at `74a75642`, with fresh ICC evidence
+  and no source drift. Read computeWorker.js, taskRuntime.js, ComputeManager
+  worker dispatch/affinity, wasmRuntime.js, the WebGPU worker architecture, and
+  the persistent MPM module example.
+- Used `git status --short --branch`, `sed`, `tail`, `rg -n`, and `rg --files`.
+  An attempted read of `demos/shared/mpmComputeTasks.js` failed; resolved the real
+  path as `demos/webgpuphys/demos/shared/mpmComputeTasks.js` and corrected the
+  prior plan's evidence row. No implementation conclusion relied on that typo.
+- Checked official Transformers.js WebGPU documentation, tagged 4.3.2 ONNX
+  backend source, and ORT performance/environment documentation. Confirmed that
+  Transformers selects ORT WebGPU with device:webgpu, can be hosted inside the
+  application worker, and defaults its WASM proxy to false. ORT documents that
+  proxy-worker mode is incompatible with WebGPU and GPU-buffer transfer.
+- Clarified the execution contract: ComputeManager owns the required worker,
+  resident session, admission, scheduling and cancellation; Transformers/ORT
+  initialize inside it and execute WebGPU kernels there. A registered JS module
+  is the current host entry point; it does not imply CPU-only computation or
+  compatibility with the custom wasm-webgpu ABI. ORT owns individual model
+  operators; per-kernel scheduling/shared renderer buffers remain extra work.
+- Updated plan/branch/ipfs-large-files-model-inference.md, plan/arch/wgpuworker.md,
+  plan/plan.md, plan/tests.md, and this log. Added worker-ownership/GPU-execution
+  acceptance, no inline fallback, proxy:false, and an initial one-thread WASM
+  support budget. Feature implementation remains pending.
+- Validation is documentation/source/API review plus new-link/instruction/history
+  checks, `git diff --check`, and ICC guard. No application tests, model download,
+  browser/GPU run, dependency installation, or runtime changes were performed.
+
+## 2026-11-03 11:42:22 AKST - Clarify content addressing and local reseeding
+
+- Prompt: “the models should also be content addressible via ipfs right? so if
+  you successfully have it saved in localstorage/indexeddb other peers would be
+  able to query and fetch it from our/the ipfs network right?” Exact delivery
+  time is unavailable; first observed intake time after the message was
+  `2026-11-03T11:42:22-09:00`. This extends the active architecture clarification.
+- Rechecked official IPFS addressing/routing/transfer, web-app providing, and
+  pinning documentation. Clarified manifest/package CIDs, verified persistent
+  blocks, provider discovery/serving, and retained-copy reannouncement. A local
+  cache entry alone does not advertise or serve IPFS content; public reachability
+  depends on configured routing and compatible transports. Browser seeding is
+  active-session work. Prefer IndexedDB binary storage over string localStorage.
+- Updated the same IPFS branch plan, high-level plan, tests strategy, and this
+  log with the complete download-to-provider lifecycle and a restart/reseed gate
+  requiring no model load or HF access. The preceding worker clarification also
+  updates plan/arch/wgpuworker.md; five documents comprise this combined slice.
+- Prior checks for the first clarification passed: five expected documents,
+  two new relative links, corrected MPM source path, preserved instructions/log,
+  `git diff --check`, and ICC guard with no warnings/violations. Final combined
+  documentation checks and local commit follow; no application tests or runtime
+  implementation are claimed. Research used official web pages and live source
+  reads, with no models, servers, dependencies, or external deployments created.
+
+## 2026-11-03 11:43:34 AKST - StateManager ownership clarification
+
+- Prompt: “and that stuff would be managed by the statemanager right?” Exact
+  delivery time is unavailable; first observed intake was
+  `2026-11-03T11:43:34-09:00`. Read StateManager's constructor, local artifact
+  factory, DataState registration, and manager architecture documents.
+- Confirmed and adopted ownership: StateManager owns the composable artifact
+  service/store, manifests/CIDs, verification/completeness, pins, quota/GC and
+  read leases. NetworkManager owns IPFS routing/transport/serving; ComputeManager
+  owns resident model execution. NodeKernel wires managers and orders lifecycle.
+  Replaced the earlier proposal for an independently NodeKernel-owned
+  ArtifactManager with a StateManager-owned ArtifactService.
+- Updated branch/main/test plans plus arch/arch.md, arch/datastate.md,
+  arch/stateman.md and this log. Added restore-before-advertise, offline access,
+  startup rollback and drain-before-close gates. Large binary data remains out
+  of Yjs. A combined patch initially failed on a stale tests.md context and made
+  no changes; reread the target and applied the corrected patch.
+
+## 2026-11-03 11:45:09 AKST - Start IPFS artifact/WebGPU implementation branch
+
+- Prompt: “alright I think you should create a new branch for this effort and
+  dig in. make sure to use your icc skill to the full extent”. Exact delivery
+  time is unavailable; first observed intake was `2026-11-03T11:45:09-09:00`.
+- Created `feature/ipfs-artifacts-webgpu` from `74a75642` with
+  `git switch -c feature/ipfs-artifacts-webgpu`, carrying the authorized ownership
+  clarification documentation forward. Read the ICC skill/research guidance and
+  CLI agent-preflight/agent-session help. No repo-local .icc enforcement policy
+  exists. Rechecked package/workspace scripts and current worker source paths.
+- Implementation is now authorized. Preserve the full IPFS-01 end state while
+  progressing in validated slices: compatibility, StateManager storage,
+  NetworkManager serving/reseeding, imports/durable seeds, ComputeManager-owned
+  model inference, remote requests, and demo/release gates. Use native agents
+  with non-overlapping ICC edit leases for independent work; root owns integration,
+  package changes, documentation and final verification. Keep commits local.
+- Clarification checkpoint: PASS for eight documentation files, three added local
+  links, preserved instructions/history, consistent StateManager ownership, and
+  `git diff --check`; ICC guard passed with no warnings/violations. Preparing the
+  local clarification commit before dependency/source implementation begins.

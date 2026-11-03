@@ -11,13 +11,21 @@ model/runtime identity, resource limits, and full completion criteria.
   path/manifest/DAG/size bounds; ranges; resume; crash recovery; dedup; reader
   leases; pin-aware GC; cross-tab coordination; quota denial/exhaustion. Measure
   transient transport memory independently from model-loader allocations.
+- Ownership/lifecycle: StateManager creates and closes the artifact service;
+  inject a NetworkManager transport and verify storage recovery before serving,
+  startup rollback, offline reads, and draining transfers before store closure.
 - Genuine hosting: independent BrowserContexts/profiles and peer identities,
   empty receiver storage, A imports → B fetches → A closes → fresh C fetches
   from B. Block origin/public gateway fallback and assert actual IPFS serving
   counters. Pages within one context can share IndexedDB and are insufficient
   evidence. Add durable seed restart, one-provider loss, and all-providers-gone
   cases; browser cache retention does not establish durable network availability.
+  Restart a browser provider from retained IndexedDB blocks, refresh its
+  availability, and fetch the model from a fresh peer without loading it for
+  inference or accessing HF. An unrelated cached Blob is not a serving pass.
 - Model/compute: exact revision and complete variant closure, approved runtime,
+  inference initialization/execution in a ComputeManager-owned worker ID,
+  explicit WebGPU backend, no inline fallback or independent inference worker,
   actual WebGPU generation, second request with resident weights, cold worker/
   reload with HF and public runtime CDNs blocked, required-worker readiness,
   bounded token streams/queues and slow-consumer overflow, abort during download/

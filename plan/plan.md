@@ -27,8 +27,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.
+  Verified model packages retain immutable CIDs and persist in the IPFS block
+  store; hosting-enabled peers serve and reannounce them after restart.
+- Ownership: StateManager manages artifact storage/manifests/pins/availability;
+  NetworkManager discovers providers and transfers blocks; ComputeManager runs
+  inference in its managed WebGPU worker. NodeKernel wires these managers.
 - Initial model candidate: Qwen3-0.6B ONNX q4f16 through Transformers.js, with the
-  whole model resident on one WebGPU peer. Distributed storage is separate from
+  whole model resident on one WebGPU peer. Actual inference must execute inside
+  a WebGPU-capable compute worker owned and managed by ComputeManager;
+  Transformers.js/ONNX Runtime initialize in that worker and dispatch GPU work
+  there. Distributed storage is separate from
   multi-GPU tensor parallelism. Preserve existing small local artifact caches;
   large blocks and private inference content stay outside Yjs/pubsub.
 - Status: **plan only, implementation pending**. No model weights downloaded,

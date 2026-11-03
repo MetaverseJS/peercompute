@@ -54,7 +54,7 @@ survey with focused source review, not a claim that every binary was interpreted
 | `gpu/GPUHubManager.js` | GPU ownership policy exists. A third-party inference runtime does not automatically share its device or buffers with Three.js/the hub. |
 | `nodeKernel/NodeKernel.js` | Owns manager startup/shutdown and remote execution admission. Add opt-in artifact and model-service lifecycle here; accept registered runtime/model IDs, not model-provided executable URLs. |
 | `demos/motorcycle/src/render/motorcycleModel.js` | Bounded fetch plus manifest/hash/license checks provide a useful non-LLM consumer pattern. Its whole-file buffer is appropriate for that small asset, not generic large-file ingestion. |
-| Multiscale worker builds, `demos/shared/mpmComputeTasks.js`, `scripts/sync-federal-highways.mjs` | Reuse production worker import-closure testing, persistent GPU task patterns, and streamed source/provenance practices. |
+| Multiscale worker builds, `demos/webgpuphys/demos/shared/mpmComputeTasks.js`, `scripts/sync-federal-highways.mjs` | Reuse production worker import-closure testing, persistent GPU task patterns, and streamed source/provenance practices. |
 | `peercompute/src/relay-go`, `services/geodata` | Relay connectivity and fixed-source geodata service are not IPFS storage hosts. Keep those responsibilities separate. |
 
 Paths in the first seven rows are relative to `peercompute/src/peercompute/`.
@@ -64,12 +64,23 @@ passing-test result is historical; no application suite was rerun for this plan.
 
 ## Architecture and ownership
 
+User ownership clarification on 2026-11-03: **StateManager owns the artifact
+service and persistent data**. Implement it as a composable subsystem of the
+existing manager, rather than another independently owned top-level manager.
+
+| Owner | Responsibility |
+| --- | --- |
+| StateManager | ArtifactService/ArtifactStore lifecycle; verified blocks; manifests/CIDs; local completeness; pins, quota, eviction/GC; read leases; restart recovery; policy-approved availability descriptors. |
+| NetworkManager | IPFS node/transport lifecycle, provider discovery, authenticated identity binding, advertisements, block requests/responses, connection/upload budgets. Reads/writes use the StateManager-owned store contract. |
+| ComputeManager | Required WebGPU workers, inference module/session residency, execution admission, scheduling, output, GPU/CPU reservations, cancellation and disposal. It consumes artifact read handles supplied by StateManager. |
+| NodeKernel | Wires the existing managers and controls their startup/shutdown order. It does not independently own the artifact store. |
+
 ```text
 File / revision-pinned Hugging Face import
                   |
      immutable manifest + UnixFS directory/file CIDs
                   |
-       ArtifactManager: policy, pins, verified reads
+     StateManager.ArtifactService: pins, verified reads
           |                         |
   local block store          IPFS block exchange
   IndexedDB + journal        browser peers / durable seeds
@@ -84,8 +95,9 @@ File / revision-pinned Hugging Face import
 ### 1. Generic artifacts before model-specific behavior
 
 Proposed modules belong under `peercompute/src/peercompute/artifacts/`:
-`ArtifactManager`, a manifest validator, `ArtifactStore`, and an IPFS transport
-adapter. Names are implementation targets, not current exports.
+`ArtifactService`, a manifest validator, `ArtifactStore`, and an IPFS transport
+adapter. StateManager constructs/owns the service and exposes its API; implementation
+modules can stay separate files. Names are proposed targets, not current exports.
 
 - Provide `importStream`, `resolveManifest`, `stat`, `openRead`, `ensureLocal`,
   `pin`, `unpin`, `remove`, `list`, and `getAvailability` operations. Reads accept
@@ -106,9 +118,13 @@ adapter. Names are implementation targets, not current exports.
 - Track storage quota, request persistent storage when available, and handle
   denied persistence and `QuotaExceededError`. A browser pin protects against
   application GC, not browser eviction, user deletion, suspension, or shutdown.
-- NodeKernel owns optional startup/shutdown; StateManager exposes local handles
-  and compact descriptor registration. Existing LocalArtifactCache consumers
-  retain their small local caches. No file bytes go through Yjs or pubsub.
+- StateManager owns optional service startup/shutdown and exposes artifact handles
+  and compact descriptor registration. NodeKernel injects the NetworkManager
+  transport and coordinates startup/rollback: restore/reconcile the local store
+  before advertising, stop advertisements/drain transfers before closing it.
+  Local storage/read operations remain usable without an active network or Yjs
+  provider. Existing LocalArtifactCache consumers retain their small local
+  caches. No file bytes go through Yjs or pubsub.
 
 Define versioned, data-only `peercompute.artifact.manifest.v1` and a model
 extension `peercompute.model.manifest.v1`. A generic manifest records a directory
@@ -144,6 +160,26 @@ keeping HF credentials local does not make IPFS content private. Encrypted priva
 artifact distribution and key management require a separate design.
 
 ### 2. Actual IPFS hosting, discovery, and durable availability
+
+User requirement clarified on 2026-11-03: model packages are content-addressable
+IPFS artifacts, and a successful local download must be reusable as a provider's
+copy. In a hosting-enabled session the lifecycle is **request manifest CID →
+retrieve/verify its file DAGs → persist blocks in IndexedDB → announce complete
+availability → serve those same blocks to requesting peers**. Another peer names
+the CID, discovers a reachable provider, fetches and verifies the blocks, and can
+then become a provider itself. The package covers tokenizer/configuration as
+well as weights. A new package version has a new CID; human model names map to
+approved CIDs through our catalog, not a global IPFS filename search.
+
+Use IndexedDB for binary blocks; `localStorage` is synchronous string storage and
+is unsuitable for model weights. Storing a Blob in an unrelated application or
+Transformers cache does not register an IPFS provider. The active IPFS service
+must use the persistent block store and actually expose block exchange. On
+restart reconcile pins/completeness and refresh availability, allowing a fresh
+peer to retrieve retained data without HF access or loading the model for compute.
+Public-IPFS reachability additionally depends on compatible transports and
+configured provider routing; a CID alone does not make every browser globally
+discoverable. The same CID remains usable within our connected peer network.
 
 Use standard Bitswap/UnixFS so files interoperate with external IPFS hosts.
 Availability advertisements carry only bounded descriptors, provider identity,
@@ -210,7 +246,7 @@ Use **Transformers.js 4.3.2** as the initial inference adapter candidate. Its
 versioned source exposes `env.fetch`, making an IPFS-backed verified stream bridge
 possible without a mandatory service worker. Set a manifest-scoped virtual local
 model path, `allowLocalModels=true`, `allowRemoteModels=false`, and route allowed
-paths through the ArtifactManager. Reject unlisted paths; disable redundant
+paths through StateManager's ArtifactService. Reject unlisted paths; disable redundant
 browser/filesystem runtime caches. Transfer bounded chunks over MessagePorts
 where the store and inference worker differ, with credits and abort propagation.
 The current loader calls `env.fetch` without forwarding an AbortSignal: the
@@ -242,6 +278,34 @@ verified same-origin route. Its documented URL/cache path is not evidence of an
 equivalent `env.fetch` hook. Re-evaluate after the primary runtime spike if needed.
 
 ### 4. Resident inference through existing compute orchestration
+
+User requirement clarified on 2026-11-03: **actual inference must execute in a
+WebGPU-capable compute worker created and managed by ComputeManager**. The
+execution chain is ComputeManager → managed module worker → registered inference
+module → Transformers.js → ONNX Runtime WebGPU → GPU compute dispatches. Import
+and initialize the inference runtime inside that worker. The UI submits commands
+and consumes streamed results; an independent demo-created worker does not meet
+this requirement.
+
+A WebGPU compute worker is a Web Worker with WebGPU access, as described in
+[the worker architecture](../arch/wgpuworker.md). In today's task runtime, the
+appropriate entry point is a registered JS module task running in a required
+worker, with an explicit WebGPU resource/backend requirement and worker affinity.
+The `runtime: 'js'` tag describes its host module; it does not imply CPU-only
+execution. The existing MPM task module uses this general pattern. Transformers
+is not a drop-in module for the repository's custom `wasm-webgpu` host ABI merely
+because ONNX Runtime also ships WASM. Report host runtime and actual execution
+provider separately, and reject inline fallback for this service.
+
+ComputeManager schedules model sessions and inference requests; ONNX Runtime
+owns graph/operator execution, GPU allocations, and kernel dispatch inside the
+worker. Transformers.js supplies model loading, tokenization, and generation.
+This meets managed-worker inference; instruction/kernel-level preemption or
+automatic sharing of the renderer's GPU buffers requires further runtime-specific
+integration. Keep `env.backends.onnx.wasm.proxy=false`; ORT's proxy-worker mode
+does not support its WebGPU execution provider. Initially set `numThreads=1` for
+WASM support work to keep helper threads within the declared worker budget;
+additional CPU threads require explicit accounting and compatibility tests.
 
 Register a `ModelInferenceService` through ComputeServiceRegistry and the existing
 ComputeManagerServiceAdapter. Inject NodeKernel's existing ComputeManager; do not
@@ -327,7 +391,7 @@ Every item is **pending**. Each slice updates this file, `plan/log.md`, and
 | ID | Work and main file targets | Exit gate |
 | --- | --- | --- |
 | IPFS-01.0 | Compatibility spike: exact Helia/libp2p/IDB dependency set, browser Bitswap reachability, node ownership, Transformers worker fetch hook and pinned runtime assets. Measure the selected Qwen on actual WebGPU. | Two independent browser contexts exchange a verified block; artifact shutdown leaves application networking alive; production worker loads the pinned model through the adapter, generates text, and disposes. Record hardware/browser/peaks and dependency lock. No production-wide networking upgrade. |
-| IPFS-01.1 | `artifacts/` schemas/store/import/read/range/pins/resume/GC/quota; StateManager local handle; exports and pure tests. | Deterministic CID fixtures; corruption/path/size rejection; bounded 128 MiB ingestion; crash recovery, dedup, GC, pin and active-read safety. Non-model files work without inference dependencies. |
+| IPFS-01.1 | StateManager-owned `artifacts/` service, schemas/store/import/read/range/pins/resume/GC/quota; manager API, lifecycle, exports and pure tests. | Deterministic CID fixtures; corruption/path/size rejection; bounded 128 MiB ingestion; crash recovery, dedup, GC, pin and active-read safety; manager startup/rollback/teardown with injected transport. Non-model files work without inference dependencies. |
 | IPFS-01.2 | NetworkManager-coordinated IPFS adapter, provider binding/discovery, bounded blocks and advertisements, optional verified HTTP fallback. | A→B→C reseeding test below, independent identities/storage, actual serving counters, no origin/gateway escape, relay/peer-loss cleanup. |
 | IPFS-01.3 | Node importer under `scripts/`, generic file and HF manifest workflow, operator seed recipe and pin inventory; no weights in Git. | Exact revision/digests/complete variant closure, reproducible directory CID, two durable providers, seed restart and one-provider-loss recovery. |
 | IPFS-01.4 | ModelInferenceService adapter, compatible compute worker streaming/cancel/residency, broker/supervisor/NodeKernel lifecycle, actual GPU admission. | Model acquired by CID generates on real WebGPU; second request reuses residency; restart uses retained artifacts with origin blocked; abort/dispose/device loss/preemption release resources correctly. |
@@ -353,7 +417,8 @@ in this section have been implemented or executed by this planning change.
    integer/range/streaming boundaries; measure transient memory independently.
 2. **Failure and retention:** interrupt/resume, corrupt/missing blocks, malicious
    manifests, quota denial/exhaustion, cancelled reads, duplicate imports, mixed
-   pins, cross-tab GC, seed restart, relay loss, and all providers unavailable.
+   pins, cross-tab GC, seed restart, provider restart/reannouncement from retained
+   IndexedDB blocks with no model loaded, relay loss, and all providers unavailable.
    Show an honest unavailable state when the last complete provider disappears.
 3. **Model package:** fetch the exact variant through its manifest CID, validate
    every required file, and generate on a real WebGPU adapter. Verify a second
@@ -363,6 +428,9 @@ in this section have been implemented or executed by this planning change.
    timings, transfer bytes, estimated/measured memory, and actual backend evidence.
    Headless software GPU or mocked inference is not hardware-performance proof.
 4. **Compute integration:** real worker readiness, required-worker failure,
+   proof that runtime initialization/session execution occur in the worker ID
+   owned by ComputeManager, actual WebGPU dispatch/profiling evidence, no inline
+   fallback or independent inference worker, and compatible one-shot handlers;
    token ordering/backpressure and slow-consumer overflow, abort during
    download/load/generation including late load completion after abort, unload,
    device loss, preemption, lease renewal/expiry beyond TTL, no double-counted GPU
@@ -409,7 +477,9 @@ throughput, production-readiness, or multi-GPU claim is earned by planning alone
   [streamers](https://github.com/huggingface/transformers.js/blob/4.3.2/packages/transformers/src/generation/streamers.js),
   [stopping criteria](https://github.com/huggingface/transformers.js/blob/4.3.2/packages/transformers/src/generation/stopping_criteria.js),
   [ORT large-model constraints](https://onnxruntime.ai/docs/tutorials/web/large-models.html),
-  [ORT WebGPU device options](https://onnxruntime.ai/docs/api/js/interfaces/Env.WebGpuFlags.html).
+  [ORT WebGPU device options](https://onnxruntime.ai/docs/api/js/interfaces/Env.WebGpuFlags.html),
+  [ORT worker/proxy/thread constraints](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html),
+  [Transformers.js WebGPU execution](https://huggingface.co/docs/transformers.js/guides/webgpu).
 - Alternative runtime investigation:
   [WebLLM 0.2.87 model/runtime config](https://github.com/mlc-ai/web-llm/blob/v0.2.87/src/config.ts),
   [MLC Qwen package revision](https://huggingface.co/mlc-ai/Qwen3-0.6B-q4f16_1-MLC/tree/8c14ce481d4c692769976ad52afea453a102df19).
