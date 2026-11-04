@@ -55,6 +55,17 @@ Additional model choices on this branch:
 | Qwen3.5 9B Evil, mradermacher GGUF Q4_K_M | 5.78 GB | Experimental text chat |
 | Qwen2.5 Coder 0.5B, ONNX q4 | 878 MB | Coding and code explanation; no shader-f16 requirement |
 | SmolLM2 360M Instruct, ONNX q4 | 391 MB | Lightweight English chat, rewriting and summarization; no shader-f16 requirement |
+| Tsotchke Qwen3 Coder 30B A3B GeoRefine C30, mixed GGUF | 18.59 GB | Text candidate; exceeds the current 16 GiB loader limit |
+| Tsotchke Qwen3.6 35B A3B GeoRefine C20, mixed GGUF | 20.02 GB | Text candidate; exceeds the current 16 GiB loader limit |
+| Tsotchke Qwen3.8 27B GeoRefine L162, mixed GGUF | 16.25 GB | Text candidate; device qualification pending |
+
+The November 4 inventory covers all seven public repositories from
+[Tsotchke-Corporation](https://huggingface.co/Tsotchke-Corporation). D14, L162,
+C30 and C20 use standard GGUF tensor formats. The two Context packages and TBE
+require custom GeoRefine codecs and are excluded. New entries preserve immutable
+file hashes, licenses, notices and model cards; they have not been hardware-qualified.
+C20's publisher reports portable-runtime qualification pending and a failed
+coding-quality gate. Listing a model does not override the browser's loader limits.
 
 The requested9B GGUF choices are pinned execution candidates. Their publisher
 hashes, metadata and bounded GGUF headers are checked; full9B browser execution,
@@ -196,12 +207,22 @@ internally. Import progress reports downloaded bytes, stored-file verification
 and GPU initialization separately, with elapsed phase time. File sharing runs
 in the background, so preparing publication does not hold up
 local chat. Sharing failures remain visible in **Stored Models**.
+Choices are ordered by package size, smallest first, with download size shown
+separately from RAM/GPU estimates. The initial selection is the last successfully
+loaded model whose package is still stored in this library, or Qwen3.5 0.8B
+Abliterated if that package is gone. Selecting a default does not load it.
+An unsupported default remains selected with setup help and import disabled.
+The visible back arrow returns to the demo overview. The top-right hamburger
+opens About with links to Tsotchke's Hugging Face organization,
+[tsotchke.org](https://tsotchke.org/) and [tsotchke.net](https://tsotchke.net/).
 **Share with peers** and **Host inference** start checked and are independent:
 sharing serves retained model files; hosting executes requests on the
 currently loaded model. Both require an active connected browser. These checkboxes
 live in the **Config** modal alongside GGUF GPU layers, connection and unload
 controls. **Stored Models** opens a separate window listing local model packages,
-sizes and loaded/shared status. **Delete** stops sharing/hosting that model,
+sizes and loaded/shared status. **Load** switches the local worker to a complete
+stored package without downloading it again; loading can be stopped in the dialog.
+**Delete** stops sharing/hosting that model,
 unloads it if needed, and frees files unused by other retained packages. Shared
 blocks and independently pinned files remain available to their other owners.
 If another tab is using the package, unload it there before retrying deletion.

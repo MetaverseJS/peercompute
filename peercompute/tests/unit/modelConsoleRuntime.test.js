@@ -4,6 +4,7 @@ import { setImmediate as nextTurn } from 'node:timers/promises';
 import { attachModelRuntimeController } from '../../../demos/inference/src/modelRuntimeController.js';
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inference/src/modelPreferences.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
@@ -11,7 +12,7 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now } = {}) {
+function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now, preferences } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const localManifest = { ...manifest, model: modelInfo };
   const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
@@ -31,6 +32,7 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     getPublishedArtifactCids: () => [...published],
     async createPeerInferenceService(options) { callbacks = options; peer.closed = false; calls.push('attach'); return peer; },
     async releasePeerInferenceService(owner) {
+      if (!callbacks) return false;
       assert.equal(owner, callbacks.owner); calls.push('release');
       if (failRelease) { failRelease = false; throw new Error('Stop failed'); }
       released = true;
@@ -67,7 +69,8 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
-  const controller = attachModelRuntimeController(runtime, { catalog: catalogInfo ?? { test: { ...catalog.test, model: modelInfo } }, ...(now ? { now } : {}) });
+  const controller = attachModelRuntimeController(runtime, { catalog: catalogInfo ?? { test: { ...catalog.test, model: modelInfo } },
+    ...(now ? { now } : {}), ...(preferences ? { preferences } : {}) });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
 
@@ -564,7 +567,8 @@ test('failed network teardown retains owned model resources until an explicit re
 test('stored library lists actual local manifests and deletes a resident only after stopping its work', async () => {
   const f = fixture(); await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
   assert.deepEqual(await f.runtime.listStoredModels(), [{ manifestCid: cid, name: manifest.name,
-    totalBytes: 100, runtime: model.runtime, loaded: true, shared: true }]);
+    modelId: 'test', totalBytes: 100, runtime: model.runtime, loaded: true, shared: true,
+    localAvailability: { status: 'unknown', reason: 'Local memory fit is unverified.' } }]);
   const local = assert.rejects(f.runtime.generate('local', { requestId: 'local-delete', prompt: 'wait' }), /deleted/);
   const remote = assert.rejects(f.callbacks.generate({ manifestCid: cid, requestId: 'remote-delete', prompt: 'wait',
     signal: new AbortController().signal }), /deleted/);
@@ -687,5 +691,177 @@ test('local library can exceed the bounded network model directory', async () =>
   await f.runtime.setSharing(true);
   assert.equal((await f.runtime.listStoredModels()).length, 130);
   assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 128);
+  await f.runtime.dispose();
+});
+
+const secondCid = 'bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q';
+function preferenceStore() {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key) };
+  return () => createModelPreferences({ storeName: 'test-library', storage });
+}
+function customStoredRecord(overrides = {}) {
+  return { cid: secondCid, kind: 'manifest', pinned: true, status: 'complete',
+    manifest: { ...manifest, name: 'Custom offline model', model: { ...model, repository: 'custom/offline' }, files: [{ size: 50 }] },
+    ...overrides };
+}
+
+test('sources and library sort by bytes, keep catalog keys and expose custom offline packages', async () => {
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false,
+    catalogInfo: { huge: { ...catalog.test, id: 'huge', name: 'Huge', totalBytes: 1000,
+      model: { ...model, repository: 'test/huge' } }, ...catalog } });
+  await f.controller.initialize();
+  const choices = f.runtime.listModelSources();
+  assert.deepEqual(choices.map((entry) => entry.key), [`stored:${secondCid}`, 'hf:test', 'hf:huge']);
+  assert.equal(choices.filter((entry) => entry.manifestCid === cid).length, 0, 'known stored catalog model has no duplicate row');
+  assert.equal(choices[0].source, 'stored');
+  assert.deepEqual((await f.runtime.listStoredModels()).map((entry) => entry.totalBytes), [50, 100]);
+  await f.runtime.dispose();
+});
+
+test('unknown peer sizes sort last and equal-size rows have stable name/key ordering', async () => {
+  const f = fixture(); await f.controller.initialize();
+  f.peer.models = [
+    { ...descriptor, manifestCid: 'unknown', name: 'A unknown', totalBytes: undefined, providers: [{ local: false }] },
+    { ...descriptor, manifestCid: 'z', name: 'Z peer', totalBytes: 10, providers: [{ local: false }] },
+    { ...descriptor, manifestCid: 'a', name: 'A peer', totalBytes: 10, providers: [{ local: false }] },
+  ];
+  assert.deepEqual(f.runtime.listModelSources().map((entry) => entry.key), ['peer:a', 'peer:z', 'hf:test', 'peer:unknown']);
+  await f.runtime.dispose();
+});
+
+test('only a successful local load persists selection; reopen selects without importing or loading', async () => {
+  const preferences = preferenceStore();
+  const first = fixture({ retained: true, connected: false, preferences: preferences() });
+  await first.controller.initialize();
+  assert.equal(first.runtime.getPreferredModelSourceKey(), `hf:${DEFAULT_MODEL_ID}`);
+  assert.equal(preferences().readLastLoaded(), null);
+  await first.runtime.loadStoredModel(cid);
+  assert.equal(first.runtime.getPreferredModelSourceKey(), 'hf:test');
+  assert.equal(preferences().readLastLoaded().manifestCid, cid);
+  await first.runtime.dispose();
+  const reopened = fixture({ retained: true, connected: false, preferences: preferences() });
+  await reopened.controller.initialize();
+  assert.equal(reopened.runtime.getPreferredModelSourceKey(), 'hf:test');
+  assert(!reopened.calls.includes('load')); assert(!reopened.calls.includes('import'));
+  await reopened.runtime.dispose();
+});
+
+test('stored-only load replaces a resident offline and reuses it without imports or peer downloads', async () => {
+  const preferences = preferenceStore();
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences() });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const progress = [];
+  const result = await f.runtime.loadStoredModel(secondCid, { onProgress: ({ stage }) => progress.push(stage) });
+  assert.equal(result.manifestCid, secondCid); assert.deepEqual(progress, ['unload', 'load']);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
+  assert.equal(f.runtime.service.getStatus().manifestCid, secondCid);
+  const calls = f.calls.length; await f.runtime.acquireModel(`stored:${secondCid}`);
+  assert.equal(f.calls.length, calls, 'already resident package does not reload or acquire another lease');
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('fetch-peer'));
+  await f.runtime.dispose();
+  const reopened = fixture({ retainedRecords: [customStoredRecord()], connected: false, preferences: preferences() });
+  await reopened.controller.initialize();
+  assert.equal(reopened.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
+  assert(!reopened.calls.includes('load'));
+  await reopened.runtime.dispose();
+});
+
+test('missing, incomplete, deleting and unretained stored packages never download or replace a resident', async () => {
+  for (const target of [null, customStoredRecord({ status: 'partial' }), customStoredRecord({ status: 'deleting' }),
+    customStoredRecord({ pinned: false })]) {
+    const f = fixture({ retained: true, connected: false });
+    await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+    if (target) f.records.set(secondCid, target);
+    const calls = f.calls.length;
+    await assert.rejects(f.runtime.loadStoredModel(secondCid), /stored and retained/);
+    assert.equal(f.runtime.service.getStatus().manifestCid, cid);
+    assert.equal(f.calls.length, calls);
+    await f.runtime.dispose();
+  }
+});
+
+test('stored load checks actual compatibility before releasing the current model', async () => {
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, hooks: {
+    compatibility(entry) { return entry.model?.repository === 'custom/offline'
+      ? { status: 'unavailable', reason: 'Configured GPU budget is too small' } : { status: 'unknown' }; },
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const calls = f.calls.length;
+  await assert.rejects(f.runtime.loadStoredModel(secondCid), /budget is too small/);
+  assert.equal(f.calls.length, calls); assert.equal(f.runtime.service.getStatus().manifestCid, cid);
+  const row = (await f.runtime.listStoredModels()).find((entry) => entry.manifestCid === secondCid);
+  assert.equal(row.localAvailability.status, 'unavailable');
+  await f.runtime.dispose();
+});
+
+test('failed and cancelled stored loads do not replace the last successful preference', async () => {
+  const preferences = preferenceStore(); let fail = false;
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences(), hooks: {
+    load(setStatus) { if (fail) { setStatus({ status: 'idle' }); throw new Error('GPU initialization failed'); } },
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  fail = true;
+  await assert.rejects(f.runtime.loadStoredModel(secondCid), /GPU initialization failed/);
+  assert.equal(preferences().readLastLoaded().manifestCid, cid);
+  fail = false;
+  const abort = new AbortController();
+  await assert.rejects(f.runtime.loadStoredModel(secondCid, { signal: abort.signal,
+    onProgress({ stage }) { if (stage === 'load') abort.abort(new DOMException('Cancelled', 'AbortError')); },
+  }), { name: 'AbortError' });
+  assert.equal(preferences().readLastLoaded().manifestCid, cid);
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('fetch-peer'));
+  await f.runtime.dispose();
+});
+
+test('removed remembered packages fall back, but unsupported retained preferences remain selected for help', async () => {
+  const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: cid, modelId: 'test' });
+  const blocked = fixture({ retained: true, connected: false, preferences: preferences(), hooks: {
+    compatibility: () => ({ status: 'unavailable', reason: 'GPU feature shader-f16 is required' }),
+  } });
+  await blocked.controller.initialize();
+  assert.equal(blocked.runtime.getPreferredModelSourceKey(), 'hf:test');
+  assert.equal(blocked.runtime.listModelSources()[0].localAvailability.status, 'unavailable');
+  assert(!blocked.calls.includes('load')); await blocked.runtime.dispose();
+  const removed = fixture({ connected: false, preferences: preferences() });
+  await removed.controller.initialize();
+  assert.equal(removed.runtime.getPreferredModelSourceKey(), `hf:${DEFAULT_MODEL_ID}`);
+  assert.equal(preferences().readLastLoaded(), null); await removed.runtime.dispose();
+});
+
+test('deleting the preferred package clears the durable hint after successful removal', async () => {
+  const preferences = preferenceStore();
+  const f = fixture({ retained: true, connected: false, preferences: preferences() });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  await f.runtime.deleteStoredModel(cid);
+  assert.equal(preferences().readLastLoaded(), null);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), `hf:${DEFAULT_MODEL_ID}`);
+  await f.runtime.dispose();
+});
+
+test('stale controller deletion preserves another tab\'s newer successful selection', async () => {
+  const preferences = preferenceStore();
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences() });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const latest = await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  await f.runtime.deleteStoredModel(cid);
+  assert.deepEqual(preferences().readLastLoaded(), latest);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
+  assert.equal(f.calls.filter((call) => call === 'load').length, 1, 'adopting a hint must not load it');
+  await f.runtime.dispose();
+});
+
+test('stale library refresh adopts newer retained selection instead of deleting shared preferences', async () => {
+  const preferences = preferenceStore();
+  await preferences().rememberLoaded({ manifestCid: cid, modelId: 'test' });
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences() });
+  await f.controller.initialize();
+  const latest = await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  f.records.delete(cid);
+  await f.runtime.listStoredModels();
+  assert.deepEqual(preferences().readLastLoaded(), latest);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
+  assert(!f.calls.includes('load')); assert(!f.calls.includes('import'));
   await f.runtime.dispose();
 });

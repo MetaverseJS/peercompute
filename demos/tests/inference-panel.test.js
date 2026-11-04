@@ -45,6 +45,7 @@ async function fixture(t, scenario = {}) {
     window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: true, refreshCalls: 0,
       refreshActive: 0, refreshPeak: 0, disposed: false, sharing: true, hostInference: true,
       stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList,
+      loadedCid: scenario.loaded ? 'fixture-vision' : null, preferredSourceKey: scenario.preferredSourceKey, sources: scenario.sources,
       availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
     const delay = (ms, signal) => new Promise((resolve, reject) => {
@@ -62,10 +63,10 @@ async function fixture(t, scenario = {}) {
       getMemoryBudgets: () => ({ ...state.memoryBudgets }),
       setMemoryBudgets(budgets) { state.memoryBudgets = budgets; calls.push({ type: 'budgets', ...budgets }); return budgets; },
       getSharingErrors: () => state.stored.filter((model) => model.shareError).map((model) => ({ manifestCid: model.manifestCid, message: model.shareError })),
-      listModelSources: () => [
+      listModelSources: () => (state.sources ?? [
         { key: 'hf:vision', name: 'Fixture vision', source: 'hf', modelId: 'smolvlm-256m-q4', runtime: 'transformers.js', modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
           task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] },
-        { key: 'peer:fixture', name: 'Peer text model', source: 'peers', modelId: 'peer-text', manifestCid: 'fixture', runtime: 'llama.cpp', task: 'text-generation', modalities: ['text'] }]
+        { key: 'peer:fixture', name: 'Peer text model', source: 'peers', modelId: 'peer-text', manifestCid: 'fixture', runtime: 'llama.cpp', task: 'text-generation', modalities: ['text'] }])
         .map((source) => ({ ...source, localAvailability: scenario.memoryPolicy && state.memoryBudgets.cpuBytes != null
           && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' }
           : state.availability[source.key] ?? { status: 'unknown', cpuBytes: 4 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 } })),
@@ -88,7 +89,17 @@ async function fixture(t, scenario = {}) {
             { stage: 'verify' }, { stage: 'load' }, { type: 'model-load', stage: 'unet', loaded: 0, total: 1000 },
           ]) { options.onProgress(event); await delay(150, options.signal); }
         }
-        await delay(scenario.acquireDelay ?? 5, options.signal); state.loaded = true; calls.push({ type: 'loaded' }); },
+        await delay(scenario.acquireDelay ?? 5, options.signal); state.loaded = true; state.loadedCid = 'fixture-vision'; calls.push({ type: 'loaded' }); },
+      ...(scenario.preferredSourceKey ? { getPreferredModelSourceKey: () => state.preferredSourceKey } : {}),
+      async loadStoredModel(cid, options) {
+        calls.push({ type: 'load-stored', cid, gpuLayers: options.ggufGpuLayers });
+        options.onProgress?.({ stage: 'verify' });
+        await delay(scenario.loadStoredDelay ?? 20, options.signal);
+        if (state.rejectLoad) throw new Error('Stored model could not be loaded');
+        state.loaded = true; state.loadedCid = cid;
+        state.preferredSourceKey = (state.sources ?? []).find((source) => source.manifestCid === cid)?.key ?? 'hf:vision';
+        return { manifestCid: cid };
+      },
       async setSharing(value) { if (state.rejectSharing) throw new Error('Sharing failed'); state.sharing = value; calls.push({ type: 'sharing', value }); },
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
       async generate(target, options) {
@@ -108,16 +119,16 @@ async function fixture(t, scenario = {}) {
           finishReason: scenario.finishReason ?? 'stop', contextTruncated: !!scenario.contextTruncated };
       },
       async cancel(requestId) { calls.push({ type: 'cancel', requestId }); return true; },
-      async unload() { state.loaded = false; calls.push({ type: 'unload' }); },
+      async unload() { state.loaded = false; state.loadedCid = null; calls.push({ type: 'unload' }); },
       async listStoredModels({ signal } = {}) {
         calls.push({ type: 'stored-list' }); await delay(10, signal);
         if (state.rejectStoredList) throw new Error('Storage is temporarily unavailable');
-        return state.stored.map((model) => ({ ...model, loaded: state.loaded && model.manifestCid === 'fixture-vision' }));
+        return state.stored.map((model) => ({ ...model, loaded: state.loaded && model.manifestCid === state.loadedCid }));
       },
       async deleteStoredModel(cid, { signal } = {}) {
         calls.push({ type: 'delete', cid }); await delay(scenario.deleteDelay ?? 20, signal);
         if (state.rejectDelete) throw new Error('Model is still in use');
-        const unloaded = state.loaded && cid === 'fixture-vision';
+        const unloaded = state.loaded && cid === state.loadedCid;
         if (unloaded) state.loaded = false;
         if (state.cleanupFails) {
           state.stored.find((model) => model.manifestCid === cid).cleanupPending = true;
@@ -805,4 +816,150 @@ test('a pending clipboard response cannot change a newly reopened setup dialog',
     assert.equal(await help.getByRole('status').textContent(), '');
     await done.click();
   }
+});
+
+test('About menu has safe links, keyboard focus and an independent visible overview arrow', async (t) => {
+  const page = await fixture(t, { interval: 50 });
+  const menu = page.getByRole('button', { name: 'About and links', exact: true });
+  const back = page.getByRole('link', { name: 'Back to demo overview', exact: true });
+  assert.equal(await back.isVisible(), true);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const menuBox = await menu.boundingBox(), backBox = await back.boundingBox();
+    assert.ok(menuBox.x > backBox.x && menuBox.x + menuBox.width <= viewport.width);
+    await menu.focus(); await page.keyboard.press('Enter');
+    const modal = page.getByRole('dialog', { name: 'About PeerCompute', exact: true });
+    await modal.waitFor();
+    assert.match(await modal.textContent(), /WebGPU/); assert.match(await modal.textContent(), /IPFS/);
+    assert.match(await modal.textContent(), /hosting browser stays online/);
+    const links = await modal.getByRole('link').evaluateAll((anchors) => anchors.map((a) => ({ href: a.href, target: a.target, rel: a.rel })));
+    assert.deepEqual(links.map((link) => link.href), ['https://huggingface.co/Tsotchke-Corporation', 'https://tsotchke.org/', 'https://tsotchke.net/']);
+    assert.ok(links.every((link) => link.target === '_blank' && link.rel === 'noopener noreferrer'));
+    for (let index = 0; index < 8; index++) {
+      await page.keyboard.press('Tab');
+      assert.equal(await modal.evaluate((element) => element.contains(document.activeElement)), true);
+    }
+    const bounds = await modal.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height);
+    await page.keyboard.press('Escape');
+    assert.equal(await menu.evaluate((element) => document.activeElement === element), true);
+  }
+  assert.deepEqual(await page.evaluate(() => calls), []);
+  await menu.click(); await page.evaluate(() => panel.dispose());
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('package bytes determine source order while manual selection and peer targets survive refresh', async (t) => {
+  const sources = [
+    { key: 'hf:huge', name: 'A huge model', source: 'hf', totalBytes: 8 * 1024 ** 3 },
+    { key: 'peer:unknown', name: 'Unknown model', source: 'peers' },
+    { key: 'stored:small', name: 'Stored model', source: 'stored', manifestCid: 'small', totalBytes: 2 * 1024 ** 2 },
+    { key: 'hf:tie', name: 'Tie model', source: 'hf', totalBytes: 2 * 1024 ** 2 },
+    { key: 'hf:invalid', name: 'Bad size', source: 'hf', totalBytes: -1 },
+  ];
+  const page = await fixture(t, { sources, preferredSourceKey: 'hf:huge', interval: 50 });
+  const source = page.getByLabel('Model and source');
+  assert.deepEqual(await source.locator('option').evaluateAll((items) => items.map((item) => item.value)),
+    ['stored:small', 'hf:tie', 'hf:huge', 'hf:invalid', 'peer:unknown']);
+  assert.match(await source.locator('option[value="stored:small"]').textContent(), /Stored on this device · 2.0 MiB package/);
+  assert.match(await source.locator('option[value="hf:huge"]').textContent(), /8.00 GiB package/);
+  assert.match(await source.locator('option[value="peer:unknown"]').textContent(), /Unknown size/);
+  assert.equal(await source.inputValue(), 'hf:huge');
+  await source.selectOption('stored:small');
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.evaluate(() => uiState.sources.reverse());
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await source.inputValue(), 'stored:small');
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
+  await page.getByLabel('Filter models').fill('local stored');
+  assert.equal(await source.locator('option').count(), 1);
+  await page.getByLabel('Filter models').fill('');
+  assert.equal(await source.inputValue(), 'stored:small');
+  assert.deepEqual(await page.evaluate(() => calls), []);
+});
+
+test('an unavailable preferred model remains selected without autoload and has explicit setup help', async (t) => {
+  const page = await fixture(t, { preferredSourceKey: 'peer:fixture', interval: 50, availability: {
+    'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is unavailable' },
+  } });
+  const source = page.getByLabel('Model and source');
+  assert.equal(await source.inputValue(), 'peer:fixture');
+  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await source.inputValue(), 'peer:fixture');
+  await page.getByRole('button', { name: 'Set up selected model' }).click();
+  const help = page.getByRole('dialog', { name: 'Model setup', exact: true }); await help.waitFor();
+  assert.match(await help.textContent(), /shader-f16/);
+  await page.keyboard.press('Escape'); await source.selectOption('hf:vision');
+  await page.waitForTimeout(120);
+  assert.equal(await source.inputValue(), 'hf:vision');
+  assert.equal(await page.getByRole('button', { name: 'Set up selected model' }).isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => calls), []);
+});
+
+test('Stored Models loads one local package atomically, selects local chat and remembers its source', async (t) => {
+  const page = await fixture(t, { loaded: true, preferredSourceKey: 'hf:vision', loadStoredDelay: 100,
+    stored: [{ manifestCid: 'fixture-vision', name: 'Fixture vision', totalBytes: 1024 ** 3 },
+      { manifestCid: 'small', name: 'Small stored', totalBytes: 2 * 1024 ** 2 }],
+    sources: [{ key: 'hf:vision', name: 'Fixture vision', source: 'hf', totalBytes: 1024 ** 3 },
+      { key: 'stored:small', name: 'Small stored', source: 'stored', manifestCid: 'small', totalBytes: 2 * 1024 ** 2 }],
+  });
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  const load = modal.getByRole('button', { name: 'Load Small stored', exact: true }); await load.waitFor();
+  assert.deepEqual(await modal.locator('.pc-stored-model strong').allTextContents(), ['Small stored', 'Fixture vision']);
+  assert.equal(await modal.getByRole('button', { name: 'Loaded Fixture vision', exact: true }).isDisabled(), true);
+  await load.click();
+  assert.equal(await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).isDisabled(), true);
+  await load.evaluate((element) => element.onclick());
+  await page.waitForFunction(() => uiState.loadedCid === 'small');
+  await modal.waitFor({ state: 'hidden' });
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
+  assert.equal(await page.getByLabel('Model and source').inputValue(), 'stored:small');
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
+    [{ type: 'load-stored', cid: 'small', gpuLayers: 99999 }]);
+  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).waitFor();
+  assert.equal(await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).isDisabled(), true);
+});
+
+test('stored loading failures and cancellation remain retryable without import or download fallback', async (t) => {
+  const page = await fixture(t, { loadStoredDelay: 150, stored: [{ manifestCid: 'small', name: 'Stored model', totalBytes: 1024 }] });
+  await page.evaluate(() => { uiState.rejectLoad = true; });
+  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  const load = modal.getByRole('button', { name: 'Load Stored model', exact: true }); await load.click();
+  await modal.getByText('Error: Stored model could not be loaded', { exact: true }).waitFor();
+  assert.equal(await load.isEnabled(), true);
+  await page.evaluate(() => { uiState.rejectLoad = false; }); await load.click();
+  await modal.getByRole('button', { name: 'Stop loading', exact: true }).click();
+  await modal.getByText('Cancelled: Cancelled', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => uiState.loaded), false);
+  assert.equal(await load.isEnabled(), true);
+  await load.click(); await modal.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => uiState.loadedCid), 'small');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').length), 3);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'pin', 'unload'].includes(call.type))), []);
+});
+
+test('unavailable, deleting and loaded stored packages cannot start another load', async (t) => {
+  const page = await fixture(t, { loaded: true, stored: [
+    { manifestCid: 'fixture-vision', name: 'Resident', totalBytes: 1024 },
+    { manifestCid: 'deleting', name: 'Deleting', totalBytes: 2048, cleanupPending: true },
+    { manifestCid: 'blocked', name: 'Blocked', totalBytes: 4096, localAvailability: { status: 'unavailable', code: 'gpu_budget_exceeded', reason: 'Needs more GPU memory.' } },
+  ] });
+  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  for (const name of ['Loaded Resident', 'Load Deleting', 'Load Blocked']) {
+    const button = modal.getByRole('button', { name, exact: true }); await button.waitFor();
+    assert.equal(await button.isDisabled(), true);
+    if (name !== 'Load Blocked') await button.evaluate((element) => element.onclick());
+  }
+  assert.match(await modal.textContent(), /Needs more GPU memory/);
+  await modal.getByRole('button', { name: 'Load Blocked', exact: true }).evaluate((element) => element.onclick());
+  await page.getByRole('dialog', { name: 'Model setup', exact: true }).waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
 });

@@ -9,6 +9,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate,
   normalizeModelMemoryBudgets } from './modelDeviceCompatibility.js';
 import { importModelPackage } from './modelLibrary.js';
+import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import { createModelNetworkConnection } from './modelNetworkConnection.js';
@@ -45,7 +46,7 @@ export async function checkGgufCapabilities() {
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
-  memoryBudgets, probeDeviceCapabilities = collectModelDeviceCapabilities,
+  memoryBudgets, preferenceStorage, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
   let deviceCapabilities = null, deviceCheck;
@@ -232,7 +233,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       if (ownsState) await state.destroy();
     },
   };
-  const controller = attachModelRuntimeController(runtime, { catalog: MODEL_CATALOG });
+  const controller = attachModelRuntimeController(runtime, { catalog: MODEL_CATALOG,
+    preferences: createModelPreferences({ storeName: store.lockName ?? store.name ?? storeName, storage: preferenceStorage }) });
   try { await controller.initialize(); }
   catch (error) { await runtime.dispose(); throw error; }
   return runtime;

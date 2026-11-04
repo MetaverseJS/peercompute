@@ -151,7 +151,8 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
     return ['model_invalid', 'Invalid model GPU feature requirements'];
   const maximum = model.runtime === 'llama.cpp' ? 16 * GiB
     : model.runtime === 'onnx-diffusion' ? 3 * GiB : modelResourcePolicy(model).maxModelBytes;
-  if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large', 'Package exceeds this runtime’s supported file budget'];
+  if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large',
+    `Model package is ${(totalBytes / GiB).toFixed(2)} GiB; this runtime supports up to ${Number((maximum / GiB).toFixed(2))} GiB.`];
   if (model.runtime === 'transformers.js') {
     if (((!descriptorOnly || model.runtimeVersion !== undefined) && model.runtimeVersion !== MODEL_RUNTIME_VERSION)
         || ((!descriptorOnly || model.architecture !== undefined) && !['qwen2', 'qwen3', 'llama', 'qwen3_5', 'idefics3', 'smolvlm'].includes(model.architecture))) {

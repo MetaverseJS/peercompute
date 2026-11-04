@@ -1575,3 +1575,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - November4 public deployment: a281d9b5 is live; model tileHTTP200,33exact-byte/MIME checks and23actual-public browser routes pass. All9network packages connect to SecretWorkshop. All46screenshots reviewed and actual public owned-peer inference passes64.56s (999GPUdispatches, encryptedWebRTC, exactpinnedCID). Previously documented camera/XR/geodata limits remain.
 
 - Follow-up: investigate MPM Headless raw momentum-drift warning with force-corrected numerical acceptance; startup success does not validate the large transient. Investigate CubeChat2/64 memory64-probe failures before declaring every embedded worker GGUF-ready. Standalone managed-worker prerequisites and actual ONNX peer inference pass. Broader IPFS-01 and ulg merge remain open.
+
+### Model console library and Tsotchke catalog - November4 2026
+
+- Implemented package-size ordering and labels; remember the last successfully loaded model while its package remains stored, else Qwen3.5 0.8B Abliterated; explicit load from Stored Models without download or automatic startup. Conditional, Web-Lock-serialized preference updates prevent an older tab from clearing a newer selection.
+- Added visible overview back arrow and top-right hamburger containing About, Tsotchke-Corporation Hugging Face, tsotchke.org and tsotchke.net links; mobile layout, keyboard focus and five-second discovery preserved.
+- Added every standard-GGUF Tsotchke release (C30,L162,C20 alongside existing D14), excluding three custom-codec packages. Pinned metadata/D14 CID and runtime bounds preserved; C30/C20 exceed the current16GiB loader limit, and new models remain hardware-unqualified candidates.
+- Validation passes150integrated unit,44UI/navigation and67release tests; three production builds; real library restart/load/delete with zero repeat downloads; actual owned-peer inference; four nested Pages routes with SecretWorkshop connections. Public release verification is the remaining delivery step. Broader IPFS qualification and ulg merge remain separate.

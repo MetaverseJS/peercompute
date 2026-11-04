@@ -47,10 +47,15 @@ test('explicit budgets are strictly normalized and can be cleared back to automa
   assert.equal(evaluate(large, {}, { cpuBytes: 8 * GiB, gpuBytes: 16 * GiB }).status, 'unknown');
 });
 
-test('all approved catalog profiles remain selectable without claiming physical memory fit', () => {
+test('catalog profiles expose loader bounds without claiming physical memory fit', () => {
+  const overLimit = new Set(['qwen3-coder-30b-a3b-georefine-c30-gguf', 'qwen3.6-35b-a3b-georefine-c20-gguf']);
   for (const entry of [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG), ...Object.values(DIFFUSION_MODEL_CATALOG)]) {
-    assert.equal(evaluate(entry).status, 'unknown', entry.id);
-    assert.match(evaluate(entry).reason, /memory fit is unverified/, entry.id);
+    const result = evaluate(entry);
+    assert.equal(result.status, overLimit.has(entry.id) ? 'unavailable' : 'unknown', entry.id);
+    if (overLimit.has(entry.id)) {
+      assert.equal(result.code, 'package_too_large', entry.id);
+      assert.match(result.reason, /supports up to 16 GiB/, entry.id);
+    } else assert.match(result.reason, /memory fit is unverified/, entry.id);
   }
 });
 
@@ -120,6 +125,14 @@ test('a 16 GiB GPU budget cannot substitute for missing browser FP16 support', (
   const budgets = { cpuBytes: 12 * GiB, gpuBytes: 16 * GiB };
   for (const entry of Object.values(MODEL_CATALOG)) assert.equal(evaluate(entry, { features: [] }, budgets).status, 'unknown');
   for (const entry of [...Object.values(GGUF_MODEL_CATALOG), ...Object.values(DIFFUSION_MODEL_CATALOG)]) {
+    if (entry.totalBytes > 16 * GiB) {
+      // Large catalog entries stay visible, but a browser flag cannot lift the
+      // loader's package limit. That admission failure precedes FP16 probing.
+      assert.equal(evaluate(entry, { features: [] }, budgets).code, 'package_too_large');
+      assert.equal(evaluate(entry, {}, budgets).code, 'package_too_large');
+      assert.match(evaluate(entry, {}, budgets).reason, /supports up to 16 GiB/);
+      continue;
+    }
     assert.equal(evaluate(entry, { features: [] }, budgets).code, 'gpu_feature_unavailable');
     assert.equal(evaluate(entry, {}, budgets).status, 'unknown');
   }

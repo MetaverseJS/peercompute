@@ -1,5 +1,5 @@
 import { createInferenceRuntime } from './runtime.js';
-import { createPanelView, appendMessage, renderStoredModels, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
+import { createPanelView, appendMessage, renderStoredModels, formatModelBytes, renderModelCompatibilityHelp, sortModelPackages } from './ui/panelView.js';
 import { buildModelCompatibilityHelp, detectModelHelpEnvironment } from './ui/modelCompatibilityHelp.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
@@ -14,13 +14,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
-  let storedPromise, storedController;
+  let storedPromise, storedController, loadingStoredModel = false;
   let refreshTimer, sources = [], targets = [];
   let desiredSourceKey;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
+  const sourceLabel = (source) => source.source === 'hf' ? 'Hugging Face'
+    : source.source === 'stored' ? 'Stored on this device' : 'Peers';
   const sourceReason = (source) => String(source?.localAvailability?.reason
     || (source?.localAvailability?.status === 'checking' ? 'Checking this device…' : 'Unavailable on this device.')).slice(0, 512);
   const memoryEstimate = (source) => {
@@ -49,6 +51,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.prompt.placeholder = target?.task === 'text-to-image' ? 'Describe an image…' : 'Message…';
     view.acquire.disabled = !!operation || !source || sourceBlocked(source);
     view.source.disabled = !!operation; view.sourceFilter.disabled = !!operation;
+    view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
     view.cancel.hidden = !operation; view.target.disabled = !!operation;
@@ -56,23 +59,25 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation;
     view.storedRefresh.disabled = !!operation || !!storedController;
-    for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController;
+    for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController || button.dataset.inactive === 'true';
+    view.storedCancel.hidden = !operation || !loadingStoredModel;
   }
   function renderSources() {
     const previous = view.source.value;
     const terms = view.sourceFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = sources.filter((source) => {
+    const matches = sortModelPackages(sources).filter((source) => {
       const text = [source.name, source.modelId, source.task, source.runtime, source.source,
-        source.source === 'hf' ? 'Hugging Face' : 'Peers', source.task === 'text-to-image' ? 'Image generation' : ''].join(' ').toLowerCase();
+        sourceLabel(source), source.source === 'stored' ? 'local' : '', source.task === 'text-to-image' ? 'Image generation' : ''].join(' ').toLowerCase();
       return terms.every((term) => text.includes(term));
     });
-    if (!desiredSourceKey) desiredSourceKey = sources.find((entry) => entry.modelId === 'smolvlm-256m-q4' && entry.source === 'hf')?.key
+    if (!desiredSourceKey) desiredSourceKey = runtime.getPreferredModelSourceKey?.()
+      ?? sources.find((entry) => entry.modelId === 'smolvlm-256m-q4' && entry.source === 'hf')?.key
       ?? sources.find((entry) => !sourceBlocked(entry))?.key ?? sources[0]?.key;
     view.source.replaceChildren();
     for (const source of matches) {
       const option = document.createElement('option'); option.value = source.key;
       option.textContent = String(source.name).slice(0, 140) + (source.task === 'text-to-image' ? ' · Image generation' : '')
-        + ' · ' + (source.source === 'hf' ? 'Hugging Face' : 'Peers')
+        + ' · ' + sourceLabel(source) + ' · ' + formatModelBytes(source.totalBytes) + ' package'
         + ' · ' + memoryEstimate(source)
         + (sourceBlocked(source) ? ' · Setup required — select for help' : '');
       // A disabled native option cannot receive clicks or keyboard activation.
@@ -87,7 +92,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const preferred = matches.find((entry) => entry.key === desiredSourceKey)
         ?? matches.find((entry) => entry.key === previous)
         ?? matches.find((entry) => !sourceBlocked(entry)) ?? matches[0];
-      if (sourceBlocked(preferred)) {
+      if (sourceBlocked(preferred) && !(runtime.getPreferredModelSourceKey && preferred.key === desiredSourceKey)) {
         const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.disabled = true;
         placeholder.textContent = 'Choose a model — select unavailable models for help'; view.source.prepend(placeholder);
         view.source.value = '';
@@ -107,7 +112,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     helpSource = source;
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
-    renderHelp(); view.configuration.close(); view.storedModels.close();
+    renderHelp(); view.configuration.close(); view.storedModels.close(); view.about.close();
     if (!view.compatibility.open) view.compatibility.showModal();
   }
   function renderSourceStatus(matches) {
@@ -126,6 +131,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     }
     view.sourceStatus.textContent = notices.join(' ');
     view.sourceStatus.hidden = !notices.length;
+    view.sourceHelp.hidden = !selected || !sourceBlocked(selected);
   }
   function renderLists() {
     const selected = view.target.value || 'local';
@@ -234,9 +240,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const key = `${event.type ?? ''}:${event.stage ?? event.status ?? ''}:${event.path ?? event.file ?? ''}`;
     if (key !== progressKey) { progressKey = key; progressStarted = performance.now(); }
     progressLabel = String(label).slice(0, 512); view.status.textContent = progressLabel;
+    if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = progressLabel;
     if (!progressTimer) progressTimer = setInterval(() => {
       if (alive() && operation && !operation.signal.aborted) {
         view.status.textContent = `${progressLabel} (${Math.floor((performance.now() - progressStarted) / 1000)}s)`;
+        if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = view.status.textContent;
       }
     }, 1000);
   };
@@ -260,7 +268,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       try {
         const models = await runtime.listStoredModels({ signal: controller.signal });
         if (alive()) {
-          renderStoredModels(view, models, deleteStoredModel);
+          renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined);
           view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
         }
         return true;
@@ -283,6 +291,34 @@ export async function mountInferencePanel({ container = document.body, stateMana
       }
     });
   }
+  async function loadStoredModel(model) {
+    if (!alive() || operation || storedController || model.loaded || model.cleanupPending) return;
+    if (sourceBlocked(model)) { showCompatibilityHelp(model); return; }
+    loadingStoredModel = true;
+    let loaded = false;
+    try {
+      await run(async (signal) => {
+        invalidateActions(); progress({ stage: 'verify' });
+        try {
+          await runtime.loadStoredModel(model.manifestCid, { signal,
+            onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
+        } catch (error) { await refreshStoredModels(); throw error; }
+        signal.throwIfAborted();
+        histories.delete('local');
+        desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
+        renderLists(); view.target.value = 'local';
+        await refreshStoredModels();
+        view.status.textContent = view.storedStatus.textContent = `Loaded ${model.name}. Send a message.`;
+        loaded = true;
+      });
+    } finally {
+      loadingStoredModel = false;
+      if (alive()) {
+        updateControls();
+        if (loaded) { view.storedModels.close(); view.prompt.focus(); }
+      }
+    }
+  }
   function clearAttachment() {
     attachment = null; view.attachment.hidden = true; view.attachmentImage.removeAttribute('src'); view.imageFile.value = ''; updateControls();
   }
@@ -295,14 +331,22 @@ export async function mountInferencePanel({ container = document.body, stateMana
 
   view.configure.onclick = () => {
     if (!alive()) return;
-    view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
+    view.about.close(); view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
   view.stored.onclick = () => {
     if (!alive()) return;
-    view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
+    view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
+  };
+  view.menu.onclick = () => {
+    if (!alive()) return;
+    view.compatibility.close(); view.configuration.close(); view.storedModels.close(); view.about.showModal();
   };
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
   view.sourceFilter.oninput = renderSources;
+  view.sourceHelp.onclick = () => {
+    const selected = sources.find((entry) => entry.key === view.source.value);
+    if (selected && sourceBlocked(selected)) showCompatibilityHelp(selected);
+  };
   view.source.onchange = () => {
     if (!alive() || operation) return;
     const key = view.source.value;
@@ -315,7 +359,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.helpConfig.onclick = () => view.configure.click();
   view.compatibility.addEventListener('close', () => {
     helpVersion++;
-    if (alive() && !view.configuration.open && !view.storedModels.open) view.source.focus();
+    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open) view.source.focus();
   });
   view.helpCopy.onclick = async () => {
     const command = view.helpCommand.value;
@@ -402,6 +446,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     operation?.abort('User cancelled');
     if (requestId) void runtime.cancel(requestId).catch(showError);
   };
+  view.storedCancel.onclick = () => view.cancel.click();
   async function send() {
     if (view.send.disabled) return;
     await run(async (signal) => {
@@ -482,7 +527,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; generatedImages.dispose(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.panel.inert = true;
+    closing = true; generatedImages.dispose(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);

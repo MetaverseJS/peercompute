@@ -896,3 +896,7 @@ Build the complete docs gallery with the expanded model catalog and verify every
 - November4 05:47 AKST: explicit user approval received for the verified GitHub false-positive exception; API approval succeeded. Continue publication and public-origin validation without changing repository scanner configuration or merging ulg.
 
 - November4 public closure: Pagesa281d9b5 deployed; secondtile/modelconsoleHTTP200;33exact-file/MIME checks,23public route checks and46visual reviews complete. Real public owned-peer managed WebGPU inference passes with exact pinned model CID and encrypted transport. Outstanding geodata/MPM numerical diagnostics/CubeChat2of64memory64 probes/camera-XR limits are recorded; parentIPFS-01 and ulg merge remain open.
+
+## November4 07:23 AKST - Library defaults, navigation and complete Tsotchke GGUF catalog
+
+Add size-sorted model choices, remembered successful stored-model default (fallback Qwen3.5 0.8B Abliterated), and explicit Stored Models loading. Selection does not auto-load. Add overview back arrow plus top-right About/link hamburger. Include all four standard-GGUF Tsotchke releases with immutable provenance and codec exclusions; retain the current large-file/runtime admission bounds and candidacy labels. Preserve existing local/peer workflow, accessibility and persistent model identities.

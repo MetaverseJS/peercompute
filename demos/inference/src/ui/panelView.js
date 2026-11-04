@@ -1,3 +1,5 @@
+import { resolveOverviewUrl } from './consoleNavigation.js';
+
 const node = (tag, text, className) => {
   const result = document.createElement(tag);
   if (text !== undefined) result.textContent = text;
@@ -33,18 +35,41 @@ function dialog(title) {
 }
 
 export function formatModelBytes(bytes) {
+  if (!Number.isSafeInteger(bytes) || bytes < 0) return 'Unknown size';
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
   return `${Math.ceil(bytes / 1024)} KiB`;
 }
 
+export function sortModelPackages(models) {
+  const size = (model) => Number.isSafeInteger(model.totalBytes) && model.totalBytes >= 0 ? model.totalBytes : Infinity;
+  return [...models].sort((left, right) => (size(left) - size(right))
+    || String(left.name).localeCompare(String(right.name))
+    || String(left.key ?? left.manifestCid).localeCompare(String(right.key ?? right.manifestCid)));
+}
+
 export function createPanelView(container) {
   const panel = node('section', undefined, 'pc-inference-panel'); panel.setAttribute('aria-label', 'Model chat');
+  const navigation = node('nav', undefined, 'pc-console-navigation'); navigation.setAttribute('aria-label', 'Console navigation');
+  const back = node('a', '←', 'pc-console-back'); back.href = resolveOverviewUrl(location.href);
+  back.setAttribute('aria-label', 'Back to demo overview'); back.title = 'Back to demo overview';
+  const menu = button('☰', 'About and links'); menu.title = 'About and links';
+  navigation.append(back, menu); panel.append(navigation);
   const sourceFilter = node('input'); sourceFilter.type = 'search'; sourceFilter.placeholder = 'Filter models';
   sourceFilter.setAttribute('aria-label', 'Filter models'); sourceFilter.maxLength = 256;
   const source = node('select'); source.setAttribute('aria-label', 'Model and source');
   const acquire = button('Import Model'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
-  const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup');
+  const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const about = aboutWindow.element;
+  aboutWindow.body.append(node('p', 'PeerCompute runs models in your browser using WebGPU. You can chat with a model on this device or use inference hosted by another peer.'));
+  aboutWindow.body.append(node('p', 'Model files are identified by their content and shared over IPFS. File sharing and hosted inference are available while the hosting browser stays online.'));
+  const aboutLinks = node('ul', undefined, 'pc-about-links');
+  for (const [text, href] of [['Tsotchke-Corporation on Hugging Face', 'https://huggingface.co/Tsotchke-Corporation'],
+    ['tsotchke.org', 'https://tsotchke.org'], ['tsotchke.net', 'https://tsotchke.net']]) {
+    const anchor = node('a', text); anchor.href = href; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
+    const item = node('li'); item.append(anchor); aboutLinks.append(item);
+  }
+  aboutWindow.body.append(aboutLinks);
   const configuration = settings.element, storedModels = library.element;
   const compatibility = help.element;
   const helpModel = node('strong'), helpReason = node('p', '', 'pc-inference-note');
@@ -66,7 +91,7 @@ export function createPanelView(container) {
   help.body.append(helpModel, helpReason, helpEnvironment,
     node('p', 'Browser detection is approximate. Adjust these choices if needed.', 'pc-inference-note'),
     helpDetails, helpCommandGroup, helpConfig);
-  for (const [trigger, modal] of [[configure, configuration], [stored, storedModels]]) {
+  for (const [trigger, modal] of [[configure, configuration], [stored, storedModels], [menu, about]]) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
@@ -74,6 +99,8 @@ export function createPanelView(container) {
   const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
   sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
   source.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
+  const sourceHelp = button('Setup help', 'Set up selected model'); sourceHelp.hidden = true;
+  sourceHelp.className = 'pc-source-help'; panel.append(sourceHelp);
   const discoveryStatus = node('p', 'Connecting to peer network…', 'pc-network-summary');
   discoveryStatus.setAttribute('aria-live', 'polite'); panel.append(discoveryStatus);
   const sharing = node('input'); sharing.type = 'checkbox'; sharing.checked = true;
@@ -104,9 +131,10 @@ export function createPanelView(container) {
   const unload = button('Unload local model'); settings.body.append(unload);
   const clearChat = button('Clear conversation'); settings.body.append(clearChat);
   settings.body.append(node('p', 'Clear chat history to start a new conversation while keeping the loaded model and stored files.', 'pc-inference-note'));
-  library.body.append(node('p', 'Delete removes a model from this device and unloads it if needed. Files used by other stored models or pinned separately are kept.', 'pc-inference-note'));
+  library.body.append(node('p', 'Load uses the files already on this device and replaces the current local model. Delete removes a model and unloads it if needed. Files used by other stored models or pinned separately are kept.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
-  const storedRefresh = button('Refresh'); library.body.append(storedList, storedRefresh);
+  const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
+  library.body.append(storedList, storedRefresh, storedCancel);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
   const empty = node('p', 'Import a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
@@ -121,9 +149,10 @@ export function createPanelView(container) {
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels, compatibility); container.append(panel);
-  return { panel, sourceFilter, source, sourceStatus, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
-    configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedStatus: library.status, gpuLayers,
+  panel.append(configuration, storedModels, compatibility, about); container.append(panel);
+  return { panel, sourceFilter, source, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
+    configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
+    back, menu, about,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
@@ -150,19 +179,25 @@ export function renderModelCompatibilityHelp(view, help) {
   view.helpStatus.textContent = '';
 }
 
-export function renderStoredModels(view, models, onDelete) {
+export function renderStoredModels(view, models, onDelete, onLoad) {
   view.storedList.replaceChildren();
   if (!models.length) view.storedList.append(node('li', 'No models stored on this device.', 'pc-stored-empty'));
-  for (const model of models) {
+  for (const model of sortModelPackages(models)) {
     const row = node('li', undefined, 'pc-stored-model');
     const details = node('div'); details.append(node('strong', model.name));
     const metadata = [formatModelBytes(model.totalBytes), ...(model.loaded ? ['Loaded'] : []), ...(model.shared ? ['Shared'] : []),
       ...(model.cleanupPending ? ['Cleanup pending'] : [])];
     details.append(node('p', metadata.join(' · '), 'pc-inference-note'));
     if (model.shareError) details.append(node('p', `Sharing unavailable: ${String(model.shareError).slice(0, 256)}`, 'pc-inference-note'));
+    const blocked = ['checking', 'unavailable'].includes(model.localAvailability?.status);
+    if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
+    const load = button(model.loaded ? 'Loaded' : 'Load', `${model.loaded ? 'Loaded' : 'Load'} ${model.name}`);
+    load.dataset.inactive = String(Boolean(model.loaded || model.cleanupPending || blocked || !onLoad));
+    load.disabled = load.dataset.inactive === 'true'; load.onclick = () => onLoad?.(model);
     const removeLabel = model.cleanupPending ? 'Retry delete' : 'Delete';
     const remove = button(removeLabel, `${removeLabel} ${model.name}`); remove.className = 'pc-delete-model';
-    remove.onclick = () => onDelete(model); row.append(details, remove); view.storedList.append(row);
+    const actions = node('div', undefined, 'pc-stored-actions'); actions.append(load, remove);
+    remove.onclick = () => onDelete(model); row.append(details, actions); view.storedList.append(row);
   }
 }
 

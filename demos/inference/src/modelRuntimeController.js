@@ -2,6 +2,15 @@ import { createModelMutationQueue, listStoredModelRecords, modelStorageError, wi
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 import { findModelCatalogEntry } from './modelDeviceCompatibility.js';
+import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
+
+function compareModelSizes(left, right) {
+  const size = (value) => Number.isSafeInteger(value) && value >= 0 ? value : Infinity;
+  const a = size(left.totalBytes), b = size(right.totalBytes);
+  if (a !== b) return a < b ? -1 : 1;
+  const label = (value) => `${value.name ?? ''}\0${value.key ?? value.manifestCid ?? ''}`;
+  return label(left) < label(right) ? -1 : label(left) > label(right) ? 1 : 0;
+}
 
 function capabilities(model = {}) {
   const modalities = [...(model.modalities ?? ['text'])];
@@ -10,11 +19,13 @@ function capabilities(model = {}) {
 }
 
 /** UI policy over manager-owned storage, inference and private peer streams. */
-export function attachModelRuntimeController(runtime, { catalog, now = Date.now } = {}) {
+export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
+  preferences = createModelPreferences({ storeName: runtime.store.lockName ?? runtime.store.name }) } = {}) {
   const original = Object.fromEntries(['importCatalog', 'importPackage', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
     .map((key) => [key, runtime[key].bind(runtime)]));
   const owner = {};
   const retained = new Map();
+  const retainedManifests = new Map();
   const published = new Set();
   const sharingErrors = new Map();
   const requests = new Map();
@@ -28,6 +39,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   let peerService, peerStarting, refreshing, acquiring, backgroundSharing;
   let current = null, localRequests = 0, lastIdleAt = now();
   let publication = Promise.resolve();
+  let lastLoaded = preferences.readLastLoaded();
   let discovery = { connected: false, peerCount: 0, sharedModelCount: 0, hostedModelCount: 0,
     errors: [], checkedAt: null };
 
@@ -65,9 +77,11 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   }
   async function remember(record) {
     if (!record?.cid) throw new Error('Imported package has no content identity');
-    const model = descriptor(record.cid, record.manifest ?? await runtime.store.getManifest(record.cid));
+    const manifest = record.manifest ?? await runtime.store.getManifest(record.cid);
+    const model = descriptor(record.cid, manifest);
     if (model) {
       retained.set(record.cid, model);
+      retainedManifests.set(record.cid, manifest);
     }
     return model;
   }
@@ -76,10 +90,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     const available = new Set();
     for (const record of records) {
       if (record.status === 'deleting') { deleting.add(record.cid); continue; }
-      if (record.pinned) { available.add(record.cid); await remember(record); }
+      if (record.pinned || record.retain) { available.add(record.cid); await remember(record); }
     }
-    for (const cid of retained.keys()) if (!available.has(cid)) retained.delete(cid);
+    for (const cid of retained.keys()) if (!available.has(cid)) { retained.delete(cid); retainedManifests.delete(cid); }
+    if (lastLoaded && !available.has(lastLoaded.manifestCid)) {
+      lastLoaded = await preferences.clearLastLoaded(lastLoaded);
+    }
     return records;
+  }
+  async function rememberSuccessfulLoad(cid, signal) {
+    const model = resident();
+    if (signal?.aborted || model?.manifestCid !== cid) return;
+    lastLoaded = await preferences.rememberLoaded({ manifestCid: cid, modelId: model.modelId }, { signal });
   }
   function resident() {
     const status = runtime.service.getStatus();
@@ -225,7 +247,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     }
     current = await remember({ cid }); lastIdleAt = now();
     await ensurePeerService();
-    return result;
+    await rememberSuccessfulLoad(cid, options.signal);
+    return { ...result, manifestCid: cid };
   }
   async function unloadModel() {
     await peerService?.setHostingEnabled(false);
@@ -237,6 +260,29 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   async function releaseModelUse(cid) {
     const release = modelUses.get(cid);
     if (release) { await release(); modelUses.delete(cid); }
+  }
+  async function activateRecord(record, options, signal) {
+    signal.throwIfAborted();
+    // Validate persisted metadata before replacing a working local session.
+    assertLocallyAvailable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
+    signal.throwIfAborted();
+    if (resident()?.manifestCid === record.cid) {
+      await rememberSuccessfulLoad(record.cid, signal);
+      shareAfterLoad(record.cid);
+      return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
+    }
+    options.onProgress?.({ stage: 'unload' }); signal.throwIfAborted();
+    await unloadModel(); signal.throwIfAborted();
+    options.onProgress?.({ stage: 'load' }); signal.throwIfAborted();
+    const result = await loadModel(record.cid, { ...options, signal });
+    shareAfterLoad(record.cid);
+    return result;
+  }
+  async function acquire(operation, signal) {
+    assertOpen();
+    if (acquiring) throw new Error('Another model import or load is already running');
+    acquiring = mutate(operation, signal);
+    try { return await acquiring; } finally { acquiring = null; }
   }
   for (const method of ['connect', 'connectBackend']) {
     runtime[method] = async (...args) => { assertOpen(); const result = await original[method](...args); await connectionReady(); return result; };
@@ -256,12 +302,21 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     getPreferences: () => ({ sharing, hostInference }),
     getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
     getDiscoveryStatus: () => structuredClone({ ...discovery, connected: Boolean(runtime.networkManager?.isConnected) }),
+    getPreferredModelSourceKey() {
+      const saved = lastLoaded && !deleting.has(lastLoaded.manifestCid) && retained.get(lastLoaded.manifestCid);
+      return saved ? catalog[saved.modelId] ? `hf:${saved.modelId}` : `stored:${saved.manifestCid}`
+        : `hf:${DEFAULT_MODEL_ID}`;
+    },
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
         modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,
         localAvailability: localAvailability(entry) })),
       ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers',
-        localAvailability: localAvailability(entry) }))];
+        localAvailability: localAvailability(entry) })),
+      ...[...retained.values()].filter((entry) => !catalog[entry.modelId] && !deleting.has(entry.manifestCid))
+        .map((entry) => ({ ...entry, key: `stored:${entry.manifestCid}`, source: 'stored',
+          localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) }))]
+        .sort(compareModelSizes);
     },
     listInferenceTargets() {
       const model = resident();
@@ -303,16 +358,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     },
     async acquireModel(key, options = {}) {
       assertOpen();
-      if (acquiring) throw new Error('Another model import is already running');
       const source = runtime.listModelSources().find((entry) => entry.key === key);
       if (!source) throw new Error('This model source is no longer available');
+      if (source.source === 'stored') return runtime.loadStoredModel(source.manifestCid, options);
       const profile = source.source === 'hf' ? catalog[source.modelId] : source;
       assertLocallyAvailable(profile);
-      acquiring = mutate(async (signal) => {
+      return acquire(async (signal) => {
         assertLocallyAvailable(profile);
         let record;
         if (source.source === 'hf') {
-          const saved = [...retained.values()].find((entry) => entry.modelId === source.modelId);
+          const preferred = lastLoaded && retained.get(lastLoaded.manifestCid);
+          const saved = preferred?.modelId === source.modelId ? preferred
+            : [...retained.values()].find((entry) => entry.modelId === source.modelId);
           record = saved && await runtime.store.stat(saved.manifestCid, { signal });
           if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }], { deferSharing: true });
         } else {
@@ -322,25 +379,19 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
           signal.throwIfAborted();
           record = await importModel('ensure', [source.manifestCid, { signal }], { deferSharing: true });
         }
-        signal.throwIfAborted();
-        // Recheck the actual persisted manifest before unloading a working model.
-        assertLocallyAvailable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
-        signal.throwIfAborted();
-        if (resident()?.manifestCid === record.cid) {
-          shareAfterLoad(record.cid);
-          return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
-        }
-        options.onProgress?.({ stage: 'unload' });
-        signal.throwIfAborted();
-        await unloadModel();
-        signal.throwIfAborted();
-        options.onProgress?.({ stage: 'load' });
-        signal.throwIfAborted();
-        const result = await loadModel(record.cid, { ...options, signal });
-        shareAfterLoad(record.cid);
-        return result;
+        return activateRecord(record, options, signal);
       }, options.signal);
-      try { return await acquiring; } finally { acquiring = null; }
+    },
+    loadStoredModel(input, options = {}) {
+      const cid = artifactCID(input).toString();
+      return acquire(async (signal) => {
+        if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
+        const record = await runtime.store.stat(cid, { signal });
+        if (record?.kind !== 'manifest' || record.status !== 'complete' || !(record.pinned || record.retain)) {
+          throw new Error('This model is no longer completely stored and retained on this device. Import it before loading.');
+        }
+        return activateRecord(record, options, signal);
+      }, options.signal);
     },
     unload() { return mutate(() => unloadModel()); },
     async listStoredModels({ signal } = {}) {
@@ -351,13 +402,19 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
       const actual = new Set(runtime.networkManager?.getPublishedArtifactCids?.() ?? []);
       return records.map((record) => ({
         manifestCid: record.cid, name: descriptor(record.cid, record.manifest)?.name ?? record.manifest.name ?? record.cid,
+        modelId: descriptor(record.cid, record.manifest)?.modelId ?? record.cid,
         totalBytes: record.manifest.files.reduce((sum, file) => sum + file.size, 0),
         runtime: record.manifest.model.runtime,
+        localAvailability: record.status === 'deleting' || deleting.has(record.cid)
+          ? { status: 'unavailable', code: 'model_deleting', reason: 'Finish deleting this package before loading it.' }
+          : !(record.pinned || record.retain)
+            ? { status: 'unavailable', code: 'model_not_retained', reason: 'This package is not retained for local use. Import it before loading.' }
+            : localAvailability(record.manifest),
         loaded: status.status !== 'idle' && status.manifestCid === record.cid,
         shared: actual.has(record.cid),
         ...(record.status === 'deleting' || deleting.has(record.cid) ? { cleanupPending: true } : {}),
         ...(sharingErrors.has(record.cid) ? { shareError: sharingErrors.get(record.cid).message } : {}),
-      }));
+      })).sort(compareModelSizes);
     },
     deleteStoredModel(input, { signal } = {}) {
       assertOpen();
@@ -390,7 +447,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
           }
           activeSignal.throwIfAborted();
           const result = await runtime.store.remove(cid, { signal: activeSignal });
-          retained.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);
+          retained.delete(cid); retainedManifests.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);
+          if (lastLoaded?.manifestCid === cid) lastLoaded = await preferences.clearLastLoaded(lastLoaded);
           await peerService?.setHostingEnabled(hostInference);
           return { deleted: result.removed, freedBytes: result.freedBytes, unloaded };
         } catch (error) {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG } from '../../src/peercompute/artifacts/modelArtifactCatalog.js';
@@ -29,6 +30,9 @@ test('runtime candidate preserves the exact previously imported 27B package', ()
   }
   assert.equal(candidate.capabilities.requiresCapabilityCheck, true);
   assert.equal(original.capabilities.browserInference, false);
+  const { name, model, provenance, files } = candidate;
+  assert.equal(createHash('sha256').update(JSON.stringify({ name, model, provenance, files })).digest('hex'),
+    '79ce0bdebbf3c0ea56da7ae39babf3ded40aad6a3c7c8775070f92b6a0f6203c');
 });
 
 test('GGUF source lookup rejects paths and identifiers outside the pinned catalog', () => {
