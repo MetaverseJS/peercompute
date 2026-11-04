@@ -5,8 +5,7 @@ import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../../../peercompu
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 import { normalizeArtifactManifest } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
-import { sha1 } from '@noble/hashes/legacy.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
+import { importModelPackage } from './modelLibrary.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
@@ -14,7 +13,6 @@ import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
 
 export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG });
-export const STORAGE_QUOTAS = Object.freeze([4, 8, 24].map((gib) => gib * 1024 ** 3));
 
 export function trustedRuntimeAssets(runtimeBaseUrl) {
   if (runtimeBaseUrl) {
@@ -49,7 +47,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const existingTransport = networkManager?.getArtifactTransport?.();
   const existingStore = existingTransport?.store ?? state.getArtifactStore(storeName);
   const store = existingStore
-    ?? state.createArtifactStore({ name: storeName, maximumBytes: 4 * 1024 ** 3 });
+    ?? state.createArtifactStore({ name: storeName, capacity: 'browser', maximumTraversalBlocks: 131072 });
   let service;
   let ggufService;
   let activeService;
@@ -93,29 +91,6 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       }, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
   }
 
-  async function importFiles(files, sourceUrl, { signal, onProgress } = {}) {
-    const imported = [];
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      onProgress?.({ stage: 'import', path: file.path, index, total: files.length });
-      let result = file.cid ? await store.stat(file.cid) : null;
-      if (!result || result.status !== 'complete' || result.size !== file.size || result.sha256 !== file.sha256) {
-        const response = await fetch(sourceUrl(file.path), { signal });
-        if (!response.ok || !response.body) throw new Error(`Artifact source failed: ${file.path} (${response.status})`);
-        const git = file.gitBlobSha1 ? sha1.create().update(new TextEncoder().encode(`blob ${file.size}\0`)) : null;
-        async function* verifiedSource() {
-          for await (const bytes of response.body) { git?.update(bytes); yield bytes; }
-          if (git && bytesToHex(git.digest()) !== file.gitBlobSha1) throw new Error(`Source Git blob SHA-1 mismatch: ${file.path}`);
-        }
-        result = await store.importFile(verifiedSource(), { expectedSize: file.size,
-          ...(file.sha256 ? { expectedSha256: file.sha256 } : {}), signal, pin: false });
-      }
-      if (file.cid && result.cid !== file.cid) throw new Error(`Imported CID differs: ${file.path}`);
-      imported.push({ path: file.path, cid: result.cid, size: result.size, sha256: result.sha256 });
-    }
-    return imported;
-  }
-
   async function connectNetwork(config, { signal } = {}) {
     signal?.throwIfAborted();
     if (network) {
@@ -144,14 +119,6 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     get networkManager() { return network; },
     get networkReady() { return !!network?.getArtifactTransport?.(); },
     get networkError() { return networkError; },
-    setStorageQuota(bytes) {
-      if (!STORAGE_QUOTAS.includes(bytes)) throw new Error('Choose a supported local storage limit');
-      const stats = store.getStats();
-      const blocks = Math.max(65536, Math.ceil(bytes / (256 * 1024)) + 4096);
-      if (stats.storedBytes > bytes || stats.blockCount > blocks) throw new Error('Existing files exceed the requested storage limit');
-      store.maximumBytes = bytes; store.maximumTraversalBlocks = blocks;
-      return store.getStats();
-    },
     async connectBackend(options = {}) {
       return connectNetwork(await loadInferenceRelayConfig(options), options);
     },
@@ -170,23 +137,18 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     async importCatalog(modelId, options = {}) {
       const entry = MODEL_CATALOG[modelId];
       if (!entry) throw new Error('Unknown approved model');
-      const available = store.maximumBytes - store.getStats().storedBytes;
-      if (entry.totalBytes > available) throw new Error(`Package needs ${(entry.totalBytes / 1024 ** 3).toFixed(2)} GiB; increase the local storage limit before importing`);
-      const storage = await globalThis.navigator?.storage?.estimate?.();
-      if (Number.isFinite(storage?.quota) && Number.isFinite(storage?.usage)
-          && entry.totalBytes > storage.quota - storage.usage) throw new Error('Browser storage quota is too small for this package');
       const sourceUrl = INFERENCE_CATALOG[modelId] ? modelFileUrl
         : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl : modelArtifactFileUrl;
-      const files = await importFiles(entry.files, (path) => sourceUrl(modelId, path), options);
-      return store.importManifest({ schema: 'peercompute.artifact.manifest.v1', name: entry.name,
-        files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } }, { pin: true, signal: options.signal });
+      return importModelPackage(store, { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
+        files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } },
+      (path) => sourceUrl(modelId, path), options);
     },
     async importPackage(manifest, sourceBaseUrl, { expectedCid, ...options } = {}) {
       manifest = normalizeArtifactManifest(manifest);
       const base = new URL(sourceBaseUrl, location.href);
       if (base.origin !== location.origin) throw new Error('Fixture package source must be same-origin');
-      await importFiles(manifest.files, (path) => new URL(path.split('/').map(encodeURIComponent).join('/'), base).href, options);
-      const result = await store.importManifest(manifest, { pin: true, signal: options.signal });
+      const result = await importModelPackage(store, manifest,
+        (path) => new URL(path.split('/').map(encodeURIComponent).join('/'), base).href, options);
       if (expectedCid && result.cid !== expectedCid) throw new Error('Package manifest CID changed during import');
       return result;
     },

@@ -20,6 +20,7 @@ export const ARTIFACT_IMPORT_PROFILE = Object.freeze({
 });
 export { ARTIFACT_MANIFEST_SCHEMA };
 const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const RETENTION = Symbol('artifact-import-retention');
 function integer(value, name, minimum = 1) {
   if (!Number.isSafeInteger(value) || value < minimum) throw new RangeError(`Invalid ${name}.`);
   return value;
@@ -31,7 +32,7 @@ function missing(cid) {
 }
 function abortable(promise, signal) {
   if (!signal) return promise;
-  throwIfAborted(signal);
+  if (signal.aborted) { Promise.resolve(promise).catch(() => {}); throwIfAborted(signal); }
   return new Promise((resolve, reject) => {
     const abort = () => reject(signal.reason || new DOMException('Aborted', 'AbortError'));
     signal.addEventListener('abort', abort, { once: true });
@@ -64,12 +65,16 @@ async function* sourceChunks(source, signal) {
 /** StateManager-owned persistent UnixFS storage. Network facades borrow its lifecycle. */
 export class ArtifactStore {
   constructor({ name = 'default', persistent = true, backend, ownsBackend = backend === undefined,
-    maximumBytes = 2 * 1024 ** 3, maximumBlockBytes = 2 * 1024 ** 2,
+    capacity = 'bounded', maximumBytes = capacity === 'browser' ? Number.MAX_SAFE_INTEGER : 2 * 1024 ** 3,
+    maximumBlockBytes = 2 * 1024 ** 2,
     maximumFileBytes = ARTIFACT_MAXIMUM_FILE_BYTES, maximumTraversalBlocks = 65536,
-    maximumRoots = 1024, maximumRoutingBytes = 16 * 1024 ** 2,
+    maximumStoredBlocks = capacity === 'browser' ? Number.MAX_SAFE_INTEGER : maximumTraversalBlocks,
+    maximumRoots = capacity === 'browser' ? Number.MAX_SAFE_INTEGER : 1024, maximumRoutingBytes = 16 * 1024 ** 2,
     maximumConcurrentBlockWrites = 4, maximumQueuedBlockWrites = 16,
     lockManager = globalThis.navigator?.locks, onDestroy, indexedDBImpl, keyRange } = {}) {
     if (typeof name !== 'string' || !/^[\w.-]{1,80}$/u.test(name)) throw new TypeError('Invalid artifact store name.');
+    if (!['bounded', 'browser'].includes(capacity)) throw new TypeError('Invalid artifact storage capacity policy.');
+    this.capacity = capacity;
     this.name = name;
     this.persistent = persistent;
     this.backend = backend || (persistent ? new IndexedDBArtifactBackend({ name, indexedDBImpl, keyRange })
@@ -79,6 +84,7 @@ export class ArtifactStore {
     this.maximumBlockBytes = integer(maximumBlockBytes, 'maximumBlockBytes');
     this.maximumFileBytes = integer(maximumFileBytes, 'maximumFileBytes');
     this.maximumTraversalBlocks = integer(maximumTraversalBlocks, 'maximumTraversalBlocks');
+    this.maximumStoredBlocks = integer(maximumStoredBlocks, 'maximumStoredBlocks');
     this.maximumRoots = integer(maximumRoots, 'maximumRoots');
     this.maximumRoutingBytes = integer(maximumRoutingBytes, 'maximumRoutingBytes');
     this.maximumConcurrentBlockWrites = integer(maximumConcurrentBlockWrites, 'maximumConcurrentBlockWrites');
@@ -140,8 +146,14 @@ export class ArtifactStore {
       resume: () => { operation.paused = false; throwIfAborted(combined); } };
   }
 
-  async _run(signal, callback, mode) {
-    const operation = await this._begin(signal, mode);
+  async _run(signal, callback, mode, retention) {
+    if (retention && (retention.store !== this || !retention.held || mode === 'exclusive')) {
+      throw new Error('Artifact retention scope is no longer active.');
+    }
+    // Scoped imports already own the shared GC lock. Reacquiring it behind a
+    // queued exclusive writer would deadlock under Web Locks writer fairness.
+    const activeSignal = retention ? AbortSignal.any([retention.signal, ...(signal ? [signal] : [])]) : signal;
+    const operation = await this._begin(activeSignal, retention ? 'none' : mode);
     try {
       const result = await callback(operation.signal);
       throwIfAborted(operation.signal);
@@ -157,7 +169,7 @@ export class ArtifactStore {
       const record = update(previous);
       throwIfAborted(signal);
       await this.backend.put('roots', cid, record, { maximumEntries: this.maximumRoots,
-        maximumBytes: this.maximumRoots * (ARTIFACT_MANIFEST_MAXIMUM_BYTES + 2048) });
+        maximumBytes: Math.min(Number.MAX_SAFE_INTEGER, this.maximumRoots * (ARTIFACT_MANIFEST_MAXIMUM_BYTES + 2048)) });
       this.rootUsage = await this.backend.getUsage('roots');
       return structuredClone(record);
     } finally { unlock(); }
@@ -224,7 +236,7 @@ export class ArtifactStore {
     await this._verifyBlock(parsed, bytes);
     throwIfAborted(signal);
     await this.backend.put('blocks', parsed.toString(), bytes,
-      { maximumBytes: this.maximumBytes, maximumEntries: this.maximumTraversalBlocks });
+      { maximumBytes: this.maximumBytes, maximumEntries: this.maximumStoredBlocks });
     this.usage = await this.backend.getUsage('blocks');
     return parsed;
   }
@@ -237,7 +249,7 @@ export class ArtifactStore {
     };
   }
 
-  async importFile(source, { signal, expectedSize, expectedSha256, pin = true } = {}) {
+  async importFile(source, { signal, expectedSize, expectedSha256, pin = true, [RETENTION]: retention } = {}) {
     if (expectedSize !== undefined) integer(expectedSize, 'expectedSize', 0);
     if (expectedSize > this.maximumFileBytes) throw new RangeError('File exceeds byte limit.');
     if (expectedSha256 !== undefined && !/^[a-f0-9]{64}$/u.test(expectedSha256)) throw new TypeError('Invalid expected SHA-256.');
@@ -271,10 +283,10 @@ export class ArtifactStore {
       return this._writeRoot(cid, (previous) => ({ cid, kind: 'file', size, sha256: digest,
         status: 'complete', pinned: Boolean(pin || previous?.pinned), retain: false,
         profile: ARTIFACT_IMPORT_PROFILE.name }), activeSignal);
-    });
+    }, undefined, retention);
   }
 
-  async importManifest(input, { signal, pin = true } = {}) {
+  async importManifest(input, { signal, pin = true, [RETENTION]: retention } = {}) {
     const manifest = normalizeArtifactManifest(input, { maximumFileBytes: this.maximumFileBytes });
     const bytes = encodeArtifactManifest(manifest);
     return this._run(signal, async (activeSignal) => {
@@ -284,7 +296,7 @@ export class ArtifactStore {
       return this._writeRoot(cid.toString(), (previous) => ({ cid: cid.toString(), kind: 'manifest',
         size: bytes.byteLength, manifest, status: 'complete', pinned: Boolean(pin || previous?.pinned),
         retain: false }), activeSignal);
-    });
+    }, undefined, retention);
   }
 
   async _verifyFile(cid, expected = {}, signal) {
@@ -421,15 +433,15 @@ export class ArtifactStore {
     });
   }
 
-  async stat(input, { signal } = {}) {
+  async stat(input, { signal, [RETENTION]: retention } = {}) {
     const cid = artifactCID(input).toString();
-    return this._run(signal, () => this.backend.get('roots', cid));
+    return this._run(signal, () => this.backend.get('roots', cid), undefined, retention);
   }
 
-  async getManifest(input, { signal } = {}) {
+  async getManifest(input, { signal, [RETENTION]: retention } = {}) {
     const cid = artifactCID(input).toString();
     return this._run(signal, async (activeSignal) => decodeArtifactManifest(await this._readBlock(cid, activeSignal),
-      { maximumFileBytes: this.maximumFileBytes }));
+      { maximumFileBytes: this.maximumFileBytes }), undefined, retention);
   }
 
   async *openRead(input, { offset = 0, length, signal } = {}) {
@@ -457,6 +469,71 @@ export class ArtifactStore {
       if (!previous) throw missing(cid);
       return { ...previous, pinned: false, retain: false };
     }, activeSignal));
+  }
+
+  /** Keep a multi-file import alive until its manifest owns the file closure.
+   * Use the supplied scoped methods inside the callback, never the outer store's
+   * locking methods. Child roots remain unpinned; this leaves no persistent pin
+   * journal behind if an import is cancelled or the browser exits.
+   */
+  async withRetention(callback, { signal } = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Artifact retention requires a callback.');
+    const operation = await this._begin(signal);
+    const retention = { store: this, signal: operation.signal, held: true, accepting: true };
+    const pending = new Set();
+    const scoped = {};
+    for (const method of ['stat', 'getManifest', 'importFile', 'importManifest']) {
+      scoped[method] = (input, options = {}) => {
+        if (!retention.accepting) return Promise.reject(new Error('Artifact retention scope is no longer active.'));
+        if (pending.size >= 32) return Promise.reject(new Error('Artifact retention operation queue is full.'));
+        const task = this[method](input, { ...options, [RETENTION]: retention });
+        pending.add(task);
+        task.finally(() => pending.delete(task)).catch(() => {});
+        return task;
+      };
+    }
+    scoped.getStats = () => this.getStats();
+    Object.freeze(scoped);
+    try {
+      const result = await abortable(Promise.resolve().then(() => {
+        throwIfAborted(operation.signal); return callback(scoped);
+      }), operation.signal);
+      retention.accepting = false;
+      await Promise.all([...pending]);
+      throwIfAborted(operation.signal);
+      return result;
+    } finally {
+      retention.accepting = false;
+      await Promise.allSettled([...pending]);
+      retention.held = false; operation.finish();
+    }
+  }
+
+  /** Hold one root across a resident model's on-demand range reads. The caller
+   * signal cancels acquisition only; after grant, release must follow confirmed
+   * worker unload. Store destruction also releases owned use leases.
+   */
+  async acquireUse(input, { signal } = {}) {
+    const cid = artifactCID(input).toString();
+    const operation = await this._begin(signal, 'none');
+    let unlock;
+    try {
+      unlock = await acquireArtifactLock(`${this.lockName}:use:${cid}`, 'shared', operation.signal, this.lockManager);
+      const root = await this.stat(cid, { signal: operation.signal });
+      if (root?.status !== 'complete' || (!root.pinned && !root.retain)) {
+        throw new Error('Artifact use requires a complete retained root.');
+      }
+      throwIfAborted(operation.signal);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true; this.controller.signal.removeEventListener('abort', release);
+        unlock(); operation.finish();
+      };
+      this.controller.signal.addEventListener('abort', release, { once: true });
+      if (this.controller.signal.aborted) { release(); throwIfAborted(this.controller.signal); }
+      return release;
+    } catch (error) { unlock?.(); operation.finish(); throw error; }
   }
 
   async *_entries(collection, keysOnly = false) {
@@ -493,16 +570,42 @@ export class ArtifactStore {
     } finally { operation.finish(); }
   }
 
-  async gc({ signal } = {}) {
-    return this._run(signal, async (activeSignal) => {
-      const cutoff = (await this.backend.getUsage('blocks')).generation || 0;
+  async _collectGarbage(activeSignal, removeCid) {
+      const before = await this.backend.getUsage('blocks');
+      const cutoff = before.generation || 0;
       const marked = new Set();
       for await (const { value } of this._entries('roots')) {
+        if (value.cid === removeCid) continue;
         if (!value.pinned && !value.retain) continue;
         const roots = [value.cid, ...(value.manifest?.files || []).map((file) => file.cid)];
         for await (const key of this._walk(roots, { signal: activeSignal, allowMissing: value.status !== 'complete' })) {
           marked.add(key);
-          if (marked.size > this.maximumTraversalBlocks) throw new RangeError('Artifact GC exceeds block limit.');
+          // Each DAG is still bounded by _walk. The union is bounded by the
+          // actual exclusive-lock snapshot, not by one package's DAG budget.
+          if (marked.size > before.entries) throw new RangeError('Artifact GC exceeds the stored block collection.');
+        }
+      }
+      // Finish all reachability checks before changing the selected root. No
+      // scratch writes are required to reclaim storage from a full database.
+      const removedRoot = removeCid ? await this.backend.get('roots', removeCid) : null;
+      const retainedByOtherRoot = Boolean(removeCid && marked.has(removeCid));
+      if (removedRoot) {
+        if (retainedByOtherRoot) {
+          // A root can also be a file in another package. Preserve its verified
+          // file descriptor; deleting a manifest must not retain its child pins.
+          const record = removedRoot.kind === 'manifest' ? {
+            cid: removeCid, kind: 'file', size: removedRoot.size,
+            sha256: hex(artifactCID(removeCid).multihash.digest), status: removedRoot.status,
+            pinned: false, retain: false
+          } : { ...removedRoot, pinned: false, retain: false };
+          await this._writeRoot(removeCid, () => record, activeSignal);
+        } else {
+          // Keep a durable retry row if sweeping fails or the page exits. Drop
+          // optional retention/profile fields so replacing a complete record
+          // does not need extra logical metadata capacity in a full database.
+          const tombstone = { ...removedRoot, pinned: false, status: 'deleting' };
+          delete tombstone.retain; delete tombstone.profile;
+          await this._writeRoot(removeCid, () => tombstone, activeSignal);
         }
       }
       let deletedBlocks = 0;
@@ -515,14 +618,50 @@ export class ArtifactStore {
       }
       this.usage = await this.backend.getUsage('blocks');
       this.rootUsage = await this.backend.getUsage('roots');
-      return { deletedBlocks, storedBytes: this.usage.bytes, blockCount: this.usage.entries };
-    }, 'exclusive');
+      return { deletedBlocks, freedBytes: before.bytes - this.usage.bytes,
+        storedBytes: this.usage.bytes, blockCount: this.usage.entries,
+        ...(removeCid ? { cid: removeCid, removed: Boolean(removedRoot), retainedByOtherRoot } : {}) };
+  }
+
+  async gc({ signal } = {}) {
+    return this._run(signal, (activeSignal) => this._collectGarbage(activeSignal), 'exclusive');
+  }
+
+  /** Forget one explicit root and reclaim only unreachable blocks. Callers own
+   * network withdrawal and resident-worker teardown before invoking this.
+   * Interrupted sweeping leaves a non-pinned `deleting` catalog row for retry;
+   * repeating remove, including for an absent root, safely resumes collection.
+   */
+  async remove(input, { signal, useWaitMs = 1000 } = {}) {
+    const cid = artifactCID(input).toString();
+    integer(useWaitMs, 'useWaitMs');
+    if (useWaitMs > 30000) throw new RangeError('Artifact use wait exceeds limit.');
+    await this.open();
+    const busy = new AbortController();
+    const timer = setTimeout(() => busy.abort(Object.assign(new Error('This model is in use in another session. Unload it before deleting.'),
+      { code: 'ERR_ARTIFACT_IN_USE' })), useWaitMs);
+    timer.unref?.();
+    let unlock;
+    try {
+      unlock = await acquireArtifactLock(`${this.lockName}:use:${cid}`, 'exclusive',
+        AbortSignal.any([busy.signal, this.controller.signal, ...(signal ? [signal] : [])]), this.lockManager);
+    } finally { clearTimeout(timer); }
+    try {
+      return await this._run(signal, async (activeSignal) => {
+        try { return await this._collectGarbage(activeSignal, cid); }
+        finally {
+          this.usage = await this.backend.getUsage('blocks');
+          this.rootUsage = await this.backend.getUsage('roots');
+        }
+      }, 'exclusive');
+    } finally { unlock(); }
   }
 
   getStats() {
     return Object.freeze({ name: this.name, isOpen: this.isOpen, persistent: this.persistent,
       storedBytes: this.usage.bytes, blockCount: this.usage.entries, rootCount: this.rootUsage.entries,
-      maximumBytes: this.maximumBytes, pending: this.operations.size });
+      maximumBytes: this.maximumBytes, maximumStoredBlocks: this.maximumStoredBlocks,
+      capacity: this.capacity, pending: this.operations.size });
   }
 
   getBlockstore() { return this.blockstore; }

@@ -126,6 +126,222 @@ test('a paused read protects unpinned blocks until iterator return; cancellation
   await assert.rejects(paused.next(), { name: 'AbortError' });
 });
 
+const packageFor = (name, files) => ({ schema: ARTIFACT_MANIFEST_SCHEMA, name,
+  files: files.map((file, index) => ({ path: `file-${index}.bin`, cid: file.cid, size: file.size, sha256: file.sha256 })) });
+
+test('browser capacity separates aggregate storage from per-DAG safeguards and explicit bounds', async (t) => {
+  const store = createStore(t, { capacity: 'browser', maximumTraversalBlocks: 2 });
+  assert.equal(store.maximumBytes, Number.MAX_SAFE_INTEGER);
+  assert.equal(store.maximumStoredBlocks, Number.MAX_SAFE_INTEGER);
+  assert.equal(store.maximumRoots, Number.MAX_SAFE_INTEGER);
+  const roots = [];
+  for (let index = 0; index < 4; index++) {
+    const file = await store.importFile(new Uint8Array([index + 1]), { pin: false });
+    roots.push(await store.importManifest(packageFor(`package-${index}`, [file])));
+  }
+  assert.equal(store.getStats().blockCount, 8);
+  assert.equal((await store.gc()).deletedBlocks, 0);
+  const result = await store.remove(roots[0].cid);
+  assert.equal(result.deletedBlocks, 2); assert.ok(result.freedBytes > 0);
+  assert.equal((await store.stat(roots[1].cid)).pinned, true);
+  assert.equal((await store.gc()).deletedBlocks, 0);
+  // Large individual DAGs remain rejected, independent of aggregate capacity.
+  const large = await store.importFile(fixture(), { pin: false });
+  await assert.rejects(collect(store.openRead(large.cid)), /traversal/);
+
+  const bounded = createStore(t, { capacity: 'browser', maximumBytes: 10, maximumStoredBlocks: 1, maximumRoots: 2 });
+  await bounded.importFile(new Uint8Array([1]));
+  await assert.rejects(bounded.importFile(new Uint8Array([2])), { name: 'QuotaExceededError' });
+  assert.equal(bounded.maximumBytes, 10); assert.equal(bounded.maximumRoots, 2);
+  assert.equal(createStore(t).maximumRoots, 1024);
+  assert.throws(() => new ArtifactStore({ capacity: 'infinite' }), /capacity/);
+  assert.throws(() => new ArtifactStore({ maximumBytes: Infinity }), /maximumBytes/);
+});
+
+test('removing one package preserves shared files and independent pins', async (t) => {
+  const store = createStore(t, { capacity: 'browser', maximumTraversalBlocks: 4 });
+  const shared = await store.importFile(new Uint8Array([10]), { pin: false });
+  const a = await store.importFile(new Uint8Array([11]), { pin: false });
+  const b = await store.importFile(new Uint8Array([12]), { pin: false });
+  const independentlyPinned = await store.importFile(new Uint8Array([13]));
+  const first = await store.importManifest(packageFor('first', [shared, a, independentlyPinned]));
+  const second = await store.importManifest(packageFor('second', [shared, b]));
+  const result = await store.remove(first.cid);
+  assert.equal(result.removed, true); assert.equal(result.deletedBlocks, 2);
+  assert.equal(await store.stat(first.cid), undefined); assert.equal(await store.stat(a.cid), undefined);
+  assert.equal((await store.stat(second.cid)).pinned, true);
+  assert.equal((await store.stat(independentlyPinned.cid)).pinned, true);
+  assert.deepEqual(await collect(store.openRead(shared.cid)), Buffer.from([10]));
+  assert.deepEqual(await collect(store.openRead(b.cid)), Buffer.from([12]));
+  const sharedDeletion = await store.remove(shared.cid);
+  assert.equal(sharedDeletion.retainedByOtherRoot, true);
+  assert.equal((await store.stat(shared.cid)).status, 'complete');
+  assert.deepEqual(await collect(store.openRead(shared.cid)), Buffer.from([10]));
+});
+
+test('removal on a second store waits for an active reader before reclaiming its file', async (t) => {
+  const backend = new MemoryArtifactBackend({ name: `delete-reader-${Math.random()}` });
+  const first = createStore(t, { backend }); const second = createStore(t, { backend });
+  const file = await first.importFile(fixture());
+  const read = first.openRead(file.cid)[Symbol.asyncIterator](); await read.next();
+  let removed = false;
+  const deleting = second.remove(file.cid).then((result) => { removed = true; return result; });
+  await delay(15); assert.equal(removed, false);
+  await read.return(); assert.equal((await deleting).deletedBlocks, 4);
+  assert.equal(await first.stat(file.cid), undefined);
+});
+
+test('scoped package retention avoids writer-fairness deadlock across IndexedDB handles', { timeout: 5000 }, async (t) => {
+  const indexedDBImpl = new IDBFactory();
+  const backend = () => new IndexedDBArtifactBackend({ name: 'retained-package-import', indexedDBImpl, keyRange: IDBKeyRange });
+  const first = createStore(t, { backend: backend(), ownsBackend: true });
+  const second = createStore(t, { backend: backend(), ownsBackend: true });
+  let firstImported, proceed, savedScope;
+  const imported = new Promise((resolve) => { firstImported = resolve; });
+  const gate = new Promise((resolve) => { proceed = resolve; });
+  const importing = first.withRetention(async (scoped) => {
+    savedScope = scoped;
+    const a = await scoped.importFile(new Uint8Array([71]), { pin: false });
+    firstImported(); await gate;
+    assert.equal((await scoped.stat(a.cid)).pinned, false);
+    const b = await scoped.importFile(new Uint8Array([72]), { pin: false });
+    return scoped.importManifest(packageFor('retained', [a, b]));
+  });
+  await imported;
+  let collected = false;
+  const collecting = second.gc().then((result) => { collected = true; return result; });
+  await delay(15); assert.equal(collected, false);
+  proceed(); const manifest = await importing;
+  assert.equal((await collecting).deletedBlocks, 0);
+  assert.equal((await second.stat(manifest.cid)).pinned, true);
+  for (const file of manifest.manifest.files) assert.equal((await second.stat(file.cid)).pinned, false);
+  await assert.rejects(savedScope.stat(manifest.cid), /scope.*active/);
+});
+
+test('cancelled package retention releases unpinned files without leaving permanent child pins', async (t) => {
+  const store = createStore(t);
+  const controller = new AbortController(); let ready;
+  const imported = new Promise((resolve) => { ready = resolve; });
+  const task = store.withRetention(async (scoped) => {
+    await scoped.importFile(new Uint8Array([81]), { pin: false }); ready();
+    await new Promise(() => {});
+  }, { signal: controller.signal });
+  const rejected = assert.rejects(task, { name: 'AbortError' });
+  await imported; controller.abort(); await rejected;
+  assert.equal((await store.gc()).deletedBlocks, 1);
+  assert.equal(store.getStats().rootCount, 0);
+});
+
+test('cancellation at retention grant does not invoke the import callback or leak rejection', async (t) => {
+  const store = createStore(t); const controller = new AbortController();
+  const begin = store._begin.bind(store);
+  store._begin = async (...args) => { const operation = await begin(...args); controller.abort(); return operation; };
+  let invoked = false;
+  await assert.rejects(store.withRetention(async (scoped) => {
+    invoked = true; await scoped.importFile(new Uint8Array([82]));
+  }, { signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(invoked, false); assert.equal(store.operations.size, 0);
+});
+
+test('failed deletion preserves a durable retry row and other pins across reopen', async (t) => {
+  const indexedDBImpl = new IDBFactory();
+  const backend = () => new IndexedDBArtifactBackend({ name: 'interrupted-package-delete', indexedDBImpl, keyRange: IDBKeyRange });
+  const first = createStore(t, { backend: backend(), ownsBackend: true, capacity: 'browser', maximumTraversalBlocks: 3 });
+  const a = await first.importFile(new Uint8Array([91]), { pin: false });
+  const b = await first.importFile(new Uint8Array([92]), { pin: false });
+  const target = await first.importManifest(packageFor('remove', [a]));
+  const keep = await first.importManifest(packageFor('keep', [b]));
+  const originalDelete = first.backend.delete.bind(first.backend);
+  let blocks = 0;
+  first.backend.delete = async (collection, key) => {
+    if (collection === 'blocks' && ++blocks === 2) throw new Error('injected deletion failure');
+    return originalDelete(collection, key);
+  };
+  await assert.rejects(first.remove(target.cid), /injected/);
+  assert.equal((await first.stat(target.cid)).status, 'deleting');
+  assert.equal((await first.stat(target.cid)).pinned, false);
+  assert.deepEqual((await first.stat(target.cid)).manifest, target.manifest);
+  assert.equal((await first.stat(keep.cid)).pinned, true);
+  assert.equal(first.getStats().storedBytes, (await first.backend.getUsage('blocks')).bytes);
+  await first.destroy();
+  const restored = createStore(t, { backend: backend(), ownsBackend: true, capacity: 'browser', maximumTraversalBlocks: 3 });
+  assert.equal((await restored.stat(target.cid)).status, 'deleting');
+  await restored.remove(target.cid);
+  assert.equal(await restored.stat(target.cid), undefined);
+  assert.deepEqual(await collect(restored.openRead(b.cid)), Buffer.from([92]));
+  assert.equal((await restored.stat(keep.cid)).pinned, true);
+  assert.equal((await restored.remove(target.cid)).removed, false);
+});
+
+test('deletion needs no new mark records and validates other pins before mutation', async (t) => {
+  const store = createStore(t, { capacity: 'browser' });
+  const a = await store.importFile(new Uint8Array([101]), { pin: false });
+  const target = await store.importManifest(packageFor('delete-at-quota', [a]));
+  const b = await store.importFile(new Uint8Array([102]));
+  const put = store.backend.put.bind(store.backend);
+  store.backend.put = async (collection, key, value, limits) => {
+    const previous = await store.backend.get(collection, key);
+    if (previous === undefined || JSON.stringify(value).length > JSON.stringify(previous).length) {
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    }
+    return put(collection, key, value, limits);
+  };
+  assert.equal((await store.remove(target.cid)).deletedBlocks, 2);
+  assert.deepEqual(await collect(store.openRead(b.cid)), Buffer.from([102]));
+  store.backend.put = put;
+  const c = await store.importFile(new Uint8Array([103]));
+  await store.backend.delete('blocks', b.cid);
+  await assert.rejects(store.remove(c.cid), { name: 'NotFoundError' });
+  assert.equal((await store.stat(c.cid)).pinned, true);
+  assert.equal((await store.stat(c.cid)).status, 'complete');
+});
+
+test('browser capacity still propagates a real backend quota failure without committing a root', async (t) => {
+  const store = createStore(t, { capacity: 'browser' });
+  const put = store.backend.put.bind(store.backend);
+  store.backend.put = async (collection, ...args) => {
+    if (collection === 'blocks') throw new DOMException('Actual browser storage limit', 'QuotaExceededError');
+    return put(collection, ...args);
+  };
+  await assert.rejects(store.importFile(new Uint8Array([111])), { name: 'QuotaExceededError' });
+  assert.equal(store.getStats().rootCount, 0); assert.equal(store.getStats().storedBytes, 0);
+});
+
+test('per-root use leases block removal between reads without blocking other package deletion', async (t) => {
+  const backend = new MemoryArtifactBackend({ name: `resident-use-${Math.random()}` });
+  const first = createStore(t, { backend }); const second = createStore(t, { backend });
+  const a = await first.importFile(new Uint8Array([121]));
+  const b = await first.importFile(new Uint8Array([122]));
+  const unpinned = await first.importFile(new Uint8Array([120]), { pin: false });
+  await assert.rejects(first.acquireUse(unpinned.cid), /complete retained root/);
+  const controller = new AbortController();
+  const release = await first.acquireUse(a.cid, { signal: controller.signal });
+  controller.abort(); // An expired load request cannot release a resident model.
+  await assert.rejects(second.remove(a.cid, { useWaitMs: 20 }), { code: 'ERR_ARTIFACT_IN_USE' });
+  assert.equal((await first.stat(a.cid)).pinned, true);
+  assert.equal((await second.remove(b.cid)).removed, true);
+  release(); release();
+  assert.equal((await second.remove(a.cid)).removed, true);
+});
+
+test('pending use acquisition can be cancelled and store teardown releases granted leases', async (t) => {
+  const backend = new MemoryArtifactBackend({ name: `resident-teardown-${Math.random()}` });
+  const first = createStore(t, { backend }); const second = createStore(t, { backend });
+  const file = await first.importFile(new Uint8Array([123]));
+  const aborted = new AbortController(); aborted.abort();
+  await assert.rejects(first.acquireUse(file.cid, { signal: aborted.signal }), { name: 'AbortError' });
+  await first.acquireUse(file.cid);
+  const deleting = second.remove(file.cid, { useWaitMs: 1000 });
+  await delay(10);
+  const waitingController = new AbortController();
+  const waiting = second.acquireUse(file.cid, { signal: waitingController.signal });
+  const rejected = assert.rejects(waiting, { name: 'AbortError' });
+  waitingController.abort(); await rejected;
+  await first.destroy();
+  assert.equal((await deleting).removed, true);
+  await assert.rejects(second.acquireUse(file.cid), /complete retained root/);
+});
+
 test('known-CID download resumes from verified blocks after restart and reuses the pin journal', async (t) => {
   const source = createStore(t);
   const bytes = fixture();

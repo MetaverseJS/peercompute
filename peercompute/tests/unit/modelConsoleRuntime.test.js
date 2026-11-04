@@ -8,7 +8,7 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, connected = true, failRelease = false } = {}) {
+function fixture({ retained = false, connected = true, failRelease = false, hooks = {} } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const record = { cid, manifest, kind: 'manifest', pinned: true, status: 'complete' };
   if (retained) records.set(cid, record);
@@ -37,24 +37,27 @@ function fixture({ retained = false, connected = true, failRelease = false } = {
       if (options.prompt === 'wait') return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
       return { text: 'Local answer', workerId: 'worker-1' };
     },
-    async unloadModel() { calls.push('unload'); status = { status: 'idle' }; },
+    async unloadModel() { calls.push('unload'); await hooks.unload?.(); status = { status: 'idle' }; },
     async cancel() { calls.push('cancel-local'); },
   };
   const runtime = { service, networkManager: network,
     get networkReady() { return network.isConnected; },
     store: { async *list() { yield* records.values(); }, async getManifest() { return manifest; },
-      async stat(key) { return records.get(key); } },
-    async importCatalog() { calls.push('import'); records.set(cid, record); return record; },
+      async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
+      async stat(key) { return records.get(key); },
+      async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
+    async importCatalog() { calls.push('import'); await hooks.import?.(); records.set(cid, record); return record; },
     async importPackage() { records.set(cid, record); return record; },
-    async load(key) { calls.push('load'); status = { status: 'ready', manifestCid: key }; return { workerId: 'worker-1' }; },
+    async load(key) { calls.push('load'); status = { status: 'ready', manifestCid: key };
+      await hooks.load?.((value) => { status = value; }); return { workerId: 'worker-1' }; },
     async ensure() { calls.push('fetch-peer'); records.set(cid, record); return record; },
-    async publish(key) { calls.push('publish'); published.add(key); },
+    async publish(key) { calls.push('publish'); await hooks.publish?.(); published.add(key); },
     async withdraw(key) { calls.push('withdraw'); published.delete(key); },
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
   const controller = attachModelRuntimeController(runtime, { catalog });
-  return { runtime, controller, calls, peer, published, get callbacks() { return callbacks; }, get released() { return released; } };
+  return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
 
 test('opening the console enables both preferences without fetching or loading weights', async () => {
@@ -173,4 +176,129 @@ test('failed network teardown retains owned model resources until an explicit re
   assert.equal(f.calls.includes('dispose'), false); assert.equal(f.released, false);
   await f.runtime.dispose(); assert.equal(f.released, true);
   assert(f.calls.lastIndexOf('release') < f.calls.indexOf('dispose'));
+});
+
+test('stored library lists actual local manifests and deletes a resident only after stopping its work', async () => {
+  const f = fixture(); await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  assert.deepEqual(await f.runtime.listStoredModels(), [{ manifestCid: cid, name: manifest.name,
+    totalBytes: 100, runtime: model.runtime, loaded: true, shared: true }]);
+  const local = assert.rejects(f.runtime.generate('local', { requestId: 'local-delete', prompt: 'wait' }), /deleted/);
+  const remote = assert.rejects(f.callbacks.generate({ manifestCid: cid, requestId: 'remote-delete', prompt: 'wait',
+    signal: new AbortController().signal }), /deleted/);
+  const result = await f.runtime.deleteStoredModel(cid);
+  await Promise.all([local, remote]);
+  assert.deepEqual(result, { deleted: true, freedBytes: 100, unloaded: true });
+  assert(f.calls.indexOf('withdraw') < f.calls.lastIndexOf('unload'));
+  assert(f.calls.lastIndexOf('unload') < f.calls.indexOf('remove'));
+  assert.deepEqual(await f.runtime.listStoredModels(), []);
+  assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
+  await f.runtime.dispose();
+});
+
+test('failed unload keeps storage intact and quarantines the model until deletion retry succeeds', async () => {
+  let fail = true;
+  const f = fixture({ hooks: { unload() { if (fail && f.calls.includes('withdraw')) throw new Error('GPU termination not acknowledged'); } } });
+  await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  await assert.rejects(f.runtime.deleteStoredModel(cid), /not acknowledged/);
+  assert(f.records.has(cid)); assert(!f.calls.includes('remove'));
+  assert(!f.calls.includes('release-use'));
+  assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
+  await assert.rejects(f.runtime.generate('local', { prompt: 'hello' }), /Import a model/);
+  fail = false;
+  assert.equal((await f.runtime.deleteStoredModel(cid)).deleted, true);
+  await f.runtime.dispose();
+});
+
+test('delete waits for an in-flight import and prevents that package from being republished', async () => {
+  let release;
+  const wait = new Promise((resolve) => { release = resolve; });
+  const f = fixture({ hooks: { import: () => wait } }); await f.controller.initialize();
+  const importing = f.runtime.importCatalog('test');
+  await Promise.resolve(); await Promise.resolve();
+  const deleting = f.runtime.deleteStoredModel(cid);
+  assert(!f.calls.includes('remove'));
+  release(); await importing; await deleting;
+  assert(!f.calls.includes('publish')); assert.deepEqual(await f.runtime.listStoredModels(), []);
+  await f.runtime.dispose();
+});
+
+test('a sharing budget failure preserves local import and auto-load with accurate per-model warning', async () => {
+  const f = fixture({ hooks: { publish() { throw new Error('Serving closure exceeds block limit'); } } });
+  await f.controller.initialize();
+  await f.runtime.acquireModel('hf:test');
+  assert.equal(f.runtime.listInferenceTargets()[0].available, true);
+  const [stored] = await f.runtime.listStoredModels();
+  assert.equal(stored.loaded, true); assert.equal(stored.shared, false);
+  assert.match(stored.shareError, /block limit/);
+  assert.equal(f.runtime.getPreferences().sharing, true);
+  await f.runtime.dispose();
+});
+
+test('deleting an unloaded model does not cancel or unload another resident', async () => {
+  const f = fixture(); await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  const other = 'bafkreihffolxaess6g3df2lzjiac5cpokwfnfhddbzjf22xfmkvhmrjaja';
+  f.records.set(other, { cid: other, manifest, kind: 'manifest', pinned: true, status: 'complete' });
+  const unloads = f.calls.filter((call) => call === 'unload').length;
+  assert.deepEqual(await f.runtime.deleteStoredModel(other), { deleted: true, freedBytes: 100, unloaded: false });
+  assert.equal(f.calls.filter((call) => call === 'unload').length, unloads);
+  assert.equal((await f.runtime.generate('local', { prompt: 'hello' })).text, 'Local answer');
+  await f.runtime.dispose();
+});
+
+test('an aborted load caller cannot release a successful residency lease', async () => {
+  const f = fixture({ retained: true }); await f.controller.initialize();
+  const caller = new AbortController();
+  await f.runtime.load(cid, { signal: caller.signal });
+  caller.abort('Caller stopped waiting');
+  assert(!f.calls.includes('release-use'));
+  await f.runtime.unload();
+  assert.equal(f.calls.filter((value) => value === 'release-use').length, 1);
+  await f.runtime.dispose();
+});
+
+test('failed load cleanup holds the model use lease until acknowledged cleanup retry', async () => {
+  const f = fixture({ retained: true, hooks: { load(setStatus) {
+    setStatus({ status: 'cleanup-failed', manifestCid: cid }); throw new Error('Worker termination failed');
+  } } });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.load(cid), /termination failed/);
+  assert(!f.calls.includes('release-use'));
+  await f.runtime.unload();
+  assert.equal(f.calls.filter((value) => value === 'release-use').length, 1);
+  await f.runtime.dispose();
+});
+
+test('interrupted deletion remains visible after controller restart and retry completes cleanup', async () => {
+  const f = fixture({ retained: true });
+  f.records.set(cid, { ...f.records.get(cid), status: 'deleting', pinned: false });
+  await f.controller.initialize();
+  const [stored] = await f.runtime.listStoredModels();
+  assert.equal(stored.cleanupPending, true); assert.equal(stored.shared, false);
+  assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 0);
+  await assert.rejects(f.runtime.load(cid), /being deleted/);
+  assert.equal((await f.runtime.deleteStoredModel(cid)).deleted, true);
+  assert.deepEqual(await f.runtime.listStoredModels(), []);
+  await f.runtime.dispose();
+});
+
+test('library enumeration refreshes descriptors removed by a different context', async () => {
+  const f = fixture({ retained: true }); await f.controller.initialize();
+  assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 1);
+  f.records.delete(cid);
+  assert.deepEqual(await f.runtime.listStoredModels(), []);
+  await f.runtime.refreshPeers();
+  assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 0);
+  assert.equal(f.published.size, 0);
+  await f.runtime.dispose();
+});
+
+test('local library can exceed the bounded network model directory', async () => {
+  const f = fixture();
+  for (let index = 0; index < 130; index++) f.records.set(`fixture-${index}`, {
+    cid: `fixture-${index}`, manifest, kind: 'manifest', status: 'complete', pinned: true,
+  });
+  await f.controller.initialize();
+  assert.equal((await f.runtime.listStoredModels()).length, 130);
+  assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 128);
+  await f.runtime.dispose();
 });

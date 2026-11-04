@@ -11,6 +11,9 @@ function nextUsage(previous, old, size, { maximumBytes = Number.MAX_SAFE_INTEGER
   maximumEntries = Number.MAX_SAFE_INTEGER } = {}) {
   const next = { bytes: previous.bytes - (old?.size || 0) + size,
     entries: previous.entries + (old ? 0 : 1), generation: (previous.generation || 0) + 1 };
+  if (Object.values(next).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new RangeError('Artifact storage accounting exceeds safe integer range.');
+  }
   if (next.bytes > maximumBytes || next.entries > maximumEntries) {
     throw new DOMException('Artifact storage quota exceeded.', 'QuotaExceededError');
   }

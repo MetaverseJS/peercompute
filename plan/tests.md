@@ -1,5 +1,29 @@
 ## PeerCompute Test Strategy
 
+### Modal library and browser storage — 2026-11-03 18:49 AKST
+
+- Native Config and Stored Models dialogs: focus/Escape/close restoration, both
+  default-on preferences only inside Config, no capacity selector, meaningful
+  empty/loaded/shared/delete/error states, viewport and peer polling preserved.
+- Prove advisory low browser estimates do not stop import; exercise actual
+  QuotaExceededError with small deterministic storage and verify recovery/cleanup.
+- Prove local library capacity can exceed per-DAG block budget without removing
+  per-DAG protections. Delete one package while preserving other manifests,
+  independently pinned files, shared blocks and active readers/imports.
+- Verify deleting loaded/shared models stops inference/publication and awaits
+  unload; failures remain truthful/retryable. Use isolated fixture stores only.
+
+- Final **PASS**: artifact41/41; combined artifact/controller/real-IDB63/63;
+  modal UI16/16. Exact Tailnet desktop/mobile modal checks pass with no weights,
+  GPU work or user-cache mutation. Controlled27B HF418 probe proves a10GiB
+  advisory estimate no longer rejects download; tiny actual IDB import/list/delete
+  reclaims storage. Injected native IDB put failure verifies quota-error recovery.
+- Broader regression: core384/385 (unchanged ULG Eshkol baseline failure), demo
+  contracts49/49; Webpack/inference/CubeChat/Earth builds pass. Actual128MiB
+  browser WebRTC reseeding passes after original host exit and peer reload,
+  with0public HTTP fallback. Evidence in log.md and external ICC runtime archive
+  model-library-20261103; `npm run test:model-library` reruns the focused suite.
+
 ### Console and peer inference acceptance — 2026-11-03 18:11 AKST
 
 - Verify source selector and automatic fetch→load, default-on sharing/hosting,

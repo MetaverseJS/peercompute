@@ -1,5 +1,5 @@
-import { createInferenceRuntime, STORAGE_QUOTAS } from './runtime.js';
-import { createPanelView, appendMessage } from './ui/panelView.js';
+import { createInferenceRuntime } from './runtime.js';
+import { createPanelView, appendMessage, renderStoredModels, formatModelBytes } from './ui/panelView.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
 import './panel.css';
 
@@ -7,15 +7,22 @@ import './panel.css';
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
   networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
   runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000 } = {}) {
-  const view = createPanelView(container, STORAGE_QUOTAS);
+  const view = createPanelView(container);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise;
+  let storedPromise, storedController;
   let refreshTimer, sources = [], targets = [];
   const alive = () => !disposed && !closing;
   const selectedTarget = () => targets.find((target) => target.key === view.target.value);
   const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
-  const showError = (error) => { if (alive()) view.status.textContent = (error.name === 'AbortError' ? 'Cancelled: ' : 'Error: ') + error.message; };
+  const showError = (error) => {
+    if (!alive()) return;
+    const message = (error.name === 'AbortError' ? 'Cancelled: ' : 'Error: ') + error.message;
+    view.status.textContent = message;
+    if (view.configuration.open) view.configurationStatus.textContent = message;
+    if (view.storedModels.open) view.storedStatus.textContent = message;
+  };
   const scrollTranscript = () => {
     while (view.transcript.children.length > 24 || encoder.encode(view.transcript.textContent).byteLength > 128 * 1024) view.transcript.firstElementChild?.remove();
     view.transcript.scrollTop = view.transcript.scrollHeight;
@@ -28,6 +35,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.cancel.hidden = !operation; view.target.disabled = !!operation;
     view.attach.disabled = !!operation || !target?.modalities?.includes('image');
     view.unload.disabled = !!operation;
+    view.storedRefresh.disabled = !!operation || !!storedController;
+    for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController;
   }
   function renderLists() {
     const selectedSource = view.source.value, selected = view.target.value || 'local';
@@ -88,19 +97,55 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     await operationDone;
   }
+  async function refreshStoredModels() {
+    if (!alive() || storedPromise) return storedPromise;
+    const controller = new AbortController(); storedController = controller;
+    view.storedStatus.textContent = 'Reading stored models…'; updateControls();
+    storedPromise = (async () => {
+      try {
+        const models = await runtime.listStoredModels({ signal: controller.signal });
+        if (alive()) {
+          renderStoredModels(view, models, deleteStoredModel);
+          view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
+        }
+        return true;
+      } catch (error) { showError(error); return false; }
+      finally { storedPromise = null; storedController = null; if (alive()) updateControls(); }
+    })();
+    return storedPromise;
+  }
+  function deleteStoredModel(model) {
+    return run(async (signal) => {
+      view.storedStatus.textContent = `Deleting ${model.name}…`;
+      let result;
+      try { result = await runtime.deleteStoredModel(model.manifestCid, { signal }); }
+      catch (error) { await refreshStoredModels(); throw error; }
+      if (result.unloaded) { histories.delete('local'); invalidateActions(); }
+      if (await refreshStoredModels()) {
+        const message = result.deleted ? `Deleted ${model.name}.` : 'This model is no longer stored.';
+        view.storedStatus.textContent = message + (result.freedBytes > 0 ? ` Freed ${formatModelBytes(result.freedBytes)}.` : '');
+        view.status.textContent = message;
+      }
+    });
+  }
   function clearAttachment() {
     attachment = null; view.attachment.hidden = true; view.attachmentImage.removeAttribute('src'); view.imageFile.value = ''; updateControls();
   }
   try {
     runtime = await runtimeFactory({ stateManager, computeManager, networkManager, runtimeBaseUrl });
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
-    view.quota.value = String(runtime.store.maximumBytes); renderLists(); view.status.textContent = 'Ready.';
+    renderLists(); view.status.textContent = 'Ready.';
   } catch (error) { view.panel.remove(); throw error; }
 
   view.configure.onclick = () => {
-    view.configuration.hidden = !view.configuration.hidden;
-    view.configure.setAttribute('aria-expanded', String(!view.configuration.hidden));
+    if (!alive()) return;
+    view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
+  view.stored.onclick = () => {
+    if (!alive()) return;
+    view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
+  };
+  view.storedRefresh.onclick = () => { void refreshStoredModels(); };
   view.source.onchange = updateControls;
   view.target.onchange = () => { invalidateActions(); updateControls(); };
   view.prompt.oninput = updateControls;
@@ -109,7 +154,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (!alive()) return;
       const desired = control.checked; control.disabled = true;
       const task = (async () => {
-        try { await runtime[method](desired); }
+        try { await runtime[method](desired); if (alive()) view.configurationStatus.textContent = 'Preferences updated.'; }
         catch (error) { control.checked = !desired; showError(error); }
         finally { if (alive()) control.disabled = false; }
       })();
@@ -120,16 +165,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     invalidateActions(); view.status.textContent = 'Importing and loading model…';
     await runtime.acquireModel(view.source.value, { signal, onProgress: progress, ggufGpuLayers: Number(view.gpuLayers.value) });
     histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
-    view.status.textContent = 'Model ready. Send a message.';
+    view.status.textContent = runtime.getSharingErrors?.().length
+      ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
   });
   view.unload.onclick = () => run(async () => {
     invalidateActions(); await runtime.unload(); histories.delete('local'); view.status.textContent = 'Local model unloaded.';
+    view.configurationStatus.textContent = view.status.textContent;
   });
-  view.quota.onchange = () => {
-    if (operation) { view.quota.value = String(runtime.store.maximumBytes); return; }
-    try { runtime.setStorageQuota(Number(view.quota.value)); }
-    catch (error) { view.quota.value = String(runtime.store.maximumBytes); showError(error); }
-  };
   view.connect.onclick = () => run(async (signal) => {
     if (view.relay.value.trim()) await runtime.connect(view.relay.value.trim(), { signal });
     else await runtime.connectBackend({ signal });
@@ -209,10 +251,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
   async function dispose() {
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; view.panel.inert = true;
+    closing = true; view.storedModels.close(); view.configuration.close(); view.panel.inert = true;
     disposingPromise = (async () => {
-      clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort();
-      invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await Promise.allSettled([...preferenceTasks]);
+      clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
+      invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);
       await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }

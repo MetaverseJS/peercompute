@@ -74,14 +74,16 @@ npm run dev:inference
 
 Default CLI cache: `~/.cache/peercompute-artifacts`; quota: 4 GiB. The filesystem
 backend permits one owner at a time and leaves a lock after a crash for explicit
-operator recovery. Browser stores require Web Locks and default to a 2 GiB block
-quota. These are payload budgets, not estimates of free browser storage or VRAM.
-The model console starts at 4 GiB and offers explicit 4/8/24 GiB storage limits.
-Publication separately caps the number of unique served blocks: 65,536 by
-default, following the store's traversal policy up to a hard ceiling of 131,072.
-The demo's explicit 24 GiB setting admits 102,400 traversed/published blocks, so
-the requested collection can exceed the old publication cap of about 16 GiB.
-Shared blocks count once; quota and complete-root verification still apply.
+operator recovery. Browser stores require Web Locks. General ArtifactStore callers
+retain explicit configurable budgets (2 GiB by default); the model console uses
+browser-managed capacity with no selectable application storage cap. Browser
+quota estimates are advisory and do not reject downloads; actual storage-write
+failures report that the browser refused more data. Chromium can return rounded
+quota values without changing enforcement. [Chromium policy](https://chromium.googlesource.com/chromium/src/components/policy/+/b8e7e44318f442747ca9b3d38edde021a254ac1e/resources/templates/policy_definitions/Miscellaneous/StaticStorageQuotaEnabled.yaml).
+
+Local capacity is separate from bounded per-file traversal and network-serving
+budgets. Publication remains limited to at most 131,072 unique blocks; a sharing
+failure does not invalidate a successfully stored model or prevent local loading.
 One tab at a time owns artifact networking for a persistent store; other tabs
 can still use local storage and inference, then connect after that owner stops.
 
@@ -94,8 +96,15 @@ Select a Hugging Face or discovered peer model, then **Import Model**: it fetche
 verifies, retains and loads the model automatically. Content addressing is handled
 internally. **Share with peers** and **Host inference** start checked and are
 independent: sharing serves retained model files; hosting executes requests on the
-currently loaded model. Both require an active connected browser. **Config**
-contains storage quota, GGUF GPU layers, connection and unload controls.
+currently loaded model. Both require an active connected browser. These checkboxes
+live in the **Config** modal alongside GGUF GPU layers, connection and unload
+controls. **Stored Models** opens a separate window listing local model packages,
+sizes and loaded/shared status. **Delete** stops sharing/hosting that model,
+unloads it if needed, and frees files unused by other retained packages. Shared
+blocks and independently pinned files remain available to their other owners.
+If another tab is using the package, unload it there before retrying deletion.
+If another tab owns this library's file sharing, delete from that tab or close it
+before retrying.
 
 The standalone chat fills the available browser window. Type any question,
 attach an image with **+**, and press Enter to send

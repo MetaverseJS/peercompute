@@ -32,6 +32,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
   Close button, explicit CID field and sample scene. This advances IPFS-01.5.
   November3 18:36 follow-up: standalone chat fills the available window; remove
   remaining layout caps and verify fresh navigation removes the old sample shell.
+- November3 18:49 revision: modal Config contains sharing/hosting preferences;
+  Stored Models lists local packages and deletes them safely. Remove console
+  capacity selectors and hard rejection from advisory browser quota estimates;
+  allow storage until actual browser writes fail, preserving per-operation bounds.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.
@@ -66,7 +70,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
   GPU layers on RTX5060Ti16GB, using bounded ranges from the verified Node store.
   Cancellation uses acknowledged worker termination and releases residency.
   Its full14GB browser peer transfer/persistence remain separate open gates.
-  Remote inference and the broader parent gates remain open. The September
+  Physical-host remote inference acceptance and the broader parent gates remain open. The September
   baseline is historical.
 
 ### Overall Roadmap Assessment - 2026-09-14 AKDT

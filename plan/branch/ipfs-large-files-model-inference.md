@@ -178,6 +178,25 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   Verified exact viewport bounds at1440x1000,1920x1080,1280x1600 and390x844;
   UI10/10PASS with no oldshell/graphic or pageoverflow.
 
+### Modal library and storage revision — November3,18:49:08 AKST
+
+- Replace inline Config with a native modal and move both default-on sharing/
+  hosting checkboxes inside. Add a separate Stored Models window with names,
+  sizes, loaded/shared status and explicit per-model deletion.
+- Remove selectable console storage budgets and hard rejection based on browser
+  estimates. Use actual browser storage enforcement; handle genuine write failures
+  without silently deleting other packages. General library callers may still
+  choose explicit quotas; per-DAG/frame/admission bounds remain distinct.
+- Stop serving/hosting a deleting package, unload it if resident, preserve shared
+  blocks and independent file pins, and coordinate deletion with imports/readers
+  across contexts. No deletion of real user caches during tests.
+- Implementation verified: Config/StoredModels native dialogs, browser-limited
+  console capacity, actual-write error handling, scoped imports, per-model use
+  leases and durable deletion retry. Artifact41/41, combined63/63, UI16/16;
+  false-estimate27B first-fetch and tiny real IndexedDB lifecycle pass without
+  model download. Core384/385 preserves baseline ULG failure;128MiB WebRTC
+  reseeding and affected builds pass. Parent IPFS-01 remains open.
+
 ## Requested outcome and roadmap position
 
 Add IPFS support for large files generally, including small Hugging Face Qwen

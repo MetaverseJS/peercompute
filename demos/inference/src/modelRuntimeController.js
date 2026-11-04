@@ -1,12 +1,22 @@
+import { createModelMutationQueue, listStoredModelRecords, modelStorageError, withModelDeletionOwnership } from './modelLibrary.js';
+import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
+import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
+
 /** UI policy over manager-owned storage, inference and private peer streams. */
 export function attachModelRuntimeController(runtime, { catalog, now = Date.now } = {}) {
-  const original = Object.fromEntries(['importCatalog', 'importPackage', 'load', 'connect', 'connectBackend', 'dispose']
+  const original = Object.fromEntries(['importCatalog', 'importPackage', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
     .map((key) => [key, runtime[key].bind(runtime)]));
   const owner = {};
   const retained = new Map();
   const published = new Set();
+  const sharingErrors = new Map();
   const requests = new Map();
   const lifetime = new AbortController();
+  const mutations = createModelMutationQueue();
+  const deleting = new Set();
+  const deletions = new Map();
+  const localGenerations = new Set();
+  const modelUses = new Map();
   let sharing = true, hostInference = true, closed = false;
   let peerService, peerStarting, refreshing, acquiring;
   let current = null, localRequests = 0, lastIdleAt = now();
@@ -27,29 +37,49 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     if (!record?.cid) throw new Error('Imported package has no content identity');
     const model = descriptor(record.cid, record.manifest ?? await runtime.store.getManifest(record.cid));
     if (model) {
-      if (!retained.has(record.cid) && retained.size >= 128) throw new Error('Model catalog is full');
       retained.set(record.cid, model);
     }
     return model;
   }
+  async function refreshStoredRecords(signal) {
+    const records = await listStoredModelRecords(runtime.store, { signal });
+    const available = new Set();
+    for (const record of records) {
+      if (record.status === 'deleting') { deleting.add(record.cid); continue; }
+      if (record.pinned) { available.add(record.cid); await remember(record); }
+    }
+    for (const cid of retained.keys()) if (!available.has(cid)) retained.delete(cid);
+    return records;
+  }
   function resident() {
     const status = runtime.service.getStatus();
-    return current && status.status === 'ready' && status.manifestCid === current.manifestCid ? current : null;
+    return current && !deleting.has(current.manifestCid) && status.status === 'ready'
+      && status.manifestCid === current.manifestCid ? current : null;
   }
   const remoteModels = () => (peerService?.listModels() ?? []).map((entry) => ({ ...entry,
     providers: entry.providers.filter((provider) => !provider.local) })).filter((entry) => entry.providers.length);
   const remoteHosts = () => (peerService?.listHosts() ?? []).map((entry) => ({ ...entry,
     hosts: entry.hosts.filter((host) => !host.local) })).filter((entry) => entry.hosts.length);
 
-  async function syncSharing() {
+  async function syncSharing({ strict = false } = {}) {
     const work = async () => {
       if (closed || !runtime.networkReady) return;
+      await refreshStoredRecords(lifetime.signal);
       const actual = new Set(runtime.networkManager.getPublishedArtifactCids());
+      const errors = [];
+      for (const cid of published) if (!retained.has(cid)) {
+        try { await runtime.withdraw(cid); actual.delete(cid); published.delete(cid); sharingErrors.delete(cid); }
+        catch (error) { sharingErrors.set(cid, error); errors.push(error); }
+      }
       for (const cid of retained.keys()) {
-        if (sharing && !actual.has(cid)) { await runtime.publish(cid); actual.add(cid); }
-        if (!sharing && actual.has(cid)) { await runtime.withdraw(cid); actual.delete(cid); }
+        try {
+          if (sharing && !deleting.has(cid) && !actual.has(cid)) { await runtime.publish(cid); actual.add(cid); }
+          if ((!sharing || deleting.has(cid)) && actual.has(cid)) { await runtime.withdraw(cid); actual.delete(cid); }
+          sharingErrors.delete(cid);
+        } catch (error) { sharingErrors.set(cid, error); errors.push(error); }
         if (actual.has(cid)) published.add(cid); else published.delete(cid);
       }
+      if (strict && errors.length) throw new AggregateError(errors, 'Some models could not update their file sharing state');
     };
     publication = publication.catch(() => {}).then(work);
     return publication;
@@ -59,8 +89,14 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     if (!model) throw new Error('Import a model before using local inference');
     if (options.image && !model.modalities.includes('image')) throw new Error('This model accepts text only');
     localRequests++;
-    try { return await runtime.service.generate(options); }
-    finally { if (--localRequests === 0) lastIdleAt = now(); }
+    const abort = new AbortController();
+    const signal = AbortSignal.any([combined(options.signal), abort.signal]);
+    const request = { manifestCid: model.manifestCid, abort };
+    localGenerations.add(request);
+    try {
+      request.promise = Promise.resolve(runtime.service.generate({ ...options, signal }));
+      return await request.promise;
+    } finally { localGenerations.delete(request); if (--localRequests === 0) lastIdleAt = now(); }
   }
   async function ensurePeerService() {
     assertOpen();
@@ -78,7 +114,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
         getLocalState: () => {
           const status = runtime.service.getStatus();
           const busy = localRequests > 0 || !!status.activeRequestId || status.queuedRequests > 0;
-          return { sharedModels: sharing ? [...retained.values()].filter((model) => published.has(model.manifestCid)) : [],
+          const local = resident();
+          const models = [...retained.values()].filter((model) => published.has(model.manifestCid) && !deleting.has(model.manifestCid));
+          if (local) models.sort((left, right) => Number(right.manifestCid === local.manifestCid) - Number(left.manifestCid === local.manifestCid));
+          return { sharedModels: sharing ? models.slice(0, PEER_INFERENCE_LIMITS.maximumModels) : [],
             hostedModel: hostInference && !closed ? resident() : null,
             busy, queuedRequests: status.queuedRequests ?? 0, idleForMs: busy ? 0 : Math.max(0, now() - lastIdleAt) };
         },
@@ -99,24 +138,59 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     await ensurePeerService();
     await syncSharing();
   }
+  function mutate(operation, signal) {
+    assertOpen();
+    const activeSignal = combined(signal);
+    return mutations.run(() => { assertOpen(); return operation(activeSignal); }, { signal: activeSignal });
+  }
+  async function importModel(method, args) {
+    let result;
+    try { result = await original[method](...args); } catch (error) { throw modelStorageError(error); }
+    await remember(result); await syncSharing(); return result;
+  }
+  async function loadModel(cid, options = {}) {
+    if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
+    if (!modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
+    let result;
+    try { result = await original.load(cid, options); }
+    catch (error) {
+      // A failed load can retain a worker whose termination was not acknowledged.
+      // Only a service with no matching session proves its file lease is releasable.
+      if (runtime.service.getStatus().manifestCid !== cid) await releaseModelUse(cid);
+      throw error;
+    }
+    current = await remember({ cid }); lastIdleAt = now();
+    await ensurePeerService();
+    return result;
+  }
+  async function unloadModel() {
+    await peerService?.setHostingEnabled(false);
+    await runtime.service.unloadModel();
+    for (const cid of modelUses.keys()) await releaseModelUse(cid);
+    current = null;
+    await peerService?.setHostingEnabled(hostInference);
+  }
+  async function releaseModelUse(cid) {
+    const release = modelUses.get(cid);
+    if (release) { await release(); modelUses.delete(cid); }
+  }
   for (const method of ['connect', 'connectBackend']) {
     runtime[method] = async (...args) => { assertOpen(); const result = await original[method](...args); await connectionReady(); return result; };
   }
   for (const method of ['importCatalog', 'importPackage']) {
-    runtime[method] = async (...args) => {
-      assertOpen(); const result = await original[method](...args);
-      await remember(result); await syncSharing(); return result;
+    runtime[method] = (...args) => {
+      const index = method === 'importPackage' ? 2 : 1;
+      return mutate((signal) => {
+        args[index] = { ...args[index], signal };
+        return importModel(method, args);
+      }, args[index]?.signal);
     };
   }
-  runtime.load = async (cid, options = {}) => {
-    assertOpen();
-    const result = await original.load(cid, options);
-    current = await remember({ cid }); lastIdleAt = now();
-    await ensurePeerService();
-    return result;
-  };
+  runtime.ensure = (cid, options = {}) => mutate((signal) => importModel('ensure', [cid, { ...options, signal }]), options.signal);
+  runtime.load = (cid, options = {}) => mutate((signal) => loadModel(cid, { ...options, signal }), options.signal);
   Object.assign(runtime, {
     getPreferences: () => ({ sharing, hostInference }),
+    getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
         modelId: entry.id, modalities: entry.model.modalities, runtime: entry.model.runtime, totalBytes: entry.totalBytes })),
@@ -141,7 +215,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     },
     async setSharing(value) {
       assertOpen(); const previous = sharing; sharing = Boolean(value);
-      try { await syncSharing(); } catch (error) { sharing = previous; throw error; }
+      try { await syncSharing({ strict: true }); } catch (error) { sharing = previous; throw error; }
       return runtime.getPreferences();
     },
     async setHostInference(value) {
@@ -155,29 +229,84 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
       if (acquiring) throw new Error('Another model import is already running');
       const source = runtime.listModelSources().find((entry) => entry.key === key);
       if (!source) throw new Error('This model source is no longer available');
-      acquiring = (async () => {
-        const signal = combined(options.signal); signal.throwIfAborted();
+      acquiring = mutate(async (signal) => {
         let record;
         if (source.source === 'hf') {
           const saved = [...retained.values()].find((entry) => entry.modelId === source.modelId);
           record = saved && await runtime.store.stat(saved.manifestCid, { signal });
-          if (!record || record.status !== 'complete') record = await runtime.importCatalog(source.modelId, { ...options, signal });
+          if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }]);
         } else {
-          record = await runtime.ensure(source.manifestCid, { signal });
-          await remember(record); await syncSharing();
+          record = await importModel('ensure', [source.manifestCid, { signal }]);
         }
         signal.throwIfAborted();
         if (resident()?.manifestCid === record.cid) return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
-        await runtime.unload();
-        return runtime.load(record.cid, { ...options, signal });
-      })();
+        await unloadModel();
+        return loadModel(record.cid, { ...options, signal });
+      }, options.signal);
       try { return await acquiring; } finally { acquiring = null; }
     },
-    async unload() {
-      assertOpen(); current = null;
-      await peerService?.setHostingEnabled(false);
-      await runtime.service.unloadModel();
-      await peerService?.setHostingEnabled(hostInference);
+    unload() { return mutate(() => unloadModel()); },
+    async listStoredModels({ signal } = {}) {
+      assertOpen();
+      const activeSignal = combined(signal);
+      const records = await refreshStoredRecords(activeSignal);
+      const status = runtime.service.getStatus();
+      const actual = new Set(runtime.networkManager?.getPublishedArtifactCids?.() ?? []);
+      return records.map((record) => ({
+        manifestCid: record.cid, name: descriptor(record.cid, record.manifest)?.name ?? record.manifest.name ?? record.cid,
+        totalBytes: record.manifest.files.reduce((sum, file) => sum + file.size, 0),
+        runtime: record.manifest.model.runtime,
+        loaded: status.status !== 'idle' && status.manifestCid === record.cid,
+        shared: actual.has(record.cid),
+        ...(record.status === 'deleting' || deleting.has(record.cid) ? { cleanupPending: true } : {}),
+        ...(sharingErrors.has(record.cid) ? { shareError: sharingErrors.get(record.cid).message } : {}),
+      }));
+    },
+    deleteStoredModel(input, { signal } = {}) {
+      assertOpen();
+      const cid = artifactCID(input).toString();
+      if (deletions.has(cid)) return deletions.get(cid);
+      signal?.throwIfAborted();
+      // Stop admission immediately, including while an earlier import finishes.
+      // A failed deletion stays quarantined until an explicit retry succeeds.
+      deleting.add(cid);
+      const deletion = mutate((activeSignal) => withModelDeletionOwnership(runtime, async () => {
+        let unloaded = false;
+        const record = await runtime.store.stat(cid, { signal: activeSignal });
+        if (record && (record.kind !== 'manifest' || !record.manifest?.model?.runtime)) {
+          deleting.delete(cid); throw new Error('Only stored model packages can be deleted here');
+        }
+        try {
+          await publication.catch(() => {});
+          if (runtime.networkManager?.getPublishedArtifactCids?.().includes(cid)) await runtime.withdraw(cid);
+          published.delete(cid);
+          const status = runtime.service.getStatus();
+          const matching = current?.manifestCid === cid || status.manifestCid === cid;
+          if (matching) {
+            await peerService?.setHostingEnabled(false);
+            const active = [...localGenerations].filter((request) => request.manifestCid === cid);
+            for (const request of active) request.abort.abort(new DOMException('Stored model is being deleted', 'AbortError'));
+            await Promise.allSettled(active.map((request) => request.promise));
+            await runtime.service.unloadModel();
+            await releaseModelUse(cid);
+            current = null; unloaded = true;
+          }
+          activeSignal.throwIfAborted();
+          const result = await runtime.store.remove(cid, { signal: activeSignal });
+          retained.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);
+          await peerService?.setHostingEnabled(hostInference);
+          return { deleted: result.removed, freedBytes: result.freedBytes, unloaded };
+        } catch (error) {
+          const present = await runtime.store.stat(cid).catch(() => undefined);
+          if (present === undefined) retained.delete(cid);
+          // Quarantine still prevents this CID from being hosted. Other models
+          // can be selected after a failed deletion without changing preference.
+          await peerService?.setHostingEnabled(hostInference).catch(() => {});
+          throw error;
+        }
+      }, { signal: activeSignal }), signal).finally(() => { deletions.delete(cid); });
+      deletions.set(cid, deletion);
+      return deletion;
     },
     async generate(target, options = {}) {
       assertOpen();
@@ -211,13 +340,12 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     // though createPeerInferenceService never resolved into peerService.
     await runtime.networkManager?.releasePeerInferenceService(owner);
     peerService = null;
-    await Promise.allSettled([publication, refreshing, acquiring].filter(Boolean));
+    await Promise.allSettled([publication, refreshing, acquiring, mutations.settled()].filter(Boolean));
     await original.dispose();
+    for (const cid of modelUses.keys()) await releaseModelUse(cid);
   };
   return { async initialize() {
-    for await (const record of runtime.store.list()) {
-      if (record.kind === 'manifest' && record.status === 'complete' && record.pinned) await remember(record);
-    }
+    await refreshStoredRecords(lifetime.signal);
     if (runtime.networkReady) await connectionReady();
   } };
 }
