@@ -144,7 +144,19 @@ export class PeerInferenceService {
       stream = await connection.newStream(PEER_INFERENCE_PROTOCOL, { signal: op.signal, runOnLimitedConnection: true });
       const io = channel(stream);
       await io.write(this._envelope('query', peerId), op.signal);
-      const response = await io.read(op.signal); this._checkEnvelope(response, peerId);
+      const response = await io.read(op.signal);
+      if (response?.type === 'error') {
+        // Legacy v2 error frames have no envelope. They are only failures from
+        // this already authenticated, explicitly queried stream, never directory
+        // data. A partial or complete envelope must still pass every check.
+        if (['sender', 'recipient', 'scope'].some((key) => Object.hasOwn(response, key))) this._checkEnvelope(response, peerId);
+        if (typeof response.message !== 'string' || (response.code !== undefined && typeof response.code !== 'string')) {
+          throw failure('Invalid inference directory error response', 'ERR_INFERENCE_DIRECTORY_INVALID');
+        }
+        throw failure(response.message.slice(0, 256) || 'Peer inference directory unavailable',
+          response.code?.slice(0, 80) || 'ERR_PEER_INFERENCE');
+      }
+      this._checkEnvelope(response, peerId);
       if (response.type !== 'directory') throw failure('Invalid inference directory response');
       this._remember(peerId, localState(response.state));
       await stream.close({ signal: op.signal });
@@ -163,7 +175,8 @@ export class PeerInferenceService {
         const results = await Promise.allSettled(peers.map((peerId) => this._query(peerId, op.signal)));
         op.signal.throwIfAborted();
         this.lastErrors = results.flatMap((result, index) => result.status === 'rejected'
-          ? [{ peerId: peers[index], message: String(result.reason?.message ?? 'Directory unavailable').slice(0, 256) }] : []);
+          ? [{ peerId: peers[index], code: String(result.reason?.code ?? 'ERR_PEER_INFERENCE').slice(0, 80),
+            message: String(result.reason?.message ?? 'Directory unavailable').slice(0, 256) }] : []);
         return { models: this.listModels(), hosts: this.listHosts(), errors: structuredClone(this.lastErrors) };
       } finally { op.dispose(); }
     };
@@ -176,10 +189,9 @@ export class PeerInferenceService {
     const op = operation([this.controller.signal], this.requestTimeoutMs);
     const abort = () => stream.abort(aborted(op.signal));
     op.signal.addEventListener('abort', abort, { once: true });
-    const io = channel(stream); let key; let monitor;
+    const io = channel(stream); let key; let monitor; let request;
     try {
       const first = operation([op.signal], this.queryTimeoutMs);
-      let request;
       try { request = await io.read(first.signal); } finally { first.dispose(); }
       this._checkEnvelope(request, peerId);
       if (request.type === 'query') {
@@ -263,8 +275,10 @@ export class PeerInferenceService {
     } catch (cause) {
       const error = asError(cause);
       if (!op.signal.aborted) {
-        try { await io.write({ type: 'error', code: String(error.code ?? 'ERR_PEER_INFERENCE').slice(0, 80),
-          message: String(error.message ?? 'Peer inference failed').slice(0, 256) }, op.signal); await stream.close({ signal: op.signal }); }
+        const details = { code: String(error.code ?? 'ERR_PEER_INFERENCE').slice(0, 80),
+          message: String(error.message ?? 'Peer inference failed').slice(0, 256) };
+        try { await io.write(request?.type === 'query' ? this._envelope('error', peerId, details)
+          : { type: 'error', ...details }, op.signal); await stream.close({ signal: op.signal }); }
         catch { stream.abort(error); }
       } else stream.abort(error);
     } finally {

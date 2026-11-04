@@ -24,9 +24,11 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   const localGenerations = new Set();
   const modelUses = new Map();
   let sharing = true, hostInference = true, closed = false;
-  let peerService, peerStarting, refreshing, acquiring;
+  let peerService, peerStarting, refreshing, acquiring, backgroundSharing;
   let current = null, localRequests = 0, lastIdleAt = now();
   let publication = Promise.resolve();
+  let discovery = { connected: false, peerCount: 0, sharedModelCount: 0, hostedModelCount: 0,
+    errors: [], checkedAt: null };
 
   const assertOpen = () => { if (closed) throw new Error('Model console is closed'); };
   const combined = (signal) => signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
@@ -91,9 +93,37 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   const remoteHosts = () => (peerService?.listHosts() ?? []).map((entry) => ({ ...entry, ...capabilities(entry),
     hosts: entry.hosts.filter((host) => !host.local) })).filter((entry) => entry.hosts.length);
 
+  function recordDiscovery(errors = []) {
+    const manager = runtime.networkManager;
+    const connected = Boolean(manager?.isConnected);
+    const peers = new Set(connected ? manager.peers?.keys() ?? [] : []);
+    for (const connection of connected ? manager.libp2p?.getConnections?.() ?? [] : []) {
+      if (connection.status === 'open') peers.add(connection.remotePeer.toString());
+    }
+    peers.delete(manager?.libp2p?.peerId?.toString());
+    for (const relay of manager?.bootstrapPeerIds ?? []) peers.delete(relay);
+    discovery = { connected, peerCount: peers.size, sharedModelCount: connected ? remoteModels().length : 0,
+      hostedModelCount: connected ? remoteHosts().length : 0, checkedAt: now(),
+      errors: (Array.isArray(errors) ? errors : []).slice(0, PEER_INFERENCE_LIMITS.maximumPeers).map((error) => ({
+        peerId: String(error?.peerId ?? '').slice(0, 128),
+        code: String(error?.code ?? 'ERR_PEER_DISCOVERY').slice(0, 80),
+        message: String(error?.message ?? 'Peer directory query failed').slice(0, 256),
+      })) };
+  }
+
+  function refreshSharingInBackground(cid) {
+    if (closed || backgroundSharing) return;
+    // A single background pass joins the same chain as explicit sharing changes.
+    // Directory polls must neither await it nor append another pass while busy.
+    backgroundSharing = syncSharing().catch((error) => {
+      if (closed) return;
+      for (const root of cid ? [cid] : retained.keys()) sharingErrors.set(root, error);
+    }).finally(() => { backgroundSharing = null; });
+  }
+
   async function syncSharing({ strict = false } = {}) {
     const work = async () => {
-      if (closed || !runtime.networkReady) return;
+      if (closed || !(runtime.artifactReady ?? runtime.networkReady)) return;
       await refreshStoredRecords(lifetime.signal);
       const actual = new Set(runtime.networkManager.getPublishedArtifactCids());
       const errors = [];
@@ -166,7 +196,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   }
   async function connectionReady() {
     await ensurePeerService();
-    await syncSharing();
+    refreshSharingInBackground();
   }
   function mutate(operation, signal) {
     assertOpen();
@@ -181,9 +211,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     return result;
   }
   function shareAfterLoad(cid) {
-    // syncSharing joins the existing publication chain, which disposal and
-    // deletion await. No acquisition/chat callback escapes into this work.
-    void syncSharing().catch((error) => { if (!closed) sharingErrors.set(cid, error); });
+    refreshSharingInBackground(cid);
   }
   async function loadModel(cid, options = {}) {
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
@@ -229,6 +257,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   Object.assign(runtime, {
     getPreferences: () => ({ sharing, hostInference }),
     getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
+    getDiscoveryStatus: () => structuredClone({ ...discovery, connected: Boolean(runtime.networkManager?.isConnected) }),
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
         modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,
@@ -246,10 +275,20 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     async refreshPeers({ signal } = {}) {
       assertOpen();
       if (!refreshing) refreshing = (async () => {
-        const service = await ensurePeerService();
-        await syncSharing();
-        if (service) await service.refresh({ signal: combined(signal) });
-        return { models: runtime.listModelSources(), targets: runtime.listInferenceTargets() };
+        const activeSignal = combined(signal);
+        try {
+          activeSignal.throwIfAborted();
+          const service = await ensurePeerService();
+          activeSignal.throwIfAborted();
+          refreshSharingInBackground();
+          const result = service ? await service.refresh({ signal: activeSignal }) : null;
+          activeSignal.throwIfAborted();
+          recordDiscovery(result?.errors);
+          return { models: runtime.listModelSources(), targets: runtime.listInferenceTargets(), discovery: runtime.getDiscoveryStatus() };
+        } catch (error) {
+          if (!closed && !activeSignal.aborted) recordDiscovery([error]);
+          throw error;
+        }
       })().finally(() => { refreshing = null; });
       return refreshing;
     },
@@ -400,13 +439,13 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     // though createPeerInferenceService never resolved into peerService.
     await runtime.networkManager?.releasePeerInferenceService(owner);
     peerService = null;
-    await Promise.allSettled([publication, refreshing, acquiring, mutations.settled()].filter(Boolean));
+    await Promise.allSettled([publication, backgroundSharing, refreshing, acquiring, mutations.settled()].filter(Boolean));
     await original.dispose();
     for (const cid of modelUses.keys()) await releaseModelUse(cid);
   };
   return { async initialize() {
     await runtime.checkDeviceCapabilities?.();
     await refreshStoredRecords(lifetime.signal);
-    if (runtime.networkReady) await connectionReady();
+    if (runtime.networkManager?.isConnected) await connectionReady();
   } };
 }

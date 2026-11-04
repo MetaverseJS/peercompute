@@ -69,15 +69,14 @@ export function buildModelCompatibilityHelp(source, { environment = detectModelH
     help.steps.push('Open Config and review the RAM and GPU memory budgets. Raise or clear an optional limit only when appropriate for your device.', 'A shared compute pool may impose its own limit. Choose a smaller model or a peer-hosted model if that limit still applies.');
   } else if (code === 'gpu_feature_unavailable' && /\bshader-f16\b/i.test(help.reason)) {
     help.paragraphs.push('This browser does not expose the shader-f16 feature required by this model runtime. GPU memory capacity alone does not establish FP16 support.');
-    help.steps.push('Update the browser and the supported graphics driver, then check this model again.');
     if (os === 'linux' && Object.hasOwn(COMMANDS, browser)) {
       help.command = COMMANDS[browser];
       help.commandLabel = 'Optional Linux NVIDIA / Vulkan launch command';
       help.paragraphs.push('If this Linux machine uses an NVIDIA GPU with the Chromium Vulkan backend, the optional command below may expose FP16. It is specific to that backend and driver combination.', 'This switch overrides a driver-related restriction. Older drivers may produce incorrect results or instability; exposing the feature does not guarantee correct execution.');
-      help.steps.push('Save your work and fully exit this browser, including background processes. Run the command using your usual browser profile; do not clear site data or create a temporary profile.', `Open ${browser === 'edge' ? 'edge' : 'chrome'}://version and confirm the Command Line includes --enable-dawn-features=vulkan_enable_f16_on_nvidia. Then return to the original PeerCompute site address so its stored models remain available.`, 'If the feature is still missing or results are unstable, fully exit and launch normally without the switch. Choose an available model or a peer-hosted model.');
+      help.steps.push('Try the launch command below first. Save your work and fully exit this browser, including background processes, then run the command using your usual browser profile; do not clear site data or create a temporary profile.', `Open ${browser === 'edge' ? 'edge' : 'chrome'}://version and confirm the Command Line includes --enable-dawn-features=vulkan_enable_f16_on_nvidia. Then return to the original PeerCompute site address so its stored models remain available.`, 'If the feature is still missing, update the browser and supported graphics driver, then check this model again.', 'If results are unstable, fully exit and launch normally without the switch. Choose an available model or a peer-hosted model.');
     } else {
       help.paragraphs.push('There is no verified launch command here for this browser and operating system. Browser and driver support can vary.');
-      help.steps.push('Use a current compatible browser that exposes the required feature, or choose an available model or a peer-hosted model.');
+      help.steps.push('Update the browser and supported graphics driver, then check this model again.', 'Use a current compatible browser that exposes the required feature, or choose an available model or a peer-hosted model.');
     }
     help.links.push({ label: 'Chromium command-line instructions', url: CHROMIUM_FLAGS }, { label: 'Dawn NVIDIA FP16 driver restriction', url: DAWN_F16 });
   } else if (code === 'gpu_feature_unavailable') {

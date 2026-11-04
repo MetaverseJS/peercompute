@@ -80,6 +80,18 @@ The root node should exist on a domain secured with SSL enabling all executable 
   contexts prevent a shared browser cache from masquerading as peer hosting.
   Verified model packages retain immutable CIDs and persist in the IPFS block
   store; hosting-enabled peers serve and reannounce them after restart.
+- November3 21:38–22:05 revision: separate application discovery from artifact
+  restoration/publication and same-store ownership. Surface real query failures
+  and separate shared-package/loaded-host counts; preserve private routing and
+  host freshness. Native customizable pickers wrap within the viewport, and
+  applicable setup help starts with the browser command. Actual separate-browser
+  GPU inference and same-library second-tab discovery pass against SecretWorkshop.
+- Conversation audit: IPFS-01 still needs full27B browser persistence/peer
+  transfer and2048-context qualification, physical-machine acceptance, durable
+  seed/seed-loss operation, GPU-loss/render contention, NetViz model telemetry,
+  and real-model CubeChat/Earth action acceptance. Ordinary disk-file storage is
+  a discussed follow-up; abliterated multimodal2B remains explicitly deferred.
+  Merge into ulg remains pending user review.
 - Ownership: StateManager manages artifact storage/manifests/pins/availability;
   NetworkManager discovers providers and transfers blocks; ComputeManager runs
   inference in its managed WebGPU worker. NodeKernel wires these managers.

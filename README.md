@@ -227,6 +227,21 @@ Prompts, images and streamed output travel over encrypted application streams;
 they are excluded from shared state and pubsub. A remote requester needs no model
 weights or GPU worker. Discovery is scoped to the connected PeerCompute room.
 
+The network summary separates shared files from loaded inference hosts. For
+example, a shared DreamShaper package appears in **Import Model**, but appears
+beside **Send** only while a peer has it loaded with **Host inference** enabled.
+Artifact restoration/publication runs independently of the five-second discovery
+refresh. A second tab that cannot own the same local artifact store can still
+discover and use remote inference; file-sharing errors are reported separately.
+The runtime's `networkReady` means the application connection is ready;
+`artifactReady` and `getArtifactNetworkStatus()` describe file transport readiness.
+`connectNetwork()` can resolve before file startup finishes; file operations await
+that startup and preserve its ownership and integrity checks.
+
+Model options wrap within the window in browsers supporting native customizable
+selects; other browsers retain their native picker. Applicable browser setup help
+starts with the launch command, followed by verification and driver/browser updates.
+
 Choose an image-generation target and describe the image in the same prompt box.
 The result appears in the conversation; image targets use only the current
 prompt and disable image attachments. Generated previews are bounded and local,

@@ -53,7 +53,9 @@ async function fixture(t, scenario = {}) {
       if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true });
     });
     const runtime = {
-      networkReady: true,
+      networkReady: !scenario.connectFailure,
+      getDiscoveryStatus: () => scenario.discovery,
+      getArtifactNetworkStatus: () => scenario.artifactNetwork,
       store: { maximumBytes: 4 * 1024 ** 3, async importFile() { calls.push({ type: 'pin' }); } },
       getPreferences: () => ({ sharing: state.sharing, hostInference: state.hostInference }),
       getDeviceCapabilities: () => ({ deviceMemoryGiB: 8 }),
@@ -125,13 +127,14 @@ async function fixture(t, scenario = {}) {
         return { deleted: true, unloaded, freedBytes: 1024 ** 2 };
       },
       setStorageQuota(bytes) { runtime.store.maximumBytes = bytes; },
-      async connectBackend() {}, async connect() {}, async dispose() {
+      async connectBackend() { if (scenario.connectFailure) throw new Error('Relay unavailable'); }, async connect() {}, async dispose() {
         state.disposeAttempts = (state.disposeAttempts ?? 0) + 1;
         if (scenario.disposeFailsOnce && state.disposeAttempts === 1) throw new Error('Worker stop not acknowledged');
         state.disposed = true;
       },
     };
     window.panel = await mountInferencePanel({ container: document.querySelector('#panel'), runtimeFactory: async () => runtime,
+      autoConnect: !!scenario.connectFailure,
       refreshIntervalMs: scenario.interval ?? 5000,
       ...(scenario.context ? { getContext: (options) => { contextCalls.push(options); return { text: 'Optional embedded scene context', image: { forbidden: true } }; },
         actions: { instructions: 'Suggest an approved action.', invalidate() {}, propose() { return [{ label: 'test action', apply() { calls.push({ type: 'action' }); } }]; } } } : {}) });
@@ -351,6 +354,60 @@ test('model entries show estimated RAM and GPU requirements without claiming det
   assert.match(await source.locator('option[value="hf:vision"]').textContent(), /est\. RAM 4 GiB \/ GPU 8 GiB/);
   assert.match(await source.locator('option[value="peer:fixture"]').textContent(), /est\. RAM unknown \/ GPU unknown/);
   assert.match(await page.locator('.pc-model-availability').textContent(), /Planning estimates; actual memory use varies/);
+});
+
+test('peer status distinguishes empty directories, query failures and unavailable file sharing', async (t) => {
+  const page = await fixture(t, { discovery: { connected: true, peerCount: 2, sharedModelCount: 0, hostedModelCount: 0,
+    errors: [{ peerId: 'fixture', code: 'ERR_DIRECTORY', message: 'Directory timed out' }] },
+    artifactNetwork: { status: 'error', error: 'Another tab owns file sharing' } });
+  const summary = page.locator('.pc-network-summary');
+  await page.waitForFunction(() => document.querySelector('.pc-network-summary').textContent.includes('Directory timed out'));
+  assert.match(await summary.textContent(), /2 peers · 0 shared models · 0 hosted models/);
+  assert.match(await summary.textContent(), /File sharing unavailable: Another tab owns file sharing/);
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.getByLabel('Message', { exact: true }).fill('Hello');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), false);
+});
+
+test('discovery stays visible while file sharing prepares retained packages', async (t) => {
+  const page = await fixture(t, { discovery: { connected: true, peerCount: 3, sharedModelCount: 5, hostedModelCount: 1, errors: [] },
+    artifactNetwork: { status: 'starting' } });
+  await page.waitForFunction(() => document.querySelector('.pc-network-summary').textContent.includes('5 shared models'));
+  assert.match(await page.locator('.pc-network-summary').textContent(), /1 hosted models/);
+  assert.match(await page.locator('.pc-network-summary').textContent(), /Inference discovery remains available/);
+});
+
+test('failed auto-connect stays offline with its error through later directory refreshes', async (t) => {
+  const page = await fixture(t, { connectFailure: true, interval: 30 });
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  const text = await page.locator('.pc-network-summary').textContent();
+  assert.match(text, /Peer network is offline/);
+  assert.match(text, /Relay unavailable/);
+  assert.doesNotMatch(text, /Connecting/);
+});
+
+test('opened model pickers wrap long names inside desktop and mobile viewports and retain focus during refresh', async (t) => {
+  const page = await fixture(t, { interval: 50, loaded: true });
+  for (const viewport of [{ width: 866, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    for (const name of ['Model and source', 'Chat target']) {
+      const select = page.getByLabel(name, { exact: true });
+      await select.click();
+      await page.waitForFunction((name) => document.querySelector(`select[aria-label="${name}"]`).matches(':open'), name);
+      await select.locator('option').last().evaluate((option) => { option.textContent = 'Qwen very long model name '.repeat(12) + ' · Peers · est. RAM 8 GiB / GPU 16 GiB'; });
+      const option = select.locator('option').last();
+      const box = await option.boundingBox();
+      assert.ok(box && box.x >= 0 && box.x + box.width <= viewport.width, JSON.stringify(box));
+      assert.ok(box.height > 50, 'Long option must wrap over multiple lines');
+      assert.equal(await option.evaluate((element) => getComputedStyle(element).whiteSpace), 'normal');
+      const before = await page.evaluate(() => uiState.refreshCalls);
+      await page.waitForFunction((before) => uiState.refreshCalls > before + 1, before);
+      assert.equal(await select.evaluate((element) => element.matches(':open')), true);
+      await page.keyboard.press('Escape');
+      assert.equal(await select.evaluate((element) => element === document.activeElement), true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    }
+  }
 });
 
 test('import progress advances past the last file into verification and GPU loading', async (t) => {
@@ -693,7 +750,7 @@ test('keyboard can open an all-unavailable choice and budget help links to Confi
   const page = await fixture(t, { availability: { 'hf:vision': unavailable, 'peer:fixture': unavailable } });
   const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
   assert.equal(await source.inputValue(), '');
-  await source.focus(); await page.keyboard.press('End'); await help.waitFor();
+  await source.focus(); await page.keyboard.press('Space'); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await help.waitFor();
   assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
   assert.equal(await help.getByLabel('Browser launch command', { exact: true }).isVisible(), false);
   await help.getByRole('button', { name: 'Open Config', exact: true }).click();

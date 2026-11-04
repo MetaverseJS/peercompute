@@ -13,7 +13,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const generatedImages = createGeneratedImageRenderer(view.transcript);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
-  let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise;
+  let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
   let storedPromise, storedController;
   let refreshTimer, sources = [], targets = [];
   let desiredSourceKey;
@@ -150,6 +150,26 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!view.target.value && targets.some((target) => target.key === 'local')) view.target.value = 'local';
     updateControls();
   }
+  function renderNetworkStatus(error) {
+    if (!runtime) return;
+    const discovery = runtime.getDiscoveryStatus?.();
+    const connected = discovery?.connected ?? runtime.networkReady;
+    if (connected) connectionFailure = null;
+    const text = connected
+      ? `Peer network connected${Number.isSafeInteger(discovery?.peerCount) ? ` · ${discovery.peerCount} peers` : ''}`
+        + ` · ${discovery?.sharedModelCount ?? sources.filter((source) => source.source === 'peers').length} shared models`
+        + ` · ${discovery?.hostedModelCount ?? targets.filter((target) => !target.local && target.available).length} hosted models.`
+      : connectController && !connectController.signal.aborted ? 'Connecting to peer network…' : 'Peer network is offline.';
+    const notes = [text];
+    const issue = error?.message ?? connectionFailure?.message ?? discovery?.errors?.[0]?.message;
+    if (issue) notes.push('Discovery issue: ' + String(issue).slice(0, 256));
+    else if (connected && discovery?.peerCount === 0) notes.push('Waiting for other peers.');
+    else if (connected && discovery?.hostedModelCount === 0) notes.push('No peer is currently advertising a loaded model for inference.');
+    const artifacts = runtime.getArtifactNetworkStatus?.();
+    if (artifacts?.status === 'starting') notes.push('File sharing is preparing stored models. Inference discovery remains available.');
+    if (artifacts?.status === 'error') notes.push('File sharing unavailable: ' + String(artifacts.error ?? 'Initialization failed').slice(0, 256));
+    view.discoveryStatus.textContent = view.networkStatus.textContent = notes.join(' ');
+  }
   function syncMemoryBudgets() {
     const budgets = runtime.getMemoryBudgets?.() ?? {};
     view.cpuBudget.value = budgets.cpuBytes == null ? '' : String(budgets.cpuBytes / 1024 ** 3);
@@ -183,9 +203,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
     refreshPromise = (async () => {
       try {
         await runtime.refreshPeers({ signal: controller.signal });
-        if (alive()) { renderLists(); view.networkStatus.textContent = runtime.networkReady ? 'Peer network connected.' : 'Peer network is offline.'; }
+        if (alive()) {
+          // Keep an open native picker and its keyboard focus stable while the
+          // directory refreshes. The next closed-picker refresh updates its list.
+          const pickerOpen = CSS.supports('selector(:open)') && (view.source.matches(':open') || view.target.matches(':open'));
+          if (!pickerOpen) renderLists();
+          renderNetworkStatus();
+        }
       } catch (error) {
-        if (alive() && !controller.signal.aborted) view.networkStatus.textContent = 'Peer refresh unavailable: ' + error.message;
+        if (alive() && !controller.signal.aborted) renderNetworkStatus(error);
       } finally { refreshPromise = null; refreshController = null; }
     })();
     return refreshPromise;
@@ -351,7 +377,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.connect.onclick = () => run(async (signal) => {
     if (view.relay.value.trim()) await runtime.connect(view.relay.value.trim(), { signal });
     else await runtime.connectBackend({ signal });
-    view.networkStatus.textContent = 'Peer network connected.'; await refreshPeers();
+    await refreshPeers();
   });
   view.file.onchange = () => run(async (signal) => {
     const file = view.file.files[0]; if (!file) return;
@@ -444,9 +470,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   refreshTimer = setInterval(() => { void refreshPeers(); }, Math.max(20, refreshIntervalMs));
   if (autoConnect && !runtime.networkReady) {
-    connectController = new AbortController();
-    connectPromise = runtime.connectBackend({ signal: connectController.signal }).then(() => refreshPeers()).catch((error) => {
-      if (alive() && !connectController.signal.aborted) view.networkStatus.textContent = 'Peer network unavailable: ' + error.message;
+    const controller = new AbortController(); connectController = controller;
+    connectPromise = runtime.connectBackend({ signal: controller.signal }).then(() => refreshPeers()).catch((error) => {
+      if (alive() && !controller.signal.aborted) connectionFailure = error;
+    }).finally(() => {
+      if (connectController === controller) connectController = null;
+      if (alive()) renderNetworkStatus();
     });
   } else void refreshPeers();
   async function dispose() {

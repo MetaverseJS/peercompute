@@ -1,5 +1,32 @@
 ## PeerCompute Test Strategy
 
+### Discovery independent of artifact startup — 2026-11-03 22:05 AKST
+
+- Controller tests keep directory queries running across four simulated20-second
+  publication stalls, coalesce background work, preserve teardown, and expose
+  bounded errors. Connection tests preserve inference during artifact startup or
+  same-store ownership failure, with cancellation and owned/borrowed cleanup.
+- Real Noise query tests preserve authenticated error envelopes, legacy bounded
+  error-only frames, and full identity/scope validation for model directories.
+- Focused controller/connection/library/protocol/help/admission suite103/103 PASS;
+  headless UI36/36 PASS, including failed-startup status after later polls. UI covers visible network counts and separate sharing
+  errors, actual opened-picker wrapping at866px/390px, keyboard focus, stable
+  open menus through refresh, and command-first setup help.
+- `PREVIEW_URL=<trusted HTTPS console> DISCOVERY_EVIDENCE=<external JSON> node
+  demos/tests/model-network-discovery.mjs` uses an owned GPU host, same-library
+  second tab and independent GPU-disabled browser on the production backend.
+  Pinned SmolVLM256M bytes are streamed from the existing external artifact cache;
+  requires the matching cache and trusted preview TLS certificate. No prompt is
+  sent unless the discovered target is hosted solely by the owned browser.
+- Staging and exact live HTTPS preview actual-browser PASS: shared files and loaded hosts discovered in both
+  requesters despite same-library artifact ownership rejection; encrypted remote
+  reply has999 GPU dispatches/86 submissions; hosting off/on updates directory;
+  desktop/mobile picker bounds pass, no page errors or cleanup errors.
+  This proves separate processes on one machine, not the open physical-host gate.
+- First harness run failed when Playwright buffered a large model response through
+  CDP. Replaced that fixture path with HTTPS streaming of exact pinned files;
+  production model verification and bounds are unchanged. Preserve both receipts.
+
 ### Chat completion and output budgets — 2026-11-03 21:12 AKST
 
 - Workers:1,024-token ceiling;2,048-token GGUF context; native stop/length/unknown,

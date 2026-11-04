@@ -59,6 +59,68 @@ test('private inference rejects plaintext, missing crypto and invalid input enve
   assert.throws(() => generation({ manifestCid, requestId: 'over-token-limit', prompt: 'x', maxNewTokens: MODEL_POLICY.maxNewTokens + 1 }), /numeric/);
 });
 
+test('an online host query failure reports its actual scoped error and recovers on the next refresh', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), sharedModels: [model], hostedModel: model };
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  host.service.getLocalState = () => { throw Object.assign(new Error('Catalog is temporarily locked'), { code: 'ERR_CATALOG_LOCKED' }); };
+  const stream = await requestor.node.getConnections()[0].newStream(PEER_INFERENCE_PROTOCOL);
+  const io = channel(stream); const signal = AbortSignal.timeout(3000);
+  await io.write(requestor.service._envelope('query', host.node.peerId.toString()), signal);
+  const response = await io.read(signal);
+  assert.equal(response.type, 'error');
+  assert.equal(response.sender, host.node.peerId.toString()); assert.equal(response.recipient, requestor.node.peerId.toString());
+  assert.deepEqual(response.scope, requestor.service.scope);
+  assert.equal(response.code, 'ERR_CATALOG_LOCKED'); assert.equal(response.message, 'Catalog is temporarily locked');
+  await stream.close({ signal });
+  const failed = await requestor.service.refresh();
+  assert.deepEqual(failed.errors, [{ peerId: host.node.peerId.toString(), code: 'ERR_CATALOG_LOCKED', message: 'Catalog is temporarily locked' }]);
+  assert.equal(failed.models.length, 0); assert.equal(failed.hosts.length, 0);
+  assert.equal(requestor.node.getConnections().length, 1);
+  host.service.getLocalState = () => host.state;
+  const recovered = await requestor.service.refresh();
+  assert.equal(recovered.models.length, 1); assert.equal(recovered.hosts.length, 1); assert.deepEqual(recovered.errors, []);
+  assert.equal(host.received.length, 0);
+});
+
+test('legacy bare query errors stay bounded while spoofed or partial scoped responses fail closed', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), sharedModels: [model], hostedModel: model };
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  let response = { type: 'error', code: 'E'.repeat(200), message: 'Temporary failure '.repeat(100) };
+  await host.node.unhandle(PEER_INFERENCE_PROTOCOL);
+  await host.node.handle(PEER_INFERENCE_PROTOCOL, (stream) => {
+    void (async () => {
+      const io = channel(stream); const signal = AbortSignal.timeout(3000);
+      try { await io.read(signal); await io.write(response, signal); await stream.close({ signal }); }
+      catch (error) { stream.abort(error); }
+    })();
+  });
+  const legacy = await requestor.service.refresh();
+  assert.equal(legacy.errors[0].code, 'E'.repeat(80));
+  assert.equal(legacy.errors[0].message, response.message.slice(0, 256));
+  assert.equal(legacy.hosts.length, 0); assert.equal(legacy.models.length, 0);
+  response = { type: 'error', code: {}, message: 'Invalid code type' };
+  assert.equal((await requestor.service.refresh()).errors[0].code, 'ERR_INFERENCE_DIRECTORY_INVALID');
+  const validError = host.service._envelope('error', requestor.node.peerId.toString(), { code: 'ERR_TEST', message: 'Hidden forged error' });
+  for (const invalid of [
+    { ...validError, sender: requestor.node.peerId.toString() },
+    { ...validError, recipient: host.node.peerId.toString() },
+    { ...validError, scope: { ...validError.scope, roomId: 'wrong-room' } },
+    { type: 'error', sender: host.node.peerId.toString(), message: 'Partial envelope' },
+    { type: 'directory', state: host.state },
+    host.service._envelope('directory', requestor.node.peerId.toString(), { state: host.state, scope: { ...validError.scope, roomId: 'wrong-room' } }),
+  ]) {
+    response = invalid;
+    const rejected = await requestor.service.refresh();
+    assert.match(rejected.errors[0].message, /identity or scope mismatch/);
+    assert.equal(rejected.models.length, 0); assert.equal(rejected.hosts.length, 0);
+  }
+  response = host.service._envelope('directory', requestor.node.peerId.toString(), { state: host.state });
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  assert.equal(host.received.length, 0);
+});
+
 test('completion metadata validates enums and booleans without inventing an older peer stop reason', () => {
   assert.deepEqual(resultData({ text: 'Older answer' }), { text: 'Older answer', finishReason: 'unknown' });
   assert.deepEqual(resultData({ text: '', finishReason: undefined, contextTruncated: undefined }), { text: '', finishReason: 'unknown' });

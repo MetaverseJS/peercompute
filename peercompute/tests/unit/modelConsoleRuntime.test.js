@@ -9,7 +9,7 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, connected = true, failRelease = false, hooks = {}, modelInfo = model } = {}) {
+function fixture({ retained = false, connected = true, failRelease = false, hooks = {}, modelInfo = model, now } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const localManifest = { ...manifest, model: modelInfo };
   const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
@@ -19,7 +19,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
   const peer = {
     models: [], hosts: [], enabled: true,
     listModels() { return this.models; }, listHosts() { return this.hosts; },
-    async refresh() { calls.push('refresh'); },
+    async refresh(options) { calls.push('refresh'); return await hooks.refresh?.(options, this) ?? { errors: [] }; },
     async setHostingEnabled(value) { this.enabled = value; calls.push(`hosting:${value}`); },
     async generate(_cid, options) { calls.push('remote'); return hooks.remoteGenerate?.(options) ?? { text: 'Remote answer', image: options.image }; },
     async cancel() { calls.push('cancel-remote'); },
@@ -49,7 +49,8 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     ...(hooks.deviceCheck ? { checkDeviceCapabilities: hooks.deviceCheck } : {}),
     ...(hooks.setBudgets ? { setMemoryBudgets: hooks.setBudgets } : {}),
     get networkReady() { return network.isConnected; },
-    store: { async *list() { yield* records.values(); }, async getManifest() { return localManifest; },
+    ...(hooks.artifactReady ? { get artifactReady() { return hooks.artifactReady(); } } : {}),
+    store: { async *list() { await hooks.list?.(); yield* records.values(); }, async getManifest() { return localManifest; },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
       async stat(key) { return records.get(key); },
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
@@ -63,7 +64,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
-  const controller = attachModelRuntimeController(runtime, { catalog: { test: { ...catalog.test, model: modelInfo } } });
+  const controller = attachModelRuntimeController(runtime, { catalog: { test: { ...catalog.test, model: modelInfo } }, ...(now ? { now } : {}) });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
 
@@ -73,6 +74,122 @@ test('opening the console enables both preferences without fetching or loading w
   assert.equal(f.calls.includes('load'), false); assert.equal(f.calls.includes('import'), false);
   assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
   assert.equal(f.runtime.listInferenceTargets()[0].available, false);
+  await f.runtime.dispose();
+});
+
+test('directory polling stays fresh across multiple TTLs while one background publication is stalled', async () => {
+  let at = 0, receivedAt = -Infinity, scans = 0, release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const publishing = new Promise((resolve) => { started = resolve; });
+  const remoteModel = { ...descriptor, providers: [{ peerId: 'remote', local: false }] };
+  const remoteHost = { ...descriptor, hosts: [{ peerId: 'remote', local: false, busy: false }] };
+  const f = fixture({ retained: true, connected: false, now: () => at, hooks: {
+    list() { scans++; }, publish() { started(); return blocked; },
+    refresh(_options, peer) { receivedAt = at; peer.models = [remoteModel]; peer.hosts = [remoteHost]; return { errors: [] }; },
+  } });
+  f.peer.listModels = () => at - receivedAt > 15000 ? [] : f.peer.models;
+  f.peer.listHosts = () => at - receivedAt > 15000 ? [] : f.peer.hosts;
+  f.runtime.networkManager.peers = new Map([['remote', {}]]);
+  await f.controller.initialize();
+  let connected = false, disposed = false;
+  const connecting = f.runtime.connectBackend().then(() => { connected = true; });
+  try {
+    await publishing; await nextTurn();
+    assert.equal(connected, true, 'application connection must not wait for file publication');
+    for (let index = 1; index <= 4; index++) {
+      at = index * 20000;
+      const result = await f.runtime.refreshPeers();
+      assert.equal(result.discovery.checkedAt, at);
+      assert.equal(result.discovery.connected, true); assert.equal(result.discovery.peerCount, 1);
+      assert.equal(result.discovery.sharedModelCount, 1); assert.equal(result.discovery.hostedModelCount, 1);
+      assert.equal(result.models.filter((entry) => entry.source === 'peers').length, 1);
+      assert.equal(result.targets.filter((entry) => !entry.local).length, 1);
+    }
+    assert.equal(f.calls.filter((call) => call === 'refresh').length, 4);
+    assert.equal(f.calls.filter((call) => call === 'publish').length, 1);
+    assert.equal(scans, 2, 'periodic queries must not queue or run more sharing scans while one is pending');
+    release(); await nextTurn();
+    assert.equal(scans, 2, 'coalesced calls must not leave queued publication passes');
+    await f.runtime.dispose(); disposed = true;
+  } finally { release(); await connecting; if (!disposed) await f.runtime.dispose(); }
+});
+
+test('opening with retained files does not await publication and disposal still tracks it', async () => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const publishing = new Promise((resolve) => { started = resolve; });
+  const f = fixture({ retained: true, hooks: { publish() { started(); return blocked; } } });
+  let ready = false;
+  const initializing = f.controller.initialize().then(() => { ready = true; });
+  try {
+    await publishing; await nextTurn(); assert.equal(ready, true);
+    let disposed = false;
+    const closing = f.runtime.dispose().then(() => { disposed = true; });
+    await nextTurn(); assert.equal(disposed, false); assert.equal(f.calls.includes('dispose'), false);
+    release(); await closing; assert.equal(disposed, true);
+  } finally { release(); await initializing; await f.runtime.dispose(); }
+});
+
+test('discovery retains bounded errors and counts unique application peers separately from model groups', async () => {
+  let at = 100;
+  const errors = [{ peerId: 'peer-b', code: 'ERR_UNSUPPORTED_PROTOCOL', message: 'Peer does not host this protocol' },
+    { peerId: 'p'.repeat(300), message: 'm'.repeat(600) }];
+  const f = fixture({ now: () => at, hooks: { refresh: () => ({ errors }) } });
+  const manager = f.runtime.networkManager;
+  manager.peers = new Map([['self', {}], ['relay', {}], ['peer-a', {}], ['peer-b', {}]]);
+  manager.bootstrapPeerIds = new Set(['relay']);
+  manager.libp2p = { peerId: { toString: () => 'self' }, getConnections: () => [
+    { status: 'open', remotePeer: { toString: () => 'relay' } },
+    { status: 'open', remotePeer: { toString: () => 'peer-a' } },
+    { status: 'open', remotePeer: { toString: () => 'peer-c' } },
+    { status: 'closed', remotePeer: { toString: () => 'old-connection' } },
+  ] };
+  await f.controller.initialize();
+  f.peer.models = [{ ...descriptor, providers: [{ peerId: 'self', local: true }, { peerId: 'peer-a', local: false }] },
+    { ...descriptor, manifestCid: 'own-only', providers: [{ peerId: 'self', local: true }] }];
+  f.peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'peer-a', local: false }, { peerId: 'peer-c', local: false }] }];
+  const result = await f.runtime.refreshPeers();
+  assert.deepEqual({ ...result.discovery, errors: [] }, { connected: true, peerCount: 3, sharedModelCount: 1,
+    hostedModelCount: 1, checkedAt: 100, errors: [] });
+  assert.deepEqual(result.discovery.errors[0], errors[0]);
+  assert.equal(result.discovery.errors[1].peerId.length, 128);
+  assert.equal(result.discovery.errors[1].message.length, 256);
+  assert.equal(result.discovery.errors[1].code, 'ERR_PEER_DISCOVERY');
+  result.discovery.errors[0].message = 'Changed by UI';
+  assert.equal(f.runtime.getDiscoveryStatus().errors[0].message, errors[0].message);
+  at = 200; errors.length = 0;
+  const healthy = await f.runtime.refreshPeers();
+  assert.equal(healthy.discovery.checkedAt, 200); assert.deepEqual(healthy.discovery.errors, []);
+  manager.isConnected = false;
+  const offline = await f.runtime.refreshPeers();
+  assert.equal(offline.discovery.connected, false); assert.equal(offline.discovery.peerCount, 0);
+  assert.equal(offline.discovery.sharedModelCount, 0); assert.equal(offline.discovery.hostedModelCount, 0);
+  await f.runtime.dispose();
+});
+
+test('a directory failure is visible after rejection and a later refresh can recover', async () => {
+  let fail = true;
+  const f = fixture({ hooks: { refresh() {
+    if (fail) throw Object.assign(new Error('Directory query timed out'), { code: 'ERR_DIRECTORY_TIMEOUT' });
+    return { errors: [] };
+  } } });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.refreshPeers(), /timed out/);
+  assert.deepEqual(f.runtime.getDiscoveryStatus().errors, [{ peerId: '', code: 'ERR_DIRECTORY_TIMEOUT', message: 'Directory query timed out' }]);
+  fail = false;
+  assert.deepEqual((await f.runtime.refreshPeers()).discovery.errors, []);
+  await f.runtime.dispose();
+});
+
+test('artifact ownership failure does not prevent directory queries or advertising a loaded inference host', async () => {
+  const f = fixture({ retained: true, hooks: { artifactReady: () => false } });
+  await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  const state = await f.callbacks.getLocalState();
+  assert.equal(state.hostedModel.manifestCid, cid); assert.deepEqual(state.sharedModels, []);
+  assert.equal(f.calls.includes('publish'), false);
+  const result = await f.runtime.refreshPeers();
+  assert.equal(result.discovery.connected, true); assert.equal(f.calls.includes('refresh'), true);
+  assert.equal((await f.runtime.generate('local', { prompt: 'Explain leaves.' })).text, 'Local answer');
   await f.runtime.dispose();
 });
 
@@ -209,7 +326,7 @@ test('one HF acquisition loads before background publication and reports acquisi
   const f = fixture(); await f.controller.initialize();
   const events = [];
   await f.runtime.acquireModel('hf:test', { onProgress: (event) => events.push(event) });
-  await f.runtime.refreshPeers();
+  await f.runtime.setSharing(true);
   assert.deepEqual(events, [{ stage: 'unload' }, { stage: 'load' }]);
   assert(f.calls.indexOf('import') < f.calls.indexOf('publish'));
   assert(f.calls.indexOf('load') < f.calls.indexOf('publish'));
@@ -404,7 +521,7 @@ test('failed unload keeps storage intact and quarantines the model until deletio
   let fail = true;
   const f = fixture({ hooks: { unload() { if (fail && f.calls.includes('withdraw')) throw new Error('GPU termination not acknowledged'); } } });
   await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
-  await f.runtime.refreshPeers();
+  await f.runtime.setSharing(true);
   await assert.rejects(f.runtime.deleteStoredModel(cid), /not acknowledged/);
   assert(f.records.has(cid)); assert(!f.calls.includes('remove'));
   assert(!f.calls.includes('release-use'));
@@ -490,10 +607,11 @@ test('interrupted deletion remains visible after controller restart and retry co
 
 test('library enumeration refreshes descriptors removed by a different context', async () => {
   const f = fixture({ retained: true }); await f.controller.initialize();
+  await f.runtime.setSharing(true);
   assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 1);
   f.records.delete(cid);
   assert.deepEqual(await f.runtime.listStoredModels(), []);
-  await f.runtime.refreshPeers();
+  await f.runtime.setSharing(true);
   assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 0);
   assert.equal(f.published.size, 0);
   await f.runtime.dispose();
@@ -505,6 +623,7 @@ test('local library can exceed the bounded network model directory', async () =>
     cid: `fixture-${index}`, manifest, kind: 'manifest', status: 'complete', pinned: true,
   });
   await f.controller.initialize();
+  await f.runtime.setSharing(true);
   assert.equal((await f.runtime.listStoredModels()).length, 130);
   assert.equal((await f.callbacks.getLocalState()).sharedModels.length, 128);
   await f.runtime.dispose();

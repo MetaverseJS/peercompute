@@ -661,7 +661,7 @@ phases with remaining exit criteria stay open. Each slice updates this file, `pl
 | .0–.2 | Pinned dependencies, StateManager store, lifecycle/unit checks, 128 MiB and complete SmolVLM package reseeding across independent browser contexts; actual WebGPU worker inference. | Two physical hosts, broader churn and measured transport peaks. |
 | .3 | External-cache importer and exact pinned packages; requested 27B passes full hash/import/manifest verification, persistence and ranges beyond 4 GiB. | Two always-on seed providers, operator lifecycle and seed-loss acceptance. |
 | .4 | Four ONNX models plus small GGUF, image dependence for all three vision models, warm reuse, cooperative cancel, unload and source-off restart. Exact27B generation/arithmetic/warm reuse from Node-store ranges, forced cancellation and release; worker failure/accounting regressions. | Exact27B browser persistence/peer transfer; actual GPU-loss/render-preemption and resource-contention acceptance. |
-| .5 | Ownership and protocol plan retained. | Remote inference implementation and physical-peer acceptance. |
+| .5 | Authenticated private remote inference implemented; separate-browser WebGPU host and GPU-disabled requester text/image generation, streaming, cancellation, host toggles and peer loss tested. Model-level discovery, longest-idle/busy routing and legacy output-cap negotiation covered. | Two physical-host acceptance, durable always-on hosting and NetViz model telemetry. |
 | .6 | Inference console, CubeChat/Earth agents, nested production builds, second overview card and trusted Tailnet preview connected to Secret Workshop. | NetViz artifact/model telemetry and full chaos/release gates. |
 
 | ID | Work and main file targets | Exit gate |
@@ -849,3 +849,26 @@ Avoid granting models authority over arbitrary shared state or network messages.
 - Updated peers advertise output caps; callers negotiate each chosen provider's
   limit before admission, using256 for legacy hosts. Config can clear conversation
   context without unloading models or deleting artifact storage.
+
+### Conversation audit and discovery repair — November3 22:05 AKST
+
+- Requests: restore missing network models (including DreamShaper), wrap selector
+  entries within the window, and make trying the browser command the first help
+  step. Discovery now runs independently of expensive publication and persistent
+  artifact startup; a same-library ownership failure preserves the application
+  connection. Show separate counts/errors for shared files and loaded inference
+  hosts. Authentication, actual host freshness and artifact ownership remain intact.
+- Actual production-backend proof covers an owned managed GPU host, a second tab
+  sharing its IndexedDB library, and an independent GPU-disabled browser. Both
+  clients discover the host and its package. Private inference returns actual GPU
+  evidence; hosting off/on removes/restores the model. The final live check also
+  observes DreamShaper hosted by an existing peer, without sending that peer a
+  test prompt. All owned browsers close after validation.
+- Remaining IPFS-01 qualification: full27B browser persistence/restart/transfer;
+  27B at2048 context (the earlier56-layer proof used512); two physical machines;
+  durable seeds/seed-loss; GPU loss/render contention; NetViz model telemetry;
+  real-model scene/actions in the implemented CubeChat/Earth integrations.
+- Ordinary disk-file/handle storage was discussed, but is not implemented.
+  Abliterated multimodal2B remains explicitly deferred. Wrapping is verified for
+  native customizable selects; unsupported browsers retain their native picker.
+  Merge into ulg stays pending user review.

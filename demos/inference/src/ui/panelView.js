@@ -74,6 +74,8 @@ export function createPanelView(container) {
   const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
   sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
   source.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
+  const discoveryStatus = node('p', 'Connecting to peer network…', 'pc-network-summary');
+  discoveryStatus.setAttribute('aria-live', 'polite'); panel.append(discoveryStatus);
   const sharing = node('input'); sharing.type = 'checkbox'; sharing.checked = true;
   const hosting = node('input'); hosting.type = 'checkbox'; hosting.checked = true;
   const toggles = node('div', undefined, 'pc-model-preferences');
@@ -120,7 +122,7 @@ export function createPanelView(container) {
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
   panel.append(configuration, storedModels, compatibility); container.append(panel);
-  return { panel, sourceFilter, source, sourceStatus, acquire, stored, configure, sharing, hosting, status, configuration,
+  return { panel, sourceFilter, source, sourceStatus, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedStatus: library.status, gpuLayers,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,

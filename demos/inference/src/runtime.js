@@ -11,6 +11,7 @@ import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemory
 import { importModelPackage } from './modelLibrary.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
+import { createModelNetworkConnection } from './modelNetworkConnection.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
@@ -64,9 +65,11 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   let ggufService;
   let diffusionService;
   let activeService;
-  let network = networkManager;
-  let ownsNetwork = false;
-  let networkError = null;
+  const networkConnection = createModelNetworkConnection({ store, manager: networkManager,
+    async createManager(config) {
+      const { NetworkManager } = await import('../../../peercompute/src/peercompute/networkManager/NetworkManager.js');
+      return new NetworkManager(config);
+    } });
   try {
     await store.open();
   // Configured admission envelopes, not claims about hardware capacity or observed model peaks.
@@ -82,10 +85,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       resourceEstimate: modelMemoryEstimate,
       loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
-    if (network) {
-      try { await network.createArtifactTransport(store); }
-      catch (error) { networkError = error; }
-    }
+    if (networkConnection.networkReady) networkConnection.startArtifacts();
   } catch (error) {
     await diffusionService?.dispose().catch(() => {});
     await ggufService?.dispose().catch(() => {});
@@ -100,26 +100,6 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     return compute.createModelInferenceService({ artifactStore: store, runtime: 'llama.cpp',
       runtimeAssets: trustedGgufRuntimeAssets(), runtimeOptions, collectGpuEvidence,
       resourceEstimate: modelMemoryEstimate, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
-  }
-
-  async function connectNetwork(config, { signal } = {}) {
-    signal?.throwIfAborted();
-    if (network) {
-      const transport = await network.createArtifactTransport(store);
-      networkError = null; return transport;
-    }
-    const { NetworkManager } = await import('../../../peercompute/src/peercompute/networkManager/NetworkManager.js');
-    const candidate = new NetworkManager(config);
-    const aborted = () => { void candidate.disconnect().catch(() => {}); };
-    signal?.addEventListener('abort', aborted, { once: true });
-    try {
-      await candidate.initialize(); signal?.throwIfAborted();
-      await candidate.connect(); signal?.throwIfAborted();
-      await candidate.createArtifactTransport(store); signal?.throwIfAborted();
-      network = candidate; ownsNetwork = true; networkError = null;
-      return candidate.getArtifactTransport();
-    } catch (error) { networkError = error; await candidate.disconnect().catch(() => {}); throw error; }
-    finally { signal?.removeEventListener('abort', aborted); }
   }
 
   const runtime = {
@@ -153,9 +133,10 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const cid = artifactCID(input);
       if (cid.code !== 0x55) throw new Error('Model packages require a manifest CID');
       try { return await store.getManifest(cid.toString(), { signal }); }
-      catch (error) { signal?.throwIfAborted(); if (!network) throw error; }
+      catch (error) { signal?.throwIfAborted(); if (!networkConnection.networkReady) throw error; }
       // Read only the bounded manifest before accepting any model weights.
-      const bytes = await network.fetchArtifactBlock(cid.toString(), { artifactCid: cid.toString(), signal });
+      await networkConnection.requireArtifacts({ signal });
+      const bytes = await networkConnection.manager.fetchArtifactBlock(cid.toString(), { artifactCid: cid.toString(), signal });
       signal?.throwIfAborted();
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > ARTIFACT_MANIFEST_MAXIMUM_BYTES) {
         throw new Error('Peer model manifest exceeds its metadata budget');
@@ -165,23 +146,25 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return decodeArtifactManifest(bytes);
     },
     checkGgufCapabilities,
-    get networkManager() { return network; },
-    get networkReady() { return !!network?.getArtifactTransport?.(); },
-    get networkError() { return networkError; },
+    get networkManager() { return networkConnection.manager; },
+    get networkReady() { return networkConnection.networkReady; },
+    get artifactReady() { return networkConnection.artifactReady; },
+    get networkError() { return networkConnection.error; },
+    getArtifactNetworkStatus: () => networkConnection.getArtifactNetworkStatus(),
     async connectBackend(options = {}) {
-      return connectNetwork(await loadInferenceRelayConfig(options), options);
+      // Connect resolves on application readiness; file transport may still be
+      // starting, in which case the return value is null. Transfers await it.
+      return networkConnection.connect(({ signal }) => loadInferenceRelayConfig({ ...options, signal }), options);
     },
     async connect(relayAddress, { signal } = {}) {
       signal?.throwIfAborted();
-      if (network) {
-        const transport = await network.createArtifactTransport(store);
-        networkError = null; return transport;
-      }
-      if (typeof relayAddress !== 'string' || relayAddress.length > 1024
-          || !/^\/(?:dns4|dns6|ip4|ip6)\//.test(relayAddress) || !relayAddress.includes('/p2p/')) {
-        throw new Error('Enter a relay multiaddress including its peer ID');
-      }
-      return connectNetwork({ bootstrapPeers: [relayAddress] }, { signal });
+      return networkConnection.connect(() => {
+        if (typeof relayAddress !== 'string' || relayAddress.length > 1024
+            || !/^\/(?:dns4|dns6|ip4|ip6)\//.test(relayAddress) || !relayAddress.includes('/p2p/')) {
+          throw new Error('Enter a relay multiaddress including its peer ID');
+        }
+        return { bootstrapPeers: [relayAddress] };
+      }, { signal });
     },
     async importCatalog(modelId, options = {}) {
       const entry = MODEL_CATALOG[modelId];
@@ -228,23 +211,23 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return activeService.loadModel({ manifestCid: cid, ...options });
     },
     async ensure(cid, options = {}) {
-      if (!network) throw new Error('Connect the artifact network first');
+      await networkConnection.requireArtifacts(options);
       return store.ensureLocal(cid, { ...options, fetchBlock: (blockCid, readOptions) =>
-        network.fetchArtifactBlock(blockCid, { ...readOptions, artifactCid: cid }) });
+        networkConnection.manager.fetchArtifactBlock(blockCid, { ...readOptions, artifactCid: cid }) });
     },
     async publish(cid) {
-      if (!network) throw new Error('Connect the artifact network first');
-      return network.announceArtifact(cid);
+      await networkConnection.requireArtifacts();
+      return networkConnection.manager.announceArtifact(cid);
     },
     async withdraw(cid) {
-      if (!network) throw new Error('Connect the artifact network first');
-      return network.withdrawArtifact(cid);
+      await networkConnection.requireArtifacts();
+      return networkConnection.manager.withdrawArtifact(cid);
     },
     async dispose() {
       await diffusionService.dispose();
       await ggufService.dispose();
       await service.dispose();
-      if (ownsNetwork) await network.disconnect();
+      await networkConnection.dispose();
       if (ownsCompute) await compute.destroy();
       if (ownsState) await state.destroy();
     },

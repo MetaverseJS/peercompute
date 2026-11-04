@@ -51,6 +51,8 @@ test('only the researched Linux Chromium family gets fixed conditional launch co
       assert.equal(result.command, os === 'linux' ? commands[browser] ?? null : null, `${browser}/${os}`);
       assert.equal(result.openConfig, false);
       if (result.command) {
+        assert.match(result.steps[0], /^Try the launch command below first/);
+        assert.match(result.steps[2], /^If the feature is still missing, update/);
         assert.match(result.paragraphs.join(' '), /If this Linux machine uses an NVIDIA GPU.*Vulkan/);
         assert.match(result.paragraphs.join(' '), /incorrect results or instability/);
         assert.match(result.steps.join(' '), /fully exit.*background processes/);
