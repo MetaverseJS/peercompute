@@ -116,15 +116,18 @@ export class PeerInferenceService {
   }
   listModels() { this._group(); return structuredClone(this.models); }
   listHosts() { this._group(); return structuredClone(this.hosts); }
-  async _connection(peerId, signal) {
-    signal.throwIfAborted();
-    const best = () => this.manager.libp2p.getConnections()
+  _connections(peerId) {
+    return this.manager.libp2p.getConnections()
       .filter((item) => item.remotePeer.toString() === peerId && encryptedConnection(item))
       .sort((a, b) => {
         const score = (item) => item.encryption === 'native' ? 3
           : item.remoteAddr?.getComponents?.().some(({ name }) => name === 'p2p-circuit') ? 1 : 2;
         return score(b) - score(a);
-      })[0];
+      });
+  }
+  async _connection(peerId, signal) {
+    signal.throwIfAborted();
+    const best = () => this._connections(peerId)[0];
     let connection = best();
     if (!connection && this.manager.peers?.has(peerId)) {
       // Respect the manager's normal logical capacity, relay and dial backoff.
@@ -134,14 +137,42 @@ export class PeerInferenceService {
     if (!connection) throw failure('No authenticated encrypted connection to inference peer', 'ERR_INFERENCE_UNREACHABLE');
     return connection;
   }
+  async _openStream(peerId, signal) {
+    const first = await this._connection(peerId, signal);
+    const candidates = [...new Set([first, ...this._connections(peerId)])].slice(0, 4);
+    const errors = [];
+    for (const connection of candidates) {
+      signal.throwIfAborted();
+      if (!encryptedConnection(connection)) continue;
+      // Limit stream negotiation, independently of the much longer generation
+      // deadline. Never retry after any application header or prompt is written.
+      const op = operation([this.controller.signal, signal], Math.min(2000, this.queryTimeoutMs / 2));
+      let opening;
+      try {
+        opening = Promise.resolve(connection.newStream(PEER_INFERENCE_PROTOCOL,
+          { signal: op.signal, runOnLimitedConnection: true }));
+        const stream = await withAbort(opening, op.signal);
+        op.signal.throwIfAborted();
+        return { connection, stream };
+      } catch (cause) {
+        const error = asError(cause);
+        // A transport that completes after its deadline must not leak a stream.
+        opening?.then((late) => late.abort(error), () => {}).catch(() => {});
+        signal.throwIfAborted(); this.controller.signal.throwIfAborted();
+        errors.push(error);
+      } finally { op.dispose(); }
+    }
+    throw Object.assign(new AggregateError(errors,
+      `Unable to open an encrypted inference stream: ${String(errors.at(-1)?.message ?? 'connections closed').slice(0, 160)}`,
+      { cause: errors.at(-1) }), { code: 'ERR_INFERENCE_STREAM_UNAVAILABLE', peerId });
+  }
   async _query(peerId, signal) {
     const op = operation([this.controller.signal, signal], this.queryTimeoutMs);
     let stream;
     const abort = () => stream?.abort(aborted(op.signal));
     op.signal.addEventListener('abort', abort, { once: true });
     try {
-      const connection = await this._connection(peerId, op.signal);
-      stream = await connection.newStream(PEER_INFERENCE_PROTOCOL, { signal: op.signal, runOnLimitedConnection: true });
+      ({ stream } = await this._openStream(peerId, op.signal));
       const io = channel(stream);
       await io.write(this._envelope('query', peerId), op.signal);
       const response = await io.read(op.signal);
@@ -327,8 +358,8 @@ export class PeerInferenceService {
     const abort = () => stream?.abort(aborted(signal));
     signal.addEventListener('abort', abort, { once: true });
     try {
-      const connection = await this._connection(peerId, signal);
-      stream = await connection.newStream(PEER_INFERENCE_PROTOCOL, { signal, runOnLimitedConnection: true });
+      const opened = await this._openStream(peerId, signal);
+      const { connection } = opened; stream = opened.stream;
       const io = channel(stream);
       const header = { ...input, image: input.image ? { width: input.image.width, height: input.image.height, channels: 4 } : undefined };
       await io.write(this._envelope('generate', peerId, header), signal);

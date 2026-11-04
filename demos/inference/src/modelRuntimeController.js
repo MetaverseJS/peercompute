@@ -18,6 +18,22 @@ function capabilities(model = {}) {
   return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : 'text'])] };
 }
 
+function awaitLoadStep(promise, signal, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const finish = (callback, value) => {
+      clearTimeout(timer); signal?.removeEventListener('abort', abort); callback(value);
+    };
+    const abort = () => finish(reject, signal.reason);
+    signal?.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then((value) => finish(resolve, value), (error) => finish(reject, error));
+    // Peer registration is optional for a local load. Its existing tracked
+    // promise remains owned by the controller if registration is still pending.
+    if (timeoutMs !== undefined) timer = setTimeout(() => finish(resolve), timeoutMs);
+    if (signal?.aborted) abort();
+  });
+}
+
 /** UI policy over manager-owned storage, inference and private peer streams. */
 export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   preferences = createModelPreferences({ storeName: runtime.store.lockName ?? runtime.store.name }) } = {}) {
@@ -75,9 +91,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       repository: manifest.model.repository, revision: manifest.model.revision,
       totalBytes: manifest.files.reduce((sum, file) => sum + file.size, 0) };
   }
-  async function remember(record) {
+  async function remember(record, { signal } = {}) {
     if (!record?.cid) throw new Error('Imported package has no content identity');
-    const manifest = record.manifest ?? await runtime.store.getManifest(record.cid);
+    const manifest = record.manifest ?? await runtime.store.getManifest(record.cid, { signal });
+    signal?.throwIfAborted();
     const model = descriptor(record.cid, manifest);
     if (model) {
       retained.set(record.cid, model);
@@ -237,18 +254,40 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
     assertLocallyAvailable(await runtime.store.getManifest(cid, { signal: options.signal }));
     if (!modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
-    let result;
-    try { result = await original.load(cid, options); }
+    const signal = options.signal;
+    let preferenceReceipt;
+    try {
+      const result = await original.load(cid, options);
+      signal?.throwIfAborted();
+      const next = await awaitLoadStep(remember({ cid }, { signal }), signal);
+      signal?.throwIfAborted();
+      await awaitLoadStep(ensurePeerService(), signal, 3000);
+      signal?.throwIfAborted();
+      preferenceReceipt = await preferences.rememberLoadedWithReceipt({ manifestCid: cid, modelId: next.modelId }, { signal });
+      lastLoaded = preferenceReceipt.record;
+      signal?.throwIfAborted();
+      current = next; lastIdleAt = now();
+      return { ...result, manifestCid: cid };
+    }
     catch (error) {
+      const failures = [];
+      if (signal?.aborted && runtime.service.getStatus().manifestCid === cid) {
+        // Cancellation may arrive after the managed loader returned ready.
+        // Hide it from new peer requests, then await acknowledged worker cleanup.
+        if (current?.manifestCid === cid) current = null;
+        try { await runtime.service.unloadModel(); }
+        catch (cleanupError) { failures.push(cleanupError); }
+      }
       // A failed load can retain a worker whose termination was not acknowledged.
       // Only a service with no matching session proves its file lease is releasable.
       if (runtime.service.getStatus().manifestCid !== cid) await releaseModelUse(cid);
+      if (signal?.aborted && preferenceReceipt?.committed) {
+        try { lastLoaded = await preferences.restoreLastLoaded(preferenceReceipt); }
+        catch (restoreError) { failures.push(restoreError); }
+      }
+      if (failures.length) throw new AggregateError([error, ...failures], 'Model load cancelled and cleanup is incomplete');
       throw error;
     }
-    current = await remember({ cid }); lastIdleAt = now();
-    await ensurePeerService();
-    await rememberSuccessfulLoad(cid, options.signal);
-    return { ...result, manifestCid: cid };
   }
   async function unloadModel() {
     await peerService?.setHostingEnabled(false);
@@ -310,17 +349,24 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     getStartupModel() {
       assertOpen();
       const saved = [...retained.values()].filter((entry) => !deleting.has(entry.manifestCid))
-        .sort(compareModelSizes);
-      const availability = (entry) => localAvailability(retainedManifests.get(entry.manifestCid) ?? entry);
-      // Reuse this device's complete library before downloading anything. A remembered
-      // package stays selected even when this browser needs setup to run it.
-      const selected = saved.find((entry) => entry.manifestCid === lastLoaded?.manifestCid)
-        ?? saved.find((entry) => !['checking', 'unavailable'].includes(availability(entry).status)) ?? saved[0];
-      if (selected) return { sourceKey: catalog[selected.modelId] ? `hf:${selected.modelId}` : `stored:${selected.manifestCid}`,
-        manifestCid: selected.manifestCid, name: selected.name, localAvailability: availability(selected) };
-      const fallback = catalog[DEFAULT_MODEL_ID];
-      return fallback ? { sourceKey: `hf:${DEFAULT_MODEL_ID}`, name: fallback.name,
-        localAvailability: localAvailability(fallback) } : null;
+        .sort(compareModelSizes).map((entry) => ({
+          sourceKey: catalog[entry.modelId] ? `hf:${entry.modelId}` : `stored:${entry.manifestCid}`,
+          manifestCid: entry.manifestCid, name: entry.name,
+          localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry),
+        }));
+      const choices = Object.values(catalog).map((entry) => ({ ...entry, key: `hf:${entry.id}` }))
+        .sort(compareModelSizes).map((entry) => ({ sourceKey: entry.key, name: entry.name,
+          localAvailability: localAvailability(entry) }));
+      const preferred = saved.find((entry) => entry.manifestCid === lastLoaded?.manifestCid);
+      const fallback = choices.find((entry) => entry.sourceKey === `hf:${DEFAULT_MODEL_ID}`);
+      // Unknown physical memory remains eligible under the admission policy.
+      // Pending checks never authorize a speculative replacement download.
+      const supported = (entry) => ['available', 'unknown'].includes(entry?.localAvailability.status);
+      const checking = (entry) => entry?.localAvailability.status === 'checking';
+      return (supported(preferred) ? preferred : null) ?? saved.find(supported)
+        ?? (checking(preferred) ? preferred : null) ?? saved.find(checking)
+        ?? (supported(fallback) || checking(fallback) ? fallback : null) ?? choices.find(supported)
+        ?? choices.find(checking) ?? preferred ?? saved[0] ?? fallback ?? choices[0] ?? null;
     },
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',

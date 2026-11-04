@@ -48,18 +48,62 @@ export function captureOrtDevice(adapter, onDevice) {
   return () => { adapter.requestDevice = original; };
 }
 
-export async function runDiffusionGpuStage({ session, inputs, device, signal, own, markLost }) {
-  throwIfAborted(signal);
-  let outputs;
+// Queue completion alone does not reject failed GPU commands. ORT logs some
+// validation errors and otherwise returns tensors backed by invalid buffers.
+export async function guardDiffusionGpuOperation({ device, operation, setDeviceCapture, markLost, stage = 'execution' }) {
+  let scopedDevice, result, failure;
+  const filters = [];
+  const attach = (actual) => {
+    if (scopedDevice === actual) return;
+    if (scopedDevice) throw new Error('Diffusion changed GPU devices during an operation');
+    scopedDevice = actual;
+    for (const filter of ['validation', 'out-of-memory', 'internal']) {
+      actual.pushErrorScope(filter); filters.push(filter);
+    }
+  };
   try {
-    outputs = await session.run(inputs);
-    Object.values(outputs).forEach(own);
-    await device.queue.onSubmittedWorkDone();
-  } catch (error) {
-    // An abort racing a native failure must never make the session reusable.
-    markLost();
-    throw new Error(`Model session lost: diffusion GPU execution failed: ${String(error.message ?? error).slice(0, 200)}`);
+    if (device) attach(device);
+    // The first session creates the ORT device partway through this operation.
+    setDeviceCapture?.(attach);
+    result = await operation();
+    if (!scopedDevice) throw new Error('ORT did not create the admitted GPU device');
+    await scopedDevice.queue.onSubmittedWorkDone();
+  } catch (error) { failure = error; }
+  finally { setDeviceCapture?.(null); }
+  const captured = await Promise.all(filters.reverse().map(async (filter) => {
+    try { return { filter, error: await scopedDevice.popErrorScope() }; }
+    catch (error) { return { filter, error, scopeFailed: true }; }
+  }));
+  // Prefer the originating allocation/internal error over invalid-buffer fallout.
+  const gpuFailure = ['out-of-memory', 'internal', 'validation'].map((filter) =>
+    captured.find((item) => item.filter === filter && item.error && !item.scopeFailed)).find(Boolean);
+  failure ??= captured.find((item) => item.scopeFailed)?.error;
+  if (gpuFailure || failure) {
+    const cause = gpuFailure?.error ?? failure;
+    const kind = gpuFailure?.filter === 'out-of-memory' ? 'out of memory' : gpuFailure?.filter ?? 'execution failure';
+    const message = gpuFailure?.filter === 'out-of-memory'
+      ? `Model session lost: diffusion ${stage} GPU out of memory. Close GPU-heavy apps or unload other models, then reload this model.`
+      : `Model session lost: diffusion ${stage} GPU ${kind}: ${String(cause.message ?? cause).slice(0, 240)}`;
+    const error = new Error(message, { cause });
+    error.code = gpuFailure?.filter === 'out-of-memory' ? 'ERR_DIFFUSION_GPU_OUT_OF_MEMORY' : 'ERR_DIFFUSION_GPU';
+    markLost(error); throw error;
   }
+  return result;
+}
+
+export function observeDiffusionGpuErrors(device, onFailure) {
+  const handle = (event) => onFailure(event.error);
+  // ORT assigns onuncapturederror; an independent listener survives that assignment.
+  device.addEventListener('uncapturederror', handle);
+  return () => device.removeEventListener('uncapturederror', handle);
+}
+
+export async function runDiffusionGpuStage({ session, inputs, device, signal, own, markLost, stage = 'execution' }) {
+  throwIfAborted(signal);
+  const outputs = await guardDiffusionGpuOperation({ device, markLost, stage, operation: async () => {
+    const outputs = await session.run(inputs);
+    Object.values(outputs).forEach(own); return outputs;
+  } });
   throwIfAborted(signal);
   return outputs;
 }
@@ -89,11 +133,21 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
   loadTokenizer = () => import('@huggingface/transformers').then((module) => module.CLIPTokenizer) }) {
   const { trusted } = validateDiffusionManifest(manifest);
   const sessions = {}, evidence = { gpuDispatches: 0, gpuSubmissions: 0, generatedRequests: 0 };
-  let device, reader, tokenizer, ort, restoreAdapter, disposed = false, busy = false, lost = false;
+  let device, reader, tokenizer, ort, restoreAdapter, removeGpuObserver, captureLoadingDevice,
+    disposed = false, busy = false, lost = false;
+  const markLost = (error) => {
+    if (disposed) return;
+    lost = true;
+    if (!evidence.gpuFailure) {
+      evidence.gpuFailure = String(error?.cause?.message ?? error?.message ?? error ?? 'GPU operation failed').slice(0, 400);
+      console.error('Diffusion GPU failure:', evidence.gpuFailure);
+    }
+  };
   async function dispose() {
     if (disposed) return;
     disposed = true;
     restoreAdapter?.(); restoreAdapter = null;
+    removeGpuObserver?.(); removeGpuObserver = null;
     reader?.close();
     let error;
     for (const session of Object.values(sessions)) {
@@ -116,6 +170,8 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
     ort.env.webgpu.adapter = adapter;
     restoreAdapter = captureOrtDevice(adapter, (actual) => {
       device = actual;
+      captureLoadingDevice?.(device);
+      removeGpuObserver = observeDiffusionGpuErrors(device, markLost);
       evidence.runtimeFeatures = [...device.features];
       measureDevice(device, evidence);
       device.lost.then(() => { if (!disposed) lost = true; });
@@ -139,11 +195,16 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
         text_encoder: { batch_size: 1 },
         vae_decoder: { batch_size: 1, num_channels_latent: 4, height_latent: 64, width_latent: 64 },
       } : {};
-      sessions[name] = await ort.InferenceSession.create(data, {
-        executionProviders: ['webgpu'], enableMemPattern: false, enableCpuMemArena: false,
-        ...(overrides[name] ? { freeDimensionOverrides: overrides[name] } : {}),
-        extra: { session: { disable_prepacking: '1', use_device_allocator_for_initializers: '1' } },
-      });
+      sessions[name] = await guardDiffusionGpuOperation({ device, stage: `${name} load`, markLost,
+        setDeviceCapture: (capture) => { captureLoadingDevice = capture; }, operation: async () => {
+          // Retain the session even if a later scope/fence fails, so cleanup owns it.
+          sessions[name] = await ort.InferenceSession.create(data, {
+            executionProviders: ['webgpu'], enableMemPattern: false, enableCpuMemArena: false,
+            ...(overrides[name] ? { freeDimensionOverrides: overrides[name] } : {}),
+            extra: { session: { disable_prepacking: '1', use_device_allocator_for_initializers: '1' } },
+          });
+          return sessions[name];
+        } });
       if (!device || ort.env.webgpu.device !== device || !device.features.has('shader-f16')) {
         throw new Error('ORT did not create the admitted WebGPU device');
       }
@@ -173,11 +234,13 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
         throwIfAborted(requestSignal);
         const dispatches = evidence.gpuDispatches;
         const outputs = await runDiffusionGpuStage({ session, inputs, device, signal: requestSignal, own,
-          markLost: () => { lost = true; } });
+          markLost, stage: session === sessions.text_encoder ? 'text encoder'
+            : session === sessions.unet ? 'denoise' : 'decode' });
         throwIfAborted(requestSignal);
-        if (lost) throw new Error('GPU device lost during diffusion');
+        if (lost) throw new Error(`GPU operation failed during diffusion: ${evidence.gpuFailure ?? 'device lost'}`);
         if (evidence.gpuDispatches <= dispatches) throw new Error('Diffusion stage did not execute on WebGPU');
         await nextTurn(); throwIfAborted(requestSignal);
+        if (lost) throw new Error(`GPU operation failed during diffusion: ${evidence.gpuFailure ?? 'device lost'}`);
         return outputs;
       };
       const update = (stage, step) => { throwIfAborted(requestSignal); progress?.({ type: 'diffusion-progress', stage, step, steps }); };
@@ -214,7 +277,11 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
           gpuDispatches: evidence.gpuDispatches - before.dispatches,
           gpuSubmissions: evidence.gpuSubmissions - before.submissions };
       } catch (error) {
-        if (!requestSignal?.aborted) { lost = true; throw new Error(`Model session lost: ${String(error.message ?? error).slice(0, 300)}`); }
+        if (!requestSignal?.aborted) {
+          lost = true;
+          if (String(error.message).startsWith('Model session lost:')) throw error;
+          throw new Error(`Model session lost: ${String(error.message ?? error).slice(0, 300)}`, { cause: error });
+        }
         throw error;
       } finally {
         for (const tensor of tensors) { try { tensor.dispose(); } catch { /* Owned worker shutdown remains the fallback. */ } }

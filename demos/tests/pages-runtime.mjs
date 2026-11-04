@@ -8,10 +8,13 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { MODEL_CATALOG, modelFileUrl } from '../../peercompute/src/peercompute/inference/modelCatalog.js';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const prefix = '/peercompute/';
 const relayConfigUrl = 'https://secretworkshop.net/peercompute/config/relay-config.json';
+const startupModelId = 'smolvlm-256m-q4';
+const startupModelUrls = new Set(MODEL_CATALOG[startupModelId].files.map((file) => modelFileUrl(startupModelId, file.path)));
 const route = (id, pathname, network = 'local-only', extra = {}) => Object.freeze({ id, pathname, network, ...extra });
 
 // Seventeen overview cards, five additional built HTML entries, and overview.
@@ -45,7 +48,7 @@ export const PAGES_ROUTES = Object.freeze([
 const mime = new Map(Object.entries({
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml',
+  '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   '.gif': 'image/gif', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json', '.ktx2': 'image/ktx2', '.woff2': 'font/woff2',
@@ -102,6 +105,7 @@ function positiveInteger(value, fallback, maximum = 600000) {
 }
 
 export function pagesOptions(env = process.env) {
+  const allowModelStartup = env.PAGES_ALLOW_MODEL_STARTUP === '1';
   const selected = String(env.PAGES_ROUTES ?? '').split(',').map((value) => value.trim()).filter(Boolean);
   const matches = (definition, key) => definition.id === key || definition.pathname === key || definition.pathname.split('/')[0] === key;
   for (const name of selected) assert(PAGES_ROUTES.some((definition) => matches(definition, name)), `Unknown Pages route: ${name}`);
@@ -118,9 +122,42 @@ export function pagesOptions(env = process.env) {
     executablePath: env.PAGES_CHROME_PATH ?? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
       ?? (existsSync('/opt/google/chrome/chrome') ? '/opt/google/chrome/chrome' : undefined),
     args: [...args, '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
-    timeoutMs: positiveInteger(env.PAGES_ROUTE_TIMEOUT_MS, 180000), settleMs: positiveInteger(env.PAGES_SETTLE_MS, 2500),
+    allowModelStartup,
+    timeoutMs: positiveInteger(env.PAGES_ROUTE_TIMEOUT_MS, allowModelStartup ? 600000 : 180000), settleMs: positiveInteger(env.PAGES_SETTLE_MS, 2500),
     desktop: { width: 1440, height: 1000 }, mobile: { width: 390, height: 844 },
   };
+}
+
+function modelRequestInfo(request) {
+  let modelSource = false, allowed = false;
+  for (let link = request; link; link = link.redirectedFrom()) {
+    const host = new URL(link.url()).hostname;
+    if (host === 'huggingface.co' || host.endsWith('.huggingface.co') || host === 'hf.co' || host.endsWith('.hf.co')) modelSource = true;
+    if (startupModelUrls.has(link.url())) allowed = true;
+  }
+  return { modelSource, allowed };
+}
+
+// Standalone exposes its runtime; embedded Earth intentionally exposes only UI.
+// Do not infer a model CID or native execution from DOM readiness alone.
+export function modelStartupSnapshot() {
+  const panel = document.querySelector('.pc-inference-panel');
+  const runtime = window.inferencePanel?.runtime;
+  const services = runtime ? Object.values(runtime.services)
+    : (window.__PEERCOMPUTE_KERNELS__ ?? []).flatMap((kernel) => [...(kernel.getComputeManager?.()?.modelServices ?? [])]);
+  const statuses = services.map((service) => service.getStatus());
+  const toggles = ['Share with peers', 'Host inference'].map((name) => {
+    const label = [...(panel?.querySelectorAll('label') ?? [])].find((element) => element.textContent.trim() === name);
+    const input = label?.querySelector('input');
+    return { name, checked: input?.checked ?? null, disabled: input?.disabled ?? null, wired: typeof input?.onchange === 'function' };
+  });
+  const message = panel?.querySelector(':scope > [role="status"]')?.textContent ?? '';
+  return { loading: !!panel?.querySelector('.pc-model-loading[open]'), message,
+    sourceKey: panel?.querySelector('select[aria-label="Model and source"]')?.value,
+    controlsReady: !panel?.querySelector('select[aria-label="Model and source"]')?.disabled,
+    toggles, statuses, runtimeExposed: !!runtime, proof: services.length ? 'managed service status' : 'DOM-only embedded readiness',
+    preferences: runtime?.getPreferences?.() ?? null,
+    ready: statuses.length ? statuses.some((state) => state.status === 'ready') : /^Loaded .+\. Send a message\./.test(message) };
 }
 
 // Runs inside the actual page. Keep observations narrow: no user chats, prompts,
@@ -343,11 +380,12 @@ async function isolationSnapshot(page, initializeWorker = false) {
 async function runRoute(definition, options, baseUrl, expectedPeers) {
   const result = { id: definition.id, pathname: definition.pathname, networkPolicy: definition.network,
     startedAt: timestamp(), passed: false, failures: [], screenshots: [], consoleErrors: 0,
-    warnings: 0, gpuLossWarnings: 0, pageErrors: 0, httpErrors: 0, failedRequests: 0, websocketErrors: 0, cleanupErrors: [], samples: [], interactions: [] };
+    warnings: 0, gpuLossWarnings: 0, pageErrors: 0, httpErrors: 0, failedRequests: 0, websocketErrors: 0, cleanupErrors: [], samples: [], interactions: [],
+    modelStartups: [], modelRequests: [], expectedCancelledModelRequests: [], unexpectedModelRequests: [] };
   const eventPath = path.join(options.outputDir, `${definition.id}.events.jsonl`);
   result.events = eventPath;
   const events = createWriteStream(eventPath, { flags: 'w' });
-  let browser, context, page, closing = false, eventError, watchdog;
+  let browser, context, page, closing = false, eventError, watchdog, cancellingModel = false;
   events.on('error', (error) => { eventError = error; });
   const event = (type, data) => events.write(`${JSON.stringify({ at: timestamp(), type, duringCleanup: closing, ...data })}\n`);
   const began = Date.now();
@@ -381,6 +419,55 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       sha256: createHash('sha256').update(bytes).digest('hex') });
     await sample(label);
   };
+  const modelStartup = async (label) => {
+    cancellingModel = false;
+    const budget = Math.min(240000, Math.max(1, remaining() - 20000));
+    const deadline = Date.now() + budget;
+    const entry = { label, startedAt: timestamp(), modelRequestsBefore: result.modelRequests.length,
+      mode: options.allowModelStartup ? 'load bounded SmolVLM package' : 'cancel automatic loading' };
+    result.modelStartups.push(entry);
+    await page.waitForFunction(() => {
+      const labels = [...document.querySelectorAll('.pc-inference-panel label')];
+      return ['Share with peers', 'Host inference'].every((name) =>
+        typeof labels.find((label) => label.textContent.trim() === name)?.querySelector('input')?.onchange === 'function');
+    }, null, { timeout: Math.min(60000, budget) });
+    // Exercise the actual preference handlers even while Config is hidden.
+    // No private embedded runtime, capabilities, or admission state is replaced.
+    await page.evaluate(() => {
+      const labels = [...document.querySelectorAll('.pc-inference-panel label')];
+      for (const name of ['Host inference', 'Share with peers']) {
+        const input = labels.find((label) => label.textContent.trim() === name).querySelector('input');
+        input.checked = false; input.onchange();
+      }
+    });
+    let cancellationRequested = false;
+    do {
+      const state = await page.evaluate(modelStartupSnapshot); entry.state = state;
+      const preferencesOff = state.toggles.every((input) => !input.checked && !input.disabled);
+      if (/^Error:/.test(state.message)) throw new Error(`Automatic model startup failed: ${state.message}`);
+      if (state.sourceKey && state.sourceKey !== `hf:${startupModelId}`) throw new Error(`Unexpected startup model ${state.sourceKey}; only ${startupModelId} is authorized by this gate`);
+      if (!options.allowModelStartup && state.loading && !cancellationRequested) {
+        cancellingModel = true; cancellationRequested = true;
+        await page.locator('.pc-model-loading').getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
+      if (!state.loading && state.controlsReady && preferencesOff) {
+        if (options.allowModelStartup) assert(state.ready, `Automatic model did not become ready: ${state.message}`);
+        else {
+          assert(cancellationRequested || state.ready, `No actual startup or cancellation was observed: ${state.message}`);
+          if (cancellationRequested && state.statuses.length) assert(state.statuses.every((status) => status.status === 'idle'), 'Cancellation left a resident model');
+        }
+        if (state.preferences) assert.deepEqual(state.preferences, { sharing: false, hostInference: false });
+        entry.cancelled = cancellationRequested; entry.finishedAt = timestamp();
+        entry.durationMs = Date.now() - Date.parse(entry.startedAt);
+        entry.modelRequestsAfter = result.modelRequests.length;
+        if (label === 'warm' && options.allowModelStartup) assert.equal(entry.modelRequestsAfter, entry.modelRequestsBefore, 'Warm stored startup fetched model files again');
+        return entry;
+      }
+      if (Date.now() >= deadline) break;
+      await page.waitForTimeout(Math.min(100, deadline - Date.now()));
+    } while (Date.now() < deadline);
+    throw new Error(`Automatic model startup/cleanup exceeded ${budget}ms`);
+  };
   try {
     browser = await chromium.launch({ executablePath: options.executablePath, headless: options.headless, args: options.args });
     watchdog = setTimeout(() => {
@@ -389,16 +476,34 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     }, remaining());
     context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: options.desktop,
       permissions: definition.id === 'cubechat' ? ['camera', 'microphone'] : [] });
+    if (definition.isolation) await context.route('https://**/*', (route) => {
+      const request = route.request(), info = modelRequestInfo(request);
+      if (info.modelSource && !info.allowed) {
+        result.unexpectedModelRequests.push(request.url());
+        event('rejected-model-request', { url: request.url(), reason: 'Only the pinned SmolVLM 256M startup package is allowed' });
+        return route.abort('blockedbyclient');
+      }
+      return route.continue();
+    });
     page = await context.newPage(); page.setDefaultTimeout(5000); page.setDefaultNavigationTimeout(60000);
     page.on('console', (message) => { const type = message.type(); event('console', { level: type, text: message.text(), location: message.location() });
       if (!closing && type === 'error') result.consoleErrors++;
       if (!closing && type === 'warning') { result.warnings++; if (/CONTEXT_LOST_WEBGL|context lost|device lost/i.test(message.text())) result.gpuLossWarnings++; } });
     page.on('pageerror', (error) => { event('pageerror', { error: errorText(error) }); if (!closing) result.pageErrors++; });
-    page.on('request', (request) => event('request', { method: request.method(), resourceType: request.resourceType(), url: request.url() }));
+    page.on('request', (request) => {
+      event('request', { method: request.method(), resourceType: request.resourceType(), url: request.url() });
+      const info = modelRequestInfo(request);
+      if (info.modelSource) result.modelRequests.push({ at: timestamp(), url: request.url(), allowed: info.allowed });
+    });
     page.on('response', (response) => { event('response', { url: response.url(), status: response.status(), fromServiceWorker: response.fromServiceWorker(),
       contentType: response.headers()['content-type'], coop: response.headers()['cross-origin-opener-policy'], coep: response.headers()['cross-origin-embedder-policy'] });
       if (!closing && response.status() >= 400) result.httpErrors++; });
-    page.on('requestfailed', (request) => { event('requestfailed', { url: request.url(), failure: request.failure(), resourceType: request.resourceType() }); if (!closing) result.failedRequests++; });
+    page.on('requestfailed', (request) => {
+      const expectedCancellation = cancellingModel && modelRequestInfo(request).modelSource && request.failure()?.errorText === 'net::ERR_ABORTED';
+      event('requestfailed', { url: request.url(), failure: request.failure(), resourceType: request.resourceType(), expectedCancellation });
+      if (!closing && expectedCancellation) result.expectedCancelledModelRequests.push(request.url());
+      else if (!closing) result.failedRequests++;
+    });
     page.on('websocket', (socket) => { event('websocket', { url: socket.url() }); socket.on('socketerror', (error) => {
       event('websocket-error', { url: socket.url(), error }); if (!closing) result.websocketErrors++;
     });
@@ -407,6 +512,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     if (['cubechat', 'daddygo'].includes(definition.id) || definition.id.startsWith('hyperborea')) url.searchParams.set('e2e', '1');
     result.url = url.href;
     await attempt('cold navigation', () => page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, remaining()) }));
+    if (definition.id === 'inference') await attempt('cold automatic model startup', () => modelStartup('cold'));
     const sceneReady = await attempt('scene readiness', ready);
     if (!sceneReady) await attempt('failure diagnostic screenshot', () => screenshot('failure'));
     await attempt('settle and observe', async () => { await page.waitForTimeout(Math.min(options.settleMs, remaining())); await sample('settled'); });
@@ -455,7 +561,9 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
         }
       });
       await attempt('warm isolation reload', async () => {
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }); await ready();
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+        if (definition.id === 'inference') await modelStartup('warm');
+        await ready();
         result.warmIsolation = await isolationSnapshot(page, definition.id === 'inference');
         assert(result.warmIsolation.document.crossOriginIsolated && result.warmIsolation.document.sharedArrayBuffer, 'Warm document isolation did not survive reload');
         if (definition.id === 'inference') assert(result.warmIsolation.workers.length > 0 && result.warmIsolation.workers.every((worker) => worker.crossOriginIsolated && worker.sharedArrayBuffer), 'Warm managed worker isolation failed');
@@ -463,6 +571,8 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       if (definition.id !== 'inference') await attempt('embedded model panel startup', async () => {
         await page.getByRole('button', { name: '> LOCAL AGENT', exact: true }).click();
         await page.locator('.pc-inference-panel').waitFor({ state: 'visible', timeout: Math.min(60000, remaining()) });
+        await modelStartup('embedded');
+        await screenshot('embedded-model');
         await page.getByRole('button', { name: 'CLOSE / UNLOAD', exact: true }).click();
         await page.locator('.pc-inference-panel').waitFor({ state: 'detached' });
       });
@@ -483,7 +593,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     if (eventError) result.cleanupErrors.push(errorText(eventError));
     result.finishedAt = timestamp(); result.durationMs = Date.now() - began;
     result.passed = !result.failures.length && !result.cleanupErrors.length && !result.pageErrors
-      && !result.consoleErrors && !result.gpuLossWarnings && !result.httpErrors && !result.failedRequests && !result.websocketErrors;
+      && !result.consoleErrors && !result.gpuLossWarnings && !result.httpErrors && !result.failedRequests && !result.websocketErrors && !result.unexpectedModelRequests.length;
     await save(); console.log(`[pages] ${definition.id}: ${result.passed ? 'PASS' : 'FAIL'} (${result.durationMs}ms)`);
   }
   return result;
@@ -491,7 +601,10 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
 
 export async function runPagesAcceptance(options = pagesOptions()) {
   await mkdir(options.outputDir, { recursive: true });
-  const report = { startedAt: timestamp(), scope: 'Built Pages routes, genuine external sources, owned browsers, no model downloads or user-host inference',
+  const report = { startedAt: timestamp(), scope: options.allowModelStartup
+    ? 'Built Pages routes, owned browsers, automatic pinned SmolVLM 256M startup, sharing/hosting disabled, no user-host inference'
+    : 'Built Pages routes, owned browsers, automatic loading cancelled after initialization; partial pinned SmolVLM downloads may occur; no user-host inference',
+    allowModelStartup: options.allowModelStartup, allowedStartupModel: startupModelId,
     docsRoot: options.docsRoot, chrome: options.executablePath, chromeArgs: options.args, headless: options.headless, routes: [], cleanupErrors: [], passed: false };
   const file = path.join(options.outputDir, 'report.json');
   const save = () => writeFile(file, JSON.stringify(report, null, 2));

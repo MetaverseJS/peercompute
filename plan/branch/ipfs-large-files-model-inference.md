@@ -902,3 +902,12 @@ Build the complete docs gallery with the expanded model catalog and verify every
 Add size-sorted model choices, remembered successful stored-model default (fallback Qwen3.5 0.8B Abliterated), and explicit Stored Models loading. Selection does not auto-load. Add overview back arrow plus top-right About/link hamburger. Include all four standard-GGUF Tsotchke releases with immutable provenance and codec exclusions; retain the current large-file/runtime admission bounds and candidacy labels. Preserve existing local/peer workflow, accessibility and persistent model identities.
 
 - November4 steering: investigate live remoteDreamShaper failures; move library/config/About into hamburger with separate About modal; rename ImportModel toLoad and automatically load saved/default model on startup; make model console installablePWA. This supersedes earlier no-autoload selection-only requirement.
+
+### November4 loading feedback follow-up
+
+- User requests a spinner overlay and Cancel during local model loading. Cover startup retained/default models, HF/peer acquisition and Stored Models → Load. Keep stage progress visible and wait for operation cleanup before dismissing; Escape cancels and background controls remain inaccessible.
+- Original public Dream failure was expired admission; owner-lifetime repair is deployed. Separate gray/noisy image output remains under hardware/runtime investigation despite valid peer transfer and unchanged diffusion source.
+
+- November4 additional request: an unsupported default must automatically select and load a supported model. Prefer existing compatible stored models to downloads; if needed choose the smallest compatible catalog profile, preserving honest setup state when none are available.
+
+- Console-only dial warnings are not request outcomes. Preserve direct/relay encryption and avoid replay; retry same-host stream negotiation safely before writing application data. Actual request errors and remote model/session readiness remain authoritative.

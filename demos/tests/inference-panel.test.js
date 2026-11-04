@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { before, after } from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
@@ -36,7 +36,7 @@ async function fixture(t, scenario = {}) {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('https://**/*', (route) => { external.push(route.request().url()); return route.abort(); });
   t.after(async () => {
-    await page.evaluate(() => window.panel?.dispose()).catch(() => {});
+    await page.evaluate(() => { window.cleaningUpFixture = true; window.finishLoadCleanup?.(); return window.panel?.dispose(); }).catch(() => {});
     await page.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []);
   });
   await page.goto(origin + '/__ui_fixture');
@@ -59,6 +59,18 @@ async function fixture(t, scenario = {}) {
       const abort = () => { clearTimeout(timer); reject(new DOMException('Cancelled', 'AbortError')); };
       if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true });
     });
+    const modelDelay = async (ms, signal) => {
+      try { await delay(ms, signal); }
+      catch (error) {
+        if (scenario.waitForLoadCleanup && !window.cleaningUpFixture) {
+          state.cleaning = true; calls.push({ type: 'load-cleanup' });
+          await new Promise((resolve) => { window.finishLoadCleanup = resolve; });
+          state.cleaning = false;
+        }
+        if (scenario.cleanupFailure) throw new AggregateError([error], 'Model cleanup is incomplete');
+        throw error;
+      }
+    };
     const runtime = {
       networkReady: !scenario.connectFailure,
       getDiscoveryStatus: () => scenario.discovery,
@@ -95,7 +107,7 @@ async function fixture(t, scenario = {}) {
             { stage: 'verify' }, { stage: 'load' }, { type: 'model-load', stage: 'unet', loaded: 0, total: 1000 },
           ]) { options.onProgress(event); await delay(150, options.signal); }
         }
-        await delay(scenario.acquireDelay ?? 5, options.signal);
+        await modelDelay(scenario.acquireDelay ?? 5, options.signal);
         if (state.rejectAcquire) throw new Error('Model download failed');
         state.loaded = true; state.loadedCid = 'fixture-vision'; calls.push({ type: 'loaded' }); },
       ...(scenario.startup ? { getStartupModel: () => ({ ...scenario.startup, localAvailability: state.availability[scenario.startup.sourceKey] ?? scenario.startup.localAvailability }) } : {}),
@@ -103,7 +115,7 @@ async function fixture(t, scenario = {}) {
       async loadStoredModel(cid, options) {
         calls.push({ type: 'load-stored', cid, gpuLayers: options.ggufGpuLayers });
         options.onProgress?.({ stage: 'verify' });
-        await delay(scenario.loadStoredDelay ?? 20, options.signal);
+        await modelDelay(scenario.loadStoredDelay ?? 20, options.signal);
         if (state.rejectLoad) throw new Error('Stored model could not be loaded');
         state.loaded = true; state.loadedCid = cid;
         state.preferredSourceKey = (state.sources ?? []).find((source) => source.manifestCid === cid)?.key ?? 'hf:vision';
@@ -303,10 +315,10 @@ test('model filtering and memory budgets are disabled during an active import', 
   await page.getByRole('button', { name: 'Load', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'acquire'));
   assert.equal(await page.getByRole('searchbox', { name: 'Filter models' }).isDisabled(), true);
-  await openMenuAction(page, 'Configure model chat');
+  assert.equal(await page.getByRole('dialog', { name: 'Loading model', exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Model RAM budget (GiB)', { exact: true }).isDisabled(), true);
   assert.equal(await page.getByLabel('Model GPU memory budget (GiB)', { exact: true }).isDisabled(), true);
-  await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('[aria-label="Filter models"]').disabled);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'budgets')), []);
 });
@@ -948,6 +960,7 @@ test('Stored Models loads one local package atomically, selects local chat and r
   await load.evaluate((element) => element.onclick());
   await page.waitForFunction(() => uiState.loadedCid === 'small');
   await modal.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 1, 'Successful loading must not leave a cancellable metadata-refresh tail');
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
   assert.equal(await page.getByLabel('Model and source').inputValue(), 'stored:small');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
@@ -966,7 +979,7 @@ test('stored loading failures and cancellation remain retryable without import o
   await modal.getByText('Error: Stored model could not be loaded', { exact: true }).waitFor();
   assert.equal(await load.isEnabled(), true);
   await page.evaluate(() => { uiState.rejectLoad = false; }); await load.click();
-  await modal.getByRole('button', { name: 'Stop loading', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Loading model', exact: true }).getByRole('button', { name: 'Cancel', exact: true }).click();
   await modal.getByText('Cancelled: Cancelled', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => uiState.loaded), false);
   assert.equal(await load.isEnabled(), true);
@@ -1043,7 +1056,7 @@ test('blocked startup remains selected with inline help and keeps remote inferen
 test('startup cancellation releases controls and a manual Load is an explicit retry', async (t) => {
   const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Fixture vision' }, acquireDelay: 500, interval: 50 });
   assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Cancelled:'));
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
   assert.equal(await page.evaluate(() => uiState.loaded), false);
@@ -1087,4 +1100,121 @@ test('Install is explicit in the menu, supports browser guidance and unsubscribe
   assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'dispose-install-controller')), false);
   await page.evaluate(() => emitInstall({ installed: false }));
   assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('HF and peer loading overlays follow download, verification and engine progress until ready', async (t) => {
+  for (const key of ['hf:vision', 'peer:fixture']) {
+    const page = await fixture(t, { importProgress: true, acquireDelay: 600 });
+    await page.getByLabel('Model and source').selectOption(key);
+    await page.getByRole('button', { name: 'Load', exact: true }).click();
+    const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+    await overlay.waitFor();
+    assert.match(await overlay.textContent(), key === 'hf:vision' ? /Fixture vision/ : /Peer text model/);
+    assert.equal(await overlay.getByRole('button', { name: 'Done', exact: true }).count(), 0);
+    assert.equal(await overlay.getByRole('button', { name: 'Close', exact: true }).count(), 0);
+    await overlay.getByRole('status').filter({ hasText: 'Downloading 7/7' }).waitFor();
+    await overlay.getByRole('status').filter({ hasText: 'Verifying stored model files' }).waitFor();
+    await overlay.getByRole('status').filter({ hasText: 'Loading model into RAM' }).waitFor();
+    await overlay.getByRole('status').filter({ hasText: 'Loading model: unet' }).waitFor();
+    await overlay.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => uiState.loaded), true);
+    assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Model ready/);
+    assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).evaluate((button) => button === document.activeElement), true);
+  }
+});
+
+test('startup overlays cover saved and default loads and Escape waits for cancellation cleanup', async (t) => {
+  for (const manifestCid of [undefined, 'saved']) {
+    const page = await fixture(t, { startup: { sourceKey: 'hf:vision', manifestCid, name: 'Startup model' },
+      acquireDelay: 10000, loadStoredDelay: 10000, waitForLoadCleanup: true });
+    const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+    assert.equal(await overlay.isVisible(), true);
+    assert.equal(await overlay.getByRole('button', { name: 'Cancel', exact: true }).evaluate((button) => button === document.activeElement), true);
+    await page.keyboard.press('Tab');
+    assert.equal(await overlay.evaluate((element) => element.contains(document.activeElement)), true);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => uiState.cleaning === true);
+    assert.equal(await overlay.isVisible(), true);
+    assert.equal(await overlay.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true);
+    assert.match(await overlay.getByRole('status').textContent(), /Cancelling load.*Waiting for cleanup/);
+    await page.keyboard.press('Escape'); await page.keyboard.press('Tab');
+    assert.equal(await overlay.isVisible(), true);
+    assert.equal(await overlay.evaluate((element) => element.contains(document.activeElement)), true);
+    await page.evaluate(() => document.querySelector('[aria-label="Menu"]').onclick());
+    assert.equal(await page.getByRole('dialog', { name: 'Menu', exact: true }).isVisible(), false);
+    assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load-cleanup').length), 1);
+    await page.evaluate(() => finishLoadCleanup()); await overlay.waitFor({ state: 'hidden' });
+    assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Cancelled:/);
+    assert.equal(await page.evaluate(() => uiState.loaded), false);
+    assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isEnabled(), true);
+  }
+});
+
+test('stored-library overlay keeps cleanup failures visible without reporting successful cancellation', async (t) => {
+  const page = await fixture(t, { stored: [{ manifestCid: 'saved', name: 'Stored package', totalBytes: 1024 }],
+    loadStoredDelay: 10000, waitForLoadCleanup: true, cleanupFailure: true });
+  await openMenuAction(page, 'Stored Models');
+  const library = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  await library.getByRole('button', { name: 'Load Stored package', exact: true }).click();
+  const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  await overlay.waitFor(); assert.match(await overlay.textContent(), /Stored package/);
+  await overlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForFunction(() => uiState.cleaning === true);
+  assert.equal(await overlay.isVisible(), true);
+  await page.evaluate(() => finishLoadCleanup()); await overlay.waitFor({ state: 'hidden' });
+  assert.equal(await library.isVisible(), true);
+  assert.match(await library.getByRole('status').textContent(), /Error: Model cleanup is incomplete/);
+  assert.doesNotMatch(await library.getByRole('status').textContent(), /Cancelled:/);
+  assert.equal(await library.evaluate((element) => element.contains(document.activeElement)), true);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').length), 1);
+});
+
+test('loading overlay fits desktop, mobile and embedded panels and honors reduced motion', async (t) => {
+  const page = await fixture(t, { acquireDelay: 10000, waitForLoadCleanup: true });
+  const output = '/tmp/peercompute-model-loading-overlay'; await mkdir(output, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
+  const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  for (const [label, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    await page.setViewportSize(viewport);
+    const bounds = await overlay.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height);
+    assert.equal(await overlay.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+    await page.screenshot({ path: `${output}/${label}.png` });
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await overlay.locator('.pc-loading-spinner').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.locator('#panel').evaluate((element) => { element.classList.remove('pc-inference-standalone'); element.style.width = '620px'; });
+  const embedded = await page.locator('.pc-inference-panel').boundingBox();
+  assert.equal(embedded.width, 620); assert.equal(embedded.height, 720);
+  await overlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForFunction(() => uiState.cleaning === true);
+  await page.screenshot({ path: `${output}/cancelling-embedded.png` });
+  await page.evaluate(() => finishLoadCleanup()); await overlay.waitFor({ state: 'hidden' });
+});
+
+test('chat generation keeps its Stop control and never opens the model-loading overlay', async (t) => {
+  const page = await fixture(t, { loaded: true, generateDelay: 10000 });
+  await page.getByLabel('Message', { exact: true }).fill('Hello');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
+  assert.equal(await page.getByRole('dialog', { name: 'Loading model', exact: true }).isVisible(), false);
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.waitForFunction(() => calls.some((call) => call.type === 'cancel'));
+});
+
+test('panel disposal waits for load cleanup before removing its loading overlay', async (t) => {
+  const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Pending model' },
+    acquireDelay: 10000, waitForLoadCleanup: true });
+  await page.evaluate(() => { window.pendingDispose = panel.dispose(); });
+  await page.waitForFunction(() => uiState.cleaning === true);
+  const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  assert.equal(await overlay.isVisible(), true);
+  assert.equal(await overlay.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => uiState.disposed), false);
+  await page.evaluate(async () => { finishLoadCleanup(); await pendingDispose; });
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  assert.equal(await page.locator('.pc-inference-panel').count(), 0);
+  assert.equal(await page.evaluate(() => uiState.disposed), true);
 });

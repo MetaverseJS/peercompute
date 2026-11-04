@@ -97,7 +97,79 @@ test('native failure racing cancellation quarantines diffusion while cooperative
   for (const fails of [true, false]) {
     const controller = new AbortController(); let lost = false;
     const session = { async run() { controller.abort(); if (fails) throw new WebAssembly.RuntimeError('trap'); return {}; } };
-    await assert.rejects(runDiffusionGpuStage({ session, inputs: {}, device: { queue: { async onSubmittedWorkDone() {} } }, signal: controller.signal, own() {}, markLost() { lost = true; } }), fails ? /Model session lost/ : { name: 'AbortError' });
+    await assert.rejects(runDiffusionGpuStage({ session, inputs: {}, device: gpuDevice(), signal: controller.signal, own() {}, markLost() { lost = true; } }), fails ? /Model session lost/ : { name: 'AbortError' });
     assert.equal(lost, fails);
   }
+});
+
+function gpuDevice(errors = {}) {
+  const device = new EventTarget(), scopes = [], popped = [];
+  Object.assign(device, { scopes, popped,
+    pushErrorScope(filter) { scopes.push(filter); },
+    async popErrorScope() { const filter = scopes.pop(); popped.push(filter); return errors[filter] ?? null; },
+    queue: { async onSubmittedWorkDone() {} },
+  });
+  return device;
+}
+
+test('resolved ORT tensors and queue fences cannot hide GPU allocation or validation failure', async () => {
+  const { runDiffusionGpuStage } = await import('../../src/peercompute/inference/diffusion/engine.js');
+  for (const filter of ['validation', 'out-of-memory', 'internal']) {
+    const device = gpuDevice({ [filter]: new Error(`${filter} origin`) });
+    const output = { dispose() {} }, owned = []; let lost;
+    await assert.rejects(runDiffusionGpuStage({ device, session: { async run() { return { image: output }; } }, inputs: {},
+      own: (tensor) => owned.push(tensor), markLost: (error) => { lost = error; } }),
+    (error) => /Model session lost/.test(error.message) && error.cause.message === `${filter} origin`);
+    assert.ok(lost); assert.deepEqual(owned, [output], 'caller retains output cleanup ownership on failure');
+    assert.deepEqual(device.scopes, []); assert.deepEqual(device.popped, ['internal', 'out-of-memory', 'validation']);
+  }
+});
+
+test('first-session device creation is scoped and allocation failure wins over invalid-buffer fallout', async () => {
+  const { guardDiffusionGpuOperation } = await import('../../src/peercompute/inference/diffusion/engine.js');
+  const oom = new Error('Failed to allocate 67108864 bytes');
+  const device = gpuDevice({ 'out-of-memory': oom, validation: new Error('Invalid Buffer') });
+  let capture, lost, released = 0;
+  const session = { async release() { released++; } };
+  let retained;
+  await assert.rejects(guardDiffusionGpuOperation({ stage: 'unet load',
+    setDeviceCapture: (value) => { capture = value; }, markLost: (error) => { lost = error; },
+    operation: async () => { capture(device); retained = session; return session; } }),
+  (error) => error.code === 'ERR_DIFFUSION_GPU_OUT_OF_MEMORY' && error.cause === oom && /unet load/.test(error.message));
+  assert.equal(capture, null); assert.ok(lost); await retained.release(); assert.equal(released, 1);
+  assert.match(lost.message, /Close GPU-heavy apps or unload other models, then reload/);
+  assert.ok(!lost.message.includes(oom.message), 'native allocation details stay in the cause');
+  assert.deepEqual(device.scopes, []);
+});
+
+test('uncaptured GPU errors remain observed when ORT replaces its event property and detach on cleanup', async () => {
+  const { observeDiffusionGpuErrors } = await import('../../src/peercompute/inference/diffusion/engine.js');
+  const device = gpuDevice(), seen = [], stop = observeDiffusionGpuErrors(device, (error) => seen.push(error));
+  device.onuncapturederror = () => {};
+  const event = new Event('uncapturederror'); event.error = new Error('idle GPU allocation failure');
+  device.dispatchEvent(event); assert.deepEqual(seen, [event.error]);
+  stop(); device.dispatchEvent(event); assert.equal(seen.length, 1);
+});
+
+test('scope cleanup failures quarantine the worker and cancellation cannot turn GPU OOM into healthy reuse', async () => {
+  const { runDiffusionGpuStage } = await import('../../src/peercompute/inference/diffusion/engine.js');
+  const controller = new AbortController(), device = gpuDevice({ 'out-of-memory': new Error('allocation failed') });
+  let lost = false;
+  await assert.rejects(runDiffusionGpuStage({ device, inputs: {}, signal: controller.signal,
+    session: { async run() { controller.abort(); return {}; } }, own() {}, markLost() { lost = true; } }), /GPU out of memory/);
+  assert.equal(lost, true); assert.deepEqual(device.scopes, []);
+  const broken = gpuDevice(); let pops = 0;
+  broken.popErrorScope = async () => { pops++; throw new Error('device destroyed'); };
+  await assert.rejects(runDiffusionGpuStage({ device: broken, inputs: {}, session: { async run() { return {}; } },
+    own() {}, markLost() {} }), /device destroyed/);
+  assert.equal(pops, 3);
+});
+
+test('GPU validation failure marks the managed task lost and blocks another generation', async () => {
+  const { runDiffusionGpuStage } = await import('../../src/peercompute/inference/diffusion/engine.js');
+  const f = fixture(async () => runDiffusionGpuStage({ device: gpuDevice({ validation: new Error('Invalid command buffer') }),
+    session: { async run() { return {}; } }, inputs: {}, own() {}, markLost() {} }));
+  await f.load(); await assert.rejects(f.run(), /Invalid command buffer/);
+  assert.equal((await f.task({ command: 'status', sessionId: 'model' })).status, 'lost');
+  await assert.rejects(f.run(), /lost/); assert.equal(f.calls, 1);
 });

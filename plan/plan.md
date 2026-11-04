@@ -1591,3 +1591,11 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Add standalone installable PWA with isolated service worker, relative Pages paths and bounded app-shell caching. Validate offline shell separately from actual model/network execution.
 - Acceptance: deterministic expiry/revocation/cleanup regressions, UI startup/menu tests, PWA installability/offline and isolation checks, actual public DreamShaper generation after simulated idle clock gap.
 - Implementation andprepublicationgates pass:193integratedunits,49UI,17PWA/isolation,73releasechecks;3builds,4nestedroutes andrealconsoleinstallability/offline/menuacceptance. Publishing thenverifyingactualpublicDreamimage/startup withretainedmodel; broaderIPFS/ulg/large-modelqualification remainsopen.
+
+- November4 follow-up: public83b0c1df fixes the confirmed expired admission and verifies automatic saved/default loading and installable PWA. Peer Dream image transfer completes, but visual output is corrupt; retain image-quality gate open separately. Add a modal spinner with progress and real cancellation for every local load path, staying open through cancellation cleanup.
+
+- Latest November4 steering: unsupported startup choices automatically fall back to a compatible saved package, otherwise the requested default if compatible, otherwise the smallest compatible catalog package. Validate actual automatic startup on a standard no-f16 browser and embedded consoles.
+
+- Inference connections now retry another already authenticated connection to the same host when initial stream negotiation fails, before any prompt is sent. The reported console-only dial warning was distinct from the observed expired remote model error; refresh the hosting page to use the deployed owner-lifetime fix.
+
+- Verified: cancellable local-load overlay, supported-model startup fallback, late cancellation cleanup/preference rollback, diffusion GPU error detection, and same-peer stream recovery.213integratedunit/55UI/17PWA/73releasechecks plus actual library/startup/cancel and4affectedPagesroutes pass. Live controlled encrypted relay recovery passes; Dream's prior bad pixels were an actual GPUallocationfailure, now rejected. Publishing this slice; broader IPFS/ulg gates remain separate.

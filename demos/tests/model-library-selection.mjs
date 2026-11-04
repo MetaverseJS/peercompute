@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { DEFAULT_MODEL_ID } from '../inference/src/modelPreferences.js';
+import { MODEL_CATALOG, modelFileUrl } from '../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { resolveOverviewUrl } from '../inference/src/ui/consoleNavigation.js';
 
 // Real storage and managed GPU execution in an owned, temporary browser profile.
@@ -10,11 +10,13 @@ import { resolveOverviewUrl } from '../inference/src/ui/consoleNavigation.js';
 const url = process.env.PREVIEW_URL || 'https://fastbox.tail5c077c.ts.net:5189/?dev=1';
 const output = process.env.LIBRARY_EVIDENCE || '/tmp/peercompute-model-library-selection';
 const modelId = 'smolvlm-256m-q4';
+const verifyCancellation = process.env.LIBRARY_VERIFY_LOAD_CANCEL === '1';
+const allowedModelUrls = new Set(MODEL_CATALOG[modelId].files.map((file) => modelFileUrl(modelId, file.path)));
 const report = { url, startedAt: new Date().toISOString(), modelId,
   scope: 'Owned browser, real IndexedDB and managed WebGPU, normal pinned HF downloads, local inference only',
-  pageErrors: [], consoleErrors: [], cleanupErrors: [], modelRequests: [], screenshots: [] };
+  verifyCancellation, pageErrors: [], consoleErrors: [], cleanupErrors: [], modelRequests: [], unexpectedModelRequests: [], screenshots: [] };
 await mkdir(output, { recursive: true });
-let browser, page, forbidModelDownloads = false;
+let browser, page, forbidModelDownloads = false, phase = 'initial-fallback';
 const snapshot = async (name) => {
   const file = path.join(output, `${name}.png`);
   await page.screenshot({ path: file, fullPage: true }); report.screenshots.push(file);
@@ -30,20 +32,44 @@ async function ready() {
 }
 async function selected() { return page.getByRole('combobox', { name: 'Model and source', exact: true }).inputValue(); }
 async function modelStatus() { return page.evaluate(() => inferencePanel.runtime.service.getStatus()); }
+async function loaded() {
+  await page.waitForFunction(() => window.inferencePanel?.runtime.service.getStatus().status === 'ready', null, { timeout: 240000 });
+  await page.locator('.pc-model-loading').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+}
+async function cancelLoad(method, label) {
+  const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  await overlay.waitFor({ state: 'visible', timeout: 30000 });
+  await snapshot(`${label}-loading`);
+  if (method === 'escape') await page.keyboard.press('Escape');
+  else await overlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+  // Cancellation is complete only after the actual runtime promise settles.
+  await overlay.waitFor({ state: 'hidden', timeout: 120000 });
+  await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'idle', null, { timeout: 30000 });
+  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  const status = await page.locator('.pc-inference-panel > [role="status"]').innerText();
+  assert(!/Error:|cleanup.*incomplete/i.test(status), status);
+  report[label] = { status: await modelStatus(), message: status, method,
+    retained: await page.evaluate(() => inferencePanel.runtime.listStoredModels()) };
+}
 try {
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/opt/google/chrome/chrome',
     headless: process.env.LIBRARY_HEADED !== '1', args: ['--enable-unsafe-webgpu'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await context.route('https://**/*', (route) => {
     const request = route.request(), requestUrl = new URL(request.url());
-    let modelSource = false;
+    let modelSource = false, allowedModel = false;
     for (let link = request; link; link = link.redirectedFrom()) {
       const host = new URL(link.url()).hostname;
       if (host === 'huggingface.co' || host.endsWith('.huggingface.co') || host === 'hf.co' || host.endsWith('.hf.co')) modelSource = true;
+      if (allowedModelUrls.has(link.url())) allowedModel = true;
     }
     const unexpectedExternal = requestUrl.origin !== new URL(url).origin && requestUrl.hostname !== 'secretworkshop.net';
     if (modelSource || (forbidModelDownloads && unexpectedExternal)) {
-      report.modelRequests.push({ url: request.url(), forbidden: forbidModelDownloads });
+      report.modelRequests.push({ url: request.url(), forbidden: forbidModelDownloads, phase, allowedModel });
+      if (modelSource && !allowedModel) {
+        report.unexpectedModelRequests.push(request.url()); return route.abort('blockedbyclient');
+      }
       if (forbidModelDownloads) return route.abort('blockedbyclient');
     }
     return route.continue();
@@ -52,12 +78,18 @@ try {
   page.on('pageerror', (error) => report.pageErrors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') report.consoleErrors.push(message.text()); });
   await page.goto(url); await ready();
-  assert.equal(await selected(), `hf:${DEFAULT_MODEL_ID}`);
   report.defaultStartup = await page.evaluate(() => inferencePanel.runtime.getStartupModel());
-  assert.equal(report.defaultStartup.localAvailability.status, 'unavailable',
-    'This small-model gate uses the standard browser without a shader-f16 override; the default GGUF must be blocked');
-  assert.equal((await modelStatus()).status, 'idle', 'An incompatible default must not start loading');
-  assert.equal(report.modelRequests.length, 0, 'A blocked default must not download model files');
+  assert.equal(report.defaultStartup.sourceKey, `hf:${modelId}`, 'The actual no-f16 fallback must be the bounded SmolVLM package');
+  assert(!['unavailable', 'checking'].includes(report.defaultStartup.localAvailability.status));
+  assert.equal(await selected(), report.defaultStartup.sourceKey);
+  if (verifyCancellation) {
+    await cancelLoad('button', 'initialCancellation');
+    phase = 'manual-retry';
+    await page.getByRole('button', { name: 'Load', exact: true }).click();
+  }
+  await loaded();
+  report.initialAutoStart = { ...await modelStatus(), retriedAfterCancellation: verifyCancellation };
+  report.manifestCid = report.initialAutoStart.manifestCid;
   const arrow = page.getByRole('link', { name: 'Back to demo overview', exact: true });
   assert.equal(await arrow.getAttribute('href'), resolveOverviewUrl(url));
   report.overviewUrl = resolveOverviewUrl(url);
@@ -74,20 +106,14 @@ try {
   report.sources = await page.evaluate(() => inferencePanel.runtime.listModelSources().map(({ key, totalBytes }) => ({ key, totalBytes })));
   const sizes = report.sources.map((entry) => Number.isFinite(entry.totalBytes) && entry.totalBytes >= 0 ? entry.totalBytes : Infinity);
   assert(sizes.every((size, index) => !index || sizes[index - 1] <= size));
-  const picker = page.getByRole('combobox', { name: 'Model and source', exact: true });
-  await picker.selectOption(`hf:${modelId}`);
-  await page.getByRole('button', { name: 'Load', exact: true }).click();
-  await page.waitForFunction(() => window.inferencePanel?.runtime.service.getStatus().status === 'ready', null, { timeout: 240000 });
-  const initial = await modelStatus(); report.manifestCid = initial.manifestCid;
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
   assert.equal(await page.evaluate(() => inferencePanel.runtime.getPreferredModelSourceKey()), `hf:${modelId}`);
   const imported = report.modelRequests.length;
   assert(imported > 0, 'The initial package was imported normally');
   forbidModelDownloads = true;
+  phase = 'retained-auto-start';
   await page.reload(); await ready();
   assert.equal(await selected(), `hf:${modelId}`, 'Reload restores the last successfully used stored model');
-  await page.waitForFunction(() => window.inferencePanel?.runtime.service.getStatus().status === 'ready', null, { timeout: 240000 });
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  await loaded();
   report.storedAutoStart = await modelStatus();
   assert.equal(report.storedAutoStart.manifestCid, report.manifestCid, 'Reload automatically loads the remembered local package');
   assert.equal(report.modelRequests.length, imported, 'Automatic stored loading must not fetch model files');
@@ -103,7 +129,16 @@ try {
   const library = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   const row = library.locator('.pc-stored-model').filter({ hasText: 'SmolVLM 256M' });
   await row.waitFor(); await snapshot('stored-desktop');
+  phase = 'stored-load';
   await row.getByRole('button', { name: /^Load / }).click();
+  if (verifyCancellation) {
+    await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'loading', null, { timeout: 30000 });
+    await cancelLoad('escape', 'storedCancellation');
+    assert(report.storedCancellation.retained.some((entry) => entry.manifestCid === report.manifestCid));
+    assert.equal(report.modelRequests.length, imported, 'Cancelled stored load must keep its verified package and avoid downloads');
+    await row.getByRole('button', { name: /^Load / }).click();
+  }
+  await loaded();
   await library.waitFor({ state: 'hidden', timeout: 120000 });
   assert.equal((await modelStatus()).manifestCid, report.manifestCid);
   assert.equal(report.modelRequests.length, imported, 'Stored Models Load must not fetch model files');
@@ -126,11 +161,14 @@ try {
   await row.getByRole('button', { name: /^Delete / }).click();
   await page.waitForFunction(async () => (await inferencePanel.runtime.listStoredModels()).length === 0, null, { timeout: 120000 });
   await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  phase = 'deleted-library-fallback'; forbidModelDownloads = false;
   await page.reload(); await ready();
-  assert.equal(await selected(), `hf:${DEFAULT_MODEL_ID}`, 'Deleted remembered package falls back to the requested Qwen');
-  assert.equal((await page.evaluate(() => inferencePanel.runtime.getStartupModel())).localAvailability.status, 'unavailable');
-  assert.equal((await modelStatus()).status, 'idle');
-  assert.equal(report.modelRequests.length, imported);
+  report.deletedStartup = await page.evaluate(() => inferencePanel.runtime.getStartupModel());
+  assert.equal(report.deletedStartup.sourceKey, `hf:${modelId}`, 'Deleting the saved model must reselect a supported catalog fallback');
+  assert.equal(await selected(), report.deletedStartup.sourceKey);
+  // Prove the fallback actually starts, then cancel instead of downloading it twice.
+  await cancelLoad('button', 'deletedFallbackCancellation');
+  assert.deepEqual(report.unexpectedModelRequests, []);
   assert.deepEqual(report.pageErrors, []); assert.deepEqual(report.consoleErrors, []);
   report.passed = true;
 } catch (error) {

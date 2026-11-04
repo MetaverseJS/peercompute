@@ -13,12 +13,14 @@ const button = (text, label) => {
 };
 const label = (text, control) => { const result = node('label', text); result.append(control); return result; };
 
-function dialog(title) {
+function dialog(title, { dismissible = true } = {}) {
   const element = node('dialog', undefined, 'pc-model-dialog');
   const heading = node('h2', title); heading.id = `model-dialog-${crypto.randomUUID()}`;
   element.setAttribute('aria-labelledby', heading.id);
-  const done = button('Done'); done.autofocus = true; done.onclick = () => element.close();
-  const header = node('div', undefined, 'pc-dialog-header'); header.append(heading, done);
+  const header = node('div', undefined, 'pc-dialog-header'); header.append(heading);
+  if (dismissible) {
+    const done = button('Done'); done.autofocus = true; done.onclick = () => element.close(); header.append(done);
+  }
   const body = node('div', undefined, 'pc-dialog-body');
   const status = node('p', '', 'pc-inference-status'); status.setAttribute('role', 'status');
   element.append(header, body, status);
@@ -26,6 +28,7 @@ function dialog(title) {
     if (event.key !== 'Tab') return;
     const controls = [...element.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')]
       .filter((control) => !control.disabled && control.tabIndex >= 0 && control.getClientRects().length);
+    if (!controls.length) { event.preventDefault(); element.focus(); return; }
     const first = controls[0], last = controls.at(-1);
     if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
       event.preventDefault(); (event.shiftKey ? last : first)?.focus();
@@ -60,6 +63,15 @@ export function createPanelView(container) {
   const source = node('select'); source.setAttribute('aria-label', 'Model and source');
   const acquire = button('Load'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
   const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const loadingWindow = dialog('Loading model', { dismissible: false }), loading = loadingWindow.element;
+  loading.classList.add('pc-model-loading'); loading.tabIndex = -1;
+  const loadingSpinner = node('span', undefined, 'pc-loading-spinner'); loadingSpinner.setAttribute('aria-hidden', 'true');
+  const loadingModel = node('strong', '', 'pc-loading-model');
+  const loadingCancel = button('Cancel'); loadingCancel.autofocus = true;
+  loadingWindow.status.id = `model-load-progress-${crypto.randomUUID()}`;
+  loadingWindow.status.setAttribute('aria-live', 'polite'); loadingWindow.status.setAttribute('aria-atomic', 'true');
+  loading.setAttribute('aria-describedby', loadingWindow.status.id);
+  loadingWindow.body.append(loadingSpinner, loadingModel, loadingWindow.status, loadingCancel);
   const menuDialog = dialog('Menu'), menuWindow = menuDialog.element;
   menuWindow.classList.add('pc-console-menu');
   const aboutButton = button('About'), install = button('Install'); install.hidden = true;
@@ -153,10 +165,11 @@ export function createPanelView(container) {
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels, compatibility, about, menuWindow); container.append(panel);
+  panel.append(configuration, storedModels, compatibility, about, menuWindow, loading); container.append(panel);
   return { panel, sourceFilter, source, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
+    loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,

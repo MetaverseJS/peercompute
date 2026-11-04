@@ -34,24 +34,51 @@ export function createModelPreferences({ storeName = 'inference-models', storage
   // helper. If the lock is denied or stalls, only change this session's hint.
   async function update(operation, signal) {
     if (!locks?.request) return operation(true);
+    let entered = false;
     try {
       return await locks.request(`${key}:write`, { mode: 'exclusive',
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1000)]) : AbortSignal.timeout(1000) },
-      () => operation(true));
-    } catch { return operation(false); }
+      () => { entered = true; return operation(true); });
+    } catch (error) {
+      if (entered) throw error;
+      return operation(false);
+    }
   }
+  function rememberLoadedWithReceipt(value, { signal } = {}) {
+    const record = normalize({ ...value, version: 1, selectionId: crypto.randomUUID() });
+    if (!record) throw new TypeError('A stored model preference requires a valid CID and model ID');
+    return update((persistent) => {
+      if (signal?.aborted) return { record: read(), committed: false };
+      const previous = read(persistent);
+      remembered = record; sessionOnly = !persistent;
+      if (persistent) try { storage?.setItem(key, JSON.stringify(record)); } catch { sessionOnly = true; }
+      return { record: copy(), previous, committed: true, persisted: !sessionOnly && !!storage?.setItem };
+    }, signal);
+  }
+  const matches = (a, b) => a && b && a.manifestCid === b.manifestCid
+    && a.modelId === b.modelId && a.selectionId === b.selectionId;
   read();
   return {
     readLastLoaded: read,
-    rememberLoaded(value, { signal } = {}) {
-      const record = normalize({ ...value, version: 1, selectionId: crypto.randomUUID() });
-      if (!record) throw new TypeError('A stored model preference requires a valid CID and model ID');
+    rememberLoaded: (value, options) => rememberLoadedWithReceipt(value, options).then((receipt) => receipt.record),
+    rememberLoadedWithReceipt,
+    restoreLastLoaded(receipt) {
+      const expected = normalize(receipt?.record), previous = normalize(receipt?.previous);
+      if (!receipt?.committed || !expected) return Promise.resolve(read());
       return update((persistent) => {
-        if (signal?.aborted) return read();
-        remembered = record; sessionOnly = !persistent;
-        if (persistent) try { storage?.setItem(key, JSON.stringify(record)); } catch { sessionOnly = true; }
+        const current = read(receipt.persisted);
+        // A newer successful load, including the same CID, wins over rollback.
+        if (!matches(current, expected)) return current;
+        if (receipt.persisted && !persistent) throw new Error('The cancelled load was cleaned up, but its saved selection could not be restored');
+        if (receipt.persisted) {
+          try {
+            if (previous) storage.setItem(key, JSON.stringify(previous));
+            else storage.removeItem(key);
+          } catch (error) { throw new Error('The cancelled load was cleaned up, but its saved selection could not be restored', { cause: error }); }
+        }
+        remembered = previous; sessionOnly = !receipt.persisted || !persistent;
         return copy();
-      }, signal);
+      });
     },
     clearLastLoaded(expected = copy()) {
       const previous = normalize(expected);

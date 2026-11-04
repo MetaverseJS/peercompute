@@ -101,3 +101,65 @@ test('cancelled or denied-lock writes never overwrite another persisted successf
   await second.clearLastLoaded(session);
   assert.deepEqual(createModelPreferences({ storage }).readLastLoaded(), saved);
 });
+
+test('cancelled load receipt restores its previous hint without overwriting newer cross-tab loads', async () => {
+  const storage = memoryStorage(), first = createModelPreferences({ storage }), second = createModelPreferences({ storage });
+  const previous = await first.rememberLoaded(record);
+  const receipt = await first.rememberLoadedWithReceipt({ ...record, modelId: 'cancelled' });
+  assert(receipt.committed && receipt.persisted);
+  assert.deepEqual(await first.restoreLastLoaded(receipt), previous);
+  assert.deepEqual(second.readLastLoaded(), previous);
+  for (const modelId of ['cancelled', 'another-model']) {
+    const cancelled = await first.rememberLoadedWithReceipt({ ...record, modelId: 'cancelled' });
+    const newer = await second.rememberLoaded({ ...record, modelId });
+    assert.deepEqual(await first.restoreLastLoaded(cancelled), newer);
+    assert.deepEqual(first.readLastLoaded(), newer);
+  }
+  const signal = AbortSignal.abort();
+  const aborted = await first.rememberLoadedWithReceipt(record, { signal });
+  assert.equal(aborted.committed, false);
+  assert.deepEqual(await first.restoreLastLoaded(aborted), second.readLastLoaded());
+});
+
+test('receipt rollback preserves session-only hints when browser write locks are denied', async () => {
+  const storage = memoryStorage();
+  const saved = await createModelPreferences({ storage }).rememberLoaded(record);
+  const locks = { async request() { throw new Error('Lock denied'); } };
+  const preferences = createModelPreferences({ storage, locks });
+  const previous = await preferences.rememberLoaded({ ...record, modelId: 'local-only-previous' });
+  const receipt = await preferences.rememberLoadedWithReceipt({ ...record, modelId: 'local-only-cancelled' });
+  assert.equal(receipt.persisted, false);
+  assert.deepEqual(await preferences.restoreLastLoaded(receipt), previous);
+  assert.deepEqual(preferences.readLastLoaded(), previous);
+  assert.deepEqual(createModelPreferences({ storage }).readLastLoaded(), saved);
+});
+
+test('rollback after lock recovery restores the latest persisted hint instead of a stale session fallback', async () => {
+  const storage = memoryStorage(); let denied = true;
+  const locks = { async request(_key, _options, callback) { if (denied) throw new Error('Denied'); return callback(); } };
+  const preferences = createModelPreferences({ storage, locks });
+  await preferences.rememberLoaded({ ...record, modelId: 'session-only' });
+  const latest = await createModelPreferences({ storage }).rememberLoaded({ ...record, modelId: 'other-tab' });
+  denied = false;
+  const receipt = await preferences.rememberLoadedWithReceipt(record);
+  assert.deepEqual(receipt.previous, latest);
+  assert.deepEqual(await preferences.restoreLastLoaded(receipt), latest);
+  assert.deepEqual(createModelPreferences({ storage }).readLastLoaded(), latest);
+});
+
+test('failed persistent rollback is reported once and never retried outside its acquired lock', async () => {
+  const storage = memoryStorage(); let denyLock = false;
+  const locks = { async request(_key, _options, callback) { if (denyLock) throw new Error('Denied'); return callback(); } };
+  const preferences = createModelPreferences({ storage, locks });
+  const receipt = await preferences.rememberLoadedWithReceipt(record);
+  const remove = storage.removeItem; let removals = 0;
+  storage.removeItem = () => { removals++; throw new Error('Storage failed'); };
+  await assert.rejects(preferences.restoreLastLoaded(receipt), /could not be restored/);
+  assert.equal(removals, 1); assert.deepEqual(preferences.readLastLoaded(), receipt.record);
+  denyLock = true;
+  await assert.rejects(preferences.restoreLastLoaded(receipt), /could not be restored/);
+  assert.equal(removals, 1);
+  denyLock = false; storage.removeItem = remove;
+  assert.equal(await preferences.restoreLastLoaded(receipt), null);
+  assert.equal(createModelPreferences({ storage }).readLastLoaded(), null);
+});

@@ -45,6 +45,75 @@ async function until(check) {
   throw new Error('Condition did not settle');
 }
 
+test('failed preferred WebRTC stream opens through the same host\'s encrypted relay before sending inference', { timeout: 15000 }, async (t) => {
+  const [requestor, host, unrelated] = await fixture(t);
+  host.state = { ...empty(), hostedModel: model };
+  await requestor.service.refresh();
+  const actual = requestor.node.getConnections().find((connection) => connection.remotePeer.equals(host.node.peerId));
+  const original = requestor.node.getConnections;
+  const attempts = [];
+  const native = { status: 'open', remotePeer: host.node.peerId, encryption: 'native', remoteAddr: multiaddr('/webrtc'),
+    async newStream() { attempts.push('native'); throw new Error('Preferred muxer closed'); } };
+  const relay = { status: 'open', remotePeer: host.node.peerId, encryption: '/noise', remoteAddr: multiaddr('/p2p-circuit'),
+    newStream(...args) { attempts.push('relay'); return actual.newStream(...args); } };
+  const forbidden = { ...native, encryption: '/plaintext/2.0.0',
+    newStream() { throw new Error('Plaintext must never be attempted'); } };
+  const other = { ...native, remotePeer: unrelated.node.peerId,
+    newStream() { throw new Error('A different peer is not a connection fallback'); } };
+  requestor.node.getConnections = () => [native, relay, forbidden, other];
+  try {
+    await requestor.service._query(host.node.peerId.toString(), AbortSignal.timeout(3000));
+    let accepted = 0;
+    const result = await requestor.service.generate(manifestCid, { prompt: 'Describe a calm lake.',
+      onProgress(event) { if (event.type === 'accepted') accepted++; } });
+    assert.deepEqual(attempts, ['native', 'relay', 'native', 'relay']);
+    assert.equal(result.peerId, host.node.peerId.toString()); assert.equal(result.connectionEncryption, '/noise');
+    assert.equal(host.received.length, 1); assert.equal(accepted, 1); assert.equal(unrelated.received.length, 0);
+  } finally { requestor.node.getConnections = original; }
+});
+
+test('stream opening cancellation never retries and closes a transport\'s late stream', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  const original = requestor.node.getConnections;
+  const caller = new AbortController(); let finishOpening, started, relayAttempts = 0, lateAborted = 0;
+  const opening = new Promise((resolve) => { finishOpening = resolve; });
+  const atOpening = new Promise((resolve) => { started = resolve; });
+  const native = { status: 'open', remotePeer: host.node.peerId, encryption: 'native', remoteAddr: multiaddr('/webrtc'),
+    newStream() { started(); return opening; } };
+  const relay = { ...native, encryption: '/noise', remoteAddr: multiaddr('/p2p-circuit'),
+    newStream() { relayAttempts++; throw new Error('Must not retry after cancellation'); } };
+  requestor.node.getConnections = () => [native, relay];
+  const pending = requestor.service._openStream(host.node.peerId.toString(), caller.signal);
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  try {
+    await atOpening; caller.abort(); await rejected;
+    assert.equal(relayAttempts, 0); assert.equal(host.received.length, 0);
+    finishOpening({ abort() { lateAborted++; } }); await delay(0); assert.equal(lateAborted, 1);
+  } finally { finishOpening({ abort() {} }); requestor.node.getConnections = original; await rejected; }
+});
+
+test('stream negotiation has a bounded deadline and preserves every failed connection cause', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2, { queryTimeoutMs: 100 });
+  const original = requestor.node.getConnections;
+  const relayError = Object.assign(new Error('Relay stream limit reached'), { code: 'ERR_RELAY_LIMIT' });
+  let finishOpening, lateAborted = 0, relayAttempts = 0;
+  const native = { status: 'open', remotePeer: host.node.peerId, encryption: 'native', remoteAddr: multiaddr('/webrtc'),
+    newStream() { return new Promise((resolve) => { finishOpening = resolve; }); } };
+  const relay = { ...native, encryption: '/noise', remoteAddr: multiaddr('/p2p-circuit'),
+    newStream() { relayAttempts++; throw relayError; } };
+  requestor.node.getConnections = () => [native, relay];
+  try {
+    await assert.rejects(requestor.service._openStream(host.node.peerId.toString(), AbortSignal.timeout(2000)), (error) => {
+      assert(error instanceof AggregateError); assert.equal(error.code, 'ERR_INFERENCE_STREAM_UNAVAILABLE');
+      assert.equal(error.errors.length, 2); assert.equal(error.errors[0].code, 'ERR_INFERENCE_DEADLINE');
+      assert.equal(error.errors[1], relayError); assert.equal(error.cause, relayError);
+      assert.match(error.message, /Relay stream limit/); return true;
+    });
+    assert.equal(relayAttempts, 1); assert.equal(host.received.length, 0);
+    finishOpening({ abort() { lateAborted++; } }); await delay(0); assert.equal(lateAborted, 1);
+  } finally { finishOpening?.({ abort() {} }); requestor.node.getConnections = original; }
+});
+
 test('private inference rejects plaintext, missing crypto and invalid input envelopes', () => {
   const base = { status: 'open', remotePeer: {} };
   assert.equal(encryptedConnection({ ...base, encryption: '/noise' }), true);

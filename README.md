@@ -203,17 +203,19 @@ cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
 Select a Hugging Face or discovered peer model, then **Load**: it fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
-internally. Import progress reports downloaded bytes, stored-file verification
-and GPU initialization separately, with elapsed phase time. File sharing runs
+internally. A loading overlay shows a spinner, the model name, downloaded bytes,
+stored-file verification and GPU initialization, with elapsed phase time.
+**Cancel** (or Escape) stops the load; the overlay stays visible while worker
+cleanup finishes. Completed stored packages remain available for another attempt. File sharing runs
 in the background, so preparing publication does not hold up
 local chat. Sharing failures remain visible in **Stored Models**.
 Choices are ordered by package size, smallest first, with download size shown
 separately from RAM/GPU estimates. Startup automatically loads the last successfully
-used model whose complete package is still stored in this library. Without that
-hint, it reuses a compatible saved model; an empty library downloads and loads
-Qwen3.5 0.8B Abliterated. Startup loading can be stopped. An unsupported startup
-model remains selected with setup help and Load disabled; peer inference remains
-available. This startup attempt runs once and does not retry on discovery refresh.
+used compatible model whose complete package is still stored in this library.
+Without that hint, it reuses a compatible saved model. Otherwise it downloads
+and loads Qwen3.5 0.8B Abliterated if supported, or the smallest supported catalog
+model. Startup loading can be cancelled. If no model is supported, setup help
+remains available alongside peer inference. This startup attempt runs once and does not retry on discovery refresh.
 The visible back arrow returns to the demo overview. The top-right hamburger
 contains Stored Models, Config, About and installation controls. About opens a
 separate modal with links to Tsotchke's Hugging Face organization,
@@ -245,6 +247,11 @@ worker cleanup, rather than relying on a browser heartbeat timer. Background
 timer throttling cannot expire a loaded model's reservation. Explicit revocation,
 quarantine or loss of its assigned worker still makes the model unavailable and
 requires cleanup before capacity is reused.
+Diffusion also checks WebGPU allocation, validation and internal errors during
+loading and generation. A failed GPU operation invalidates the model instead of
+returning a corrupt image. GPU memory estimates describe the model budget, not
+currently free VRAM; close other GPU-heavy workloads and reload after an
+out-of-memory error.
 
 Use **Filter models** to search by name, source, task or runtime. All models
 show estimated RAM/GPU requirements in their
@@ -282,7 +289,9 @@ attach an image with **+**, and press Enter to send
 and one entry per remotely hosted immutable model package. It refreshes every
 five seconds, chooses the longest-idle available host, and marks a model **(busy)**
 when all its hosts are busy. Requests then try the first reachable host's bounded
-queue. Requests are never retried on another host after generation commits.
+queue. Before sending a prompt, a failed stream-open attempt can fall back to
+another authenticated connection to the same host, including an encrypted relay.
+Requests are never retried on another host after generation commits.
 Prompts, images and streamed output travel over encrypted application streams;
 they are excluded from shared state and pubsub. A remote requester needs no model
 weights or GPU worker. Discovery is scoped to the connected PeerCompute room.

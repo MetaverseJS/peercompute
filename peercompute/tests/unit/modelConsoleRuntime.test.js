@@ -30,7 +30,7 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
   };
   const network = { isConnected: connected,
     getPublishedArtifactCids: () => [...published],
-    async createPeerInferenceService(options) { callbacks = options; peer.closed = false; calls.push('attach'); return peer; },
+    async createPeerInferenceService(options) { callbacks = options; peer.closed = false; calls.push('attach'); await hooks.attach?.(); return peer; },
     async releasePeerInferenceService(owner) {
       if (!callbacks) return false;
       assert.equal(owner, callbacks.owner); calls.push('release');
@@ -55,7 +55,9 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     ...(hooks.setBudgets ? { setMemoryBudgets: hooks.setBudgets } : {}),
     get networkReady() { return network.isConnected; },
     ...(hooks.artifactReady ? { get artifactReady() { return hooks.artifactReady(); } } : {}),
-    store: { async *list() { await hooks.list?.(); yield* records.values(); }, async getManifest(key) { return records.get(key)?.manifest ?? localManifest; },
+    store: { async *list() { await hooks.list?.(); yield* records.values(); }, async getManifest(key, options) {
+      await hooks.manifest?.(key, options); return records.get(key)?.manifest ?? localManifest;
+    },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
       async stat(key) { return records.get(key); },
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
@@ -645,6 +647,83 @@ test('an aborted load caller cannot release a successful residency lease', async
   await f.runtime.dispose();
 });
 
+test('cancelling metadata after worker readiness waits for cleanup and keeps complete stored artifacts', async () => {
+  let finishMetadata, reachedMetadata, finishCleanup, reachedCleanup;
+  const metadata = new Promise((resolve) => { finishMetadata = resolve; });
+  const atMetadata = new Promise((resolve) => { reachedMetadata = resolve; });
+  const cleanup = new Promise((resolve) => { finishCleanup = resolve; });
+  const atCleanup = new Promise((resolve) => { reachedCleanup = resolve; });
+  const preferences = preferenceStore();
+  const previous = await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences(), hooks: {
+    manifest() { if (f.calls.includes('load')) { reachedMetadata(); return metadata; } },
+    unload() { if (f.calls.includes('load')) { reachedCleanup(); return cleanup; } },
+  } });
+  await f.controller.initialize();
+  const caller = new AbortController(); let settled = false;
+  const loading = f.runtime.loadStoredModel(cid, { signal: caller.signal });
+  const rejected = assert.rejects(loading, { name: 'AbortError' }).finally(() => { settled = true; });
+  try {
+    await atMetadata; caller.abort(); await atCleanup; await nextTurn();
+    assert.equal(settled, false); assert(!f.calls.includes('release-use'));
+    assert.equal(f.runtime.listInferenceTargets()[0].available, false);
+    finishCleanup(); await rejected;
+    assert.equal(f.runtime.service.getStatus().status, 'idle'); assert(f.calls.includes('release-use'));
+    assert.equal(f.records.get(cid).status, 'complete'); assert.equal(f.records.get(cid).pinned, true);
+    assert.deepEqual(preferences().readLastLoaded(), previous); assert(!f.calls.includes('publish'));
+    finishMetadata(); await nextTurn();
+    assert.equal(f.runtime.service.getStatus().status, 'idle', 'late metadata cannot revive a cancelled load');
+  } finally { finishCleanup(); finishMetadata(); await rejected; await f.runtime.dispose(); }
+});
+
+test('cancelling pending peer registration unloads promptly and consumes late registration failure', async () => {
+  let failAttach, reachedAttach;
+  const attaching = new Promise((_resolve, reject) => { failAttach = reject; });
+  const atAttach = new Promise((resolve) => { reachedAttach = resolve; });
+  const f = fixture({ retained: true, connected: false, hooks: { attach() { reachedAttach(); return attaching; } } });
+  await f.controller.initialize(); f.runtime.networkManager.isConnected = true;
+  const caller = new AbortController();
+  const loading = f.runtime.loadStoredModel(cid, { signal: caller.signal });
+  const rejected = assert.rejects(loading, { name: 'AbortError' });
+  try {
+    await atAttach; caller.abort(); await rejected;
+    assert.equal(f.runtime.service.getStatus().status, 'idle'); assert(f.calls.includes('release-use'));
+    assert.equal(f.callbacks.getLocalState().hostedModel, null); assert(!f.calls.includes('publish'));
+    assert.equal(f.records.get(cid).pinned, true);
+    failAttach(new Error('Late network failure')); await nextTurn();
+  } finally { failAttach(new Error('Registration closed')); await rejected; await f.runtime.dispose(); }
+});
+
+test('optional peer registration has a bounded local-load wait and remains tracked for shutdown', async (t) => {
+  let finishAttach, reachedAttach;
+  const attaching = new Promise((resolve) => { finishAttach = resolve; });
+  const atAttach = new Promise((resolve) => { reachedAttach = resolve; });
+  const f = fixture({ retained: true, connected: false, hooks: { attach() { reachedAttach(); return attaching; } } });
+  await f.controller.initialize(); f.runtime.networkManager.isConnected = true;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const loading = f.runtime.loadStoredModel(cid);
+  try {
+    await atAttach; t.mock.timers.tick(3000); await loading;
+    assert.equal(f.runtime.service.getStatus().status, 'ready');
+    let disposed = false; const closing = f.runtime.dispose().then(() => { disposed = true; });
+    await nextTurn(); assert.equal(disposed, false);
+    finishAttach(); await closing; assert.equal(disposed, true);
+  } finally { t.mock.timers.reset(); finishAttach(); await loading; await f.runtime.dispose(); }
+});
+
+test('late load cancellation reports failed cleanup and retains its model-use lease for retry', async () => {
+  const caller = new AbortController(); let fail = true;
+  const f = fixture({ retained: true, connected: false, hooks: {
+    load() { caller.abort(); }, unload() { if (fail && f.calls.includes('load')) throw new Error('Worker stop failed'); },
+  } });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.loadStoredModel(cid, { signal: caller.signal }), (error) =>
+    error instanceof AggregateError && /cleanup is incomplete/.test(error.message)
+      && error.errors.some((cause) => /Worker stop failed/.test(cause.message)));
+  assert(!f.calls.includes('release-use')); assert.equal(f.records.get(cid).pinned, true);
+  fail = false; await f.runtime.unload(); assert(f.calls.includes('release-use')); await f.runtime.dispose();
+});
+
 test('failed load cleanup holds the model use lease until acknowledged cleanup retry', async () => {
   const f = fixture({ retained: true, hooks: { load(setStatus) {
     setStatus({ status: 'cleanup-failed', manifestCid: cid }); throw new Error('Worker termination failed');
@@ -744,7 +823,7 @@ test('startup without a valid hint reuses a compatible saved package instead of 
   await choices.runtime.dispose();
 });
 
-test('startup preserves blocked remembered choice with help and never selects deleting packages', async () => {
+test('startup preserves a blocked choice for help only when all alternatives are blocked, and excludes deleting packages', async () => {
   const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
   const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], preferences: preferences(), connected: false, hooks: {
     compatibility: () => ({ status: 'unavailable', reason: 'GPU setup required' }),
@@ -756,6 +835,57 @@ test('startup preserves blocked remembered choice with help and never selects de
   await f.runtime.listStoredModels();
   assert.equal(f.runtime.getStartupModel().manifestCid, cid);
   await f.runtime.dispose();
+});
+
+test('startup replaces an unsupported remembered package with compatible saved artifacts without downloading', async () => {
+  const preferences = preferenceStore();
+  const previous = await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: preferences(), hooks: {
+    compatibility: (entry) => ({ status: entry.model.repository === 'custom/offline' ? 'unavailable' : 'unknown' }),
+  } });
+  await f.controller.initialize();
+  const selected = f.runtime.getStartupModel();
+  assert.equal(selected.manifestCid, cid); assert.equal(selected.sourceKey, 'hf:test');
+  assert.deepEqual(preferences().readLastLoaded(), previous, 'selection alone cannot overwrite the successful hint');
+  await f.runtime.loadStoredModel(selected.manifestCid);
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('fetch-peer'));
+  assert.equal(preferences().readLastLoaded().manifestCid, cid);
+  await f.runtime.dispose();
+});
+
+test('startup prefers a supported requested default, otherwise chooses the smallest supported catalog entry', async () => {
+  const entry = (id, totalBytes, name = id) => ({ ...catalog.test, id, totalBytes, name,
+    model: { ...model, repository: `catalog/${id}` } });
+  const catalogInfo = { [DEFAULT_MODEL_ID]: entry(DEFAULT_MODEL_ID, 1000),
+    tinyBlocked: entry('tinyBlocked', 1), beta: entry('beta', 10, 'Same'), alpha: entry('alpha', 10, 'Same'),
+    unknownSize: entry('unknownSize', undefined), large: entry('large', 500) };
+  let blockDefault = false;
+  const f = fixture({ connected: false, catalogInfo, hooks: { compatibility: (value) => ({
+    status: value.id === 'tinyBlocked' || (blockDefault && value.id === DEFAULT_MODEL_ID) ? 'unavailable' : 'unknown',
+    reason: 'Physical memory fit remains unverified',
+  }) } });
+  await f.controller.initialize();
+  assert.equal(f.runtime.getStartupModel().sourceKey, `hf:${DEFAULT_MODEL_ID}`);
+  blockDefault = true;
+  assert.equal(f.runtime.getStartupModel().sourceKey, 'hf:alpha', 'size then name/key order is deterministic');
+  assert.equal(f.runtime.getStartupModel().manifestCid, undefined);
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('load'));
+  await f.runtime.dispose();
+});
+
+test('startup does not download an alternative while saved or requested-default capability checks are pending', async () => {
+  const catalogInfo = { ...catalog, [DEFAULT_MODEL_ID]: { ...catalog.test, id: DEFAULT_MODEL_ID, totalBytes: 500 } };
+  for (const retained of [false, true]) {
+    const f = fixture({ retained, connected: false, catalogInfo, hooks: {
+      compatibility: (entry) => ({ status: entry.id === 'test' ? 'available' : 'checking' }),
+    } });
+    await f.controller.initialize();
+    const selected = f.runtime.getStartupModel();
+    assert.equal(selected.localAvailability.status, 'checking');
+    assert.equal(selected.manifestCid, retained ? cid : undefined);
+    assert(!f.calls.includes('import')); assert(!f.calls.includes('load'));
+    await f.runtime.dispose();
+  }
 });
 
 test('sources and library sort by bytes, keep catalog keys and expose custom offline packages', async () => {
@@ -864,6 +994,29 @@ test('failed and cancelled stored loads do not replace the last successful prefe
   assert.equal(preferences().readLastLoaded().manifestCid, cid);
   assert(!f.calls.includes('import')); assert(!f.calls.includes('fetch-peer'));
   await f.runtime.dispose();
+});
+
+test('cancellation after preference commit restores only this operation\'s hint after cleanup', async () => {
+  for (const newerTab of [false, true]) {
+    const preferences = preferenceStore(), caller = new AbortController();
+    const previous = await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+    const local = preferences(), write = local.rememberLoadedWithReceipt;
+    let newer;
+    local.rememberLoadedWithReceipt = async (...args) => {
+      const receipt = await write(...args);
+      if (newerTab) newer = await preferences().rememberLoaded({ manifestCid: cid, modelId: 'test' });
+      caller.abort();
+      return receipt;
+    };
+    const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, preferences: local });
+    await f.controller.initialize();
+    await assert.rejects(f.runtime.loadStoredModel(cid, { signal: caller.signal }), { name: 'AbortError' });
+    assert.equal(f.runtime.service.getStatus().status, 'idle'); assert(f.calls.includes('release-use'));
+    assert.deepEqual(preferences().readLastLoaded(), newerTab ? newer : previous);
+    assert.equal(f.runtime.getPreferredModelSourceKey(), newerTab ? 'hf:test' : `stored:${secondCid}`);
+    assert.equal(f.records.get(cid).pinned, true); assert(!f.calls.includes('publish'));
+    await f.runtime.dispose();
+  }
 });
 
 test('removed remembered packages fall back, but unsupported retained preferences remain selected for help', async () => {

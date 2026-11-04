@@ -19,6 +19,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let desiredSourceKey;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
+  let loadingOperation;
   let unsubscribeInstall;
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
@@ -55,13 +56,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
-    view.cancel.hidden = !operation; view.target.disabled = !!operation;
+    view.cancel.hidden = !operation || !!loadingOperation; view.target.disabled = !!operation;
     view.attach.disabled = !!operation || !target?.modalities?.includes('image');
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation;
     view.storedRefresh.disabled = !!operation || !!storedController;
     for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController || button.dataset.inactive === 'true';
-    view.storedCancel.hidden = !operation || !loadingStoredModel;
+    view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
   }
   function renderSources() {
     const previous = view.source.value;
@@ -241,22 +242,59 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const key = `${event.type ?? ''}:${event.stage ?? event.status ?? ''}:${event.path ?? event.file ?? ''}`;
     if (key !== progressKey) { progressKey = key; progressStarted = performance.now(); }
     progressLabel = String(label).slice(0, 512); view.status.textContent = progressLabel;
+    if (loadingOperation && !loadingOperation.controller.signal.aborted) view.loadingStatus.textContent = progressLabel;
     if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = progressLabel;
     if (!progressTimer) progressTimer = setInterval(() => {
       if (alive() && operation && !operation.signal.aborted) {
         view.status.textContent = `${progressLabel} (${Math.floor((performance.now() - progressStarted) / 1000)}s)`;
+        if (loadingOperation) view.loadingStatus.textContent = view.status.textContent;
         if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = view.status.textContent;
       }
     }, 1000);
   };
-  async function run(action) {
+  function cancelLoading() {
+    if (!loadingOperation || loadingOperation.controller.signal.aborted) return;
+    loadingOperation.controller.abort(new DOMException('Model load cancelled', 'AbortError'));
+  }
+  function showLoading(controller, modelName) {
+    const entry = { controller, focus: document.activeElement,
+      previousDialog: [...view.panel.querySelectorAll('dialog[open]')].at(-1) };
+    loadingOperation = entry;
+    view.loadingModel.textContent = String(modelName).slice(0, 256);
+    view.loadingStatus.textContent = 'Preparing model…'; view.loadingCancel.disabled = false;
+    entry.onAbort = () => {
+      view.loadingCancel.disabled = true;
+      view.loadingStatus.textContent = 'Cancelling load… Waiting for cleanup.';
+      if (alive()) view.loading.focus();
+    };
+    controller.signal.addEventListener('abort', entry.onAbort, { once: true });
+    updateControls(); view.loading.showModal();
+  }
+  function finishLoading(controller) {
+    const entry = loadingOperation;
+    if (!entry || entry.controller !== controller) return;
+    controller.signal.removeEventListener('abort', entry.onAbort);
+    loadingOperation = null; view.loading.close();
+    if (!alive()) return;
+    const focus = entry.focus?.isConnected && entry.focus.matches('button,input,select,textarea,a[href],[tabindex]')
+      && !entry.focus.disabled && entry.focus.getClientRects().length ? entry.focus
+      : entry.previousDialog?.open ? entry.previousDialog.querySelector('button:not(:disabled)')
+        : !view.acquire.disabled ? view.acquire : view.menu;
+    focus?.focus();
+  }
+  async function run(action, { modelName } = {}) {
     if (!alive() || operation) return;
     const controller = new AbortController(); operation = controller; updateControls();
     operationDone = (async () => {
-      try { await action(controller.signal); } catch (error) { showError(error); }
+      try {
+        if (modelName !== undefined) showLoading(controller, modelName);
+        await action(controller.signal);
+      } catch (error) { showError(error); }
       finally {
         clearInterval(progressTimer); progressTimer = null; progressKey = null;
-        if (operation === controller) operation = null; if (alive()) { renderLists(); scrollTranscript(); }
+        if (operation === controller) operation = null;
+        try { if (alive()) { renderLists(); scrollTranscript(); } }
+        finally { finishLoading(controller); }
       }
     })();
     await operationDone;
@@ -308,10 +346,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
         histories.delete('local');
         desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
         renderLists(); view.target.value = 'local';
-        await refreshStoredModels();
         view.status.textContent = view.storedStatus.textContent = `Loaded ${model.name}. Send a message.`;
         loaded = true;
-      });
+      }, { modelName: model.name });
     } finally {
       loadingStoredModel = false;
       if (alive()) {
@@ -331,24 +368,24 @@ export async function mountInferencePanel({ container = document.body, stateMana
   } catch (error) { view.panel.remove(); throw error; }
 
   view.configure.onclick = () => {
-    if (!alive()) return;
+    if (!alive() || loadingOperation) return;
     view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
   view.stored.onclick = () => {
-    if (!alive()) return;
+    if (!alive() || loadingOperation) return;
     view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
   };
   view.menu.onclick = () => {
-    if (!alive()) return;
+    if (!alive() || loadingOperation) return;
     view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.close(); view.menuWindow.showModal();
   };
   view.aboutButton.onclick = () => {
-    if (!alive()) return;
+    if (!alive() || loadingOperation) return;
     view.menuWindow.close(); view.about.showModal();
   };
   for (const modal of [view.menuWindow, view.configuration, view.storedModels, view.about]) {
     modal.addEventListener('close', () => {
-      if (alive() && ![view.menuWindow, view.configuration, view.storedModels, view.about, view.compatibility].some((entry) => entry.open)
+      if (alive() && ![view.loading, view.menuWindow, view.configuration, view.storedModels, view.about, view.compatibility].some((entry) => entry.open)
           && document.activeElement !== view.prompt) view.menu.focus();
     });
   }
@@ -438,7 +475,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
     view.status.textContent = runtime.getSharingErrors?.().length
       ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
-    });
+    }, { modelName: selected.name });
   };
   view.unload.onclick = () => run(async () => {
     invalidateActions(); await runtime.unload(); histories.delete('local'); view.status.textContent = 'Local model unloaded.';
@@ -474,9 +511,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   view.removeAttachment.onclick = () => { imageController?.abort(); clearAttachment(); };
   view.cancel.onclick = () => {
+    if (loadingOperation) { cancelLoading(); return; }
     operation?.abort(new DOMException('User cancelled', 'AbortError'));
     if (requestId) void runtime.cancel(requestId).catch(showError);
   };
+  view.loadingCancel.onclick = cancelLoading;
+  view.loading.addEventListener('cancel', (event) => { event.preventDefault(); cancelLoading(); });
   view.storedCancel.onclick = () => view.cancel.click();
   async function send() {
     if (view.send.disabled) return;
@@ -560,7 +600,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         signal.throwIfAborted();
         histories.delete('local'); renderLists();
         view.status.textContent = `Loaded ${startup.name}. Send a message.`;
-      });
+      }, { modelName: startup.name });
     }
   } catch (error) { showError(error); }
   refreshTimer = setInterval(() => { void refreshPeers(); }, Math.max(20, refreshIntervalMs));
