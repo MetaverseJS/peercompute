@@ -8,13 +8,16 @@ import { chromium } from 'playwright';
 let server, browser, origin;
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 before(async () => {
+  // Exercise the real standalone shell without bootstrapping its actual runtime.
+  const standaloneHtml = (await readFile(new URL('../inference/index.html', import.meta.url), 'utf8'))
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
   server = await createServer({ configFile: false, root: repo, logLevel: 'error',
     optimizeDeps: { entries: ['demos/inference/src/agentPanel.js'] },
     server: { host: '127.0.0.1', port: 0, hmr: false, fs: { allow: [repo] } },
     plugins: [{ name: 'inference-ui-fixture', configureServer(vite) {
       vite.middlewares.use('/__ui_fixture', (_request, response) => {
         response.setHeader('Content-Type', 'text/html');
-        response.end('<!doctype html><html><head><link rel="icon" href="data:,"></head><body style="margin:0"><main id="panel" class="pc-inference-standalone"></main></body></html>');
+        response.end(standaloneHtml);
       });
     } }] });
   await server.listen(); origin = 'http://127.0.0.1:' + server.httpServer.address().port;
@@ -226,4 +229,20 @@ test('failed runtime teardown blocks new UI work and permits an explicit disposa
   await page.evaluate(() => panel.dispose());
   assert.equal(await page.evaluate(() => uiState.disposed), true);
   assert.equal(await page.locator('.pc-inference-panel').count(), 0);
+});
+
+test('standalone chat fills wide, tall and mobile viewports while embedded sizing remains bounded', async (t) => {
+  const page = await fixture(t);
+  for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 1600 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await page.locator('.pc-inference-panel').boundingBox();
+    assert.deepEqual(bounds, { x: 0, y: 0, ...viewport });
+    const shell = await page.evaluate(() => ({ width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight, samples: document.querySelectorAll('h1,canvas,img[src]').length }));
+    assert.deepEqual(shell, { width: viewport.width, height: viewport.height, samples: 0 });
+  }
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  await page.locator('#panel').evaluate((element) => { element.classList.remove('pc-inference-standalone'); element.style.width = '620px'; });
+  const embedded = await page.locator('.pc-inference-panel').boundingBox();
+  assert.equal(embedded.width, 620); assert.equal(embedded.height, 740);
 });

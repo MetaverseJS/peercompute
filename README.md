@@ -97,7 +97,8 @@ independent: sharing serves retained model files; hosting executes requests on t
 currently loaded model. Both require an active connected browser. **Config**
 contains storage quota, GGUF GPU layers, connection and unload controls.
 
-Type any question, attach an image with **+**, and press Enter to send
+The standalone chat fills the available browser window. Type any question,
+attach an image with **+**, and press Enter to send
 (Shift+Enter inserts a newline). The selector next to Send offers the local model
 and one entry per remotely hosted immutable model package. It refreshes every
 five seconds, chooses the longest-idle available host, and marks a model **(busy)**

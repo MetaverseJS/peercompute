@@ -168,6 +168,16 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   durable operator seeds, renderer contention, full27B browser transfer and
   NetViz/chaos remain open parent gates. Keep the feature branch unmerged.
 
+### Viewport follow-up — November3,18:36:53 AKST
+
+- User screenshot requests filling the available window and removing the old
+  square/circle sample. Latest served HTML already omits the old heading/sample;
+  remove standalone900px width/980px height caps and outer padding. Preserve
+  embedded panel sizing. Verify the exact `?dev=1` URL in fresh desktop/mobile
+  browser contexts and provide a fresh navigation link for existing tabs.
+  Verified exact viewport bounds at1440x1000,1920x1080,1280x1600 and390x844;
+  UI10/10PASS with no oldshell/graphic or pageoverflow.
+
 ## Requested outcome and roadmap position
 
 Add IPFS support for large files generally, including small Hugging Face Qwen

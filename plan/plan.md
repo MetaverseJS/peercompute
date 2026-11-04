@@ -30,6 +30,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
   hosting; five-second model-level discovery and longest-idle host scheduling;
   private prompt/image streams; Config hides storage/GGUF settings. Remove the
   Close button, explicit CID field and sample scene. This advances IPFS-01.5.
+  November3 18:36 follow-up: standalone chat fills the available window; remove
+  remaining layout caps and verify fresh navigation removes the old sample shell.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

@@ -207,10 +207,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     closed = true; hostInference = false; current = null; lifetime.abort('Model console closed');
     for (const request of requests.values()) request.abort.abort('Model console closed');
     await peerStarting?.catch(() => {});
-    if (peerService) {
-      await runtime.networkManager.releasePeerInferenceService(owner);
-      peerService = null;
-    }
+    // Failed startup may leave a manager-owned handle awaiting cleanup even
+    // though createPeerInferenceService never resolved into peerService.
+    await runtime.networkManager?.releasePeerInferenceService(owner);
+    peerService = null;
     await Promise.allSettled([publication, refreshing, acquiring].filter(Boolean));
     await original.dispose();
   };

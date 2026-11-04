@@ -66,6 +66,26 @@ test('opening the console enables both preferences without fetching or loading w
   await f.runtime.dispose();
 });
 
+test('failed startup retains underlying resources until manager-owned cleanup can be retried', async () => {
+  const f = fixture(); let owned, releases = 0;
+  f.runtime.networkManager.createPeerInferenceService = async ({ owner }) => {
+    owned = owner; throw new AggregateError([new Error('Start failed'), new Error('Unhandle failed')], 'Startup cleanup failed');
+  };
+  f.runtime.networkManager.releasePeerInferenceService = async (owner) => {
+    assert.equal(owner, owned);
+    if (++releases === 1) throw new Error('Unhandle still failing');
+    owned = null;
+  };
+  await assert.rejects(f.controller.initialize(), /Startup cleanup failed/);
+  await assert.rejects(f.runtime.dispose(), /Unhandle still failing/);
+  assert.equal(f.calls.includes('dispose'), false);
+  assert(owned);
+  await f.runtime.dispose();
+  assert.equal(releases, 2);
+  assert.equal(owned, null);
+  assert.equal(f.calls.filter((call) => call === 'dispose').length, 1);
+});
+
 test('a surviving console reattaches hosting after the shared network manager reconnects', async () => {
   const f = fixture(); await f.controller.initialize();
   await f.runtime.acquireModel('hf:test');

@@ -51,6 +51,12 @@
   replacement-implementation rule; policy was not changed. Exact scope and
   counts are recorded in log.md.
 
+- Viewport follow-up **PASS**: panel exactly fills1440x1000,1920x1080,
+  1280x1600 and390x844, no outeroverflow, oldheading/canvas/sampleimage, pageerrors
+  or weightrequests. UI10/10PASS and follow-up lifecycle/protocol24/24PASS;
+  inference buildPASS. Receipts: /tmp/peercompute-console-fullscreen-preview-20261104.json,
+  /tmp/peercompute-console-fullscreen-tests.log and /tmp/peercompute-console-lifecycle-followup.log.
+
 ### IPFS artifact and model gates - 2026-11-03 AKST
 
 Status: **implementation underway; evidence below is scoped**. The
