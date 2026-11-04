@@ -1,5 +1,5 @@
 import { MODEL_POLICY } from '../../inference/modelManifest.js';
-import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_LIMITS as LIMITS, bytes, cid, integer,
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
   encryptedConnection, localState, generation, resultData, diffusionProgress, channel } from './protocol.js';
 import { monitorResultControls, describeResultImage, writeResultImage, readResultImage } from './imageResult.js';
 
@@ -79,7 +79,8 @@ export class PeerInferenceService {
     }
   }
   async _state(signal, ownReservation = 0) {
-    const state = localState(await withAbort(this.getLocalState(), signal), this.hostingEnabled);
+    const state = localState(await withAbort(this.getLocalState(), signal), this.hostingEnabled,
+      { defaultMaxNewTokens: MODEL_POLICY.maxNewTokens });
     // The application reports local work as well. Inbound work is also busy
     // during upload/admission so simultaneous requestors do not see false idle.
     if (this.inbound.size > ownReservation) { state.busy = true; state.idleForMs = 0; }
@@ -105,10 +106,10 @@ export class PeerInferenceService {
         models.get(model.manifestCid).providers.push({ peerId, local });
       }
       if (state.hostedModel) {
-        const model = state.hostedModel;
+        const { maxNewTokens, ...model } = state.hostedModel;
         if (!hosts.has(model.manifestCid)) hosts.set(model.manifestCid, { ...model, hosts: [] });
         hosts.get(model.manifestCid).hosts.push({ peerId, local, busy: state.busy,
-          idleForMs: state.busy ? 0 : state.idleForMs, queuedRequests: state.queuedRequests });
+          idleForMs: state.busy ? 0 : state.idleForMs, queuedRequests: state.queuedRequests, maxNewTokens });
       }
     }
     this.models = [...models.values()]; this.hosts = [...hosts.values()];
@@ -197,6 +198,7 @@ export class PeerInferenceService {
       this.inbound.set(key, { peerId, controller: op.controller });
       const state = await this._state(op.signal, 1);
       if (!state.hostedModel || state.hostedModel.manifestCid !== input.manifestCid) throw failure('Requested model is not hosted', 'ERR_INFERENCE_NOT_HOSTED');
+      if (input.maxNewTokens > state.hostedModel.maxNewTokens) throw failure('Requested token limit exceeds hosted capacity', 'ERR_INFERENCE_TOKEN_LIMIT');
       if (input.task !== undefined && input.task !== state.hostedModel.task) throw failure('Requested task does not match hosted model');
       input.task = state.hostedModel.task;
       generation(input); // Validate task-dependent input before admitting an upload.
@@ -215,6 +217,7 @@ export class PeerInferenceService {
       }
       const current = await this._state(op.signal, 1);
       if (!current.hostedModel || current.hostedModel.manifestCid !== input.manifestCid) throw failure('Inference host changed during upload');
+      if (input.maxNewTokens > current.hostedModel.maxNewTokens) throw failure('Requested token limit exceeds hosted capacity', 'ERR_INFERENCE_TOKEN_LIMIT');
       await io.write({ type: 'accepted', requestId: input.requestId, queued: current.busy }, op.signal);
       // No work can start merely because our admission reply was sent. A lost
       // reply is safely retryable until the caller commits with this start ack.
@@ -295,7 +298,8 @@ export class PeerInferenceService {
       for (const candidate of candidates) {
         op.signal.throwIfAborted(); entry.peerId = candidate.peerId;
         options.onProgress?.({ type: 'routing', requestId: input.requestId, peerId: candidate.peerId, busy: candidate.busy });
-        try { return await this._generateAt(candidate.peerId, input, options, op.signal); }
+        const candidateInput = { ...input, maxNewTokens: Math.min(input.maxNewTokens, candidate.maxNewTokens ?? LEGACY_MAX_NEW_TOKENS) };
+        try { return await this._generateAt(candidate.peerId, candidateInput, options, op.signal); }
         catch (error) { lastError = error; if (error.committed || op.signal.aborted) throw error; }
       }
       throw lastError;

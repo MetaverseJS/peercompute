@@ -62,6 +62,19 @@ The root node should exist on a domain secured with SSL enabling all executable 
   rejection. Default Chrome157/NVIDIA595.91.7 lacks shader-f16 even on the16GB
   GPU; earlier hardware runs used an explicit override. Keep real runtime feature
   requirements and document the normal-browser limitation rather than bypass it.
+- November3 20:57 revision: choosing an unavailable model opens setup help.
+  Keep import blocked, with browser/OS-specific instructions, copyable verified
+  workarounds and Config guidance for budget limits. Preserve peer chat and
+  local model residency while the user reads help.
+- November3 21:12 follow-up: replace the silent128-token chat cutoff with a
+  bounded1,024-token request and2,048-token GGUF context. Preserve completion
+  metadata from local/peer workers and display actual length limits. Verify
+  benign longer output in a managed WebGPU worker; retain existing cancellation,
+  deadlines and distinct27B512-context measurement scope.
+- November3 21:19 follow-up: show estimated RAM/GPU reservations in each model
+  choice, with unknown/measured-capacity distinctions. Import status separates
+  file bytes, manifest verification and GPU initialization. Local loading does not
+  wait for background publication; sharing failures remain discoverable in the library.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

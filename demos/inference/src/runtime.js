@@ -45,7 +45,7 @@ export async function checkGgufCapabilities() {
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
   memoryBudgets, probeDeviceCapabilities = collectModelDeviceCapabilities,
-  ggufRuntimeOptions = { n_ctx: 512, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
+  ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
   let deviceCapabilities = null, deviceCheck;
   const ownsState = !stateManager;

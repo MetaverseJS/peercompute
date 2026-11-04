@@ -3,7 +3,7 @@ import { GGUF_MODEL_CATALOG } from '../../artifacts/ggufModelCatalog.js';
 import { MODEL_POLICY } from '../modelManifest.js';
 
 export const GGUF_RUNTIME_VERSION = '3.8.1';
-export const GGUF_CONTEXT_LIMIT = 512;
+export const GGUF_CONTEXT_LIMIT = 2048;
 const GiB = 1024 ** 3;
 
 export function validateGgufManifest(input) {
@@ -50,7 +50,7 @@ export function validateGgufRuntimeOptions(options = {}) {
       || Object.keys(options).some((key) => !['n_ctx', 'n_batch', 'n_gpu_layers', 'n_threads'].includes(key))) {
     throw new Error('Unknown GGUF runtime option');
   }
-  const result = { n_ctx: 512, n_batch: 64, n_gpu_layers: 99999, n_threads: 1, ...options };
+  const result = { n_ctx: GGUF_CONTEXT_LIMIT, n_batch: 64, n_gpu_layers: 99999, n_threads: 1, ...options };
   if (!Number.isInteger(result.n_ctx) || result.n_ctx < 64 || result.n_ctx > GGUF_CONTEXT_LIMIT
       || !Number.isInteger(result.n_batch) || result.n_batch < 1 || result.n_batch > 128
       || !Number.isInteger(result.n_gpu_layers) || result.n_gpu_layers < 1 || result.n_gpu_layers > 99999

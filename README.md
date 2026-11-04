@@ -170,8 +170,12 @@ cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
 Select a Hugging Face or discovered peer model, then **Import Model**: it fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
-internally. **Share with peers** and **Host inference** start checked and are
-independent: sharing serves retained model files; hosting executes requests on the
+internally. Import progress reports downloaded bytes, stored-file verification
+and GPU initialization separately, with elapsed phase time. File sharing runs
+in the background, so preparing publication does not hold up
+local chat. Sharing failures remain visible in **Stored Models**.
+**Share with peers** and **Host inference** start checked and are independent:
+sharing serves retained model files; hosting executes requests on the
 currently loaded model. Both require an active connected browser. These checkboxes
 live in the **Config** modal alongside GGUF GPU layers, connection and unload
 controls. **Stored Models** opens a separate window listing local model packages,
@@ -182,8 +186,16 @@ If another tab is using the package, unload it there before retrying deletion.
 If another tab owns this library's file sharing, delete from that tab or close it
 before retrying.
 
-Use **Filter models** to search by name, source, task or runtime. Unsupported
-local models remain visible but disabled with a reason; the same checks run
+Use **Filter models** to search by name, source, task or runtime. All models
+show estimated RAM/GPU requirements in their
+entries. These are the manager's configured reservation estimates; actual peaks
+depend on the model, context, image and GPU offload. Unknown values remain explicit.
+Unsupported local models remain muted and marked **Setup required**. Select one to open
+**Model setup**, which explains the reason and provides applicable browser/OS
+instructions and a **Copy command** action. Browser detection can be corrected
+in the dialog. Budget limits link to Config; unsupported browsers and runtime
+requirements get appropriate alternatives. Reading help preserves the previous
+selection and loaded model. Import stays blocked for unavailable models; the same checks run
 before importing or loading, including verification of peer package metadata
 before fetching weights. **Config** also offers optional model RAM/GPU memory
 budgets in GiB. These use the runtime's existing reservation estimates, not disk
@@ -192,6 +204,17 @@ clamped, and WebGPU cannot report free VRAM, so uncertain fits stay selectable
 with **memory fit unverified**. Clearing a budget restores automatic feature
 checks and the configured manager admission limits. Remote inference targets
 remain available independently of the requesting device's local capabilities.
+
+Chat requests up to1,024 output tokens, replacing the previous128-token cutoff.
+Both text runtimes have a2,048-token context ceiling. Responses explicitly show
+when generation reaches a length limit or the runtime does not report a completion
+reason. Transformers.js drops the oldest complete conversation turns when needed
+and reports that omission; oversized latest prompts/images still produce a context
+error. GGUF keeps context shifting disabled and reports context exhaustion.
+Use **Config → Clear conversation** to discard chat history without unloading the
+model or deleting stored files. Updated hosts advertise their output limit; requests
+to older hosts use their legacy256-token limit until they refresh. The earlier27B memory measurements above
+used512 context and do not establish the peak at2,048.
 
 The standalone chat fills the available browser window. Type any question,
 attach an image with **+**, and press Enter to send

@@ -32,22 +32,38 @@ export async function importModelPackage(store, entry, sourceUrl, { signal, onPr
       for (let index = 0; index < entry.files.length; index += 1) {
         signal?.throwIfAborted();
         const file = entry.files[index];
-        onProgress?.({ stage: 'import', path: file.path, index, total: entry.files.length });
+        const clock = () => globalThis.performance?.now() ?? Date.now();
+        let loaded = 0, lastProgressAt = clock();
+        const report = () => onProgress?.({ stage: 'import', path: file.path, index, total: entry.files.length,
+          loaded, totalBytes: file.size });
+        report();
         let result = file.cid ? await scopedStore.stat(file.cid, { signal }) : null;
         if (!result || result.status !== 'complete' || result.size !== file.size || result.sha256 !== file.sha256) {
           const response = await fetchImpl(sourceUrl(file.path), { signal });
           if (!response.ok || !response.body) throw new Error(`Artifact source failed: ${file.path} (${response.status})`);
           const git = file.gitBlobSha1 ? sha1.create().update(new TextEncoder().encode(`blob ${file.size}\0`)) : null;
           async function* verifiedSource() {
-            for await (const bytes of response.body) { git?.update(bytes); yield bytes; }
+            for await (const bytes of response.body) {
+              signal?.throwIfAborted();
+              git?.update(bytes); loaded += bytes.byteLength;
+              yield bytes;
+              const at = clock();
+              if (loaded < file.size && at - lastProgressAt >= 100) { lastProgressAt = at; report(); }
+            }
             if (git && bytesToHex(git.digest()) !== file.gitBlobSha1) throw new Error(`Source Git blob SHA-1 mismatch: ${file.path}`);
           }
           result = await scopedStore.importFile(verifiedSource(), { expectedSize: file.size,
             ...(file.sha256 ? { expectedSha256: file.sha256 } : {}), signal, pin: false });
         }
         if (file.cid && result.cid !== file.cid) throw new Error(`Imported CID differs: ${file.path}`);
+        signal?.throwIfAborted();
+        loaded = file.size; report();
         imported.push({ path: file.path, cid: result.cid, size: result.size, sha256: result.sha256 });
       }
+      signal?.throwIfAborted();
+      onProgress?.({ stage: 'verify', total: entry.files.length,
+        totalBytes: imported.reduce((sum, file) => sum + file.size, 0) });
+      signal?.throwIfAborted();
       return scopedStore.importManifest({ ...entry, files: imported }, { pin: true, signal });
     }, { signal });
   } catch (error) { throw modelStorageError(error); }

@@ -6,6 +6,8 @@ import { normalizeModelMessages, validateImageInput } from '../../inference/mode
 // v2 distinguishes image output from vision input and adds credited result frames.
 // A v1 reader discards those capabilities, so it must not discover a v2 image host.
 export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/2.0.0';
+// Original v2 hosts omit this capability and reject requests above 256 tokens.
+export const LEGACY_MAX_NEW_TOKENS = 256;
 export const PEER_INFERENCE_LIMITS = Object.freeze({ frameBytes: 128 * 1024, imageChunkBytes: 64 * 1024,
   maximumPeers: 32, maximumModels: 128, maximumInbound: 5, maximumPerPeer: 2,
   maximumOutbound: 5, queryTimeoutMs: 5000, requestTimeoutMs: 120000, recordTtlMs: 15000 });
@@ -46,12 +48,14 @@ export function descriptor(value) {
     repository: string(value.repository, 256), revision: string(value.revision, 128),
     totalBytes: integer(value.totalBytes, 64 * 1024 ** 3) };
 }
-export function localState(value, hostingEnabled = true) {
+export function localState(value, hostingEnabled = true, { defaultMaxNewTokens = LEGACY_MAX_NEW_TOKENS } = {}) {
   if (!value || !Array.isArray(value.sharedModels) || value.sharedModels.length > PEER_INFERENCE_LIMITS.maximumModels) {
     throw new Error('Invalid shared model catalog');
   }
   const sharedModels = [...new Map(value.sharedModels.map((item) => { const model = descriptor(item); return [model.manifestCid, model]; })).values()];
   const hostedModel = hostingEnabled && value.hostedModel ? descriptor(value.hostedModel) : null;
+  if (hostedModel) hostedModel.maxNewTokens = integer(value.hostedModel.maxNewTokens === undefined
+    ? defaultMaxNewTokens : value.hostedModel.maxNewTokens, MODEL_POLICY.maxNewTokens, 1);
   return { sharedModels, hostedModel, busy: Boolean(value.busy),
     idleForMs: integer(value.idleForMs ?? 0, Number.MAX_SAFE_INTEGER),
     queuedRequests: integer(value.queuedRequests ?? 0, 1024) };
@@ -89,7 +93,14 @@ export function resultImage(value, { imageBytes = false } = {}) {
 }
 export function resultData(value, options = {}) {
   if (typeof value?.text !== 'string' || bytes(value.text) > MODEL_POLICY.maxOutputBytes) throw new Error('Invalid inference result text');
-  const result = { text: value.text };
+  // Older v2 peers omit completion metadata. Missing evidence never means EOS.
+  const finishReason = value.finishReason === undefined ? 'unknown' : value.finishReason;
+  if (!['stop', 'length', 'unknown'].includes(finishReason)) throw new Error('Invalid inference finish reason');
+  const result = { text: value.text, finishReason };
+  if (value.contextTruncated !== undefined) {
+    if (typeof value.contextTruncated !== 'boolean') throw new Error('Invalid inference context truncation flag');
+    result.contextTruncated = value.contextTruncated;
+  }
   for (const key of ['inputTokens', 'outputTokens', 'gpuDispatches', 'gpuSubmissions']) {
     if (value[key] != null) result[key] = integer(value[key], Number.MAX_SAFE_INTEGER);
   }

@@ -65,7 +65,8 @@ async function fixture(t, scenario = {}) {
           task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] },
         { key: 'peer:fixture', name: 'Peer text model', source: 'peers', modelId: 'peer-text', manifestCid: 'fixture', runtime: 'llama.cpp', task: 'text-generation', modalities: ['text'] }]
         .map((source) => ({ ...source, localAvailability: scenario.memoryPolicy && state.memoryBudgets.cpuBytes != null
-          && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' } : state.availability[source.key] })),
+          && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' }
+          : state.availability[source.key] ?? { status: 'unknown', cpuBytes: 4 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 } })),
       listInferenceTargets: () => [{ key: 'local', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true,
         available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
@@ -78,6 +79,13 @@ async function fixture(t, scenario = {}) {
         finally { state.refreshActive--; }
       },
       async acquireModel(key, options) { calls.push({ type: 'acquire', key, gpuLayers: options.ggufGpuLayers });
+        if (scenario.importProgress) {
+          window.emitImportProgress = options.onProgress;
+          for (const event of [
+            { stage: 'import', path: 'LICENSE', index: 6, total: 7, loaded: 1024, totalBytes: 1024 },
+            { stage: 'verify' }, { stage: 'load' }, { type: 'model-load', stage: 'unet', loaded: 0, total: 1000 },
+          ]) { options.onProgress(event); await delay(150, options.signal); }
+        }
         await delay(scenario.acquireDelay ?? 5, options.signal); state.loaded = true; calls.push({ type: 'loaded' }); },
       async setSharing(value) { if (state.rejectSharing) throw new Error('Sharing failed'); state.sharing = value; calls.push({ type: 'sharing', value }); },
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
@@ -94,7 +102,8 @@ async function fixture(t, scenario = {}) {
             ? { width: 2048, height: 2048, channels: 4, data } : { width: 512, height: 512, channels: 4, data } };
         }
         const text = scenario.longReply ? Array.from({ length: 70 }, (_, i) => 'Reply line ' + i).join('\n') : 'Reply to ' + options.messages.at(-1).content;
-        options.onToken?.(text); return { text, inputTokens: 4, outputTokens: 8 };
+        options.onToken?.(text); return { text, inputTokens: 4, outputTokens: scenario.outputTokens ?? 8,
+          finishReason: scenario.finishReason ?? 'stop', contextTruncated: !!scenario.contextTruncated };
       },
       async cancel(requestId) { calls.push({ type: 'cancel', requestId }); return true; },
       async unload() { state.loaded = false; calls.push({ type: 'unload' }); },
@@ -192,19 +201,23 @@ test('model filter uses AND terms across source, name, ID, task and runtime with
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
 });
 
-test('unavailable and checking models stay visible with reasons and cannot import even through a stale handler', async (t) => {
+test('unavailable and checking models offer setup help and cannot import even through a stale handler', async (t) => {
   const page = await fixture(t, { loaded: true, interval: 50, availability: {
     'hf:vision': { status: 'unavailable', reason: 'Needs 12 GiB GPU memory.' },
     'peer:fixture': { status: 'checking', reason: 'Checking WebGPU support…' },
   } });
   const source = page.getByLabel('Model and source');
-  assert.equal(await source.locator('option:disabled').count(), 2);
-  assert.match(await source.locator('option').first().textContent(), /Needs 12 GiB GPU memory/);
+  assert.equal(await source.locator('option[data-unavailable=true]').count(), 2);
+  assert.match(await source.locator('option[value="hf:vision"]').textContent(), /Setup required/);
   assert.match(await page.locator('.pc-model-availability').textContent(), /Checking WebGPU support/);
   const acquire = page.getByRole('button', { name: 'Import Model', exact: true });
   assert.equal(await acquire.isDisabled(), true);
   await acquire.evaluate((button) => button.onclick());
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+  await source.selectOption('hf:vision');
+  const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  assert.match(await help.textContent(), /Needs 12 GiB GPU memory/);
+  await help.getByRole('button', { name: 'Done', exact: true }).click();
   await page.evaluate(() => { uiState.availability['hf:vision'] = { status: 'unknown', reason: 'Free GPU memory is unknown.' }; });
   await page.waitForFunction(() => !document.querySelector('[aria-label="Model and source"] option').disabled);
   assert.equal(await acquire.isEnabled(), true);
@@ -215,6 +228,7 @@ test('unavailable and checking models stay visible with reasons and cannot impor
     return [...document.querySelectorAll('button')].find((button) => button.textContent === 'Import Model').onclick();
   });
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+  await help.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByLabel('Chat target').selectOption('peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Use the peer instead.');
   await page.getByLabel('Message', { exact: true }).press('Enter');
@@ -231,7 +245,7 @@ test('Config memory budgets convert GiB, refresh restrictions, clear to auto and
   assert.match(await page.getByRole('dialog', { name: 'Config', exact: true }).textContent(), /approximately 8 GiB.*cannot report free GPU memory/);
   await cpu.fill('2.5'); await cpu.dispatchEvent('change');
   assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: null });
-  assert.equal(await page.getByLabel('Model and source').locator('option:disabled').count(), 2);
+  assert.equal(await page.getByLabel('Model and source').locator('option[data-unavailable=true]').count(), 2);
   await gpu.fill('6'); await gpu.dispatchEvent('change');
   assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: 6 * 1024 ** 3 });
   await cpu.focus(); // Commit the GPU field's native blur/change before counting rejected edits.
@@ -274,10 +288,84 @@ test('Enter sends, Shift+Enter preserves a newline, optional embedded context st
     actions: calls.filter((call) => call.type === 'action').length,
     bottom: document.querySelector('[role=log]').scrollHeight - document.querySelector('[role=log]').clientHeight - document.querySelector('[role=log]').scrollTop }));
   assert.equal(result.request.messages.at(-1).content, 'First\nSecond'); assert.equal(result.request.image, null);
+  assert.equal(result.request.maxNewTokens, 1024);
   assert.match(result.request.messages[0].content, /Optional embedded scene context/);
   assert.deepEqual(result.contextCalls, [{ includeImage: false }]); assert.equal(result.actions, 0); assert(result.bottom < 3);
   await page.getByRole('button', { name: 'Apply: test action', exact: true }).click();
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'action').length), 1);
+});
+
+test('local and peer replies retain their full text and visibly report generation limits', async (t) => {
+  for (const target of ['local', 'peer:fixture']) {
+    const page = await fixture(t, { loaded: true, longReply: true, finishReason: 'length', outputTokens: 1024, contextTruncated: true });
+    await page.getByLabel('Chat target').selectOption(target);
+    await page.getByLabel('Message', { exact: true }).fill('Explain how rainbows form in detail.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.getByRole('log').getByText(/Response reached the model’s output or context limit/).waitFor();
+    const reply = page.locator('.pc-chat-message-assistant').last();
+    assert.match(await reply.textContent(), /Reply line 69/);
+    assert.match(await reply.textContent(), /Older conversation turns were omitted/);
+    assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').maxNewTokens), 1024);
+    const bottom = await page.getByRole('log').evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
+    assert.ok(bottom < 3);
+    await page.getByLabel('Message', { exact: true }).fill('Explain the colors.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 2);
+    assert.doesNotMatch(await page.evaluate(() => JSON.stringify(calls.filter((call) => call.type === 'generate')[1].messages)), /Response reached|Older conversation/);
+  }
+});
+
+test('unknown completion is distinguished from an explicit normal stop', async (t) => {
+  for (const finishReason of ['unknown', 'stop']) {
+    const page = await fixture(t, { loaded: true, finishReason, outputTokens: 1024 });
+    await page.getByLabel('Message', { exact: true }).fill('Describe a rainbow.');
+    await page.getByLabel('Message', { exact: true }).press('Enter');
+    await page.waitForFunction(() => document.querySelector('.pc-chat-message-assistant p')?.textContent);
+    const message = await page.locator('.pc-chat-message-assistant').textContent();
+    assert.equal(message.includes('did not report whether'), finishReason === 'unknown');
+    assert.doesNotMatch(message, /Response reached/);
+  }
+});
+
+test('Config clears conversation context without unloading a model or changing storage', async (t) => {
+  const page = await fixture(t, { loaded: true, generateDelay: 300 });
+  const input = page.getByLabel('Message', { exact: true });
+  await input.fill('Explain clouds.'); await input.press('Enter');
+  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  const clear = page.getByRole('button', { name: 'Clear conversation', exact: true });
+  assert.equal(await clear.isDisabled(), true);
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+  await clear.click();
+  assert.equal(await page.locator('.pc-chat-message').count(), 0);
+  assert.equal(await page.evaluate(() => uiState.loaded), true);
+  await page.keyboard.press('Escape'); await input.fill('Explain rain.'); await input.press('Enter');
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 2);
+  const request = await page.evaluate(() => calls.filter((call) => call.type === 'generate')[1]);
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Explain rain.' }]);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['unload', 'delete', 'acquire', 'pin'].includes(call.type))), []);
+});
+
+test('model entries show estimated RAM and GPU requirements without claiming detected capacity', async (t) => {
+  const page = await fixture(t, { availability: { 'peer:fixture': { status: 'unknown', cpuBytes: 0, gpuBytes: 0 } } });
+  const source = page.getByLabel('Model and source');
+  assert.match(await source.locator('option[value="hf:vision"]').textContent(), /est\. RAM 4 GiB \/ GPU 8 GiB/);
+  assert.match(await source.locator('option[value="peer:fixture"]').textContent(), /est\. RAM unknown \/ GPU unknown/);
+  assert.match(await page.locator('.pc-model-availability').textContent(), /Planning estimates; actual memory use varies/);
+});
+
+test('import progress advances past the last file into verification and GPU loading', async (t) => {
+  const page = await fixture(t, { importProgress: true, acquireDelay: 1200 });
+  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  const status = page.locator('.pc-inference-panel > [role=status]');
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Downloading 7/7: LICENSE'));
+  assert.match(await status.textContent(), /1.0 KiB|1 KiB/);
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Verifying stored model files'));
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model into RAM'));
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model: unet'));
+  await page.waitForFunction(() => /Loading model: unet \(\d+s\)/.test(document.querySelector('[role=status]').textContent));
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Model ready.'));
+  assert.doesNotMatch(await status.textContent(), /LICENSE|undefined/);
+  await page.waitForTimeout(1050); assert.match(await status.textContent(), /Model ready/);
 });
 
 test('peer refresh marks busy only for all-busy providers and never silently changes a selected target', async (t) => {
@@ -567,4 +655,97 @@ test('invalid pixels and late cancelled image results never become preview URLs'
   await cancelled.getByRole('button', { name: 'Stop', exact: true }).click();
   await cancelled.waitForFunction(() => document.querySelector('[role=status]').textContent.startsWith('Cancelled'));
   assert.equal(await cancelled.evaluate(() => previewUrls.created.length), 0);
+});
+
+test('unsupported selection opens repeatable setup help, preserves selection and never imports', async (t) => {
+  const page = await fixture(t, { interval: 50, loaded: true, availability: {
+    'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'Required FP16 GPU math (shader-f16) is unavailable in this browser' },
+  } });
+  const source = page.getByLabel('Model and source');
+  const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  await source.selectOption('peer:fixture'); await help.waitFor();
+  assert.equal(await source.inputValue(), 'hf:vision');
+  assert.match(await help.textContent(), /Peer text model/);
+  await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
+  await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
+  const command = help.getByLabel('Browser launch command', { exact: true });
+  assert.equal(await command.inputValue(), 'google-chrome --enable-dawn-features=vulkan_enable_f16_on_nvidia');
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await help.isVisible(), true);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { async writeText(text) { window.copiedCommand = text; } } }));
+  await help.getByRole('button', { name: 'Copy command', exact: true }).click();
+  await page.waitForFunction(() => window.copiedCommand?.includes('vulkan_enable_f16_on_nvidia'));
+  assert.equal(await page.evaluate(() => copiedCommand), await command.inputValue());
+  await help.getByLabel('Browser', { exact: true }).selectOption('firefox');
+  assert.equal(await command.isVisible(), false);
+  assert.equal(await help.getByRole('button', { name: 'Copy command', exact: true }).isVisible(), false);
+  assert.doesNotMatch(await help.textContent(), /firefox --enable-dawn/);
+  await page.keyboard.press('Escape'); assert.equal(await help.isVisible(), false);
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Model and source');
+  assert.equal(await source.evaluate((element) => element === document.activeElement), true);
+  await source.selectOption('peer:fixture'); await help.waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'unload', 'pin', 'budgets'].includes(call.type))), []);
+  assert.equal(await page.evaluate(() => uiState.loaded), true);
+});
+
+test('keyboard can open an all-unavailable choice and budget help links to Config', async (t) => {
+  const unavailable = { status: 'unavailable', code: 'gpu_budget_exceeded', reason: 'Exceeds configured GPU memory budget' };
+  const page = await fixture(t, { availability: { 'hf:vision': unavailable, 'peer:fixture': unavailable } });
+  const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  assert.equal(await source.inputValue(), '');
+  await source.focus(); await page.keyboard.press('End'); await help.waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.equal(await help.getByLabel('Browser launch command', { exact: true }).isVisible(), false);
+  await help.getByRole('button', { name: 'Open Config', exact: true }).click();
+  const config = page.getByRole('dialog', { name: 'Config', exact: true });
+  assert.equal(await config.isVisible(), true); assert.equal(await help.isVisible(), false);
+  assert.equal(await config.evaluate((element) => element.contains(document.activeElement)), true);
+  await page.keyboard.press('Escape');
+  await source.selectOption('hf:vision'); await help.waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+});
+
+test('setup command has a manual-copy fallback and dialog fits mobile with focus trapping', async (t) => {
+  const page = await fixture(t, { availability: { 'hf:vision': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is required' } } });
+  await page.setViewportSize({ width: 390, height: 660 });
+  await page.getByLabel('Model and source').selectOption('hf:vision');
+  const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  await help.getByLabel('Browser', { exact: true }).selectOption('edge');
+  await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { async writeText() { throw new Error('Denied'); } } }));
+  await help.getByRole('button', { name: 'Copy command', exact: true }).click();
+  await help.getByText('Clipboard unavailable. Select and copy the command above.').waitFor();
+  const command = help.getByLabel('Browser launch command', { exact: true });
+  const selected = await command.evaluate((element) => ({ start: element.selectionStart, end: element.selectionEnd, value: element.value, focused: document.activeElement === element }));
+  assert.equal(selected.start, 0); assert.equal(selected.end, selected.value.length); assert.equal(selected.focused, true);
+  assert.match(selected.value, /^microsoft-edge --enable-dawn-features=/);
+  await help.getByRole('button', { name: 'Done', exact: true }).focus(); await page.keyboard.press('Shift+Tab');
+  assert.equal(await help.getByRole('button', { name: 'Copy command', exact: true }).evaluate((element) => document.activeElement === element), true);
+  await page.keyboard.press('Tab'); assert.equal(await help.getByRole('button', { name: 'Done', exact: true }).evaluate((element) => document.activeElement === element), true);
+  const box = await help.boundingBox(); assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 660);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= 390), true);
+  await page.evaluate(() => panel.dispose()); assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('a pending clipboard response cannot change a newly reopened setup dialog', async (t) => {
+  const page = await fixture(t, { availability: { 'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is required' } } });
+  const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() {
+    return new Promise((resolve, reject) => { window.finishCopy = resolve; window.rejectCopy = reject; });
+  } } }));
+  for (const fail of [false, true]) {
+    await source.selectOption('peer:fixture');
+    await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
+    await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
+    await help.getByRole('button', { name: 'Copy command', exact: true }).click();
+    await help.getByRole('button', { name: 'Done', exact: true }).click();
+    await source.selectOption('peer:fixture');
+    await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
+    await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
+    const done = help.getByRole('button', { name: 'Done', exact: true }); await done.focus();
+    await page.evaluate(async (fail) => { if (fail) rejectCopy(new Error('Denied')); else finishCopy(); await new Promise((resolve) => setTimeout(resolve, 0)); }, fail);
+    assert.equal(await done.evaluate((element) => element === document.activeElement), true);
+    assert.equal(await help.getByRole('status').textContent(), '');
+    await done.click();
+  }
 });

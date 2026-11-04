@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { attachModelRuntimeController } from '../../../demos/inference/src/modelRuntimeController.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
@@ -204,16 +205,84 @@ test('a surviving console reattaches hosting after the shared network manager re
   await f.runtime.dispose();
 });
 
-test('one HF acquisition pins publishes and automatically loads the managed model', async () => {
+test('one HF acquisition loads before background publication and reports acquisition stages', async () => {
   const f = fixture(); await f.controller.initialize();
-  await f.runtime.acquireModel('hf:test');
+  const events = [];
+  await f.runtime.acquireModel('hf:test', { onProgress: (event) => events.push(event) });
+  await f.runtime.refreshPeers();
+  assert.deepEqual(events, [{ stage: 'unload' }, { stage: 'load' }]);
   assert(f.calls.indexOf('import') < f.calls.indexOf('publish'));
-  assert(f.calls.indexOf('publish') < f.calls.indexOf('load'));
+  assert(f.calls.indexOf('load') < f.calls.indexOf('publish'));
   assert.equal((await f.callbacks.getLocalState()).hostedModel.manifestCid, cid);
   assert.equal(f.runtime.listInferenceTargets()[0].available, true);
   assert.equal(f.runtime.listInferenceTargets()[0].task, 'image-text-to-text');
   assert.deepEqual(f.runtime.listInferenceTargets()[0].outputModalities, ['text']);
   assert.equal(f.published.has(cid), true);
+  await f.runtime.dispose();
+});
+
+test('stalled background publication does not delay local readiness and shutdown still awaits it', async () => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const publishing = new Promise((resolve) => { started = resolve; });
+  const f = fixture({ hooks: { publish() { started(); return blocked; } } });
+  const progress = [];
+  await f.controller.initialize();
+  let ready = false, disposed = false;
+  const loading = f.runtime.acquireModel('hf:test', { onProgress: (event) => progress.push(event) }).then((result) => { ready = true; return result; });
+  try {
+    await publishing; await nextTurn();
+    assert.equal(ready, true);
+    assert.equal((await loading).workerId, 'worker-1');
+    assert.equal(f.runtime.listInferenceTargets()[0].available, true);
+    assert.equal((await f.runtime.generate('local', { prompt: 'Explain photosynthesis briefly.' })).text, 'Local answer');
+    const eventCount = progress.length;
+    const closing = f.runtime.dispose().then(() => { disposed = true; });
+    await nextTurn();
+    assert.equal(disposed, false); assert.equal(f.calls.includes('dispose'), false);
+    release(); await closing;
+    assert.equal(disposed, true); assert.equal(progress.length, eventCount, 'sharing cannot overwrite later chat status');
+  } finally { release(); await loading; await f.runtime.dispose(); }
+});
+
+test('public import methods retain awaited sharing semantics', async () => {
+  for (const method of ['importCatalog', 'importPackage', 'ensure']) {
+    let release, started;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    const publishing = new Promise((resolve) => { started = resolve; });
+    const f = fixture({ hooks: { publish() { started(); return blocked; } } });
+    await f.controller.initialize(); let done = false;
+    const importing = f.runtime[method](method === 'importPackage' ? manifest : 'test', ...(method === 'importPackage' ? ['fixture'] : []))
+      .then((value) => { done = true; return value; });
+    try {
+      await publishing; await nextTurn(); assert.equal(done, false, method);
+      assert.equal(f.calls.includes('load'), false);
+      release(); assert.equal((await importing).cid, cid); assert.equal(f.published.has(cid), true);
+    } finally { release(); await importing; await f.runtime.dispose(); }
+  }
+});
+
+test('cancelling before local loading avoids publication and releases acquisition for retry', async () => {
+  const f = fixture(); await f.controller.initialize();
+  for (const stage of ['unload', 'load']) {
+    const controller = new AbortController();
+    await assert.rejects(f.runtime.acquireModel('hf:test', { signal: controller.signal,
+      onProgress(event) { if (event.stage === stage) controller.abort(new DOMException('Cancel before load', 'AbortError')); },
+    }), { name: 'AbortError' });
+    assert.equal(f.calls.includes('load'), false); assert.equal(f.calls.includes('publish'), false);
+    assert.equal(f.calls.includes('use'), false);
+  }
+  await f.runtime.acquireModel('hf:test');
+  assert.equal(f.runtime.listInferenceTargets()[0].available, true);
+  await f.runtime.dispose();
+});
+
+test('a failed local load does not enqueue publication of its imported package', async () => {
+  const f = fixture({ hooks: { load(setStatus) { setStatus({ status: 'idle' }); throw new Error('GPU initialization failed'); } } });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.acquireModel('hf:test'), /GPU initialization failed/);
+  assert.equal(f.calls.includes('publish'), false); assert.equal(f.calls.includes('release-use'), true);
+  assert.equal(f.records.get(cid).pinned, true);
   await f.runtime.dispose();
 });
 
@@ -263,7 +332,9 @@ test('peer sources acquire by hidden CID and automatically load; local-only prov
   f.peer.models = [{ ...descriptor, providers: [{ peerId: 'remote', local: false }] },
     { ...descriptor, manifestCid: 'local-only', providers: [{ peerId: 'self', local: true }] }];
   assert.equal(f.runtime.listModelSources().length, 2);
-  await f.runtime.acquireModel(`peer:${cid}`);
+  const events = [];
+  await f.runtime.acquireModel(`peer:${cid}`, { onProgress: (event) => events.push(event) });
+  assert.deepEqual(events, [{ stage: 'download-peers' }, { stage: 'unload' }, { stage: 'load' }]);
   assert(f.calls.indexOf('fetch-peer') < f.calls.indexOf('load')); assert(!f.calls.includes('import'));
   await f.runtime.dispose();
 });
@@ -333,6 +404,7 @@ test('failed unload keeps storage intact and quarantines the model until deletio
   let fail = true;
   const f = fixture({ hooks: { unload() { if (fail && f.calls.includes('withdraw')) throw new Error('GPU termination not acknowledged'); } } });
   await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  await f.runtime.refreshPeers();
   await assert.rejects(f.runtime.deleteStoredModel(cid), /not acknowledged/);
   assert(f.records.has(cid)); assert(!f.calls.includes('remove'));
   assert(!f.calls.includes('release-use'));
@@ -360,6 +432,7 @@ test('a sharing budget failure preserves local import and auto-load with accurat
   const f = fixture({ hooks: { publish() { throw new Error('Serving closure exceeds block limit'); } } });
   await f.controller.initialize();
   await f.runtime.acquireModel('hf:test');
+  await f.runtime.refreshPeers();
   assert.equal(f.runtime.listInferenceTargets()[0].available, true);
   const [stored] = await f.runtime.listStoredModels();
   assert.equal(stored.loaded, true); assert.equal(stored.shared, false);

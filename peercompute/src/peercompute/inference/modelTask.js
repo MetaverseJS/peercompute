@@ -56,6 +56,28 @@ function disposeTensors(value, visited = new Set()) {
   for (const item of Object.values(value)) disposeTensors(item, visited);
 }
 
+function dropOldestTurn(messages) {
+  const first = messages.findIndex((message) => message.role === 'user');
+  if (first < 0) return null;
+  const next = messages.findIndex((message, index) => index > first && message.role === 'user');
+  if (next < 0) return null;
+  // Keep all system instructions and the latest user turn. Do not slice text or
+  // leave an older assistant response without its corresponding user request.
+  return messages.filter((message, index) => index < first || index >= next || message.role === 'system');
+}
+
+function generationFinishReason(model, generated, maximum) {
+  // Match the pinned Transformers runtime's generation-config precedence.
+  const config = { ...model.config };
+  for (const key of ['decoder', 'generator', 'text_config']) Object.assign(config, config[key]);
+  Object.assign(config, model.generation_config);
+  const eos = Array.isArray(config.eos_token_id) ? config.eos_token_id : [config.eos_token_id];
+  const last = generated.at(-1);
+  const tokenId = (value) => typeof value === 'bigint' || (Number.isSafeInteger(value) && value >= 0);
+  if (tokenId(last) && eos.some((id) => tokenId(id) && BigInt(id) === BigInt(last))) return 'stop';
+  return generated.length >= maximum ? 'length' : 'unknown';
+}
+
 async function loadComponents({ library, modelPath, options, manifest }) {
   const components = {};
   try {
@@ -269,7 +291,7 @@ export function createModelTaskRuntime({
     if (!Number.isInteger(maxNewTokens) || maxNewTokens < 1 || maxNewTokens > MODEL_POLICY.maxNewTokens) {
       throw new Error('Generation exceeds its output-token budget');
     }
-    const messages = normalizeModelMessages(data);
+    let messages = normalizeModelMessages(data);
     const image = validateImageInput(data.image);
     if (image && entry.manifest.model.task !== 'image-text-to-text') throw new Error('This model does not admit image inputs');
     throwIfAborted(context.signal);
@@ -286,37 +308,47 @@ export function createModelTaskRuntime({
     let sequence = 0;
     let outputBytes = 0;
     let streamFailure;
+    let contextTruncated = false;
     const initialDispatches = entry.gpuDispatches ?? 0;
     const initialSubmissions = entry.gpuSubmissions ?? 0;
     try {
       throwIfAborted(context.signal);
       const { tokenizer, processor, model } = entry.components;
-      let chat = messages;
-      if (processor) {
-        chat = messages.map((message) => ({ role: message.role, content: [{ type: 'text', text: message.content }] }));
-        if (image) {
-          const lastUser = chat.findLast((message) => message.role === 'user');
-          if (!lastUser) throw new Error('An image requires a user message');
-          lastUser.content.unshift({ type: 'image' });
+      let inputTokens;
+      while (true) {
+        throwIfAborted(controller.signal);
+        let chat = messages;
+        if (processor) {
+          chat = messages.map((message) => ({ role: message.role, content: [{ type: 'text', text: message.content }] }));
+          if (image) {
+            const lastUser = chat.findLast((message) => message.role === 'user');
+            if (!lastUser) throw new Error('An image requires a user message');
+            lastUser.content.unshift({ type: 'image' });
+          }
         }
-      }
-      const prompt = (processor ?? tokenizer).apply_chat_template(chat, {
-        tokenize: false, add_generation_prompt: true, enable_thinking: false,
-      });
-      if (typeof prompt !== 'string' || byteLength(prompt) > MODEL_POLICY.maxPromptBytes) {
-        throw new Error('Templated prompt exceeds its byte budget');
-      }
-      if (image) {
-        const raw = new entry.library.RawImage(image.data, image.width, image.height, image.channels);
-        // Version 4's Idefics3 processor takes (text, images), unlike old examples.
-        inputs = await processor(prompt, raw, { do_image_splitting: false });
-      } else {
-        inputs = await tokenizer(prompt, { truncation: false, padding: false });
-      }
-      const inputTokens = inputs.input_ids?.dims?.at(-1);
-      if (!Number.isSafeInteger(inputTokens) || inputTokens < 1
-          || inputTokens + maxNewTokens > MODEL_POLICY.maxContextTokens) {
-        throw new Error('Prompt/image tokens exceed the context budget');
+        const prompt = (processor ?? tokenizer).apply_chat_template(chat, {
+          tokenize: false, add_generation_prompt: true, enable_thinking: false,
+        });
+        if (typeof prompt !== 'string' || byteLength(prompt) > MODEL_POLICY.maxPromptBytes) {
+          throw new Error('Templated prompt exceeds its byte budget');
+        }
+        if (image) {
+          const raw = new entry.library.RawImage(image.data, image.width, image.height, image.channels);
+          // Version 4's Idefics3 processor takes (text, images), unlike old examples.
+          inputs = await processor(prompt, raw, { do_image_splitting: false });
+        } else {
+          inputs = await tokenizer(prompt, { truncation: false, padding: false });
+        }
+        throwIfAborted(controller.signal);
+        inputTokens = inputs.input_ids?.dims?.at(-1);
+        if (!Number.isSafeInteger(inputTokens) || inputTokens < 1) throw new Error('Invalid model input token count');
+        if (inputTokens + maxNewTokens <= MODEL_POLICY.maxContextTokens) break;
+        const trimmed = dropOldestTurn(messages);
+        if (!trimmed) throw new Error('Latest prompt/image and system instructions exceed the context budget; shorten the prompt or request fewer output tokens');
+        const discarded = inputs; inputs = undefined;
+        disposeTensors(discarded);
+        messages = trimmed;
+        contextTruncated = true;
       }
       throwIfAborted(controller.signal);
       const streamer = new entry.library.TextStreamer(tokenizer, {
@@ -344,7 +376,7 @@ export function createModelTaskRuntime({
       if (entry.lost) throw new Error('GPU device lost; model session is unavailable');
       throwIfAborted(controller.signal);
       const rows = output.tolist();
-      if (rows.length !== 1 || rows[0].length > inputTokens + maxNewTokens) {
+      if (rows.length !== 1 || rows[0].length < inputTokens || rows[0].length > inputTokens + maxNewTokens) {
         throw new Error('Model returned an over-budget token sequence');
       }
       const generated = rows[0].slice(inputTokens);
@@ -352,7 +384,8 @@ export function createModelTaskRuntime({
       if (byteLength(text) > MODEL_POLICY.maxOutputBytes) throw new Error('Generated text exceeds its byte budget');
       entry.generatedRequests += 1;
       return { sessionId: entry.sessionId, requestId, text, inputTokens,
-        outputTokens: generated.length, workerId: entry.workerId, gpuDispatches: (entry.gpuDispatches ?? 0) - initialDispatches,
+        outputTokens: generated.length, finishReason: generationFinishReason(model, generated, maxNewTokens), contextTruncated,
+        workerId: entry.workerId, gpuDispatches: (entry.gpuDispatches ?? 0) - initialDispatches,
         gpuSubmissions: (entry.gpuSubmissions ?? 0) - initialSubmissions, gpuProfileSamples: entry.gpuProfileSamples ?? 0 };
     } finally {
       context.signal?.removeEventListener('abort', abort);

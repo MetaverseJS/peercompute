@@ -24,6 +24,8 @@ assert(['external', 'browser'].includes(mode), 'GGUF_ARTIFACT_MODE must be exter
 assert(mode !== 'browser' || entry.weightBytes < 4 * 1024 ** 3, 'Large acceptance must reuse the Node store without a duplicate browser copy');
 const gpuLayers = Number(process.env.GGUF_GPU_LAYERS || 99999);
 assert(Number.isSafeInteger(gpuLayers) && gpuLayers >= 1 && gpuLayers <= 99999, 'Invalid GGUF_GPU_LAYERS');
+const contextTokens = Number(process.env.GGUF_CONTEXT_TOKENS || 2048);
+assert(Number.isSafeInteger(contextTokens) && contextTokens >= 64 && contextTokens <= 2048, 'Invalid GGUF_CONTEXT_TOKENS');
 const useF16Override = process.env.GGUF_NVIDIA_F16_OVERRIDE === '1';
 const report = { startedAt: new Date().toISOString(), node: process.version, modelId, mode,
   scope: mode === 'browser' ? 'Managed WebGPU GGUF from persistent browser artifacts; source disabled after import'
@@ -76,7 +78,7 @@ try {
   report.manifestCid = descriptor.manifestCid;
   report.revision = entry.revision;
   report.totalBytes = manifest.files.reduce((sum, file) => sum + file.size, 0);
-  report.runtimeOptions = { n_ctx: 512, n_batch: 64, n_gpu_layers: gpuLayers, n_threads: 1 };
+  report.runtimeOptions = { n_ctx: contextTokens, n_batch: 64, n_gpu_layers: gpuLayers, n_threads: 1 };
   await sampleDeviceMemory();
   memoryTimer = setInterval(() => { void sampleDeviceMemory(); }, 5000);
   memoryTimer.unref();
@@ -186,6 +188,20 @@ try {
   report.correctnessMs = performance.now() - requestStarted;
   assert.match(report.correctness.text.trim(), /^4[.!]?$/, 'The admitted GGUF must answer the arithmetic control correctly');
   console.log('GGUF warm reuse and arithmetic control passed');
+  if (process.env.GGUF_LONG_RESPONSE === '1') {
+    assert.equal(contextTokens, 2048, 'Long response acceptance requires the current console context');
+    requestStarted = performance.now();
+    report.longResponse = await page.evaluate(() => window.ggufAcceptance.generate({ maxNewTokens: 1024,
+      prompt: 'Explain the water cycle for a science student in detail. Cover evaporation, condensation, clouds, rain, snow, groundwater, rivers, and oceans. Write at least 600 words. /no_think' }));
+    report.longResponseMs = performance.now() - requestStarted;
+    assert(report.longResponse.outputTokens > 128 && report.longResponse.outputTokens <= 1024, 'Answer must pass the old cutoff within the new bound');
+    assert(['stop', 'length'].includes(report.longResponse.finishReason), 'Native completion reason must reach the caller');
+    report.limitResponse = await page.evaluate(() => window.ggufAcceptance.generate({ maxNewTokens: 32,
+      prompt: 'List the integers from one to five hundred, with one number on each line. /no_think' }));
+    assert.equal(report.limitResponse.finishReason, 'length', 'A short budget must report length, not a normal stop');
+    assert.equal(report.correctness.finishReason, 'stop', 'Arithmetic control must end normally');
+    console.log('GGUF long response and native stop/length reporting passed');
+  }
   report.resident = await page.evaluate(() => window.ggufAcceptance.evidence());
   assert(report.resident.pressure.activeLeaseCount >= 2, 'Resident CPU and GPU resources must remain admitted');
   requestStarted = performance.now();

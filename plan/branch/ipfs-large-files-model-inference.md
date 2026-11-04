@@ -828,3 +828,24 @@ Avoid granting models authority over arbitrary shared state or network messages.
   Separate feature-blocked copy from memory-budget failures. Validate both the
   normal NVIDIA driver policy and the explicitly overridden test environment;
   do not imply that one proves the other. FP32 fallback remains unimplemented.
+- November3 20:57: make unavailable model choices actionable for setup help;
+  native disabled options cannot trigger a modal. They remain visually muted,
+  labeled and blocked from import. The modal explains the actual limitation,
+  detects browser/OS with manual correction, offers applicable fixed launch
+  commands, supports copying/reopening/keyboard navigation, and preserves the
+  prior selection, resident model and independent peer inference.
+- November3 21:12: fix silent early response cutoff. Request1,024 output tokens
+  with a2,048-token context; preserve manager admission, cancellation and deadlines.
+  Keep stop/length/unknown completion metadata over peer transport and display
+  limit notices with each answer. Tokenize ONNX history before dropping old turns;
+  preserve the latest request, images and system instructions. GGUF context errors
+  remain explicit, without silent replay or automatic context shifting. Qualify
+  the larger context with cached small-model WebGPU execution; retain the earlier
+  27B512-context measurement scope until separately measured.
+- November3 21:19: show RAM/GPU estimates for HF and peer model entries. Replace
+  last-file stale status with byte progress, verification and component loading
+  phases plus elapsed time. Keep verification intact and allow local model readiness
+  without waiting for tracked sharing publication; expose errors in the library.
+- Updated peers advertise output caps; callers negotiate each chosen provider's
+  limit before admission, using256 for legacy hosts. Config can clear conversation
+  context without unloading models or deleting artifact storage.

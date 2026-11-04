@@ -7,7 +7,7 @@ export const MODEL_POLICY = Object.freeze({
   maxFiles: 1024,
   maxModelBytes: 1536 * 1024 * 1024,
   maxContextTokens: 2048,
-  maxNewTokens: 256,
+  maxNewTokens: 1024,
   maxPromptBytes: 64 * 1024,
   maxOutputBytes: 64 * 1024,
   maxMessages: 64,

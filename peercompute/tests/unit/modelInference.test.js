@@ -63,10 +63,12 @@ function fakeLibrary() {
   };
 }
 
-function fakeComponents({ inputTokens = 2, generate, vision = false, events = [] } = {}) {
+function fakeComponents({ inputTokens = 2, outputTokens = [2n], config, generationConfig, generate, vision = false, events = [] } = {}) {
   const tensors = [];
-  const tokenizer = Object.assign(() => {
-    const tensor = { dims: [1, inputTokens], dispose() { events.push('inputs-disposed'); } };
+  let lastInputTokens;
+  const tokenizer = Object.assign((text) => {
+    lastInputTokens = typeof inputTokens === 'function' ? inputTokens(text) : inputTokens;
+    const tensor = { dims: [1, lastInputTokens], dispose() { events.push('inputs-disposed'); } };
     tensors.push(tensor);
     return { input_ids: tensor };
   }, {
@@ -78,9 +80,10 @@ function fakeComponents({ inputTokens = 2, generate, vision = false, events = []
     decode: () => 'hello',
     dispose() { events.push('tokenizer-disposed'); },
   });
-  const output = () => ({ tolist: () => [[...Array(inputTokens).fill(1n), 2n]],
+  const output = () => ({ tolist: () => [[...Array(lastInputTokens).fill(1n), ...outputTokens]],
     dispose() { events.push('output-disposed'); } });
   const model = {
+    config, generation_config: generationConfig,
     async generate(options) {
       events.push('generate');
       if (generate) return generate(options, output);
@@ -283,6 +286,98 @@ test('context and output byte budgets fail closed and release input/output tenso
   await assert.rejects(overflow.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'overflow', prompt: 'x' }), /byte budget/);
   assert.equal(interrupted, true);
   await overflow.runtime({ command: 'unload', sessionId: 'test-session' });
+});
+
+test('long benign replies use the larger bounded output allowance and retain a natural stop', async () => {
+  const explanation = ('Plants use sunlight, water and carbon dioxide to make sugars. ' +
+    'Roots absorb water, leaves exchange gases, and chlorophyll captures light. ').repeat(16) + 'That completes the explanation.';
+  const components = fakeComponents({ outputTokens: [...Array(400).fill(4n), 9n], generationConfig: { eos_token_id: [8, 9] },
+    generate(options, output) {
+      assert.equal(options.max_new_tokens, 1024);
+      options.streamer.options.callback_function(explanation);
+      return output();
+    } });
+  components.tokenizer.decode = () => explanation;
+  const fixture = runtimeFor({ components }); await loadRuntime(fixture);
+  let streamed = '';
+  const result = await fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'long-answer',
+    prompt: 'Explain how plants make food in several paragraphs.' }, { emitProgress(event) { streamed += event.text; } });
+  assert.equal(result.text, explanation); assert.equal(streamed, explanation);
+  assert.equal(result.outputTokens, 401); assert.equal(result.finishReason, 'stop');
+  assert.equal(result.contextTruncated, false);
+  assert.equal(MODEL_POLICY.maxContextTokens, 2048); assert.equal(MODEL_POLICY.maxOutputBytes, 64 * 1024);
+  await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
+});
+
+test('ONNX distinguishes EOS at the exact limit, length, and an unverified early ending', async () => {
+  for (const [outputTokens, config, generationConfig, expected] of [
+    [[4n, 9n], { eos_token_id: 1 }, { eos_token_id: [8, 9] }, 'stop'],
+    [[4n, 7n], { eos_token_id: 1, text_config: { eos_token_id: 7 } }, undefined, 'stop'],
+    [[4n, 7n], { eos_token_id: 7 }, { eos_token_id: 9 }, 'length'],
+    [[4n, 5n], undefined, undefined, 'length'],
+    [[4n], { eos_token_id: 9 }, undefined, 'unknown'],
+  ]) {
+    const fixture = runtimeFor({ components: fakeComponents({ outputTokens, config, generationConfig }) });
+    await loadRuntime(fixture);
+    const result = await fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'finish',
+      prompt: 'Explain a seed.', maxNewTokens: 2 });
+    assert.equal(result.finishReason, expected);
+    await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
+  }
+});
+
+test('token-aware history trimming preserves instructions and latest turn, then frees discarded tensors', async () => {
+  const events = [], prompts = [];
+  const messages = [
+    { role: 'system', content: 'Explain clearly.' },
+    { role: 'user', content: 'OLDER_QUESTION about seeds.' },
+    { role: 'assistant', content: 'OLDER_ANSWER about seed shells.' },
+    { role: 'user', content: 'RECENT_QUESTION about roots.' },
+    { role: 'assistant', content: 'RECENT_ANSWER about absorbing water.' },
+    { role: 'user', content: 'Explain how leaves capture sunlight.' },
+  ];
+  const original = structuredClone(messages);
+  const components = fakeComponents({ events, inputTokens(text) {
+    prompts.push(text); return text.includes('OLDER_QUESTION') ? 1200 : 900;
+  }, generate(options, output) {
+    assert.equal(events.filter((event) => event === 'inputs-disposed').length, 1);
+    assert.equal(options.input_ids.dims[1], 900); return output();
+  } });
+  const fixture = runtimeFor({ components }); await loadRuntime(fixture);
+  const result = await fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'history', messages });
+  assert.equal(result.contextTruncated, true); assert.equal(result.inputTokens, 900);
+  assert.equal(prompts.length, 2); assert.doesNotMatch(prompts[1], /OLDER_/);
+  assert.match(prompts[1], /Explain clearly/); assert.match(prompts[1], /RECENT_QUESTION.*\nRECENT_ANSWER/);
+  assert.match(prompts[1], /leaves capture sunlight/); assert.deepEqual(messages, original);
+  assert.equal(events.filter((event) => event === 'inputs-disposed').length, 2);
+  await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
+});
+
+test('history trimming accounts for image tokens and keeps the image on the latest user turn', async () => {
+  const events = [];
+  const components = fakeComponents({ events, vision: true, inputTokens: (text) => text.includes('older') ? 1500 : 1000 });
+  const fixture = runtimeFor({ components }); await loadRuntime(fixture, manifest({ vision: true }));
+  const result = await fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'image-history',
+    messages: [{ role: 'user', content: 'older question' }, { role: 'assistant', content: 'older answer' },
+      { role: 'user', content: 'Describe this leaf.' }], image: { data: new Uint8Array(4), width: 1, height: 1, channels: 4 } });
+  assert.equal(result.contextTruncated, true);
+  const calls = events.filter((event) => typeof event === 'object');
+  assert.equal(calls.length, 2); assert.equal(calls[1].text, '<image>Describe this leaf.');
+  assert.equal(events.filter((event) => event === 'pixels-disposed').length, 2);
+  await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
+});
+
+test('an oversized latest prompt remains an explicit error after bounded history trimming', async () => {
+  const events = [];
+  const fixture = runtimeFor({ components: fakeComponents({ events, inputTokens: 1800 }) });
+  await loadRuntime(fixture);
+  await assert.rejects(fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: 'latest-too-long',
+    messages: [{ role: 'system', content: 'Explain carefully.' }, { role: 'user', content: 'Old question.' },
+      { role: 'assistant', content: 'Old answer.' }, { role: 'user', content: 'Explain the complete plant life cycle.' }] }),
+  /Latest prompt\/image and system instructions exceed the context budget/);
+  assert.equal(events.filter((event) => event === 'inputs-disposed').length, 2);
+  assert.equal(events.includes('generate'), false);
+  await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
 });
 
 test('generation cancellation awaits the model and keeps a reusable resident session', async () => {

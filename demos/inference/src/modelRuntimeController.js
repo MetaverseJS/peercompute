@@ -173,10 +173,17 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     const activeSignal = combined(signal);
     return mutations.run(() => { assertOpen(); return operation(activeSignal); }, { signal: activeSignal });
   }
-  async function importModel(method, args) {
+  async function importModel(method, args, { deferSharing = false } = {}) {
     let result;
     try { result = await original[method](...args); } catch (error) { throw modelStorageError(error); }
-    await remember(result); await syncSharing(); return result;
+    await remember(result);
+    if (!deferSharing) await syncSharing();
+    return result;
+  }
+  function shareAfterLoad(cid) {
+    // syncSharing joins the existing publication chain, which disposal and
+    // deletion await. No acquisition/chat callback escapes into this work.
+    void syncSharing().catch((error) => { if (!closed) sharingErrors.set(cid, error); });
   }
   async function loadModel(cid, options = {}) {
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
@@ -270,17 +277,31 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
         if (source.source === 'hf') {
           const saved = [...retained.values()].find((entry) => entry.modelId === source.modelId);
           record = saved && await runtime.store.stat(saved.manifestCid, { signal });
-          if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }]);
+          if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }], { deferSharing: true });
         } else {
           if (runtime.inspectPeerPackage) assertLocallyAvailable(await runtime.inspectPeerPackage(source.manifestCid, { signal }));
-          record = await importModel('ensure', [source.manifestCid, { signal }]);
+          signal.throwIfAborted();
+          options.onProgress?.({ stage: 'download-peers' });
+          signal.throwIfAborted();
+          record = await importModel('ensure', [source.manifestCid, { signal }], { deferSharing: true });
         }
         signal.throwIfAborted();
         // Recheck the actual persisted manifest before unloading a working model.
         assertLocallyAvailable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
-        if (resident()?.manifestCid === record.cid) return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
+        signal.throwIfAborted();
+        if (resident()?.manifestCid === record.cid) {
+          shareAfterLoad(record.cid);
+          return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
+        }
+        options.onProgress?.({ stage: 'unload' });
+        signal.throwIfAborted();
         await unloadModel();
-        return loadModel(record.cid, { ...options, signal });
+        signal.throwIfAborted();
+        options.onProgress?.({ stage: 'load' });
+        signal.throwIfAborted();
+        const result = await loadModel(record.cid, { ...options, signal });
+        shareAfterLoad(record.cid);
+        return result;
       }, options.signal);
       try { return await acquiring; } finally { acquiring = null; }
     },

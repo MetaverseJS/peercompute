@@ -9,11 +9,80 @@ import { build } from 'vite';
 import { chromium } from 'playwright';
 import { ArtifactStore } from '../../src/peercompute/artifacts/ArtifactStore.js';
 import { importModelPackage, modelStorageError, listStoredModelRecords } from '../../../demos/inference/src/modelLibrary.js';
+import { sha1 } from '@noble/hashes/legacy.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const model = { runtime: 'transformers.js', repository: 'test/library', revision: 'a'.repeat(40) };
 const entry = (name, bytes) => ({ schema: 'peercompute.artifact.manifest.v1', name, model,
   files: [{ path: 'weights.bin', size: bytes.length }] });
+
+test('package progress is throttled, ordered, and finishes files before manifest verification without changing CIDs', async (t) => {
+  const store = new ArtifactStore({ persistent: false, capacity: 'browser' }); await store.open();
+  let at = 0;
+  t.mock.method(performance, 'now', () => at);
+  const weights = new Uint8Array(12 * 1024).map((_, index) => index % 251);
+  const license = new TextEncoder().encode('Fixture license');
+  const source = { schema: 'peercompute.artifact.manifest.v1', name: 'Progress fixture', model, files: [
+    { path: 'weights.bin', size: weights.length, sha256: bytesToHex(sha256(weights)) },
+    { path: 'LICENSE', size: license.length, gitBlobSha1: bytesToHex(sha1.create()
+      .update(new TextEncoder().encode(`blob ${license.length}\0`)).update(license).digest()) },
+  ] };
+  const events = [];
+  const originalManifest = store.importManifest.bind(store);
+  store.importManifest = async (...args) => {
+    assert.equal(events.at(-1).stage, 'verify');
+    return originalManifest(...args);
+  };
+  const fetchImpl = async (url) => ({ ok: true, body: (async function* () {
+    const bytes = url === 'weights.bin' ? weights : license;
+    for (let offset = 0; offset < bytes.length; offset += 1024) {
+      at += 25; yield bytes.subarray(offset, offset + 1024);
+    }
+  })() });
+  try {
+    const result = await importModelPackage(store, source, (path) => path, { fetchImpl,
+      onProgress(event) { events.push({ ...event }); } });
+    const weightEvents = events.filter((event) => event.path === 'weights.bin');
+    assert.deepEqual(weightEvents.map((event) => event.loaded), [0, 4096, 8192, 12288]);
+    assert(weightEvents.every((event) => event.index === 0 && event.total === 2 && event.totalBytes === weights.length));
+    assert.deepEqual(events.filter((event) => event.path === 'LICENSE').map((event) => event.loaded), [0, license.length]);
+    assert.deepEqual(events.at(-1), { stage: 'verify', total: 2, totalBytes: weights.length + license.length });
+    assert.equal(result.pinned, true);
+    assert.deepEqual(Object.fromEntries(result.manifest.files.map((file) => [file.path, file.sha256])),
+      { 'weights.bin': bytesToHex(sha256(weights)), LICENSE: bytesToHex(sha256(license)) });
+    events.length = 0;
+    const cached = await importModelPackage(store, result.manifest, () => { throw new Error('Cached file must not download'); }, {
+      onProgress(event) { events.push({ ...event }); },
+    });
+    assert.equal(cached.cid, result.cid);
+    assert.deepEqual(cached.manifest, result.manifest);
+    assert.deepEqual(events.map((event) => event.stage), ['import', 'import', 'import', 'import', 'verify']);
+  } finally { await store.destroy(); }
+});
+
+test('failed integrity checks never report a verified file and cancelling verification leaves no manifest', async () => {
+  const store = new ArtifactStore({ persistent: false, capacity: 'browser' }); await store.open();
+  const bytes = new TextEncoder().encode('Benign model fixture');
+  try {
+    for (const metadata of [{ sha256: '0'.repeat(64) }, { gitBlobSha1: '0'.repeat(40) }]) {
+      const events = [], spec = entry('Corrupt', bytes); Object.assign(spec.files[0], metadata);
+      await assert.rejects(importModelPackage(store, spec, () => 'fixture', {
+        fetchImpl: async () => new Response(bytes), onProgress(event) { events.push(event); },
+      }), /mismatch|does not match/i);
+      assert.deepEqual(events.map((event) => event.loaded), [0]);
+      assert.equal((await listStoredModelRecords(store)).length, 0);
+    }
+    const controller = new AbortController(), events = [];
+    await assert.rejects(importModelPackage(store, entry('Cancelled', bytes), () => 'fixture', {
+      signal: controller.signal, fetchImpl: async () => new Response(bytes),
+      onProgress(event) { events.push(event); if (event.stage === 'verify') controller.abort(new DOMException('Cancelled', 'AbortError')); },
+    }), { name: 'AbortError' });
+    assert.equal(events.at(-1).stage, 'verify');
+    assert.equal((await listStoredModelRecords(store)).length, 0);
+  } finally { await store.destroy(); }
+});
 
 test('package import preserves the original storage failure and leaves another pinned model intact', async () => {
   const store = new ArtifactStore({ persistent: false, capacity: 'browser' }); await store.open();

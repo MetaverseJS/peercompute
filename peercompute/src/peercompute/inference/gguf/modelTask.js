@@ -98,7 +98,7 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
     const submissions = current.engine.evidence.submissions;
     let nativeRequest;
     let completed = false;
-    let text = '', sequence = 0, inputTokens = null, outputTokens = null;
+    let text = '', sequence = 0, inputTokens = null, outputTokens = null, finishReason = 'unknown';
     try {
       const started = await current.engine.action('completion', { _name: 'cmpl_req', is_chat: true,
         data_json: JSON.stringify({ messages, stream: true, max_tokens: maxNewTokens,
@@ -111,11 +111,13 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
         throwIfAborted(controller.signal);
         const response = await current.engine.action('get_result', { _name: 'gres_req', req_id: nativeRequest }, controller.signal);
         throwIfAborted(controller.signal);
-        if (!response.success || response.is_error) throw new Error('GGUF generation failed or exceeded the context budget');
+        if (!response.success || response.is_error) throw new Error('GGUF generation failed or exceeded the context budget; shorten the conversation or request fewer output tokens');
         if (response.data_json && response.data_json !== 'null') {
           if (byteLength(response.data_json) > 1024 * 1024) throw new Error('GGUF result exceeds its byte budget');
           const parsed = JSON.parse(response.data_json);
           for (const chunk of Array.isArray(parsed) ? parsed : [parsed]) {
+            const nativeReason = chunk.choices?.[0]?.finish_reason ?? chunk.finish_reason;
+            if (nativeReason != null) finishReason = ['stop', 'length'].includes(nativeReason) ? nativeReason : 'unknown';
             const delta = chunk.choices?.[0]?.delta?.content ?? chunk.content ?? '';
             if (typeof delta !== 'string') throw new Error('Invalid GGUF text chunk');
             text += delta;
@@ -139,6 +141,7 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       }
       current.generatedRequests += 1;
       return { sessionId: current.sessionId, requestId, text, inputTokens, outputTokens,
+        finishReason, contextTruncated: false,
         workerId: current.workerId, gpuDispatches: current.engine.evidence.dispatches - dispatches,
         gpuSubmissions: current.engine.evidence.submissions - submissions,
         gpuOffload: current.engine.evidence.offload, artifactReads: current.reader.getStats() };

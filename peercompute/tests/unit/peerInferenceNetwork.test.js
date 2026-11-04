@@ -9,8 +9,9 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL, encryptedConnection, channel, descriptor, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { PEER_INFERENCE_PROTOCOL, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { imageDigest } from '../../src/peercompute/networkManager/inference/imageResult.js';
+import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';
 
 const manifestCid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { manifestCid, modelId: 'fixture', name: 'Fixture', modalities: ['text', 'image'],
@@ -54,6 +55,112 @@ test('private inference rejects plaintext, missing crypto and invalid input enve
   assert.throws(() => descriptor({ ...model, totalBytes: Infinity }), /numeric/);
   assert.throws(() => generation({ manifestCid, requestId: 'x', prompt: 'x'.repeat(65537) }), /budget/);
   assert.throws(() => generation({ manifestCid, requestId: 'x', prompt: 'x', image: { width: 2 ** 31, height: 1, channels: 4 } }), /numeric/);
+  assert.equal(generation({ manifestCid, requestId: 'token-limit', prompt: 'x', maxNewTokens: MODEL_POLICY.maxNewTokens }).maxNewTokens, MODEL_POLICY.maxNewTokens);
+  assert.throws(() => generation({ manifestCid, requestId: 'over-token-limit', prompt: 'x', maxNewTokens: MODEL_POLICY.maxNewTokens + 1 }), /numeric/);
+});
+
+test('completion metadata validates enums and booleans without inventing an older peer stop reason', () => {
+  assert.deepEqual(resultData({ text: 'Older answer' }), { text: 'Older answer', finishReason: 'unknown' });
+  assert.deepEqual(resultData({ text: '', finishReason: undefined, contextTruncated: undefined }), { text: '', finishReason: 'unknown' });
+  for (const finishReason of ['stop', 'length', 'unknown']) for (const contextTruncated of [true, false]) {
+    assert.deepEqual(resultData({ text: 'Answer', finishReason, contextTruncated }), { text: 'Answer', finishReason, contextTruncated });
+  }
+  for (const finishReason of [null, false, 1, {}, [], '', 'eos', 'STOP', 'length '.repeat(10000)]) {
+    assert.throws(() => resultData({ text: 'Answer', finishReason }), /finish reason/);
+  }
+  for (const contextTruncated of [null, 0, 1, 'true', {}, []]) {
+    assert.throws(() => resultData({ text: 'Answer', contextTruncated }), /context truncation/);
+  }
+});
+
+test('host token caps are validated separately from package descriptors and absent remote caps stay legacy', () => {
+  assert.equal(MODEL_POLICY.maxNewTokens, 1024);
+  assert.equal(LEGACY_MAX_NEW_TOKENS, 256);
+  assert.equal(localState({ ...empty(), hostedModel: model }).hostedModel.maxNewTokens, 256);
+  assert.equal(localState({ ...empty(), hostedModel: { ...model, maxNewTokens: 1024 } }).hostedModel.maxNewTokens, 1024);
+  assert.equal(localState({ ...empty(), hostedModel: model }, true, { defaultMaxNewTokens: 1024 }).hostedModel.maxNewTokens, 1024);
+  const state = localState({ ...empty(), sharedModels: [{ ...model, maxNewTokens: 1024 }] });
+  assert.equal(state.sharedModels[0].maxNewTokens, undefined);
+  for (const maxNewTokens of [null, 0, -1, 1.5, 1025, Infinity, '1024', true]) {
+    assert.throws(() => localState({ ...empty(), hostedModel: { ...model, maxNewTokens } }), /numeric/);
+  }
+});
+
+test('mixed old and new Noise hosts keep longest-idle routing and use their individual token caps', { timeout: 15000 }, async (t) => {
+  const [requestor, old, current] = await fixture(t);
+  let oldIdle = 900, rejectOld = false, oldCap;
+  const oldRequests = [];
+  current.state = { ...empty(), hostedModel: model, idleForMs: 100 };
+  await old.node.unhandle(PEER_INFERENCE_PROTOCOL);
+  await old.node.handle(PEER_INFERENCE_PROTOCOL, (stream) => {
+    void (async () => {
+      const io = channel(stream); const signal = AbortSignal.timeout(3000);
+      try {
+        const input = await io.read(signal);
+        if (input.type === 'query') {
+          await io.write(old.service._envelope('directory', requestor.node.peerId.toString(), { state: {
+            ...empty(), sharedModels: [model], hostedModel: { ...model, ...(oldCap !== undefined ? { maxNewTokens: oldCap } : {}) }, idleForMs: oldIdle,
+          } }), signal);
+        } else {
+          oldRequests.push(input);
+          assert(input.maxNewTokens <= 256, 'An older host must never receive the new 1024-token default');
+          if (rejectOld) await io.write({ type: 'error', code: 'ERR_INFERENCE_NOT_HOSTED', message: 'Model unloaded' }, signal);
+          else {
+            await io.write({ type: 'upload', requestId: input.requestId }, signal);
+            await io.write({ type: 'accepted', requestId: input.requestId }, signal);
+            assert.equal((await io.read(signal)).type, 'start');
+            await io.write({ type: 'done', requestId: input.requestId, result: { text: 'Legacy answer' } }, signal);
+          }
+        }
+        await stream.close({ signal });
+      } catch (error) { stream.abort(error); }
+    })();
+  });
+  const firstDirectory = await requestor.service.refresh();
+  const group = firstDirectory.hosts[0];
+  assert.equal(group.maxNewTokens, undefined);
+  assert.equal(group.hosts.find((host) => host.peerId === old.node.peerId.toString()).maxNewTokens, 256);
+  assert.equal(group.hosts.find((host) => host.peerId === current.node.peerId.toString()).maxNewTokens, 1024);
+  const first = await requestor.service.generate(manifestCid, { prompt: 'x' });
+  assert.equal(first.peerId, old.node.peerId.toString()); assert.equal(first.finishReason, 'unknown');
+  assert.equal(oldRequests.at(-1).maxNewTokens, 256); assert.equal(current.received.length, 0);
+
+  oldIdle = 1; await requestor.service.refresh();
+  const second = await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 1024 });
+  assert.equal(second.peerId, current.node.peerId.toString()); assert.equal(current.received.at(-1).maxNewTokens, 1024);
+  await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 64 });
+  assert.equal(current.received.at(-1).maxNewTokens, 64);
+
+  // An old provider rejected before commitment does not lower the next candidate's limit.
+  oldIdle = 900; rejectOld = true; await requestor.service.refresh();
+  const routed = [];
+  const fallback = await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 1024,
+    onProgress: (event) => { if (event.type === 'routing') routed.push(event.peerId); } });
+  assert.deepEqual(routed, [old.node.peerId.toString(), current.node.peerId.toString()]);
+  assert.equal(fallback.peerId, current.node.peerId.toString()); assert.equal(current.received.at(-1).maxNewTokens, 1024);
+  assert.equal(oldRequests.at(-1).maxNewTokens, 256);
+
+  oldCap = 1025;
+  const invalid = await requestor.service.refresh();
+  assert.equal(invalid.errors.length, 1);
+  assert.equal(invalid.hosts[0].hosts.length, 1);
+  assert.equal(invalid.hosts[0].hosts[0].peerId, current.node.peerId.toString());
+});
+
+test('a host enforces a smaller advertised token cap before execution', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModel: { ...model, maxNewTokens: 128 } };
+  await requestor.service.refresh();
+  await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 1024 });
+  assert.equal(host.received[0].maxNewTokens, 128);
+  const stream = await requestor.node.getConnections()[0].newStream(PEER_INFERENCE_PROTOCOL);
+  const io = channel(stream); const signal = AbortSignal.timeout(3000);
+  await io.write(requestor.service._envelope('generate', host.node.peerId.toString(), {
+    manifestCid, requestId: 'over-host-limit', prompt: 'x', maxNewTokens: 129,
+  }), signal);
+  const response = await io.read(signal);
+  assert.equal(response.type, 'error'); assert.equal(response.code, 'ERR_INFERENCE_TOKEN_LIMIT');
+  assert.equal(host.received.length, 1); await stream.close({ signal });
 });
 
 test('real Noise peers group packages and hosts, route longest idle, stream text and bounded RGBA', { timeout: 30000 }, async (t) => {
@@ -70,11 +177,69 @@ test('real Noise peers group packages and hosts, route longest idle, stream text
   const result = await requestor.service.generate(manifestCid, { requestId: 'private-request', prompt: 'Private sentinel text', image,
     onToken: (text) => tokens.push(text) });
   assert.equal(result.peerId, b.node.peerId.toString()); assert.equal(result.text, 'Hello');
+  assert.equal(result.finishReason, 'unknown'); assert.equal(result.contextTruncated, undefined);
   assert.deepEqual(tokens, ['Hello']); assert.equal(a.received.length, 0); assert.equal(b.received.length, 1);
   assert.deepEqual(b.received[0].messages, [{ role: 'user', content: 'Private sentinel text' }]);
   assert.deepEqual(b.received[0].image.data, image.data);
   assert.notEqual(b.received[0].requestId, 'private-request');
   assert.equal(requestor.manager.sendToPeer.toString().includes('pubsub'), true);
+});
+
+test('real Noise text peers preserve completion and trimming metadata and reject invalid host results', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModel: model };
+  await requestor.service.refresh();
+  for (const metadata of [
+    { finishReason: 'stop', contextTruncated: false },
+    { finishReason: 'length', contextTruncated: true },
+    { finishReason: 'unknown' },
+  ]) {
+    host.run = async (input) => {
+      host.received.push(input); input.onToken('Answer');
+      return { text: 'Answer', outputTokens: 1, ...metadata };
+    };
+    const result = await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: MODEL_POLICY.maxNewTokens });
+    assert.equal(result.finishReason, metadata.finishReason);
+    assert.equal(result.contextTruncated, metadata.contextTruncated);
+    assert.equal(host.received.at(-1).maxNewTokens, MODEL_POLICY.maxNewTokens);
+  }
+  for (const [metadata, message] of [[{ finishReason: 'eos' }, /finish reason/], [{ contextTruncated: 'yes' }, /context truncation/]]) {
+    host.run = async () => ({ text: 'Answer', ...metadata });
+    await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'x' }), message);
+  }
+  await until(() => host.service.inbound.size === 0);
+  assert.equal(requestor.service.outbound.size, 0);
+});
+
+test('older v2 wire results default to unknown and invalid completion metadata is never replayed', { timeout: 15000 }, async (t) => {
+  const [requestor, host, fallback] = await fixture(t);
+  host.state = { ...empty(), hostedModel: model, idleForMs: 100 };
+  fallback.state = { ...empty(), hostedModel: model, idleForMs: 1 };
+  await requestor.service.refresh();
+  let metadata = {};
+  await host.node.unhandle(PEER_INFERENCE_PROTOCOL);
+  await host.node.handle(PEER_INFERENCE_PROTOCOL, (stream) => {
+    void (async () => {
+      const io = channel(stream); const signal = AbortSignal.timeout(3000);
+      try {
+        const input = await io.read(signal);
+        await io.write({ type: 'upload', requestId: input.requestId }, signal);
+        await io.write({ type: 'accepted', requestId: input.requestId }, signal);
+        assert.equal((await io.read(signal)).type, 'start');
+        await io.write({ type: 'done', requestId: input.requestId, result: { text: 'Legacy answer', ...metadata } }, signal);
+        await stream.close({ signal });
+      } catch (error) { stream.abort(error); }
+    })();
+  });
+  const legacy = await requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 32 });
+  assert.equal(legacy.text, 'Legacy answer'); assert.equal(legacy.finishReason, 'unknown');
+  assert.equal(legacy.contextTruncated, undefined);
+  for (const [invalid, message] of [[{ finishReason: null }, /finish reason/], [{ contextTruncated: 'false' }, /context truncation/]]) {
+    metadata = invalid;
+    await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'x', maxNewTokens: 32 }), message);
+  }
+  assert.equal(fallback.received.length, 0);
+  assert.equal(requestor.service.outbound.size, 0);
 });
 
 test('host disable aborts queued/inflight requests and never loads a missing model', { timeout: 20000 }, async (t) => {
@@ -313,7 +478,7 @@ test('real Noise peers transfer generated pixels with credits, digest, progress 
   host.run = async (input) => {
     host.received.push(input);
     input.onProgress({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 4 });
-    return { text: '', seed: input.seed, steps: 4, gpuDispatches: 22,
+    return { text: '', seed: input.seed, steps: 4, gpuDispatches: 22, finishReason: 'stop', contextTruncated: false,
       image: { width: 512, height: 512, channels: 4, data: pixels } };
   };
   const directory = await requestor.service.refresh();
@@ -325,6 +490,7 @@ test('real Noise peers transfer generated pixels with credits, digest, progress 
     onProgress: (event) => progress.push(event) });
   assert.equal(result.seed, 123); assert.equal(result.steps, 4);
   assert.equal(result.gpuDispatches, 22); assert.equal(result.connectionEncryption, '/noise');
+  assert.equal(result.finishReason, 'stop'); assert.equal(result.contextTruncated, false);
   assert.equal(result.image.sha256, imageDigest(pixels));
   assert.deepEqual(result.image.data, pixels);
   assert.equal(host.received[0].task, 'text-to-image');

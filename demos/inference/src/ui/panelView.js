@@ -22,7 +22,7 @@ function dialog(title) {
   element.append(header, body, status);
   element.addEventListener('keydown', (event) => {
     if (event.key !== 'Tab') return;
-    const controls = [...element.querySelectorAll('button,input,select,textarea,[tabindex]')]
+    const controls = [...element.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')]
       .filter((control) => !control.disabled && control.tabIndex >= 0 && control.getClientRects().length);
     const first = controls[0], last = controls.at(-1);
     if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
@@ -44,8 +44,28 @@ export function createPanelView(container) {
   sourceFilter.setAttribute('aria-label', 'Filter models'); sourceFilter.maxLength = 256;
   const source = node('select'); source.setAttribute('aria-label', 'Model and source');
   const acquire = button('Import Model'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
-  const settings = dialog('Config'), library = dialog('Stored Models');
+  const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup');
   const configuration = settings.element, storedModels = library.element;
+  const compatibility = help.element;
+  const helpModel = node('strong'), helpReason = node('p', '', 'pc-inference-note');
+  const helpBrowser = node('select'), helpOs = node('select');
+  helpBrowser.setAttribute('aria-label', 'Browser'); helpOs.setAttribute('aria-label', 'Operating system');
+  for (const [value, text] of [['chrome', 'Chrome'], ['chromium', 'Chromium'], ['edge', 'Edge'], ['brave', 'Brave'], ['firefox', 'Firefox'], ['safari', 'Safari'], ['other', 'Other browser']]) {
+    const option = node('option', text); option.value = value; helpBrowser.append(option);
+  }
+  for (const [value, text] of [['linux', 'Linux'], ['windows', 'Windows'], ['macos', 'macOS'], ['android', 'Android'], ['ios', 'iOS / iPadOS'], ['other', 'Other system']]) {
+    const option = node('option', text); option.value = value; helpOs.append(option);
+  }
+  const helpEnvironment = node('div', undefined, 'pc-config-grid');
+  helpEnvironment.append(label('Browser', helpBrowser), label('Operating system', helpOs));
+  const helpDetails = node('div', undefined, 'pc-model-help-details');
+  const helpCommand = node('textarea'); helpCommand.readOnly = true; helpCommand.rows = 3;
+  helpCommand.setAttribute('aria-label', 'Browser launch command'); helpCommand.spellcheck = false;
+  const helpCopy = button('Copy command'), helpConfig = button('Open Config');
+  const helpCommandGroup = node('div', undefined, 'pc-model-help-command'); helpCommandGroup.append(helpCommand, helpCopy);
+  help.body.append(helpModel, helpReason, helpEnvironment,
+    node('p', 'Browser detection is approximate. Adjust these choices if needed.', 'pc-inference-note'),
+    helpDetails, helpCommandGroup, helpConfig);
   for (const [trigger, modal] of [[configure, configuration], [stored, storedModels]]) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
@@ -80,6 +100,8 @@ export function createPanelView(container) {
   const networkStatus = node('p', '', 'pc-inference-note'); settings.body.append(networkStatus);
   const file = node('input'); file.type = 'file'; file.setAttribute('aria-label', 'Pin a file locally'); settings.body.append(label('Pin a file locally', file));
   const unload = button('Unload local model'); settings.body.append(unload);
+  const clearChat = button('Clear conversation'); settings.body.append(clearChat);
+  settings.body.append(node('p', 'Clear chat history to start a new conversation while keeping the loaded model and stored files.', 'pc-inference-note'));
   library.body.append(node('p', 'Delete removes a model from this device and unloads it if needed. Files used by other stored models or pinned separately are kept.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
   const storedRefresh = button('Refresh'); library.body.append(storedList, storedRefresh);
@@ -97,12 +119,33 @@ export function createPanelView(container) {
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels); container.append(panel);
+  panel.append(configuration, storedModels, compatibility); container.append(panel);
   return { panel, sourceFilter, source, sourceStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedStatus: library.status, gpuLayers,
+    compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
-    relay, connect, networkStatus, file, unload, transcript, empty, proposed, attachment, attachmentImage,
+    relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
     attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel };
+}
+
+export function renderModelCompatibilityHelp(view, help) {
+  view.helpModel.textContent = help.name;
+  view.helpReason.textContent = help.reason;
+  view.helpDetails.replaceChildren();
+  for (const paragraph of help.paragraphs) view.helpDetails.append(node('p', paragraph, 'pc-inference-note'));
+  if (help.steps.length) {
+    const steps = node('ol');
+    for (const step of help.steps) steps.append(node('li', step));
+    view.helpDetails.append(steps);
+  }
+  for (const link of help.links) {
+    const anchor = node('a', link.label); anchor.href = link.url; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
+    const paragraph = node('p', undefined, 'pc-inference-note'); paragraph.append(anchor); view.helpDetails.append(paragraph);
+  }
+  view.helpCommand.value = help.command ?? '';
+  view.helpCommandGroup.hidden = !help.command;
+  view.helpConfig.hidden = !help.openConfig;
+  view.helpStatus.textContent = '';
 }
 
 export function renderStoredModels(view, models, onDelete) {

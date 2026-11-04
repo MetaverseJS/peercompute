@@ -1,5 +1,57 @@
 ## PeerCompute Test Strategy
 
+### Chat completion and output budgets — 2026-11-03 21:12 AKST
+
+- Workers:1,024-token ceiling;2,048-token GGUF context; native stop/length/unknown,
+  EOS exactly at the limit, missing completion metadata, cancellation and explicit
+  context errors. ONNX retokenizes and drops old complete turns while retaining
+  system/latest-user/image input and disposing discarded tensors.
+- Peer tests retain optional completion metadata over real loopback Noise streams,
+  accept older omissions as unknown, reject invalid enums/types, and preserve image
+  output, byte limits, admission and no replay after request commitment.
+- Browser tests preserve long local/peer reply text, annotate limits outside model
+  history, distinguish unknown from normal stop, and scroll to the latest content.
+- Hardware: `GGUF_ARTIFACT_MODE=external GGUF_NVIDIA_F16_OVERRIDE=1 GGUF_SKIP_RESTART=1 GGUF_LONG_RESPONSE=1 node peercompute/tests/runtime/gguf-inference.mjs`
+  reuses verified cached0.8B weights, validates actual GPU generation beyond128
+  tokens with2,048 context, bounded output, native stop/length, warm reuse and
+  cancellation/unload. External mode proves worker behavior, not browser persistence
+  or a physical peer transfer. Earlier27B memory proof remains512-context only.
+- Mixed-version v2 hosts: verify optional provider-specific limits, missing→256,
+  updated→1024, invalid values, per-candidate precommit bounds, and unchanged
+  longest-idle routing/no postcommit replay. Config history reset must preserve
+  model residency/storage and be unavailable during an active operation.
+- Current validation:151/151 integrated unit/network/controller tests and32/32
+  headless browser tests pass. Cached0.8B GGUF actual GPU answer exceeds128tokens
+  and reaches1024 with native length reason; arithmetic EOS reports stop.
+  SmolVLM256M actual ONNX/image lifecycle passes with normal stop metadata.
+
+### Import phase and memory estimate display — 2026-11-03 21:19 AKST
+
+- File events expose initial/throttled/final verified byte counts; manifest
+  verification retains hash checks. UI advances from the final LICENSE file to
+  verification and GPU component initialization, with bounded elapsed updates.
+- Controlled stalled publication proves local readiness is independent; public
+  import methods retain awaited sharing behavior. Cancellation before unload,
+  load failure, background errors and tracked teardown remain covered.
+- Every HF/peer option displays trusted configured RAM/GPU estimates, leaving
+  unknowns explicit and avoiding a claim to detect free VRAM. Diffusion8GiB/8GiB
+  display is an admission reservation, not a newly measured memory peak.
+- Inference, CubeChat and Earth production builds pass with existing chunk-size
+  warnings. Final staging HTTPS desktop/mobile check passes with all10 HF labels,
+  actionable missing-f16 help, memory estimates, zero page/network errors and no
+  weight/WASM requests. Exact live-origin handoff is recorded in plan/log.md.
+
+### Unsupported model setup help — 2026-11-03 20:57 AKST
+
+- Cover browser/OS detection, conditional NVIDIA Vulkan workaround commands,
+  non-Chromium/mobile guidance, memory/runtime/isolation reasons and inert model
+  names/URLs in the pure guidance module. Do not invent unsupported browser flags.
+- Real DOM tests cover selecting a muted model, all-unavailable menus, repeated
+  opening, keyboard/focus/Escape, clipboard success/failure, manual browser/OS
+  correction, Config navigation, refresh stability and no import/unload side effects.
+- Verify production default-browser help at the trusted HTTPS preview on desktop
+  and mobile. No weights, GPU allocations or user browser changes are needed.
+
 ### Model search and device admission — 2026-11-03 20:19 AKST
 
 - Pure policy tests: absent/fallback GPU, missing f16 and GGUF browser features,
