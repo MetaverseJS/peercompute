@@ -20,7 +20,7 @@ ComputeManager-owned WebGPU workers on Chrome155/RTX5060Ti, including warm reuse
 cancellation, unload and browser restart with external model requests blocked.
 All three vision models distinguish red and blue image inputs. The complete SmolVLM256M
 package also passes the independent-peer reseeding test. CubeChat and EarthGrid
-expose an optional local-agent panel with bounded scene context and image capture;
+expose an optional agent panel with bounded scene context and explicit image attachments;
 model-proposed demo actions require an explicit apply button.
 
 The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
@@ -89,13 +89,31 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `npm run dev:inference` (console5189). Both bind to `0.0.0.0` with HTTPS; set
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
-console connects to the configured Secret Workshop backend automatically;
-publishing a retained package still requires **Share with peers**. **Download
-from peers** retrieves and verifies the package identified by a CID from an
-online provider; saving it locally does not automatically publish it. Start with
-SmolVLM256M, choose **Import pinned HF package**, then **Load on this GPU**.
-Latest core regression: 336/337 passing, with the same pre-existing ULG Eshkol
-tensor-contract failure. See [test evidence and remaining gates](plan/tests.md).
+console connects to the configured Secret Workshop backend automatically.
+Select a Hugging Face or discovered peer model, then **Import Model**: it fetches,
+verifies, retains and loads the model automatically. Content addressing is handled
+internally. **Share with peers** and **Host inference** start checked and are
+independent: sharing serves retained model files; hosting executes requests on the
+currently loaded model. Both require an active connected browser. **Config**
+contains storage quota, GGUF GPU layers, connection and unload controls.
+
+Type any question, attach an image with **+**, and press Enter to send
+(Shift+Enter inserts a newline). The selector next to Send offers the local model
+and one entry per remotely hosted immutable model package. It refreshes every
+five seconds, chooses the longest-idle available host, and marks a model **(busy)**
+when all its hosts are busy. Requests then try the first reachable host's bounded
+queue. Requests are never retried on another host after generation commits.
+Prompts, images and streamed output travel over encrypted application streams;
+they are excluded from shared state and pubsub. A remote requester needs no model
+weights or GPU worker. Discovery is scoped to the connected PeerCompute room.
+
+Actual independent-browser acceptance passes text and image inference on a
+ComputeManager WebGPU worker over encrypted WebRTC, streaming, cancellation,
+host disable/disconnect, and a third peer's complete 268.8 MB IPFS model transfer
+with HTTP weight sources blocked. This used separate browsers on one machine;
+two physical devices remain an acceptance gate. Run `npm run test:peer-inference`,
+`npm run test:inference:ui`, and `npm run test:peer-inference:browser` for the
+protocol, UI and hardware workflows. See [test evidence and remaining gates](plan/tests.md).
 
 ## Current Status - September 14, 2026
 

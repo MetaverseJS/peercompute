@@ -113,7 +113,10 @@
     "test:artifacts:browser": "node peercompute/tests/runtime/ipfs-artifacts.mjs",
     "test:inference:browser": "node peercompute/tests/runtime/model-inference.mjs",
     "test:gguf": "node --test peercompute/tests/unit/ggufArtifactReader.test.js peercompute/tests/unit/ggufRuntime.test.js peercompute/tests/unit/ggufService.test.js peercompute/tests/unit/ggufCatalog.test.js",
-    "test:gguf:browser": "node peercompute/tests/runtime/gguf-inference.mjs"
+    "test:gguf:browser": "node peercompute/tests/runtime/gguf-inference.mjs",
+    "test:peer-inference": "node --test peercompute/tests/unit/peerInferenceNetwork.test.js peercompute/tests/unit/modelConsoleRuntime.test.js",
+    "test:peer-inference:browser": "node peercompute/tests/runtime/peer-inference.mjs",
+    "test:inference:ui": "node --test demos/tests/inference-panel.test.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

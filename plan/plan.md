@@ -24,6 +24,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - The [implementation plan](branch/ipfs-large-files-model-inference.md) defines
   IPFS-01.0–.6, source seams, dependency/runtime spikes, ownership, bounded memory,
   durable seed hosts, model provenance, cancellation, and acceptance tests.
+- November3 18:11 AKST revision: implemented the requested compact console and
+  real remote inference. Independent-browser managed WebGPU text/image, streaming,
+  cancellation, host disable/disconnect and model transfer pass. Unified HF/peer import auto-loads; default-on file sharing/inference
+  hosting; five-second model-level discovery and longest-idle host scheduling;
+  private prompt/image streams; Config hides storage/GGUF settings. Remove the
+  Close button, explicit CID field and sample scene. This advances IPFS-01.5.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

@@ -8,6 +8,7 @@ import { modelResourcePolicy } from '../../../peercompute/src/peercompute/infere
 import { sha1 } from '@noble/hashes/legacy.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
+import { attachModelRuntimeController } from './modelRuntimeController.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
@@ -135,7 +136,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     finally { signal?.removeEventListener('abort', aborted); }
   }
 
-  return {
+  const runtime = {
     stateManager: state, computeManager: compute, store,
     get service() { return activeService; },
     get services() { return { onnx: service, gguf: ggufService }; },
@@ -234,4 +235,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       if (ownsState) await state.destroy();
     },
   };
+  const controller = attachModelRuntimeController(runtime, { catalog: MODEL_CATALOG });
+  try { await controller.initialize(); }
+  catch (error) { await runtime.dispose(); throw error; }
+  return runtime;
 }

@@ -1,5 +1,56 @@
 ## PeerCompute Test Strategy
 
+### Console and peer inference acceptance — 2026-11-03 18:11 AKST
+
+- Verify source selector and automatic fetch→load, default-on sharing/hosting,
+  hidden configuration, Enter/Shift+Enter, attachment picker/preview, image
+  rejection on text-only models, streaming auto-scroll, five-second refresh and
+  teardown without timers or callbacks surviving disposal.
+- Verify one entry per hosted model; longest-idle ready host, deterministic busy
+  fallback, stale/disconnected host expiry, bounded queues and no duplicate
+  execution on retries. Validate scope, peer identity, encryption, frame/image/
+  output limits and cancellation on disconnect/disable.
+- Use actual independent browser peers with a GPU-disabled requester and a real
+  managed SmolVLM GPU host. Send text and red/blue images through encrypted libp2p
+  streams; verify streamed output, GPU dispatches, cancellation and cleanup.
+  Block external model downloads after seeding the host. Separately verify
+  discovery and Bitswap retrieval of the published model package.
+- Run focused tests and affected existing regressions/builds; inspect the exact
+  Tailnet HTTPS preview headlessly at desktop and mobile sizes. Keep user preview
+  servers; close owned acceptance browsers and temporary servers.
+
+- Final actual remote acceptance **PASS**: Chrome157 on NVIDIA RTX5060Ti;
+  separate GPU-disabled requester and third receiving browser. Text plus red/blue
+  image responses use the same managed worker and exact native-encrypted WebRTC
+  streams (red3,605/blue1,694 GPU dispatches). Cancellation/reuse, active host
+  disable, disconnect and no-host rejection pass. Third peer verifies15 files,
+  1,052 blocks and268,819,304 DAG bytes with HTTP model sources blocked. Requester
+  stores0bytes, creates no ComputeManager/worker and requests no WASM. No page
+  errors, external requests or prompt/image pubsub fields; unload releases all
+  resource leases. /tmp/peercompute-peer-inference-hardware-20261103-direct.json.
+- Preserve the first run's failure: functional checks passed but transport chose
+  encrypted relay despite available WebRTC. Direct-path preference and exact
+  returned-connection assertions fix it; failed receipt remains
+  /tmp/peercompute-peer-inference-hardware-20261103.json.
+- Protocol plus existing reliability/WebRTC tests **58/58 PASS**, including14
+  actual Noise/plaintext-node protocol checks. Shared ONNX/GGUF/controller
+  regressions **56/56 PASS** before the final additional reconnect test.
+- Exact trusted Tailnet preview passes with the actual facade/backend and GPU
+  disabled: six HF choices, both defaults on, no Close/CID/canvas, no weight
+  requests or page errors, and390px mobile layout without overflow. Desktop,
+  mobile and Config screenshots reviewed; /tmp/peercompute-console-preview-20261104.json.
+- Final UI interaction suite **9/9 PASS** via
+  `node --test demos/tests/inference-panel.test.js`; final facade suite **9/9 PASS**.
+  Fullcore **360/361**, only the pre-existing staged ULG Eshkol contract failure
+  at serviceOrchestration.test.js:4137. Demo ports/release/agents **49/49 PASS**.
+  Webpack and inference/CubeChat/Earth production builds pass with existing
+  large-bundle warnings. Generated outputs are excluded from the commit; the
+  inference snapshot is retained under ~/.cache/peercompute-preview.
+- The early working-tree ICC guard failed its deletion threshold. Preserve that
+  receipt. The complete staged change passes with a warning under ICC's existing
+  replacement-implementation rule; policy was not changed. Exact scope and
+  counts are recorded in log.md.
+
 ### IPFS artifact and model gates - 2026-11-03 AKST
 
 Status: **implementation underway; evidence below is scoped**. The

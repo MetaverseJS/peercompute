@@ -682,6 +682,10 @@ export class NetworkManager {
     this.artifactStarting = null;
     this.artifactPendingStore = null;
     this.artifactStopping = null;
+    this.peerInferenceService = null;
+    this.peerInferenceStarting = null;
+    this.peerInferenceOwner = null;
+    this.peerInferenceStopping = null;
     this._applicationPrivateKey = null;
     this.peerId = null;
     this.isConnected = false;
@@ -1155,6 +1159,7 @@ export class NetworkManager {
   }
 
   async disconnect() {
+    await this._stopPeerInferenceService();
     await this._stopArtifactTransport();
     this.isConnected = false;
     this._stopScheduler();
@@ -1238,6 +1243,52 @@ export class NetworkManager {
   }
 
   getArtifactTransport() { return this.artifactTransport; }
+
+  getPublishedArtifactCids() { return [...(this.artifactDiscovery?.publicArtifacts ?? [])].slice(0, 128); }
+
+  async createPeerInferenceService(options = {}) {
+    if (this.peerInferenceStopping) await this.peerInferenceStopping;
+    const owner = options.owner ?? Symbol('peer-inference-owner');
+    if (this.peerInferenceService || this.peerInferenceStarting) {
+      if (this.peerInferenceOwner !== owner) throw new Error('Peer inference service already belongs to another owner');
+      if (this.peerInferenceService?.closed) throw new Error('Peer inference service cleanup must succeed before restarting');
+      return this.peerInferenceService ?? this.peerInferenceStarting;
+    }
+    if (!this.libp2p || !this.isConnected) throw new Error('Connect NetworkManager before enabling peer inference');
+    this.peerInferenceOwner = owner;
+    this.peerInferenceStarting = (async () => {
+      const { PeerInferenceService } = await import('./inference/PeerInferenceService.js');
+      const service = new PeerInferenceService(this, { ...options, owner });
+      try { await service.start(); this.peerInferenceService = service; return service; }
+      catch (error) {
+        try { await service.stop(); }
+        catch (cleanupError) {
+          this.peerInferenceService = service;
+          throw new AggregateError([error, cleanupError], 'Peer inference startup cleanup failed');
+        }
+        this.peerInferenceOwner = null; throw error;
+      }
+    })();
+    try { return await this.peerInferenceStarting; }
+    finally { this.peerInferenceStarting = null; }
+  }
+
+  getPeerInferenceService() { return this.peerInferenceService; }
+
+  async releasePeerInferenceService(owner) {
+    if (this.peerInferenceOwner !== owner) return false;
+    await this._stopPeerInferenceService(); return true;
+  }
+
+  async _stopPeerInferenceService() {
+    if (this.peerInferenceStopping) return this.peerInferenceStopping;
+    this.peerInferenceStopping = (async () => {
+      if (this.peerInferenceStarting) await this.peerInferenceStarting.catch(() => {});
+      await this.peerInferenceService?.stop();
+      this.peerInferenceService = null; this.peerInferenceOwner = null;
+    })();
+    try { await this.peerInferenceStopping; } finally { this.peerInferenceStopping = null; }
+  }
 
   async announceArtifact(cid) {
     if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');

@@ -1,257 +1,221 @@
-import { createInferenceRuntime, MODEL_CATALOG, STORAGE_QUOTAS } from './runtime.js';
+import { createInferenceRuntime, STORAGE_QUOTAS } from './runtime.js';
+import { createPanelView, appendMessage } from './ui/panelView.js';
+import { readImageAttachment } from './ui/imageAttachment.js';
 import './panel.css';
 
-const element = (tag, text, className) => {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  if (className) node.className = className;
-  return node;
-};
-
-/** Explicit local-model controls, reusable by demos without loading weights on normal startup. */
+/** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
-  networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false } = {}) {
-  const panel = element('section', undefined, 'pc-inference-panel');
-  panel.setAttribute('aria-label', 'PeerCompute local model console');
-  const header = element('header');
-  header.append(element('strong', 'PEERCOMPUTE // MODEL CONSOLE'));
-  const close = element('button', 'Close');
-  header.append(close); panel.append(header);
-  const status = element('p', 'Opening local artifact storage…', 'pc-inference-status');
-  status.setAttribute('role', 'status'); panel.append(status);
-  const select = element('select'); select.setAttribute('aria-label', 'Approved model package');
-  for (const entry of Object.values(MODEL_CATALOG)) {
-    const option = element('option', `${entry.name} · ${(entry.totalBytes / 1024 ** 2).toFixed(0)} MiB${entry.capabilities?.requiresCapabilityCheck ? ' · check GPU support' : entry.capabilities?.browserInference === false ? ' · storage only' : ''}`);
-    option.value = entry.id; select.append(option);
+  networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
+  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000 } = {}) {
+  const view = createPanelView(container, STORAGE_QUOTAS);
+  const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
+  let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
+  let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise;
+  let refreshTimer, sources = [], targets = [];
+  const alive = () => !disposed && !closing;
+  const selectedTarget = () => targets.find((target) => target.key === view.target.value);
+  const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
+  const showError = (error) => { if (alive()) view.status.textContent = (error.name === 'AbortError' ? 'Cancelled: ' : 'Error: ') + error.message; };
+  const scrollTranscript = () => {
+    while (view.transcript.children.length > 24 || encoder.encode(view.transcript.textContent).byteLength > 128 * 1024) view.transcript.firstElementChild?.remove();
+    view.transcript.scrollTop = view.transcript.scrollHeight;
+  };
+  function updateControls() {
+    const target = selectedTarget();
+    view.acquire.disabled = !!operation || !sources.some((source) => source.key === view.source.value);
+    view.source.disabled = !!operation;
+    view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
+    view.cancel.hidden = !operation; view.target.disabled = !!operation;
+    view.attach.disabled = !!operation || !target?.modalities?.includes('image');
+    view.unload.disabled = !!operation;
   }
-  select.value = 'smolvlm-256m-q4';
-  const acquire = element('button', 'Import pinned HF package');
-  const row = element('div', undefined, 'pc-inference-row'); row.append(select, acquire); panel.append(row);
-  const capability = element('p', '', 'pc-inference-note'); panel.append(capability);
-  const gpuLayers = element('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
-  gpuLayers.setAttribute('aria-label', 'GGUF GPU layer limit');
-  const ggufSettings = element('label', 'GGUF GPU layer limit (99999 = all; partial offload also uses CPU memory) ');
-  ggufSettings.append(gpuLayers); ggufSettings.hidden = true; panel.append(ggufSettings);
-  const measuredGguf = element('p', 'Tested 27B configuration: RTX 5060 Ti (16 GB), 56 GPU layers and a 512-token context. A compatible browser is required; other devices need their own memory limit.', 'pc-inference-note');
-  measuredGguf.hidden = true; panel.append(measuredGguf);
-  const quota = element('select'); quota.setAttribute('aria-label', 'Local artifact storage limit');
-  for (const bytes of STORAGE_QUOTAS) { const option = element('option', `${bytes / 1024 ** 3} GiB local limit`); option.value = String(bytes); quota.append(option); }
-  const quotaRow = element('div', undefined, 'pc-inference-row'); quotaRow.append(element('label', 'Local artifact storage '), quota); panel.append(quotaRow);
-  const cid = element('input'); cid.placeholder = 'Model manifest CID'; cid.setAttribute('aria-label', 'Model manifest CID');
-  cid.title = 'The CID identifies a verified model package. Paste one from a peer or import a pinned package.';
-  const load = element('button', 'Load on this GPU');
-  const fetchPeer = element('button', 'Download from peers'); fetchPeer.disabled = !networkManager;
-  fetchPeer.title = 'Download and retain the package identified by this CID. A peer sharing it must be online. Load the model separately to run it.';
-  const unload = element('button', 'Unload');
-  const publish = element('button', 'Share with peers'); publish.disabled = !networkManager;
-  publish.title = 'Explicitly share this verified package while this browser and its artifact network are running.';
-  const withdraw = element('button', 'Stop sharing'); withdraw.disabled = !networkManager;
-  const cidRow = element('div', undefined, 'pc-inference-row'); cidRow.append(cid, load, fetchPeer, unload, publish, withdraw); panel.append(cidRow);
-  panel.append(element('p', 'A CID identifies a package. Downloading from peers requires an online peer already sharing that package.', 'pc-inference-note'));
-  const relay = element('input'); relay.placeholder = 'Relay multiaddress /dns4/…/tcp/…/wss/p2p/…';
-  relay.setAttribute('aria-label', 'Artifact relay multiaddress');
-  const connect = element('button', 'Connect artifact network');
-  const networkRow = element('div', undefined, 'pc-inference-row'); networkRow.append(relay, connect);
-  if (!networkManager) panel.append(networkRow);
-  const fileLabel = element('label', 'Pin any file locally ');
-  const file = element('input'); file.type = 'file'; fileLabel.append(file); panel.append(fileLabel);
-  panel.append(element('p', 'Files stay in this browser’s IndexedDB. A loaded model runs locally. Peer serving requires an active artifact transport.', 'pc-inference-note'));
-  const transcript = element('div', undefined, 'pc-inference-transcript');
-  transcript.setAttribute('aria-live', 'polite'); panel.append(transcript);
-  const prompt = element('textarea'); prompt.rows = 3; prompt.maxLength = 16000; prompt.placeholder = 'Ask the model about this scene…';
-  prompt.setAttribute('aria-label', 'Message to the local model'); panel.append(prompt);
-  const captureLabel = element('label', ' Include a scene image on the next request');
-  const capture = element('input'); capture.type = 'checkbox'; captureLabel.prepend(capture); panel.append(captureLabel);
-  const send = element('button', 'Send'); const cancel = element('button', 'Cancel');
-  const controls = element('div', undefined, 'pc-inference-row'); controls.append(send, cancel); panel.append(controls);
-  const proposed = element('div', undefined, 'pc-inference-actions'); panel.append(proposed);
-  container.append(panel);
-  let runtime;
-  let requestId;
-  let operation;
-  let disposed = false;
-  let disposingPromise;
-  let operationDone;
-  const history = [];
-  const encoder = new TextEncoder();
-  const invalidateActions = () => { actions?.invalidate?.(); proposed.replaceChildren(); };
-  const trimTranscript = () => {
-    while (transcript.children.length > 24 || encoder.encode(transcript.textContent).byteLength > 128 * 1024) {
-      transcript.firstElementChild?.remove();
+  function renderLists() {
+    const selectedSource = view.source.value, selected = view.target.value || 'local';
+    const previousTarget = targets.find((entry) => entry.key === selected);
+    const previousLabel = view.target.selectedOptions[0]?.textContent;
+    sources = runtime.listModelSources(); targets = runtime.listInferenceTargets();
+    view.source.replaceChildren();
+    for (const source of sources) {
+      const option = document.createElement('option'); option.value = source.key;
+      option.textContent = String(source.name).slice(0, 140) + ' · ' + (source.source === 'hf' ? 'Hugging Face' : 'Peers');
+      view.source.append(option);
     }
-  };
-  const showError = (error) => { status.textContent = `${error.name === 'AbortError' ? 'Cancelled' : 'Error'}: ${error.message}`; };
+    if (sources.some((entry) => entry.key === selectedSource)) view.source.value = selectedSource;
+    else {
+      const preferred = sources.find((entry) => entry.modelId === 'smolvlm-256m-q4' && entry.source === 'hf');
+      if (preferred) view.source.value = preferred.key;
+    }
+    view.target.replaceChildren();
+    for (const target of targets) {
+      const option = document.createElement('option'); option.value = target.key;
+      option.textContent = (target.local ? 'Local · ' : 'Peers · ') + String(target.name).slice(0, 140)
+        + (target.busy ? ' (busy)' : !target.available ? ' (unavailable)' : '');
+      view.target.append(option);
+    }
+    // A vanished provider must not silently redirect a composed message.
+    if (!targets.some((entry) => entry.key === selected) && selected !== 'local' && previousLabel) {
+      const option = document.createElement('option'); option.value = selected; option.disabled = true;
+      option.textContent = (previousTarget?.name ?? previousLabel.replace(/ \(unavailable\)$/, '')) + ' (unavailable)'; view.target.append(option);
+    }
+    view.target.value = selected;
+    if (!view.target.value && targets.some((target) => target.key === 'local')) view.target.value = 'local';
+    updateControls();
+  }
+  async function refreshPeers() {
+    if (!alive() || refreshPromise) return refreshPromise;
+    const controller = new AbortController(); refreshController = controller;
+    refreshPromise = (async () => {
+      try {
+        await runtime.refreshPeers({ signal: controller.signal });
+        if (alive()) { renderLists(); view.networkStatus.textContent = runtime.networkReady ? 'Peer network connected.' : 'Peer network is offline.'; }
+      } catch (error) {
+        if (alive() && !controller.signal.aborted) view.networkStatus.textContent = 'Peer refresh unavailable: ' + error.message;
+      } finally { refreshPromise = null; refreshController = null; }
+    })();
+    return refreshPromise;
+  }
   const progress = (event) => {
-    if (event.stage === 'import') status.textContent = `Importing ${event.index + 1}/${event.total}: ${event.path}`;
-    else if (event.type === 'model-load') status.textContent = `Loading model: ${event.status}${event.loaded ? ` (${Math.round(event.loaded / 1024 ** 2)} MiB)` : ''}`;
+    if (!alive()) return;
+    if (event.stage === 'import') view.status.textContent = 'Importing ' + (event.index + 1) + '/' + event.total + ': ' + event.path;
+    else if (event.type === 'model-load') view.status.textContent = 'Loading model: ' + event.status;
   };
-  try {
-    runtime = await createInferenceRuntime({ stateManager, computeManager, networkManager, runtimeBaseUrl });
-    quota.value = String(runtime.store.maximumBytes);
-    fetchPeer.disabled = publish.disabled = withdraw.disabled = !runtime.networkReady;
-    if (networkManager && !runtime.networkReady) {
-      relay.hidden = true; connect.textContent = 'Retry artifact network'; panel.append(networkRow);
-    }
-    status.textContent = runtime.networkError
-      ? 'Local inference ready. Peer transport could not connect; retry when the relay is available.'
-      : 'Ready. Import a pinned package or load a retained manifest CID.';
-  } catch (error) { showError(error); panel.remove(); throw error; }
-
   async function run(action) {
-    if (disposed || disposingPromise) return;
-    if (operation) { status.textContent = 'Wait for the current operation or cancel it.'; return; }
-    const controller = new AbortController(); operation = controller;
+    if (!alive() || operation) return;
+    const controller = new AbortController(); operation = controller; updateControls();
     operationDone = (async () => {
       try { await action(controller.signal); } catch (error) { showError(error); }
-      finally { if (operation === controller) operation = null; trimTranscript(); }
+      finally { if (operation === controller) operation = null; if (alive()) { renderLists(); scrollTranscript(); } }
     })();
     await operationDone;
   }
-  let capabilityRevision = 0;
-  const updateCapability = async () => {
-    const revision = ++capabilityRevision;
-    const entry = MODEL_CATALOG[select.value];
-    const canRun = entry.capabilities?.browserInference !== false;
-    const isGguf = entry.model.runtime === 'llama.cpp';
-    ggufSettings.hidden = !isGguf;
-    measuredGguf.hidden = entry.id !== 'qwen3.8-27b-georefine-d14-gguf';
-    const resident = runtime.service.getStatus();
-    capture.disabled = isGguf || (resident.runtime === 'llama.cpp' && resident.status !== 'idle');
-    if (capture.disabled) capture.checked = false;
-    load.disabled = !canRun;
-    if (isGguf && canRun) {
-      load.disabled = true;
-      capability.textContent = 'Checking isolated browser, WebAssembly and WebGPU support. No model download starts automatically.';
-      try {
-        await runtime.checkGgufCapabilities();
-        if (disposed || revision !== capabilityRevision) return;
-        load.disabled = false;
-        capability.textContent = 'GGUF text runtime available. Context is limited to 512 tokens. Model loading still requires enough GPU and CPU memory; the storage limit does not reserve GPU memory.';
-      } catch (error) {
-        if (disposed || revision !== capabilityRevision) return;
-        capability.textContent = `GGUF storage and hosting are available; local execution cannot start: ${error.message}`;
-      }
-      return;
-    }
-    capability.textContent = canRun ? 'Text and supported image requests run locally after loading.'
-      : 'This GGUF package can be pinned and hosted. Local execution is unavailable in the current browser adapter. Import requires a larger storage limit and starts only when clicked.';
+  function clearAttachment() {
+    attachment = null; view.attachment.hidden = true; view.attachmentImage.removeAttribute('src'); view.imageFile.value = ''; updateControls();
+  }
+  try {
+    runtime = await runtimeFactory({ stateManager, computeManager, networkManager, runtimeBaseUrl });
+    const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
+    view.quota.value = String(runtime.store.maximumBytes); renderLists(); view.status.textContent = 'Ready.';
+  } catch (error) { view.panel.remove(); throw error; }
+
+  view.configure.onclick = () => {
+    view.configuration.hidden = !view.configuration.hidden;
+    view.configure.setAttribute('aria-expanded', String(!view.configuration.hidden));
   };
-  select.onchange = updateCapability; updateCapability();
-  quota.onchange = () => {
-    if (operation || disposingPromise) {
-      quota.value = String(runtime.store.maximumBytes);
-      status.textContent = 'Wait for the current operation before changing the storage limit.'; return;
-    }
-    try { runtime.setStorageQuota(Number(quota.value)); status.textContent = `Local artifact limit set to ${Number(quota.value) / 1024 ** 3} GiB.`; }
-    catch (error) { quota.value = String(runtime.store.maximumBytes); showError(error); }
+  view.source.onchange = updateControls;
+  view.target.onchange = () => { invalidateActions(); updateControls(); };
+  view.prompt.oninput = updateControls;
+  for (const [control, method] of [[view.sharing, 'setSharing'], [view.hosting, 'setHostInference']]) {
+    control.onchange = () => {
+      if (!alive()) return;
+      const desired = control.checked; control.disabled = true;
+      const task = (async () => {
+        try { await runtime[method](desired); }
+        catch (error) { control.checked = !desired; showError(error); }
+        finally { if (alive()) control.disabled = false; }
+      })();
+      preferenceTasks.add(task); task.finally(() => preferenceTasks.delete(task));
+    };
+  }
+  view.acquire.onclick = () => run(async (signal) => {
+    invalidateActions(); view.status.textContent = 'Importing and loading model…';
+    await runtime.acquireModel(view.source.value, { signal, onProgress: progress, ggufGpuLayers: Number(view.gpuLayers.value) });
+    histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
+    view.status.textContent = 'Model ready. Send a message.';
+  });
+  view.unload.onclick = () => run(async () => {
+    invalidateActions(); await runtime.unload(); histories.delete('local'); view.status.textContent = 'Local model unloaded.';
+  });
+  view.quota.onchange = () => {
+    if (operation) { view.quota.value = String(runtime.store.maximumBytes); return; }
+    try { runtime.setStorageQuota(Number(view.quota.value)); }
+    catch (error) { view.quota.value = String(runtime.store.maximumBytes); showError(error); }
   };
-  connect.onclick = () => run(async (signal) => {
-    status.textContent = 'Connecting artifact network…';
-    if (autoConnect && !relay.value.trim() && !runtime.networkManager) await runtime.connectBackend({ signal });
-    else await runtime.connect(relay.value.trim(), { signal });
-    fetchPeer.disabled = publish.disabled = withdraw.disabled = false;
-    networkRow.remove(); status.textContent = 'Artifact network connected. Choose Share with peers to make a package available.';
+  view.connect.onclick = () => run(async (signal) => {
+    if (view.relay.value.trim()) await runtime.connect(view.relay.value.trim(), { signal });
+    else await runtime.connectBackend({ signal });
+    view.networkStatus.textContent = 'Peer network connected.'; await refreshPeers();
   });
-  publish.onclick = () => run(async () => {
-    await runtime.publish(cid.value.trim()); status.textContent = `Hosting pinned CID for peers: ${cid.value.trim()}`;
+  view.file.onchange = () => run(async (signal) => {
+    const file = view.file.files[0]; if (!file) return;
+    await runtime.store.importFile(file.stream(), { expectedSize: file.size, pin: true, signal });
+    view.status.textContent = 'Pinned ' + file.name + ' locally.'; view.file.value = '';
   });
-  withdraw.onclick = () => run(async () => {
-    await runtime.withdraw(cid.value.trim()); status.textContent = 'CID withdrawn; local files retained.';
-  });
-  acquire.onclick = () => run(async (signal) => {
-    const record = await runtime.importCatalog(select.value, { signal, onProgress: progress });
-    cid.value = record.cid; status.textContent = `Pinned package: ${record.cid}`;
-  });
-  load.onclick = () => run(async (signal) => {
-    invalidateActions();
-    const result = await runtime.load(cid.value.trim(), { signal, onProgress: progress,
-      ggufGpuLayers: Number(gpuLayers.value) });
-    capture.disabled = runtime.service.getStatus().runtime === 'llama.cpp';
-    if (capture.disabled) capture.checked = false;
-    status.textContent = `Resident on worker ${result.workerId} · ${result.adapter.vendor} ${result.adapter.architecture}`;
-    history.length = 0;
-  });
-  fetchPeer.onclick = () => run(async (signal) => {
-    const result = await runtime.ensure(cid.value.trim(), { signal });
-    status.textContent = `Verified peer package retained: ${result.cid}`;
-  });
-  unload.onclick = () => run(async () => {
-    invalidateActions(); await runtime.service.unloadModel(); history.length = 0;
-    void updateCapability();
-    status.textContent = 'Model unloaded; pinned files retained.';
-  });
-  file.onchange = () => run(async (signal) => {
-    const selected = file.files[0]; if (!selected) return;
-    const result = await runtime.store.importFile(selected.stream(), { expectedSize: selected.size, pin: true, signal });
-    status.textContent = `Pinned ${selected.name}: ${result.cid}`;
-    transcript.append(element('p', `${selected.name}\n${result.cid}`, 'pc-inference-note'));
-  });
-  cancel.onclick = () => {
-    operation?.abort('User cancelled');
-    if (requestId) void runtime.service.cancel(requestId).catch(showError);
-  };
-  send.onclick = () => run(async (signal) => {
-    const text = prompt.value.trim(); if (!text) return;
-    invalidateActions();
-    const includeImage = capture.checked && runtime.service.getStatus().runtime !== 'llama.cpp';
-    const context = await getContext?.({ includeImage });
-    const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
-    const instructions = String(actions?.instructions ?? '').slice(0, 8000);
-    const messages = [
-      ...(contextText || instructions ? [{ role: 'system', content: `${contextText}\n${instructions}` }] : []),
-      ...history.slice(-6), { role: 'user', content: text },
-    ];
-    transcript.append(element('p', `YOU > ${text}`));
-    const reply = element('p', 'MODEL > '); transcript.append(reply);
-    proposed.replaceChildren();
-    requestId = crypto.randomUUID();
-    status.textContent = 'Generating locally…';
+  view.attach.onclick = () => view.imageFile.click();
+  view.imageFile.onchange = async () => {
+    imageController?.abort(); const controller = new AbortController(); imageController = controller;
+    const file = view.imageFile.files[0]; if (!file) return;
+    imageLoading = true; updateControls();
     try {
-      const result = await runtime.service.generate({ requestId, messages, signal,
-        image: includeImage && typeof context === 'object' ? context.image : undefined,
-        maxNewTokens: 128, onToken: (chunk) => { reply.textContent += chunk; trimTranscript(); } });
-      reply.textContent = `MODEL > ${result.text}`;
-      history.push({ role: 'user', content: text }, { role: 'assistant', content: result.text });
-      if (history.length > 6) history.splice(0, history.length - 6);
-      while (history.length && encoder.encode(JSON.stringify(history)).byteLength > 24 * 1024) history.splice(0, 2);
-      status.textContent = `Complete · ${result.inputTokens} input / ${result.outputTokens} output tokens`;
+      const next = await readImageAttachment(file, { signal: controller.signal });
+      if (!alive() || controller.signal.aborted) return;
+      attachment = next; view.attachmentImage.src = next.preview; view.attachmentName.textContent = next.name;
+      view.attachment.hidden = false; updateControls(); view.prompt.focus();
+    } catch (error) { if (!controller.signal.aborted) showError(error); }
+    finally { if (imageController === controller) { imageLoading = false; if (alive()) updateControls(); } }
+  };
+  view.removeAttachment.onclick = () => { imageController?.abort(); clearAttachment(); };
+  view.cancel.onclick = () => {
+    operation?.abort('User cancelled');
+    if (requestId) void runtime.cancel(requestId).catch(showError);
+  };
+  async function send() {
+    if (view.send.disabled) return;
+    await run(async (signal) => {
+      const target = selectedTarget(), targetKey = target.key;
+      const text = view.prompt.value.trim(), selectedImage = attachment;
+      if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
+      invalidateActions();
+      const context = await getContext?.({ includeImage: false });
+      const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
+      const instructions = String(actions?.instructions ?? '').slice(0, 8000);
+      const history = histories.get(targetKey) ?? [], message = text || 'Describe this image.';
+      const messages = [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
+        ...history.slice(-6), { role: 'user', content: message }];
+      appendMessage(view, 'user', text, { image: selectedImage?.preview });
+      const reply = appendMessage(view, 'assistant', '', { targetName: target.name });
+      view.prompt.value = ''; clearAttachment(); scrollTranscript();
+      requestId = crypto.randomUUID(); view.status.textContent = target.local ? 'Generating…' : 'Waiting for peer…';
       try {
-        for (const proposal of (actions?.propose(result.text) ?? []).slice(0, 4)) {
-          const button = element('button', `Apply: ${proposal.label}`);
-          button.onclick = async () => {
-            button.disabled = true;
-            try { await proposal.apply(); status.textContent = 'Approved action applied.'; }
-            catch (error) { showError(error); }
-          };
-          proposed.append(button);
-        }
-      } catch { /* Unstructured replies remain visible as text. */ }
-    } finally { requestId = null; }
-  });
+        const result = await runtime.generate(targetKey, { requestId, messages, signal, image: selectedImage?.image,
+          maxNewTokens: 128, onToken(chunk) { if (alive()) { reply.textContent += chunk; scrollTranscript(); } } });
+        reply.textContent = result.text;
+        history.push({ role: 'user', content: message }, { role: 'assistant', content: result.text });
+        while (history.length > 6 || encoder.encode(JSON.stringify(history)).byteLength > 24 * 1024) history.splice(0, 2);
+        histories.delete(targetKey); histories.set(targetKey, history);
+        if (histories.size > 8) histories.delete(histories.keys().next().value);
+        view.status.textContent = 'Ready.';
+        try {
+          for (const proposal of (actions?.propose(result.text) ?? []).slice(0, 4)) {
+            const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Apply: ' + proposal.label;
+            button.onclick = async () => { button.disabled = true; try { await proposal.apply(); } catch (error) { showError(error); } };
+            view.proposed.append(button);
+          }
+        } catch { /* Plain chat remains usable when a response is not an action proposal. */ }
+      } catch (error) { if (!reply.textContent) reply.textContent = error.name === 'AbortError' ? 'Cancelled.' : 'Request failed.'; throw error; }
+      finally { requestId = null; scrollTranscript(); }
+    });
+  }
+  view.send.onclick = () => { void send(); };
+  view.prompt.onkeydown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); }
+  };
+  refreshTimer = setInterval(() => { void refreshPeers(); }, Math.max(20, refreshIntervalMs));
+  if (autoConnect && !runtime.networkReady) {
+    connectController = new AbortController();
+    connectPromise = runtime.connectBackend({ signal: connectController.signal }).then(() => refreshPeers()).catch((error) => {
+      if (alive() && !connectController.signal.aborted) view.networkStatus.textContent = 'Peer network unavailable: ' + error.message;
+    });
+  } else void refreshPeers();
   async function dispose() {
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
+    closing = true; view.panel.inert = true;
     disposingPromise = (async () => {
-      operation?.abort('Panel closed'); invalidateActions();
-      await operationDone;
-      await runtime.dispose();
-      disposed = true; panel.remove(); onClose?.();
+      clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort();
+      invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await Promise.allSettled([...preferenceTasks]);
+      await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }
   }
-  close.onclick = () => { void dispose().catch(showError); };
-  if (autoConnect && !runtime.networkReady) {
-    connect.textContent = 'Connect Secret Workshop';
-    void run(async (signal) => {
-      status.textContent = 'Connecting Secret Workshop artifact network…';
-      try {
-        await runtime.connectBackend({ signal });
-        fetchPeer.disabled = publish.disabled = withdraw.disabled = false; networkRow.remove();
-        status.textContent = 'Secret Workshop connected. Import or download a package; Share with peers makes it available while you stay online.';
-      } catch (error) {
-        if (!signal.aborted) status.textContent = `Local inference ready. Backend connection failed: ${error.message}`;
-      }
-    });
-  }
-  return { element: panel, runtime, dispose };
+  return { element: view.panel, runtime, dispose, refreshPeers };
 }

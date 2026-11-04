@@ -47,7 +47,7 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   @libp2p/utils7.4.5 rather than the old global7.0.9 override. Existing network
   regressions and actual browser WebRTC/Bitswap checks passed with this set.
 - Remaining parent scope includes operator seed lifecycle, two-host/>2GiB
-  acceptance, whole-request remote inference, rendering contention/preemption,
+  acceptance, physical-host remote inference, rendering contention/preemption,
   NetViz model telemetry and final release verification. Do not close IPFS-01
   merely because storage or mocked inference checks pass.
 
@@ -125,7 +125,8 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   64 batch. Its143.3s load used bounded verified Node-store ranges. Cancellation
   terminates the worker and releases admission; it does not retain this large
   model warm. Full14GB browser transfer/persistence remain separate gates.
-- Clarify the CID actions as **Download from peers**, **Share with peers** and
+- Historical controls (superseded by the18:11 console revision below):
+  clarify the CID actions as **Download from peers**, **Share with peers** and
   **Stop sharing**. A CID identifies content; download requires an online
   provider and saves verified local content. Publication and GPU load are
   separate explicit actions. An unserved server filesystem cache is not a seed.
@@ -136,11 +137,36 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   and demo on trusted HTTPS bound to0.0.0.0 and reachable over Tailscale.
 - Standalone demo connects to the existing secretworkshop.net backend using its
   production relay configuration. Keep local model use available on network
-  failure and require explicit model hosting publication.
+  failure. The18:11 revision below enables sharing/hosting by default with
+  independent checkboxes.
 - Verify the exact handoff URLs, secure-context WebGPU availability, panel startup
   and actual backend connection. Leave only the requested preview servers running.
 - Keep feature/ipfs-artifacts-webgpu separate from ulg until user review and an
   explicit merge instruction. No push, public deployment or merge is implied.
+
+### Console implementation evidence — November3,18:33 AKST
+
+- Unified Import Model fetches/verifies/pins and automatically loads HF or peer
+  sources. Manifest CIDs remain internal. Removed Close, sample graphic and
+  scene-image checkbox; default-on sharing/hosting, Config, image picker,
+  Enter-to-send and auto-scrolling chat are implemented in the shared panel.
+- NetworkManager owns the private inference protocol; the facade composes retained
+  StateManager packages and the existing ComputeManager model service. Shared
+  managers can reconnect without reloading the resident model. Host disable
+  cancels inbound requests while preserving local chat and file sharing.
+- Five-second discovery groups exact immutable model CIDs; longest-idle ready
+  hosts precede deterministic busy fallback. Bounded frames, upload credits,
+  queues, token output, deadlines and a start acknowledgment prevent unbounded
+  buffering or retrying committed generation on a second host.
+- Actual independent Chrome157 browsers pass Smol256 text/red/blue requests,
+  streamed output, cancellation/reuse, disable/disconnect and encrypted WebRTC
+  transport. A third empty browser receives all15 files/1,052 blocks/268,819,304
+  DAG bytes through IPFS with HTTP weights denied. The requester stores0bytes
+  and creates no compute worker. All owned test processes closed; user previews
+  remain running. Evidence: /tmp/peercompute-peer-inference-hardware-20261103-direct.json.
+- This proves the implementation portion of IPFS-01.5; two physical hosts,
+  durable operator seeds, renderer contention, full27B browser transfer and
+  NetViz/chaos remain open parent gates. Keep the feature branch unmerged.
 
 ## Requested outcome and roadmap position
 
@@ -522,6 +548,34 @@ reject over-budget work before allocation; P0 may tighten them with measurements
 
 ## Ordered implementation TODOs
 
+### Console and peer inference revision — 2026-11-03 18:11:01 AKST
+
+- Replace manual import/fetch/load/CID controls with a model/source selector and
+  **Import Model**. List HF and discovered peer sources; verify retained content
+  and load automatically after acquisition. Never download weights on page open.
+- Default **Share with peers** and **Host inference** to checked. Sharing controls
+  package publication; inference hosting advertises only an actually loaded model
+  and dispatches remote work through its ComputeManager service. Disable hosting
+  and disconnect must cancel remote work and release stream resources.
+- Move storage quota and GGUF layer settings behind Config. Remove the sample
+  square/circle scene, scene-image checkbox, internal Close button and manifest
+  CID field. Keep programmatic disposal for embedded demos.
+- Simplify chat: arbitrary questions, explicit image attachment through **+**
+  beside Send, Enter submits (Shift+Enter adds a line), transcript auto-scrolls.
+- Refresh the execution selector every five seconds: local model plus one entry
+  per remotely hosted model identity, grouped by immutable manifest CID. Route
+  to the longest-idle available host; if all hosts are busy, mark the model
+  **(busy)** and submit to the first reachable host's bounded queue.
+- Prompts, images and streamed replies use authenticated encrypted PeerCompute
+  streams, with scope checks, bounded frames/queues, cancellation and deadlines.
+  They do not enter pubsub/Yjs. Images are decoded/downsampled to bounded RGBA;
+  text-only models reject image input. Preserve optional embedded scene text and
+  explicitly applied demo action proposals.
+- Acceptance: focused routing/stream/lifecycle tests; actual separate-browser
+  GPU host and GPU-disabled requester exchange text/images; host toggle and
+  disconnect cleanup; actual peer package discovery/download; headless desktop
+  and mobile UI checks; existing ONNX/GGUF/build regressions; verified Tailnet URL.
+
 The current implementation has passed the local/browser slices below. Parent
 phases with remaining exit criteria stay open. Each slice updates this file, `plan/log.md`, and
 `plan/tests.md`, runs its relevant gates, and reaches a local validated commit.
@@ -541,7 +595,7 @@ phases with remaining exit criteria stay open. Each slice updates this file, `pl
 | IPFS-01.2 | NetworkManager-coordinated IPFS adapter, provider binding/discovery, bounded blocks and advertisements, optional verified HTTP fallback. | A→B→C reseeding test below, independent identities/storage, actual serving counters, no origin/gateway escape, relay/peer-loss cleanup. |
 | IPFS-01.3 | Node importer under `scripts/`, generic file and HF manifest workflow, operator seed recipe and pin inventory; no weights in Git. | Exact revision/digests/complete variant closure, reproducible directory CID, two durable providers, seed restart and one-provider-loss recovery. |
 | IPFS-01.4 | ModelInferenceService adapter, compatible compute worker streaming/cancel/residency, broker/supervisor/NodeKernel lifecycle, actual GPU admission. | Model acquired by CID generates on real WebGPU; second request reuses residency; restart uses retained artifacts with origin blocked; abort/dispose/device loss/preemption release resources correctly. |
-| IPFS-01.5 | Authenticated remote inference protocol, registered-model admission, explicit peer selection, limited placement hooks and NetViz metadata. | Two physical capable peers serve and request bounded generation; output/cancel/backpressure/peer-loss behavior proven; no prompt/token leakage to shared state. |
+| IPFS-01.5 | Authenticated remote inference protocol, registered-model admission, explicit model selection with longest-idle/busy placement, and NetViz metadata. | Two physical capable peers serve and request bounded generation; output/cancel/backpressure/peer-loss behavior proven; no prompt/token leakage to shared state. |
 | IPFS-01.6 | `demos/inference` retro-terminal artifact/model console, generic non-LLM consumer, workspace/dev/build/gallery/static-test registration, nested Vite worker/runtime packaging, bounded chaos regression. | Production build works at a nested HTTPS path with no live HF dependency; same files reseed to fresh peers; NetViz distinguishes fetching/hosting/loaded/running; existing relevant suites and release checks pass. |
 
 The implemented first slice follows compatibility → generic store → peer
