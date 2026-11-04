@@ -8,7 +8,7 @@ import './panel.css';
 /** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
   networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
-  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000 } = {}) {
+  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController } = {}) {
   const view = createPanelView(container);
   const generatedImages = createGeneratedImageRenderer(view.transcript);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
@@ -19,6 +19,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let desiredSourceKey;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
+  let unsubscribeInstall;
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
   const sourceLabel = (source) => source.source === 'hf' ? 'Hugging Face'
@@ -112,7 +113,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     helpSource = source;
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
-    renderHelp(); view.configuration.close(); view.storedModels.close(); view.about.close();
+    renderHelp(); view.menuWindow.close(); view.configuration.close(); view.storedModels.close(); view.about.close();
     if (!view.compatibility.open) view.compatibility.showModal();
   }
   function renderSourceStatus(matches) {
@@ -200,7 +201,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       });
       runtime.setMemoryBudgets({ cpuBytes: values[0], gpuBytes: values[1] });
       syncMemoryBudgets(); sources = runtime.listModelSources(); renderSources();
-      view.configurationStatus.textContent = 'Memory budgets updated for future imports.';
+      view.configurationStatus.textContent = 'Memory budgets updated for future loads.';
     } catch (error) { showError(error); }
   }
   async function refreshPeers() {
@@ -232,7 +233,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     } else if (event.type === 'model-load') label = 'Loading model: ' + (event.stage || event.status || 'initializing GPU')
       + (event.file ? ' · ' + event.file : '');
     else label = {
-      prepare: 'Preparing model import…', verify: 'Verifying stored model files…',
+      prepare: 'Preparing model…', verify: 'Verifying stored model files…',
       'download-peers': 'Fetching and verifying model files from peers…',
       unload: 'Releasing the previous model…', load: 'Loading model into RAM and GPU memory…',
     }[event.stage];
@@ -331,16 +332,45 @@ export async function mountInferencePanel({ container = document.body, stateMana
 
   view.configure.onclick = () => {
     if (!alive()) return;
-    view.about.close(); view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
+    view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
   view.stored.onclick = () => {
     if (!alive()) return;
-    view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
+    view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
   };
   view.menu.onclick = () => {
     if (!alive()) return;
-    view.compatibility.close(); view.configuration.close(); view.storedModels.close(); view.about.showModal();
+    view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.close(); view.menuWindow.showModal();
   };
+  view.aboutButton.onclick = () => {
+    if (!alive()) return;
+    view.menuWindow.close(); view.about.showModal();
+  };
+  for (const modal of [view.menuWindow, view.configuration, view.storedModels, view.about]) {
+    modal.addEventListener('close', () => {
+      if (alive() && ![view.menuWindow, view.configuration, view.storedModels, view.about, view.compatibility].some((entry) => entry.open)
+          && document.activeElement !== view.prompt) view.menu.focus();
+    });
+  }
+  if (pwaInstallController) {
+    const renderInstall = (state = pwaInstallController.getState()) => {
+      if (!alive()) return;
+      view.install.hidden = false; view.install.disabled = state.installed || state.installing;
+      view.install.textContent = state.installed ? 'Installed' : state.installing ? 'Installing…' : 'Install';
+      view.menuStatus.textContent = String(state.instructions ?? '').slice(0, 512);
+    };
+    renderInstall(); unsubscribeInstall = pwaInstallController.subscribe?.(renderInstall);
+    view.install.onclick = async () => {
+      if (!alive() || view.install.disabled) return;
+      try {
+        const result = await pwaInstallController.install();
+        if (alive()) {
+          renderInstall();
+          if (result.instructions) view.menuStatus.textContent = String(result.instructions).slice(0, 512);
+        }
+      } catch (error) { if (alive()) view.menuStatus.textContent = 'Installation unavailable: ' + String(error.message).slice(0, 256); }
+    };
+  }
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
   view.sourceFilter.oninput = renderSources;
   view.sourceHelp.onclick = () => {
@@ -359,7 +389,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.helpConfig.onclick = () => view.configure.click();
   view.compatibility.addEventListener('close', () => {
     helpVersion++;
-    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open) view.source.focus();
+    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open && !view.menuWindow.open) view.source.focus();
   });
   view.helpCopy.onclick = async () => {
     const command = view.helpCommand.value;
@@ -404,6 +434,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     return run(async (signal) => {
     invalidateActions(); progress({ stage: 'prepare' });
     await runtime.acquireModel(key, { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
+    signal.throwIfAborted();
     histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
     view.status.textContent = runtime.getSharingErrors?.().length
       ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
@@ -443,7 +474,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   view.removeAttachment.onclick = () => { imageController?.abort(); clearAttachment(); };
   view.cancel.onclick = () => {
-    operation?.abort('User cancelled');
+    operation?.abort(new DOMException('User cancelled', 'AbortError'));
     if (requestId) void runtime.cancel(requestId).catch(showError);
   };
   view.storedCancel.onclick = () => view.cancel.click();
@@ -513,6 +544,25 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.prompt.onkeydown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); }
   };
+  // Runtime initialization only reads the library. Start exactly one cancellable
+  // load after the controls exist, independently of peer connection readiness.
+  try {
+    const startup = runtime.getStartupModel?.();
+    if (startup) {
+      desiredSourceKey = startup.sourceKey; renderSources();
+      if (sourceBlocked(startup)) {
+        view.status.textContent = `Cannot load ${startup.name}: ${sourceReason(startup)}`;
+      } else void run(async (signal) => {
+        progress({ stage: startup.manifestCid ? 'verify' : 'prepare' });
+        const options = { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) };
+        if (startup.manifestCid) await runtime.loadStoredModel(startup.manifestCid, options);
+        else await runtime.acquireModel(startup.sourceKey, options);
+        signal.throwIfAborted();
+        histories.delete('local'); renderLists();
+        view.status.textContent = `Loaded ${startup.name}. Send a message.`;
+      });
+    }
+  } catch (error) { showError(error); }
   refreshTimer = setInterval(() => { void refreshPeers(); }, Math.max(20, refreshIntervalMs));
   if (autoConnect && !runtime.networkReady) {
     const controller = new AbortController(); connectController = controller;
@@ -527,7 +577,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; generatedImages.dispose(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
+    closing = true; unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);

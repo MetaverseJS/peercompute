@@ -5,6 +5,8 @@ import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
 import { createArtifactFetch, serveArtifactPort } from '../../src/peercompute/inference/ArtifactReadBridge.js';
 import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
+import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
+import { ResourceLeaseBroker } from '../../src/peercompute/serviceOrchestration/ResourceLeaseBroker.js';
 import { createModelTaskRuntime, validateImageInput } from '../../src/peercompute/inference/modelTask.js';
 import { MODEL_POLICY, validateModelManifest } from '../../src/peercompute/inference/modelManifest.js';
 import { MODEL_CATALOG, modelFileUrl } from '../../src/peercompute/inference/modelCatalog.js';
@@ -429,10 +431,12 @@ test('multimodal generation passes bounded RGBA to the processor and disposes pr
 function serviceFor({ fixture = runtimeFor(), modelManifest = manifest(), events = [] } = {}) {
   const submissions = [];
   const running = new Map();
+  let reserved = false, workerId = null;
   const computeManager = {
-    async reserveWorkerAffinity(key) { events.push(`reserve:${key}`); },
-    async releaseWorkerAffinity(key) { events.push(`release:${key}`); },
-    async terminateWorkerAffinity(key) { events.push(`terminate:${key}`); },
+    async reserveWorkerAffinity(key) { events.push(`reserve:${key}`); reserved = true; workerId = 17; },
+    getWorkerAffinityState(affinityKey) { return { affinityKey, reserved, workerId }; },
+    async releaseWorkerAffinity(key) { events.push(`release:${key}`); reserved = false; workerId = null; },
+    async terminateWorkerAffinity(key) { events.push(`terminate:${key}`); workerId = null; },
     submitTask(task) {
       submissions.push(task);
       assert.equal(task.requireWorker, true);
@@ -465,6 +469,123 @@ test('host service holds admission and affinity through residency and acknowledg
   assert.ok(submissions.every((task) => task.affinityKey === 'model:resident'));
   assert.equal(submissions[0].transferables.length, 1);
   assert.equal(service.getStatus().status, 'idle');
+});
+
+test('managed resident survives a long load and idle clock jumps without renewal or reloading', async () => {
+  let now = 1000;
+  const broker = new ResourceLeaseBroker({ now: () => now,
+    capacities: { cpu: { units: 1, memoryBytes: 2048 }, gpu: { units: 1, memoryBytes: 2048 } } });
+  const { service, submissions, computeManager } = serviceFor();
+  service.admission = new ResidentModelAdmission({ broker });
+  const submit = computeManager.submitTask;
+  computeManager.submitTask = async (task) => {
+    const result = await submit(task);
+    if (task.data.command === 'load') { now += 90_000; broker.expireLeases(); }
+    return result;
+  };
+  await service.loadModel({ sessionId: 'long-lived', manifestCid: cid });
+  assert.equal(service.getStatus().status, 'ready');
+  for (let index = 0; index < 2; index++) {
+    now += 24 * 60 * 60_000;
+    assert.deepEqual(broker.expireLeases(), []);
+    assert.equal(service.getStatus().status, 'ready');
+    const result = await service.generate({ prompt: 'Hello', maxNewTokens: 5 });
+    assert.equal(result.workerId, 17);
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 1024);
+    await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+  }
+  assert.equal(submissions.filter((task) => task.data.command === 'load').length, 1);
+  await service.unloadModel();
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+  assert.equal(broker.reportPressure().pools.cpu.activeMemoryBytes, 0);
+});
+
+test('admission revoked during a loader cannot become ready and releases only after worker stop', async () => {
+  const events = [], { service, computeManager } = serviceFor({ events });
+  let revoked = false;
+  service.admission.acquire = async () => ({
+    assertActive() { if (revoked) throw new Error('Residency was revoked'); },
+    async release() { events.push('release-admission'); },
+  });
+  const submit = computeManager.submitTask;
+  computeManager.submitTask = async (task) => {
+    const result = await submit(task);
+    if (task.data.command === 'load') revoked = true;
+    return result;
+  };
+  await assert.rejects(service.loadModel({ sessionId: 'load-revoked', manifestCid: cid }), /revoked/);
+  assert.equal(service.getStatus().status, 'idle');
+  assert.ok(events.indexOf('terminate:model:load-revoked') < events.indexOf('release-admission'));
+});
+
+test('ready status rejects a missing or replaced original worker without releasing unacknowledged capacity', async () => {
+  for (const state of [{ reserved: false, workerId: 17 }, { reserved: true, workerId: null }, { reserved: true, workerId: 18 }]) {
+    const events = [], { service, submissions, computeManager } = serviceFor({ events });
+    await service.loadModel({ sessionId: 'worker-lost', manifestCid: cid });
+    computeManager.getWorkerAffinityState = (affinityKey) => ({ affinityKey, ...state });
+    assert.equal(service.getStatus().status, 'lost');
+    await assert.rejects(service.generate({ prompt: 'Do not dispatch' }), /not ready/);
+    assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
+    assert.ok(!events.includes('release-admission'));
+    await service.unloadModel();
+    assert.ok(events.indexOf('terminate:model:worker-lost') < events.indexOf('release-admission'));
+  }
+});
+
+test('worker loss during load cannot return a ready session', async () => {
+  const events = [], { service, computeManager } = serviceFor({ events });
+  const submit = computeManager.submitTask;
+  computeManager.submitTask = async (task) => {
+    const result = await submit(task);
+    if (task.data.command === 'load') computeManager.getWorkerAffinityState = () => ({ reserved: true, workerId: null });
+    return result;
+  };
+  await assert.rejects(service.loadModel({ sessionId: 'load-worker-lost', manifestCid: cid }), /original managed resident worker/);
+  assert.equal(service.getStatus().status, 'idle');
+  assert.ok(events.indexOf('terminate:model:load-worker-lost') < events.indexOf('release-admission'));
+});
+
+test('worker status loss is remembered and failed explicit cleanup retains admission until retry', async () => {
+  const events = [], { service, computeManager } = serviceFor({ events });
+  await service.loadModel({ sessionId: 'status-lost', manifestCid: cid });
+  const submit = computeManager.submitTask;
+  computeManager.submitTask = (task) => task.data.command === 'status'
+    ? Promise.resolve({ status: 'lost', sessionId: task.data.sessionId }) : submit(task);
+  assert.equal((await service.status()).status, 'lost');
+  assert.equal(service.getStatus().status, 'lost');
+  const terminate = computeManager.terminateWorkerAffinity;
+  computeManager.terminateWorkerAffinity = async () => { throw new Error('Worker stop not acknowledged'); };
+  await assert.rejects(service.unloadModel(), /not acknowledged/);
+  assert.ok(!events.includes('release-admission'));
+  computeManager.terminateWorkerAffinity = terminate;
+  await service.unloadModel();
+  assert.equal(events.filter((event) => event === 'release-admission').length, 1);
+});
+
+test('revocation during active generation suppresses its result and cancels queued work', async () => {
+  const events = [], { service, computeManager, submissions } = serviceFor({ events });
+  let revoked = false;
+  service.admission.acquire = async () => ({
+    assertActive() { if (revoked) throw new Error('Residency was revoked'); },
+    async release() { events.push('release-admission'); },
+  });
+  await service.loadModel({ sessionId: 'active-revoked', manifestCid: cid });
+  const submit = computeManager.submitTask, started = deferred(), gate = deferred();
+  computeManager.submitTask = async (task) => {
+    if (task.data.command === 'generate') { started.resolve(); await gate.promise; }
+    return submit(task);
+  };
+  const active = service.generate({ requestId: 'active', prompt: 'Hello' });
+  await started.promise;
+  const queued = service.generate({ requestId: 'queued', prompt: 'Later' });
+  const rejected = assert.rejects(queued, { name: 'AbortError' });
+  revoked = true; gate.resolve();
+  await assert.rejects(active, /revoked/); await rejected;
+  assert.equal(service.getStatus().status, 'lost');
+  assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 1);
+  assert.ok(!events.includes('release-admission'));
+  await service.unloadModel();
+  assert.equal(events.filter((event) => event === 'release-admission').length, 1);
 });
 
 test('host service bounds its queue and cancels queued work without dispatch', async () => {
@@ -716,17 +837,86 @@ test('failed generation termination quarantines residency and prevents further d
 test('revoked admission rejects queued generation without freeing resident capacity', async () => {
   const events = [];
   const { service, submissions } = serviceFor({ events });
-  let calls = 0;
+  let revoked = false;
   service.admission.acquire = async () => ({
-    assertActive() { calls += 1; if (calls > 1) throw new Error('Residency was revoked'); },
+    assertActive() { if (revoked) throw new Error('Residency was revoked'); },
     release() { events.push('release-admission'); },
   });
   await service.loadModel({ sessionId: 'revoked', manifestCid: cid });
+  revoked = true;
   await assert.rejects(service.generate({ prompt: 'x' }), /revoked/);
+  assert.equal(service.getStatus().status, 'lost');
   assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
   assert.ok(!events.includes('release-admission'));
   await service.unloadModel();
   assert.ok(events.includes('release-admission'));
+});
+
+test('async admission checks are awaited before dispatch and result delivery without unhandled rejection', async () => {
+  for (const failAt of ['dispatch', 'completion']) {
+    const events = [], { service, computeManager, submissions } = serviceFor({ events });
+    let phase = 'load', assertions = 0;
+    const entered = deferred(), gate = deferred();
+    service.admission.acquire = async () => ({
+      async assertActive() {
+        assertions++;
+        if (phase === failAt) { entered.resolve(); await gate.promise; throw new Error('Async residency revoked'); }
+      },
+      async release() { events.push('release-admission'); },
+    });
+    await service.loadModel({ sessionId: `async-${failAt}`, manifestCid: cid });
+    assert.equal(assertions, 2);
+    service.getStatus(); service.getStatus();
+    assert.equal(assertions, 2, 'synchronous status must not invoke an asynchronous guard');
+    phase = 'dispatch';
+    const submit = computeManager.submitTask;
+    computeManager.submitTask = async (task) => {
+      const result = await submit(task);
+      if (task.data.command === 'generate') phase = 'completion';
+      return result;
+    };
+    const pending = service.generate({ prompt: 'Hello' });
+    const rejected = assert.rejects(pending, /Async residency revoked/);
+    await entered.promise;
+    assert.equal(submissions.filter((task) => task.data.command === 'generate').length, failAt === 'dispatch' ? 0 : 1);
+    gate.resolve(); await rejected;
+    assert.equal(service.getStatus().status, 'lost');
+    assert.ok(!events.includes('release-admission'));
+    await service.unloadModel();
+    assert.equal(events.filter((event) => event === 'release-admission').length, 1);
+  }
+});
+
+test('a promise returned by an explicitly synchronous admission check fails closed and is consumed', async () => {
+  const { service, submissions } = serviceFor();
+  service.admission.acquire = async () => ({ assertActive() {},
+    assertActiveSync() { return Promise.reject(new Error('Invalid asynchronous health API')); }, async release() {} });
+  await service.loadModel({ sessionId: 'bad-health-api', manifestCid: cid });
+  assert.equal(service.getStatus().status, 'lost');
+  await assert.rejects(service.generate({ prompt: 'Do not dispatch' }), /not ready/);
+  await nextTurn();
+  assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
+  await service.unloadModel();
+});
+
+test('unload cancels a suspended async admission check before dispatch and consumes its late rejection', async () => {
+  const events = [], { service, submissions } = serviceFor({ events });
+  let checking = false;
+  const entered = deferred(), gate = deferred();
+  service.admission.acquire = async () => ({
+    async assertActive() { if (checking) { entered.resolve(); await gate.promise; } },
+    async release() { events.push('release-admission'); },
+  });
+  await service.loadModel({ sessionId: 'async-unload', manifestCid: cid });
+  checking = true;
+  const active = service.generate({ prompt: 'Do not dispatch' });
+  const rejected = assert.rejects(active, { name: 'AbortError' });
+  await entered.promise;
+  await service.unloadModel(); await rejected;
+  assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
+  assert.equal(service.getStatus().status, 'idle');
+  assert.equal(events.filter((event) => event === 'release-admission').length, 1);
+  gate.reject(new Error('Late admission failure')); await nextTurn();
 });
 
 test('overlapping panel and manager disposal dispatch one unload and release one residency', async () => {

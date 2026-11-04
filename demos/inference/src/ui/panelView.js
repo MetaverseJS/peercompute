@@ -53,13 +53,17 @@ export function createPanelView(container) {
   const navigation = node('nav', undefined, 'pc-console-navigation'); navigation.setAttribute('aria-label', 'Console navigation');
   const back = node('a', '←', 'pc-console-back'); back.href = resolveOverviewUrl(location.href);
   back.setAttribute('aria-label', 'Back to demo overview'); back.title = 'Back to demo overview';
-  const menu = button('☰', 'About and links'); menu.title = 'About and links';
+  const menu = button('☰', 'Menu'); menu.title = 'Menu';
   navigation.append(back, menu); panel.append(navigation);
   const sourceFilter = node('input'); sourceFilter.type = 'search'; sourceFilter.placeholder = 'Filter models';
   sourceFilter.setAttribute('aria-label', 'Filter models'); sourceFilter.maxLength = 256;
   const source = node('select'); source.setAttribute('aria-label', 'Model and source');
-  const acquire = button('Import Model'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
+  const acquire = button('Load'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
   const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const menuDialog = dialog('Menu'), menuWindow = menuDialog.element;
+  menuWindow.classList.add('pc-console-menu');
+  const aboutButton = button('About'), install = button('Install'); install.hidden = true;
+  menuDialog.body.append(stored, configure, aboutButton, install);
   const about = aboutWindow.element;
   aboutWindow.body.append(node('p', 'PeerCompute runs models in your browser using WebGPU. You can chat with a model on this device or use inference hosted by another peer.'));
   aboutWindow.body.append(node('p', 'Model files are identified by their content and shared over IPFS. File sharing and hosted inference are available while the hosting browser stays online.'));
@@ -91,11 +95,11 @@ export function createPanelView(container) {
   help.body.append(helpModel, helpReason, helpEnvironment,
     node('p', 'Browser detection is approximate. Adjust these choices if needed.', 'pc-inference-note'),
     helpDetails, helpCommandGroup, helpConfig);
-  for (const [trigger, modal] of [[configure, configuration], [stored, storedModels], [menu, about]]) {
+  for (const [trigger, modal] of [[configure, configuration], [stored, storedModels], [aboutButton, about], [menu, menuWindow]]) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
-  const top = node('div', undefined, 'pc-model-toolbar'); top.append(sourceFilter, source, acquire, stored, configure); panel.append(top);
+  const top = node('div', undefined, 'pc-model-toolbar'); top.append(sourceFilter, source, acquire); panel.append(top);
   const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
   sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
   source.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
@@ -137,7 +141,7 @@ export function createPanelView(container) {
   library.body.append(storedList, storedRefresh, storedCancel);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
-  const empty = node('p', 'Import a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
+  const empty = node('p', 'Load a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
   const proposed = node('div', undefined, 'pc-inference-actions'); panel.append(proposed);
   const attachment = node('div', undefined, 'pc-chat-attachment'); attachment.hidden = true;
   const attachmentImage = node('img'); attachmentImage.alt = 'Selected image';
@@ -149,10 +153,10 @@ export function createPanelView(container) {
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels, compatibility, about); container.append(panel);
+  panel.append(configuration, storedModels, compatibility, about, menuWindow); container.append(panel);
   return { panel, sourceFilter, source, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
-    back, menu, about,
+    back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,

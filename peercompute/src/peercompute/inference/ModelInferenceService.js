@@ -18,6 +18,15 @@ function workerWasTerminated(error) {
   return error?.workerTerminated === true || error?.code === 'WORKER_TERMINATED';
 }
 
+function waitForAdmission(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(abortError(signal.reason));
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    if (signal.aborted) abort();
+  });
+}
+
 /** Host-side lifecycle/admission facade. All inference runs through ComputeManager. */
 export class ModelInferenceService {
   constructor({ computeManager, artifactStore, admission, runtimeAssets, resourceEstimate,
@@ -29,7 +38,7 @@ export class ModelInferenceService {
     allowedManifestCids = null, collectGpuEvidence = false } = {}) {
     if (!computeManager?.submitTask || !computeManager.reserveWorkerAffinity
         || !computeManager.releaseWorkerAffinity || !computeManager.cancelTask
-        || !computeManager.terminateWorkerAffinity) {
+        || !computeManager.terminateWorkerAffinity || !computeManager.getWorkerAffinityState) {
       throw new Error('Inference requires managed worker reservation and cancellation APIs');
     }
     if (!artifactStore?.stat || !artifactStore.openRead || !admission?.acquire) {
@@ -106,12 +115,15 @@ export class ModelInferenceService {
         throwIfAborted(operation.controller.signal);
         await this.computeManager.reserveWorkerAffinity(entry.affinityKey);
         entry.reserved = true;
+        entry.workerId = this.#assertWorker(entry).workerId;
         throwIfAborted(operation.controller.signal);
         entry.lease = await this.admission.acquire({ sessionId, manifestCid, manifest: entry.manifest,
           estimatedCpuBytes: estimate.cpuBytes, estimatedGpuBytes: estimate.gpuBytes });
         if (!entry.lease?.release) throw new Error('Admission did not return a resident resource lease');
         throwIfAborted(operation.controller.signal);
-        await entry.lease.assertActive?.();
+        await waitForAdmission(entry.lease.assertActive?.(), operation.controller.signal);
+        throwIfAborted(operation.controller.signal);
+        this.#assertWorker(entry);
         const { port1, port2 } = this.createChannel();
         entry.bridge = serveArtifactPort(port1, { store: this.artifactStore, manifest: entry.manifest });
         entry.dispatched = true;
@@ -124,6 +136,10 @@ export class ModelInferenceService {
           signal: operation.controller.signal, onProgress,
         });
         throwIfAborted(operation.controller.signal);
+        this.#assertWorker(entry);
+        await waitForAdmission(entry.lease.assertActive?.(), operation.controller.signal);
+        throwIfAborted(operation.controller.signal);
+        this.#assertWorker(entry);
         entry.status = 'ready';
         entry.evidence = result;
         return result;
@@ -160,6 +176,8 @@ export class ModelInferenceService {
     if (this.closed || this.session?.status !== 'ready' || sessionId !== this.session.sessionId) {
       return Promise.reject(new Error('Requested model is not ready'));
     }
+    const healthError = this.#checkReadiness(this.session);
+    if (healthError) return Promise.reject(healthError);
     let normalized;
     try {
       validateSessionId(requestId);
@@ -222,7 +240,10 @@ export class ModelInferenceService {
     try {
       throwIfAborted(item.operation.controller.signal);
       if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Model session lost');
-      await item.session.lease?.assertActive?.();
+      const healthError = await this.#checkReadinessAsync(item.session, item.operation.controller.signal);
+      if (healthError) throw healthError;
+      throwIfAborted(item.operation.controller.signal);
+      if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Requested model is no longer ready');
       const result = await this.computeManager.submitTask({
         id: `${item.session.sessionId}-generate-${item.requestId}`,
         module: this.moduleUrl, exportName: 'handleModelTask', data: item.data,
@@ -230,9 +251,17 @@ export class ModelInferenceService {
         transferables: item.data.image ? [item.data.image.data.buffer] : [],
         signal: item.operation.controller.signal, onProgress: item.onProgress,
       });
+      const completionError = await this.#checkReadinessAsync(item.session, item.operation.controller.signal);
+      if (completionError) throw completionError;
+      throwIfAborted(item.operation.controller.signal);
+      if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Requested model is no longer ready');
       item.resolve(result);
     } catch (error) {
-      if (workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
+      if (error?.code === 'ERR_MODEL_RESIDENCY_INACTIVE') {
+        // Keep resident capacity quarantined until explicit unload acknowledges
+        // termination, just as when a readiness query discovers the loss.
+        this.#markUnavailable(item.session, error);
+      } else if (workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
           || /GPU device lost|Model session lost/.test(error?.message ?? '')) {
         item.session.status = 'lost';
         this.#rejectQueue('Model worker was lost');
@@ -268,6 +297,7 @@ export class ModelInferenceService {
   }
 
   getStatus() {
+    if (this.session?.status === 'ready') this.#checkReadiness(this.session);
     return { status: this.session?.status ?? (this.closed ? 'closed' : 'idle'),
       runtime: this.runtimeDefinition.id,
       sessionId: this.session?.sessionId ?? null, manifestCid: this.session?.manifestCid ?? null,
@@ -277,10 +307,66 @@ export class ModelInferenceService {
   }
 
   async status() {
+    const snapshot = this.getStatus();
     const entry = this.session;
-    if (!entry || entry.status !== 'ready' || this.active) return this.getStatus();
-    return this.computeManager.submitTask({ module: this.moduleUrl, exportName: 'handleModelTask',
+    if (!entry || entry.status !== 'ready' || this.active) return snapshot;
+    const result = await this.computeManager.submitTask({ module: this.moduleUrl, exportName: 'handleModelTask',
       data: { command: 'status', sessionId: entry.sessionId }, affinityKey: entry.affinityKey, requireWorker: true });
+    if (this.session === entry && ['lost', 'absent', 'unloaded'].includes(result.status)) {
+      this.#markUnavailable(entry, new Error('Model session lost: resident worker reported an unavailable runtime'));
+    }
+    return result;
+  }
+
+  #assertWorker(entry) {
+    const state = this.computeManager.getWorkerAffinityState(entry.affinityKey);
+    if (!entry.reserved || !state?.reserved || state.workerId == null
+        || (entry.workerId != null && entry.workerId !== state.workerId)) {
+      throw new Error('Model session lost: the original managed resident worker is unavailable');
+    }
+    return state;
+  }
+
+  #markUnavailable(entry, error) {
+    if (this.session !== entry || ['unloading', 'cleanup-failed'].includes(entry.status)) return;
+    entry.status = 'lost';
+    this.#rejectQueue(error.message);
+    if (this.active?.session === entry) this.active.operation.controller.abort(error);
+  }
+
+  #checkReadiness(entry) {
+    try {
+      this.#assertWorker(entry);
+      const result = entry.lease?.assertActiveSync?.();
+      if (result?.then) {
+        Promise.resolve(result).catch(() => {});
+        throw new TypeError('Resident synchronous health check must not return a promise');
+      }
+      return null;
+    } catch (cause) {
+      return this.#readinessFailure(entry, cause);
+    }
+  }
+
+  async #checkReadinessAsync(entry, signal) {
+    try {
+      this.#assertWorker(entry);
+      await waitForAdmission(entry.lease?.assertActive?.(), signal);
+      throwIfAborted(signal);
+      if (this.session !== entry || entry.status !== 'ready') throw new Error('Requested model is no longer ready');
+      this.#assertWorker(entry);
+      return null;
+    } catch (cause) {
+      if (signal.aborted) throw abortError(signal.reason);
+      if (this.session !== entry || entry.status === 'unloading') throw cause;
+      return this.#readinessFailure(entry, cause);
+    }
+  }
+
+  #readinessFailure(entry, cause) {
+    const error = Object.assign(new Error(String(cause?.message ?? cause), { cause }), { code: 'ERR_MODEL_RESIDENCY_INACTIVE' });
+    this.#markUnavailable(entry, error);
+    return error;
   }
 
   #rejectQueue(reason) {
@@ -319,6 +405,8 @@ export class ModelInferenceService {
       return { sessionId: entry.sessionId, status: 'unloaded' };
     }
     if (entry.status === 'cleanup-failed' || entry.status === 'lost') {
+      if (this.active?.session === entry) await this.cancel(this.active.requestId, { reason: 'Lost model is unloading' });
+      if (this.session !== entry) return { sessionId: entry.sessionId, status: 'unloaded' };
       await this.computeManager.terminateWorkerAffinity(entry.affinityKey, { reason: 'Retry model cleanup' });
       await this.#release(entry);
       this.session = null;

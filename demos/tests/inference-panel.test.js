@@ -25,6 +25,11 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await server?.close(); });
 
+async function openMenuAction(page, name) {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name, exact: true }).click();
+}
+
 async function fixture(t, scenario = {}) {
   const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
   const errors = [], external = [];
@@ -45,6 +50,7 @@ async function fixture(t, scenario = {}) {
     window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: true, refreshCalls: 0,
       refreshActive: 0, refreshPeak: 0, disposed: false, sharing: true, hostInference: true,
       stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList,
+      rejectLoad: !!scenario.rejectLoad, rejectAcquire: !!scenario.rejectAcquire,
       loadedCid: scenario.loaded ? 'fixture-vision' : null, preferredSourceKey: scenario.preferredSourceKey, sources: scenario.sources,
       availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
@@ -89,7 +95,10 @@ async function fixture(t, scenario = {}) {
             { stage: 'verify' }, { stage: 'load' }, { type: 'model-load', stage: 'unet', loaded: 0, total: 1000 },
           ]) { options.onProgress(event); await delay(150, options.signal); }
         }
-        await delay(scenario.acquireDelay ?? 5, options.signal); state.loaded = true; state.loadedCid = 'fixture-vision'; calls.push({ type: 'loaded' }); },
+        await delay(scenario.acquireDelay ?? 5, options.signal);
+        if (state.rejectAcquire) throw new Error('Model download failed');
+        state.loaded = true; state.loadedCid = 'fixture-vision'; calls.push({ type: 'loaded' }); },
+      ...(scenario.startup ? { getStartupModel: () => ({ ...scenario.startup, localAvailability: state.availability[scenario.startup.sourceKey] ?? scenario.startup.localAvailability }) } : {}),
       ...(scenario.preferredSourceKey ? { getPreferredModelSourceKey: () => state.preferredSourceKey } : {}),
       async loadStoredModel(cid, options) {
         calls.push({ type: 'load-stored', cid, gpuLayers: options.ggufGpuLayers });
@@ -144,7 +153,19 @@ async function fixture(t, scenario = {}) {
         state.disposed = true;
       },
     };
-    window.panel = await mountInferencePanel({ container: document.querySelector('#panel'), runtimeFactory: async () => runtime,
+    let installListener;
+    window.installState = { available: !!scenario.pwaAvailable, installed: false, installing: false, supported: true, instructions: 'Use your browser menu to install this app.' };
+    window.emitInstall = (state) => { Object.assign(installState, state); installListener?.({ ...installState }); };
+    const pwaInstallController = scenario.pwa ? {
+      getState: () => ({ ...installState }),
+      subscribe(listener) { installListener = listener; listener({ ...installState }); return () => { installListener = null; calls.push({ type: 'unsubscribe-install' }); }; },
+      async install() { calls.push({ type: 'install' });
+        if (scenario.installDelay) await delay(scenario.installDelay);
+        if (!installState.available) return { outcome: 'unavailable', instructions: installState.instructions };
+        emitInstall({ installed: true, available: false }); return { outcome: 'accepted' }; },
+      dispose() { calls.push({ type: 'dispose-install-controller' }); },
+    } : undefined;
+    window.panel = await mountInferencePanel({ pwaInstallController, container: document.querySelector('#panel'), runtimeFactory: async () => runtime,
       autoConnect: !!scenario.connectFailure,
       refreshIntervalMs: scenario.interval ?? 5000,
       ...(scenario.context ? { getContext: (options) => { contextCalls.push(options); return { text: 'Optional embedded scene context', image: { forbidden: true } }; },
@@ -153,7 +174,7 @@ async function fixture(t, scenario = {}) {
   return page;
 }
 
-test('compact unloaded console defaults sharing and hosting on without importing, Close, CID or scene controls', async (t) => {
+test('unloaded injected runtime defaults sharing and hosting on without Close, CID or scene controls', async (t) => {
   const page = await fixture(t);
   assert.equal(await page.getByLabel('Share with peers', { exact: true }).isChecked(), true);
   assert.equal(await page.getByLabel('Host inference', { exact: true }).isChecked(), true);
@@ -164,7 +185,7 @@ test('compact unloaded console defaults sharing and hosting on without importing
   assert.equal(await page.getByLabel('Local artifact storage limit').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   assert.equal(await page.getByRole('dialog', { name: 'Config', exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Share with peers', { exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Host inference', { exact: true }).isVisible(), true);
@@ -179,13 +200,13 @@ test('compact unloaded console defaults sharing and hosting on without importing
 test('unified import selects either source and automatically makes local chat available', async (t) => {
   const page = await fixture(t);
   await page.getByLabel('Model and source').selectOption('peer:fixture');
-  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'loaded'));
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
   await page.getByLabel('Message', { exact: true }).fill('Hello');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), [{ type: 'acquire', key: 'peer:fixture', gpuLayers: 99999 }]);
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   await page.getByLabel('Share with peers', { exact: true }).uncheck();
   await page.getByLabel('Host inference', { exact: true }).uncheck();
   await page.waitForFunction(() => !uiState.sharing && !uiState.hostInference);
@@ -207,7 +228,7 @@ test('model filter uses AND terms across source, name, ID, task and runtime with
   assert.equal(await target.inputValue(), 'peer:fixture');
   await filter.fill('no such model');
   assert.equal(await source.locator('option:checked').textContent(), 'No matching models');
-  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.match(await page.locator('.pc-model-availability').textContent(), /No matching models/);
   await filter.fill(''); assert.equal(await source.inputValue(), 'peer:fixture');
   await filter.fill('Peers llama text-generation');
@@ -224,7 +245,7 @@ test('unavailable and checking models offer setup help and cannot import even th
   assert.equal(await source.locator('option[data-unavailable=true]').count(), 2);
   assert.match(await source.locator('option[value="hf:vision"]').textContent(), /Setup required/);
   assert.match(await page.locator('.pc-model-availability').textContent(), /Checking WebGPU support/);
-  const acquire = page.getByRole('button', { name: 'Import Model', exact: true });
+  const acquire = page.getByRole('button', { name: 'Load', exact: true });
   assert.equal(await acquire.isDisabled(), true);
   await acquire.evaluate((button) => button.onclick());
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
@@ -239,7 +260,7 @@ test('unavailable and checking models offer setup help and cannot import even th
   // Runtime state changes before the next UI refresh; the click handler still rechecks it.
   await page.evaluate(() => {
     uiState.availability['hf:vision'] = { status: 'unavailable', reason: 'Device is incompatible.' };
-    return [...document.querySelectorAll('button')].find((button) => button.textContent === 'Import Model').onclick();
+    return [...document.querySelectorAll('button')].find((button) => button.textContent === 'Load').onclick();
   });
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
   await help.getByRole('button', { name: 'Done', exact: true }).click();
@@ -252,7 +273,7 @@ test('unavailable and checking models offer setup help and cannot import even th
 
 test('Config memory budgets convert GiB, refresh restrictions, clear to auto and reject invalid values', async (t) => {
   const page = await fixture(t, { memoryPolicy: true });
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   const cpu = page.getByLabel('Model RAM budget (GiB)', { exact: true });
   const gpu = page.getByLabel('Model GPU memory budget (GiB)', { exact: true });
   assert.equal(await cpu.inputValue(), ''); assert.equal(await gpu.inputValue(), '');
@@ -279,10 +300,10 @@ test('Config memory budgets convert GiB, refresh restrictions, clear to auto and
 
 test('model filtering and memory budgets are disabled during an active import', async (t) => {
   const page = await fixture(t, { acquireDelay: 10000 });
-  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'acquire'));
   assert.equal(await page.getByRole('searchbox', { name: 'Filter models' }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   assert.equal(await page.getByLabel('Model RAM budget (GiB)', { exact: true }).isDisabled(), true);
   assert.equal(await page.getByLabel('Model GPU memory budget (GiB)', { exact: true }).isDisabled(), true);
   await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -345,7 +366,7 @@ test('Config clears conversation context without unloading a model or changing s
   const page = await fixture(t, { loaded: true, generateDelay: 300 });
   const input = page.getByLabel('Message', { exact: true });
   await input.fill('Explain clouds.'); await input.press('Enter');
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   const clear = page.getByRole('button', { name: 'Clear conversation', exact: true });
   assert.equal(await clear.isDisabled(), true);
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
@@ -423,7 +444,7 @@ test('opened model pickers wrap long names inside desktop and mobile viewports a
 
 test('import progress advances past the last file into verification and GPU loading', async (t) => {
   const page = await fixture(t, { importProgress: true, acquireDelay: 1200 });
-  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   const status = page.locator('.pc-inference-panel > [role=status]');
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Downloading 7/7: LICENSE'));
   assert.match(await status.textContent(), /1.0 KiB|1 KiB/);
@@ -493,7 +514,7 @@ test('dispose aborts active generation and stops refresh before releasing the ru
   assert.equal(await page.evaluate(() => uiState.refreshCalls), count);
 });
 
-test('default discovery refresh runs every five seconds without startup inference', async (t) => {
+test('discovery refresh runs every five seconds without inventing a startup choice for an injected runtime', async (t) => {
   const page = await fixture(t);
   await page.waitForFunction(() => uiState.refreshCalls === 1);
   await page.waitForTimeout(4500);
@@ -505,7 +526,7 @@ test('default discovery refresh runs every five seconds without startup inferenc
 test('Stop cancels an active request and failed preferences restore their prior value', async (t) => {
   const page = await fixture(t, { loaded: true, generateDelay: 10000 });
   await page.evaluate(() => { uiState.rejectSharing = true; });
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   await page.getByLabel('Share with peers', { exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Sharing failed'));
   assert.equal(await page.getByLabel('Share with peers', { exact: true }).isChecked(), true);
@@ -519,7 +540,7 @@ test('Stop cancels an active request and failed preferences restore their prior 
 
 test('failed runtime teardown blocks new UI work and permits an explicit disposal retry', async (t) => {
   const page = await fixture(t, { loaded: true, disposeFailsOnce: true, interval: 50 });
-  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  await openMenuAction(page, 'Configure model chat');
   const error = await page.evaluate(async () => { try { await panel.dispose(); } catch (error) { return error.message; } });
   assert.equal(error, 'Worker stop not acknowledged');
   assert.equal(await page.locator('.pc-inference-panel').evaluate((element) => element.inert), true);
@@ -547,12 +568,11 @@ test('standalone chat fills wide, tall and mobile viewports while embedded sizin
   assert.equal(embedded.width, 620); assert.equal(embedded.height, 740);
 });
 
-test('independent modal windows trap focus, close on Escape and return to their toolbar buttons', async (t) => {
+test('independent menu windows trap focus, close on Escape and return to the hamburger', async (t) => {
   const page = await fixture(t, { interval: 50 });
-  const config = page.getByRole('button', { name: 'Configure model chat' });
-  const stored = page.getByRole('button', { name: 'Stored Models', exact: true });
-  for (const [trigger, name] of [[config, 'Config'], [stored, 'Stored Models']]) {
-    await trigger.click();
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  for (const [trigger, name] of [['Configure model chat', 'Config'], ['Stored Models', 'Stored Models']]) {
+    await openMenuAction(page, trigger);
     const modal = page.getByRole('dialog', { name, exact: true });
     assert.equal(await modal.isVisible(), true);
     assert.equal(await page.locator('dialog[open]').count(), 1);
@@ -564,7 +584,7 @@ test('independent modal windows trap focus, close on Escape and return to their 
     await page.waitForFunction((count) => uiState.refreshCalls > count, count);
     await page.keyboard.press('Escape');
     assert.equal(await modal.isVisible(), false);
-    assert.equal(await trigger.evaluate((element) => element === document.activeElement), true);
+    assert.equal(await menu.evaluate((element) => element === document.activeElement), true);
   }
   assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'delete' || call.type === 'acquire')), false);
 });
@@ -575,7 +595,7 @@ test('stored models list offers explicit deletion and removes a loaded package w
     { manifestCid: 'fixture-text', name: 'Fixture text', totalBytes: 2 * 1024 ** 2, shared: false },
   ], deleteDelay: 100 });
   await page.getByLabel('Message', { exact: true }).fill('Keep my draft');
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   const vision = modal.getByRole('button', { name: 'Delete Fixture vision', exact: true });
   await vision.waitFor();
@@ -591,7 +611,7 @@ test('stored models list offers explicit deletion and removes a loaded package w
   await page.keyboard.press('Escape');
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Keep my draft');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   await modal.getByRole('button', { name: 'Delete Fixture text', exact: true }).click();
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
 });
@@ -600,7 +620,7 @@ test('stored model read and deletion failures stay visible and retryable without
   const page = await fixture(t, { rejectStoredList: true, stored: [
     { manifestCid: 'fixture-text', name: 'Fixture text', totalBytes: 1024, shared: false },
   ] });
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   await modal.getByText('Error: Storage is temporarily unavailable', { exact: true }).waitFor();
   await page.evaluate(() => { uiState.rejectStoredList = false; uiState.rejectDelete = true; });
@@ -623,7 +643,7 @@ test('stored deletion stays disabled during a request and modal bounds fit mobil
   for (const viewport of [{ width: 1920, height: 1080 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     for (const [trigger, name] of [['Stored Models', 'Stored Models'], ['Configure model chat', 'Config']]) {
-      await page.getByRole('button', { name: trigger, exact: true }).click();
+      await openMenuAction(page, trigger);
       const modal = page.getByRole('dialog', { name, exact: true });
       if (name === 'Stored Models') {
         await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).waitFor();
@@ -645,7 +665,7 @@ test('interrupted deletion refreshes the actual catalog and exposes a cleanup re
     { manifestCid: 'fixture-vision', name: 'Fixture vision', totalBytes: 1024, shared: false },
   ] });
   await page.evaluate(() => { uiState.cleanupFails = true; });
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).click();
   await modal.getByText('Error: Storage cleanup interrupted', { exact: true }).waitFor();
@@ -653,7 +673,7 @@ test('interrupted deletion refreshes the actual catalog and exposes a cleanup re
   assert.doesNotMatch(await modal.textContent(), /Loaded/);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 2);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   await page.evaluate(() => { uiState.cleanupFails = false; });
   await modal.getByRole('button', { name: 'Retry delete Fixture vision', exact: true }).click();
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
@@ -663,11 +683,11 @@ test('a sharing failure keeps the imported model usable and explains its library
   const page = await fixture(t, { stored: [
     { manifestCid: 'fixture-vision', name: 'Fixture vision', totalBytes: 1024, shared: false, shareError: 'Peer network is offline' },
   ] });
-  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Model ready. Sharing is unavailable'));
   await page.getByLabel('Message', { exact: true }).fill('Still usable');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   await page.getByRole('dialog', { name: 'Stored Models', exact: true }).getByText('Sharing unavailable: Peer network is offline', { exact: true }).waitFor();
 });
 
@@ -762,7 +782,7 @@ test('keyboard can open an all-unavailable choice and budget help links to Confi
   const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
   assert.equal(await source.inputValue(), '');
   await source.focus(); await page.keyboard.press('Space'); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await help.waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.equal(await help.getByLabel('Browser launch command', { exact: true }).isVisible(), false);
   await help.getByRole('button', { name: 'Open Config', exact: true }).click();
   const config = page.getByRole('dialog', { name: 'Config', exact: true });
@@ -820,7 +840,7 @@ test('a pending clipboard response cannot change a newly reopened setup dialog',
 
 test('About menu has safe links, keyboard focus and an independent visible overview arrow', async (t) => {
   const page = await fixture(t, { interval: 50 });
-  const menu = page.getByRole('button', { name: 'About and links', exact: true });
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
   const back = page.getByRole('link', { name: 'Back to demo overview', exact: true });
   assert.equal(await back.isVisible(), true);
   assert.equal(await page.locator('dialog[open]').count(), 0);
@@ -829,6 +849,17 @@ test('About menu has safe links, keyboard focus and an independent visible overv
     const menuBox = await menu.boundingBox(), backBox = await back.boundingBox();
     assert.ok(menuBox.x > backBox.x && menuBox.x + menuBox.width <= viewport.width);
     await menu.focus(); await page.keyboard.press('Enter');
+    const menuDialog = page.getByRole('dialog', { name: 'Menu', exact: true });
+    assert.deepEqual(await menuDialog.getByRole('button').allTextContents(), ['Done', 'Stored Models', 'Config', 'About']);
+    assert.equal(await page.locator('.pc-model-toolbar button').allTextContents().then((labels) => labels.join(',')), 'Load');
+    for (let index = 0; index < 6; index++) {
+      await page.keyboard.press('Tab');
+      assert.equal(await menuDialog.evaluate((element) => element.contains(document.activeElement)), true);
+    }
+    await page.keyboard.press('Escape');
+    assert.equal(await menu.evaluate((element) => document.activeElement === element), true);
+    await openMenuAction(page, 'About');
+    assert.equal(await menuDialog.isVisible(), false);
     const modal = page.getByRole('dialog', { name: 'About PeerCompute', exact: true });
     await modal.waitFor();
     assert.match(await modal.textContent(), /WebGPU/); assert.match(await modal.textContent(), /IPFS/);
@@ -885,7 +916,7 @@ test('an unavailable preferred model remains selected without autoload and has e
   } });
   const source = page.getByLabel('Model and source');
   assert.equal(await source.inputValue(), 'peer:fixture');
-  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.equal(await page.locator('dialog[open]').count(), 0);
   await page.waitForFunction(() => uiState.refreshCalls >= 3);
   assert.equal(await source.inputValue(), 'peer:fixture');
@@ -907,7 +938,7 @@ test('Stored Models loads one local package atomically, selects local chat and r
       { key: 'stored:small', name: 'Small stored', source: 'stored', manifestCid: 'small', totalBytes: 2 * 1024 ** 2 }],
   });
   await page.getByLabel('Chat target').selectOption('peer:fixture');
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   const load = modal.getByRole('button', { name: 'Load Small stored', exact: true }); await load.waitFor();
   assert.deepEqual(await modal.locator('.pc-stored-model strong').allTextContents(), ['Small stored', 'Fixture vision']);
@@ -921,7 +952,7 @@ test('Stored Models loads one local package atomically, selects local chat and r
   assert.equal(await page.getByLabel('Model and source').inputValue(), 'stored:small');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
     [{ type: 'load-stored', cid: 'small', gpuLayers: 99999 }]);
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).waitFor();
   assert.equal(await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).isDisabled(), true);
 });
@@ -929,7 +960,7 @@ test('Stored Models loads one local package atomically, selects local chat and r
 test('stored loading failures and cancellation remain retryable without import or download fallback', async (t) => {
   const page = await fixture(t, { loadStoredDelay: 150, stored: [{ manifestCid: 'small', name: 'Stored model', totalBytes: 1024 }] });
   await page.evaluate(() => { uiState.rejectLoad = true; });
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   const load = modal.getByRole('button', { name: 'Load Stored model', exact: true }); await load.click();
   await modal.getByText('Error: Stored model could not be loaded', { exact: true }).waitFor();
@@ -951,7 +982,7 @@ test('unavailable, deleting and loaded stored packages cannot start another load
     { manifestCid: 'deleting', name: 'Deleting', totalBytes: 2048, cleanupPending: true },
     { manifestCid: 'blocked', name: 'Blocked', totalBytes: 4096, localAvailability: { status: 'unavailable', code: 'gpu_budget_exceeded', reason: 'Needs more GPU memory.' } },
   ] });
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   for (const name of ['Loaded Resident', 'Load Deleting', 'Load Blocked']) {
     const button = modal.getByRole('button', { name, exact: true }); await button.waitFor();
@@ -962,4 +993,98 @@ test('unavailable, deleting and loaded stored packages cannot start another load
   await modal.getByRole('button', { name: 'Load Blocked', exact: true }).evaluate((element) => element.onclick());
   await page.getByRole('dialog', { name: 'Model setup', exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
+});
+
+test('startup downloads the default once, without waiting for the peer network', async (t) => {
+  const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Fixture vision' },
+    acquireDelay: 100, connectFailure: true, interval: 50 });
+  await page.waitForFunction(() => uiState.loaded);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')),
+    [{ type: 'acquire', key: 'hf:vision', gpuLayers: 99999 }]);
+  assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Loaded Fixture vision/);
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.getByLabel('Model and source').selectOption('peer:fixture');
+  await page.waitForFunction(() => uiState.refreshCalls >= 4);
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
+  assert.equal(await page.getByLabel('Model and source').inputValue(), 'peer:fixture');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'acquire').length), 1);
+});
+
+test('startup loads the remembered stored package directly with no download fallback', async (t) => {
+  const page = await fixture(t, { preferredSourceKey: 'peer:fixture',
+    startup: { sourceKey: 'peer:fixture', manifestCid: 'fixture', name: 'Remembered model' },
+    loadStoredDelay: 100, interval: 50 });
+  assert.equal(await page.getByLabel('Model and source').inputValue(), 'peer:fixture');
+  await page.waitForFunction(() => uiState.loadedCid === 'fixture');
+  await page.waitForFunction(() => uiState.refreshCalls >= 4);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
+    [{ type: 'load-stored', cid: 'fixture', gpuLayers: 99999 }]);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('blocked startup remains selected with inline help and keeps remote inference available', async (t) => {
+  const page = await fixture(t, { preferredSourceKey: 'hf:vision',
+    startup: { sourceKey: 'hf:vision', name: 'Fixture vision' }, interval: 50,
+    availability: { 'hf:vision': { status: 'unavailable', reason: 'shader-f16 is unavailable' } } });
+  assert.equal(await page.getByLabel('Model and source').inputValue(), 'hf:vision');
+  assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Cannot load Fixture vision: shader-f16/);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Set up selected model', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.getByLabel('Message', { exact: true }).fill('Hello peer');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'load-stored'].includes(call.type))), []);
+});
+
+test('startup cancellation releases controls and a manual Load is an explicit retry', async (t) => {
+  const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Fixture vision' }, acquireDelay: 500, interval: 50 });
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Cancelled:'));
+  await page.waitForFunction(() => uiState.refreshCalls >= 4);
+  assert.equal(await page.evaluate(() => uiState.loaded), false);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'acquire').length), 1);
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.waitForFunction(() => uiState.loaded);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'acquire').length), 2);
+});
+
+test('failed stored startup reports the error without downloading or retrying on polling', async (t) => {
+  const page = await fixture(t, { startup: { sourceKey: 'hf:vision', manifestCid: 'missing', name: 'Stored model' }, rejectLoad: true, interval: 50 });
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Stored model could not be loaded'));
+  await page.waitForFunction(() => uiState.refreshCalls >= 4);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isEnabled(), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire'].includes(call.type))),
+    [{ type: 'load-stored', cid: 'missing', gpuLayers: 99999 }]);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('disposing during startup cancels the load and releases the panel', async (t) => {
+  const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Fixture vision' }, acquireDelay: 10000 });
+  await page.evaluate(() => panel.dispose());
+  assert.equal(await page.evaluate(() => uiState.loaded), false);
+  assert.equal(await page.evaluate(() => uiState.disposed), true);
+  assert.equal(await page.locator('.pc-inference-panel').count(), 0);
+});
+
+test('Install is explicit in the menu, supports browser guidance and unsubscribes on dispose', async (t) => {
+  const page = await fixture(t, { pwa: true });
+  assert.deepEqual(await page.evaluate(() => calls), []);
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Menu', exact: true });
+  assert.match(await menu.textContent(), /Use your browser menu to install/);
+  await menu.getByRole('button', { name: 'Install', exact: true }).click();
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'install').length), 1);
+  await page.evaluate(() => emitInstall({ available: true, instructions: 'Install this app on your device.' }));
+  await menu.getByRole('button', { name: 'Install', exact: true }).click();
+  assert.equal(await menu.getByRole('button', { name: 'Installed', exact: true }).isDisabled(), true);
+  await page.evaluate(() => panel.dispose());
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'unsubscribe-install').length), 1);
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'dispose-install-controller')), false);
+  await page.evaluate(() => emitInstall({ installed: false }));
+  assert.equal(await page.locator('dialog[open]').count(), 0);
 });

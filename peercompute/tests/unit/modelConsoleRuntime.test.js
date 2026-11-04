@@ -707,6 +707,57 @@ function customStoredRecord(overrides = {}) {
     ...overrides };
 }
 
+test('startup selects the default only for an empty complete retained library', async () => {
+  const defaultCatalog = { [DEFAULT_MODEL_ID]: { ...catalog.test, id: DEFAULT_MODEL_ID } };
+  const f = fixture({ connected: false, catalogInfo: defaultCatalog,
+    retainedRecords: [customStoredRecord({ status: 'partial' })] });
+  await f.controller.initialize();
+  const selected = f.runtime.getStartupModel();
+  assert.equal(selected.sourceKey, `hf:${DEFAULT_MODEL_ID}`);
+  assert.equal(selected.manifestCid, undefined);
+  assert(!f.calls.includes('load')); assert(!f.calls.includes('import'), 'selection itself does not start execution');
+  await f.runtime.dispose();
+});
+
+test('startup prefers remembered stored model over a smaller saved alternative', async () => {
+  const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: cid, modelId: 'test' });
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], preferences: preferences(), connected: false });
+  await f.controller.initialize();
+  assert.equal(f.runtime.getStartupModel().manifestCid, cid);
+  await f.runtime.loadStoredModel(f.runtime.getStartupModel().manifestCid);
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('fetch-peer'));
+  await f.runtime.dispose();
+});
+
+test('startup without a valid hint reuses a compatible saved package instead of downloading default', async () => {
+  const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  const f = fixture({ retained: true, preferences: preferences(), connected: false });
+  await f.controller.initialize();
+  assert.equal(f.runtime.getStartupModel().manifestCid, cid);
+  assert.equal(f.runtime.getStartupModel().sourceKey, 'hf:test');
+  await f.runtime.dispose();
+  const choices = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false, hooks: {
+    compatibility: (entry) => ({ status: entry.model.repository === 'custom/offline' ? 'unavailable' : 'unknown' }),
+  } });
+  await choices.controller.initialize();
+  assert.equal(choices.runtime.getStartupModel().manifestCid, cid, 'skip an incompatible alternative only when no remembered choice exists');
+  await choices.runtime.dispose();
+});
+
+test('startup preserves blocked remembered choice with help and never selects deleting packages', async () => {
+  const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], preferences: preferences(), connected: false, hooks: {
+    compatibility: () => ({ status: 'unavailable', reason: 'GPU setup required' }),
+  } });
+  await f.controller.initialize();
+  assert.equal(f.runtime.getStartupModel().manifestCid, secondCid);
+  assert.equal(f.runtime.getStartupModel().localAvailability.status, 'unavailable');
+  f.records.set(secondCid, customStoredRecord({ status: 'deleting' }));
+  await f.runtime.listStoredModels();
+  assert.equal(f.runtime.getStartupModel().manifestCid, cid);
+  await f.runtime.dispose();
+});
+
 test('sources and library sort by bytes, keep catalog keys and expose custom offline packages', async () => {
   const f = fixture({ retained: true, retainedRecords: [customStoredRecord()], connected: false,
     catalogInfo: { huge: { ...catalog.test, id: 'huge', name: 'Huge', totalBytes: 1000,

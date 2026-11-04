@@ -201,19 +201,22 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
-Select a Hugging Face or discovered peer model, then **Import Model**: it fetches,
+Select a Hugging Face or discovered peer model, then **Load**: it fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
 internally. Import progress reports downloaded bytes, stored-file verification
 and GPU initialization separately, with elapsed phase time. File sharing runs
 in the background, so preparing publication does not hold up
 local chat. Sharing failures remain visible in **Stored Models**.
 Choices are ordered by package size, smallest first, with download size shown
-separately from RAM/GPU estimates. The initial selection is the last successfully
-loaded model whose package is still stored in this library, or Qwen3.5 0.8B
-Abliterated if that package is gone. Selecting a default does not load it.
-An unsupported default remains selected with setup help and import disabled.
+separately from RAM/GPU estimates. Startup automatically loads the last successfully
+used model whose complete package is still stored in this library. Without that
+hint, it reuses a compatible saved model; an empty library downloads and loads
+Qwen3.5 0.8B Abliterated. Startup loading can be stopped. An unsupported startup
+model remains selected with setup help and Load disabled; peer inference remains
+available. This startup attempt runs once and does not retry on discovery refresh.
 The visible back arrow returns to the demo overview. The top-right hamburger
-opens About with links to Tsotchke's Hugging Face organization,
+contains Stored Models, Config, About and installation controls. About opens a
+separate modal with links to Tsotchke's Hugging Face organization,
 [tsotchke.org](https://tsotchke.org/) and [tsotchke.net](https://tsotchke.net/).
 **Share with peers** and **Host inference** start checked and are independent:
 sharing serves retained model files; hosting executes requests on the
@@ -228,6 +231,20 @@ blocks and independently pinned files remain available to their other owners.
 If another tab is using the package, unload it there before retrying deletion.
 If another tab owns this library's file sharing, delete from that tab or close it
 before retrying.
+
+The standalone console is an installable PWA on HTTPS. Use **Menu → Install**
+or the browser's installation command. It uses the same origin and model library
+as the browser page. Its versioned app-shell cache preserves the isolation headers
+needed by managed workers; it excludes model files, WASM runtimes, external
+requests and private inference data. Offline launch provides the console UI;
+peer inference, uncached models and uncached execution runtimes still need a
+connection. Installing does not keep a closed browser running as an inference host.
+
+Resident models reserve their CPU/GPU envelope until acknowledged unload or
+worker cleanup, rather than relying on a browser heartbeat timer. Background
+timer throttling cannot expire a loaded model's reservation. Explicit revocation,
+quarantine or loss of its assigned worker still makes the model unavailable and
+requires cleanup before capacity is reused.
 
 Use **Filter models** to search by name, source, task or runtime. All models
 show estimated RAM/GPU requirements in their
@@ -271,7 +288,7 @@ they are excluded from shared state and pubsub. A remote requester needs no mode
 weights or GPU worker. Discovery is scoped to the connected PeerCompute room.
 
 The network summary separates shared files from loaded inference hosts. For
-example, a shared DreamShaper package appears in **Import Model**, but appears
+example, a shared DreamShaper package appears in the **Load** model list, but appears
 beside **Send** only while a peer has it loaded with **Host inference** enabled.
 Artifact restoration/publication runs independently of the five-second discovery
 refresh. A second tab that cannot own the same local artifact store can still

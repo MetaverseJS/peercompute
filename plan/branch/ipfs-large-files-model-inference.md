@@ -900,3 +900,5 @@ Build the complete docs gallery with the expanded model catalog and verify every
 ## November4 07:23 AKST - Library defaults, navigation and complete Tsotchke GGUF catalog
 
 Add size-sorted model choices, remembered successful stored-model default (fallback Qwen3.5 0.8B Abliterated), and explicit Stored Models loading. Selection does not auto-load. Add overview back arrow plus top-right About/link hamburger. Include all four standard-GGUF Tsotchke releases with immutable provenance and codec exclusions; retain the current large-file/runtime admission bounds and candidacy labels. Preserve existing local/peer workflow, accessibility and persistent model identities.
+
+- November4 steering: investigate live remoteDreamShaper failures; move library/config/About into hamburger with separate About modal; rename ImportModel toLoad and automatically load saved/default model on startup; make model console installablePWA. This supersedes earlier no-autoload selection-only requirement.

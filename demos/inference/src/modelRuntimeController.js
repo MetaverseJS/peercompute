@@ -307,6 +307,21 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       return saved ? catalog[saved.modelId] ? `hf:${saved.modelId}` : `stored:${saved.manifestCid}`
         : `hf:${DEFAULT_MODEL_ID}`;
     },
+    getStartupModel() {
+      assertOpen();
+      const saved = [...retained.values()].filter((entry) => !deleting.has(entry.manifestCid))
+        .sort(compareModelSizes);
+      const availability = (entry) => localAvailability(retainedManifests.get(entry.manifestCid) ?? entry);
+      // Reuse this device's complete library before downloading anything. A remembered
+      // package stays selected even when this browser needs setup to run it.
+      const selected = saved.find((entry) => entry.manifestCid === lastLoaded?.manifestCid)
+        ?? saved.find((entry) => !['checking', 'unavailable'].includes(availability(entry).status)) ?? saved[0];
+      if (selected) return { sourceKey: catalog[selected.modelId] ? `hf:${selected.modelId}` : `stored:${selected.manifestCid}`,
+        manifestCid: selected.manifestCid, name: selected.name, localAvailability: availability(selected) };
+      const fallback = catalog[DEFAULT_MODEL_ID];
+      return fallback ? { sourceKey: `hf:${DEFAULT_MODEL_ID}`, name: fallback.name,
+        localAvailability: localAvailability(fallback) } : null;
+    },
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
         modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,

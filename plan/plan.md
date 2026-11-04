@@ -1582,3 +1582,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Added visible overview back arrow and top-right hamburger containing About, Tsotchke-Corporation Hugging Face, tsotchke.org and tsotchke.net links; mobile layout, keyboard focus and five-second discovery preserved.
 - Added every standard-GGUF Tsotchke release (C30,L162,C20 alongside existing D14), excluding three custom-codec packages. Pinned metadata/D14 CID and runtime bounds preserved; C30/C20 exceed the current16GiB loader limit, and new models remain hardware-unqualified candidates.
 - Validation passes150integrated unit,44UI/navigation and67release tests; three production builds; real library restart/load/delete with zero repeat downloads; actual owned-peer inference; four nested and four actual public Pages routes with SecretWorkshop connections. Published bc392fc8 on November4:33exact-byte/MIME URLs and8public screenshots verified. This console slice is delivered; broader IPFS qualification and ulg merge remain separate.
+
+
+### Remote DreamShaper lifecycle, automatic startup and installable console - November4 2026
+
+- In progress: repair timer-dependent resident reservations and stale hosted readiness after confirmed live expiry; preserve explicit revocation, quota and worker ownership.
+- Move Stored Models/Config/About into hamburger; About opens a separate modal. Rename import action Load; start one cancellable saved/default model load at launch.
+- Add standalone installable PWA with isolated service worker, relative Pages paths and bounded app-shell caching. Validate offline shell separately from actual model/network execution.
+- Acceptance: deterministic expiry/revocation/cleanup regressions, UI startup/menu tests, PWA installability/offline and isolation checks, actual public DreamShaper generation after simulated idle clock gap.
+- Implementation andprepublicationgates pass:193integratedunits,49UI,17PWA/isolation,73releasechecks;3builds,4nestedroutes andrealconsoleinstallability/offline/menuacceptance. Publishing thenverifyingactualpublicDreamimage/startup withretainedmodel; broaderIPFS/ulg/large-modelqualification remainsopen.

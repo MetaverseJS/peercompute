@@ -1,15 +1,15 @@
 /** Keep explicit CPU/GPU envelopes admitted for the complete model lifetime. */
 export class ResidentModelAdmission {
-  constructor({ broker, ttlMs = 30_000 } = {}) {
-    if (!broker?.requestLease || !broker.renewLease) throw new TypeError('ResourceLeaseBroker is required');
-    if (!Number.isSafeInteger(ttlMs) || ttlMs < 300) throw new RangeError('Invalid resident lease TTL');
+  constructor({ broker } = {}) {
+    if (!broker?.requestLease || !broker.releaseLease || !broker.get || !broker.expireLeases) {
+      throw new TypeError('ResourceLeaseBroker is required');
+    }
     for (const kind of ['cpu', 'gpu']) {
       if (!(broker.reportPressure().pools[kind]?.memoryBytes > 0)) {
         throw new Error(`An explicit ${kind} memory budget is required for inference`);
       }
     }
     this.broker = broker;
-    this.ttlMs = ttlMs;
   }
 
   async acquire({ sessionId, manifestCid, estimatedCpuBytes, estimatedGpuBytes }) {
@@ -21,7 +21,7 @@ export class ResidentModelAdmission {
       for (const [resourceKind, memoryBytes] of [['cpu', estimatedCpuBytes], ['gpu', estimatedGpuBytes]]) {
         leases.push(await this.broker.requestLease({ resourceKind, memoryBytes,
           rootTaskId: sessionId, serviceId: 'model-inference', units: 1,
-          resident: true, preemptable: false, priorityClass: 'interactive', ttlMs: this.ttlMs,
+          resident: true, preemptable: false, priorityClass: 'interactive', lifetime: 'owner',
           metadata: { manifestCid, policy: 'configured-resident-envelope' } }));
       }
     } catch (error) {
@@ -29,23 +29,23 @@ export class ResidentModelAdmission {
       throw error;
     }
     let released = false;
-    let renewalError = null;
-    const timer = setInterval(() => {
-      Promise.all(leases.map((lease) => this.broker.renewLease(lease.leaseId, { ttlMs: this.ttlMs })))
-        .catch((error) => { renewalError = error; clearInterval(timer); });
-    }, Math.floor(this.ttlMs / 3));
-    timer.unref?.();
+    // Browser suspension is not disposal. These allocations remain owned until
+    // the model service acknowledges worker/runtime cleanup; no timer can prove it.
+    const assertActive = () => {
+      this.broker.expireLeases();
+      if (released || leases.some((lease) => this.broker.get(lease.leaseId)?.status !== 'active')) {
+        throw Object.assign(new Error('Resident admission was revoked or is unavailable; unload the model before reuse'),
+          { code: 'ERR_RESIDENT_ADMISSION_INACTIVE' });
+      }
+    };
     return {
       leaseIds: leases.map((lease) => lease.leaseId),
-      assertActive: () => {
-        this.broker.expireLeases();
-        if (released || renewalError || leases.some((lease) => this.broker.get(lease.leaseId)?.status !== 'active')) {
-          throw new Error('Resident admission expired or was revoked; unload the model before reuse');
-        }
-      },
+      assertActive,
+      // Explicit synchronous health API for cached readiness/discovery. Custom
+      // admissions may instead expose only an asynchronous assertActive guard.
+      assertActiveSync: assertActive,
       release: async () => {
         if (released) return;
-        clearInterval(timer);
         await Promise.all(leases.map((lease) => this.broker.releaseLease(lease.leaseId)));
         released = true;
       }

@@ -89,6 +89,12 @@ export class ResourceLeaseBroker {
   async requestLease(spec = {}) {
     this.expireLeases();
     if (spec.leaseId && this.leases.has(spec.leaseId)) throw new Error('Resource lease ID already exists');
+    const lifetime = spec.lifetime ?? 'ttl';
+    if (!['ttl', 'owner'].includes(lifetime)) throw new Error('Invalid resource lease lifetime');
+    if (lifetime === 'owner' && (spec.resident !== true || spec.preemptable !== false
+        || spec.ttlMs != null || spec.expiresAt != null)) {
+      throw new Error('Owner lifetime requires a non-preemptable resident allocation without a TTL');
+    }
     const kind = normalizeResourceKind(spec.resourceKind || spec.kind || spec.type);
     const pool = this.pools.get(kind);
     if (!pool || pool.units <= 0) {
@@ -135,8 +141,9 @@ export class ResourceLeaseBroker {
       deviceId,
       preemptable: spec.preemptable !== false,
       resident: spec.resident === true,
+      lifetime,
       createdAt,
-      expiresAt: normalizePositiveInteger(spec.expiresAt, createdAt + ttlMs, createdAt),
+      expiresAt: lifetime === 'owner' ? null : normalizePositiveInteger(spec.expiresAt, createdAt + ttlMs, createdAt),
       status: 'active',
       metadata: clonePlain(spec.metadata || {})
     };
@@ -152,7 +159,7 @@ export class ResourceLeaseBroker {
     this.expireLeases();
     const lease = this.leases.get(leaseId);
     if (!lease || lease.status !== 'active') throw new Error('Resource lease is no longer active');
-    lease.expiresAt = this.now() + normalizePositiveInteger(ttlMs, this.defaultTtlMs);
+    if (lease.lifetime !== 'owner') lease.expiresAt = this.now() + normalizePositiveInteger(ttlMs, this.defaultTtlMs);
     return clonePlain(lease);
   }
 
@@ -175,7 +182,7 @@ export class ResourceLeaseBroker {
   expireLeases(now = this.now()) {
     const expired = [];
     for (const lease of this.leases.values()) {
-      if (lease.status === 'active' && lease.expiresAt <= now) {
+      if (lease.status === 'active' && lease.lifetime !== 'owner' && lease.expiresAt <= now) {
         lease.status = 'expired';
         lease.expiredAt = now;
         expired.push(clonePlain(lease));

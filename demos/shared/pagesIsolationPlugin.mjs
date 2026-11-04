@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const clientPath = fileURLToPath(new URL('./pagesIsolation.js', import.meta.url));
 const workerPath = fileURLToPath(new URL('./pagesIsolationWorker.js', import.meta.url));
@@ -8,11 +9,11 @@ const entryPath = '/@peercompute/pages-isolation-entry.js';
 const virtualId = '\0peercompute:pages-isolation-entry';
 
 /** Build-only wrapper: each demo gets its own worker and URL-directory scope. */
-export function pagesIsolationPlugin() {
-  let root, appEntry;
+export function pagesIsolationPlugin({ appShell = null } = {}) {
+  let root, publicDir, appEntry;
   return {
     name: 'peercompute-pages-isolation', apply: 'build',
-    configResolved(config) { root = config.root; },
+    configResolved(config) { root = config.root; publicDir = config.publicDir; },
     transformIndexHtml: {
       order: 'pre',
       handler(html, context) {
@@ -39,9 +40,41 @@ export function pagesIsolationPlugin() {
       return `import { startPagesDemo } from ${JSON.stringify(clientPath)};\n`
         + `void startPagesDemo(() => import(${JSON.stringify(appEntry)}));\n`;
     },
-    generateBundle() {
-      this.emitFile({ type: 'asset', fileName: 'pages-isolation-sw.js',
-        source: readFileSync(workerPath, 'utf8') });
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        const worker = readFileSync(workerPath, 'utf8');
+        let configuration = null;
+        if (appShell) {
+          const entries = new Map();
+          const add = (name, source) => {
+            if (!/^(?:index\.html|assets\/[\w.-]+\.(?:js|css)|manifest\.webmanifest|icons\/[\w.-]+\.(?:png|svg))$/.test(name)) {
+              throw new Error(`Invalid app-shell file: ${name}`);
+            }
+            const bytes = Buffer.from(source);
+            if (bytes.length > 8 * 1024 * 1024) throw new Error(`App-shell asset exceeds 8 MiB: ${name}`);
+            entries.set(name, { path: name, bytes: bytes.length,
+              sha256: createHash('sha256').update(bytes).digest('hex') });
+          };
+          for (const asset of Object.values(bundle)) {
+            if (asset.fileName === 'index.html' || /^assets\/[\w.-]+\.(?:js|css)$/.test(asset.fileName)) {
+              add(asset.fileName, asset.type === 'chunk' ? asset.code : asset.source);
+            }
+          }
+          if (!entries.has('index.html')) throw new Error('App-shell HTML was not emitted');
+          for (const name of appShell.publicFiles ?? []) {
+            // Validate before resolving a path; only explicitly selected public files.
+            if (!/^(?:manifest\.webmanifest|icons\/[\w.-]+\.(?:png|svg))$/.test(name)) throw new Error('Invalid public app-shell file');
+            add(name, readFileSync(path.join(publicDir, name)));
+          }
+          const files = [...entries.values()].sort((a, b) => a.path.localeCompare(b.path));
+          const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
+          if (files.length > 128 || totalBytes > 16 * 1024 * 1024) throw new Error('App-shell cache exceeds its 128-file / 16 MiB budget');
+          configuration = { version: createHash('sha256').update(worker).update(JSON.stringify(files)).digest('hex'), files };
+        }
+        this.emitFile({ type: 'asset', fileName: 'pages-isolation-sw.js',
+          source: `const __PEERCOMPUTE_APP_SHELL__ = ${JSON.stringify(configuration)};\n${worker}` });
+      },
     },
   };
 }

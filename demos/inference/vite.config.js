@@ -9,7 +9,10 @@ export default defineConfig(({ command }) => ({
   worker: { format: 'es' },
   // Keep generated dependency code readable without changing identifiers or licenses.
   esbuild: { lineLimit: 120, legalComments: 'inline' },
-  plugins: [pagesIsolationPlugin()],
+  plugins: [pagesIsolationPlugin({ appShell: {
+    publicFiles: ['manifest.webmanifest', 'icons/peercompute.svg', 'icons/peercompute-192.png',
+      'icons/peercompute-512.png', 'icons/peercompute-maskable-512.png'],
+  } })],
   server: { host: '0.0.0.0', port: 5189, https: command === 'serve' ? ensureDevHttpsCert() : undefined,
     headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
     fs: { allow: [fileURLToPath(new URL('../../', import.meta.url))] } },

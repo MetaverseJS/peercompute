@@ -21,6 +21,7 @@ function fixture({ failLoad = false, failStop = false } = {}) {
     },
     computeManager: {
       async reserveWorkerAffinity() { events.push('reserve'); },
+      getWorkerAffinityState(affinityKey) { return { affinityKey, reserved: true, workerId: 'gguf-worker' }; },
       async releaseWorkerAffinity() { events.push('release-affinity'); },
       async cancelTask() {},
       async terminateWorkerAffinity() {

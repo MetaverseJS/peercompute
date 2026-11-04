@@ -38,7 +38,7 @@ function createRegistry() {
   ]);
 }
 
-test('expired resident memory stays counted until disposal acknowledgment releases it', async () => {
+test('owner-lifetime model admission survives suspended timers and stays counted until disposal acknowledgement', async () => {
   let now = 1000;
   const broker = new ResourceLeaseBroker({ now: () => now,
     capacities: { cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 1024 } } });
@@ -47,14 +47,61 @@ test('expired resident memory stays counted until disposal acknowledgment releas
   try {
     lease.assertActive();
     await assert.rejects(broker.requestLease({ kind: 'gpu', priorityClass: 'render' }), /quota exceeded/);
-    now += 31_000;
-    broker.expireLeases();
-    assert.throws(() => lease.assertActive(), /expired or was revoked/);
+    for (const entry of broker.list()) { assert.equal(entry.lifetime, 'owner'); assert.equal(entry.expiresAt, null); }
+    now += 24 * 60 * 60_000;
+    assert.deepEqual(broker.expireLeases(), []);
+    lease.assertActive();
     assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 600);
     await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
   } finally { await lease.release(); }
   assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
   assert.equal((await broker.requestLease({ kind: 'gpu' })).status, 'active');
+});
+
+test('TTL resident grants still expire without freeing resident allocations', async () => {
+  let now = 100;
+  const broker = new ResourceLeaseBroker({ now: () => now, capacities: { gpu: { units: 1, memoryBytes: 1000 } } });
+  const lease = await broker.requestLease({ resident: true, memoryBytes: 400, ttlMs: 10 });
+  now += 20;
+  assert.equal(broker.expireLeases()[0].leaseId, lease.leaseId);
+  assert.equal(broker.get(lease.leaseId).status, 'expired');
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 400);
+  await assert.rejects(broker.renewLease(lease.leaseId), /no longer active/);
+  await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+  await broker.releaseLease(lease.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+});
+
+test('owner lifetime cannot be applied to ordinary or preemptable work and cannot hide explicit expiry', async () => {
+  const broker = new ResourceLeaseBroker();
+  for (const spec of [{}, { resident: true }, { resident: true, preemptable: false, ttlMs: 30_000 },
+    { resident: true, preemptable: false, expiresAt: 100 }]) {
+    await assert.rejects(broker.requestLease({ ...spec, lifetime: 'owner' }), /Owner lifetime requires/);
+  }
+  await assert.rejects(broker.requestLease({ lifetime: 'forever' }), /Invalid resource lease lifetime/);
+  assert.deepEqual(broker.list(), []);
+});
+
+test('owner-lifetime admission never revives revoked or quarantined leases and retains capacity until release', async () => {
+  for (const invalidation of ['revoke', 'root', 'quarantine']) {
+    let now = 1000;
+    const broker = new ResourceLeaseBroker({ now: () => now,
+      capacities: { cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 1024 } } });
+    const admission = await new ResidentModelAdmission({ broker }).acquire({ sessionId: 'resident',
+      manifestCid: 'test', estimatedCpuBytes: 500, estimatedGpuBytes: 600 });
+    const gpu = broker.list({ resourceKind: 'gpu' })[0];
+    if (invalidation === 'revoke') await broker.revokeLease(gpu.leaseId);
+    if (invalidation === 'root') await broker.revokeByRootTask('resident');
+    if (invalidation === 'quarantine') { broker.quarantineResource(); broker.clearQuarantine(); }
+    now += 86400_000; broker.expireLeases();
+    assert.throws(() => admission.assertActive(), { code: 'ERR_RESIDENT_ADMISSION_INACTIVE' });
+    await assert.rejects(broker.renewLease(gpu.leaseId), /no longer active/);
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 600);
+    await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+    await admission.release(); await admission.release();
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+    assert.equal(broker.reportPressure().pools.cpu.activeMemoryBytes, 0);
+  }
 });
 
 test('resident admission rolls back CPU reservation when GPU memory is unavailable', async () => {
