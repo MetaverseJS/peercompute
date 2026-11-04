@@ -82,6 +82,15 @@ test('GGUF checks browser prerequisites separately from available GPU features',
   assert.equal(evaluate(small, { memory64: undefined }).status, 'unknown');
 });
 
+test('a 16 GiB GPU budget cannot substitute for missing browser FP16 support', () => {
+  const budgets = { cpuBytes: 12 * GiB, gpuBytes: 16 * GiB };
+  for (const entry of Object.values(MODEL_CATALOG)) assert.equal(evaluate(entry, { features: [] }, budgets).status, 'unknown');
+  for (const entry of [...Object.values(GGUF_MODEL_CATALOG), ...Object.values(DIFFUSION_MODEL_CATALOG)]) {
+    assert.equal(evaluate(entry, { features: [] }, budgets).code, 'gpu_feature_unavailable');
+    assert.equal(evaluate(entry, {}, budgets).status, 'unknown');
+  }
+});
+
 test('checking and failed or timed-out probes remain distinguishable from missing WebGPU', () => {
   assert.equal(evaluateModelCompatibility(large).status, 'checking');
   assert.equal(evaluate(large, { webgpu: null, probeError: 'Timed out' }).code, 'device_probe_unknown');

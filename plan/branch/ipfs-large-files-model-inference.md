@@ -823,3 +823,8 @@ Avoid granting models authority over arbitrary shared state or network messages.
   preserve the resident model and remote inference. Cold-adapter retry stays
   within the original3s deadline and performs no device/allocation stress probe.
   This completes the search/admission slice, not the broader physical-host gates.
+- November3 20:43 follow-up: 16GB GPU screenshot reflects missing browser
+  shader-f16, which the pinned GGUF backend and both diffusion profiles require.
+  Separate feature-blocked copy from memory-budget failures. Validate both the
+  normal NVIDIA driver policy and the explicitly overridden test environment;
+  do not imply that one proves the other. FP32 fallback remains unimplemented.

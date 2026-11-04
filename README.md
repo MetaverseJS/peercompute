@@ -91,6 +91,37 @@ Chrome155/NVIDIA595.91.07 Vulkan tests explicitly use the diagnosed NVIDIA f16
 override; it is not enabled by the application. Browser/driver correctness must
 be qualified on the chosen device.
 
+The model menu checks browser features independently of memory budgets. A 16 GiB
+GPU can still have GGUF and diffusion disabled when Chrome withholds `shader-f16`.
+On this machine, Chrome157/NVIDIA595.91.7 reproduces that condition without the
+test override; the four ONNX q4 chat/vision choices remain enabled. The pinned
+[llama.cpp backend](https://github.com/ggml-org/llama.cpp/blob/46ca246de9bb1c35269722a6240d37d9dfd79cad/ggml/src/ggml-webgpu/ggml-webgpu.cpp#L4886)
+requires this feature, as do the diffusion graphs. Removing the menu check would
+not enable those runtimes. Chrome156's
+[Dawn driver check](https://github.com/google/dawn/blob/8114a24a35eed1db88d1d897e8bd193a8c334712/src/dawn/native/vulkan/PhysicalDeviceVk.cpp)
+enables NVIDIA Vulkan f16 for driver615.71 and newer; actual browser feature
+detection remains authoritative. The test override bypasses a driver correctness
+gate and is not applied to the user's browser. No FP32 fallback is implemented.
+
+The previously validated workaround is the Chrome startup switch
+`--enable-dawn-features=vulkan_enable_f16_on_nvidia`. There is no dedicated
+`chrome://flags` toggle for it. It must be applied to the
+browser process; the page cannot enable it and another window of an existing
+Chrome process does not acquire new startup flags. Controlled Linux tests also
+enable WebGPU/Vulkan. To try that configuration in a separate profile:
+
+```sh
+google-chrome --user-data-dir="$HOME/.cache/peercompute-f16-preview" \
+  --enable-unsafe-webgpu --enable-features=Vulkan,VulkanFromANGLE \
+  --use-angle=vulkan --use-vulkan=native --disable-vulkan-surface \
+  --enable-dawn-features=vulkan_enable_f16_on_nvidia \
+  'https://fastbox.tail5c077c.ts.net:5189/?dev=1&v=filter2'
+```
+
+This profile has its own model storage; reusing the same profile path retains it.
+The override is a diagnostic workaround for the driver correctness restriction,
+not a guarantee for every GPU/model combination.
+
 `npm install` prepares hash-checked static engine/glue modules in ignored
 node_modules; `npm run prepare:gguf` regenerates them. Models are read through
 bounded CID ranges; no whole14GB JavaScript buffer is needed. Terminating the

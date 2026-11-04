@@ -58,6 +58,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
   downloads, bounded peer metadata verification and desktop/mobile layout pass
   on the production preview. A bounded adapter retry fixes transient cold-Chrome
   null results; actual free memory remains unverified. IPFS-01 parent gates remain open.
+- November3 20:43 follow-up: distinguish missing browser FP16 support from memory
+  rejection. Default Chrome157/NVIDIA595.91.7 lacks shader-f16 even on the16GB
+  GPU; earlier hardware runs used an explicit override. Keep real runtime feature
+  requirements and document the normal-browser limitation rather than bypass it.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

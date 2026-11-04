@@ -25,6 +25,12 @@
   library dialog and overview link intact. No page errors, failed HTTP responses
   or weights/WASM requests. Receipts: /tmp/peercompute-device-filter-{preview,live}.json.
   Owned browser/profile and temporary5197 server closed; preview5189 remains up.
+- Follow-up FP16 diagnosis: catalog matrix16/16 policy tests PASS. With the same
+  16GiBGPU budget, missing browser f16 disables six GGUF/diffusion choices while
+  four ONNX q4 choices remain eligible; feature exposure enables all ten. Check
+  actual production startup separately without the NVIDIA f16 override and with
+  it, recording driver/browser identity and avoiding model downloads. Existing
+  GPU-model quality evidence applies only to its documented override environment.
 
 
 ### Image generation and abliterated choices — 2026-11-03 19:18 AKST
