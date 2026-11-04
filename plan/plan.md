@@ -1570,3 +1570,4 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 - November3 23:32 AKST: user explicitly approved publishing938fe136 to the existing feature-branch Pages source. Deployment and exactpublicURL validation are in progress; ulg merge remains separate.
 - Publication currently blocked by GitHub GH013 false-positive detection of an official Transformers.js model-class identifier. Both ordinary pushes rejected; remote remains fe3cfda3. Replacement8bbba3d2 passes67tests/8affected runtime routes plus previous23route coverage. Await explicit false-positive exception approval; no bypass or merge performed.
+- November4 05:47 AKST: user explicitly approved the verified false-positive exception. GitHub accepted the narrowly scoped false_positive API request; protected normal push and exact public deployment checks are proceeding. All broader IPFS qualification and ulg merge remain separate.

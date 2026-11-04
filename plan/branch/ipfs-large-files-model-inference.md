@@ -893,3 +893,4 @@ Build the complete docs gallery with the expanded model catalog and verify every
 
 - November3 23:32 AKST: user approved publishing the verified docs build to feature/ipfs-artifacts-webgpu; no ulg merge. Initial push was rejected by a generated Transformers.js secret-scanner false-positive candidate. Verify official upstream provenance and preserve all identifiers/licenses while limiting generated line lengths; retry only normal protected push after validation.
 - Protected retry8bbba3d2 rejected on the same unchanged upstream identifier. Public publication remains pending a separately approved GitHub false-positive exception. Preserve scanner protection, provenance receipts, and the already verified local preview.
+- November4 05:47 AKST: explicit user approval received for the verified GitHub false-positive exception; API approval succeeded. Continue publication and public-origin validation without changing repository scanner configuration or merging ulg.
