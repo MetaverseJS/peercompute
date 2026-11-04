@@ -1,5 +1,32 @@
 ## PeerCompute Test Strategy
 
+### Model search and device admission — 2026-11-03 20:19 AKST
+
+- Pure policy tests: absent/fallback GPU, missing f16 and GGUF browser features,
+  bounded adapter-probe failures, explicit RAM/GPU budgets, unknown/capped RAM,
+  and the27B package staying eligible despite smaller per-buffer limits.
+- Controller tests: reject incompatible catalog/peer imports before bytes or
+  unloading the resident model; recheck before load; retain remote inference.
+- Headless UI tests: search names/sources/tasks, disabled reasons, empty results,
+  selection restoration, five-second refresh, optional budget validation/clear,
+  and remote targets unaffected by local incompatibility.
+- Validate production startup and responsive layout at the exact trusted preview
+  URL with an isolated browser. No model downloads or large allocation probing.
+- Final focused runtime/policy suite91/91 and headless UI23/23 PASS. Policy15/15
+  includes cold null→hardware retry, repeated null, fallback, deadline and late
+  result handling without GPU devices. Inference/CubeChat/Earth builds pass.
+- Actual cold production startup finds NVIDIA/f16; ten choices, case-insensitive
+  filter, empty/clear selection, 8GiB GPU budget disabling27B, programmatic
+  rejection before downloads and budget reset pass. Real manifest verifier
+  accepts bounded hashed metadata and rejects corrupt/oversized data using a
+  synthetic transport response, with no weights or persistent writes.
+- Exact trusted HTTPS5189 preview and staging5197 pass at1440×1000/390×844,
+  with SecretWorkshop connected, all three services idle, default preferences,
+  library dialog and overview link intact. No page errors, failed HTTP responses
+  or weights/WASM requests. Receipts: /tmp/peercompute-device-filter-{preview,live}.json.
+  Owned browser/profile and temporary5197 server closed; preview5189 remains up.
+
+
 ### Image generation and abliterated choices — 2026-11-03 19:18 AKST
 
 - Verify immutable catalog metadata, complete package closures, hashes,

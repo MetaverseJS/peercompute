@@ -40,6 +40,8 @@ export function formatModelBytes(bytes) {
 
 export function createPanelView(container) {
   const panel = node('section', undefined, 'pc-inference-panel'); panel.setAttribute('aria-label', 'Model chat');
+  const sourceFilter = node('input'); sourceFilter.type = 'search'; sourceFilter.placeholder = 'Filter models';
+  sourceFilter.setAttribute('aria-label', 'Filter models'); sourceFilter.maxLength = 256;
   const source = node('select'); source.setAttribute('aria-label', 'Model and source');
   const acquire = button('Import Model'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
   const settings = dialog('Config'), library = dialog('Stored Models');
@@ -48,7 +50,10 @@ export function createPanelView(container) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
-  const top = node('div', undefined, 'pc-model-toolbar'); top.append(source, acquire, stored, configure); panel.append(top);
+  const top = node('div', undefined, 'pc-model-toolbar'); top.append(sourceFilter, source, acquire, stored, configure); panel.append(top);
+  const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
+  sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
+  source.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
   const sharing = node('input'); sharing.type = 'checkbox'; sharing.checked = true;
   const hosting = node('input'); hosting.type = 'checkbox'; hosting.checked = true;
   const toggles = node('div', undefined, 'pc-model-preferences');
@@ -61,7 +66,14 @@ export function createPanelView(container) {
   const gpuLayers = node('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
   gpuLayers.setAttribute('aria-label', 'GGUF GPU layer limit');
   const limits = node('div', undefined, 'pc-config-grid');
-  limits.append(label('GGUF GPU layers', gpuLayers)); settings.body.append(limits);
+  const cpuBudget = node('input'), gpuBudget = node('input');
+  for (const input of [cpuBudget, gpuBudget]) {
+    input.type = 'number'; input.min = '0'; input.max = '1024'; input.step = 'any'; input.placeholder = 'Auto';
+  }
+  limits.append(label('Model RAM budget (GiB)', cpuBudget), label('Model GPU memory budget (GiB)', gpuBudget));
+  const memoryNote = node('p', '', 'pc-inference-note'); settings.body.append(limits, memoryNote);
+  const gpuLimits = node('div', undefined, 'pc-config-grid');
+  gpuLimits.append(label('GGUF GPU layers', gpuLayers)); settings.body.append(gpuLimits);
   settings.body.append(node('p', '99999 uses all GPU layers. The 27B model was tested with 56 layers on an RTX 5060 Ti (16 GB), with a compatible browser.', 'pc-inference-note'));
   const relay = node('input'); relay.placeholder = 'Optional relay multiaddress'; relay.setAttribute('aria-label', 'Artifact relay multiaddress');
   const connect = button('Connect'); const network = node('div', undefined, 'pc-config-row'); network.append(relay, connect); settings.body.append(network);
@@ -86,8 +98,9 @@ export function createPanelView(container) {
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
   panel.append(configuration, storedModels); container.append(panel);
-  return { panel, source, acquire, stored, configure, sharing, hosting, status, configuration,
+  return { panel, sourceFilter, source, sourceStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedStatus: library.status, gpuLayers,
+    cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, transcript, empty, proposed, attachment, attachmentImage,
     attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel };
 }

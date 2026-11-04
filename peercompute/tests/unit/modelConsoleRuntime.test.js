@@ -43,6 +43,10 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     async cancel() { calls.push('cancel-local'); },
   };
   const runtime = { service, networkManager: network,
+    ...(hooks.compatibility ? { getModelCompatibility: hooks.compatibility } : {}),
+    ...(hooks.inspectPeerPackage ? { inspectPeerPackage: hooks.inspectPeerPackage } : {}),
+    ...(hooks.deviceCheck ? { checkDeviceCapabilities: hooks.deviceCheck } : {}),
+    ...(hooks.setBudgets ? { setMemoryBudgets: hooks.setBudgets } : {}),
     get networkReady() { return network.isConnected; },
     store: { async *list() { yield* records.values(); }, async getManifest() { return localManifest; },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
@@ -68,6 +72,100 @@ test('opening the console enables both preferences without fetching or loading w
   assert.equal(f.calls.includes('load'), false); assert.equal(f.calls.includes('import'), false);
   assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
   assert.equal(f.runtime.listInferenceTargets()[0].available, false);
+  await f.runtime.dispose();
+});
+
+test('blocked catalog and peer imports do not download or unload; remote inference still works', async () => {
+  const blocked = { status: 'unavailable', code: 'gpu-budget', reason: 'Exceeds configured GPU memory budget' };
+  const f = fixture({ hooks: { compatibility: () => blocked } });
+  await f.controller.initialize();
+  f.peer.models = [{ ...descriptor, providers: [{ peerId: 'remote', local: false }] }];
+  f.peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'remote', local: false, busy: false }] }];
+  assert(f.runtime.listModelSources().every((source) => source.localAvailability === blocked));
+  for (const key of ['hf:test', `peer:${cid}`]) {
+    await assert.rejects(f.runtime.acquireModel(key), (error) => error.code === 'ERR_MODEL_LOCAL_UNAVAILABLE');
+  }
+  assert(!f.calls.some((call) => ['import', 'fetch-peer', 'load', 'unload', 'use'].includes(call)));
+  const remote = f.runtime.listInferenceTargets().find((target) => !target.local);
+  assert.equal(remote.available, true);
+  assert.equal((await f.runtime.generate(remote.key, { prompt: 'Hello' })).text, 'Remote answer');
+  await f.runtime.dispose();
+});
+
+test('cached device check completes before exposing local choices and unknown fit remains usable', async () => {
+  let checked = false;
+  const f = fixture({ hooks: {
+    deviceCheck: async () => { await Promise.resolve(); checked = true; },
+    compatibility: () => ({ status: checked ? 'unknown' : 'checking', reason: 'Memory fit unverified' }),
+  } });
+  await assert.rejects(f.runtime.acquireModel('hf:test'), /Memory fit unverified/);
+  assert(!f.calls.includes('import'));
+  await f.controller.initialize();
+  assert.equal(f.runtime.listModelSources()[0].localAvailability.status, 'unknown');
+  await f.runtime.acquireModel('hf:test'); assert(f.calls.includes('load'));
+  await f.runtime.dispose();
+});
+
+test('stale selections and direct local load recheck capability before acquiring a file lease', async () => {
+  let blocked = false;
+  const f = fixture({ retained: true, hooks: { compatibility: () => ({
+    status: blocked ? 'unavailable' : 'unknown', reason: 'Device limit changed',
+  }) } });
+  await f.controller.initialize();
+  const choice = f.runtime.listModelSources()[0];
+  blocked = true;
+  await assert.rejects(f.runtime.acquireModel(choice.key), /Device limit changed/);
+  await assert.rejects(f.runtime.load(cid), /Device limit changed/);
+  assert(!f.calls.some((call) => ['import', 'load', 'unload', 'use'].includes(call)));
+  await f.runtime.dispose();
+});
+
+test('peer display metadata cannot lower the trusted model requirements', async () => {
+  let checked;
+  const f = fixture({ hooks: { compatibility: (entry) => {
+    checked = entry;
+    return { status: entry.totalBytes === 100 ? 'unavailable' : 'unknown', reason: 'Trusted model exceeds budget' };
+  } } });
+  await f.controller.initialize();
+  f.peer.models = [{ ...descriptor, totalBytes: 1, providers: [{ peerId: 'remote', local: false }] }];
+  await assert.rejects(f.runtime.acquireModel(`peer:${cid}`), /Trusted model exceeds budget/);
+  assert.equal(checked.totalBytes, 100);
+  assert(!f.calls.includes('fetch-peer'));
+  await f.runtime.dispose();
+});
+
+test('peer manifest preflight rejects large actual requirements before fetching weights', async () => {
+  const seen = [];
+  const f = fixture({ hooks: {
+    compatibility: (entry) => ({ status: entry.name === 'Too large' ? 'unavailable' : 'unknown', reason: 'Actual package exceeds budget' }),
+    inspectPeerPackage: async (key) => { seen.push(key); return { ...manifest, name: 'Too large' }; },
+  } });
+  await f.controller.initialize(); await f.runtime.acquireModel('hf:test');
+  f.calls.length = 0;
+  f.peer.models = [{ ...descriptor, providers: [{ peerId: 'remote', local: false }] }];
+  await assert.rejects(f.runtime.acquireModel(`peer:${cid}`), /Actual package exceeds budget/);
+  assert.deepEqual(seen, [cid]);
+  assert(!f.calls.some((call) => ['fetch-peer', 'unload', 'load'].includes(call)));
+  assert.equal(f.runtime.listInferenceTargets()[0].available, true);
+  await f.runtime.dispose();
+});
+
+test('memory budget changes wait for an active import and actual manifest is rechecked before unload', async () => {
+  let completeImport, imported = false, writes = 0;
+  const wait = new Promise((resolve) => { completeImport = resolve; });
+  const f = fixture({ hooks: {
+    setBudgets: () => { writes++; return {}; },
+    import: async () => { await wait; imported = true; },
+    compatibility: (entry) => ({ status: imported && entry.files ? 'unavailable' : 'unknown', reason: 'Actual manifest exceeds budget' }),
+  } });
+  await f.controller.initialize();
+  const acquiring = f.runtime.acquireModel('hf:test');
+  assert.throws(() => f.runtime.setMemoryBudgets({ gpuBytes: 1 }), /Wait for the model import/);
+  assert.equal(writes, 0);
+  completeImport();
+  await assert.rejects(acquiring, /Actual manifest exceeds budget/);
+  assert(!f.calls.includes('unload')); assert(!f.calls.includes('load'));
+  f.runtime.setMemoryBudgets({ gpuBytes: null }); assert.equal(writes, 1);
   await f.runtime.dispose();
 });
 

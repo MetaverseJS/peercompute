@@ -151,6 +151,17 @@ If another tab is using the package, unload it there before retrying deletion.
 If another tab owns this library's file sharing, delete from that tab or close it
 before retrying.
 
+Use **Filter models** to search by name, source, task or runtime. Unsupported
+local models remain visible but disabled with a reason; the same checks run
+before importing or loading, including verification of peer package metadata
+before fetching weights. **Config** also offers optional model RAM/GPU memory
+budgets in GiB. These use the runtime's existing reservation estimates, not disk
+storage limits or measured memory peaks. Browser-reported RAM is rounded and
+clamped, and WebGPU cannot report free VRAM, so uncertain fits stay selectable
+with **memory fit unverified**. Clearing a budget restores automatic feature
+checks and the configured manager admission limits. Remote inference targets
+remain available independently of the requesting device's local capabilities.
+
 The standalone chat fills the available browser window. Type any question,
 attach an image with **+**, and press Enter to send
 (Shift+Enter inserts a newline). The selector next to Send offers the local model

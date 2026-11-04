@@ -48,6 +48,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
   Qwen3.5 0.8B Abliterated passes actual GPU lifecycle and arithmetic checks.
   Qwen3 0.6B Abliterated runs but fails the quality gate; retain it as an
   experimental choice with the observed limitation documented.
+- November3 20:19 revision: defer abliterated multimodal2B conversion. Add a
+  searchable Import Model list and disable unsupported or over-budget local
+  loads with readable reasons. Unknown browser memory remains explicit; Config
+  allows inference memory budgets without restoring a disk-storage quota.
+  Local limitations must not disable inference hosted by other peers.
+- Search/admission checkpoint: policy and runtime checks pass91/91; UI23/23.
+  Cold browser startup, search/selection, explicit budget rejection before
+  downloads, bounded peer metadata verification and desktop/mobile layout pass
+  on the production preview. A bounded adapter retry fixes transient cold-Chrome
+  null results; actual free memory remains unverified. IPFS-01 parent gates remain open.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

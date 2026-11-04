@@ -802,3 +802,24 @@ Avoid granting models authority over arbitrary shared state or network messages.
   with ten choices and the SecretWorkshop backend. Serving a fixed build directory
   prevents unfinished source edits from interrupting the preview again. Both host
   and requester tabs must refresh for inference protocol2 capability discovery.
+
+
+### November3 20:19 - Search and device compatibility
+
+- Defer the abliterated multimodal2B candidate. Add a native filter to unified
+  HF/peer import choices, preserving query/selection through periodic discovery.
+- Show unsupported or over-budget models as disabled with a specific reason;
+  enforce this before imports and local loads. Keep peer inference independent
+  of requester GPU capability and memory budgets.
+- Probe adapter features and GGUF browser prerequisites without loading weights
+  or allocating GPU buffers. Browser RAM is approximate; WebGPU does not expose
+  freeVRAM. Do not compare package size to per-buffer limits or storage quota.
+- Optional Config RAM/GPU inference budgets compare against the existing model
+  reservation estimates. Unknown actual fit remains selectable and labelled;
+  these controls do not limit disk storage or change existing runtime estimates.
+- Implemented and verified:91 focused unit/runtime tests,23 headless UI tests,
+  affected production builds and exact desktop/mobile Tailnet preview pass.
+  Peer root metadata is hash-checked before weight transfer; rejected imports
+  preserve the resident model and remote inference. Cold-adapter retry stays
+  within the original3s deadline and performs no device/allocation stress probe.
+  This completes the search/admission slice, not the broader physical-host gates.

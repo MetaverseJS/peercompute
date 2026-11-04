@@ -30,6 +30,30 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
 
   const assertOpen = () => { if (closed) throw new Error('Model console is closed'); };
   const combined = (signal) => signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+  function localAvailability(entry) {
+    // Peer display metadata cannot lower a trusted model's resource estimate.
+    const approved = !entry.model && Object.values(catalog).find((candidate) =>
+      candidate.model.runtime === entry.runtime && (candidate.repository ?? candidate.model.repository) === entry.repository
+        && (candidate.revision ?? candidate.model.revision) === entry.revision);
+    return runtime.getModelCompatibility?.(approved || entry)
+      ?? { status: 'unknown', reason: 'Local memory fit is unverified.' };
+  }
+  function assertLocallyAvailable(entry) {
+    const availability = localAvailability(entry);
+    if (['checking', 'unavailable'].includes(availability.status)) {
+      throw Object.assign(new Error(availability.reason || 'This model cannot load on this device'),
+        { code: 'ERR_MODEL_LOCAL_UNAVAILABLE', availability });
+    }
+    return availability;
+  }
+  if (runtime.setMemoryBudgets) {
+    const setBudgets = runtime.setMemoryBudgets.bind(runtime);
+    runtime.setMemoryBudgets = (value) => {
+      assertOpen();
+      if (acquiring || runtime.service.getStatus().status === 'loading') throw new Error('Wait for the model import/load to finish before changing memory budgets');
+      return setBudgets(value);
+    };
+  }
   function descriptor(cid, manifest) {
     if (!manifest?.model?.runtime || !manifest.model.repository) return null;
     const match = Object.values(catalog).find((entry) => entry.model.repository === manifest.model.repository
@@ -156,6 +180,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   }
   async function loadModel(cid, options = {}) {
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
+    assertLocallyAvailable(await runtime.store.getManifest(cid, { signal: options.signal }));
     if (!modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
     let result;
     try { result = await original.load(cid, options); }
@@ -199,8 +224,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
-        modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes })),
-      ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers' }))];
+        modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,
+        localAvailability: localAvailability(entry) })),
+      ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers',
+        localAvailability: localAvailability(entry) }))];
     },
     listInferenceTargets() {
       const model = resident();
@@ -235,16 +262,22 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
       if (acquiring) throw new Error('Another model import is already running');
       const source = runtime.listModelSources().find((entry) => entry.key === key);
       if (!source) throw new Error('This model source is no longer available');
+      const profile = source.source === 'hf' ? catalog[source.modelId] : source;
+      assertLocallyAvailable(profile);
       acquiring = mutate(async (signal) => {
+        assertLocallyAvailable(profile);
         let record;
         if (source.source === 'hf') {
           const saved = [...retained.values()].find((entry) => entry.modelId === source.modelId);
           record = saved && await runtime.store.stat(saved.manifestCid, { signal });
           if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }]);
         } else {
+          if (runtime.inspectPeerPackage) assertLocallyAvailable(await runtime.inspectPeerPackage(source.manifestCid, { signal }));
           record = await importModel('ensure', [source.manifestCid, { signal }]);
         }
         signal.throwIfAborted();
+        // Recheck the actual persisted manifest before unloading a working model.
+        assertLocallyAvailable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
         if (resident()?.manifestCid === record.cid) return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
         await unloadModel();
         return loadModel(record.cid, { ...options, signal });
@@ -351,6 +384,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     for (const cid of modelUses.keys()) await releaseModelUse(cid);
   };
   return { async initialize() {
+    await runtime.checkDeviceCapabilities?.();
     await refreshStoredRecords(lifetime.signal);
     if (runtime.networkReady) await connectionReady();
   } };

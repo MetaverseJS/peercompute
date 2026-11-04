@@ -44,7 +44,8 @@ async function fixture(t, scenario = {}) {
     URL.revokeObjectURL = (url) => { previewUrls.revoked.push(url); revokeUrl(url); };
     window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: true, refreshCalls: 0,
       refreshActive: 0, refreshPeak: 0, disposed: false, sharing: true, hostInference: true,
-      stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList };
+      stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList,
+      availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
     const delay = (ms, signal) => new Promise((resolve, reject) => {
       const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
@@ -55,11 +56,16 @@ async function fixture(t, scenario = {}) {
       networkReady: true,
       store: { maximumBytes: 4 * 1024 ** 3, async importFile() { calls.push({ type: 'pin' }); } },
       getPreferences: () => ({ sharing: state.sharing, hostInference: state.hostInference }),
+      getDeviceCapabilities: () => ({ deviceMemoryGiB: 8 }),
+      getMemoryBudgets: () => ({ ...state.memoryBudgets }),
+      setMemoryBudgets(budgets) { state.memoryBudgets = budgets; calls.push({ type: 'budgets', ...budgets }); return budgets; },
       getSharingErrors: () => state.stored.filter((model) => model.shareError).map((model) => ({ manifestCid: model.manifestCid, message: model.shareError })),
       listModelSources: () => [
-        { key: 'hf:vision', name: 'Fixture vision', source: 'hf', modelId: 'smolvlm-256m-q4', modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
+        { key: 'hf:vision', name: 'Fixture vision', source: 'hf', modelId: 'smolvlm-256m-q4', runtime: 'transformers.js', modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
           task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] },
-        { key: 'peer:fixture', name: 'Peer text model', source: 'peers', manifestCid: 'fixture', modalities: ['text'] }],
+        { key: 'peer:fixture', name: 'Peer text model', source: 'peers', modelId: 'peer-text', manifestCid: 'fixture', runtime: 'llama.cpp', task: 'text-generation', modalities: ['text'] }]
+        .map((source) => ({ ...source, localAvailability: scenario.memoryPolicy && state.memoryBudgets.cpuBytes != null
+          && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' } : state.availability[source.key] })),
       listInferenceTargets: () => [{ key: 'local', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true,
         available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
@@ -72,7 +78,7 @@ async function fixture(t, scenario = {}) {
         finally { state.refreshActive--; }
       },
       async acquireModel(key, options) { calls.push({ type: 'acquire', key, gpuLayers: options.ggufGpuLayers });
-        await delay(5, options.signal); state.loaded = true; calls.push({ type: 'loaded' }); },
+        await delay(scenario.acquireDelay ?? 5, options.signal); state.loaded = true; calls.push({ type: 'loaded' }); },
       async setSharing(value) { if (state.rejectSharing) throw new Error('Sharing failed'); state.sharing = value; calls.push({ type: 'sharing', value }); },
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
       async generate(target, options) {
@@ -160,6 +166,100 @@ test('unified import selects either source and automatically makes local chat av
   await page.getByLabel('Share with peers', { exact: true }).uncheck();
   await page.getByLabel('Host inference', { exact: true }).uncheck();
   await page.waitForFunction(() => !uiState.sharing && !uiState.hostInference);
+});
+
+test('model filter uses AND terms across source, name, ID, task and runtime without changing chat targets', async (t) => {
+  const page = await fixture(t, { interval: 50 });
+  const filter = page.getByRole('searchbox', { name: 'Filter models' });
+  const source = page.getByLabel('Model and source');
+  const target = page.getByLabel('Chat target');
+  await source.selectOption('peer:fixture'); await target.selectOption('peer:fixture');
+  const targetOptions = await target.locator('option').allTextContents();
+  await filter.fill('HUGGING fixture smolvlm image-text transformers');
+  assert.equal(await source.inputValue(), 'hf:vision'); assert.equal(await source.locator('option').count(), 1);
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await filter.inputValue(), 'HUGGING fixture smolvlm image-text transformers');
+  assert.equal(await source.inputValue(), 'hf:vision');
+  assert.deepEqual(await target.locator('option').allTextContents(), targetOptions);
+  assert.equal(await target.inputValue(), 'peer:fixture');
+  await filter.fill('no such model');
+  assert.equal(await source.locator('option:checked').textContent(), 'No matching models');
+  assert.equal(await page.getByRole('button', { name: 'Import Model', exact: true }).isDisabled(), true);
+  assert.match(await page.locator('.pc-model-availability').textContent(), /No matching models/);
+  await filter.fill(''); assert.equal(await source.inputValue(), 'peer:fixture');
+  await filter.fill('Peers llama text-generation');
+  assert.equal(await source.inputValue(), 'peer:fixture'); assert.equal(await source.locator('option').count(), 1);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+});
+
+test('unavailable and checking models stay visible with reasons and cannot import even through a stale handler', async (t) => {
+  const page = await fixture(t, { loaded: true, interval: 50, availability: {
+    'hf:vision': { status: 'unavailable', reason: 'Needs 12 GiB GPU memory.' },
+    'peer:fixture': { status: 'checking', reason: 'Checking WebGPU support…' },
+  } });
+  const source = page.getByLabel('Model and source');
+  assert.equal(await source.locator('option:disabled').count(), 2);
+  assert.match(await source.locator('option').first().textContent(), /Needs 12 GiB GPU memory/);
+  assert.match(await page.locator('.pc-model-availability').textContent(), /Checking WebGPU support/);
+  const acquire = page.getByRole('button', { name: 'Import Model', exact: true });
+  assert.equal(await acquire.isDisabled(), true);
+  await acquire.evaluate((button) => button.onclick());
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+  await page.evaluate(() => { uiState.availability['hf:vision'] = { status: 'unknown', reason: 'Free GPU memory is unknown.' }; });
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Model and source"] option').disabled);
+  assert.equal(await acquire.isEnabled(), true);
+  assert.match(await page.locator('.pc-model-availability').textContent(), /Free GPU memory is unknown/);
+  // Runtime state changes before the next UI refresh; the click handler still rechecks it.
+  await page.evaluate(() => {
+    uiState.availability['hf:vision'] = { status: 'unavailable', reason: 'Device is incompatible.' };
+    return [...document.querySelectorAll('button')].find((button) => button.textContent === 'Import Model').onclick();
+  });
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await page.getByLabel('Message', { exact: true }).fill('Use the peer instead.');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
+  assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').target), 'peer:fixture');
+});
+
+test('Config memory budgets convert GiB, refresh restrictions, clear to auto and reject invalid values', async (t) => {
+  const page = await fixture(t, { memoryPolicy: true });
+  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  const cpu = page.getByLabel('Model RAM budget (GiB)', { exact: true });
+  const gpu = page.getByLabel('Model GPU memory budget (GiB)', { exact: true });
+  assert.equal(await cpu.inputValue(), ''); assert.equal(await gpu.inputValue(), '');
+  assert.match(await page.getByRole('dialog', { name: 'Config', exact: true }).textContent(), /approximately 8 GiB.*cannot report free GPU memory/);
+  await cpu.fill('2.5'); await cpu.dispatchEvent('change');
+  assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: null });
+  assert.equal(await page.getByLabel('Model and source').locator('option:disabled').count(), 2);
+  await gpu.fill('6'); await gpu.dispatchEvent('change');
+  assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: 6 * 1024 ** 3 });
+  await cpu.focus(); // Commit the GPU field's native blur/change before counting rejected edits.
+  const before = await page.evaluate(() => calls.filter((call) => call.type === 'budgets').length);
+  for (const invalid of ['0', '-2', '1025', '1e309']) {
+    await cpu.fill(invalid); await cpu.dispatchEvent('change');
+    assert.equal(await cpu.getAttribute('aria-invalid'), 'true');
+    assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'budgets').length), before, invalid);
+  }
+  await cpu.fill(''); await cpu.dispatchEvent('change');
+  await gpu.fill(''); await gpu.dispatchEvent('change');
+  assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: null, gpuBytes: null });
+  assert.equal(await page.getByLabel('Model and source').locator('option:disabled').count(), 0);
+  assert.equal(await cpu.getAttribute('aria-invalid'), null);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire' || call.type === 'pin')), []);
+});
+
+test('model filtering and memory budgets are disabled during an active import', async (t) => {
+  const page = await fixture(t, { acquireDelay: 10000 });
+  await page.getByRole('button', { name: 'Import Model', exact: true }).click();
+  await page.waitForFunction(() => calls.some((call) => call.type === 'acquire'));
+  assert.equal(await page.getByRole('searchbox', { name: 'Filter models' }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Configure model chat' }).click();
+  assert.equal(await page.getByLabel('Model RAM budget (GiB)', { exact: true }).isDisabled(), true);
+  assert.equal(await page.getByLabel('Model GPU memory budget (GiB)', { exact: true }).isDisabled(), true);
+  await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Filter models"]').disabled);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'budgets')), []);
 });
 
 test('Enter sends, Shift+Enter preserves a newline, optional embedded context stays text-only and actions require clicks', async (t) => {

@@ -4,8 +4,10 @@ import { MODEL_CATALOG as INFERENCE_CATALOG, modelFileUrl } from '../../../peerc
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../../../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
-import { normalizeArtifactManifest } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
-import { modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
+import { artifactCID, decodeArtifactManifest, normalizeArtifactManifest, ARTIFACT_MANIFEST_MAXIMUM_BYTES } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate,
+  normalizeModelMemoryBudgets } from './modelDeviceCompatibility.js';
 import { importModelPackage } from './modelLibrary.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
@@ -42,7 +44,10 @@ export async function checkGgufCapabilities() {
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
+  memoryBudgets, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 512, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
+  let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
+  let deviceCapabilities = null, deviceCheck;
   const ownsState = !stateManager;
   const ownsCompute = !computeManager;
   const state = stateManager ?? new StateManager(networkManager ?? null, {
@@ -69,16 +74,12 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const gpuBytes = 16 * 1024 ** 3;
     service = await compute.createModelInferenceService({ artifactStore: store,
     resourceBudgets: { cpu: { units: 1, memoryBytes: cpuBytes }, gpu: { units: 1, memoryBytes: gpuBytes } },
-    resourceEstimate: (manifest) => {
-      const policy = modelResourcePolicy(manifest.model);
-      return { cpuBytes: Math.max(4 * 1024 ** 3, policy.minimumCpuBytes),
-        gpuBytes: Math.max(4 * 1024 ** 3, policy.minimumGpuBytes) };
-    }, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
+    resourceEstimate: modelMemoryEstimate, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
       collectGpuEvidence, generationTimeoutMs: 300_000 });
     ggufService = await createGgufService(ggufRuntimeOptions);
     diffusionService = await compute.createModelInferenceService({ artifactStore: store, runtime: 'onnx-diffusion',
       runtimeAssets: trustedDiffusionRuntimeAssets(), runtimeOptions: {}, collectGpuEvidence,
-      resourceEstimate: { cpuBytes: 8 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 },
+      resourceEstimate: modelMemoryEstimate,
       loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
     if (network) {
@@ -98,10 +99,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   async function createGgufService(runtimeOptions) {
     return compute.createModelInferenceService({ artifactStore: store, runtime: 'llama.cpp',
       runtimeAssets: trustedGgufRuntimeAssets(), runtimeOptions, collectGpuEvidence,
-      resourceEstimate: (manifest) => {
-        const large = manifest.files.reduce((sum, file) => sum + file.size, 0) > 4 * 1024 ** 3;
-        return { cpuBytes: (large ? 8 : 2) * 1024 ** 3, gpuBytes: (large ? 16 : 2) * 1024 ** 3 };
-      }, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
+      resourceEstimate: modelMemoryEstimate, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
   }
 
   async function connectNetwork(config, { signal } = {}) {
@@ -128,6 +126,44 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     stateManager: state, computeManager: compute, store,
     get service() { return activeService; },
     get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },
+    getDeviceCapabilities: () => deviceCapabilities,
+    async checkDeviceCapabilities() {
+      deviceCheck ??= Promise.resolve().then(() => probeDeviceCapabilities()).then((value) => {
+        deviceCapabilities = value; return value;
+      });
+      return deviceCheck;
+    },
+    getMemoryBudgets: () => ({ ...localMemoryBudgets }),
+    setMemoryBudgets(value) {
+      localMemoryBudgets = normalizeModelMemoryBudgets(value);
+      return { ...localMemoryBudgets };
+    },
+    getModelCompatibility(entry) {
+      // Pool totals are configured admission limits. Existing model reservations
+      // are released during replacement and are not hardware capacity readings.
+      const pools = compute.resourceBroker?.reportPressure().pools;
+      const budgets = { ...localMemoryBudgets };
+      for (const [key, kind] of [['cpuBytes', 'cpu'], ['gpuBytes', 'gpu']]) {
+        const limit = pools?.[kind]?.memoryBytes;
+        if (Number.isSafeInteger(limit) && limit > 0) budgets[key] = Math.min(budgets[key] ?? limit, limit);
+      }
+      return evaluateModelCompatibility(entry, { device: deviceCapabilities, budgets });
+    },
+    async inspectPeerPackage(input, { signal } = {}) {
+      const cid = artifactCID(input);
+      if (cid.code !== 0x55) throw new Error('Model packages require a manifest CID');
+      try { return await store.getManifest(cid.toString(), { signal }); }
+      catch (error) { signal?.throwIfAborted(); if (!network) throw error; }
+      // Read only the bounded manifest before accepting any model weights.
+      const bytes = await network.fetchArtifactBlock(cid.toString(), { artifactCid: cid.toString(), signal });
+      signal?.throwIfAborted();
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > ARTIFACT_MANIFEST_MAXIMUM_BYTES) {
+        throw new Error('Peer model manifest exceeds its metadata budget');
+      }
+      const digest = sha256(bytes);
+      if (!digest.every((value, index) => value === cid.multihash.digest[index])) throw new Error('Peer model manifest CID mismatch');
+      return decodeArtifactManifest(bytes);
+    },
     checkGgufCapabilities,
     get networkManager() { return network; },
     get networkReady() { return !!network?.getArtifactTransport?.(); },
