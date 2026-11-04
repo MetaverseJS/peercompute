@@ -911,3 +911,7 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
 - November4 additional request: an unsupported default must automatically select and load a supported model. Prefer existing compatible stored models to downloads; if needed choose the smallest compatible catalog profile, preserving honest setup state when none are available.
 
 - Console-only dial warnings are not request outcomes. Preserve direct/relay encryption and avoid replay; retry same-host stream negotiation safely before writing application data. Actual request errors and remote model/session readiness remain authoritative.
+
+### November 4 — embodied-agent research steering
+
+- The next agent concept should learn behavior, navigation and motor control through small specialist neural networks with learned information/skill routing. Persistent identity, memories and evolving bodies remain part of the goal. This supersedes the brainstorming suggestion of scripted/deterministic behavioral controllers. Retain engine physics and authority checks, distinguish memory from weight learning, and use versioned artifacts for policies/body/checkpoints. This records design intent; implementation and training have not started.
