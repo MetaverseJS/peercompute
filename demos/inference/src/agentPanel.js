@@ -1,6 +1,7 @@
 import { createInferenceRuntime } from './runtime.js';
 import { createPanelView, appendMessage, renderStoredModels, formatModelBytes } from './ui/panelView.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
+import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import './panel.css';
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
@@ -8,6 +9,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
   runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000 } = {}) {
   const view = createPanelView(container);
+  const generatedImages = createGeneratedImageRenderer(view.transcript);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise;
@@ -25,10 +27,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   const scrollTranscript = () => {
     while (view.transcript.children.length > 24 || encoder.encode(view.transcript.textContent).byteLength > 128 * 1024) view.transcript.firstElementChild?.remove();
+    generatedImages.prune();
     view.transcript.scrollTop = view.transcript.scrollHeight;
   };
   function updateControls() {
     const target = selectedTarget();
+    view.prompt.placeholder = target?.task === 'text-to-image' ? 'Describe an image…' : 'Message…';
     view.acquire.disabled = !!operation || !sources.some((source) => source.key === view.source.value);
     view.source.disabled = !!operation;
     view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
@@ -46,7 +50,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.source.replaceChildren();
     for (const source of sources) {
       const option = document.createElement('option'); option.value = source.key;
-      option.textContent = String(source.name).slice(0, 140) + ' · ' + (source.source === 'hf' ? 'Hugging Face' : 'Peers');
+      option.textContent = String(source.name).slice(0, 140) + (source.task === 'text-to-image' ? ' · Image generation' : '')
+        + ' · ' + (source.source === 'hf' ? 'Hugging Face' : 'Peers');
       view.source.append(option);
     }
     if (sources.some((entry) => entry.key === selectedSource)) view.source.value = selectedSource;
@@ -58,6 +63,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     for (const target of targets) {
       const option = document.createElement('option'); option.value = target.key;
       option.textContent = (target.local ? 'Local · ' : 'Peers · ') + String(target.name).slice(0, 140)
+        + (target.task === 'text-to-image' ? ' · Image generation' : '')
         + (target.busy ? ' (busy)' : !target.available ? ' (unavailable)' : '');
       view.target.append(option);
     }
@@ -204,30 +210,45 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (view.send.disabled) return;
     await run(async (signal) => {
       const target = selectedTarget(), targetKey = target.key;
+      const createsImage = target.task === 'text-to-image';
       const text = view.prompt.value.trim(), selectedImage = attachment;
       if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
-      const context = await getContext?.({ includeImage: false });
+      const context = createsImage ? null : await getContext?.({ includeImage: false });
       const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
-      const instructions = String(actions?.instructions ?? '').slice(0, 8000);
+      const instructions = createsImage ? '' : String(actions?.instructions ?? '').slice(0, 8000);
       const history = histories.get(targetKey) ?? [], message = text || 'Describe this image.';
-      const messages = [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
+      const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
         ...history.slice(-6), { role: 'user', content: message }];
       appendMessage(view, 'user', text, { image: selectedImage?.preview });
       const reply = appendMessage(view, 'assistant', '', { targetName: target.name });
       view.prompt.value = ''; clearAttachment(); scrollTranscript();
-      requestId = crypto.randomUUID(); view.status.textContent = target.local ? 'Generating…' : 'Waiting for peer…';
+      requestId = crypto.randomUUID(); view.status.textContent = target.local ? (createsImage ? 'Generating image…' : 'Generating…') : 'Waiting for peer…';
       try {
-        const result = await runtime.generate(targetKey, { requestId, messages, signal, image: selectedImage?.image,
-          maxNewTokens: 128, onToken(chunk) { if (alive()) { reply.textContent += chunk; scrollTranscript(); } } });
-        reply.textContent = result.text;
-        history.push({ role: 'user', content: message }, { role: 'assistant', content: result.text });
-        while (history.length > 6 || encoder.encode(JSON.stringify(history)).byteLength > 24 * 1024) history.splice(0, 2);
-        histories.delete(targetKey); histories.set(targetKey, history);
-        if (histories.size > 8) histories.delete(histories.keys().next().value);
+        const result = await runtime.generate(targetKey, { requestId, signal,
+          ...(createsImage ? { prompt: text } : { messages, image: selectedImage?.image, maxNewTokens: 128 }),
+          onProgress(event) {
+            if (alive() && createsImage && Number.isSafeInteger(event.step) && Number.isSafeInteger(event.steps)
+                && event.step >= 0 && event.step <= event.steps && event.steps <= 100) {
+              view.status.textContent = `Generating image: ${event.step}/${event.steps} steps…`;
+            }
+          },
+          onToken(chunk) { if (alive() && !createsImage) { reply.textContent += chunk; scrollTranscript(); } } });
+        if (signal.aborted) throw new DOMException('Generation cancelled', 'AbortError');
+        if (createsImage) {
+          if (!target.outputModalities?.includes('image')) throw new Error('This target did not advertise image output');
+          await generatedImages.append(reply, result.image, { signal, prompt: text });
+        } else {
+          if (typeof result.text !== 'string') throw new Error('Model returned an invalid text response');
+          reply.textContent = result.text;
+          history.push({ role: 'user', content: message }, { role: 'assistant', content: result.text });
+          while (history.length > 6 || encoder.encode(JSON.stringify(history)).byteLength > 24 * 1024) history.splice(0, 2);
+          histories.delete(targetKey); histories.set(targetKey, history);
+          if (histories.size > 8) histories.delete(histories.keys().next().value);
+        }
         view.status.textContent = 'Ready.';
         try {
-          for (const proposal of (actions?.propose(result.text) ?? []).slice(0, 4)) {
+          for (const proposal of (createsImage ? [] : actions?.propose(result.text) ?? []).slice(0, 4)) {
             const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Apply: ' + proposal.label;
             button.onclick = async () => { button.disabled = true; try { await proposal.apply(); } catch (error) { showError(error); } };
             view.proposed.append(button);
@@ -251,7 +272,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   async function dispose() {
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; view.storedModels.close(); view.configuration.close(); view.panel.inert = true;
+    closing = true; generatedImages.dispose(); view.storedModels.close(); view.configuration.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);

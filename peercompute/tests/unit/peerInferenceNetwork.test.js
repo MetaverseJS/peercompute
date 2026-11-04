@@ -9,12 +9,14 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL, encryptedConnection, channel, descriptor, generation } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { PEER_INFERENCE_PROTOCOL, encryptedConnection, channel, descriptor, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { imageDigest } from '../../src/peercompute/networkManager/inference/imageResult.js';
 
 const manifestCid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { manifestCid, modelId: 'fixture', name: 'Fixture', modalities: ['text', 'image'],
   runtime: 'test-only-injected-service', repository: 'fixture/model', revision: 'abc123', totalBytes: 100 };
 const empty = () => ({ sharedModels: [], hostedModel: null, busy: false, idleForMs: 0 });
+const imageModel = { ...model, task: 'text-to-image', modalities: ['text'], outputModalities: ['image'] };
 async function fixture(t, count = 3, options = {}) {
   const entries = [];
   t.after(async () => {
@@ -287,4 +289,113 @@ test('real plaintext connections cannot discover hosts or invoke inference strea
     await io.read(signal);
   });
   assert.equal(host.received.length, 0);
+});
+
+test('v2 image capabilities reject ambiguous tasks and over-budget image metadata', () => {
+  assert.equal(PEER_INFERENCE_PROTOCOL, '/peercompute/inference/2.0.0');
+  assert.deepEqual(descriptor(imageModel).outputModalities, ['image']);
+  assert.deepEqual(descriptor(model).outputModalities, ['text']);
+  assert.throws(() => descriptor({ ...imageModel, outputModalities: ['text'] }), /modalities/);
+  assert.throws(() => descriptor({ ...imageModel, modalities: ['text', 'image'] }), /text input/);
+  assert.throws(() => generation({ manifestCid, requestId: 'bad', task: 'text-to-image',
+    messages: [{ role: 'assistant', content: 'x' }] }), /one text prompt/);
+  for (const extra of [{ seed: -1 }, { seed: 2 ** 32 }, { steps: 9 }, { width: 1024 }]) {
+    assert.throws(() => generation({ manifestCid, requestId: 'bad', prompt: 'x', ...extra }), /numeric/);
+  }
+  assert.throws(() => resultData({ text: '', image: { width: 1025, height: 1, channels: 4, sha256: '0'.repeat(64) } }), /numeric/);
+  assert.throws(() => resultData({ text: '', image: { width: 1, height: 1, channels: 3, sha256: '0'.repeat(64) } }), /dimensions/);
+});
+
+test('real Noise peers transfer generated pixels with credits, digest, progress and seed', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), sharedModels: [imageModel], hostedModel: imageModel };
+  const pixels = Uint8Array.from({ length: 512 * 512 * 4 }, (_, i) => i % 251);
+  host.run = async (input) => {
+    host.received.push(input);
+    input.onProgress({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 4 });
+    return { text: '', seed: input.seed, steps: 4, gpuDispatches: 22,
+      image: { width: 512, height: 512, channels: 4, data: pixels } };
+  };
+  const directory = await requestor.service.refresh();
+  assert.equal(directory.hosts[0].task, 'text-to-image');
+  assert.deepEqual(directory.hosts[0].modalities, ['text']);
+  assert.deepEqual(directory.hosts[0].outputModalities, ['image']);
+  const progress = [];
+  const result = await requestor.service.generate(manifestCid, { prompt: 'A green mountain', seed: 123,
+    onProgress: (event) => progress.push(event) });
+  assert.equal(result.seed, 123); assert.equal(result.steps, 4);
+  assert.equal(result.gpuDispatches, 22); assert.equal(result.connectionEncryption, '/noise');
+  assert.equal(result.image.sha256, imageDigest(pixels));
+  assert.deepEqual(result.image.data, pixels);
+  assert.equal(host.received[0].task, 'text-to-image');
+  assert.equal(progress.filter((event) => event.type === 'diffusion-progress').length, 1);
+  await until(() => host.service.inbound.size === 0);
+});
+
+test('image result credits bound transfer and cancellation releases the host reservation', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModel: imageModel };
+  host.run = async (input) => { host.received.push(input); return { text: '',
+    image: { width: 512, height: 512, channels: 4, data: new Uint8Array(512 * 512 * 4) } }; };
+  const stream = await requestor.node.getConnections()[0].newStream(PEER_INFERENCE_PROTOCOL);
+  const io = channel(stream); const signal = AbortSignal.timeout(5000);
+  const requestId = 'stalled-output';
+  await io.write(requestor.service._envelope('generate', host.node.peerId.toString(), {
+    manifestCid, requestId, task: 'text-to-image', prompt: 'x'
+  }), signal);
+  assert.equal((await io.read(signal)).type, 'upload');
+  assert.equal((await io.read(signal)).type, 'accepted');
+  await io.write({ type: 'start', requestId }, signal);
+  assert.equal((await io.read(signal)).type, 'result-image');
+  // No ready credit: the host cannot enqueue a binary image or finish its work.
+  await delay(30); assert.equal(host.service.inbound.size, 1);
+  await io.write({ type: 'result-credit', requestId, offset: 0 }, signal);
+  assert.equal((await io.rpc.read({ signal })).byteLength, 64 * 1024);
+  await io.write({ type: 'cancel', requestId }, signal);
+  await until(() => host.service.inbound.size === 0);
+  await assert.rejects(io.rpc.read({ signal }));
+  assert.equal(host.received.length, 1);
+});
+
+test('a corrupted generated image is rejected after commitment and never replayed', { timeout: 15000 }, async (t) => {
+  const [requestor, host, fallback] = await fixture(t);
+  host.state = { ...empty(), hostedModel: imageModel, idleForMs: 100 };
+  fallback.state = { ...empty(), hostedModel: imageModel, idleForMs: 1 };
+  await requestor.service.refresh();
+  await host.node.unhandle(PEER_INFERENCE_PROTOCOL);
+  await host.node.handle(PEER_INFERENCE_PROTOCOL, (stream) => {
+    void (async () => {
+      const io = channel(stream); const signal = AbortSignal.timeout(3000);
+      try {
+        const input = await io.read(signal);
+        await io.write({ type: 'upload', requestId: input.requestId }, signal);
+        await io.write({ type: 'accepted', requestId: input.requestId }, signal);
+        assert.equal((await io.read(signal)).type, 'start');
+        await io.write({ type: 'result-image', requestId: input.requestId,
+          image: { width: 1, height: 1, channels: 4, sha256: imageDigest(new Uint8Array(4)) } }, signal);
+        assert.equal((await io.read(signal)).offset, 0);
+        await io.rpc.write(new Uint8Array([1, 2, 3, 4]), { signal });
+        await io.read(signal);
+      } catch (error) { stream.abort(error); }
+    })();
+  });
+  await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'x' }), /digest mismatch/);
+  assert.equal(fallback.received.length, 0);
+});
+
+test('image hosts reject chat history and attachments before execution; text hosts reject image output', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModel: imageModel };
+  await requestor.service.refresh();
+  await assert.rejects(requestor.service.generate(manifestCid, { messages: [
+    { role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }
+  ] }), /one text prompt/);
+  await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'x', image: {
+    width: 1, height: 1, channels: 4, data: new Uint8Array(4)
+  } }), /one text prompt/);
+  assert.equal(host.received.length, 0);
+  host.state.hostedModel = model;
+  host.run = async () => ({ text: '', image: { width: 1, height: 1, channels: 4, data: new Uint8Array(4) } });
+  await requestor.service.refresh();
+  await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'x' }), /output does not match/);
 });

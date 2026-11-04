@@ -36,6 +36,18 @@ The root node should exist on a domain secured with SSL enabling all executable 
   Stored Models lists local packages and deletes them safely. Remove console
   capacity selectors and hard rejection from advisory browser quota estimates;
   allow storage until actual browser writes fail, preserving per-operation bounds.
+- November3 19:18 revision: add small abliterated chat choices and Stable
+  Diffusion image generation, including a broader-content image model. Reuse
+  managed worker admission and IPFS packages; distinguish text-to-image output
+  from vision input, and return generated pixels through private peer streams.
+  Model behavior is publisher-described, not a guarantee of zero refusals.
+- Image generation checkpoint: SD-Turbo and DreamShaper8LCM pass actual managed
+  WebGPU generation and native encrypted WebRTC output to an independent
+  GPU-disabled browser, including source-off restart and local cancellation/
+  unload. The new console passes production startup and image-preview UI tests.
+  Qwen3.5 0.8B Abliterated passes actual GPU lifecycle and arithmetic checks.
+  Qwen3 0.6B Abliterated runs but fails the quality gate; retain it as an
+  experimental choice with the observed limitation documented.
 - First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
   the same file from B with origin/gateway fallback blocked. Separate storage
   contexts prevent a shared browser cache from masquerading as peer hosting.

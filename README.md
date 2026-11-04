@@ -39,7 +39,48 @@ WASM memory was3.33GiB and native GPU model buffers11.33GB. Cancellation require
 worker termination and released all reservations. This test used bounded ranges
 from the verified local Node artifact store; full14GB browser peer transfer and
 browser persistence are separate, unproven gates for this model.
-Both GGUF catalog candidates are text-only; the four ONNX models remain available.
+The GGUF chat models are text-only; the four Transformers.js models remain available.
+
+Additional model choices on this branch:
+
+| Model | Package download | Task |
+| --- | --- | --- |
+| Qwen3 0.6B Abliterated, GGUF Q4_K_M | 397 MB | Text chat |
+| Qwen3.5 0.8B Abliterated, GGUF Q4_K_M | 542 MB | Text chat |
+| Stable Diffusion Turbo, ONNX FP16 | 2.52 GB | One-step 512×512 image generation |
+| DreamShaper 8 LCM, SD1.5 INT8 weights | 1.04 GB | Four-step 512×512 image generation |
+
+The abliterated Qwens are publisher-described reduced-refusal variants, not a
+guarantee of refusal-free responses. The 0.6B option is experimental: it runs
+correctly but failed one simple arithmetic prompt, and a clearer prompt produced
+the right calculation while ignoring the requested answer format. The 0.8B
+variant passed greeting, arithmetic, reuse, cancellation and source-blocked
+browser restart checks. DreamShaper is
+the broader-content image option; model behavior and licensing are separate. The pinned SD-Turbo export
+includes the November 2023 Stability AI noncommercial research license.
+DreamShaper retains CreativeML Open RAIL-M use restrictions. Catalogs preserve
+exact revisions, per-file sources, hashes and license documents.
+See the [Qwen model card](https://huggingface.co/mlabonne/Qwen3-0.6B-abliterated-GGUF),
+[SD-Turbo export license](https://huggingface.co/schmuell/sd-turbo-ort-web/blob/ace89b7d2cd849f9a73914cdbb8a3ea60c853dd1/LICENSE),
+and [DreamShaper browser export](https://huggingface.co/skillsafeai/dreamshaper-8-lcm-onnx-webgpu/blob/a310400909a293a7a937a54854910ed06469192b/README.md).
+
+Image generation uses a trusted `onnx-diffusion` worker with ONNX Runtime Web 1.31.1,
+separate from the Transformers.js backend. It uses the same ComputeManager
+admission/lifecycle and StateManager/IPFS storage. Hardware WebGPU with shader-f16
+is required. INT8 weight storage reduces downloads; it does not imply INT8
+execution or a matching reduction in resident memory. ORT materializes each
+ONNX graph during session creation (largest 1.73 GB), with an 8 GiB CPU/GPU admission
+envelope. The actual execution checks and limits are recorded in [plan/tests.md](plan/tests.md).
+
+Both image models pass actual managed-worker generation, warm reuse, cancellation,
+unload and source-blocked browser restart on Chrome157/RTX5060Ti. An independent
+GPU-disabled browser receives matching 512×512 pixels over native encrypted
+WebRTC without downloading weights or starting a worker. Measured warm remote
+requests were about 1.7s for DreamShaper and 2.1s for SD-Turbo on this machine;
+these are observations, not laptop performance promises. These tests use the
+explicit NVIDIA shader-f16 override described below; the application does not
+change browser flags. Production console UI and actual GPU execution are
+validated separately.
 
 The GGUF build requires cross-origin isolation, shared WebAssembly memory64,
 JSPI, and a hardware adapter exposing shader-f16. The standalone console sets
@@ -63,11 +104,15 @@ npm run import:artifact -- --model smolvlm-256m-q4
 npm run import:artifact -- --model qwen3-0.6b-q4
 npm run import:artifact -- --model qwen3.5-2b-q4
 npm run import:artifact -- --model qwen3.5-0.8b-q4-k-m-gguf
+npm run import:artifact -- --model sd-turbo-onnx
+npm run import:artifact -- --model dreamshaper-8-lcm-int8-onnx
 npm run import:artifact -- --model qwen3.8-27b-georefine-d14-gguf --quota-bytes 25769803776
 npm run import:artifact -- --directory /path/to/files
 npm run test:artifacts
 npm run test:inference
 npm run test:gguf
+npm run test:diffusion
+npm run test:diffusion:browser
 npm run test:artifacts:browser
 npm run dev:inference
 ```
@@ -116,6 +161,14 @@ queue. Requests are never retried on another host after generation commits.
 Prompts, images and streamed output travel over encrypted application streams;
 they are excluded from shared state and pubsub. A remote requester needs no model
 weights or GPU worker. Discovery is scoped to the connected PeerCompute room.
+
+Choose an image-generation target and describe the image in the same prompt box.
+The result appears in the conversation; image targets use only the current
+prompt and disable image attachments. Generated previews are bounded and local,
+not automatically published. Private protocol2 carries generated RGBA in64KiB
+credited frames and verifies its digest. Both peers need the current application;
+reload an older host to update from protocol1. Chat/vision tasks keep their text
+output behavior, and hosted image models use the same per-model routing policy.
 
 Actual independent-browser acceptance passes text and image inference on a
 ComputeManager WebGPU worker over encrypted WebRTC, streaming, cancellation,

@@ -155,18 +155,25 @@ export class ModelInferenceService {
   }
 
   generate({ requestId = crypto.randomUUID(), sessionId = this.session?.sessionId,
-    messages, prompt, image, maxNewTokens = MODEL_POLICY.maxNewTokens, signal, onProgress, onToken } = {}) {
+    messages, prompt, image, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
+    signal, onProgress, onToken } = {}) {
     if (this.closed || this.session?.status !== 'ready' || sessionId !== this.session.sessionId) {
       return Promise.reject(new Error('Requested model is not ready'));
     }
+    let normalized;
     try {
       validateSessionId(requestId);
-      validateImageInput(image);
-      messages = normalizeModelMessages({ messages, prompt });
-      this.runtimeDefinition.validateGenerationInput?.({ image, messages, maxNewTokens });
-      prompt = undefined;
-      if (!Number.isInteger(maxNewTokens) || maxNewTokens < 1 || maxNewTokens > MODEL_POLICY.maxNewTokens) {
-        throw new Error('Generation exceeds its output-token budget');
+      if (this.runtimeDefinition.normalizeGenerationInput) {
+        normalized = this.runtimeDefinition.normalizeGenerationInput({ messages, prompt, image, maxNewTokens,
+          seed, steps, width, height }, this.session.manifest);
+      } else {
+        validateImageInput(image);
+        messages = normalizeModelMessages({ messages, prompt });
+        this.runtimeDefinition.validateGenerationInput?.({ image, messages, maxNewTokens });
+        if (!Number.isInteger(maxNewTokens) || maxNewTokens < 1 || maxNewTokens > MODEL_POLICY.maxNewTokens) {
+          throw new Error('Generation exceeds its output-token budget');
+        }
+        normalized = { messages, image, maxNewTokens };
       }
       throwIfAborted(signal);
     }
@@ -180,10 +187,10 @@ export class ModelInferenceService {
     const entry = this.session;
     const operation = operationSignal(signal, this.generationTimeoutMs);
     // Copy at most the admitted RGBA budget, then transfer the owned copy to the managed worker.
-    const copiedImage = image ? { width: image.width, height: image.height, channels: 4,
-      data: new Uint8Array(image.data) } : undefined;
+    const copiedImage = normalized.image ? { width: normalized.image.width, height: normalized.image.height, channels: 4,
+      data: new Uint8Array(normalized.image.data) } : undefined;
     const item = { requestId, session: entry, operation, started: false,
-      data: { command: 'generate', sessionId, requestId, messages, prompt, image: copiedImage, maxNewTokens },
+      data: { ...normalized, command: 'generate', sessionId, requestId, image: copiedImage },
       onProgress: (event) => {
         if (operation.controller.signal.aborted) return;
         try {

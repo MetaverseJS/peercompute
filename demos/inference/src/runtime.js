@@ -3,6 +3,7 @@ import { ComputeManager } from '../../../peercompute/src/peercompute/computeMana
 import { MODEL_CATALOG as INFERENCE_CATALOG, modelFileUrl } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../../../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
+import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 import { normalizeArtifactManifest } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { importModelPackage } from './modelLibrary.js';
@@ -11,8 +12,10 @@ import { attachModelRuntimeController } from './modelRuntimeController.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
+import diffusionWasmUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.wasm?url';
+import diffusionFactoryUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.mjs?url';
 
-export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG });
+export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG, ...DIFFUSION_MODEL_CATALOG });
 
 export function trustedRuntimeAssets(runtimeBaseUrl) {
   if (runtimeBaseUrl) {
@@ -25,6 +28,10 @@ export function trustedRuntimeAssets(runtimeBaseUrl) {
 
 export function trustedGgufRuntimeAssets() {
   return { wasm: new URL(ggufWasmUrl, location.href).href };
+}
+
+export function trustedDiffusionRuntimeAssets() {
+  return { mjs: new URL(diffusionFactoryUrl, location.href).href, wasm: new URL(diffusionWasmUrl, location.href).href };
 }
 
 export async function checkGgufCapabilities() {
@@ -50,6 +57,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     ?? state.createArtifactStore({ name: storeName, capacity: 'browser', maximumTraversalBlocks: 131072 });
   let service;
   let ggufService;
+  let diffusionService;
   let activeService;
   let network = networkManager;
   let ownsNetwork = false;
@@ -68,12 +76,17 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     }, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
       collectGpuEvidence, generationTimeoutMs: 300_000 });
     ggufService = await createGgufService(ggufRuntimeOptions);
+    diffusionService = await compute.createModelInferenceService({ artifactStore: store, runtime: 'onnx-diffusion',
+      runtimeAssets: trustedDiffusionRuntimeAssets(), runtimeOptions: {}, collectGpuEvidence,
+      resourceEstimate: { cpuBytes: 8 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 },
+      loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
     if (network) {
       try { await network.createArtifactTransport(store); }
       catch (error) { networkError = error; }
     }
   } catch (error) {
+    await diffusionService?.dispose().catch(() => {});
     await ggufService?.dispose().catch(() => {});
     await service?.dispose().catch(() => {});
     if (ownsCompute) await compute.destroy().catch(() => {});
@@ -114,7 +127,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const runtime = {
     stateManager: state, computeManager: compute, store,
     get service() { return activeService; },
-    get services() { return { onnx: service, gguf: ggufService }; },
+    get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },
     checkGgufCapabilities,
     get networkManager() { return network; },
     get networkReady() { return !!network?.getArtifactTransport?.(); },
@@ -138,7 +151,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const entry = MODEL_CATALOG[modelId];
       if (!entry) throw new Error('Unknown approved model');
       const sourceUrl = INFERENCE_CATALOG[modelId] ? modelFileUrl
-        : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl : modelArtifactFileUrl;
+        : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl
+          : DIFFUSION_MODEL_CATALOG[modelId] ? diffusionModelFileUrl : modelArtifactFileUrl;
       return importModelPackage(store, { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
         files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } },
       (path) => sourceUrl(modelId, path), options);
@@ -155,10 +169,11 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     async load(cid, { ggufGpuLayers, ...options } = {}) {
       const manifest = await store.getManifest(cid, { signal: options.signal });
       const isGguf = manifest.model?.runtime === 'llama.cpp';
-      if (!isGguf && manifest.model?.runtime !== 'transformers.js') {
+      const isDiffusion = manifest.model?.runtime === 'onnx-diffusion';
+      if (!isGguf && !isDiffusion && manifest.model?.runtime !== 'transformers.js') {
         throw new Error('This package can be stored and hosted, but its model runtime is unavailable in this browser demo');
       }
-      if ([service, ggufService].some((candidate) => candidate.getStatus().status !== 'idle')) {
+      if ([service, ggufService, diffusionService].some((candidate) => candidate.getStatus().status !== 'idle')) {
         throw new Error('Unload the resident model before loading another package');
       }
       if (isGguf) {
@@ -173,7 +188,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
           ggufService = replacement;
         }
       }
-      activeService = isGguf ? ggufService : service;
+      activeService = isGguf ? ggufService : isDiffusion ? diffusionService : service;
       return activeService.loadModel({ manifestCid: cid, ...options });
     },
     async ensure(cid, options = {}) {
@@ -190,6 +205,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return network.withdrawArtifact(cid);
     },
     async dispose() {
+      await diffusionService.dispose();
       await ggufService.dispose();
       await service.dispose();
       if (ownsNetwork) await network.disconnect();

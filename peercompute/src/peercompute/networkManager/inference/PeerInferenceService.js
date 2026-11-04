@@ -1,6 +1,7 @@
 import { MODEL_POLICY } from '../../inference/modelManifest.js';
 import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_LIMITS as LIMITS, bytes, cid, integer,
-  encryptedConnection, localState, generation, resultData, channel } from './protocol.js';
+  encryptedConnection, localState, generation, resultData, diffusionProgress, channel } from './protocol.js';
+import { monitorResultControls, describeResultImage, writeResultImage, readResultImage } from './imageResult.js';
 
 const failure = (message, code = 'ERR_PEER_INFERENCE') => Object.assign(new Error(message), { code });
 const asError = (error) => error instanceof Error ? error : failure(String(error ?? 'Peer inference failed'));
@@ -196,6 +197,9 @@ export class PeerInferenceService {
       this.inbound.set(key, { peerId, controller: op.controller });
       const state = await this._state(op.signal, 1);
       if (!state.hostedModel || state.hostedModel.manifestCid !== input.manifestCid) throw failure('Requested model is not hosted', 'ERR_INFERENCE_NOT_HOSTED');
+      if (input.task !== undefined && input.task !== state.hostedModel.task) throw failure('Requested task does not match hosted model');
+      input.task = state.hostedModel.task;
+      generation(input); // Validate task-dependent input before admitting an upload.
       if (input.image && !state.hostedModel.modalities.includes('image')) throw failure('Hosted model does not accept images');
       await io.write({ type: 'upload', requestId: input.requestId }, op.signal);
       if (input.image) {
@@ -216,11 +220,8 @@ export class PeerInferenceService {
       // reply is safely retryable until the caller commits with this start ack.
       const start = await io.read(op.signal);
       if (start.type !== 'start' || start.requestId !== input.requestId) throw failure('Missing inference start acknowledgement');
-      monitor = io.read(op.signal).then((frame) => {
-        if (frame.type !== 'cancel' || frame.requestId !== input.requestId) throw failure('Unexpected inference control frame');
-        op.controller.abort(failure('Remote request cancelled', 'ERR_INFERENCE_CANCELLED'));
-      }, (error) => { op.controller.abort(error); });
-      monitor.catch((error) => op.controller.abort(error));
+      const controls = monitorResultControls(io, input.requestId, op.controller);
+      monitor = controls.task;
       let written = Promise.resolve(); let totalBytes = 0; let sequence = 0; let pendingBytes = 0;
       const onToken = (text) => {
         op.signal.throwIfAborted();
@@ -236,11 +237,25 @@ export class PeerInferenceService {
         written = written.then(() => io.write(frame, op.signal)).then(() => { pendingBytes -= bytes(text) + 128; });
         written.catch((error) => op.controller.abort(error));
       };
+      let progressFrames = 0;
+      const onProgress = (event) => {
+        if (event?.type !== 'diffusion-progress') return;
+        op.signal.throwIfAborted();
+        if (input.task !== 'text-to-image' || ++progressFrames > 32) throw failure('Invalid image generation progress');
+        const progress = diffusionProgress(event);
+        written = written.then(() => io.write({ type: 'progress', requestId: input.requestId, progress }, op.signal));
+        written.catch((error) => op.controller.abort(error));
+      };
       // Application request IDs are locally unique even if different remote peers choose the same ID.
       const result = await withAbort(this.generateLocal({ ...input, requestId: `remote-${crypto.randomUUID()}`,
-        signal: op.signal, onToken }), op.signal);
+        signal: op.signal, onToken, onProgress }), op.signal);
       await written; op.signal.throwIfAborted();
-      await io.write({ type: 'done', requestId: input.requestId, result: resultData(result) }, op.signal);
+      if (Boolean(result?.image) !== (input.task === 'text-to-image')) throw failure('Inference output does not match hosted task');
+      const metadata = resultData({ ...result,
+        ...(result.image ? { image: describeResultImage(result.image) } : {}) });
+      if (result.image) await writeResultImage(io, { image: result.image, metadata: metadata.image,
+        requestId: input.requestId, controls, signal: op.signal });
+      await io.write({ type: 'done', requestId: input.requestId, result: metadata }, op.signal);
       await stream.close({ signal: op.signal });
     } catch (cause) {
       const error = asError(cause);
@@ -268,6 +283,12 @@ export class PeerInferenceService {
       if (!candidates.length) {
         await this.refresh({ signal: op.signal });
         candidates = this.listHosts().find((group) => group.manifestCid === input.manifestCid)?.hosts.filter((host) => !host.local) ?? [];
+      }
+      const model = this.listHosts().find((group) => group.manifestCid === input.manifestCid);
+      if (model) {
+        if (input.task !== undefined && input.task !== model.task) throw failure('Requested task does not match discovered model');
+        input.task = model.task;
+        generation(input); // Pixel bytes were already validated and copied at admission.
       }
       candidates.sort((a, b) => Number(a.busy) - Number(b.busy) || (a.busy ? 0 : b.idleForMs - a.idleForMs));
       let lastError = failure('No remote peer hosts the requested model', 'ERR_INFERENCE_NOT_HOSTED');
@@ -303,7 +324,7 @@ export class PeerInferenceService {
         if (credit.type !== 'image-credit' || credit.offset !== end) throw failure('Invalid image transfer credit');
         offset = end;
       }
-      let sequence = 0; let totalBytes = 0; let accepted = false;
+      let sequence = 0; let totalBytes = 0; let accepted = false; let image; let progressFrames = 0;
       for (;;) {
         const frame = await io.read(signal);
         if (frame.type === 'error') throw failure(String(frame.message).slice(0, 256), frame.code);
@@ -321,8 +342,23 @@ export class PeerInferenceService {
           totalBytes += bytes(frame.text);
           if (totalBytes > MODEL_POLICY.maxOutputBytes) throw failure('Inference output exceeds its byte budget');
           await withAbort(options.onToken?.(frame.text, { ...frame, peerId }), signal);
+        } else if (frame.type === 'progress') {
+          if (input.task !== 'text-to-image' || ++progressFrames > 32) throw failure('Invalid image generation progress');
+          await withAbort(options.onProgress?.({ ...diffusionProgress(frame.progress), requestId: input.requestId, peerId }), signal);
+        } else if (frame.type === 'result-image') {
+          if (input.task !== 'text-to-image' || image) throw failure('Unexpected generated image');
+          image = await readResultImage(io, { image: frame.image, requestId: input.requestId, signal });
         } else if (frame.type === 'done') {
           const result = resultData(frame.result);
+          if (Boolean(result.image) !== (input.task === 'text-to-image') || Boolean(result.image) !== Boolean(image)) {
+            throw failure('Inference output does not match requested task');
+          }
+          if (image) {
+            if (['width', 'height', 'channels', 'sha256'].some((key) => image[key] !== result.image[key])) {
+              throw failure('Generated image metadata changed during transfer');
+            }
+            result.image = image;
+          }
           await stream.close({ signal }); return { ...result, requestId: input.requestId, peerId, manifestCid: input.manifestCid,
             connectionEncryption: connection.encryption, connectionAddress: connection.remoteAddr?.toString() };
         } else throw failure('Unknown inference output frame');

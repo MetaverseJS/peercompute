@@ -51,6 +51,53 @@ Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
   NetViz model telemetry and final release verification. Do not close IPFS-01
   merely because storage or mocked inference checks pass.
 
+### Less-restrictive options and image generation — November3,19:18:10 AKST
+
+- User requests smaller refusal-free chat choices, Stable Diffusion, and a
+  less-restrictive image generation option. Add revision-pinned abliterated
+  Qwen GGUF choices; describe the publisher's intended behavior without
+  guaranteeing every response. Preserve model cards, licenses and file hashes.
+- Add a fixed trusted `onnx-diffusion` runtime in ComputeManager-owned workers.
+  Transformers.js4.3.2 does not provide this pipeline; use an isolated
+  `peercompute-diffusion-ort` alias pinned to ONNX Runtime Web1.31.1. Never load
+  executable runtime code from a model manifest or another peer. Start with
+  SD-Turbo one-step512×512 and DreamShaper8LCM four-step512×512 exports, subject
+  to actual GPU execution checks. Model files stay in StateManager/IPFS.
+- Keep the unified Import Model and inference-target selectors. Image models
+  consume one current text prompt and display the generated image in the chat.
+  They do not accept attachments unless a future runtime explicitly supports
+  image input. Generated images are local previews, not automatically pinned
+  or shared. Revoke preview URLs on transcript eviction and disposal.
+- Private inference protocol2 distinguishes input modalities, task and output
+  modalities. Bound generated RGBA to1024²/4MiB, stream in64KiB frames with one
+  outstanding credit, verify SHA-256 and keep cancellation active during
+  transfer. Do not replay a committed generation on another peer. Hosts on
+  protocol1 need a page refresh; silently stripping image capabilities is invalid.
+- Validate fixed-seed prompt-dependent outputs, warm reuse, cancellation,
+  acknowledged unload, source-off loading from retained IPFS files, and a real
+  independent requester receiving generated pixels over encrypted WebRTC.
+  Record transport/unit, browser UI and actual GPU evidence separately. New
+  model execution does not close parent physical-host or large-file gates.
+
+- November3 hardware checkpoint: both diffusion pipelines pass on Chrome157 /
+  NVIDIA RTX5060Ti with the explicit test-only Vulkan shader-f16 override.
+  DreamShaper imports1,037,003,247bytes, loads in12.432s and generates its first
+  image in7.015s; SD-Turbo imports2,516,150,032bytes, loads in31.935s and generates
+  its first image in4.252s. Actual native WebRTC requests take1.676s/2.075s,
+  respectively, with matching host/requester pixel digests and no requester
+  weights, WASM, worker or artifact database. These are local-machine observations.
+  Both retain fixed-seed output through a source-blocked full browser restart;
+  cooperative local cancellation, warm reuse and zero-lease unload pass.
+- The protocol's4MiB result limit and bridge's4MiB staging cap do not describe
+  total model memory. ORT materializes individual ONNX buffers (up to1.733GB)
+  and creates session/WASM/GPU allocations.8GiB CPU/GPU envelopes are configured
+  admission, not measured hardware minima. Tokenization, shape operations and
+  scheduler math run on CPU; every neural stage proves actual GPU dispatch.
+- Production console startup exposed a pre-existing top-level-await/shared-chunk
+  cycle; async entry startup fixes it and a built-browser test now proves actual
+  runtime initialization. Keep preview on an immutable validated snapshot while
+  editing. UI tests and managed-service GPU/peer tests remain separate evidence.
+
 ### Additional requested models — November3,12:43:31 AKST
 
 - Add a four-bit multimodal Qwen of approximately2B parameters for the same
@@ -745,3 +792,13 @@ dimensions, queued requests, and observation cadence; allow the user to stop it.
 Demonstrate integration through a narrow existing-demo adapter and the inference
 console, with image-dependent behavior and rejected unknown/invalid actions.
 Avoid granting models authority over arbitrary shared state or network messages.
+
+- Final small-GGUF qualification: Qwen3.5 0.8B Abliterated passes generation,
+  arithmetic, warm reuse, cancellation, unload and source-blocked browser restart
+  with all 26 layers on the GPU. Qwen3 0.6B Abliterated passes its 29-layer GPU
+  lifecycle but fails arithmetic/instruction-format checks; keep its experimental
+  limitation visible rather than describing every catalog option as quality-qualified.
+- The validated production build is live at the existing Tailnet origin, port5189,
+  with ten choices and the SecretWorkshop backend. Serving a fixed build directory
+  prevents unfinished source edits from interrupting the preview again. Both host
+  and requester tabs must refresh for inference protocol2 capability discovery.

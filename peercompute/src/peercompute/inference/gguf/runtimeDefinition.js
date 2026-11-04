@@ -13,6 +13,8 @@ export function validateGgufManifest(input) {
     entry.model.runtime === 'llama.cpp' && entry.repository === model?.repository
       && entry.revision === model?.revision && entry.model.architecture === model?.architecture);
   if (!trusted || model.runtime !== 'llama.cpp' || (model.runtimeVersion !== undefined && model.runtimeVersion !== GGUF_RUNTIME_VERSION)
+      || (trusted.model.runtimeVersion !== undefined && model.runtimeVersion !== trusted.model.runtimeVersion)
+      || model.dtype !== trusted.model.dtype
       || model.format !== 'GGUF'
       || model.task !== 'text-generation') throw new Error('GGUF model revision is not in the trusted runtime catalog');
   const weights = manifest.files.filter((file) => file.path.endsWith('.gguf'));

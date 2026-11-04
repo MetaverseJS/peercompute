@@ -8,9 +8,10 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, connected = true, failRelease = false, hooks = {} } = {}) {
+function fixture({ retained = false, connected = true, failRelease = false, hooks = {}, modelInfo = model } = {}) {
   const calls = [], records = new Map(), published = new Set();
-  const record = { cid, manifest, kind: 'manifest', pinned: true, status: 'complete' };
+  const localManifest = { ...manifest, model: modelInfo };
+  const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
   if (retained) records.set(cid, record);
   let status = { status: 'idle', manifestCid: null };
   let callbacks, released = false;
@@ -19,7 +20,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     listModels() { return this.models; }, listHosts() { return this.hosts; },
     async refresh() { calls.push('refresh'); },
     async setHostingEnabled(value) { this.enabled = value; calls.push(`hosting:${value}`); },
-    async generate(_cid, options) { calls.push('remote'); return { text: 'Remote answer', image: options.image }; },
+    async generate(_cid, options) { calls.push('remote'); return hooks.remoteGenerate?.(options) ?? { text: 'Remote answer', image: options.image }; },
     async cancel() { calls.push('cancel-remote'); },
   };
   const network = { isConnected: connected,
@@ -34,6 +35,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
   const service = { getStatus: () => status,
     async generate(options) {
       calls.push('local');
+      if (hooks.localGenerate) return hooks.localGenerate(options);
       if (options.prompt === 'wait') return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
       return { text: 'Local answer', workerId: 'worker-1' };
     },
@@ -42,7 +44,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
   };
   const runtime = { service, networkManager: network,
     get networkReady() { return network.isConnected; },
-    store: { async *list() { yield* records.values(); }, async getManifest() { return manifest; },
+    store: { async *list() { yield* records.values(); }, async getManifest() { return localManifest; },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
       async stat(key) { return records.get(key); },
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
@@ -56,7 +58,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
-  const controller = attachModelRuntimeController(runtime, { catalog });
+  const controller = attachModelRuntimeController(runtime, { catalog: { test: { ...catalog.test, model: modelInfo } } });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
 
@@ -111,6 +113,8 @@ test('one HF acquisition pins publishes and automatically loads the managed mode
   assert(f.calls.indexOf('publish') < f.calls.indexOf('load'));
   assert.equal((await f.callbacks.getLocalState()).hostedModel.manifestCid, cid);
   assert.equal(f.runtime.listInferenceTargets()[0].available, true);
+  assert.equal(f.runtime.listInferenceTargets()[0].task, 'image-text-to-text');
+  assert.deepEqual(f.runtime.listInferenceTargets()[0].outputModalities, ['text']);
   assert.equal(f.published.has(cid), true);
   await f.runtime.dispose();
 });
@@ -121,6 +125,38 @@ test('retained model acquisition uses local artifacts without redownloading', as
   assert.equal(f.calls.includes('import'), false); assert.equal(f.calls.filter((x) => x === 'load').length, 1);
   await f.runtime.acquireModel('hf:test');
   assert.equal(f.calls.filter((x) => x === 'load').length, 1);
+  await f.runtime.dispose();
+});
+
+test('diffusion capabilities survive import hosting discovery and local or remote generation', async () => {
+  const diffusion = { runtime: 'onnx-diffusion', repository: 'test/diffusion', revision: 'b'.repeat(40),
+    task: 'text-to-image', modalities: ['text'], outputModalities: ['image'] };
+  const image = { width: 1, height: 1, channels: 4, data: new Uint8Array([255, 0, 0, 255]) };
+  const inputs = [];
+  const generate = (input) => { inputs.push(input); return { text: '', image, seed: input.seed, steps: input.steps }; };
+  const f = fixture({ modelInfo: diffusion, hooks: { localGenerate: generate, remoteGenerate: generate } });
+  await f.controller.initialize();
+  assert.equal(f.runtime.listModelSources()[0].task, 'text-to-image');
+  assert.deepEqual(f.runtime.listModelSources()[0].outputModalities, ['image']);
+  await f.runtime.acquireModel('hf:test');
+  const advertised = (await f.callbacks.getLocalState()).hostedModel;
+  assert.equal(advertised.task, 'text-to-image'); assert.deepEqual(advertised.modalities, ['text']);
+  assert.deepEqual(advertised.outputModalities, ['image']);
+  f.peer.hosts = [{ ...advertised, hosts: [{ peerId: 'remote', local: false, busy: false }] }];
+  f.peer.models = [{ ...advertised, providers: [{ peerId: 'remote', local: false }] }];
+  const targets = f.runtime.listInferenceTargets();
+  assert(targets.every((target) => target.task === 'text-to-image' && target.outputModalities.includes('image')));
+  assert.equal(f.runtime.listModelSources()[1].task, 'text-to-image');
+  for (const target of targets) {
+    const output = await f.runtime.generate(target.key, { prompt: 'A lighthouse', seed: 42, steps: 1,
+      width: 512, height: 512, task: 'text-generation' });
+    assert.equal(output.image, image);
+    const input = inputs.at(-1);
+    assert.equal(input.task, 'text-to-image'); assert.equal(input.prompt, 'A lighthouse');
+    assert.equal(input.seed, 42); assert.equal(input.steps, 1); assert.equal(input.width, 512);
+    await assert.rejects(f.runtime.generate(target.key, { prompt: 'Do not attach', image }), /accepts text only/);
+  }
+  assert.equal(inputs.length, 2);
   await f.runtime.dispose();
 });
 

@@ -1,5 +1,63 @@
 ## PeerCompute Test Strategy
 
+### Image generation and abliterated choices — 2026-11-03 19:18 AKST
+
+- Verify immutable catalog metadata, complete package closures, hashes,
+  licenses and trusted runtime admission; reject unlisted model/graph changes.
+- Exercise diffusion math against upstream scheduler equations, fixed seeds,
+  bounded RGBA conversion, worker-only execution and shared residency cleanup.
+- Protocol2: explicit task/input/output capabilities, one prompt for image
+  generation, bounded result metadata and credited binary frames, digest
+  verification, stalled receiver cancellation, no replay after commitment,
+  and existing text/vision transport behavior.
+- Console: automatic runtime selection, image prompt semantics, attachment
+  capability, responsive generated PNG previews, object-URL eviction/disposal,
+  remote progress and cancellation; preserve modal library/settings behavior.
+- Run actual managed WebGPU generation for each added runtime/model where
+  supported, inspect images and verify nonuniform prompt-dependent pixels.
+  Include warm reuse/source-off reload/cancel/unload and real independent
+  GPU-disabled peer requester. Keep artifact downloads outside Git, serialize
+  hardware work and preserve the user's active model/browser and preview servers.
+
+- Actual image **PASS**: DreamShaper receipt
+  `/tmp/peercompute-diffusion-dream-20261103-jsep.json`, SD-Turbo receipt
+  `/tmp/peercompute-diffusion-sd-20261103.json`. Each verifies all seven source
+  files, recognizable prompt-dependent512×512 images, positive GPU dispatches
+  in every neural stage, warm reuse, cooperative local cancellation, zero leases
+  after unload and identical fixed-seed output after source-blocked browser restart.
+- Actual native WebRTC image output **PASS** for both models: independent
+  GPU-disabled requester, matching host/pixel SHA-256, hosting-disable rejection,
+  zero requester workers/databases/model/WASM requests, no private pubsub fields.
+  Protocol cancellation/stalled-output/digest/no-replay tests use real Noise peers
+  with injected model callbacks; distinguish them from actual GPU image generation.
+- UI19/19 and controller/library23/23 pass; actual production console startup,
+  ten model choices, connected backend and desktop/mobile modals pass without
+  model downloads. Real console DOM and real GPU generation are separate checks.
+  The initial production entry hang and first JSEP/native-EP ABI mismatch receipts
+  remain in log.md; both causes were corrected before final passing runs.
+- Qwen3.5 0.8B Abliterated **PASS**: 26/26 GPU layers, greeting, exact arithmetic,
+  warm reuse, cooperative cancellation, unload with zero leases and persistent
+  browser restart with all weight sources blocked. Receipt:
+  `/tmp/peercompute-qwen35-abliterated-hardware-20261103.json`.
+- Qwen3 0.6B Abliterated **runtime PASS / quality FAIL**: 29/29 GPU layers,
+  lifecycle and source-blocked restart pass. The original arithmetic prompt
+  returned `2` twice; one clearer prompt calculated `4` but violated the requested
+  one-digit format. Both original and bounded diagnostic failures are preserved:
+  `/tmp/peercompute-qwen3-abliterated-hardware-20261103.json` and
+  `/tmp/peercompute-qwen3-abliterated-quality-diagnostic-20261103.json`.
+  No prompt search or sampling change was used to erase the failure.
+- Final exact Tailnet preview **PASS**: production snapshot at
+  `https://fastbox.tail5c077c.ts.net:5189/?dev=1&v=images1`, ten choices, three idle
+  runtime services, connected SecretWorkshop backend, trusted HTTPS/isolation,
+  desktop/mobile fullscreen and both dialogs. No weights/WASM requests or page
+  errors; owned browser closed. Overview4173 still links the model demo.
+  Receipt: `/tmp/peercompute-images-live-20261104.json`.
+- Full core408/409 (unchanged ULG Eshkol baseline failure); network/reliability/
+  WebRTC63/63; demo contracts49/49; Webpack/CubeChat/Earth builds pass.
+  `npm run test:diffusion` and `npm run test:diffusion:browser` are the new focused
+  entrypoints. Hardware tests use owned Chrome157/NVIDIA Vulkan f16 override;
+  no user browser settings change. Broader parent physical-host gates remain open.
+
 ### Modal library and browser storage — 2026-11-03 18:49 AKST
 
 - Native Config and Stored Models dialogs: focus/Escape/close restoration, both

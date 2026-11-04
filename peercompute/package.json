@@ -68,6 +68,7 @@
     "libp2p": "^3.1.2",
     "multiformats": "14.0.5",
     "peercompute-artifact-noise": "npm:@libp2p/noise@17.0.2",
+    "peercompute-diffusion-ort": "npm:onnxruntime-web@1.31.1",
     "playwright": "^1.56.1",
     "process": "^0.11.10",
     "stream-browserify": "^3.0.0",

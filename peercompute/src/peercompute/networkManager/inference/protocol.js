@@ -3,7 +3,9 @@ import { lpStream } from '@libp2p/utils';
 import { MODEL_POLICY, validateSessionId } from '../../inference/modelManifest.js';
 import { normalizeModelMessages, validateImageInput } from '../../inference/modelTask.js';
 
-export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/1.0.0';
+// v2 distinguishes image output from vision input and adds credited result frames.
+// A v1 reader discards those capabilities, so it must not discover a v2 image host.
+export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/2.0.0';
 export const PEER_INFERENCE_LIMITS = Object.freeze({ frameBytes: 128 * 1024, imageChunkBytes: 64 * 1024,
   maximumPeers: 32, maximumModels: 128, maximumInbound: 5, maximumPerPeer: 2,
   maximumOutbound: 5, queryTimeoutMs: 5000, requestTimeoutMs: 120000, recordTtlMs: 15000 });
@@ -29,8 +31,18 @@ export function descriptor(value) {
   if (!value || typeof value !== 'object') throw new Error('Invalid model descriptor');
   if (!Array.isArray(value.modalities) || value.modalities.length > 4
       || value.modalities.some((item) => !['text', 'image', 'audio', 'video'].includes(item))) throw new Error('Invalid model modalities');
+  const task = value.task ?? (value.modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
+  if (!['text-generation', 'image-text-to-text', 'text-to-image'].includes(task)) throw new Error('Invalid model task');
+  const outputModalities = task === 'text-to-image' ? ['image'] : ['text'];
+  if (value.outputModalities !== undefined && (!Array.isArray(value.outputModalities)
+      || value.outputModalities.length !== 1 || value.outputModalities[0] !== outputModalities[0])) {
+    throw new Error('Model output modalities do not match its task');
+  }
+  if (task === 'text-to-image' && (value.modalities.length !== 1 || value.modalities[0] !== 'text')) {
+    throw new Error('Image generation accepts text input only');
+  }
   return { manifestCid: cid(value.manifestCid), modelId: string(value.modelId), name: string(value.name),
-    modalities: [...new Set(value.modalities)], runtime: string(value.runtime, 128),
+    task, outputModalities, modalities: [...new Set(value.modalities)], runtime: string(value.runtime, 128),
     repository: string(value.repository, 256), revision: string(value.revision, 128),
     totalBytes: integer(value.totalBytes, 64 * 1024 ** 3) };
 }
@@ -48,6 +60,15 @@ export function generation(value, { imageBytes = false } = {}) {
   validateSessionId(value.requestId);
   const result = { requestId: value.requestId, manifestCid: cid(value.manifestCid),
     messages: normalizeModelMessages(value), maxNewTokens: integer(value.maxNewTokens ?? MODEL_POLICY.maxNewTokens, MODEL_POLICY.maxNewTokens, 1) };
+  if (value.task !== undefined) {
+    if (!['text-generation', 'image-text-to-text', 'text-to-image'].includes(value.task)) throw new Error('Invalid inference task');
+    result.task = value.task;
+  }
+  if (value.seed !== undefined) result.seed = integer(value.seed, 0xffffffff);
+  if (value.steps !== undefined) result.steps = integer(value.steps, 8, 1);
+  for (const key of ['width', 'height']) if (value[key] !== undefined) result[key] = integer(value[key], 512, 512);
+  if (result.task === 'text-to-image' && (value.image != null || result.messages.length !== 1
+      || result.messages[0].role !== 'user')) throw new Error('Image generation needs one text prompt');
   if (value.image != null) {
     const { width, height, channels } = value.image;
     integer(width, MODEL_POLICY.maxImagePixels, 1); integer(height, MODEL_POLICY.maxImagePixels, 1);
@@ -58,13 +79,29 @@ export function generation(value, { imageBytes = false } = {}) {
   }
   return result;
 }
-export function resultData(value) {
+export function resultImage(value, { imageBytes = false } = {}) {
+  if (!value || typeof value !== 'object') throw new Error('Invalid result image');
+  const width = integer(value.width, 1024, 1); const height = integer(value.height, 1024, 1);
+  if (value.channels !== 4 || width * height > MODEL_POLICY.maxImagePixels
+      || !/^[a-f0-9]{64}$/.test(value.sha256 ?? '')) throw new Error('Invalid result image dimensions or digest');
+  if (imageBytes) validateImageInput(value);
+  return { width, height, channels: 4, sha256: value.sha256, ...(imageBytes ? { data: value.data } : {}) };
+}
+export function resultData(value, options = {}) {
   if (typeof value?.text !== 'string' || bytes(value.text) > MODEL_POLICY.maxOutputBytes) throw new Error('Invalid inference result text');
   const result = { text: value.text };
   for (const key of ['inputTokens', 'outputTokens', 'gpuDispatches', 'gpuSubmissions']) {
     if (value[key] != null) result[key] = integer(value[key], Number.MAX_SAFE_INTEGER);
   }
+  if (value.image != null) result.image = resultImage(value.image, options);
+  if (value.seed !== undefined) result.seed = integer(value.seed, 0xffffffff);
+  if (value.steps !== undefined) result.steps = integer(value.steps, 8, 1);
   return result;
+}
+export function diffusionProgress(value) {
+  if (!['text-encoder', 'denoise', 'decode'].includes(value.stage)) throw new Error('Invalid image generation stage');
+  const steps = integer(value.steps, 8, 1);
+  return { type: 'diffusion-progress', stage: value.stage, steps, step: integer(value.step, steps) };
 }
 export function channel(stream) {
   const rpc = lpStream(stream, { maxDataLength: PEER_INFERENCE_LIMITS.frameBytes,

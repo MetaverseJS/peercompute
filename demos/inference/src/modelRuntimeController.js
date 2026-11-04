@@ -2,6 +2,12 @@ import { createModelMutationQueue, listStoredModelRecords, modelStorageError, wi
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 
+function capabilities(model = {}) {
+  const modalities = [...(model.modalities ?? ['text'])];
+  const task = model.task ?? (modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
+  return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : 'text'])] };
+}
+
 /** UI policy over manager-owned storage, inference and private peer streams. */
 export function attachModelRuntimeController(runtime, { catalog, now = Date.now } = {}) {
   const original = Object.fromEntries(['importCatalog', 'importPackage', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
@@ -29,7 +35,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     const match = Object.values(catalog).find((entry) => entry.model.repository === manifest.model.repository
       && entry.model.revision === manifest.model.revision && entry.model.runtime === manifest.model.runtime);
     return { manifestCid: cid, modelId: match?.id ?? cid, name: match?.name ?? manifest.name ?? manifest.model.repository,
-      modalities: manifest.model.modalities ?? ['text'], runtime: manifest.model.runtime,
+      ...capabilities(manifest.model), runtime: manifest.model.runtime,
       repository: manifest.model.repository, revision: manifest.model.revision,
       totalBytes: manifest.files.reduce((sum, file) => sum + file.size, 0) };
   }
@@ -56,9 +62,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     return current && !deleting.has(current.manifestCid) && status.status === 'ready'
       && status.manifestCid === current.manifestCid ? current : null;
   }
-  const remoteModels = () => (peerService?.listModels() ?? []).map((entry) => ({ ...entry,
+  const remoteModels = () => (peerService?.listModels() ?? []).map((entry) => ({ ...entry, ...capabilities(entry),
     providers: entry.providers.filter((provider) => !provider.local) })).filter((entry) => entry.providers.length);
-  const remoteHosts = () => (peerService?.listHosts() ?? []).map((entry) => ({ ...entry,
+  const remoteHosts = () => (peerService?.listHosts() ?? []).map((entry) => ({ ...entry, ...capabilities(entry),
     hosts: entry.hosts.filter((host) => !host.local) })).filter((entry) => entry.hosts.length);
 
   async function syncSharing({ strict = false } = {}) {
@@ -94,7 +100,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     const request = { manifestCid: model.manifestCid, abort };
     localGenerations.add(request);
     try {
-      request.promise = Promise.resolve(runtime.service.generate({ ...options, signal }));
+      request.promise = Promise.resolve(runtime.service.generate({ ...options, task: model.task, signal }));
       return await request.promise;
     } finally { localGenerations.delete(request); if (--localRequests === 0) lastIdleAt = now(); }
   }
@@ -193,13 +199,13 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
     getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
-        modelId: entry.id, modalities: entry.model.modalities, runtime: entry.model.runtime, totalBytes: entry.totalBytes })),
+        modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes })),
       ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers' }))];
     },
     listInferenceTargets() {
       const model = resident();
       return [{ key: 'local', name: model?.name ?? 'No model loaded', local: true,
-        available: !!model, busy: localRequests > 0, modalities: model?.modalities ?? ['text'], providerCount: model ? 1 : 0 },
+        available: !!model, busy: localRequests > 0, ...capabilities(model ?? {}), providerCount: model ? 1 : 0 },
       ...remoteHosts().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, local: false,
         available: true, busy: entry.hosts.every((host) => host.busy), providerCount: entry.hosts.length }))];
     },
@@ -321,7 +327,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
         const entry = remoteHosts().find((model) => `peer:${model.manifestCid}` === target);
         if (!entry) throw new Error('No peer is currently hosting that model');
         if (options.image && !entry.modalities.includes('image')) throw new Error('This model accepts text only');
-        return await peerService.generate(entry.manifestCid, input);
+        return await peerService.generate(entry.manifestCid, { ...input, task: entry.task });
       } finally { requests.delete(requestId); }
     },
     async cancel(requestId) {

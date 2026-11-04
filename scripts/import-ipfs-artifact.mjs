@@ -14,10 +14,12 @@ import { ARTIFACT_MANIFEST_SCHEMA, normalizeArtifactManifest } from '../peercomp
 import { MODEL_CATALOG, modelFileUrl as inferenceModelFileUrl } from '../peercompute/src/peercompute/inference/modelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
+import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 
-export const IMPORT_MODEL_CATALOG = Object.freeze({ ...MODEL_CATALOG, ...GGUF_MODEL_CATALOG, ...MODEL_ARTIFACT_CATALOG });
+export const IMPORT_MODEL_CATALOG = Object.freeze({ ...MODEL_CATALOG, ...GGUF_MODEL_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...DIFFUSION_MODEL_CATALOG });
 const modelFileUrl = (id, path) => MODEL_CATALOG[id] ? inferenceModelFileUrl(id, path)
-  : GGUF_MODEL_CATALOG[id] ? ggufModelFileUrl(id, path) : modelArtifactFileUrl(id, path);
+  : GGUF_MODEL_CATALOG[id] ? ggufModelFileUrl(id, path)
+    : DIFFUSION_MODEL_CATALOG[id] ? diffusionModelFileUrl(id, path) : modelArtifactFileUrl(id, path);
 
 const repositoryDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_ARTIFACT_CACHE = join(homedir(), '.cache', 'peercompute-artifacts');

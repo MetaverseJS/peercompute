@@ -1344,13 +1344,14 @@ export class ComputeManager {
   async createModelInferenceService({ artifactStore, resourceBroker, resourceBudgets,
     runtime = 'transformers.js', ...options } = {}) {
     if (this.destroying) throw new Error('ComputeManager is shutting down');
-    if (!['transformers.js', 'llama.cpp'].includes(runtime)) throw new Error('Unsupported model execution runtime');
+    if (!['transformers.js', 'llama.cpp', 'onnx-diffusion'].includes(runtime)) throw new Error('Unsupported model execution runtime');
     const lifecycle = this.workerLifecycleRevision;
     const [{ ModelInferenceService }, { ResourceLeaseBroker }, { ResidentModelAdmission }, runtimeDefinition] = await Promise.all([
       import('../inference/ModelInferenceService.js'),
       import('../serviceOrchestration/ResourceLeaseBroker.js'),
       import('../serviceOrchestration/ResidentModelAdmission.js'),
-      runtime === 'llama.cpp' ? import('../inference/gguf/runtimeDefinition.js').then((module) => module.ggufRuntimeDefinition) : null,
+      runtime === 'llama.cpp' ? import('../inference/gguf/runtimeDefinition.js').then((module) => module.ggufRuntimeDefinition)
+        : runtime === 'onnx-diffusion' ? import('../inference/diffusion/runtimeDefinition.js').then((module) => module.diffusionRuntimeDefinition) : null,
     ]);
     if (this.destroying || lifecycle !== this.workerLifecycleRevision) throw new Error('ComputeManager shutdown interrupted service creation');
     if (resourceBroker && this.resourceBroker && resourceBroker !== this.resourceBroker) {

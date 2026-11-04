@@ -38,6 +38,10 @@ async function fixture(t, scenario = {}) {
   await page.evaluate(async (scenario) => {
     const { mountInferencePanel } = await import('/demos/inference/src/agentPanel.js');
     window.calls = []; window.contextCalls = [];
+    window.previewUrls = { created: [], revoked: [] };
+    const createUrl = URL.createObjectURL.bind(URL), revokeUrl = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (blob) => { const url = createUrl(blob); previewUrls.created.push(url); return url; };
+    URL.revokeObjectURL = (url) => { previewUrls.revoked.push(url); revokeUrl(url); };
     window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: true, refreshCalls: 0,
       refreshActive: 0, refreshPeak: 0, disposed: false, sharing: true, hostInference: true,
       stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList };
@@ -53,12 +57,15 @@ async function fixture(t, scenario = {}) {
       getPreferences: () => ({ sharing: state.sharing, hostInference: state.hostInference }),
       getSharingErrors: () => state.stored.filter((model) => model.shareError).map((model) => ({ manifestCid: model.manifestCid, message: model.shareError })),
       listModelSources: () => [
-        { key: 'hf:vision', name: 'Fixture vision', source: 'hf', modelId: 'smolvlm-256m-q4', modalities: ['text', 'image'] },
+        { key: 'hf:vision', name: 'Fixture vision', source: 'hf', modelId: 'smolvlm-256m-q4', modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
+          task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] },
         { key: 'peer:fixture', name: 'Peer text model', source: 'peers', manifestCid: 'fixture', modalities: ['text'] }],
       listInferenceTargets: () => [{ key: 'local', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true,
-        available: state.loaded, busy: false, modalities: ['text', 'image'] }, ...(state.remote ? [{ key: 'peer:fixture',
+        available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
+        task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
         name: 'Peer text model', local: false, available: true, busy: state.providers.every(Boolean),
-        providerCount: state.providers.length, modalities: ['text'] }] : [])],
+        providerCount: state.providers.length, modalities: ['text'],
+        task: scenario.diffusion ? 'text-to-image' : 'text-generation', outputModalities: scenario.diffusion ? ['image'] : ['text'] }] : [])],
       async refreshPeers({ signal }) {
         state.refreshCalls++; state.refreshPeak = Math.max(state.refreshPeak, ++state.refreshActive);
         try { await delay(scenario.refreshDelay ?? 1, signal); if (state.refreshError) throw new Error('Offline'); }
@@ -70,8 +77,16 @@ async function fixture(t, scenario = {}) {
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
       async generate(target, options) {
         calls.push({ type: 'generate', target, requestId: options.requestId, messages: options.messages,
+          prompt: options.prompt, maxNewTokens: options.maxNewTokens,
           image: options.image ? { width: options.image.width, height: options.image.height, bytes: options.image.data.length } : null });
-        await delay(scenario.generateDelay ?? 1, options.signal);
+        await delay(scenario.generateDelay ?? 1, scenario.ignoreAbort ? undefined : options.signal);
+        if (scenario.diffusion) {
+          options.onProgress?.({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 1 });
+          const data = new Uint8Array(512 * 512 * 4);
+          for (let index = 0; index < data.length; index += 4) { data[index] = 220; data[index + 3] = 255; }
+          return { text: '', seed: 42, steps: 1, image: scenario.invalidImage
+            ? { width: 2048, height: 2048, channels: 4, data } : { width: 512, height: 512, channels: 4, data } };
+        }
         const text = scenario.longReply ? Array.from({ length: 70 }, (_, i) => 'Reply line ' + i).join('\n') : 'Reply to ' + options.messages.at(-1).content;
         options.onToken?.(text); return { text, inputTokens: 4, outputTokens: 8 };
       },
@@ -398,4 +413,58 @@ test('a sharing failure keeps the imported model usable and explains its library
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
   await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
   await page.getByRole('dialog', { name: 'Stored Models', exact: true }).getByText('Sharing unavailable: Peer network is offline', { exact: true }).waitFor();
+});
+
+test('local and peer image targets turn each prompt into a bounded image without chat context or attachments', async (t) => {
+  const page = await fixture(t, { loaded: true, diffusion: true, context: true });
+  const prompt = page.getByLabel('Message', { exact: true });
+  assert.equal(await prompt.getAttribute('placeholder'), 'Describe an image…');
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+  for (const [target, text] of [['local', 'A red circle'], ['peer:fixture', 'A blue square']]) {
+    await page.getByLabel('Chat target').selectOption(target);
+    await prompt.fill(text); await prompt.press('Enter');
+    await page.getByAltText(`Generated image: ${text}`, { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+    const generated = page.getByAltText(`Generated image: ${text}`, { exact: true });
+    await generated.evaluate((image) => image.decode());
+    assert.deepEqual(await generated.evaluate((image) => ({ width: image.naturalWidth, height: image.naturalHeight, local: image.src.startsWith('blob:') })),
+      { width: 512, height: 512, local: true });
+    const bounds = await generated.boundingBox(); assert.ok(bounds.width <= 420);
+  }
+  const evidence = await page.evaluate(() => ({ requests: calls.filter((call) => call.type === 'generate'), contextCalls,
+    actions: calls.filter((call) => call.type === 'action'), previews: previewUrls.created.length,
+    writes: calls.filter((call) => ['pin', 'acquire', 'sharing'].includes(call.type)) }));
+  assert.deepEqual(evidence.requests.map((call) => ({ target: call.target, prompt: call.prompt, messages: call.messages, image: call.image, maxNewTokens: call.maxNewTokens })),
+    [{ target: 'local', prompt: 'A red circle', messages: undefined, image: null, maxNewTokens: undefined },
+      { target: 'peer:fixture', prompt: 'A blue square', messages: undefined, image: null, maxNewTokens: undefined }]);
+  assert.deepEqual(evidence.contextCalls, []); assert.deepEqual(evidence.actions, []); assert.deepEqual(evidence.writes, []);
+  assert.equal(evidence.previews, 2);
+  assert.equal(await page.getByRole('button', { name: 'Apply: test action', exact: true }).count(), 0);
+});
+
+test('generated image previews have a bounded history and revoke every URL on disposal', async (t) => {
+  const page = await fixture(t, { loaded: true, diffusion: true });
+  for (let index = 0; index < 8; index++) {
+    await page.getByLabel('Message', { exact: true }).fill('Image ' + index);
+    await page.getByLabel('Message', { exact: true }).press('Enter');
+    await page.getByAltText('Generated image: Image ' + index, { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+  }
+  assert.equal(await page.locator('.pc-generated-image').count(), 6);
+  assert.equal(await page.evaluate(() => previewUrls.revoked.length), 2);
+  await page.evaluate(() => panel.dispose());
+  assert.deepEqual(await page.evaluate(() => [...previewUrls.revoked].sort()), await page.evaluate(() => [...previewUrls.created].sort()));
+});
+
+test('invalid pixels and late cancelled image results never become preview URLs', async (t) => {
+  const invalid = await fixture(t, { loaded: true, diffusion: true, invalidImage: true });
+  await invalid.getByLabel('Message', { exact: true }).fill('Invalid output'); await invalid.getByLabel('Message', { exact: true }).press('Enter');
+  await invalid.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('bounded RGBA'));
+  assert.equal(await invalid.evaluate(() => previewUrls.created.length), 0);
+  const cancelled = await fixture(t, { loaded: true, diffusion: true, generateDelay: 100, ignoreAbort: true });
+  await cancelled.getByLabel('Message', { exact: true }).fill('Cancel output'); await cancelled.getByLabel('Message', { exact: true }).press('Enter');
+  await cancelled.waitForFunction(() => calls.some((call) => call.type === 'generate'));
+  await cancelled.getByRole('button', { name: 'Stop', exact: true }).click();
+  await cancelled.waitForFunction(() => document.querySelector('[role=status]').textContent.startsWith('Cancelled'));
+  assert.equal(await cancelled.evaluate(() => previewUrls.created.length), 0);
 });
