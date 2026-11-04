@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ensureDevHttpsCert } from '../../scripts/https.mjs';
+import { pagesIsolationPlugin } from '../shared/pagesIsolationPlugin.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const peercomputeRoot = path.resolve(__dirname, '../../peercompute');
@@ -11,6 +12,7 @@ export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
   worker: { format: 'es' },
+  plugins: [pagesIsolationPlugin()],
   server: {
     port: 5176,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

@@ -5,6 +5,69 @@ export const ROADVECTOR_PRESENCE_SCHEMA = 'peercompute.roadvector.presence.v1';
 export const ROADVECTOR_PRESENCE_PRECISION_DEGREES = 0.1;
 export const ROADVECTOR_PRESENCE_MAXIMUM_PEERS = 64;
 export const ROADVECTOR_PRESENCE_MAXIMUM_AGE_MS = 15_000;
+export const ROADVECTOR_PRESENCE_MAXIMUM_CONNECTIONS = 8;
+
+const PUBLIC_ADDRESS_VALUE_PROTOCOLS = new Set([
+  'ip4', 'ip6', 'dns', 'dns4', 'dns6', 'dnsaddr', 'tcp', 'udp', 'sni', 'p2p', 'certhash',
+]);
+const PUBLIC_ADDRESS_FLAG_PROTOCOLS = new Set([
+  'ws', 'wss', 'tls', 'quic', 'quic-v1', 'p2p-circuit', 'webrtc', 'webrtc-direct', 'webtransport',
+]);
+const CONNECTION_STATUSES = new Set(['open', 'closing', 'closed']);
+const CONNECTION_ENCRYPTIONS = new Set(['/noise', '/tls/1.0.0', 'native']);
+
+function publicConnectionString(value, maximumLength, pattern) {
+  try {
+    const text = typeof value === 'string' ? value : value?.toString?.();
+    return typeof text === 'string' && text.length <= maximumLength && pattern.test(text)
+      ? text
+      : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function publicConnectionAddress(value) {
+  const address = publicConnectionString(value, 2_048, /^\/[A-Za-z0-9.:/_~-]+$/);
+  if (!address) return null;
+  const components = address.slice(1).split('/');
+  for (let index = 0; index < components.length; index += 1) {
+    const protocol = components[index];
+    if (PUBLIC_ADDRESS_VALUE_PROTOCOLS.has(protocol)) {
+      if (!components[++index]) return null;
+    } else if (!PUBLIC_ADDRESS_FLAG_PROTOCOLS.has(protocol)) {
+      // In particular, do not expose HTTP paths, URL credentials, or queries.
+      return null;
+    }
+  }
+  return address;
+}
+
+function connectionSnapshots(manager) {
+  let connections;
+  try {
+    connections = manager?.getLibp2pNode?.()?.getConnections?.();
+  } catch (_) {
+    return Object.freeze([]);
+  }
+  if (!Array.isArray(connections)) return Object.freeze([]);
+  const snapshots = [];
+  // Prefer open connections if libp2p retains closing entries during a transition.
+  for (const open of [true, false]) {
+    for (const connection of connections) {
+      if (!connection || (connection.status === 'open') !== open) continue;
+      snapshots.push(Object.freeze({
+        remotePeer: publicConnectionString(connection.remotePeer, 256, /^[A-Za-z0-9]+$/),
+        address: publicConnectionAddress(connection.remoteAddr),
+        status: CONNECTION_STATUSES.has(connection.status) ? connection.status : 'unknown',
+        encryption: CONNECTION_ENCRYPTIONS.has(connection.encryption) ? connection.encryption : 'unknown',
+        limited: Boolean(connection.limits),
+      }));
+      if (snapshots.length === ROADVECTOR_PRESENCE_MAXIMUM_CONNECTIONS) return Object.freeze(snapshots);
+    }
+  }
+  return Object.freeze(snapshots);
+}
 
 const ELIGIBLE_LOCATION_SOURCES = new Set([
   'api',
@@ -211,7 +274,7 @@ export class RoadvectorPresenceRuntime {
         roomId: 'roadvector-world',
         topologyId: 'roadvector-presence',
         topology: 'distributed',
-        maxConnections: 8,
+        maxConnections: ROADVECTOR_PRESENCE_MAXIMUM_CONNECTIONS,
         targetConnections: 4,
         connectionRadius: 1,
         enableScheduler: false,
@@ -233,14 +296,19 @@ export class RoadvectorPresenceRuntime {
   }
 
   getSnapshot() {
+    const connections = connectionSnapshots(this.#manager);
+    const connected = connections.some((connection) => connection.status === 'open');
+    const status = this.#status === 'connected' && !connected ? 'disconnected' : this.#status;
     const peers = collectRoadvectorPeers(this.#manager?.getConnectedPeers?.() ?? [], {
       now: this.#clock(),
     });
     return Object.freeze({
       schemaVersion: 'peercompute.roadvector.player-presence-snapshot.v1',
-      status: this.#status,
+      status,
       error: this.#error,
-      connected: this.#status === 'connected',
+      connected,
+      connections,
+      maximumConnections: ROADVECTOR_PRESENCE_MAXIMUM_CONNECTIONS,
       publishingLocation: Boolean(this.#localPresence),
       localPrecisionDegrees: this.#localPresence?.precisionDegrees ?? null,
       remotePlayerCount: peers.length,

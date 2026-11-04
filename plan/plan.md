@@ -1559,3 +1559,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   build, and the standalone Playwright/system-Chromium built smoke pass. The
   owned HTTPS listener is closed after the smoke. Physical-headset validation
   remains NOT RUN and no headset performance certification is claimed.
+
+### GitHub Pages rebuild and complete demo validation - 2026-11-03 AKST
+
+- In progress: regenerate docs for all15packages after the model catalog changes; preserve the Local Model Console as the second overview card. Verify all17gallery demos plus additional shipped HTML routes under the actual /peercompute/ base.
+- Acceptance requires inspected screenshots, captured console/resource errors, and authenticated open SecretWorkshop connections in each demo that supports networking. Activate explicit opt-in connections; label local-only simulations accurately. Verify static-host isolation for inference/CubeChat/Earth without injecting server headers. Preserve production geodata limitations as explicit failures until resolved.
+- Publishing authorized by the subsequent November3 23:32 AKST “yes”; merge into ulg remains separate.
+
+- Result: complete local Pages build,23/23 native desktop-browser route checks and46 inspected desktop/mobile screenshots;67/67 focused tests; authenticated SecretWorkshop relay connections in all9network-enabled demo packages (10routes including Hyperborea redirect/direct). Owned managed SmolVLM inference over the peer network also passes. RoadVector riding remains geodata-backend-unconfigured; automated DaddyGo does not validate camera/pose tracking or physical XR. PublicPages is still the earlier fe3cfda3 deployment; explicit push authorization remains pending.
+
+- November3 23:32 AKST: user explicitly approved publishing938fe136 to the existing feature-branch Pages source. Deployment and exactpublicURL validation are in progress; ulg merge remains separate.

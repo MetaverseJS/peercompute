@@ -1411,6 +1411,12 @@ npm --prefix demos/webgpuphys run test:ppf-contact
 npm run build:all
 npm run test:runtime
 
+# Complete Pages-shaped visual/production-relay acceptance (Node24, system Chrome)
+# Use your certificate's valid hostname so Chrome can install service workers.
+# PAGES_HEADED=1 uses an owned system-browser window when headless GPU rendering fails.
+PAGES_HEADED=1 PAGES_HOST=0.0.0.0 PAGES_PUBLIC_HOST=fastbox.tail5c077c.ts.net \
+  PAGES_OUTPUT_DIR=/tmp/peercompute-pages-check node demos/tests/pages-runtime.mjs
+
 # Deterministic built EarthGrid/RoadVector/WXGlobe release gate
 npm run test:earth-platform:release
 
@@ -1436,6 +1442,24 @@ Notes:
   matching managed Playwright browser is absent.
 - `npm run test:runtime` exercises the built docs bundle and includes
   non-multiplayer demos.
+- `demos/tests/pages-runtime.mjs` checks all 17 gallery demos and the additional
+  shipped HTML routes at `/peercompute/`, using real external sources. It saves
+  desktop/mobile screenshots, console/resource logs and authenticated open
+  SecretWorkshop relay evidence outside Git. Network-free simulations have no
+  relay requirement; NetViz, Multiscale and Schrodinger exercise their explicit
+  connection controls. `PAGES_ROUTES=inference,cubechat` selects a focused run;
+  `PAGES_CHROME_ARGS` accepts a JSON array of hardware-specific launch flags.
+- Inference, CubeChat and Earth production builds include a narrowly scoped
+  service worker that supplies isolation headers on static hosts such as Pages.
+  First navigation may reload once before application startup. Registration
+  failure leaves the application usable; GGUF still requires the browser's actual
+  shared-memory, JSPI, memory64 and shader-f16 capabilities. The worker does not
+  cache model files or assets. Developer-server headers are a separate mechanism.
+- A Pages build does not deploy the optional Earth/RoadVector geodata service.
+  Configure `VITE_GEODATA_API_URL` only with a deployed compatible HTTPS origin
+  and matching server CORS. SecretWorkshop's relay configuration endpoint is
+  operational; its root geodata paths currently redirect to HTML. RoadVector's
+  globe and presence can work while its geodata-dependent ride stays unavailable.
 - `npm run test:runtime:p2p` is the full multiplayer browser gate for
   `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`; use
   `RUNTIME_P2P_DEMOS=...` to isolate a subset while debugging.

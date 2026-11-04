@@ -3307,3 +3307,23 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - NOT RUN: physical headset entry/re-entry, tracked controllers/hands, haptics,
   comfort, and headset GPU/frame timing. System-Chromium software-render timing
   is not a headset certification. No `terminal-browser` invocation occurred.
+
+## Pages release validation - 2026-11-03 AKST (in progress)
+
+- Build all15demo packages and run structural release/port checks.
+- Serve docs at /peercompute/ without COOP/COEP headers; correct JavaScript .mjs and WASM MIME types. Inspect all17gallery demo cards plus additional shipped HTML routes, desktop/mobile layout, console/page/resource errors and live network state.
+- Require authenticated open libp2p connections to the configured SecretWorkshop peer for network demos; config fetch or isConnected alone is insufficient. Exercise opt-in connection controls separately and identify local-only simulations. No relay or geography fixture substitution in this acceptance gate.
+- Cold/warm isolation checks must establish crossOriginIsolated/SharedArrayBuffer in document and worker for inference embeddings, with bounded reload and no model/asset caching by the isolation service worker.
+
+### Pages acceptance result - 2026-11-03 23:10 AKST
+
+- `npm run build:all` plus targeted rebuilds of inference embeddings, RoadVector, CubeChat, DaddyGo, Hyperborea and WebGPUPhys: PASS. Final package size/manifest is archived outside Git.
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/pages-isolation.test.mjs demos/webgpuphys/tests/mpm-task-bundle.test.mjs demos/motorcycle/tests/overview/*.test.mjs`:67/67 PASS. Static assertions now follow actual Earth dynamic entry and bundled MPM URL, preserving application/runtime contracts.
+- `PAGES_HEADED=1 PAGES_BASE_URL=https://fastbox.tail5c077c.ts.net:5197/peercompute/ PAGES_ROUTE_TIMEOUT_MS=90000 PAGES_OUTPUT_DIR=/tmp/peercompute-pages-final PAGES_CHROME_ARGS='["--enable-unsafe-webgpu"]' node demos/tests/pages-runtime.mjs`:23/23 PASS;46 screenshots visually reviewed, zero console/page/HTTP/request/socket/context-loss errors and no cleanup failures. RealNVIDIA GPU; all owned browsers closed. The authorized static preview remains available on5197.
+- Network proof covers inference/CubeChat/Multiscale/RoadVector/NetViz/Schrodinger/SneakyWoods/DaddyGo/Hyperborea, including both Hyperborea HTML routes. It uses actual open encrypted connections to the configured SecretWorkshop identity, without a local relay fixture. Other routes are local-only simulations/galleries.
+- Cold/warm static-host isolation and embedded panel startup pass for inference/CubeChat/Earth; inference ComputeManager worker exposes true crossOriginIsolated/SAB/JSPI/memory64. No server header injection.
+- Actual owned-peer SmolVLM256M round trip against the rebuilt nested URL PASS46.27s: cached revision-pinned source imported normally into StateManager; independentGPU-disabled requester and same-library tab discover model files and hosting; native managed-worker reply999GPUdispatches/86submissions; hosting off/on and wrapped selectors pass. Native desktop variant of existing model-network-discovery harness archived with exact source; no unrelated host prompted.
+- Initial forced-headlessVulkan matrix failures and GPU preset diagnostics are preserved. Native desktop retries establish render/connection readiness; no shader/physics thresholds were weakened. MPM raw source import was independently repaired with an exported bundled task chunk and verified in a worker.
+- Limits: RoadVector geography-dependent riding unavailable without deployed geodata; camera/pose gameplay intentionally skipped by DaddyGo automation guard; physical XR untested. Minor nonblocking mobile overlay density/help overlap is recorded in the visual report. Generic ICC generated-asset deletion gate remains a raw failure; it must not be presented as a clean guard.
+
+- Publication follow-up: official Transformers.js4.3.2 package provenance verified against registry/lockfile SHA512 after GitHub flagged minified model identifiers. Supported esbuild lineLimit formatting rebuilds for inference/WebGPUPhys PASS15.27s/11.87s; focused suite repeats67/67 PASS1.24s. Rebuilt-browser and protected-push acceptance are pending; no scanner override.

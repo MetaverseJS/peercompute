@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 import { ensureDevHttpsCert } from '../../scripts/https.mjs';
+import { pagesIsolationPlugin } from '../shared/pagesIsolationPlugin.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,7 @@ export default defineConfig(({ command }) => ({
     CESIUM_BASE_URL: JSON.stringify('./cesium/')
   },
   plugins: [
+    pagesIsolationPlugin(),
     viteStaticCopy({
       targets: [
         ...['Workers', 'ThirdParty', 'Assets', 'Widgets'].map((directory) => ({

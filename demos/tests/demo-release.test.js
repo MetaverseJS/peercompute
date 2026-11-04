@@ -230,7 +230,13 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   const motorcycleModulePath = motorcycleHtml.match(/<script[^>]+src="\.\/(assets\/[^"?]+\.js)"/i)?.[1];
   assert.ok(earthModulePath, 'EarthGrid built HTML does not reference its hashed entry module');
   assert.ok(motorcycleModulePath, 'RoadVector built HTML does not reference its hashed entry module');
-  const earthModule = read(`docs/earth/${earthModulePath}`);
+  const earthEntry = read(`docs/earth/${earthModulePath}`);
+  // Pages isolation defers application startup into a linked dynamic chunk.
+  // Follow the emitted entry's imports, rather than scanning unrelated/stale assets.
+  const earthImports = [...earthEntry.matchAll(/import\(\s*["'](\.\/[^"']+\.js)["']\s*\)/g)]
+    .map((match) => path.posix.normalize(path.posix.join(path.posix.dirname(earthModulePath), match[1])));
+  assert.ok(earthImports.every((entry) => entry.startsWith('assets/')), 'EarthGrid application import escapes its asset directory');
+  const earthModule = [earthEntry, ...earthImports.map((entry) => read(`docs/earth/${entry}`))].join('\n');
   const motorcycleModule = read(`docs/motorcycle/${motorcycleModulePath}`);
   assert.ok(earthModule.includes('peercompute.geo.osm-region.v1'));
   assert.ok(earthModule.includes('OpenStreetMap'));

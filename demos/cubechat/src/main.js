@@ -539,6 +539,8 @@ class CubeChat {
       const isMobile = this._isMobileLikeDevice();
       
       const loadingDiv = document.querySelector('#loading');
+      const loadingStatus = loadingDiv?.querySelector('p');
+      if (loadingStatus) loadingStatus.textContent = 'Ready';
       const canvas = this.scene.renderer.domElement;
       let loadingStarted = false;
       let pendingInitialPointerUnlock = false;

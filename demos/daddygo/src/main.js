@@ -289,12 +289,13 @@ import { NodeKernel } from '@peercompute';
         function handleResize() {
             const width = canvas3d.clientWidth;
             const height = canvas3d.clientHeight;
+            if (!camera || !renderer || width <= 0 || height <= 0) return;
             
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
             
-            renderer.setSize(width, height);
             renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(width, height, false);
         }
 
         function initThreeJS() {
@@ -307,7 +308,7 @@ import { NodeKernel } from '@peercompute';
 
             renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(canvas3d.clientWidth, canvas3d.clientHeight);
+            renderer.setSize(canvas3d.clientWidth, canvas3d.clientHeight, false);
 
             // Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -334,6 +335,15 @@ import { NodeKernel } from '@peercompute';
             createObstacles();
             animate();
             handleResize();
+            window.addEventListener('resize', handleResize);
+            window.addEventListener('pagehide', () => {
+                window.removeEventListener('resize', handleResize);
+            });
+            window.addEventListener('pageshow', (event) => {
+                if (!event.persisted) return;
+                window.addEventListener('resize', handleResize);
+                handleResize();
+            });
         }
 
         function createObstacles() {

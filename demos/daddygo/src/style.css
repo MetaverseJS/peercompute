@@ -12,6 +12,7 @@
             display: flex;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
             position: relative;
         }
         #video-container {
@@ -42,6 +43,8 @@
             height: 100%;
         }
         #canvas3d {
+            display: block;
+            min-width: 0;
             width: 100%;
             height: 100%;
               image-rendering: pixelated;
@@ -125,5 +128,68 @@
         }
         .toggle-btn:hover {
             opacity: 0.8;
+        }
+
+        @media (max-width: 720px), (max-height: 480px) {
+            #video-container {
+                box-sizing: border-box;
+                left: 8px;
+                bottom: 8px;
+                width: min(40vw, 160px);
+                height: min(30vw, 120px);
+                border-width: 2px;
+            }
+            #instructions {
+                box-sizing: border-box;
+                left: calc(min(40vw, 160px) + 16px);
+                right: 8px;
+                bottom: 8px;
+                max-width: none;
+                max-height: 35vh;
+                overflow-y: auto;
+                overflow-wrap: anywhere;
+                padding: 8px;
+                font-size: 11px;
+                line-height: 1.4;
+            }
+            #toggles {
+                box-sizing: border-box;
+                left: 8px;
+                right: auto;
+                bottom: calc(min(30vw, 120px) + 16px);
+                max-width: min(40vw, 160px);
+                padding: 4px;
+            }
+            .toggle-btn {
+                max-width: 100%;
+                padding: 8px;
+                font-size: 12px;
+            }
+            #status {
+                box-sizing: border-box;
+                top: 8px;
+                left: 8px;
+                width: calc(100vw - 165px);
+                max-height: 45vh;
+                overflow-y: auto;
+                overflow-wrap: anywhere;
+                padding: 6px;
+                font-size: 12px;
+            }
+            #score {
+                top: 8px;
+                right: 8px;
+                padding: 6px 8px;
+                font-size: 18px;
+            }
+            #global-score {
+                box-sizing: border-box;
+                top: 44px;
+                right: 8px;
+                max-width: 145px;
+                padding: 6px 8px;
+                font-size: 11px;
+                overflow-wrap: anywhere;
+            }
         }
     

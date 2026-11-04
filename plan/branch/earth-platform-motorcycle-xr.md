@@ -809,3 +809,9 @@ WXGlobe's NOAA compatibility gate.
   build, static release `17/17`, and rebuilt standalone Playwright/system-
   Chromium smoke. The owned listener is closed; physical-headset validation is
   explicitly NOT RUN; `terminal-browser` was not used.
+
+## Pages verification - 2026-11-03 AKST
+
+- RoadVector presence snapshots now expose up to8sanitized public libp2p connections and derive connected state from actual open connections. Overview13/13 tests and native Pages browser proof pass against SecretWorkshop.
+- Earth and WXGlobe real-source contour globes render on the production-shaped nested site; Earth’s optional model panel acquires static-host isolation.
+- No deployed compatible geodata origin was found on SecretWorkshop; root geodata routes redirect to HTML. RoadVector overview/presence pass, while riding stays explicitly disabled. Do not configure that redirect as VITE_GEODATA_API_URL or claim riding/physical XR validated.

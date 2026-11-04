@@ -579,7 +579,10 @@ test('webgpuphys headless uses isolated compute tasks', () => {
   assert.ok(exists(computePath), 'webgpuphys compute tasks missing');
   const headlessContent = fs.readFileSync(path.join(demosRoot, 'webgpuphys', 'demos', 'mpm-headless.js'), 'utf8');
   assert.ok(headlessContent.includes('ComputeManager'), 'webgpuphys headless ComputeManager usage missing');
-  assert.ok(headlessContent.includes('mpmComputeTasks'), 'webgpuphys compute module wiring missing');
+  assert.ok(headlessContent.includes('virtual:peercompute-mpm-task-url'), 'webgpuphys bundled compute module URL missing');
+  assert.ok(headlessContent.includes('module: COMPUTE_MODULE_URL'), 'webgpuphys tasks must use the bundled module URL');
+  const config = fs.readFileSync(path.join(demosRoot, 'webgpuphys', 'vite.config.js'), 'utf8');
+  assert.ok(config.includes('demos/shared/mpmComputeTasks.js') && config.includes("preserveSignature: 'strict'"), 'webgpuphys task exports must survive bundling');
 });
 
 test('fano-reactor ships sedenion chemistry model modules', () => {

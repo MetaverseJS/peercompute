@@ -1,6 +1,7 @@
 import { mpm } from "../src/index.js";
 import { ComputeManager } from "@peercompute";
 import { getSharedDevice } from "./shared/peercomputeDevice.js";
+import COMPUTE_MODULE_URL from "virtual:peercompute-mpm-task-url";
 
 const statusEl = document.getElementById("status");
 const particleCountEl = document.getElementById("particleCount");
@@ -18,8 +19,6 @@ const ELEMENTS = [
   "Hydrogen", "Oxygen", "Sodium", "Potassium", "Magnesium",
   "Aluminum", "Silicon", "Calcium", "Titanium", "Iron", "Lead"
 ];
-
-const COMPUTE_MODULE_URL = new URL("./shared/mpmComputeTasks.js", import.meta.url).href;
 
 let sim = null;
 let running = true;

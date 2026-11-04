@@ -884,3 +884,11 @@ Avoid granting models authority over arbitrary shared state or network messages.
 - Preserve capability-based local admission, remote inference availability,
   text-only GGUF behavior and existing runtime/resource bounds. Multiple
   quantizations of one repository revision must remain distinct trusted packages.
+
+## 2026-11-03 22:33 AKST - Pages handoff
+
+Build the complete docs gallery with the expanded model catalog and verify every demo visually and through console/network evidence. Include static-host cross-origin isolation for managed GGUF inference in standalone and embedded consoles. Existing developer-server headers are insufficient for GitHub Pages. Keep runtime evidence outside Git, preserve user preview origins, and keep build commits local.
+
+- Pages local acceptance complete: full docs includes the16-entry catalog and second overview card; scoped isolation supports static hosting; actual owned SmolVLM peer inference passes against /peercompute/inference/. All23shipped routes/46visual captures and67focused tests pass within documented non-camera/non-XR/available-backend scope. Public404 persists until this feature branch’s /docs build is pushed; ulg merge remains separate.
+
+- November3 23:32 AKST: user approved publishing the verified docs build to feature/ipfs-artifacts-webgpu; no ulg merge. Initial push was rejected by a generated Transformers.js secret-scanner false-positive candidate. Verify official upstream provenance and preserve all identifiers/licenses while limiting generated line lengths; retry only normal protected push after validation.
