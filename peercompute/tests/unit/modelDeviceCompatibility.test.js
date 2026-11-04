@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { modelMemoryEstimate, normalizeModelMemoryBudgets, collectModelDeviceCapabilities, evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { findModelCatalogEntry, modelMemoryEstimate, normalizeModelMemoryBudgets, collectModelDeviceCapabilities, evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
 import { MODEL_CATALOG } from '../../src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../src/peercompute/artifacts/diffusionModelCatalog.js';
@@ -51,6 +51,40 @@ test('all approved catalog profiles remain selectable without claiming physical 
   for (const entry of [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG), ...Object.values(DIFFUSION_MODEL_CATALOG)]) {
     assert.equal(evaluate(entry).status, 'unknown', entry.id);
     assert.match(evaluate(entry).reason, /memory fit is unverified/, entry.id);
+  }
+});
+
+test('same-revision GGUF variants resolve exact profiles and never guess ambiguous peer precision', () => {
+  const q4 = GGUF_MODEL_CATALOG['qwen3.5-9b-evil-mradermacher-q4-k-m-gguf'];
+  const q8 = GGUF_MODEL_CATALOG['qwen3.5-9b-evil-mradermacher-q8-0-gguf'];
+  assert.equal(q4.repository, q8.repository); assert.equal(q4.revision, q8.revision);
+  for (const entry of [q4, q8]) {
+    assert.equal(findModelCatalogEntry(entry), entry);
+    assert.equal(evaluate(entry).code, 'memory_fit_unverified');
+    const peer = { runtime: entry.model.runtime, repository: entry.repository, revision: entry.revision,
+      task: entry.model.task, modelId: entry.id, totalBytes: 1 };
+    assert.equal(findModelCatalogEntry(peer), entry);
+    assert.deepEqual(modelMemoryEstimate(peer), { cpuBytes: 8 * GiB, gpuBytes: 16 * GiB });
+    assert.equal(evaluate(peer, {}, { gpuBytes: 8 * GiB }).code, 'gpu_budget_exceeded');
+    assert.equal(evaluate(peer, { features: [] }).code, 'gpu_feature_unavailable');
+    assert.equal(findModelCatalogEntry({ ...peer, modelId: 'unknown' }), undefined);
+    assert.equal(evaluate({ ...peer, modelId: 'unknown' }).code, 'catalog_unsupported');
+    assert.equal(findModelCatalogEntry({ ...peer, task: 'text-to-image' }), undefined);
+  }
+  const swapped = structuredClone(q8); swapped.files = structuredClone(q4.files);
+  assert.equal(findModelCatalogEntry(swapped), undefined);
+  assert.equal(evaluate(swapped).code, 'catalog_unsupported');
+  const corrupt = structuredClone(q4); corrupt.files[0].sha256 = '0'.repeat(64);
+  assert.equal(findModelCatalogEntry(corrupt), undefined);
+  assert.equal(evaluate(corrupt).code, 'catalog_unsupported');
+});
+
+test('Qwen2 and Llama text ONNX q4 profiles remain usable without shader-f16', () => {
+  for (const architecture of ['qwen2', 'llama']) {
+    const entry = structuredClone(onnx); entry.model.architecture = architecture;
+    assert.equal(evaluate(entry, { features: [] }).code, 'memory_fit_unverified');
+    entry.model.dtype = 'q4f16';
+    assert.equal(evaluate(entry, { features: [] }).code, 'gpu_feature_unavailable');
   }
 });
 

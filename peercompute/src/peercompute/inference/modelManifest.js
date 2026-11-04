@@ -23,6 +23,7 @@ const QWEN35_POLICY = Object.freeze({ maxModelBytes: 2 * 1024 ** 3,
   maxProcessedImagePixels: 512 * 512 });
 const DEFAULT_RESOURCE_POLICY = Object.freeze({ maxModelBytes: MODEL_POLICY.maxModelBytes,
   minimumCpuBytes: 0, minimumGpuBytes: 0, maxProcessedImagePixels: MODEL_POLICY.maxImagePixels });
+const TEXT_ARCHITECTURES = new Set(['qwen3', 'qwen2', 'llama']);
 
 /** Trusted application limits; a manifest cannot increase its own resource envelope. */
 export function modelResourcePolicy(model) {
@@ -85,12 +86,12 @@ export function validateModelManifest(input) {
   }
   const model = manifest.model;
   if (model?.runtime !== MODEL_RUNTIME || model.runtimeVersion !== MODEL_RUNTIME_VERSION
-      || !['qwen3', 'idefics3', 'smolvlm', 'qwen3_5'].includes(model.architecture)) {
+      || ![...TEXT_ARCHITECTURES, 'idefics3', 'smolvlm', 'qwen3_5'].includes(model.architecture)) {
     throw new Error('Model runtime, architecture or dtype is not approved');
   }
-  model.task ??= model.architecture === 'qwen3' ? 'text-generation' : 'image-text-to-text';
+  model.task ??= TEXT_ARCHITECTURES.has(model.architecture) ? 'text-generation' : 'image-text-to-text';
   if (!['text-generation', 'image-text-to-text'].includes(model.task)
-      || (model.architecture === 'qwen3') !== (model.task === 'text-generation')) {
+      || TEXT_ARCHITECTURES.has(model.architecture) !== (model.task === 'text-generation')) {
     throw new Error('Model task does not match its admitted architecture');
   }
   const dtypeEntries = typeof model.dtype === 'string' ? [['model', model.dtype]]

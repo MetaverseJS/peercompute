@@ -1,6 +1,7 @@
 import { createModelMutationQueue, listStoredModelRecords, modelStorageError, withModelDeletionOwnership } from './modelLibrary.js';
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
+import { findModelCatalogEntry } from './modelDeviceCompatibility.js';
 
 function capabilities(model = {}) {
   const modalities = [...(model.modalities ?? ['text'])];
@@ -34,9 +35,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   const combined = (signal) => signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
   function localAvailability(entry) {
     // Peer display metadata cannot lower a trusted model's resource estimate.
-    const approved = !entry.model && Object.values(catalog).find((candidate) =>
-      candidate.model.runtime === entry.runtime && (candidate.repository ?? candidate.model.repository) === entry.repository
-        && (candidate.revision ?? candidate.model.revision) === entry.revision);
+    const approved = !entry.model && findModelCatalogEntry(entry, Object.values(catalog));
     return runtime.getModelCompatibility?.(approved || entry)
       ?? { status: 'unknown', reason: 'Local memory fit is unverified.' };
   }
@@ -58,8 +57,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now 
   }
   function descriptor(cid, manifest) {
     if (!manifest?.model?.runtime || !manifest.model.repository) return null;
-    const match = Object.values(catalog).find((entry) => entry.model.repository === manifest.model.repository
-      && entry.model.revision === manifest.model.revision && entry.model.runtime === manifest.model.runtime);
+    const match = findModelCatalogEntry(manifest, Object.values(catalog));
     return { manifestCid: cid, modelId: match?.id ?? cid, name: match?.name ?? manifest.name ?? manifest.model.repository,
       ...capabilities(manifest.model), runtime: manifest.model.runtime,
       repository: manifest.model.repository, revision: manifest.model.revision,

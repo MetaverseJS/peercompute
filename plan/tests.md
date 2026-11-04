@@ -1,5 +1,32 @@
 ## PeerCompute Test Strategy
 
+### Requested9B variants and non-FP16 catalog — 2026-11-03 22:14 AKST
+
+- Check immutable HF commits, sizes, publisher LFS SHA-256, metadata Git blob
+  hashes, source/conversion lineage and license closure. Bounded HTTP206 GGUF
+  header inspection verifies architecture; it does not prove full-file execution.
+- Verify same-revisionQ4/Q8 selection using model precision and exact weight
+  identities, with cross-variant/tampered rejection and stable stored/peer names.
+  Preserve the old27B manifest and runtime budgets. qwen2/llama additions accept
+  text tasks only; unchanged vision and dtype checks remain covered.
+- Import the two small pinned ONNX packages into the external verified cache;
+  `MODEL_IDS=qwen2.5-coder-0.5b-q4,smollm2-360m-instruct-q4
+  MODEL_REQUIRE_NO_F16=1 MODEL_EVIDENCE_PATH=<external JSON>
+  node peercompute/tests/runtime/model-inference.mjs` asserts shader-f16 is absent
+  from the actual adapter and ORT worker device, then verifies GPU generation,
+  reuse, cancellation/unload and restart with origin/model CDNs blocked.
+- Built preview checks all16 catalog choices, the two supported no-FP16 entries,
+  four new actionable GGUF setup entries, Q4/Q8 distinction, search and responsive
+  wrapped selectors, without downloading model weights into the preview profile.
+- Full9B imports/execution/persistence/peer transfer remain separate qualification
+  work. Do not imply a small-model GPU run or header check proves those models.
+- Results:157/157 focused unit tests and36/36 headless UI tests PASS. All three
+  inference/CubeChat/Earth production builds pass. Actual no-f16 GPU run PASS:
+  Coder loads9.66s, greeting1.14s/2478dispatches; Smol loads3.31s,
+  greeting1.82s/4816dispatches. Both reuse/cancel/unload; Coder restart succeeds
+  with source disabled. No external requests/page errors. Times are this-machine
+  observations and greeting output is not a task-quality benchmark.
+
 ### Discovery independent of artifact startup — 2026-11-03 22:05 AKST
 
 - Controller tests keep directory queries running across four simulated20-second

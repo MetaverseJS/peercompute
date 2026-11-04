@@ -39,7 +39,7 @@ WASM memory was3.33GiB and native GPU model buffers11.33GB. Cancellation require
 worker termination and released all reservations. This test used bounded ranges
 from the verified local Node artifact store; full14GB browser peer transfer and
 browser persistence are separate, unproven gates for this model.
-The GGUF chat models are text-only; the four Transformers.js models remain available.
+The GGUF chat models are text-only; the Transformers.js text and vision models remain available.
 
 Additional model choices on this branch:
 
@@ -49,6 +49,28 @@ Additional model choices on this branch:
 | Qwen3.5 0.8B Abliterated, GGUF Q4_K_M | 542 MB | Text chat |
 | Stable Diffusion Turbo, ONNX FP16 | 2.52 GB | One-step 512×512 image generation |
 | DreamShaper 8 LCM, SD1.5 INT8 weights | 1.04 GB | Four-step 512×512 image generation |
+| Qwen3.5 9B Evil, Bowman GGUF Q5_K_M | 6.47 GB | Experimental text chat |
+| Qwen3.5 9B Claude HighIQ Thinking Heretic, Q4_K_M | 5.63 GB | Text chat; mradermacher conversion of DavidAU's source |
+| Qwen3.5 9B Evil, mradermacher GGUF Q8_0 | 9.79 GB | Experimental text chat |
+| Qwen3.5 9B Evil, mradermacher GGUF Q4_K_M | 5.78 GB | Experimental text chat |
+| Qwen2.5 Coder 0.5B, ONNX q4 | 878 MB | Coding and code explanation; no shader-f16 requirement |
+| SmolLM2 360M Instruct, ONNX q4 | 391 MB | Lightweight English chat, rewriting and summarization; no shader-f16 requirement |
+
+The requested9B GGUF choices are pinned execution candidates. Their publisher
+hashes, metadata and bounded GGUF headers are checked; full9B browser execution,
+persistence and peer transfer have not been qualified here. They retain the
+current GGUF shader-f16 requirement and conservative8GiB RAM/16GiB GPU admission
+reservations, which are estimates rather than measured model peaks. The Q4 and
+Q8 variants remain distinct packages even though they share a repository revision.
+The DavidAU link supplies BF16 Safetensors; the selected
+[GGUF conversion](https://huggingface.co/mradermacher/Qwen3.5-9B-Claude-4.6-HighIQ-THINKING-HERETIC-UNCENSORED-GGUF)
+retains its source card and license. The Evil publisher describes an experimental
+behavior edit with capability damage; the catalog preserves those evaluation notes.
+
+The two new ONNX options pass actual managed WebGPU generation with shader-f16
+absent from both the adapter and ORT device, plus warm reuse, cancellation and
+unload. Coder also passes browser restart with its download source disabled.
+These are execution/lifecycle checks, not coding or summarization benchmarks.
 
 The abliterated Qwens are publisher-described reduced-refusal variants, not a
 guarantee of refusal-free responses. The 0.6B option is experimental: it runs

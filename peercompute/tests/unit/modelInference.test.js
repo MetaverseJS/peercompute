@@ -510,11 +510,12 @@ test('host cancellation releases a late load only after worker cleanup acknowled
 });
 
 test('default loader selects causal versus image-text model classes and cleans failed component loads', async () => {
-  for (const vision of [false, true]) {
+  for (const architecture of ['qwen3', 'qwen2', 'llama', 'idefics3']) {
+    const vision = architecture === 'idefics3';
     const events = [];
     const components = fakeComponents({ vision, events });
     const library = fakeLibrary();
-    library.AutoConfig = { async from_pretrained() { return { model_type: vision ? 'idefics3' : 'qwen3' }; } };
+    library.AutoConfig = { async from_pretrained() { return { model_type: architecture }; } };
     library.AutoTokenizer = { async from_pretrained() { events.push('load-tokenizer'); return components.tokenizer; } };
     library.AutoProcessor = { async from_pretrained() { events.push('load-processor'); return components.processor; } };
     library.AutoModelForCausalLM = { async from_pretrained() { events.push('load-causal'); return components.model; } };
@@ -523,7 +524,9 @@ test('default loader selects causal versus image-text model classes and cleans f
       assertWorker() {}, baseUrl: origin,
       gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } },
     });
-    await loadRuntime({ runtime }, manifest({ vision }));
+    const modelManifest = manifest({ vision });
+    modelManifest.model.architecture = architecture;
+    await loadRuntime({ runtime }, modelManifest);
     assert.ok(events.includes(vision ? 'load-image-text' : 'load-causal'));
     assert.ok(!events.includes(vision ? 'load-causal' : 'load-image-text'));
     await runtime({ command: 'unload', sessionId: 'test-session' });
@@ -649,7 +652,7 @@ test('artifact client enforces concurrent-reader limits and checks stored file d
 });
 
 test('catalog pins complete selected model variants and distinguishes Git blobs from file digests', () => {
-  assert.equal(Object.keys(MODEL_CATALOG).length, 4);
+  assert.equal(Object.keys(MODEL_CATALOG).length, 6);
   assert.equal(MODEL_CATALOG['qwen3-0.6b-q4'].weightBytes, 919096585);
   assert.equal(MODEL_CATALOG['smolvlm-256m-q4'].weightBytes, 263889326);
   assert.equal(MODEL_CATALOG['smolvlm-500m-q4'].weightBytes, 485088765);

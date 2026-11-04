@@ -872,3 +872,15 @@ Avoid granting models authority over arbitrary shared state or network messages.
   Abliterated multimodal2B remains explicitly deferred. Wrapping is verified for
   native customizable selects; unsupported browsers retain their native picker.
   Merge into ulg stays pending user review.
+
+### Model catalog expansion — November3 22:14 AKST
+
+- Add requested Qwen3.5 9B Bowman EvilQ5_K_M; DavidAU HighIQ Thinking Heretic
+  via a clearly identified GGUF conversion; Mradermacher EvilQ8_0 andQ4_K_M.
+  Retain exact revisions, file digests, original/conversion model cards and licenses.
+- Find useful ONNX chat/coding/translation options that execute without shader-f16.
+  Quantized weights alone do not establish this; validate actual managed WebGPU
+  execution on the default browser feature set.
+- Preserve capability-based local admission, remote inference availability,
+  text-only GGUF behavior and existing runtime/resource bounds. Multiple
+  quantizations of one repository revision must remain distinct trusted packages.

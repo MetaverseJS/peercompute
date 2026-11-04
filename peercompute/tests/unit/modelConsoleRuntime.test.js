@@ -2,18 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { attachModelRuntimeController } from '../../../demos/inference/src/modelRuntimeController.js';
+import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
+import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
-const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), modalities: ['text', 'image'] };
+const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
 const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, connected = true, failRelease = false, hooks = {}, modelInfo = model, now } = {}) {
+function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const localManifest = { ...manifest, model: modelInfo };
   const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
   if (retained) records.set(cid, record);
+  for (const entry of retainedRecords) records.set(entry.cid, entry);
   let status = { status: 'idle', manifestCid: null };
   let callbacks, released = false;
   const peer = {
@@ -50,11 +53,11 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     ...(hooks.setBudgets ? { setMemoryBudgets: hooks.setBudgets } : {}),
     get networkReady() { return network.isConnected; },
     ...(hooks.artifactReady ? { get artifactReady() { return hooks.artifactReady(); } } : {}),
-    store: { async *list() { await hooks.list?.(); yield* records.values(); }, async getManifest() { return localManifest; },
+    store: { async *list() { await hooks.list?.(); yield* records.values(); }, async getManifest(key) { return records.get(key)?.manifest ?? localManifest; },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
       async stat(key) { return records.get(key); },
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
-    async importCatalog() { calls.push('import'); await hooks.import?.(); records.set(cid, record); return record; },
+    async importCatalog(id) { calls.push('import'); const imported = await hooks.import?.(id) ?? record; records.set(imported.cid, imported); return imported; },
     async importPackage() { records.set(cid, record); return record; },
     async load(key) { calls.push('load'); status = { status: 'ready', manifestCid: key };
       await hooks.load?.((value) => { status = value; }); return { workerId: 'worker-1' }; },
@@ -64,7 +67,7 @@ function fixture({ retained = false, connected = true, failRelease = false, hook
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
-  const controller = attachModelRuntimeController(runtime, { catalog: { test: { ...catalog.test, model: modelInfo } }, ...(now ? { now } : {}) });
+  const controller = attachModelRuntimeController(runtime, { catalog: catalogInfo ?? { test: { ...catalog.test, model: modelInfo } }, ...(now ? { now } : {}) });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
 
@@ -250,6 +253,64 @@ test('peer display metadata cannot lower the trusted model requirements', async 
   assert.equal(checked.totalBytes, 100);
   assert(!f.calls.includes('fetch-peer'));
   await f.runtime.dispose();
+});
+
+test('same-revision GGUF variants retain their identities through import, restored loading and sharing', async () => {
+  const entries = ['qwen3.5-9b-evil-mradermacher-q4-k-m-gguf', 'qwen3.5-9b-evil-mradermacher-q8-0-gguf']
+    .map((id) => GGUF_MODEL_CATALOG[id]);
+  const cids = [cid, 'bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q'];
+  const records = entries.map((entry, index) => ({ cid: cids[index], kind: 'manifest', status: 'complete', pinned: true,
+    manifest: { model: entry.model, files: entry.files } }));
+  const catalogInfo = Object.fromEntries(entries.map((entry) => [entry.id, entry]));
+  for (const restored of [false, true]) {
+    const f = fixture({ catalogInfo, retainedRecords: restored ? records : [], hooks: {
+      import: (id) => records[entries.findIndex((entry) => entry.id === id)],
+    } });
+    try {
+      await f.controller.initialize();
+      for (const index of [1, 0, 1]) {
+        const entry = entries[index];
+        await f.runtime.acquireModel(`hf:${entry.id}`);
+        await f.runtime.setSharing(true);
+        const state = await f.callbacks.getLocalState();
+        assert.equal(state.hostedModel.modelId, entry.id);
+        assert.equal(state.hostedModel.name, entry.name);
+        assert.equal(state.hostedModel.manifestCid, cids[index]);
+        assert.equal(f.runtime.listInferenceTargets()[0].name, entry.name);
+      }
+      assert.equal(f.calls.filter((call) => call === 'import').length, restored ? 0 : 2);
+      const shared = (await f.callbacks.getLocalState()).sharedModels;
+      assert.equal(shared.length, 2);
+      const library = await f.runtime.listStoredModels();
+      for (const [index, entry] of entries.entries()) {
+        assert.equal(shared.find((item) => item.manifestCid === cids[index]).modelId, entry.id);
+        assert.equal(library.find((item) => item.manifestCid === cids[index]).name, entry.name);
+      }
+    } finally { await f.runtime.dispose(); }
+  }
+});
+
+test('peer variant hints select matching requirements and actual-manifest tampering blocks before transfer', async () => {
+  const entries = ['qwen3.5-9b-evil-mradermacher-q4-k-m-gguf', 'qwen3.5-9b-evil-mradermacher-q8-0-gguf']
+    .map((id) => GGUF_MODEL_CATALOG[id]);
+  const [q4, q8] = entries;
+  const inspected = [];
+  const device = { webgpu: true, features: ['shader-f16'], crossOriginIsolated: true, sharedArrayBuffer: true, jspi: true, memory64: true };
+  const f = fixture({ catalogInfo: Object.fromEntries(entries.map((entry) => [entry.id, entry])), hooks: {
+    compatibility(entry) { inspected.push(entry); return evaluateModelCompatibility(entry, { device }); },
+    inspectPeerPackage: async () => ({ model: q8.model, files: q4.files }),
+  } });
+  try {
+    await f.controller.initialize();
+    f.peer.models = [{ manifestCid: cid, modelId: q8.id, name: q8.name, repository: q8.repository, revision: q8.revision,
+      runtime: q8.model.runtime, task: 'text-generation', modalities: ['text'], totalBytes: 1, providers: [{ peerId: 'remote', local: false }] }];
+    f.runtime.listModelSources();
+    assert.equal(inspected.at(-1), q8, 'Q8 descriptor must not borrow the first revision variant');
+    await assert.rejects(f.runtime.acquireModel(`peer:${cid}`), /approved local runtime catalog/);
+    assert(!f.calls.some((call) => ['fetch-peer', 'load', 'unload'].includes(call)));
+    f.peer.models[0].modelId = 'unknown-variant';
+    assert.equal(f.runtime.listModelSources().find((source) => source.source === 'peers').localAvailability.code, 'catalog_unsupported');
+  } finally { await f.runtime.dispose(); }
 });
 
 test('peer manifest preflight rejects large actual requirements before fetching weights', async () => {

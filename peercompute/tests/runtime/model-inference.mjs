@@ -10,12 +10,13 @@ import { chromium } from 'playwright';
 import { MODEL_CATALOG } from '../../src/peercompute/inference/modelCatalog.js';
 
 const modelIds = (process.env.MODEL_IDS || 'smolvlm-256m-q4').split(',').map((id) => id.trim());
+const requireNoF16 = process.env.MODEL_REQUIRE_NO_F16 === '1';
 const cacheRoot = process.env.PEERCOMPUTE_ARTIFACT_CACHE || path.join(homedir(), '.cache/peercompute-artifacts');
 const evidencePath = process.env.MODEL_EVIDENCE_PATH || path.join(tmpdir(), `peercompute-model-evidence-${Date.now()}.json`);
 const fixtureRoot = fileURLToPath(new URL('../fixtures/inference/', import.meta.url));
 const temporary = await mkdtemp(path.join(tmpdir(), 'peercompute-model-hardware-'));
 const prefix = '/nested/inference/';
-const report = { startedAt: new Date().toISOString(), node: process.version, models: [], externalRequests: [], pageErrors: [] };
+const report = { startedAt: new Date().toISOString(), node: process.version, requireNoF16, models: [], externalRequests: [], pageErrors: [] };
 let context, page, server;
 let seedEnabled = true;
 let seedBytes = 0;
@@ -96,6 +97,9 @@ try {
     return page.evaluate(() => window.inferenceAcceptance.start());
   }
   report.start = await launch();
+  report.adapterFeatures = await page.evaluate(async () => [...(await navigator.gpu.requestAdapter()).features]);
+  if (requireNoF16) assert(!report.adapterFeatures.includes('shader-f16'),
+    'No-f16 qualification requires an adapter that does not expose shader-f16');
   assert.equal(report.start.persistent, true);
   for (const item of packages) {
     const result = { id: item.id, manifestCid: item.manifestCid, revision: item.catalog.revision };
@@ -115,6 +119,8 @@ try {
     result.load = await page.evaluate((cid) => window.inferenceAcceptance.load(cid), item.manifestCid);
     result.loadMs = performance.now() - loadStart;
     assert.equal(result.load.adapter.isFallbackAdapter, false);
+    if (requireNoF16) assert(!result.load.runtimeFeatures.includes('shader-f16'),
+      'The actual ONNX worker device must execute without shader-f16');
     assert(result.load.workerId, 'ComputeManager worker identity is required');
     const image = item.catalog.model.modalities.includes('image');
     const generateStart = performance.now();

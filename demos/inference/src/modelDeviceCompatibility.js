@@ -10,11 +10,33 @@ const limitNames = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeW
   'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
 const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion']);
 
+/** Resolve a catalog identity without choosing the first same-revision variant. */
+export function findModelCatalogEntry(entry, entries = catalogs) {
+  const input = entry?.model ?? entry ?? {};
+  const candidates = entries.filter((candidate) => candidate.model.runtime === input.runtime
+    && (candidate.repository ?? candidate.model.repository) === (input.repository ?? entry?.repository)
+    && (candidate.revision ?? candidate.model.revision) === (input.revision ?? entry?.revision)
+    && ['architecture', 'task', 'format', 'dtype'].every((key) =>
+      (!entry?.model && input[key] === undefined) || sameValue(input[key], candidate.model[key]))
+    && (!entry?.model || !Array.isArray(entry.files) || !Array.isArray(candidate.files)
+      || catalogFilesMatch(input.runtime, entry.files, candidate.files)));
+  // Repositories may publish several quantizations at the same immutable
+  // revision. A peer's catalog ID can disambiguate omitted display metadata,
+  // but cannot override conflicting provenance or an explicit precision.
+  return candidates.length === 1 ? candidates[0]
+    : !entry?.model ? candidates.find((candidate) => candidate.id === entry?.modelId) : undefined;
+}
+
+function catalogFilesMatch(runtime, actualFiles, expectedFiles) {
+  const weight = (file) => runtime !== 'llama.cpp' || file.path?.endsWith('.gguf');
+  const actual = actualFiles.filter(weight), expected = expectedFiles.filter(weight);
+  return actual.length === expected.length && actual.every((file) => expected.some((item) =>
+    item.path === file.path && item.size === file.size && (item.sha256 === undefined || item.sha256 === file.sha256)));
+}
+
 function profile(entry) {
   const input = entry?.model ?? entry ?? {};
-  const trusted = catalogs.find((candidate) => candidate.model.runtime === input.runtime
-    && candidate.repository === (input.repository ?? entry?.repository)
-    && candidate.revision === (input.revision ?? entry?.revision));
+  const trusted = findModelCatalogEntry(entry);
   // Display-only peer descriptors may identify a catalog entry; their memory
   // claims and purported allocation requirements are never trusted.
   const model = entry?.model ? input : trusted?.model ?? input;
@@ -132,7 +154,7 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large', 'Package exceeds this runtime’s supported file budget'];
   if (model.runtime === 'transformers.js') {
     if (((!descriptorOnly || model.runtimeVersion !== undefined) && model.runtimeVersion !== MODEL_RUNTIME_VERSION)
-        || ((!descriptorOnly || model.architecture !== undefined) && !['qwen3', 'qwen3_5', 'idefics3', 'smolvlm'].includes(model.architecture))) {
+        || ((!descriptorOnly || model.architecture !== undefined) && !['qwen2', 'qwen3', 'llama', 'qwen3_5', 'idefics3', 'smolvlm'].includes(model.architecture))) {
       return ['runtime_unsupported', 'Model version or architecture is not supported locally'];
     }
     const dtypes = typeof model.dtype === 'string' ? [model.dtype]

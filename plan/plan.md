@@ -92,6 +92,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
   and real-model CubeChat/Earth action acceptance. Ordinary disk-file storage is
   a discussed follow-up; abliterated multimodal2B remains explicitly deferred.
   Merge into ulg remains pending user review.
+- November3 22:14 revision: add requested9B GGUF variants (BowmanQ5, DavidAU
+  via a disclosedQ4 conversion, Mradermacher EvilQ8 andQ4) with immutable source
+  and license provenance. Add Coder0.5B and SmolLM2-360M ONNXq4 choices for
+  devices without shader-f16. Preserve runtime budgets; disambiguate variants
+  sharing a repository/revision throughout admission, storage and peer display.
+  Hardware acceptance for these ONNX additions must prove actual GPU dispatches
+  with shader-f16 absent; new9B entries remain explicitly unqualified candidates.
 - Ownership: StateManager manages artifact storage/manifests/pins/availability;
   NetworkManager discovers providers and transfers blocks; ComputeManager runs
   inference in its managed WebGPU worker. NodeKernel wires these managers.

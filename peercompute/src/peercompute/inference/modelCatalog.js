@@ -2,6 +2,7 @@
 // These are compatibility candidates; successful execution is a separate hardware/runtime gate.
 // LFS oid is a whole-file SHA-256. Ordinary Git blob IDs are SHA-1 over the Git blob framing.
 // Importers must compute a whole-file SHA-256 for every completed manifest entry.
+import { ADDITIONAL_MODEL_CATALOG } from './additionalModelCatalog.js';
 
 function freeze(value) {
   for (const item of Object.values(value)) if (item && typeof item === 'object') freeze(item);
@@ -9,6 +10,7 @@ function freeze(value) {
 }
 
 export const MODEL_CATALOG = freeze({
+  ...ADDITIONAL_MODEL_CATALOG,
   "qwen3-0.6b-q4": {
     "id": "qwen3-0.6b-q4",
     "name": "Qwen3 0.6B (q4)",

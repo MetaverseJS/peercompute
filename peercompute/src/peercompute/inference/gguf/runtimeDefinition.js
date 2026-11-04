@@ -9,9 +9,11 @@ const GiB = 1024 ** 3;
 export function validateGgufManifest(input) {
   const manifest = normalizeArtifactManifest(input);
   const model = manifest.model;
-  const trusted = Object.values(GGUF_MODEL_CATALOG).find((entry) =>
+  const candidates = Object.values(GGUF_MODEL_CATALOG).filter((entry) =>
     entry.model.runtime === 'llama.cpp' && entry.repository === model?.repository
-      && entry.revision === model?.revision && entry.model.architecture === model?.architecture);
+      && entry.revision === model?.revision && entry.model.architecture === model?.architecture
+      && entry.model.task === model?.task && entry.model.dtype === model?.dtype);
+  const trusted = candidates.length === 1 ? candidates[0] : undefined;
   if (!trusted || model.runtime !== 'llama.cpp' || (model.runtimeVersion !== undefined && model.runtimeVersion !== GGUF_RUNTIME_VERSION)
       || (trusted.model.runtimeVersion !== undefined && model.runtimeVersion !== trusted.model.runtimeVersion)
       || model.dtype !== trusted.model.dtype

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { MODEL_ARTIFACT_CATALOG } from '../../src/peercompute/artifacts/modelArtifactCatalog.js';
+import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { createGgufEngine, createNativeFileReader, observeGpuDevice, parseOffloadEvidence, parseBufferEvidence } from '../../src/peercompute/inference/gguf/engine.js';
 import { glueSerialize, glueDeserialize } from '@wllama/wllama/peercompute-glue.js';
 import { createGgufTaskRuntime } from '../../src/peercompute/inference/gguf/modelTask.js';
@@ -11,8 +12,7 @@ import { validateGgufManifest, validateGgufCapabilities, validateGgufRuntimeAsse
 
 const origin = 'https://peercompute.test/worker.js';
 const cid = 'bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q';
-function manifest() {
-  const entry = MODEL_ARTIFACT_CATALOG['qwen3.8-27b-georefine-d14-gguf'];
+function manifest(entry = MODEL_ARTIFACT_CATALOG['qwen3.8-27b-georefine-d14-gguf']) {
   return { schema: 'peercompute.artifact.manifest.v1', model: structuredClone(entry.model),
     files: entry.files.map(({ path, size, sha256 }) => ({ path, size, sha256: sha256 ?? 'a'.repeat(64), cid })) };
 }
@@ -28,6 +28,27 @@ test('GGUF execution admits exact trusted revision and weight digests without al
   assert.throws(() => validateGgufManifest(wrong), /trusted/);
   const corrupt = structuredClone(source); corrupt.files.find((file) => file.path.endsWith('.gguf')).sha256 = '0'.repeat(64);
   assert.throws(() => validateGgufManifest(corrupt), /digests/);
+});
+
+test('GGUF admission distinguishes same-revision precisions and rejects relabelled or missing weights', () => {
+  const q4 = GGUF_MODEL_CATALOG['qwen3.5-9b-evil-mradermacher-q4-k-m-gguf'];
+  const q8 = GGUF_MODEL_CATALOG['qwen3.5-9b-evil-mradermacher-q8-0-gguf'];
+  for (const entry of [q4, q8]) {
+    const source = manifest(entry), validated = validateGgufManifest(source);
+    assert.equal(validated.weights[0].sha256, entry.files.find((file) => file.path.endsWith('.gguf')).sha256);
+    assert.equal(validated.resourcePolicy.minimumCpuBytes, 8 * 1024 ** 3);
+    assert.equal(validated.resourcePolicy.minimumGpuBytes, 16 * 1024 ** 3);
+    for (const field of ['dtype', 'architecture', 'task']) {
+      const missing = structuredClone(source); delete missing.model[field];
+      assert.throws(() => validateGgufManifest(missing), /trusted/);
+    }
+  }
+  const relabelled = manifest(q4); relabelled.model.dtype = q8.model.dtype;
+  assert.throws(() => validateGgufManifest(relabelled), /digests/);
+  const swapped = manifest(q8); swapped.files = manifest(q4).files;
+  assert.throws(() => validateGgufManifest(swapped), /digests/);
+  const renamed = manifest(q8); renamed.files.find((file) => file.path.endsWith('.gguf')).path = q4.files.find((file) => file.path.endsWith('.gguf')).path;
+  assert.throws(() => validateGgufManifest(renamed), /digests/);
 });
 
 test('GGUF assets and native options reject arbitrary URLs, CPU-only fallback and child threads', () => {

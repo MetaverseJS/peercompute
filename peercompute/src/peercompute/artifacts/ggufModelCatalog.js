@@ -1,4 +1,5 @@
 import { MODEL_ARTIFACT_CATALOG } from './modelArtifactCatalog.js';
+import { QWEN_9B_MODEL_CATALOG } from './qwen9bModelCatalog.js';
 
 // Immutable inputs, not a claim that a browser or a model has passed execution.
 // Preserve the existing 27B manifest metadata/CID when adding its runtime option.
@@ -120,6 +121,7 @@ export const GGUF_MODEL_CATALOG = Object.freeze({
     weightBytes: files[0].size, totalBytes: files.reduce((sum, file) => sum + file.size, 0), files,
   },
   ...abliterated,
+  ...QWEN_9B_MODEL_CATALOG,
   ...Object.fromEntries(Object.entries(MODEL_ARTIFACT_CATALOG).map(([id, entry]) => [id, {
     ...entry, status: 'execution-candidate', capabilities,
   }])),
