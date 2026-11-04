@@ -1449,6 +1449,11 @@ Notes:
   relay requirement; NetViz, Multiscale and Schrodinger exercise their explicit
   connection controls. `PAGES_ROUTES=inference,cubechat` selects a focused run;
   `PAGES_CHROME_ARGS` accepts a JSON array of hardware-specific launch flags.
+- The November 4, 2026 public deployment at
+  [the demo overview](https://metaversejs.github.io/peercompute/) passes all 23
+  shipped route checks, including authenticated SecretWorkshop connections in
+  all nine network-enabled demo packages. The second tile opens the live
+  [model console](https://metaversejs.github.io/peercompute/inference/).
 - Inference, CubeChat and Earth production builds include a narrowly scoped
   service worker that supplies isolation headers on static hosts such as Pages.
   First navigation may reload once before application startup. Registration

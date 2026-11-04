@@ -3308,7 +3308,7 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   comfort, and headset GPU/frame timing. System-Chromium software-render timing
   is not a headset certification. No `terminal-browser` invocation occurred.
 
-## Pages release validation - 2026-11-03 AKST (in progress)
+## Pages release validation - 2026-11-03 AKST (published November4; scoped limits below)
 
 - Build all15demo packages and run structural release/port checks.
 - Serve docs at /peercompute/ without COOP/COEP headers; correct JavaScript .mjs and WASM MIME types. Inspect all17gallery demo cards plus additional shipped HTML routes, desktop/mobile layout, console/page/resource errors and live network state.
@@ -3327,3 +3327,13 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Limits: RoadVector geography-dependent riding unavailable without deployed geodata; camera/pose gameplay intentionally skipped by DaddyGo automation guard; physical XR untested. Minor nonblocking mobile overlay density/help overlap is recorded in the visual report. Generic ICC generated-asset deletion gate remains a raw failure; it must not be presented as a clean guard.
 
 - Publication follow-up: official Transformers.js4.3.2 package provenance verified against registry/lockfile SHA512 after GitHub flagged minified model identifiers. Supported esbuild lineLimit formatting rebuilds for inference/WebGPUPhys PASS15.27s/11.87s; focused suite repeats67/67 PASS1.24s. Rebuilt-browser and protected-push acceptance are pending; no scanner override.
+
+### Public Pages acceptance - 2026-11-04 05:54 AKST
+
+- Published a281d9b5 to feature/ipfs-artifacts-webgpu/docs after explicit authorization of the verified upstream-identifier false-positive exception. GitHub workflow41851361737 succeeded; /peercompute/inference/ HTTP200 fixes the reported tile404.
+- Independent public verifier:33URLs,69,989,814bytes, exact SHA256/size and correct HTML/JS/MJS/CSS/WASM/JSON MIME; second-tile link and all six catalog additions pass. No cache-bypass query. Receipt /tmp/peercompute-pages-public-verification-1104.json.
+- Actual public-origin `PAGES_HEADED=1 PAGES_BASE_URL=https://metaversejs.github.io/peercompute/ PAGES_ROUTE_TIMEOUT_MS=90000 PAGES_OUTPUT_DIR=/tmp/peercompute-pages-public-1104 PAGES_CHROME_ARGS='["--enable-unsafe-webgpu"]' node demos/tests/pages-runtime.mjs`:23/23 PASS, all10network routes/9packages show authenticated SecretWorkshop connections. Zero console/page/HTTP/request/socket/context-loss errors; owned browser cleanup clean. Cold/warm document and managed-worker isolation plus embedded panels pass.46desktop/mobile screenshots retained outside Git.
+- Scope limitations remain: RoadVector ride needs deployed compatible geodata; DaddyGo camera/pose is excluded by its automation guard; physical XR and two physical-machine inference are not certified by these checks. Prior67focused tests and exact rebuilt-bundle equivalence remain unchanged; no application source changed in this publishing turn.
+
+- Independent46-screenshot/public-console review passes deployment-regression scope. Retain unresolved MPM Headless raw momentum warning (~6.32e5; gravity/wall effects are not subtracted by the UI metric); this is not a numerical conservation PASS. CubeChat62/64 memory64 probes pass, all64 isolation/SAB/JSPI pass; standalone inference worker passes all prerequisites. Minor dense mobile overlays and runtime/teardown warnings remain documented in the external receipt.
+- Public owned-peer inference PASS64.56s using normal15pinnedHFfiles, exact manifestCID, owned nonfallbackNVIDIA managed worker and independentGPU-disabled requester;999dispatches/86submissions, native encryptedWebRTC, discovery/hostingoff-on/pickerbounds pass; no page/console/cleanup errors. Command and failed local-seed setup evidence are in plan/log.md. No user profile/storage or unrelated peer prompt used.
