@@ -30,6 +30,9 @@ The root node should exist on a domain secured with SSL enabling all executable 
    [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
 
 MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and checks](demos/inference/model-browser.md).
+November 5 follow-up: live HF searches returned HTTP200; missing results came from
+filters excluding uninspected metadata. Keep those candidates explicitly labeled,
+support empty-query HF browsing and resume interrupted searches on reopening.
 AGENT-01 is next and remains a plan pending its own implementation.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.

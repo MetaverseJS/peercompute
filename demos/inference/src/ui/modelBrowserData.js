@@ -38,14 +38,16 @@ export function compatibilityFor(source, getCompatibility) {
   return { status: 'unknown', reason: 'Memory fit has not been verified on this device.' };
 }
 export const blocksLocal = (availability) => ['checking', 'unavailable'].includes(availability?.status);
-export function filterBrowserModels(models, filters, getCompatibility) {
+export const needsInspection = (source) => Boolean(source.browserSummary || source.requiresInspection);
+export function filterBrowserModels(models, filters, getCompatibility, { includeUninspected = false } = {}) {
   const terms = repositoryQuery(filters.query).query.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = models.filter((source) => {
+  function matchesSource(source) {
+    const pending = includeUninspected && needsInspection(source);
     const origin = source.browserOrigin ?? (source.source === 'stored' ? 'stored' : source.source === 'peers' ? 'peers' : 'catalog');
     if (filters.source !== 'all' && origin !== filters.source && !(filters.source === 'stored' && source.stored === true)) return false;
     const task = modelTask(source), precision = modelPrecision(source);
-    if (filters.task !== 'all' && task !== filters.task) return false;
-    if (filters.precision !== 'all' && precision !== filters.precision) return false;
+    if (filters.task !== 'all' && task !== filters.task && !(pending && task === 'unknown')) return false;
+    if (filters.precision !== 'all' && precision !== filters.precision && !(pending && (!precision || precision === 'unknown'))) return false;
     // Hub search owns relevance (including description search). Local sources use AND terms.
     if (origin !== 'hub') {
       const haystack = [source.name, source.modelId, source.id, source.description, source.repository,
@@ -56,14 +58,25 @@ export function filterBrowserModels(models, filters, getCompatibility) {
     const size = source.totalBytes;
     if (filters.size === 'unknown' && knownBytes(size)) return false;
     if (filters.size !== 'all' && filters.size !== 'unknown') {
-      if (!knownBytes(size)) return false;
-      if (filters.size === 'large' ? size < 8 * 1024 ** 3 : size > Number(filters.size)) return false;
+      if (!knownBytes(size)) { if (!pending) return false; }
+      else if (filters.size === 'large' ? size < 8 * 1024 ** 3 : size > Number(filters.size)) return false;
     }
     const availability = compatibilityFor(source, getCompatibility);
-    if (filters.compatibility === 'eligible' && !source.browserPeerAvailable
-        && (blocksLocal(availability) || source.loadable === false || source.browserSummary)) return false;
-    if (filters.compatibility === 'setup' && !blocksLocal(availability) && source.loadable !== false) return false;
+    if (!pending) {
+      if (filters.compatibility === 'eligible' && !source.browserPeerAvailable
+          && (blocksLocal(availability) || source.loadable === false || needsInspection(source))) return false;
+      if (filters.compatibility === 'setup' && (needsInspection(source) || (!blocksLocal(availability) && source.loadable !== false))) return false;
+    }
     return true;
+  }
+  const matches = models.flatMap((source) => {
+    // Keep one repository row, including when a different quantization matches.
+    // The explicit selection stays unchanged; the UI names the matching variant.
+    const candidates = [source, ...(source.browserVariants ?? [])].filter(matchesSource);
+    const match = candidates.find((item) => !needsInspection(item)) ?? candidates[0];
+    if (!match) return [];
+    return [{ ...source, browserFilterPending: needsInspection(match),
+      browserMatchingVariant: match === source ? null : match.name ?? match.id }];
   });
   const size = (model) => knownBytes(model.totalBytes) ? model.totalBytes : Infinity;
   return matches.sort((a, b) => {

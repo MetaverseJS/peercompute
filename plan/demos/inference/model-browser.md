@@ -9,6 +9,14 @@ public Hub model names and model-card text, or enter a repository URL. Filter by
 source, task, package size, precision and compatibility. Default ordering is
 smallest selected package first; unknown sizes stay explicit and sort last.
 
+Selecting Hugging Face search in Source also browses Hub metadata with no query.
+An untouched All sources view stays network-free and explains how to search.
+Unknown Hub packages remain in a separate Needs inspection group when size,
+precision or compatibility cannot yet be checked; known mismatches are excluded.
+Filters consider every inspected variant, name a matching alternative and preserve
+the explicit package selection. Closing and reopening resumes an interrupted
+search, without repeating completed searches during periodic discovery refresh.
+
 A Hub repository is not a runnable package. Inspect selects an immutable revision,
 resolves variants and reports exact file closure, format and device eligibility.
 GGUF header inspection is performed for the selected variant, not every

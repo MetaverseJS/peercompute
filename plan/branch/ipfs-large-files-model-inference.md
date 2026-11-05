@@ -971,3 +971,14 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
 
 - Completion: responsive production modal, wider live Hub name/card search and exact package resolution delivered. New ONNX and single-file standard GGUF both generated in managed hardware WebGPU workers and reloaded from saved CID after browser restart with sources blocked. Final focused unit202/202, panel55/55 plus browser16/16, existing GGUF35/35 and PWA/release34/34 pass. Built standalone, CubeChat and Earth; all3 affected Pages-shaped routes pass and10 actual screenshots were independently reviewed.
 - Verified internal preview: https://fastbox.tail5c077c.ts.net:5189/?dev=1 (SecretWorkshop connected; valid isolation; overview arrow resolves). GitHub Pages and docs/ published bundles remain unchanged in this slice. See [model browser implementation](../demos/inference/model-browser.md); AGENT-01 is next.
+
+### November 5 — missing Hub results follow-up
+
+- User reports no Hugging Face models on the Tailscale preview and asks whether
+  requests were throttled. Actual name/card searches returned HTTP200 and38results;
+  restrictive filters hid every summary before package inspection.
+- Preserve an explicitly labeled Needs inspection group for missing facts while
+  excluding known mismatches. Match alternative inspected variants without
+  silently replacing the chosen package. Explicit HF-only browsing works without
+  a query; reopening resumes interrupted searches. No automatic model downloads
+  or new runtime support is implied by metadata visibility.

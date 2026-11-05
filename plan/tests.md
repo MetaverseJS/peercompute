@@ -3454,3 +3454,22 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Final MODEL-BROWSER-01 result:202/202 focused model/Hub/GGUF-admission tests;55/55 panel regression +16/16 model-browser tests;35/35 existing GGUF regressions;34/34 PWA/isolation/release checks. All3 affected source production builds pass (existing large-chunk warnings). Actual ONNX and GGUF hardware/source-off proofs pass; repeated ONNX retained reacquisition verifies Git-only sidecars locally without fetching weights.
 - Actual static Pages-shaped acceptance: inference, CubeChat and Earth3/3PASS, with real cancellation of automatic model startup and cold/warm isolation. Console/page/HTTP/request/WebSocket/cleanup error counts0 in route receipts; Earth has one transient closed-worker diagnostic sample and existing ReadPixels performance warnings, so this is not a claim of every worker probe being error-free. Reviewed10 actual screenshots, including both embedded panels. Earth is intentionally local-only; relay proof applies to inference/CubeChat.
 - Exact internal HTTPS preview passes current-build metadata search/variant inspection, mobile/desktop selected-row/action bounds, valid TLS/isolation, SecretWorkshop connection and working overview link. No GPU execution claimed for this final GPU-disabled preview smoke; hardware proof is the separate real workload above. All owned test browsers/servers closed; existing preview service stays available. No public GitHub Pages deployment or generated docs bundle change.
+
+### Hugging Face missing-results follow-up — November 5 2026
+
+- Regression command: `node --test demos/tests/model-browser.test.js` PASS23/23,
+  including7new cases for empty HF-only browsing, interrupted debounce/request
+  resumption, idle refresh during slow searches, pending filters, alternative quantizations and
+  known mismatch exclusion. Existing exact Load/peer identity gates remain covered.
+- `node --test peercompute/tests/unit/huggingFaceClient.test.js demos/tests/inference-panel.test.js`
+  PASS69/69. Production standalone build passes with the existing chunk-size warning.
+- Actual updated HTTPS preview: empty HF-only query returns20repositories; qwen
+  returns38, retained as Needs inspection with size, q4 and eligible filters.
+  Metadata endpoints return HTTP200, no weights downloaded, zero page/console
+  errors; SecretWorkshop connected, TLS/isolation valid. Inspecting the non-catalog
+  SmolLM2 package still resolves its exact variants. Desktop1360px and mobile390px
+  screenshots visually checked; controls remain within the viewport.
+- External receipts: /home/cos/.cache/peercompute-hf-missing/{before.json,after.json,
+  after-1360.png,after-390.png,after-inspected.png,model-browser-tests-final.log,base-tests.log}.
+  This is metadata/UI acceptance; earlier managed model execution evidence is
+  unchanged. No public Pages update or new inference/GPU qualification claimed.

@@ -1,6 +1,6 @@
 import './modelBrowser.css';
 import { blocksLocal, compatibilityFor, filterBrowserModels, knownBytes, matchingPeerTargets,
-  modelBytes, modelPrecision, modelTask, repositoryQuery, safeModelUrl } from './modelBrowserData.js';
+  modelBytes, modelPrecision, modelTask, needsInspection, repositoryQuery, safeModelUrl } from './modelBrowserData.js';
 
 const node = (tag, text, className) => {
   const element = document.createElement(tag);
@@ -11,7 +11,8 @@ const node = (tag, text, className) => {
 const button = (text) => { const element = node('button', text); element.type = 'button'; return element; };
 const originLabel = (source) => ({ stored: 'Stored on this device', peers: 'Peer files', hub: 'Hugging Face search', catalog: 'Catalog' })[source.browserOrigin]
   ?? (source.source === 'stored' ? 'Stored on this device' : source.source === 'peers' ? 'Peer files' : 'Catalog');
-const badge = (source) => source.loadable === false && !source.inferenceOnly && !source.requiresInspection ? 'Unsupported'
+const badge = (source) => needsInspection(source) ? 'Needs inspection'
+  : source.loadable === false && !source.inferenceOnly ? 'Unsupported'
   : source.browserOrigin === 'hub' || source.inferenceOnly || ['stored', 'peers'].includes(source.source) ? 'Candidate' : 'Catalog';
 const message = (error) => String(error?.message ?? error ?? 'Request failed').slice(0, 1000);
 
@@ -62,6 +63,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   let disposed = false, busy = false, actionPending = false, desiredKey = null, visibleKey = null;
   let searchTimer, searchController, inspectController, searchSequence = 0, inspectSequence = 0;
   let hubItems = [], nextCursor = null, searchWarning = '', searchPending = false, inspecting = null;
+  let searchIncomplete = false, resumeAppend = false;
   let inspectionError = '', callbackError = '', returnFocus, detailSignature, precisionSignature;
   const inspected = new Map(), variants = new Map();
 
@@ -79,7 +81,10 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     const remote = hubItems.map((item) => ({ ...item, key: item.browserKey ?? `hub:${item.repository}`, browserOrigin: 'hub', browserSummary: true }));
     for (const row of remote) {
       const detail = inspected.get(row.inspectReference ?? row.repository), variant = selectedVariant(detail);
-      if (variant) Object.assign(row, variantSource(row, detail, variant));
+      if (variant) {
+        const alternatives = detail.variants.map((item) => variantSource(row, detail, item));
+        Object.assign(row, variantSource(row, detail, variant), { browserVariants: alternatives });
+      }
     }
     return [...local, ...remote].map((source) => ({ ...source, browserPeerAvailable: matchingPeerTargets(source, hosts).length > 0 }));
   }
@@ -104,7 +109,8 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     && !source.requiresInspection && (source.browserOrigin !== 'hub' || Boolean(source.package)) && !blocksLocal(availability(source)); }
   function updatePrecision(rows) {
     const selected = selects.precision.value;
-    const values = new Set(rows.map(modelPrecision).filter(Boolean));
+    const values = new Set(rows.flatMap((row) => [row, ...(row.browserVariants ?? [])]).map(modelPrecision)
+      .filter((value) => value && value !== 'unknown'));
     if (selected !== 'all') values.add(selected);
     const signature = [...values].sort().join('\n');
     if (signature === precisionSignature) return;
@@ -116,18 +122,22 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   function render({ revealSelected = false } = {}) {
     if (disposed) return;
     const rows = allRows(); updatePrecision(rows);
-    const filtered = filterBrowserModels(rows, filters(), (source) => availability(source));
+    const matching = filterBrowserModels(rows, filters(), (source) => availability(source), { includeUninspected: true });
+    const pending = matching.filter((source) => source.browserFilterPending);
+    const filtered = [...matching.filter((source) => !source.browserFilterPending), ...pending];
     visibleKey = filtered.some((source) => source.key === desiredKey) ? desiredKey : filtered[0]?.key ?? null;
     const focused = document.activeElement?.closest?.('[data-model-key]')?.dataset.modelKey;
     const scrollTop = results.scrollTop;
     results.replaceChildren();
     for (const source of filtered) {
+      if (source === pending[0]) results.append(node('li', 'Needs inspection — package filters are not yet verified', 'pc-browser-candidates'));
       const item = node('li'), choice = button(''); choice.className = 'pc-browser-result'; choice.dataset.modelKey = source.key;
       choice.setAttribute('aria-pressed', String(source.key === visibleKey));
       choice.append(node('strong', source.name ?? source.repository ?? source.modelId),
         node('small', source.repository ?? source.model?.repository ?? source.modelId ?? ''),
         node('small', `${originLabel(source)} · ${modelBytes(source.totalBytes)}${knownBytes(source.totalBytes) ? ' package' : ''} · ${modelPrecision(source) || 'Precision unknown'}`),
         node('small', `${badge(source)} · ${source.browserSummary ? 'Inspect variants' : modelTask(source)}`));
+      if (source.browserMatchingVariant) choice.append(node('small', `Matching variant: ${source.browserMatchingVariant}`));
       choice.disabled = busy || actionPending;
       choice.onclick = () => { desiredKey = source.key; inspectionError = ''; callbackError = ''; render({ revealSelected: true });
         const reference = source.inspectReference ?? source.repository;
@@ -137,9 +147,12 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     if (!filtered.length) results.append(node('li', 'No matching models. Clear a filter or try another search.', 'pc-browser-empty'));
     results.scrollTop = scrollTop;
     if (focused) [...results.querySelectorAll('[data-model-key]')].find((item) => item.dataset.modelKey === focused)?.focus({ preventScroll: true });
-    summary.textContent = `${filtered.length} model${filtered.length === 1 ? '' : 's'} · Package bytes are download size, not RAM or GPU memory.`;
+    summary.textContent = `${filtered.length} model${filtered.length === 1 ? '' : 's'}${pending.length ? ` · ${pending.length} need inspection` : ''} · Package bytes are download size, not RAM or GPU memory.`;
+    const activeFilters = Object.entries(selects).filter(([key, input]) => key !== 'sort' && input.value !== 'all').length;
+    filterSummary.textContent = `Filters and sorting${activeFilters ? ` (${activeFilters} active)` : ''}`;
     status.textContent = callbackError || inspectionError || (inspecting ? `Inspecting ${inspecting}…` : '')
-      || (searchPending ? 'Searching Hugging Face metadata…' : searchWarning);
+      || (searchPending ? 'Searching Hugging Face metadata…' : searchWarning)
+      || (!search.value.trim() && selects.source.value === 'all' ? 'Search by name or description, or choose Hugging Face search in Source to browse the Hub.' : '');
     more.hidden = !nextCursor; more.disabled = busy || actionPending || searchPending;
     for (const input of [search, ...Object.values(selects)]) input.disabled = busy || actionPending;
     renderDetails(filtered.find((source) => source.key === visibleKey));
@@ -163,6 +176,8 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     const body = node('div'); details.append(body);
     body.append(node('span', badge(source), 'pc-browser-badge'), node('h3', source.name ?? source.repository));
     if (source.description) body.append(node('p', String(source.description).slice(0, 4000), 'pc-browser-note'));
+    if (source.browserMatchingVariant) body.append(node('p', `Matching variant: ${source.browserMatchingVariant}. Your selected variant is unchanged; choose a matching package below.`, 'pc-browser-note'));
+    if (source.browserFilterPending) body.append(node('p', 'Needs inspection: size, precision and compatibility filters cannot be confirmed until the package is inspected.', 'pc-browser-warning'));
     const repository = source.repository ?? source.model?.repository;
     const reference = source.inspectReference ?? repository;
     const href = safeModelUrl(repository);
@@ -268,9 +283,10 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     clearTimeout(searchTimer);
     if (disposed || busy || !element.open) return;
     const query = repositoryQuery(search.value);
-    if (query.error) { searchWarning = query.error; render(); return; }
-    if (!query.query || !searchModels || selects.source.value === 'stored' || selects.source.value === 'peers' || selects.source.value === 'catalog') return;
+    if (query.error) { searchIncomplete = false; searchWarning = query.error; render(); return; }
+    if (!canSearch()) return;
     searchController?.abort(); const controller = new AbortController(); searchController = controller;
+    searchIncomplete = true; resumeAppend = append;
     const sequence = ++searchSequence; searchPending = true; searchWarning = ''; render();
     try {
       const result = await searchModels({ query: query.query, task: selects.task.value === 'all' ? undefined : selects.task.value,
@@ -289,11 +305,16 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       searchWarning = [result.warning, result.cached ? 'Showing cached Hugging Face results.' : ''].filter(Boolean).join(' ');
     } catch (error) {
       if (!disposed && !controller.signal.aborted && sequence === searchSequence) searchWarning = `Hugging Face search unavailable: ${message(error)}. Catalog, stored models and peer files remain available.`;
-    } finally { if (sequence === searchSequence) { searchPending = false; searchController = null; render(); } }
+    } finally { if (sequence === searchSequence) { searchIncomplete = false; searchPending = false; searchController = null; render(); } }
+  }
+  function canSearch() {
+    return Boolean(searchModels && ['all', 'hub'].includes(selects.source.value)
+      && (search.value.trim() || selects.source.value === 'hub'));
   }
   function changedSearch() {
     stopRequests(); hubItems = []; nextCursor = null; searchWarning = ''; inspectionError = ''; callbackError = '';
-    render(); if (search.value.trim()) searchTimer = setTimeout(() => void runSearch(), 350);
+    searchIncomplete = canSearch(); resumeAppend = false;
+    render(); if (searchIncomplete) searchTimer = setTimeout(() => void runSearch(), 350);
   }
   search.addEventListener('input', changedSearch);
   search.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); void runSearch(); } });
@@ -319,10 +340,17 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       if (disposed) return;
       if (selectedKey !== undefined) desiredKey = selectedKey;
       render();
-      if (!element.open) { returnFocus = document.activeElement; element.showModal(); search.focus(); }
+      if (!element.open) {
+        returnFocus = document.activeElement; element.showModal(); search.focus();
+        if (searchIncomplete) void runSearch(resumeAppend);
+      }
     },
     refresh: render,
-    setBusy(value) { busy = Boolean(value); if (busy) stopRequests(); render(); },
+    setBusy(value) {
+      const wasBusy = busy;
+      busy = Boolean(value); if (busy) stopRequests(); render();
+      if (wasBusy && !busy && element.open && searchIncomplete && !searchController) void runSearch(resumeAppend);
+    },
     dispose() { if (disposed) return; disposed = true; stopRequests(); mobile.removeEventListener('change', resizeFilters);
       if (element.open) element.close(); element.remove(); inspected.clear(); variants.clear(); },
   };

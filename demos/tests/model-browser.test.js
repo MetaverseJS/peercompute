@@ -43,7 +43,8 @@ async function fixture(t, options = {}) {
       { key: 'stored:tiny', name: 'Stored tiny', source: 'stored', manifestCid: 'tiny', task: 'text-generation', dtype: 'q4', totalBytes: 8000000, localAvailability: { status: 'available' } },
       { key: 'hf:unknown', name: 'Unknown size', source: 'hf', task: 'text-to-image', localAvailability: { status: 'checking', reason: 'Checking device support.' } },
     ], targets: [{ key: 'local', local: true, available: false }, { key: 'peer:large', name: 'Large text', local: false, available: true, busy: true, providerCount: 2 }],
-    searchMode: options.searchMode, inspectMode: options.inspectMode, selected: options.selectedKey ?? 'hf:vision', pending: [] };
+    searchMode: options.searchMode, inspectMode: options.inspectMode, extraVariant: options.extraVariant,
+    selected: options.selectedKey ?? 'hf:vision', pending: [] };
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     window.modelBrowser = createModelBrowser({ container: document.querySelector('#root'), getSources: () => state.sources, getTargets: () => state.targets,
       getCompatibility: (source) => source.localAvailability ?? { status: 'unknown', code: 'memory_fit_unverified', cpuBytes: 1024 ** 3, gpuBytes: 2 * 1024 ** 3 },
@@ -53,7 +54,7 @@ async function fixture(t, options = {}) {
         if (state.searchMode === 'pending') await new Promise((resolve) => state.pending.push({ query, resolve }));
         if (state.searchMode === 'error') throw new Error('HTTP 429: retry later');
         return { items: state.searchMode === 'many' ? Array.from({ length: 20 }, (_, index) => ({ repository: `fixture/result-${String(index).padStart(2, '0')}`, name: `Result ${String(index).padStart(2, '0')}` }))
-          : [{ repository: `fixture/${query.replaceAll('/', '-')}${cursor ? '-page2' : ''}`, name: `${query} result`, description: 'Description from the model card.' }],
+          : [{ repository: `fixture/${query.replaceAll('/', '-') || 'browse'}${cursor ? '-page2' : ''}`, name: `${query || 'Browse'} result`, description: 'Description from the model card.' }],
           nextCursor: cursor ? null : 'next', warning: state.searchMode === 'cached' ? 'Offline snapshot' : undefined, cached: state.searchMode === 'cached' };
       },
       async inspectModel(reference, { signal, selectedVariant }) {
@@ -71,6 +72,9 @@ async function fixture(t, options = {}) {
             package: { id: 'fixture-q4', model: { repository, dtype: 'q4_k_m' }, files: [{ path: 'weights.gguf', size: 500000000, sha256: '0'.repeat(64) }] } },
           { key: 'split', name: 'Split package', dtype: 'q4_k_m', task: 'text-generation', totalBytes: 9 * 1024 ** 3, loadable: false, reason: 'Split GGUF packages are unsupported.' },
         ];
+        if (state.extraVariant) variants.push({ key: 'fp16', id: 'fixture-fp16', name: 'FP16 package', dtype: 'fp16',
+          task: 'text-generation', totalBytes: 4 * 1024 ** 3, loadable: true,
+          package: { id: 'fixture-fp16', model: { repository, dtype: 'fp16' } } });
         await delay(1);
         return { repository, revision, license: { spdx: 'apache-2.0', notice: 'Review publisher license terms.' },
           description: '<img src=x onerror=alert(1)> plain model description', variants: state.inspectMode === 'lazy'
@@ -103,6 +107,103 @@ test('opening and periodic refresh are metadata-free, size sorted and keep selec
   assert.equal(await dialog(page).locator('[aria-pressed=true]').getAttribute('data-model-key'), 'peer:large');
   assert.equal(await page.evaluate(() => document.activeElement.dataset.modelKey), 'peer:large');
   assert.deepEqual(await page.evaluate(() => calls), []);
+});
+
+test('explicit empty-query Hugging Face browsing fetches metadata while initial All stays network-free', async (t) => {
+  const page = await fixture(t);
+  assert.deepEqual(await page.evaluate(() => calls), []);
+  await page.getByLabel('Source', { exact: true }).selectOption('hub');
+  await page.waitForFunction(() => document.querySelector('[data-model-key="hub:fixture/browse"]'));
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'search').map((call) => call.query)), ['']);
+  assert.equal(await rows(page).count(), 1);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  for (let index = 0; index < 3; index++) await page.evaluate(() => modelBrowser.refresh());
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 1);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load', 'inspect', 'peer'].includes(call.type))), []);
+});
+
+test('closing before debounce and reopening resumes the retained query exactly once', async (t) => {
+  const page = await fixture(t);
+  await page.getByLabel('Search models', { exact: true }).fill('qwen');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 0);
+  await page.locator('#browse').click();
+  assert.equal(await page.getByLabel('Search models', { exact: true }).inputValue(), 'qwen');
+  await page.waitForFunction(() => document.querySelector('[data-model-key="hub:fixture/qwen"]'));
+  for (let index = 0; index < 3; index++) await page.evaluate(() => modelBrowser.refresh());
+  await page.waitForTimeout(450);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'search').map((call) => call.query)), ['qwen']);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('reopening an interrupted request retries once and ignores the aborted response', async (t) => {
+  const page = await fixture(t, { searchMode: 'pending' });
+  await page.getByLabel('Search models', { exact: true }).fill('qwen');
+  await page.waitForFunction(() => state.pending.length === 1);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => calls.some((call) => call.type === 'search-abort'));
+  await page.locator('#browse').click();
+  await page.waitForFunction(() => state.pending.length === 2);
+  await page.evaluate(() => state.pending[0].resolve());
+  await page.waitForTimeout(30);
+  assert.equal(await dialog(page).locator('[data-model-key^="hub:"]').count(), 0);
+  await page.evaluate(() => state.pending[1].resolve());
+  await page.waitForFunction(() => document.querySelector('[data-model-key="hub:fixture/qwen"]'));
+  await page.evaluate(() => modelBrowser.refresh()); await page.waitForTimeout(450);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 2);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('unknown Hub candidates remain inspectable under size, precision and compatibility filters without becoming loadable', async (t) => {
+  const page = await fixture(t);
+  await searchFor(page, 'qwen');
+  const candidate = dialog(page).locator('[data-model-key="hub:fixture/qwen"]');
+  for (const [label, value] of [['Package size', String(1024 ** 3)], ['Precision', 'q4'], ['Compatibility', 'eligible']]) {
+    await page.getByLabel(label, { exact: true }).selectOption(value);
+    assert.equal(await candidate.count(), 1, `Unknown metadata stays reachable with ${label}`);
+    assert.match(await dialog(page).textContent(), /needs inspection/i);
+    assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+    assert.equal(await dialog(page).getByRole('button', { name: 'Inspect variants', exact: true }).isEnabled(), true);
+  }
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'inspect').length), 0);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('inspected repositories retain alternate matches without silently changing an explicit variant', async (t) => {
+  const page = await fixture(t, { extraVariant: true });
+  await searchFor(page, 'qwen'); await choose(page, 'hub:fixture/qwen');
+  const variant = page.getByLabel('Package variant', { exact: true }); await variant.waitFor();
+  assert.ok((await page.getByLabel('Precision', { exact: true }).locator('option').evaluateAll((items) => items.map((item) => item.value))).includes('fp16'),
+    'Precision filter must include metadata from unselected variants');
+  await variant.selectOption('q8');
+  await page.getByLabel('Precision', { exact: true }).selectOption('q4_k_m');
+  await page.getByLabel('Package size', { exact: true }).selectOption(String(1024 ** 3));
+  await page.getByLabel('Compatibility', { exact: true }).selectOption('eligible');
+  assert.equal(await dialog(page).locator('[data-model-key="hub:fixture/qwen"]').count(), 1);
+  assert.equal(await variant.inputValue(), 'q8', 'Filtering must not silently change the explicitly selected package');
+  assert.match(await dialog(page).getByRole('region', { name: 'Model details' }).textContent(), /variant.*match|match.*variant/i);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  await page.evaluate(() => modelBrowser.refresh());
+  assert.equal(await variant.inputValue(), 'q8');
+  await variant.selectOption('q4');
+  assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('needs-inspection inclusion cannot override known size, precision, task or runtime mismatches', () => {
+  const base = { browserOrigin: 'hub', key: 'pending', name: 'Pending', browserSummary: false,
+    requiresInspection: true, loadable: false, dtype: 'unknown', totalBytes: 500000000, task: 'text-generation' };
+  const fixtures = [base,
+    { ...base, key: 'too-large', totalBytes: 2 * 1024 ** 3 },
+    { ...base, key: 'wrong-precision', dtype: 'q8_0' },
+    { ...base, key: 'wrong-task', task: 'text-to-image' },
+    { ...base, key: 'unsupported', requiresInspection: false, dtype: 'q4', reason: 'Unsupported architecture' },
+  ];
+  const filters = { query: '', source: 'all', task: 'text-generation', precision: 'q4', size: String(1024 ** 3), compatibility: 'eligible', sort: 'smallest' };
+  const actual = filterBrowserModels(fixtures, filters, () => ({ status: 'unknown', code: 'memory_fit_unverified' }), { includeUninspected: true });
+  assert.deepEqual(actual.map((item) => item.key), ['pending']);
+  assert.equal(actual[0].browserFilterPending, true);
+  assert.deepEqual(filterBrowserModels(fixtures, filters, () => ({ status: 'unknown' })), [], 'Default strict matching remains unchanged');
 });
 
 test('local AND description filters, task, precision, size and empty state preserve query across refresh', async (t) => {
@@ -312,6 +413,21 @@ test('busy disables model actions and disposal cancels requests without late DOM
   assert.ok(await page.evaluate(() => calls.some((call) => call.type === 'search-abort')));
   await page.evaluate(() => { modelBrowser.dispose(); state.pending[0].resolve(); });
   await page.waitForTimeout(20); assert.equal(await page.locator('dialog').count(), 0);
+});
+
+test('idle panel refresh preserves a slow search and a busy-to-idle transition resumes it once', async (t) => {
+  const page = await fixture(t, { searchMode: 'pending' });
+  await page.getByLabel('Search models', { exact: true }).fill('slow');
+  await page.waitForFunction(() => state.pending.length === 1);
+  await page.evaluate(() => { modelBrowser.setBusy(false); modelBrowser.refresh(); modelBrowser.setBusy(false); });
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 1);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search-abort').length), 0);
+  await page.evaluate(() => { modelBrowser.setBusy(true); modelBrowser.setBusy(false); modelBrowser.setBusy(false); });
+  await page.waitForFunction(() => state.pending.length === 2);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search-abort').length), 1);
+  await page.evaluate(() => { state.pending[0].resolve(); state.pending[1].resolve(); });
+  await dialog(page).locator('[data-model-key="hub:fixture/slow"]').waitFor();
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 2);
 });
 
 test('desktop/mobile dialog wraps long content, traps focus and produces owned UI screenshots', async (t) => {
