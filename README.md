@@ -14,9 +14,12 @@ reproducible PDF builder live beside the document.
 The next model-demo TODO is the model browser and wider Hugging Face discovery,
 followed by a lightweight persistent-agent layer. Its
 [one-page summary](plan/demos/inference/agentlayer.pdf) and
-[implementation plan](plan/demos/inference/agent-layer-plan.md) cover templates,
+[implementation plan](plan/demos/inference/agent-layer-plan.md) cover one general agent type,
 IndexedDB context, learned model selection with optional peer-hosted routing,
 strict local-only operation, and consented model loading, cloning and migration.
+Architecture diagrams show StateManager persistence, ComputeManager workers and
+NetworkManager peer routing. Dedicated agent types and new speech/mesh adapters
+are deferred beyond the initial agent TODO.
 These are planned capabilities; the current runtime is still the model-hosting
 foundation.
 

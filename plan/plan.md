@@ -21,12 +21,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
    filter task, selected-package size, precision, source and compatibility. Resolve
    exact supported variants and preserve stored/peer loading, cancellation and
    preferences. Scope: [model browser plan](branch/ipfs-large-files-model-inference.md#november-5--model-browser-design-discussion).
-2. [ ] **AGENT-01 — after MODEL-BROWSER-01:** spawn agents from basic templates with
+2. [ ] **AGENT-01 — after MODEL-BROWSER-01:** spawn instances of one general agent with
    identity, goals and compact context persisted in private IndexedDB. Route tasks
    through a small learned selector to eligible local/network models; support strict
    local-only and optional peer-hosted ML routing. Add separately consented host
-   model loading, cloning and same-identity migration, with speech/3D adapters as
-   staged extensions. [One-page summary](demos/inference/agentlayer.pdf) ·
+   model loading, cloning and same-identity migration. Dedicated agent types and
+   new speech/3D adapters are deferred beyond this TODO. [One-page summary](demos/inference/agentlayer.pdf) ·
    [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
 
 This is the agreed order for upcoming model-demo work. The current change records

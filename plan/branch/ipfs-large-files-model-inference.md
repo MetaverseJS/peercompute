@@ -931,7 +931,7 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
    modal and wider Hugging Face discovery/package resolution above.
 2. [ ] **AGENT-01:** immediately afterward, implement the
    [persistent agent layer](../demos/inference/agent-layer-plan.md), summarized in
-   [one page](../demos/inference/agentlayer.pdf). Basic templates create identity,
+   [one page](../demos/inference/agentlayer.pdf). One general agent type creates identity,
    goals and context in IndexedDB; a compact learned router uses eligible hosted
    models or strict local-only inference. The router itself may optionally run on
    a peer. Model-request loading, open/invited agent hosting, independent clones
@@ -949,3 +949,16 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   remain later Humunculus work. No application code or publication in this slice.
 - User requests the one-page PDF be copied to cos@stinkpad:/home/cos/Desktop/agentlayer.pdf;
   this delivery is distinct from implementing or deploying either TODO.
+
+### November 5 — general agent scope and architecture diagrams
+
+- User narrows AGENT-01 to one general-purpose agent type. Multiple instances
+  retain independent identities/goals/context; remove the proposed type selector
+  and role-specific template catalog. Existing text/vision/image adapters remain
+  usable by the same general agent. Dedicated agent types and new speech/direct
+  mesh adapters are deferred beyond this TODO, without changing MODEL-BROWSER-01's
+  first priority or the requested optional routing/loading/mobility capabilities.
+- Add reusable vector diagrams to the detailed plan and one-page PDF showing
+  PeerCompute manager ownership, local versus optional peer routing, managed
+  inference and private checkpoint persistence. Refresh the previously authorized
+  Stinkpad PDF destination after document and visual validation.

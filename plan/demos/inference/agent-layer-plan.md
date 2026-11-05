@@ -1,6 +1,6 @@
 # Persistent agents over the model hosting network
 
-Date: November 5, 2026. Status: planned, not implemented.
+Date: November 5, 2026. Status: planned, not implemented. Current scope: one general-purpose agent type.
 
 Read the [one-page summary](agentlayer.pdf) or its [editable source](agent-layer-summary.html).
 This is the first software-agent step toward [Humunculus](../humunculus/humunculus.pdf),
@@ -13,7 +13,7 @@ before learned bodies, navigation, training curricula and connectome experiments
    Search names and descriptions; filter task, selected-package size, precision,
    source and compatibility; resolve exact supported variants and preserve
    provenance, stored loading, cancellation and peer availability.
-2. **AGENT-01 — immediately afterward:** implement persistent agents that use
+2. **AGENT-01 — immediately afterward:** implement one general-purpose agent type that uses
    eligible local or hosted models through learned model selection. Include
    strict local-only operation and optional peer-hosted routing, then consented
    model provisioning, cloning and migration through the stages below.
@@ -24,34 +24,38 @@ its weights. A search result or a file provider alone does not establish an
 available inference service. The older IPFS-01 acceptance gaps remain tracked;
 these new TODOs do not mark that broader effort complete.
 
-The user spawns a template, gives it a name and goals, and chooses local-only or
+The user spawns a general agent, gives it a name and goals, and chooses local-only or
 network-assisted operation. The agent keeps its identity and memory as models
 change. It plans bounded steps, routes each step, retains results and explains
 what it used. It may ask permissioned hosts for a different model or a new home.
-Agent templates, context and transfers are data; the application supplies code.
+Agent configuration, context and transfers are data; the application supplies code.
 
-## User experience and basic agent types
+## One general agent type
 
 Add an **Agents** entry beside model browsing. Show a list of saved agents with
-name, template, current goal, status, execution host and last saved time. Actions:
+name, current goal, status, execution host and last saved time. Actions:
 Spawn, Open, Pause/Resume, Cancel task, Edit, Export, Clone, Move and Delete.
 Deleting an agent and deleting shared model weights are independent operations.
+Expose optional peer routing, host-load, Clone and Move controls only when their
+respective stages are implemented and permitted; the initial local slice must
+not present unfinished controls as operational.
 
-The spawn modal offers these initial templates, all using the same runtime:
+The spawn modal asks for a name, goals and operating preferences. It does not
+offer a type selector. One general agent can converse, reason, write code,
+interpret an attached image or request image generation through the existing
+qualified task adapters. Writing code produces an artifact; executing it needs
+a separately admitted tool. Multiple instances share this one agent definition
+but keep separate identities, contexts and authority.
 
-| Type | Initial purpose | Capability boundary |
-| --- | --- | --- |
-| General assistant | Conversation, reasoning and goal decomposition | Text models; vision when an image is attached |
-| Coding assistant | Explain, generate and revise code | Code generation is initially an output artifact; running it needs a separately admitted tool |
-| Visual creator | Describe images and generate illustrations | Current vision and text-to-image adapters |
-| 3D maker | Develop object/body descriptions and request meshes | Initial structured geometry proposals; direct mesh generation waits for a qualified adapter |
-| Voice companion | Listen, converse and speak | Template can exist in text mode; ASR/TTS require the speech stage before voice is advertised as usable |
-
-Templates contain default instructions, suggested skills and budgets; they do
-not permanently bind an agent to a model. The user can inspect/edit identity,
+A single default configuration supplies instructions and budgets without
+permanently binding the agent to a model. The user can inspect/edit identity,
 goals and summaries. Model-written memory is distinguished from user-authored
 instructions and confirmed tool outcomes. The activity view shows each step,
 model variant, executing peer, router choice, load requests and failures.
+
+Dedicated coding/visual/voice/3D agent types and new speech/direct-mesh runtimes
+are deferred beyond AGENT-01. Future capabilities extend this general agent's
+task adapters; a new agent type is not required for each new model skill.
 
 Two independent selectors control **inference location** and **router location**.
 Inference is either Local only or Network assisted. The router is Local ML or
@@ -62,23 +66,16 @@ sharing preferences retain their current behavior.
 
 ## Architecture and current foundation
 
-```mermaid
-flowchart TD
-  UI[Agent list and conversation] --> A[Agent runtime and bounded planner]
-  A <--> DB[Private IndexedDB record and journal]
-  A --> C[Typed task and minimum context]
-  C --> F[Eligibility and permission checks]
-  D[Model catalog and live host discovery] --> F
-  F --> R[Local learned ranker or optional peer ranker]
-  R --> V[Local validation and host selection]
-  V --> L[Local ComputeManager worker]
-  V --> P[Private peer inference stream]
-  L --> E[Validated result and atomic checkpoint]
-  P --> E
-  E --> A
-  A --> H[Permissioned host control service]
-  H --> M[Model load request or agent transfer]
-```
+![General agent on its owning peer, with StateManager persistence, ComputeManager execution and NetworkManager connections to peer inference and an optional peer router.](figures/agent-peercompute.svg)
+
+Figure 1. The proposed general-agent layer composes existing PeerCompute managers.
+StateManager gains an acknowledged private AgentRecordStore; its existing
+ArtifactStore retains large model files by CID. ComputeManager owns both local
+and remote model execution on their respective hosts. NetworkManager carries
+discovery and private inference/ranking streams. The optional peer router returns
+advice to the owning host, which validates it before dispatch. Arrows represent
+request and result paths, not shared authority or automatic context publication.
+The shown connections apply only to network-assisted operation.
 
 | Existing surface | Reuse and required extension |
 | --- | --- |
@@ -86,7 +83,7 @@ flowchart TD
 | `networkManager/inference/PeerInferenceService.js` | Existing private inference, host discovery, cancellation and pre-commit fallback; add separate agent/host-control protocols |
 | `networkManager/inference/protocol.js` | Currently accepts text generation, image-to-text and text-to-image; negotiate new versions/capabilities for other tasks |
 | `stateManager/StateManager.js` | Own a private agent-record repository through an additive composition seam; do not redesign current public state APIs |
-| `inference/ModelInferenceService.js` and ComputeManager | Own GPU execution, workers, cancellation and admission; add a trusted scorer task and later speech/mesh adapters |
+| `inference/ModelInferenceService.js` and ComputeManager | Own GPU execution, workers, cancellation and admission; add a trusted scorer task; speech/mesh adapters are outside AGENT-01 |
 | ArtifactStore | Verified weights and explicit artifacts/checkpoints; private context is not automatically shared or announced |
 
 Source paths in the table after the first row are relative to
@@ -111,7 +108,7 @@ portable JSON export use the same schema. A conceptual record is:
   "schema": "peercompute.agent.v1",
   "agentId": "stable-random-id",
   "controllerKeyId": "user-controller-public-key-id",
-  "templateId": "general-assistant",
+  "agentKind": "general",
   "identity": { "name": "Ada", "instructions": "Help develop the project." },
   "goals": [{ "id": "goal-1", "text": "Design a small avatar", "status": "active" }],
   "context": { "summary": "", "memoryHead": "local-record-key", "artifactRefs": [] },
@@ -163,6 +160,14 @@ encryption does not hide it from the executor.
 
 ## Decision loop and task contracts
 
+![A request passes through context, policy checks, learned ranking, host selection, managed execution and a verified checkpoint; optional peer advice returns to local validation.](figures/agent-request-cycle.svg)
+
+Figure 2. Every step starts and ends with the same agent identity. The local host
+filters candidates, validates router output and selects a provider. Context and
+goals are checkpointed after result validation; neither the router peer nor the
+answering model becomes the agent's owner. Peer routing is optional and has a
+local fallback. Local-only removes remote candidates and peer ranking entirely.
+
 Begin with one active decision per agent and a fair queue across agents. Suggested
 defaults are eight steps per user goal and a visible elapsed/token budget; users
 can adjust limits. Completion, waiting for input, budget exhaustion and failure
@@ -195,13 +200,14 @@ worker/transport cleanup; it cannot undo an already applied external effect.
 | Reasoning and coding | Text or structured messages → text/validated structured result | Existing text generation; skill quality needs measured profiles |
 | Vision | Image plus text → description/structured observations | Existing image-to-text |
 | Image generation | Prompt → bounded image artifact | Existing text-to-image |
-| Transcription | Audio with declared format → transcript | New ASR worker and audio transport/schema |
-| Speech synthesis | Text and approved voice → audio | New TTS worker and result transport/schema |
-| 3D generation | Text/image/specification → validated mesh/body artifact | New runtime, artifact validation and preview; generated source is not automatically executable |
+| Transcription | Audio with declared format → transcript | Deferred beyond AGENT-01: new ASR worker and audio transport/schema |
+| Speech synthesis | Text and approved voice → audio | Deferred beyond AGENT-01: new TTS worker and result transport/schema |
+| 3D generation | Text/image/specification → validated mesh/body artifact | Deferred beyond AGENT-01: new runtime, artifact validation and preview |
 | Model ranking | Task/candidate features → bounded scores | New compact scorer runtime and optional ranking protocol |
 
-Multi-step work composes these contracts, for example speech → text → reasoning
-→ image → spoken explanation. Unsupported steps wait or explain the missing
+Initial multi-step work can combine an image description, a text plan and a
+generated illustration, all within one general agent. Future speech or mesh
+adapters can add capabilities to this same type. Unsupported steps explain the missing
 capability; labels in a model card do not make a new adapter executable. An
 agent can use any hosted model that satisfies its policy and the negotiated task
 contract. It is not limited to the originating device's catalog or GPU size.
@@ -302,7 +308,7 @@ Keep these separate in host Config: serve loaded inference; serve model ranking;
 accept guest agents; permit agent-requested model loading; accept transfers or
 clones. Guest-agent mode is Closed, Invited only, or Open within limits. Open
 mode is standing host consent for a defined class of requests, not unlimited
-access. Enforce accepted templates/tasks, agent count, rate/concurrency, runtime,
+access. Enforce accepted task contracts, agent count, rate/concurrency, runtime,
 download/time budgets, lifetime and tool grants at the receiving host.
 
 The effective permission is the intersection of controller policy, delegated
@@ -403,7 +409,7 @@ authority. [Browser lifecycle](https://developer.chrome.com/docs/web-platform/pa
 ## Module boundaries and implementation stages
 
 Use vanilla ES modules and existing managers. Proposed `peercompute/src/peercompute/agents/`
-modules: `AgentContracts`, `AgentTemplates`, `AgentRecordStore`, `AgentRuntime`,
+modules: `AgentContracts`, `AgentDefaults`, `AgentRecordStore`, `AgentRuntime`,
 `AgentPolicy`, `AgentRouter`, `AgentAuthority` and `AgentTransfer`. Add host-control
 and ranking adapters under NetworkManager, trusted scorer tasks under inference,
 and reusable agent views under `demos/inference/src/agents/`. These are planned
@@ -412,18 +418,17 @@ names, not existing exports. UI code never owns model workers or authority.
 | Stage | Deliverable | Exit evidence |
 | --- | --- | --- |
 | A0 Contracts | Normalized catalog/tasks, agent schema and policy/grant contracts after MODEL-BROWSER-01 | Explicit existing/new capability map; schema fixtures and bounded size checks |
-| A1 Local agents | Templates, create/edit/export/delete/resume, private IndexedDB journal, strict local-only loop | Restart retains identity/goals/context; two-tab exclusion; write failure pauses; no remote context traffic |
+| A1 General agent | One general definition; create/edit/export/delete/resume, private IndexedDB journal, strict local-only loop | No type selector; separate instances retain identity/goals/context; two-tab exclusion; write failure pauses; no remote context traffic |
 | A2 Network routing | Shared catalog/host service, transparent baseline, compact trained ranker and local execution | Task/variant selection benchmark, reference equivalence, provenance, cancellation and changing-host tests |
 | A3 Optional peer router | Authenticated ranking endpoint with bounded candidate snapshots and local fallback | Timeout, malformed/stale scores and strict-local denial; no recursive routing dependency |
 | A4 Requested loading | Separate host grant, queue/progress/cancel/reservation; exact package resolver | Disabled host rejects; admitted idle load succeeds; busy user model preserved; duplicate requests coalesce |
 | A5 Clones | Explicit invite/open acceptance, new identity/lineage, selected memory and fresh grants | Two independent agents; no duplicated child on replay; host/replication bounds enforced |
 | A6 Migration | Private checkpoint, durable relinquishment, epoch handoff and reconciliation | Crash/disconnect injection at every transition; only one cooperating host runs; no timeout takeover |
-| A7 Specialist extensions | Speech and validated 3D interfaces integrated through shared routing | Real ASR/TTS and mesh output contracts proven before enabling those template capabilities |
 
 A1–A3 form the first user-visible agent slice. A4–A6 deliver the requested
-optional network autonomy. A7 supplies the remaining named specialist tasks;
-until then those template capabilities stay visibly pending. AGENT-01 is not
-fully complete while required stages or their acceptance gates are unproven.
+optional network autonomy for the same general agent type. AGENT-01 completes
+when A0–A6 and their acceptance gates pass. Dedicated agent types and new speech
+or direct-mesh adapters are future extensions, not completion gates for this TODO.
 Humunculus's neural movement, learned bodies and fly-brain experiments follow
 separately; this layer contributes persistent identity, memory and specialist
 coordination without claiming those embodied behaviors.
@@ -453,6 +458,7 @@ coordination without claiming those embodied behaviors.
   activation; preserve paused ownership without source restart. Distinguish independent clone identity from transferred
   authority. Same-identity recovery may remain paused; it must not split authority.
 - **UI and real network:** desktop/mobile dialogs, keyboard/focus, saved status,
+  one general-agent spawn form without a type selector,
   visible route trace, host controls, PWA restart, two independent browser stores
   and eventually two physical devices against the existing backend. Do not claim
   same-machine tests as physical-host continuity or a new Pages release.
@@ -461,5 +467,5 @@ The initial demonstration is a saved agent that survives reload, uses different
 qualified models for text and image tasks, and explains its routing choices.
 Then demonstrate the same goal under local-only restrictions, optional peer
 ranking, a consented model load, an independent clone and an acknowledged move.
-Speech/3D demonstrations close their own gates. All implementation tests above
+Future speech/3D demonstrations will have separate gates. All implementation tests above
 are planned; the current change only records the plan and summary.

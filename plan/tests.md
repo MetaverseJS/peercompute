@@ -3400,6 +3400,9 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 ### AGENT-01 acceptance — planned, not executed
 
 - Canonical stage gates are in [agent-layer plan](demos/inference/agent-layer-plan.md#validation-and-completion).
+  Spawn only the general agent type; multiple instances retain separate identity
+  and context, and no role selector is shown. Existing text/vision/image tasks
+  remain available through that agent's permitted model routes.
   Verify private transactional IndexedDB saves, restart/schema/export round trips,
   same-origin tab exclusion, storage failures and no public context announcements.
 - Train/evaluate the small task–model scorer on versioned outcomes and held-out
@@ -3418,8 +3421,9 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   obsolete authority on backup restore; recheck grants/policy/admission after
   preparation and retain paused ownership if activation is no longer permitted.
   Local-only also blocks automatic remote clones, not only migration.
-- Add real speech and mesh contract tests before enabling those template features;
-  exercise independent browser stores and physical-host operation separately.
+- Exercise independent browser stores and physical-host operation separately.
+  Speech/mesh adapters and dedicated agent types are deferred beyond AGENT-01;
+  their eventual implementation needs separate contract and runtime acceptance.
 
 ### Agent summary document and delivery checks — November 5 2026
 
@@ -3427,8 +3431,14 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   syntax, one-page layout overflow, actual PDF page count/text and visual raster.
   Validate plan links and TODO ordering. These are document checks, not AGENT-01
   runtime acceptance. Verify SHA256 and byte size after the authorized SCP copy.
-- Document validation PASS: one tagged A4 page, 419 body words, no page overflow
+- Initial document validation PASS: one tagged A4 page, 419 body words, no page overflow
   or browser errors; actual PDF raster visually reviewed and readable. Builder
   syntax and git diff --check pass; 13 new/relevant local links resolve. PDF
   46,551 bytes; delivery verification recorded in plan/log.md. Runtime gates above
   remain unexecuted.
+- General-agent revision PASS: one tagged A4 page, two embedded vector diagrams,
+  256 body words, zero page/diagram-label overflow and browser errors. Builder
+  regenerates SVGs and validates box text bounds. Final actual PDF visually
+  inspected; both ES modules pass syntax checks, 14 local links resolve, and
+  scope checks confirm one general type/A0–A6 with speech/mesh work deferred.
+  Final PDF65,179bytes; transfer verification recorded in plan/log.md.
