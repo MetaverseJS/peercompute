@@ -110,12 +110,13 @@ try {
   assert(report.reply.text.trim()); assert(report.reply.gpuDispatches > 0);
   for (const viewport of [{ width: 866, height: 900 }, { width: 390, height: 844 }]) {
     await requester.setViewportSize(viewport);
-    const selector = requester.getByLabel('Model and source', { exact: true });
-    await selector.click();
-    await requester.waitForFunction(() => document.querySelector('[aria-label="Model and source"]').matches(':open'));
-    const boxes = await selector.locator('option').evaluateAll((options) => options.map((option) => {
+    await requester.getByRole('button', { name: 'Browse models', exact: true }).click();
+    const browser = requester.getByRole('dialog', { name: 'Browse models', exact: true });
+    await browser.waitFor({ state: 'visible' });
+    const boxes = await browser.locator('[data-model-key]').evaluateAll((options) => options.map((option) => {
       const b = option.getBoundingClientRect(); return { x: b.x, right: b.right, width: b.width, height: b.height };
     }));
+    assert(boxes.length > 0, 'Model browser must contain discovered/catalog rows');
     assert(boxes.every((b) => b.x >= 0 && b.right <= viewport.width));
     await requester.screenshot({ path: output.replace('.json', `-${viewport.width}.png`) });
     await requester.keyboard.press('Escape');

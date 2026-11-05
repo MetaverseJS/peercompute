@@ -30,12 +30,12 @@ async function ready() {
     await inferencePanel.runtime.setSharing(false);
   });
 }
-async function selected() { return page.getByRole('combobox', { name: 'Model and source', exact: true }).inputValue(); }
+async function selected() { return page.locator('[aria-label="Current model"]').getAttribute('data-source-key'); }
 async function modelStatus() { return page.evaluate(() => inferencePanel.runtime.service.getStatus()); }
 async function loaded() {
   await page.waitForFunction(() => window.inferencePanel?.runtime.service.getStatus().status === 'ready', null, { timeout: 240000 });
   await page.locator('.pc-model-loading').waitFor({ state: 'hidden', timeout: 30000 });
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
 }
 async function cancelLoad(method, label) {
   const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
@@ -46,7 +46,7 @@ async function cancelLoad(method, label) {
   // Cancellation is complete only after the actual runtime promise settles.
   await overlay.waitFor({ state: 'hidden', timeout: 120000 });
   await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'idle', null, { timeout: 30000 });
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
   const status = await page.locator('.pc-inference-panel > [role="status"]').innerText();
   assert(!/Error:|cleanup.*incomplete/i.test(status), status);
   report[label] = { status: await modelStatus(), message: status, method,
@@ -121,7 +121,7 @@ try {
   await page.getByRole('button', { name: 'Configure model chat', exact: true }).click();
   await page.getByRole('button', { name: 'Unload local model', exact: true }).click();
   await page.waitForFunction(() => window.inferencePanel.runtime.service.getStatus().status === 'idle');
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
   await page.keyboard.press('Escape');
   await page.evaluate(() => { inferencePanel.runtime.services.onnx.collectGpuEvidence = true; });
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -160,7 +160,7 @@ try {
   await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
   await row.getByRole('button', { name: /^Delete / }).click();
   await page.waitForFunction(async () => (await inferencePanel.runtime.listStoredModels()).length === 0, null, { timeout: 120000 });
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model and source"]').disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
   phase = 'deleted-library-fallback'; forbidModelDownloads = false;
   await page.reload(); await ready();
   report.deletedStartup = await page.evaluate(() => inferencePanel.runtime.getStartupModel());

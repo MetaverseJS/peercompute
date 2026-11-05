@@ -30,6 +30,22 @@ async function openMenuAction(page, name) {
   await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name, exact: true }).click();
 }
 
+const currentModelKey = (page) => page.getByLabel('Current model', { exact: true }).getAttribute('data-source-key');
+async function browseChoice(page, key, action) {
+  await page.getByRole('button', { name: 'Browse models', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Browse models', exact: true });
+  if (!await modal.locator('.pc-browser-filters').evaluate((element) => element.open)) {
+    await modal.locator('.pc-browser-filters summary').click();
+  }
+  await modal.locator('[data-model-key]').evaluateAll((items, key) => {
+    const item = items.find((element) => element.dataset.modelKey === key);
+    if (!item) throw new Error('Missing model choice: ' + key);
+    item.click();
+  }, key);
+  if (action) await modal.getByRole('button', { name: action, exact: true }).click();
+  return modal;
+}
+
 async function fixture(t, scenario = {}) {
   const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
   const errors = [], external = [];
@@ -211,8 +227,7 @@ test('unloaded injected runtime defaults sharing and hosting on without Close, C
 
 test('unified import selects either source and automatically makes local chat available', async (t) => {
   const page = await fixture(t);
-  await page.getByLabel('Model and source').selectOption('peer:fixture');
-  await page.getByRole('button', { name: 'Load', exact: true }).click();
+  await browseChoice(page, 'peer:fixture', 'Load');
   await page.waitForFunction(() => calls.some((call) => call.type === 'loaded'));
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
   await page.getByLabel('Message', { exact: true }).fill('Hello');
@@ -224,58 +239,47 @@ test('unified import selects either source and automatically makes local chat av
   await page.waitForFunction(() => !uiState.sharing && !uiState.hostInference);
 });
 
-test('model filter uses AND terms across source, name, ID, task and runtime without changing chat targets', async (t) => {
+test('modal filtering preserves selection and does not change the remote chat target during refresh', async (t) => {
   const page = await fixture(t, { interval: 50 });
-  const filter = page.getByRole('searchbox', { name: 'Filter models' });
-  const source = page.getByLabel('Model and source');
-  const target = page.getByLabel('Chat target');
-  await source.selectOption('peer:fixture'); await target.selectOption('peer:fixture');
-  const targetOptions = await target.locator('option').allTextContents();
-  await filter.fill('HUGGING fixture smolvlm image-text transformers');
-  assert.equal(await source.inputValue(), 'hf:vision'); assert.equal(await source.locator('option').count(), 1);
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  const modal = await browseChoice(page, 'peer:fixture');
+  const filter = modal.getByLabel('Search models', { exact: true });
+  await modal.getByLabel('Source', { exact: true }).selectOption('catalog');
+  await filter.fill('fixture smolvlm image-text transformers');
+  assert.equal(await modal.locator('[data-model-key]').count(), 1);
   await page.waitForFunction(() => uiState.refreshCalls >= 3);
-  assert.equal(await filter.inputValue(), 'HUGGING fixture smolvlm image-text transformers');
-  assert.equal(await source.inputValue(), 'hf:vision');
-  assert.deepEqual(await target.locator('option').allTextContents(), targetOptions);
-  assert.equal(await target.inputValue(), 'peer:fixture');
+  assert.equal(await filter.inputValue(), 'fixture smolvlm image-text transformers');
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
   await filter.fill('no such model');
-  assert.equal(await source.locator('option:checked').textContent(), 'No matching models');
-  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
-  assert.match(await page.locator('.pc-model-availability').textContent(), /No matching models/);
-  await filter.fill(''); assert.equal(await source.inputValue(), 'peer:fixture');
-  await filter.fill('Peers llama text-generation');
-  assert.equal(await source.inputValue(), 'peer:fixture'); assert.equal(await source.locator('option').count(), 1);
+  assert.match(await modal.textContent(), /No matching models/);
+  assert.equal(await modal.getByRole('button', { name: 'Load', exact: true }).count(), 0);
+  await filter.fill(''); await modal.getByLabel('Source', { exact: true }).selectOption('all');
+  assert.equal(await modal.locator('[aria-pressed=true]').getAttribute('data-model-key'), 'peer:fixture');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
 });
 
-test('unavailable and checking models offer setup help and cannot import even through a stale handler', async (t) => {
+test('unavailable and checking choices offer explicit setup help and stale handlers cannot load', async (t) => {
   const page = await fixture(t, { loaded: true, interval: 50, availability: {
     'hf:vision': { status: 'unavailable', reason: 'Needs 12 GiB GPU memory.' },
     'peer:fixture': { status: 'checking', reason: 'Checking WebGPU support…' },
   } });
-  const source = page.getByLabel('Model and source');
-  assert.equal(await source.locator('option[data-unavailable=true]').count(), 2);
-  assert.match(await source.locator('option[value="hf:vision"]').textContent(), /Setup required/);
-  assert.match(await page.locator('.pc-model-availability').textContent(), /Checking WebGPU support/);
-  const acquire = page.getByRole('button', { name: 'Load', exact: true });
-  assert.equal(await acquire.isDisabled(), true);
-  await acquire.evaluate((button) => button.onclick());
+  let modal = await browseChoice(page, 'hf:vision');
+  const load = modal.getByRole('button', { name: 'Load', exact: true });
+  assert.equal(await load.isDisabled(), true); await load.evaluate((element) => element.onclick());
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
-  await source.selectOption('hf:vision');
+  await modal.getByRole('button', { name: 'Setup help', exact: true }).click();
   const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
-  assert.match(await help.textContent(), /Needs 12 GiB GPU memory/);
-  await help.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.match(await help.textContent(), /Needs 12 GiB GPU memory/); await page.keyboard.press('Escape');
   await page.evaluate(() => { uiState.availability['hf:vision'] = { status: 'unknown', reason: 'Free GPU memory is unknown.' }; });
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Model and source"] option').disabled);
-  assert.equal(await acquire.isEnabled(), true);
-  assert.match(await page.locator('.pc-model-availability').textContent(), /Free GPU memory is unknown/);
-  // Runtime state changes before the next UI refresh; the click handler still rechecks it.
-  await page.evaluate(() => {
-    uiState.availability['hf:vision'] = { status: 'unavailable', reason: 'Device is incompatible.' };
-    return [...document.querySelectorAll('button')].find((button) => button.textContent === 'Load').onclick();
+  await page.waitForTimeout(100);
+  modal = await browseChoice(page, 'hf:vision');
+  assert.equal(await modal.getByRole('button', { name: 'Load', exact: true }).isEnabled(), true);
+  await modal.getByRole('button', { name: 'Load', exact: true }).evaluate((element) => {
+    uiState.availability['hf:vision'] = { status: 'unavailable', reason: 'Device is incompatible.' }; element.onclick();
   });
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
-  await help.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.keyboard.press('Escape');
+  if (await help.isVisible()) await page.keyboard.press('Escape');
   await page.getByLabel('Chat target').selectOption('peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Use the peer instead.');
   await page.getByLabel('Message', { exact: true }).press('Enter');
@@ -292,7 +296,7 @@ test('Config memory budgets convert GiB, refresh restrictions, clear to auto and
   assert.match(await page.getByRole('dialog', { name: 'Config', exact: true }).textContent(), /approximately 8 GiB.*cannot report free GPU memory/);
   await cpu.fill('2.5'); await cpu.dispatchEvent('change');
   assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: null });
-  assert.equal(await page.getByLabel('Model and source').locator('option[data-unavailable=true]').count(), 2);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   await gpu.fill('6'); await gpu.dispatchEvent('change');
   assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: 2.5 * 1024 ** 3, gpuBytes: 6 * 1024 ** 3 });
   await cpu.focus(); // Commit the GPU field's native blur/change before counting rejected edits.
@@ -305,7 +309,7 @@ test('Config memory budgets convert GiB, refresh restrictions, clear to auto and
   await cpu.fill(''); await cpu.dispatchEvent('change');
   await gpu.fill(''); await gpu.dispatchEvent('change');
   assert.deepEqual(await page.evaluate(() => uiState.memoryBudgets), { cpuBytes: null, gpuBytes: null });
-  assert.equal(await page.getByLabel('Model and source').locator('option:disabled').count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), false);
   assert.equal(await cpu.getAttribute('aria-invalid'), null);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire' || call.type === 'pin')), []);
 });
@@ -314,12 +318,12 @@ test('model filtering and memory budgets are disabled during an active import', 
   const page = await fixture(t, { acquireDelay: 10000 });
   await page.getByRole('button', { name: 'Load', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'acquire'));
-  assert.equal(await page.getByRole('searchbox', { name: 'Filter models' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Browse models', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('dialog', { name: 'Loading model', exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Model RAM budget (GiB)', { exact: true }).isDisabled(), true);
   assert.equal(await page.getByLabel('Model GPU memory budget (GiB)', { exact: true }).isDisabled(), true);
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Filter models"]').disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'budgets')), []);
 });
 
@@ -392,12 +396,12 @@ test('Config clears conversation context without unloading a model or changing s
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['unload', 'delete', 'acquire', 'pin'].includes(call.type))), []);
 });
 
-test('model entries show estimated RAM and GPU requirements without claiming detected capacity', async (t) => {
-  const page = await fixture(t, { availability: { 'peer:fixture': { status: 'unknown', cpuBytes: 0, gpuBytes: 0 } } });
-  const source = page.getByLabel('Model and source');
-  assert.match(await source.locator('option[value="hf:vision"]').textContent(), /est\. RAM 4 GiB \/ GPU 8 GiB/);
-  assert.match(await source.locator('option[value="peer:fixture"]').textContent(), /est\. RAM unknown \/ GPU unknown/);
-  assert.match(await page.locator('.pc-model-availability').textContent(), /Planning estimates; actual memory use varies/);
+test('model details show estimated RAM and GPU requirements separately from package size', async (t) => {
+  const page = await fixture(t);
+  const modal = await browseChoice(page, 'hf:vision');
+  assert.match(await modal.textContent(), /Estimated RAM4.00 GiBEstimated GPU memory8.00 GiB/);
+  assert.match(await modal.textContent(), /download size, not RAM or GPU memory/);
+  assert.match(await modal.textContent(), /memory fit|Memory fit/i);
 });
 
 test('peer status distinguishes empty directories, query failures and unavailable file sharing', async (t) => {
@@ -434,7 +438,7 @@ test('opened model pickers wrap long names inside desktop and mobile viewports a
   const page = await fixture(t, { interval: 50, loaded: true });
   for (const viewport of [{ width: 866, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Model and source', 'Chat target']) {
+    for (const name of ['Chat target']) {
       const select = page.getByLabel(name, { exact: true });
       await select.click();
       await page.waitForFunction((name) => document.querySelector(`select[aria-label="${name}"]`).matches(':open'), name);
@@ -761,10 +765,10 @@ test('unsupported selection opens repeatable setup help, preserves selection and
   const page = await fixture(t, { interval: 50, loaded: true, availability: {
     'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'Required FP16 GPU math (shader-f16) is unavailable in this browser' },
   } });
-  const source = page.getByLabel('Model and source');
+  const source = page.getByRole('button', { name: 'Browse models', exact: true });
   const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
-  await source.selectOption('peer:fixture'); await help.waitFor();
-  assert.equal(await source.inputValue(), 'hf:vision');
+  await browseChoice(page, 'peer:fixture', 'Setup help'); await help.waitFor();
+  assert.equal(await currentModelKey(page), 'hf:vision');
   assert.match(await help.textContent(), /Peer text model/);
   await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
   await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
@@ -781,9 +785,9 @@ test('unsupported selection opens repeatable setup help, preserves selection and
   assert.equal(await help.getByRole('button', { name: 'Copy command', exact: true }).isVisible(), false);
   assert.doesNotMatch(await help.textContent(), /firefox --enable-dawn/);
   await page.keyboard.press('Escape'); assert.equal(await help.isVisible(), false);
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Model and source');
+  await page.waitForFunction(() => document.activeElement?.textContent === 'Browse models');
   assert.equal(await source.evaluate((element) => element === document.activeElement), true);
-  await source.selectOption('peer:fixture'); await help.waitFor();
+  await browseChoice(page, 'peer:fixture', 'Setup help'); await help.waitFor();
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'unload', 'pin', 'budgets'].includes(call.type))), []);
   assert.equal(await page.evaluate(() => uiState.loaded), true);
 });
@@ -791,9 +795,11 @@ test('unsupported selection opens repeatable setup help, preserves selection and
 test('keyboard can open an all-unavailable choice and budget help links to Config', async (t) => {
   const unavailable = { status: 'unavailable', code: 'gpu_budget_exceeded', reason: 'Exceeds configured GPU memory budget' };
   const page = await fixture(t, { availability: { 'hf:vision': unavailable, 'peer:fixture': unavailable } });
-  const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
-  assert.equal(await source.inputValue(), '');
-  await source.focus(); await page.keyboard.press('Space'); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await help.waitFor();
+  const source = page.getByRole('button', { name: 'Browse models', exact: true }), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  assert.equal(await currentModelKey(page), 'hf:vision');
+  await source.focus(); await page.keyboard.press('Enter');
+  const browser = page.getByRole('dialog', { name: 'Browse models', exact: true });
+  await browser.getByRole('button', { name: 'Setup help', exact: true }).focus(); await page.keyboard.press('Enter'); await help.waitFor();
   assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.equal(await help.getByLabel('Browser launch command', { exact: true }).isVisible(), false);
   await help.getByRole('button', { name: 'Open Config', exact: true }).click();
@@ -801,14 +807,14 @@ test('keyboard can open an all-unavailable choice and budget help links to Confi
   assert.equal(await config.isVisible(), true); assert.equal(await help.isVisible(), false);
   assert.equal(await config.evaluate((element) => element.contains(document.activeElement)), true);
   await page.keyboard.press('Escape');
-  await source.selectOption('hf:vision'); await help.waitFor();
+  await browseChoice(page, 'hf:vision', 'Setup help'); await help.waitFor();
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
 });
 
 test('setup command has a manual-copy fallback and dialog fits mobile with focus trapping', async (t) => {
   const page = await fixture(t, { availability: { 'hf:vision': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is required' } } });
   await page.setViewportSize({ width: 390, height: 660 });
-  await page.getByLabel('Model and source').selectOption('hf:vision');
+  await browseChoice(page, 'hf:vision', 'Setup help');
   const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
   await help.getByLabel('Browser', { exact: true }).selectOption('edge');
   await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
@@ -829,17 +835,17 @@ test('setup command has a manual-copy fallback and dialog fits mobile with focus
 
 test('a pending clipboard response cannot change a newly reopened setup dialog', async (t) => {
   const page = await fixture(t, { availability: { 'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is required' } } });
-  const source = page.getByLabel('Model and source'), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  const source = page.getByRole('button', { name: 'Browse models', exact: true }), help = page.getByRole('dialog', { name: 'Model setup', exact: true });
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() {
     return new Promise((resolve, reject) => { window.finishCopy = resolve; window.rejectCopy = reject; });
   } } }));
   for (const fail of [false, true]) {
-    await source.selectOption('peer:fixture');
+    await browseChoice(page, 'peer:fixture', 'Setup help');
     await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
     await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
     await help.getByRole('button', { name: 'Copy command', exact: true }).click();
     await help.getByRole('button', { name: 'Done', exact: true }).click();
-    await source.selectOption('peer:fixture');
+    await browseChoice(page, 'peer:fixture', 'Setup help');
     await help.getByLabel('Browser', { exact: true }).selectOption('chrome');
     await help.getByLabel('Operating system', { exact: true }).selectOption('linux');
     const done = help.getByRole('button', { name: 'Done', exact: true }); await done.focus();
@@ -863,7 +869,7 @@ test('About menu has safe links, keyboard focus and an independent visible overv
     await menu.focus(); await page.keyboard.press('Enter');
     const menuDialog = page.getByRole('dialog', { name: 'Menu', exact: true });
     assert.deepEqual(await menuDialog.getByRole('button').allTextContents(), ['Done', 'Stored Models', 'Config', 'About']);
-    assert.equal(await page.locator('.pc-model-toolbar button').allTextContents().then((labels) => labels.join(',')), 'Load');
+    assert.equal(await page.locator('.pc-model-toolbar button').allTextContents().then((labels) => labels.join(',')), 'Browse models,Load');
     for (let index = 0; index < 6; index++) {
       await page.keyboard.press('Tab');
       assert.equal(await menuDialog.evaluate((element) => element.contains(document.activeElement)), true);
@@ -893,7 +899,7 @@ test('About menu has safe links, keyboard focus and an independent visible overv
   assert.equal(await page.locator('dialog[open]').count(), 0);
 });
 
-test('package bytes determine source order while manual selection and peer targets survive refresh', async (t) => {
+test('modal package order and selection survive directory refresh without loading or changing peer targets', async (t) => {
   const sources = [
     { key: 'hf:huge', name: 'A huge model', source: 'hf', totalBytes: 8 * 1024 ** 3 },
     { key: 'peer:unknown', name: 'Unknown model', source: 'peers' },
@@ -902,43 +908,34 @@ test('package bytes determine source order while manual selection and peer targe
     { key: 'hf:invalid', name: 'Bad size', source: 'hf', totalBytes: -1 },
   ];
   const page = await fixture(t, { sources, preferredSourceKey: 'hf:huge', interval: 50 });
-  const source = page.getByLabel('Model and source');
-  assert.deepEqual(await source.locator('option').evaluateAll((items) => items.map((item) => item.value)),
-    ['stored:small', 'hf:tie', 'hf:huge', 'hf:invalid', 'peer:unknown']);
-  assert.match(await source.locator('option[value="stored:small"]').textContent(), /Stored on this device · 2.0 MiB package/);
-  assert.match(await source.locator('option[value="hf:huge"]').textContent(), /8.00 GiB package/);
-  assert.match(await source.locator('option[value="peer:unknown"]').textContent(), /Unknown size/);
-  assert.equal(await source.inputValue(), 'hf:huge');
-  await source.selectOption('stored:small');
   await page.getByLabel('Chat target').selectOption('peer:fixture');
-  await page.evaluate(() => uiState.sources.reverse());
-  await page.waitForFunction(() => uiState.refreshCalls >= 3);
-  assert.equal(await source.inputValue(), 'stored:small');
+  const modal = await browseChoice(page, 'stored:small');
+  assert.deepEqual(await modal.locator('[data-model-key]').evaluateAll((items) => items.map((item) => item.dataset.modelKey)),
+    ['stored:small', 'hf:tie', 'hf:huge', 'hf:invalid', 'peer:fixture', 'peer:unknown']);
+  assert.match(await modal.locator('[data-model-key="stored:small"]').textContent(), /Stored on this device · 2.0 MiB package/);
+  assert.match(await modal.locator('[data-model-key="hf:huge"]').textContent(), /8.00 GiB package/);
+  assert.match(await modal.locator('[data-model-key="peer:unknown"]').textContent(), /Unknown size/);
+  await page.evaluate(() => uiState.sources.reverse()); await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await modal.locator('[aria-pressed=true]').getAttribute('data-model-key'), 'stored:small');
+  assert.equal(await currentModelKey(page), 'hf:huge');
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
-  await page.getByLabel('Filter models').fill('local stored');
-  assert.equal(await source.locator('option').count(), 1);
-  await page.getByLabel('Filter models').fill('');
-  assert.equal(await source.inputValue(), 'stored:small');
+  await modal.getByLabel('Source', { exact: true }).selectOption('stored');
+  assert.equal(await modal.locator('[data-model-key]').count(), 1);
   assert.deepEqual(await page.evaluate(() => calls), []);
 });
 
-test('an unavailable preferred model remains selected without autoload and has explicit setup help', async (t) => {
+test('an unavailable preferred model stays visible with setup help while browsing does not autoload', async (t) => {
   const page = await fixture(t, { preferredSourceKey: 'peer:fixture', interval: 50, availability: {
     'peer:fixture': { status: 'unavailable', code: 'gpu_feature_unavailable', reason: 'shader-f16 is unavailable' },
   } });
-  const source = page.getByLabel('Model and source');
-  assert.equal(await source.inputValue(), 'peer:fixture');
+  assert.equal(await currentModelKey(page), 'peer:fixture');
   assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
-  assert.equal(await page.locator('dialog[open]').count(), 0);
   await page.waitForFunction(() => uiState.refreshCalls >= 3);
-  assert.equal(await source.inputValue(), 'peer:fixture');
   await page.getByRole('button', { name: 'Set up selected model' }).click();
   const help = page.getByRole('dialog', { name: 'Model setup', exact: true }); await help.waitFor();
-  assert.match(await help.textContent(), /shader-f16/);
-  await page.keyboard.press('Escape'); await source.selectOption('hf:vision');
-  await page.waitForTimeout(120);
-  assert.equal(await source.inputValue(), 'hf:vision');
-  assert.equal(await page.getByRole('button', { name: 'Set up selected model' }).isVisible(), false);
+  assert.match(await help.textContent(), /shader-f16/); await page.keyboard.press('Escape');
+  await browseChoice(page, 'hf:vision'); await page.keyboard.press('Escape');
+  assert.equal(await currentModelKey(page), 'peer:fixture');
   assert.deepEqual(await page.evaluate(() => calls), []);
 });
 
@@ -962,7 +959,7 @@ test('Stored Models loads one local package atomically, selects local chat and r
   await modal.waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 1, 'Successful loading must not leave a cancellable metadata-refresh tail');
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
-  assert.equal(await page.getByLabel('Model and source').inputValue(), 'stored:small');
+  assert.equal(await currentModelKey(page), 'stored:small');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
     [{ type: 'load-stored', cid: 'small', gpuLayers: 99999 }]);
   await openMenuAction(page, 'Stored Models');
@@ -1017,10 +1014,10 @@ test('startup downloads the default once, without waiting for the peer network',
     [{ type: 'acquire', key: 'hf:vision', gpuLayers: 99999 }]);
   assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Loaded Fixture vision/);
   await page.getByLabel('Chat target').selectOption('peer:fixture');
-  await page.getByLabel('Model and source').selectOption('peer:fixture');
+  await browseChoice(page, 'peer:fixture'); await page.keyboard.press('Escape');
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
-  assert.equal(await page.getByLabel('Model and source').inputValue(), 'peer:fixture');
+  assert.equal(await currentModelKey(page), 'hf:vision');
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'acquire').length), 1);
 });
 
@@ -1028,7 +1025,7 @@ test('startup loads the remembered stored package directly with no download fall
   const page = await fixture(t, { preferredSourceKey: 'peer:fixture',
     startup: { sourceKey: 'peer:fixture', manifestCid: 'fixture', name: 'Remembered model' },
     loadStoredDelay: 100, interval: 50 });
-  assert.equal(await page.getByLabel('Model and source').inputValue(), 'peer:fixture');
+  assert.equal(await currentModelKey(page), 'peer:fixture');
   await page.waitForFunction(() => uiState.loadedCid === 'fixture');
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
@@ -1040,7 +1037,7 @@ test('blocked startup remains selected with inline help and keeps remote inferen
   const page = await fixture(t, { preferredSourceKey: 'hf:vision',
     startup: { sourceKey: 'hf:vision', name: 'Fixture vision' }, interval: 50,
     availability: { 'hf:vision': { status: 'unavailable', reason: 'shader-f16 is unavailable' } } });
-  assert.equal(await page.getByLabel('Model and source').inputValue(), 'hf:vision');
+  assert.equal(await currentModelKey(page), 'hf:vision');
   assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Cannot load Fixture vision: shader-f16/);
   assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Set up selected model', exact: true }).isVisible(), true);
@@ -1105,8 +1102,7 @@ test('Install is explicit in the menu, supports browser guidance and unsubscribe
 test('HF and peer loading overlays follow download, verification and engine progress until ready', async (t) => {
   for (const key of ['hf:vision', 'peer:fixture']) {
     const page = await fixture(t, { importProgress: true, acquireDelay: 600 });
-    await page.getByLabel('Model and source').selectOption(key);
-    await page.getByRole('button', { name: 'Load', exact: true }).click();
+    await browseChoice(page, key, 'Load');
     const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
     await overlay.waitFor();
     assert.match(await overlay.textContent(), key === 'hf:vision' ? /Fixture vision/ : /Peer text model/);
@@ -1119,7 +1115,7 @@ test('HF and peer loading overlays follow download, verification and engine prog
     await overlay.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => uiState.loaded), true);
     assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Model ready/);
-    assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).evaluate((button) => button === document.activeElement), true);
+    assert.equal(await page.getByRole('button', { name: 'Browse models', exact: true }).evaluate((button) => button === document.activeElement), true);
   }
 });
 

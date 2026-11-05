@@ -927,7 +927,7 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
 
 ### November 5 — ordered discovery and agent TODOs
 
-1. [ ] **MODEL-BROWSER-01:** next model-demo implementation item, covering the
+1. [x] **MODEL-BROWSER-01:** completed November 5, covering the
    modal and wider Hugging Face discovery/package resolution above.
 2. [ ] **AGENT-01:** immediately afterward, implement the
    [persistent agent layer](../demos/inference/agent-layer-plan.md), summarized in
@@ -962,3 +962,12 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   PeerCompute manager ownership, local versus optional peer routing, managed
   inference and private checkpoint persistence. Refresh the previously authorized
   Stinkpad PDF destination after document and visual validation.
+
+### November 5 — MODEL-BROWSER-01 implementation authorized
+
+- User authorized the HF TODO. Implement responsive modal selection, public Hub name/card search, bounded caching/paging, exact variant resolution and source/task/package-size/precision/compatibility filters. Agent-layer implementation remains separate.
+- Preserve managed WebGPU execution, immutable CID packages, current startup preferences, cancellation, stored loading and peer inference. Wider GGUF admission validates standard headers independently in the worker; unsupported codecs and unadapted diffusion packages explain their limits.
+- Acceptance: focused unit and real DOM tests, live API/CORS inspection, an actual discovered package import/load through ComputeManager, source-off stored reuse, responsive visual checks and verified HTTPS preview/backend connection. Implementation results will be appended after checks.
+
+- Completion: responsive production modal, wider live Hub name/card search and exact package resolution delivered. New ONNX and single-file standard GGUF both generated in managed hardware WebGPU workers and reloaded from saved CID after browser restart with sources blocked. Final focused unit202/202, panel55/55 plus browser16/16, existing GGUF35/35 and PWA/release34/34 pass. Built standalone, CubeChat and Earth; all3 affected Pages-shaped routes pass and10 actual screenshots were independently reviewed.
+- Verified internal preview: https://fastbox.tail5c077c.ts.net:5189/?dev=1 (SecretWorkshop connected; valid isolation; overview arrow resolves). GitHub Pages and docs/ published bundles remain unchanged in this slice. See [model browser implementation](../demos/inference/model-browser.md); AGENT-01 is next.

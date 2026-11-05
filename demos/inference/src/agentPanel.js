@@ -1,8 +1,9 @@
 import { createInferenceRuntime } from './runtime.js';
-import { createPanelView, appendMessage, renderStoredModels, formatModelBytes, renderModelCompatibilityHelp, sortModelPackages } from './ui/panelView.js';
+import { createPanelView, appendMessage, renderStoredModels, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
 import { buildModelCompatibilityHelp, detectModelHelpEnvironment } from './ui/modelCompatibilityHelp.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
+import { createModelBrowser } from './ui/modelBrowser.js';
 import './panel.css';
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
@@ -16,7 +17,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
   let storedPromise, storedController, loadingStoredModel = false;
   let refreshTimer, sources = [], targets = [];
-  let desiredSourceKey;
+  let desiredSourceKey, modelBrowser, hubSelection;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
   let loadingOperation;
@@ -49,10 +50,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   function updateControls() {
     const target = selectedTarget();
-    const source = sources.find((entry) => entry.key === view.source.value);
+    const source = sources.find((entry) => entry.key === desiredSourceKey);
     view.prompt.placeholder = target?.task === 'text-to-image' ? 'Describe an image…' : 'Message…';
     view.acquire.disabled = !!operation || !source || sourceBlocked(source);
-    view.source.disabled = !!operation; view.sourceFilter.disabled = !!operation;
+    view.browse.disabled = !!operation; modelBrowser?.setBusy(!!operation);
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
@@ -65,42 +66,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
   }
   function renderSources() {
-    const previous = view.source.value;
-    const terms = view.sourceFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = sortModelPackages(sources).filter((source) => {
-      const text = [source.name, source.modelId, source.task, source.runtime, source.source,
-        sourceLabel(source), source.source === 'stored' ? 'local' : '', source.task === 'text-to-image' ? 'Image generation' : ''].join(' ').toLowerCase();
-      return terms.every((term) => text.includes(term));
-    });
     if (!desiredSourceKey) desiredSourceKey = runtime.getPreferredModelSourceKey?.()
       ?? sources.find((entry) => entry.modelId === 'smolvlm-256m-q4' && entry.source === 'hf')?.key
       ?? sources.find((entry) => !sourceBlocked(entry))?.key ?? sources[0]?.key;
-    view.source.replaceChildren();
-    for (const source of matches) {
-      const option = document.createElement('option'); option.value = source.key;
-      option.textContent = String(source.name).slice(0, 140) + (source.task === 'text-to-image' ? ' · Image generation' : '')
-        + ' · ' + sourceLabel(source) + ' · ' + formatModelBytes(source.totalBytes) + ' package'
-        + ' · ' + memoryEstimate(source)
-        + (sourceBlocked(source) ? ' · Setup required — select for help' : '');
-      // A disabled native option cannot receive clicks or keyboard activation.
-      // These choices open setup help; import admission remains independently blocked.
-      option.dataset.unavailable = String(sourceBlocked(source));
-      view.source.append(option);
-    }
-    if (!matches.length) {
-      const option = document.createElement('option'); option.value = ''; option.disabled = true;
-      option.textContent = 'No matching models'; view.source.append(option); view.source.value = '';
-    } else {
-      const preferred = matches.find((entry) => entry.key === desiredSourceKey)
-        ?? matches.find((entry) => entry.key === previous)
-        ?? matches.find((entry) => !sourceBlocked(entry)) ?? matches[0];
-      if (sourceBlocked(preferred) && !(runtime.getPreferredModelSourceKey && preferred.key === desiredSourceKey)) {
-        const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.disabled = true;
-        placeholder.textContent = 'Choose a model — select unavailable models for help'; view.source.prepend(placeholder);
-        view.source.value = '';
-      } else view.source.value = preferred.key;
-    }
-    renderSourceStatus(matches); updateControls();
+    const selected = sources.find((entry) => entry.key === desiredSourceKey);
+    view.currentModel.textContent = selected ? `${selected.name} · ${sourceLabel(selected)}` : 'Choose a model';
+    view.currentModel.dataset.sourceKey = selected?.key ?? '';
+    renderSourceStatus(); modelBrowser?.refresh(); updateControls();
   }
   function renderHelp() {
     if (!helpSource) return;
@@ -111,26 +83,16 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   function showCompatibilityHelp(source) {
     if (!alive() || operation) return;
-    helpSource = source;
+    helpSource = { ...source, localAvailability: source.localAvailability ?? runtime.getModelCompatibility?.(source.package ?? source) };
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
     renderHelp(); view.menuWindow.close(); view.configuration.close(); view.storedModels.close(); view.about.close();
     if (!view.compatibility.open) view.compatibility.showModal();
   }
-  function renderSourceStatus(matches) {
-    const selected = sources.find((entry) => entry.key === view.source.value);
-    const blocked = matches.filter(sourceBlocked);
-    const notices = selected ? [memoryEstimate(selected) + '. Planning estimates; actual memory use varies.'] : [];
-    if (!matches.length) notices.push('No matching models. Clear or change the filter.');
-    else if (selected?.localAvailability?.reason && !sourceBlocked(selected)) notices.push(String(selected.localAvailability.reason).slice(0, 512));
-    if (blocked.length) {
-      const groups = new Map();
-      for (const entry of blocked) {
-        const reason = sourceReason(entry); const names = groups.get(reason) ?? [];
-        names.push(String(entry.name).slice(0, 140)); groups.set(reason, names);
-      }
-      notices.push([...groups].map(([reason, names]) => `${names.join(', ')}: ${reason}`).join(' '));
-    }
+  function renderSourceStatus() {
+    const selected = sources.find((entry) => entry.key === desiredSourceKey);
+    const notices = selected ? [`${formatModelBytes(selected.totalBytes)} package · ${memoryEstimate(selected)}. Planning estimates; actual memory use varies.`] : [];
+    if (selected?.localAvailability?.reason) notices.push(String(selected.localAvailability.reason).slice(0, 512));
     view.sourceStatus.textContent = notices.join(' ');
     view.sourceStatus.hidden = !notices.length;
     view.sourceHelp.hidden = !selected || !sourceBlocked(selected);
@@ -139,7 +101,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const selected = view.target.value || 'local';
     const previousTarget = targets.find((entry) => entry.key === selected);
     const previousLabel = view.target.selectedOptions[0]?.textContent;
-    sources = runtime.listModelSources(); targets = runtime.listInferenceTargets();
+    sources = runtime.listModelSources();
+    if (hubSelection && !sources.some((entry) => entry.key === hubSelection.key)) sources.push(hubSelection);
+    targets = runtime.listInferenceTargets();
     renderSources();
     view.target.replaceChildren();
     for (const target of targets) {
@@ -214,7 +178,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         if (alive()) {
           // Keep an open native picker and its keyboard focus stable while the
           // directory refreshes. The next closed-picker refresh updates its list.
-          const pickerOpen = CSS.supports('selector(:open)') && (view.source.matches(':open') || view.target.matches(':open'));
+          const pickerOpen = CSS.supports('selector(:open)') && view.target.matches(':open');
           if (!pickerOpen) renderLists();
           renderNetworkStatus();
         }
@@ -364,6 +328,23 @@ export async function mountInferencePanel({ container = document.body, stateMana
     runtime = await runtimeFactory({ stateManager, computeManager, networkManager, runtimeBaseUrl });
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
     syncMemoryBudgets();
+    modelBrowser = createModelBrowser({ container: view.panel,
+      getSources: () => sources, getTargets: () => targets,
+      searchModels: (options) => runtime.searchModelHub(options),
+      inspectModel: (repository, options) => runtime.inspectModelHub(repository, options),
+      getCompatibility: (entry) => entry.localAvailability ?? runtime.getModelCompatibility?.(entry.package ?? entry)
+        ?? { status: 'unknown', reason: 'Local memory fit is unverified.' },
+      onLoad: loadSelection,
+      onUsePeer(key) {
+        renderLists();
+        if (!targets.some((target) => target.key === key && target.available && !target.local)) {
+          showError(new Error('This inference host is no longer available. Refresh the model browser.')); return;
+        }
+        view.target.value = key; invalidateActions(); updateControls(); view.prompt.focus();
+      },
+      onSetup: showCompatibilityHelp,
+    });
+    view.browse.setAttribute('aria-controls', modelBrowser.element.id);
     renderLists(); view.status.textContent = 'Ready.';
   } catch (error) { view.panel.remove(); throw error; }
 
@@ -409,24 +390,16 @@ export async function mountInferencePanel({ container = document.body, stateMana
     };
   }
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
-  view.sourceFilter.oninput = renderSources;
+  view.browse.onclick = () => { if (alive() && !operation) modelBrowser.open({ selectedKey: desiredSourceKey }); };
   view.sourceHelp.onclick = () => {
-    const selected = sources.find((entry) => entry.key === view.source.value);
+    const selected = sources.find((entry) => entry.key === desiredSourceKey);
     if (selected && sourceBlocked(selected)) showCompatibilityHelp(selected);
-  };
-  view.source.onchange = () => {
-    if (!alive() || operation) return;
-    const key = view.source.value;
-    sources = runtime.listModelSources();
-    const selected = sources.find((entry) => entry.key === key);
-    if (selected && sourceBlocked(selected)) { renderSources(); showCompatibilityHelp(selected); }
-    else { desiredSourceKey = key; renderSources(); }
   };
   view.helpBrowser.onchange = view.helpOs.onchange = renderHelp;
   view.helpConfig.onclick = () => view.configure.click();
   view.compatibility.addEventListener('close', () => {
     helpVersion++;
-    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open && !view.menuWindow.open) view.source.focus();
+    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open && !view.menuWindow.open) view.browse.focus();
   });
   view.helpCopy.onclick = async () => {
     const command = view.helpCommand.value;
@@ -458,25 +431,38 @@ export async function mountInferencePanel({ container = document.body, stateMana
       preferenceTasks.add(task); task.finally(() => preferenceTasks.delete(task));
     };
   }
-  view.acquire.onclick = () => {
+  async function loadSelection(selection) {
     if (!alive() || operation) return;
-    const key = view.source.value;
+    const key = typeof selection === 'string' ? selection : selection?.key;
     sources = runtime.listModelSources();
-    const selected = sources.find((entry) => entry.key === key);
-    if (!selected || sourceBlocked(selected)) {
-      renderSources();
-      if (selected) showCompatibilityHelp(selected);
-      return;
+    let selected = key ? sources.find((entry) => entry.key === key) ?? (hubSelection?.key === key ? hubSelection : null) : selection;
+    if (!selected) { renderSources(); return; }
+    if (selected.package) selected = { ...selected, localAvailability: runtime.getModelCompatibility(selected.package) };
+    // Resolved Hub packages carry a full model/files description; source rows
+    // carry their existing controller key. Admission is repeated by the runtime.
+    const discovered = !selected.key && selected.model && Array.isArray(selected.files);
+    if (discovered) {
+      selected = hubSelection = { ...selected, key: `hub:${selected.id}`, source: 'hf', package: selected,
+        localAvailability: runtime.getModelCompatibility(selected) };
     }
+    if (sourceBlocked(selected)) { showCompatibilityHelp(selected); return; }
+    desiredSourceKey = selected.key;
+    if (discovered) sources.push(selected);
+    renderSources();
     return run(async (signal) => {
-    invalidateActions(); progress({ stage: 'prepare' });
-    await runtime.acquireModel(key, { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
-    signal.throwIfAborted();
-    histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
-    view.status.textContent = runtime.getSharingErrors?.().length
-      ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
+      invalidateActions(); progress({ stage: 'prepare' });
+      const options = { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) };
+      if (selected.package) await runtime.acquireHubModel(selected.package, options);
+      else await runtime.acquireModel(selected.key, options);
+      signal.throwIfAborted();
+      desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
+      hubSelection = null;
+      histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
+      view.status.textContent = runtime.getSharingErrors?.().length
+        ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
     }, { modelName: selected.name });
-  };
+  }
+  view.acquire.onclick = () => loadSelection(desiredSourceKey);
   view.unload.onclick = () => run(async () => {
     invalidateActions(); await runtime.unload(); histories.delete('local'); view.status.textContent = 'Local model unloaded.';
     view.configurationStatus.textContent = view.status.textContent;
@@ -617,7 +603,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
+    closing = true; modelBrowser?.dispose(); unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);

@@ -1,6 +1,7 @@
 import { normalizeArtifactManifest } from '../../artifacts/ArtifactManifest.js';
 import { GGUF_MODEL_CATALOG } from '../../artifacts/ggufModelCatalog.js';
 import { MODEL_POLICY } from '../modelManifest.js';
+import { validateGgufHubModel } from './hubAdmission.js';
 
 export const GGUF_RUNTIME_VERSION = '3.8.1';
 export const GGUF_CONTEXT_LIMIT = 2048;
@@ -14,6 +15,21 @@ export function validateGgufManifest(input) {
       && entry.revision === model?.revision && entry.model.architecture === model?.architecture
       && entry.model.task === model?.task && entry.model.dtype === model?.dtype);
   const trusted = candidates.length === 1 ? candidates[0] : undefined;
+  if (!trusted && model?.gguf) {
+    const profile = validateGgufHubModel(model, { files: manifest.files });
+    // A discovery profile must not override the immutable identity of a file
+    // already pinned by the application catalog.
+    for (const entry of Object.values(GGUF_MODEL_CATALOG)) {
+      if (entry.repository !== model.repository || entry.revision !== model.revision) continue;
+      for (const expected of entry.files.filter((file) => file.path.endsWith('.gguf'))) {
+        const file = profile.weights.find((item) => item.path === expected.path);
+        if (file && (file.size !== expected.size || file.sha256 !== expected.sha256)) {
+          throw new Error('GGUF weights do not match the pinned catalog digests');
+        }
+      }
+    }
+    return { ...profile, manifest };
+  }
   if (!trusted || model.runtime !== 'llama.cpp' || (model.runtimeVersion !== undefined && model.runtimeVersion !== GGUF_RUNTIME_VERSION)
       || (trusted.model.runtimeVersion !== undefined && model.runtimeVersion !== trusted.model.runtimeVersion)
       || model.dtype !== trusted.model.dtype

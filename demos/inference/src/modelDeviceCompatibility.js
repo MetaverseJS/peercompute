@@ -1,3 +1,4 @@
+import { validateGgufHubModel } from '../../../peercompute/src/peercompute/inference/gguf/hubAdmission.js';
 import { MODEL_POLICY, MODEL_RUNTIME_VERSION, modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
@@ -164,6 +165,15 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
         || (model.architecture === 'qwen3_5' && dtypes.some((dtype) => dtype !== 'q4')))) {
       return ['runtime_unsupported', 'Model precision is not supported by this runtime'];
     }
+  } else if (model.runtime === 'llama.cpp' && descriptorOnly) {
+    // A directory row is only a hint. The controller fetches and validates the
+    // bounded CID manifest before accepting any peer model weights.
+    if ((model.runtimeVersion !== undefined && model.runtimeVersion !== '3.8.1')
+        || (model.task !== undefined && model.task !== 'text-generation'))
+      return ['runtime_unsupported', 'Model version or task is not supported locally'];
+  } else if (model.runtime === 'llama.cpp' && !trusted && model.gguf) {
+    try { validateGgufHubModel(model, { totalBytes, ...(files?.every((file) => file.sha256) ? { files } : {}) }); }
+    catch (error) { return ['catalog_unsupported', error.message]; }
   } else {
     if (!trusted || (model.runtimeVersion !== trusted.model.runtimeVersion && !(model.runtime === 'llama.cpp' && trusted.model.runtimeVersion === undefined && model.runtimeVersion === '3.8.1')))
       return ['catalog_unsupported', 'This package is not in the approved local runtime catalog'];

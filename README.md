@@ -11,8 +11,8 @@ models and staged acceptance gates are proposals; the agent runtime is not yet
 implemented. [Editable source](plan/demos/humunculus/humunculus.html) and the
 reproducible PDF builder live beside the document.
 
-The next model-demo TODO is the model browser and wider Hugging Face discovery,
-followed by a lightweight persistent-agent layer. Its
+The model console includes a model browser and wider Hugging Face discovery.
+The next planned layer is a lightweight persistent agent. Its
 [one-page summary](plan/demos/inference/agentlayer.pdf) and
 [implementation plan](plan/demos/inference/agent-layer-plan.md) cover one general agent type,
 IndexedDB context, learned model selection with optional peer-hosted routing,
@@ -222,7 +222,8 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
-Select a Hugging Face or discovered peer model, then **Load**: it fetches,
+Open **Browse models**, choose a catalog, stored, peer or Hugging Face package,
+then **Load**: it fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
 internally. A loading overlay shows a spinner, the model name, downloaded bytes,
 stored-file verification and GPU initialization, with elapsed phase time.
@@ -274,11 +275,27 @@ returning a corrupt image. GPU memory estimates describe the model budget, not
 currently free VRAM; close other GPU-heavy workloads and reload after an
 out-of-memory error.
 
-Use **Filter models** to search by name, source, task or runtime. All models
-show estimated RAM/GPU requirements in their
-entries. These are the manager's configured reservation estimates; actual peaks
+**Browse models** searches names and model-card descriptions on the public Hugging
+Face Hub, or accepts a repository URL. Filter by source, task, selected-package
+size, precision and compatibility; results default to smallest package first.
+Search summaries show unknown size until a concrete variant is inspected.
+Details show immutable revision, exact selected files' total size, license and
+estimated RAM/GPU requirements. Metadata browsing does not download full weights.
+GGUF variants inspect one bounded header on demand. **Use peer** selects an
+advertised inference target without importing its model files.
+
+New packages are compatibility candidates, not promises of successful execution.
+Supported ONNX architectures and standard single-file GGUF variants can load
+through the existing managed worker and CID storage path. Split/custom-codec
+GGUF, unadapted architectures and arbitrary diffusion pipelines explain why they
+are unavailable; the existing pinned diffusion catalog remains supported. Hub
+access is anonymous; gated/private packages require an external access workflow
+and cannot load here. Cached metadata can be inspected offline, while uncached
+files still require a connection. [Implementation and checks](plan/demos/inference/model-browser.md).
+
+Models' memory requirements appear in the selected package details. These are the manager's configured reservation estimates; actual peaks
 depend on the model, context, image and GPU offload. Unknown values remain explicit.
-Unsupported local models remain muted and marked **Setup required**. Select one to open
+Unavailable local packages show their reason and a **Setup help** action opening
 **Model setup**, which explains the reason and provides applicable browser/OS
 instructions and a **Copy command** action. Browser detection can be corrected
 in the dialog. Budget limits link to Config; unsupported browsers and runtime

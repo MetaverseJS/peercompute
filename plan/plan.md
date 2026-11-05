@@ -16,7 +16,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ### Next model demo TODOs — November 5 2026
 
-1. [ ] **MODEL-BROWSER-01 — next:** replace the model select list with a responsive
+1. [x] **MODEL-BROWSER-01 — complete:** replace the model select list with a responsive
    browser modal and wider Hugging Face discovery. Search names and descriptions;
    filter task, selected-package size, precision, source and compatibility. Resolve
    exact supported variants and preserve stored/peer loading, cancellation and
@@ -29,8 +29,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
    new speech/3D adapters are deferred beyond this TODO. [One-page summary](demos/inference/agentlayer.pdf) ·
    [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
 
-This is the agreed order for upcoming model-demo work. The current change records
-plans and the requested summary; application implementation remains pending.
+MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and checks](demos/inference/model-browser.md).
+AGENT-01 is next and remains a plan pending its own implementation.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.
 

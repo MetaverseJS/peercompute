@@ -1,0 +1,100 @@
+# MODEL-BROWSER-01 — Hugging Face model browser
+
+Implemented and verified November 5, 2026. Agent-layer work is the separate next TODO.
+
+## User flow
+
+Browse models opens a responsive native dialog. Search local source descriptions,
+public Hub model names and model-card text, or enter a repository URL. Filter by
+source, task, package size, precision and compatibility. Default ordering is
+smallest selected package first; unknown sizes stay explicit and sort last.
+
+A Hub repository is not a runnable package. Inspect selects an immutable revision,
+resolves variants and reports exact file closure, format and device eligibility.
+GGUF header inspection is performed for the selected variant, not every
+quantization in a repository. Candidate labels distinguish package admission from
+successful execution on this device. Unknown memory fit does not mean unsupported.
+
+Load uses the existing spinner/cancel, verified artifact import, retention,
+ComputeManager worker and remembered startup path. Stored packages reload without
+Hub access. Use peer changes the chat target without downloading weights. Peer
+inference and shared files remain separate availability states; target identity is
+manifest CID, not a display name or publisher-supplied model ID. Five-second
+refresh preserves an open dialog's selection and keyboard focus.
+
+## Modules and ownership
+
+- `huggingface/hubClient.js`: anonymous public name/full-card API queries, bounded
+  responses, pagination, cancellation, timeouts/rate handling and metadata cache.
+  All model-file URLs are fixed to the public Hub and immutable revisions.
+- `huggingface/packageResolver.js`: immutable tree/config/card resolution, exact
+  ONNX modules and external-data closure, existing catalog matching and selected
+  standard GGUF header inspection. Repository content is data; custom code is not
+  installed or executed. License claims retain publisher provenance.
+- `ui/modelBrowser.js`, `modelBrowserData.js`, `modelBrowser.css`: presentation,
+  query lifecycle, filters, variant details, load/setup/peer actions and focus.
+- `modelHubPackage.js`: acquisition-boundary shape, size, digest and immutable
+  identity checks; no placeholder identity is persisted or used to fetch bytes.
+- `runtime.js`, `modelRuntimeController.js`: existing ArtifactStore acquisition,
+  mutation queue, verified import, automatic activation, successful preference
+  commit, worker cleanup, shared-library retention and network publication.
+- `inference/gguf/hubAdmission.js`: bounded standard GGUF metadata/tensor-directory
+  parser, architecture/codec constraints and independent worker verification of
+  the selected file header before native execution. Pinned catalog digest checks
+  remain in place.
+
+## Supported scope and limits
+
+The current Transformers.js adapter admits Qwen2/Qwen3/Llama text and
+SmolVLM/Idefics3/Qwen3.5 vision packages with its supported module naming and
+precisions. Runtime file/context/resource envelopes remain enforced. ONNX q4
+without FP16 operators/cache can work without shader-f16; a nominal quantization
+label alone does not establish GPU feature requirements.
+
+Dynamic GGUF supports one self-contained standard text model, known architectures,
+standard supported tensor codecs, immutable SHA256 file identity and the existing
+16 GiB package ceiling. Complete tensor-directory/header inspection is bounded to
+16 MiB per selected file. Shared memory, memory64, JSPI, isolation and hardware
+shader-f16 prerequisites remain. Split files, custom GeoRefine layouts, unsupported
+codecs and projector-only packages are not admitted through discovery. No CPU
+fallback or arbitrary runtime assets are introduced.
+
+Diffusion discovery can identify the pinned catalog profiles. Additional image
+pipelines need their own adapter and validation; merely having ONNX files does not
+make a random diffusion repository runnable. Public search may return unsupported
+results so the UI can explain their status. Private/gated authentication is outside
+this feature. Browser-reported memory is advisory; explicit budgets and runtime
+bounds still apply. Offline cache freshness and live provider availability are
+separate from complete local model storage.
+
+## Verification
+
+Run with Node24:
+
+```sh
+node --test peercompute/tests/unit/huggingFace*.test.js peercompute/tests/unit/ggufHub*.test.js peercompute/tests/unit/model*.test.js
+node --test demos/tests/model-browser.test.js demos/tests/inference-panel.test.js
+node demos/tests/huggingface-browser.mjs
+```
+
+The real-browser harness searches a non-catalog SmolLM2 135M ONNX package, proves
+browsing fetched no weights, imports via the modal, checks actual managed hardware
+GPU generation, connects to SecretWorkshop, and restarts an owned profile with
+Hub/CDN requests blocked to verify remembered stored loading. It does not send
+inference prompts to strangers or publish its model. Desktop/mobile screenshots,
+console errors, API receipts and GPU evidence are written outside the repository.
+
+Additional checks cover unsupported/tampered metadata, stale query completion,
+pagination/rate/offline behavior, package closure, exact-variant identity,
+local-incompatible but peer-available models, cancellation, library deletion,
+startup and PWA/static nested-route behavior. Current run outcomes and limitations
+are recorded in `plan/log.md` and `plan/tests.md`; no unrun architecture is claimed
+as qualified.
+
+Final acceptance:202 focused unit tests;71 UI checks across final panel/browser
+runs;35 existing GGUF checks;34 PWA/release checks. Both novel ONNX and GGUF
+packages generated on actual managed hardware WebGPU and survived source-off
+browser restart. All3 affected production builds and Pages-shaped routes pass.
+[Internal preview](https://fastbox.tail5c077c.ts.net:5189/?dev=1) connects to
+SecretWorkshop. This slice is local to the feature branch and internal preview;
+it does not publish new GitHub Pages bundles.

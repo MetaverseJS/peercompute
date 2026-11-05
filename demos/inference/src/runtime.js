@@ -11,6 +11,9 @@ import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemory
 import { importModelPackage } from './modelLibrary.js';
 import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
+import { createHuggingFaceClient, huggingFaceFileUrl } from './huggingface/hubClient.js';
+import { inspectHuggingFaceModel } from './huggingface/packageResolver.js';
+import { validateHubPackage, reuseVerifiedHubFiles } from './modelHubPackage.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import { createModelNetworkConnection } from './modelNetworkConnection.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
@@ -103,7 +106,10 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       resourceEstimate: modelMemoryEstimate, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
   }
 
+  const hubClient = createHuggingFaceClient();
   const runtime = {
+    searchModelHub: (options) => hubClient.search(options),
+    inspectModelHub: (repository, options = {}) => inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG }),
     stateManager: state, computeManager: compute, store,
     get service() { return activeService; },
     get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },
@@ -176,6 +182,13 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return importModelPackage(store, { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
         files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } },
       (path) => sourceUrl(modelId, path), options);
+    },
+    async importHub(entry, { reuseManifest, ...options } = {}) {
+      const manifest = reuseVerifiedHubFiles(validateHubPackage(entry), reuseManifest);
+      const availability = runtime.getModelCompatibility(entry);
+      if (['checking', 'unavailable'].includes(availability.status)) throw new Error(availability.reason);
+      return importModelPackage(store, manifest,
+        (path) => huggingFaceFileUrl(entry.repository, entry.revision, path), options);
     },
     async importPackage(manifest, sourceBaseUrl, { expectedCid, ...options } = {}) {
       manifest = normalizeArtifactManifest(manifest);

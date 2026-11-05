@@ -2,6 +2,7 @@ import { createGgufArtifactReader } from '../GgufArtifactReader.js';
 import { normalizeModelMessages } from '../modelTask.js';
 import { MODEL_POLICY, abortError, throwIfAborted, validateSessionId } from '../modelManifest.js';
 import { createGgufEngine, GGUF_NATIVE_READ_BYTES } from './engine.js';
+import { verifyGgufHubWeights } from './hubAdmission.js';
 import { GGUF_RUNTIME_VERSION, ggufRuntimeDefinition, validateGgufCapabilities,
   validateGgufManifest, validateGgufRuntimeAssets, validateGgufRuntimeOptions } from './runtimeDefinition.js';
 
@@ -45,6 +46,8 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       throwIfAborted(context.signal);
       current.reader = createReader(data.artifactPort, { manifest: validated.manifest,
         signal: current.residency.signal, maxReadBytes: GGUF_NATIVE_READ_BYTES, maxReads: 1 });
+      await verifyGgufHubWeights(validated.manifest.model, validated.weights, current.reader, { signal: context.signal });
+      throwIfAborted(context.signal);
       current.engine = await loadEngine({ wasmUrl: assets.wasm, weights: validated.weights,
         reader: current.reader, signal: context.signal, collectGpuEvidence: data.collectGpuEvidence === true,
         onProgress: (event) => context.emitProgress?.({ ...event, sessionId }),

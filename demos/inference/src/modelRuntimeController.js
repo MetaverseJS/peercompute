@@ -2,6 +2,7 @@ import { createModelMutationQueue, listStoredModelRecords, modelStorageError, wi
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 import { findModelCatalogEntry } from './modelDeviceCompatibility.js';
+import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from './modelHubPackage.js';
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
 
 function compareModelSizes(left, right) {
@@ -37,8 +38,8 @@ function awaitLoadStep(promise, signal, timeoutMs) {
 /** UI policy over manager-owned storage, inference and private peer streams. */
 export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   preferences = createModelPreferences({ storeName: runtime.store.lockName ?? runtime.store.name }) } = {}) {
-  const original = Object.fromEntries(['importCatalog', 'importPackage', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
-    .map((key) => [key, runtime[key].bind(runtime)]));
+  const original = Object.fromEntries(['importCatalog', 'importPackage', 'importHub', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
+    .filter((key) => typeof runtime[key] === 'function').map((key) => [key, runtime[key].bind(runtime)]));
   const owner = {};
   const retained = new Map();
   const retainedManifests = new Map();
@@ -326,7 +327,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   for (const method of ['connect', 'connectBackend']) {
     runtime[method] = async (...args) => { assertOpen(); const result = await original[method](...args); await connectionReady(); return result; };
   }
-  for (const method of ['importCatalog', 'importPackage']) {
+  for (const method of ['importCatalog', 'importPackage', 'importHub'].filter((key) => original[key])) {
     runtime[method] = (...args) => {
       const index = method === 'importPackage' ? 2 : 1;
       return mutate((signal) => {
@@ -371,11 +372,21 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     listModelSources() {
       return [...Object.values(catalog).map((entry) => ({ key: `hf:${entry.id}`, name: entry.name, source: 'hf',
         modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,
+        description: entry.description ?? '', repository: entry.repository ?? entry.model.repository,
+        revision: entry.revision ?? entry.model.revision, license: entry.license, model: entry.model, files: entry.files,
+        dtype: entry.model.dtype, catalog: true,
+        ...(() => { const saved = [...retained.values()].find((item) => item.modelId === entry.id);
+          return saved ? { stored: true, manifestCid: saved.manifestCid } : {}; })(),
         localAvailability: localAvailability(entry) })),
       ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers',
         localAvailability: localAvailability(entry) })),
       ...[...retained.values()].filter((entry) => !catalog[entry.modelId] && !deleting.has(entry.manifestCid))
         .map((entry) => ({ ...entry, key: `stored:${entry.manifestCid}`, source: 'stored',
+          model: retainedManifests.get(entry.manifestCid)?.model,
+          files: retainedManifests.get(entry.manifestCid)?.files,
+          description: retainedManifests.get(entry.manifestCid)?.description ?? '',
+          license: retainedManifests.get(entry.manifestCid)?.provenance?.license,
+          dtype: retainedManifests.get(entry.manifestCid)?.model?.dtype,
           localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) }))]
         .sort(compareModelSizes);
     },
@@ -440,6 +451,23 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           signal.throwIfAborted();
           record = await importModel('ensure', [source.manifestCid, { signal }], { deferSharing: true });
         }
+        return activateRecord(record, options, signal);
+      }, options.signal);
+    },
+    acquireHubModel(entry, options = {}) {
+      assertOpen();
+      if (!original.importHub) throw new Error('Hub import is unavailable in this runtime');
+      // Copy and validate before entering the async queue so caller mutations
+      // cannot change the chosen revision/files while replacement waits.
+      entry = structuredClone(entry);
+      validateHubPackage(entry);
+      assertLocallyAvailable(entry);
+      return acquire(async (signal) => {
+        assertLocallyAvailable(entry);
+        const saved = [...retainedManifests].find(([cid, manifest]) => !deleting.has(cid) && matchesHubPackage(manifest, entry));
+        let record = saved && await runtime.store.stat(saved[0], { signal });
+        if (record && !await verifyStoredHubPackage(runtime.store, saved[1], entry, { signal })) record = null;
+        if (!record || record.status !== 'complete') record = await importModel('importHub', [entry, { ...options, signal, reuseManifest: saved?.[1] }], { deferSharing: true });
         return activateRecord(record, options, signal);
       }, options.signal);
     },

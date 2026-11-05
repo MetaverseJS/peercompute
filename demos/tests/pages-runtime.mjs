@@ -153,8 +153,8 @@ export function modelStartupSnapshot() {
   });
   const message = panel?.querySelector(':scope > [role="status"]')?.textContent ?? '';
   return { loading: !!panel?.querySelector('.pc-model-loading[open]'), message,
-    sourceKey: panel?.querySelector('select[aria-label="Model and source"]')?.value,
-    controlsReady: !panel?.querySelector('select[aria-label="Model and source"]')?.disabled,
+    sourceKey: panel?.querySelector('[aria-label="Current model"]')?.dataset.sourceKey,
+    controlsReady: [...(panel?.querySelectorAll('button') ?? [])].some((button) => button.textContent === 'Browse models' && !button.disabled),
     toggles, statuses, runtimeExposed: !!runtime, proof: services.length ? 'managed service status' : 'DOM-only embedded readiness',
     preferences: runtime?.getPreferences?.() ?? null,
     ready: statuses.length ? statuses.some((state) => state.status === 'ready') : /^Loaded .+\. Send a message\./.test(message) };

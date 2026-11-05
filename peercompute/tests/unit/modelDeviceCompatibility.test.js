@@ -73,7 +73,7 @@ test('same-revision GGUF variants resolve exact profiles and never guess ambiguo
     assert.equal(evaluate(peer, {}, { gpuBytes: 8 * GiB }).code, 'gpu_budget_exceeded');
     assert.equal(evaluate(peer, { features: [] }).code, 'gpu_feature_unavailable');
     assert.equal(findModelCatalogEntry({ ...peer, modelId: 'unknown' }), undefined);
-    assert.equal(evaluate({ ...peer, modelId: 'unknown' }).code, 'catalog_unsupported');
+    assert.equal(evaluate({ ...peer, modelId: 'unknown' }).code, 'model_metadata_unverified');
     assert.equal(findModelCatalogEntry({ ...peer, task: 'text-to-image' }), undefined);
   }
   const swapped = structuredClone(q8); swapped.files = structuredClone(q4.files);
@@ -199,7 +199,10 @@ test('unknown ONNX peer descriptors await actual manifest checks instead of bein
   assert.equal(evaluate(invalid).status, 'unavailable');
   const unknownGguf = { runtime: 'llama.cpp', repository: 'example/unknown', revision: 'a'.repeat(40) };
   assert.deepEqual(modelMemoryEstimate(unknownGguf), { cpuBytes: 0, gpuBytes: 0 });
-  assert.equal(evaluate(unknownGguf).code, 'catalog_unsupported');
+  assert.equal(evaluate(unknownGguf).code, 'model_metadata_unverified');
+  assert.equal(evaluate(unknownGguf, { features: [] }).code, 'gpu_feature_unavailable');
+  assert.equal(evaluate({ model: unknownGguf, files: [{ size: 64 }] }).code, 'catalog_unsupported',
+    'A complete unknown GGUF manifest still needs the independently validated header profile');
 });
 
 test('cold null adapter retries once and discovers hardware without creating a device', async () => {

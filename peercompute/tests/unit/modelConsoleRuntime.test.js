@@ -63,6 +63,7 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
     async importCatalog(id) { calls.push('import'); const imported = await hooks.import?.(id) ?? record; records.set(imported.cid, imported); return imported; },
     async importPackage() { records.set(cid, record); return record; },
+    async importHub(entry, options) { calls.push('import-hub'); const imported = await hooks.importHub(entry, options); records.set(imported.cid, imported); return imported; },
     async load(key) { calls.push('load'); status = { status: 'ready', manifestCid: key };
       await hooks.load?.((value) => { status = value; }); return { workerId: 'worker-1' }; },
     async ensure() { calls.push('fetch-peer'); records.set(cid, record); return record; },
@@ -314,7 +315,7 @@ test('peer variant hints select matching requirements and actual-manifest tamper
     await assert.rejects(f.runtime.acquireModel(`peer:${cid}`), /approved local runtime catalog/);
     assert(!f.calls.some((call) => ['fetch-peer', 'load', 'unload'].includes(call)));
     f.peer.models[0].modelId = 'unknown-variant';
-    assert.equal(f.runtime.listModelSources().find((source) => source.source === 'peers').localAvailability.code, 'catalog_unsupported');
+    assert.equal(f.runtime.listModelSources().find((source) => source.source === 'peers').localAvailability.code, 'model_metadata_unverified');
   } finally { await f.runtime.dispose(); }
 });
 
@@ -895,7 +896,9 @@ test('sources and library sort by bytes, keep catalog keys and expose custom off
   await f.controller.initialize();
   const choices = f.runtime.listModelSources();
   assert.deepEqual(choices.map((entry) => entry.key), [`stored:${secondCid}`, 'hf:test', 'hf:huge']);
-  assert.equal(choices.filter((entry) => entry.manifestCid === cid).length, 0, 'known stored catalog model has no duplicate row');
+  assert.equal(choices.filter((entry) => entry.manifestCid === cid).length, 1, 'stored catalog identity is attached to its single catalog row');
+  assert.equal(choices.find((entry) => entry.manifestCid === cid).key, 'hf:test');
+  assert.equal(choices.find((entry) => entry.manifestCid === cid).stored, true);
   assert.equal(choices[0].source, 'stored');
   assert.deepEqual((await f.runtime.listStoredModels()).map((entry) => entry.totalBytes), [50, 100]);
   await f.runtime.dispose();
@@ -1067,5 +1070,45 @@ test('stale library refresh adopts newer retained selection instead of deleting 
   assert.deepEqual(preferences().readLastLoaded(), latest);
   assert.equal(f.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
   assert(!f.calls.includes('load')); assert(!f.calls.includes('import'));
+  await f.runtime.dispose();
+});
+
+function hubPackage() {
+  const files = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_q4.onnx']
+    .map((path) => ({ path, size: 64, sha256: 'a'.repeat(64) }));
+  return { id: 'discovered-q4', repository: 'test/discovered', revision: 'b'.repeat(40), name: 'Discovered text model',
+    totalBytes: 256, files, model: { runtime: 'transformers.js', runtimeVersion: '4.3.2', architecture: 'qwen2',
+      task: 'text-generation', dtype: 'q4', modalities: ['text'], repository: 'test/discovered', revision: 'b'.repeat(40) } };
+}
+test('discovered packages acquire through the managed queue, retain identity and reuse stored files', async () => {
+  const entry = hubPackage(), preferences = preferenceStore();
+  const stored = { cid: secondCid, kind: 'manifest', status: 'complete', pinned: true, manifest: {
+    schema: 'peercompute.artifact.manifest.v1', name: entry.name, model: entry.model,
+    files: entry.files.map((file) => ({ ...file, cid })) } };
+  const f = fixture({ connected: false, preferences: preferences(), hooks: { importHub: async () => stored } });
+  await f.controller.initialize();
+  await f.runtime.acquireHubModel(entry);
+  assert.equal(f.calls.filter((call) => call === 'import-hub').length, 1);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), `stored:${secondCid}`);
+  assert.equal(f.runtime.getStartupModel().manifestCid, secondCid);
+  assert.equal(f.runtime.listModelSources().find((item) => item.key === `stored:${secondCid}`).model.repository, entry.repository);
+  await f.runtime.unload();
+  await f.runtime.acquireHubModel(entry);
+  assert.equal(f.calls.filter((call) => call === 'import-hub').length, 1, 'same exact immutable package reuses retained files');
+  await f.runtime.dispose();
+  const reopened = fixture({ connected: false, preferences: preferences(), retainedRecords: [stored] });
+  await reopened.controller.initialize();
+  await reopened.runtime.loadStoredModel(secondCid);
+  assert.equal(reopened.runtime.getStartupModel().manifestCid, secondCid);
+  assert(!reopened.calls.includes('import-hub'));
+  await reopened.runtime.dispose();
+});
+test('invalid or locally unsupported Hub packages cannot replace the resident model or import files', async () => {
+  const f = fixture({ connected: false, hooks: { compatibility: () => ({ status: 'unavailable', reason: 'GPU unavailable' }) } });
+  await f.controller.initialize();
+  assert.throws(() => f.runtime.acquireHubModel(hubPackage()), /GPU unavailable/);
+  const invalid = hubPackage(); invalid.revision = 'main';
+  assert.throws(() => f.runtime.acquireHubModel(invalid), /immutable/);
+  assert(!f.calls.includes('unload')); assert(!f.calls.includes('import-hub'));
   await f.runtime.dispose();
 });
