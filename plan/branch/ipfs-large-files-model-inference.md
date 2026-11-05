@@ -924,3 +924,28 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
 - Combine current catalog, live HF discovery, stored packages and peer availability without confusing file hosting with hosted inference. Preserve model-level remote targets, five-second peer refresh and selected source while results update. Variants retain immutable revision/package identity; names alone cannot establish equivalence.
 - Reuse acquisition, cancellation, stored-model loading and preferences. Add a bounded discovery/metadata adapter and runtime-specific package resolver; known GGUF/diffusion catalog checks cannot simply be bypassed for arbitrary Hub results. Unverified or unsupported results explain their status; memory-unknown models with supported features are not automatically excluded.
 - Suggested delivery order after approval: modal over current sources; live HF name/description search plus exact variant/package validation; peer integration and accessibility/mobile/PWA regression checks. This records a proposal only; no UI/runtime implementation or publication is authorized yet.
+
+### November 5 — ordered discovery and agent TODOs
+
+1. [ ] **MODEL-BROWSER-01:** next model-demo implementation item, covering the
+   modal and wider Hugging Face discovery/package resolution above.
+2. [ ] **AGENT-01:** immediately afterward, implement the
+   [persistent agent layer](../demos/inference/agent-layer-plan.md), summarized in
+   [one page](../demos/inference/agentlayer.pdf). Basic templates create identity,
+   goals and context in IndexedDB; a compact learned router uses eligible hosted
+   models or strict local-only inference. The router itself may optionally run on
+   a peer. Model-request loading, open/invited agent hosting, independent clones
+   and acknowledged same-identity migration are separate permissioned stages.
+
+- This is the initial software-agent foundation for Humunculus. The agent record
+  stays independent of answering model and execution peer. Model serving is not
+  permission to accept an agent or replace/download a model. Keep context private,
+  use acknowledged IndexedDB commits, and preserve pre-commit inference retry
+  rules and single active authority on cooperative hosts.
+- Routing includes eligibility checks plus trained task–model scoring, offline
+  outcome/preference data, held-out evaluation and a local fallback. Optional
+  peer ranking is advisory and nonrecursive; local-only prohibits it. Voice and
+  direct mesh generation remain new adapter work; learned movement/fly controllers
+  remain later Humunculus work. No application code or publication in this slice.
+- User requests the one-page PDF be copied to cos@stinkpad:/home/cos/Desktop/agentlayer.pdf;
+  this delivery is distinct from implementing or deploying either TODO.

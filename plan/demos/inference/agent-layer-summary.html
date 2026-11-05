@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PeerCompute Agent Layer — One Page Summary</title>
+<style>
+@page { size:A4; margin:0; }
+* { box-sizing:border-box; }
+body { margin:0; background:#e5e9e7; color:#152b26; font-family:Arial, sans-serif; }
+.page { width:210mm; height:297mm; padding:15mm 16mm 14mm; background:white; position:relative; }
+.content { height:257mm; }
+.eyebrow { font:9pt monospace; color:#42756a; letter-spacing:.8px; margin:0 0 3mm; }
+h1 { font-size:25pt; line-height:1.05; margin:0 0 3mm; letter-spacing:-.5px; }
+.intro { font-size:11pt; line-height:1.4; margin:0 0 4mm; }
+h2 { font-size:10.6pt; margin:3.5mm 0 1.3mm; color:#1b6654; }
+p { font-size:10pt; line-height:1.36; margin:0 0 2mm; }
+.flow { display:flex; align-items:center; gap:2mm; padding:3mm 0; border-top:1px solid #acc4ba; border-bottom:1px solid #acc4ba; margin:3mm 0; }
+.box { border:1px solid #72a18f; background:#eff7f2; padding:2.5mm 2mm; flex:1; text-align:center; font-size:9pt; line-height:1.25; }
+.arrow { font-size:13pt; color:#3a7b64; }
+.note { background:#f0f5f2; padding:2.5mm 3mm; margin-top:3mm; font-size:9.5pt; }
+footer { position:absolute; bottom:11mm; left:16mm; right:16mm; border-top:1px solid #acc4ba; padding-top:2mm; font-size:8pt; display:flex; justify-content:space-between; color:#426359; }
+a { color:inherit; }
+@media screen { .page { margin:15px auto; box-shadow:0 2px 14px #0002; } }
+@media print { body { background:white; } }
+</style>
+<main class="page"><article class="content">
+<p class="eyebrow">PEERCOMPUTE / PLANNED NEXT STEPS / 05 NOVEMBER 2026</p>
+<h1>Agents over the model network</h1>
+<p class="intro">A persistent identity, goals and compact context, paired with a learned model router. This is the first software-agent layer toward Humunculus: agents keep their identity while choosing different specialists for different tasks.</p>
+<div class="flow" role="img" aria-label="Saved agent context feeds a permission check, then a learned router selects local or peer inference and saves results back to context.">
+<div class="box">Identity, goals<br>and memory</div><span class="arrow">→</span><div class="box">Policy checks<br>and ML router</div><span class="arrow">→</span><div class="box">Local or peer<br>model execution</div><span class="arrow">↺</span>
+</div>
+<h2>Spawn an agent and keep its context</h2>
+<p>Choose a general assistant, coding assistant, visual creator, 3D maker or voice companion. Edit its goals, pause it and inspect its work. A small versioned record and event journal persist in private IndexedDB; attachments and model weights stay separate. Templates share a runtime and use any eligible hosted model. Speech and direct mesh generation need new adapters before those capabilities become available.</p>
+<h2>Learn which model suits each task</h2>
+<p>A compact neural scorer ranks eligible task–model pairs using capabilities, measured quality, latency and cost. Train on versioned outcomes and compare against simple baselines on held-out tasks and model variants. Run the router locally or, optionally, on a consenting peer. Peer scores are checked locally; a local fallback avoids recursive network dependencies. Model selection precedes host selection.</p>
+<h2>Make local-only operation explicit</h2>
+<p>Local-only forbids remote inference, remote routing and automatic context transfer. Public weight downloads are a separate choice. In network mode, send only the context needed for the task, show the model and provider, and retain results. The executor can read what it receives. Ordinary code enforces capabilities and permissions; learned scores cannot override them.</p>
+<h2>Let hosts opt in to additional work</h2>
+<p>Serving inference, accepting agents and allowing requested model loads are separate permissions. An agent may ask an enabled host to load an exact supported package. The host admits resources, reports progress and respects current work. Open agent access means standing consent within host limits; an invitation can authorize a specific agent or clone.</p>
+<h2>Move an identity or create a new one</h2>
+<p>Migration preserves identity: prepare the destination, save context, durably stop source authority, then activate the destination. Lost acknowledgments trigger reconciliation, never two owners. Cloning creates a new identity with parent lineage and selected memories. Both require destination consent. Private context is never automatically published over IPFS; saved state does not keep a closed browser running.</p>
+<p class="note"><strong>Implementation order:</strong> MODEL-BROWSER-01 first: searchable, filterable Hugging Face discovery and exact package resolution. AGENT-01 next: saved local agents → trained routing → optional peer routing → consented model loading → cloning and migration → speech/3D extensions. Learned embodiment remains the subsequent Humunculus work.</p>
+</article><footer><span>Design proposal · Implementation pending</span><span>PeerCompute · 1 / 1</span></footer></main>
+</html>

@@ -14,6 +14,26 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+### Next model demo TODOs — November 5 2026
+
+1. [ ] **MODEL-BROWSER-01 — next:** replace the model select list with a responsive
+   browser modal and wider Hugging Face discovery. Search names and descriptions;
+   filter task, selected-package size, precision, source and compatibility. Resolve
+   exact supported variants and preserve stored/peer loading, cancellation and
+   preferences. Scope: [model browser plan](branch/ipfs-large-files-model-inference.md#november-5--model-browser-design-discussion).
+2. [ ] **AGENT-01 — after MODEL-BROWSER-01:** spawn agents from basic templates with
+   identity, goals and compact context persisted in private IndexedDB. Route tasks
+   through a small learned selector to eligible local/network models; support strict
+   local-only and optional peer-hosted ML routing. Add separately consented host
+   model loading, cloning and same-identity migration, with speech/3D adapters as
+   staged extensions. [One-page summary](demos/inference/agentlayer.pdf) ·
+   [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
+
+This is the agreed order for upcoming model-demo work. The current change records
+plans and the requested summary; application implementation remains pending.
+AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
+or the older IPFS-01 acceptance gates.
+
 ### IPFS Large Files And Model Inference TODO - 2026-11-03 AKST
 
 - [ ] **IPFS-01:** Add generic persistent IPFS file storage, verified streaming
@@ -1055,6 +1075,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
   `CUBECHAT_REQUIRE_RELAY_MEDIA=1`.
 
 ### TODO:
+- Next model-demo work: **MODEL-BROWSER-01**, then **AGENT-01** in the ordered list
+  above; see [agent-layer plan](demos/inference/agent-layer-plan.md).
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
 - Improve relay scaling: drop relay connection after hitting target peers, rejoin relay only to assist new WebRTC dials, then drop again.
 - Execute and validate full net-chaos-lab containernet matrix runs in a properly provisioned host (docker + mininet + containernet), then calibrate gate thresholds from observed data.
@@ -1633,3 +1655,6 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Proposed browser combines HF discovery, stored packages and network availability; compact results open variant details, with separate download size, parameter count and estimated RAM/GPU requirements. Preserve size sorting, remembered successful model, startup loading, cancellation and existing peer routing.
 - Compatibility must distinguish tested package/runtime evidence, required device features and unknown memory fit. Local limitations must not hide usable remote inference. Current GGUF/diffusion loaders require approved catalog profiles; live Hub results need package resolution and admission before loading, not only a new UI.
 - HF documents model-card full-text search and exposes /api/search/full-text in its current OpenAPI schema. Plan to combine name/card search, bounded metadata enrichment and caching. Browser CORS, pagination, rate limits and selected-variant file completeness still require implementation-time validation.
+- Follow-up: user placed this next in the TODO queue as MODEL-BROWSER-01 and requested
+  AGENT-01 immediately afterward. See the ordered queue above and the agent-layer
+  plan; these supersede the earlier unprioritized brainstorming status.

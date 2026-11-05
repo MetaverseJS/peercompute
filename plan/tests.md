@@ -3396,3 +3396,39 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Name and description queries, task/source/size filters, explicit unknown sizes, selected-variant package totals and stable ordering across peer refresh. Late or cancelled HF queries must not overwrite newer results; test pagination, offline cache, rate limiting and network failures.
 - Separate package/runtime validation, local feature support and unverified memory capacity. Passing features with memory_fit_unverified must remain visible under usable-local filters; local incompatibility must not hide remote inference. GGUF/diffusion search metadata alone must not bypass package admission.
 - Responsive desktop/mobile dialog, wrapped names, keyboard search/results navigation, focus restoration and screen-reader labels. No download on browse/selection; explicit Load uses existing acquisition/spinner/cancel flow. Preserve startup preferences, stored loading/deletion, IPFS verification, remote routing, PWA/static-host behavior and existing setup help.
+
+### AGENT-01 acceptance — planned, not executed
+
+- Canonical stage gates are in [agent-layer plan](demos/inference/agent-layer-plan.md#validation-and-completion).
+  Verify private transactional IndexedDB saves, restart/schema/export round trips,
+  same-origin tab exclusion, storage failures and no public context announcements.
+- Train/evaluate the small task–model scorer on versioned outcomes and held-out
+  tasks/model families/time splits; compare reference/browser execution, simple
+  baselines, quality, total routing/encoder cost and changing host availability.
+  Optional peer scores remain bounded/advisory; test timeout/staleness and local
+  fallback without recursive routing. Local-only forbids remote inference,
+  routing, tools and automatic context transfer at the dispatch boundary.
+- Verify separate model-serving, guest-agent, requested-load and mobility grants;
+  exact model admission, fair queueing, preserved active user residency, progress,
+  cancellation and cleanup. No silent replay after committed remote inference.
+- Clone tests require new identity/lineage, selected memories, fresh grants and
+  duplicate-request suppression. Migration tests inject failure before/after
+  checkpoint, preparation, durable source relinquishment, recipient activation
+  and ACK; stale epochs cannot run and timeout cannot elect another owner. Reject
+  obsolete authority on backup restore; recheck grants/policy/admission after
+  preparation and retain paused ownership if activation is no longer permitted.
+  Local-only also blocks automatic remote clones, not only migration.
+- Add real speech and mesh contract tests before enabling those template features;
+  exercise independent browser stores and physical-host operation separately.
+
+### Agent summary document and delivery checks — November 5 2026
+
+- Build with Node24: `node plan/demos/inference/build-summary-pdf.mjs`. Check source
+  syntax, one-page layout overflow, actual PDF page count/text and visual raster.
+  Validate plan links and TODO ordering. These are document checks, not AGENT-01
+  runtime acceptance. Verify SHA256 and byte size after the authorized SCP copy.
+- Document validation PASS: one tagged A4 page, 419 body words, no page overflow
+  or browser errors; actual PDF raster visually reviewed and readable. Builder
+  syntax and git diff --check pass; 13 new/relevant local links resolve. PDF
+  46,551 bytes; delivery verification recorded in plan/log.md. Runtime gates above
+  remain unexecuted.

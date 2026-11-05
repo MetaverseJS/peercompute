@@ -11,6 +11,15 @@ models and staged acceptance gates are proposals; the agent runtime is not yet
 implemented. [Editable source](plan/demos/humunculus/humunculus.html) and the
 reproducible PDF builder live beside the document.
 
+The next model-demo TODO is the model browser and wider Hugging Face discovery,
+followed by a lightweight persistent-agent layer. Its
+[one-page summary](plan/demos/inference/agentlayer.pdf) and
+[implementation plan](plan/demos/inference/agent-layer-plan.md) cover templates,
+IndexedDB context, learned model selection with optional peer-hosted routing,
+strict local-only operation, and consented model loading, cloning and migration.
+These are planned capabilities; the current runtime is still the model-hosting
+foundation.
+
 ## IPFS Files And Model Inference - November 3, 2026
 
 [IPFS-01](plan/branch/ipfs-large-files-model-inference.md) is being implemented on
