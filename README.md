@@ -2,6 +2,15 @@
 
 PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
 
+## Humunculus design
+
+The [Humunculus design PDF](plan/demos/humunculus/humunculus.pdf) describes persistent
+embodied agents with learned neural control, specialist routing, memory,
+self-directed training, speech and evolving bodies. Its architecture, candidate
+models and staged acceptance gates are proposals; the agent runtime is not yet
+implemented. [Editable source](plan/demos/humunculus/humunculus.html) and the
+reproducible PDF builder live beside the document.
+
 ## IPFS Files And Model Inference - November 3, 2026
 
 [IPFS-01](plan/branch/ipfs-large-files-model-inference.md) is being implemented on

@@ -915,3 +915,5 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
 ### November 4 — embodied-agent research steering
 
 - The next agent concept should learn behavior, navigation and motor control through small specialist neural networks with learned information/skill routing. Persistent identity, memories and evolving bodies remain part of the goal. This supersedes the brainstorming suggestion of scripted/deterministic behavioral controllers. Retain engine physics and authority checks, distinguish memory from weight learning, and use versioned artifacts for policies/body/checkpoints. This records design intent; implementation and training have not started.
+
+- November4 document request: preserve this direction in [Humunculus design v0.1](../demos/humunculus/humunculus.pdf), including browser/peer architecture, candidate multimodal and speech models, curriculum and training, body adaptation, fly-controller experiments, milestones and measurable acceptance. The requested PDF delivery is separate from application implementation and does not authorize an ulg merge or app release.
