@@ -50,6 +50,12 @@ the built-in catalog as **Nemotron 3 Nano 4B (q4)**. Preserve its exact tested
 revision/files/profile so existing downloaded packages can be recognized and
 loaded directly. Verify catalog visibility in the internal preview.
 Split GGUF and agent implementation remain deferred.
+November5 download follow-up: recover interrupted HTTP model transfers within
+the active load using validated byte ranges and pinned digests. Five retries,
+network inactivity deadlines, visible recovery progress and immediate cancellation
+preserve the single content-addressed import. Cross-reload partial-transfer
+journaling remains deferred. Native Chrome disconnect/recovery and integrity
+regressions pass; internal preview verification accompanies this slice.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.
 

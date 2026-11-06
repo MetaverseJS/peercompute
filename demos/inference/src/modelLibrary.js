@@ -1,5 +1,6 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { downloadModelFile } from './modelDownload.js';
 
 /** Serialize package mutations without holding inference or network callbacks. */
 export function createModelMutationQueue() {
@@ -34,16 +35,14 @@ export async function importModelPackage(store, entry, sourceUrl, { signal, onPr
         const file = entry.files[index];
         const clock = () => globalThis.performance?.now() ?? Date.now();
         let loaded = 0, lastProgressAt = clock();
-        const report = () => onProgress?.({ stage: 'import', path: file.path, index, total: entry.files.length,
-          loaded, totalBytes: file.size });
+        const report = (extra = {}) => onProgress?.({ stage: 'import', path: file.path, index, total: entry.files.length,
+          loaded, totalBytes: file.size, ...extra });
         report();
         let result = file.cid ? await scopedStore.stat(file.cid, { signal }) : null;
         if (!result || result.status !== 'complete' || result.size !== file.size || result.sha256 !== file.sha256) {
-          const response = await fetchImpl(sourceUrl(file.path), { signal });
-          if (!response.ok || !response.body) throw new Error(`Artifact source failed: ${file.path} (${response.status})`);
           const git = file.gitBlobSha1 ? sha1.create().update(new TextEncoder().encode(`blob ${file.size}\0`)) : null;
           async function* verifiedSource() {
-            for await (const bytes of response.body) {
+            for await (const bytes of downloadModelFile(file, sourceUrl, { signal, fetchImpl, onRetry: report })) {
               signal?.throwIfAborted();
               git?.update(bytes); loaded += bytes.byteLength;
               yield bytes;

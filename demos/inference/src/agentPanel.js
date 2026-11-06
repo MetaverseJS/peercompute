@@ -195,6 +195,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       label = 'Downloading ' + (event.index + 1) + '/' + event.total + ': ' + event.path;
       if (Number.isSafeInteger(event.loaded) && Number.isSafeInteger(event.totalBytes) && event.loaded >= 0 && event.totalBytes > 0)
         label += ` · ${formatModelBytes(event.loaded)} / ${formatModelBytes(event.totalBytes)}`;
+      if (event.retryAttempt) label += ` · Connection interrupted; retry ${event.retryAttempt}/${event.maxRetries} in ${Math.ceil(event.retryDelayMs / 1000)}s`;
     } else if (event.type === 'model-load') label = 'Loading model: ' + (event.stage || event.status || 'initializing GPU')
       + (event.file ? ' · ' + event.file : '');
     else label = {

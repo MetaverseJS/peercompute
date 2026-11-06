@@ -119,7 +119,7 @@
     "test:peer-inference": "node --test peercompute/tests/unit/peerInferenceNetwork.test.js peercompute/tests/unit/modelConsoleRuntime.test.js",
     "test:peer-inference:browser": "node peercompute/tests/runtime/peer-inference.mjs",
     "test:inference:ui": "node --test demos/tests/inference-panel.test.js",
-    "test:model-library": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/modelConsoleRuntime.test.js peercompute/tests/unit/modelLibraryRuntime.test.js"
+    "test:model-library": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/modelConsoleRuntime.test.js peercompute/tests/unit/modelLibraryRuntime.test.js peercompute/tests/unit/modelDownload.test.js peercompute/tests/unit/modelDownloadBrowser.test.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

@@ -1050,3 +1050,15 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   revision,9files, digest identities and memory profile. Preserve upstream NVIDIA
   source/license metadata. Catalog identity matching must recognize the prior
   downloaded dynamic package; this is not a new model/precision qualification.
+
+### November 5 — Nano HTTP download interruption follow-up
+
+User reported repeated ERR_NETWORK_CHANGED on Nano4B's2,089,224,480-byte ONNX
+external data file. HTTP200 only established headers; it did not prove the body
+finished. The shared importer previously had no response-body recovery. Add
+in-operation offset recovery with exact byte ranges, canonical URL re-resolution,
+continuous hash/import state, bounded transient retries/timeouts, and retry status
+in the existing cancellable overlay. Keep PWA notices separate from this network
+failure. Do not alter model/runtime compatibility or bypass source integrity.
+Native Chrome/IndexedDB recovery and cancel checks pass. Durable partial download
+journaling across reloads is deferred; original interface-change cause is unknown.

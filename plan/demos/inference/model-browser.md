@@ -144,3 +144,21 @@ memory pressure. Browser loading materializes external-data buffers as well as
 ORT/GPU allocations, despite bounded IPFS transfer chunks. All three affected
 production builds and the exact internal preview/source-to-conversion UI/
 SecretWorkshop check pass.
+
+### November 5 — interrupted model downloads
+
+The shared HTTP importer now resumes a failed body from the last byte yielded
+into the same ArtifactStore import. Each retry resolves the original pinned
+source URL; signed CDN redirect URLs are neither cached as identity nor logged.
+Resume requires a pinned SHA256/Git digest, a206 response, exact Content-Range
+start/end/total, consistent available ETags and unencoded bytes. The final
+size/digest/CID checks remain mandatory. Ignored ranges, source changes, quota,
+malformed bytes, integrity failures and cancellation do not retry.
+
+Five transient retries use1/2/4/8/8-second waits; each network request/read has a
+30-second inactivity deadline, excluding storage-write time. The overlay shows
+retry count and received bytes. Cancelling also interrupts waits and stalled
+reads; cleanup does not wait forever on a broken stream. Page reloads do not
+retain a partial-transfer journal. The native Chrome fixture cuts an actual
+HTTP200 body after a positive prefix, then proves206 recovery produces the
+uninterrupted CID in IndexedDB; another case proves cancellation prevents retry.

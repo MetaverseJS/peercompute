@@ -234,6 +234,11 @@ the current device. Loading fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
 internally. A loading overlay shows a spinner, the model name, downloaded bytes,
 stored-file verification and GPU initialization, with elapsed phase time.
+Interrupted HTTP downloads retry from received bytes during the active load when
+the file has a pinned digest and the source supports valid byte ranges. Recovery
+has up to five retries with backoff and a 30-second network inactivity timeout; the
+overlay reports retries and final integrity checks still apply. Closing/reloading
+the page ends this recovery; partial HTTP transfers are not persisted for resume.
 **Cancel** (or Escape) stops the load; the overlay stays visible while worker
 cleanup finishes. Completed stored packages remain available for another attempt. File sharing runs
 in the background, so preparing publication does not hold up

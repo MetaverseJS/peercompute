@@ -3571,3 +3571,10 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   only the new Nano entry without HF metadata/weight/WASM requests. Desktop/mobile
   selection details show2.39GiB/q4 and correct pinned provenance/license; screenshots
   reviewed. SecretWorkshop /noise WSS connected; no browser/HTTP/cleanup errors.
+
+### Interrupted HTTP model download recovery — November 5 2026
+
+- `node --test peercompute/tests/unit/modelDownload.test.js peercompute/tests/unit/modelDownloadBrowser.test.js peercompute/tests/unit/modelLibraryRuntime.test.js`:21/21 pass. Multiple body failures, offset/range/ETag/encoding validation, finite HTTP/header retries, short/oversized bodies, continuous SHA256/Git/CID identity, corruption/quota rejection, inactivity deadlines, abort during read/backoff, stalled cleanup and late fetch disposal. Native headless Chrome cuts a real HTTP body mid-transfer, checks actual206 recovery and persistent IndexedDB, and separately checks abort before any resumed request. Both preserve an unrelated pinned package and close all owned resources.
+- `node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/modelHubPackage.test.js peercompute/tests/unit/modelConsoleRuntime.test.js demos/tests/inference-panel.test.js`:164/164 pass. Includes overlay, cancellation, retention, quota and package-reuse regression coverage.
+- The two new suites are included in `npm run test:model-library`. Standalone production build passes; no model weights/runtime changed, so no additional GPU qualification is claimed or needed for the transfer change. Deterministic fixtures prove recovery from native stream failure, not reproduction of the user's exact network-interface change.
+- Updated exact Tailscale preview passes desktop/mobile catalog visuals and actual SecretWorkshop /noise WSS connection. Separate native-browser1KiB cross-origin fetch for Nano's pinned large data file returns206 with exact/readable Content-Range and ETag, confirming browser-side recovery prerequisites. No complete model download/GPU run; owned browsers closed. Evidence in /home/cos/.cache/peercompute-download-recovery/preview/.
