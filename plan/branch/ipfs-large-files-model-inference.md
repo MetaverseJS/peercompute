@@ -1041,3 +1041,12 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   and repetitive. Do not recommend this export for reliable chat without further
   reference/model-generation-setting comparison. Nano4B's execution and chat
   screening pass independently.
+
+### November 5 — Nano4B suggested catalog omission
+
+- User asks why the tested model was not added to suggestions. Dynamic discovery
+  and qualification had been completed, but catalog promotion was missed.
+- Add **Nemotron 3 Nano 4B (q4)** to the built-in catalog with the same pinned
+  revision,9files, digest identities and memory profile. Preserve upstream NVIDIA
+  source/license metadata. Catalog identity matching must recognize the prior
+  downloaded dynamic package; this is not a new model/precision qualification.

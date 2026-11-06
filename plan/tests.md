@@ -3557,3 +3557,17 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   live in `openreason-quality-2026-11-06T04-49-16-113Z` in the evidence directory.
   A future reference comparison should examine export EOS151643 vs upstream151645
   and generation settings; neither difference alone explains the opening text.
+
+### Nano4B suggested catalog — November 5 2026
+
+- 149/149 focused model inference, compatibility, package/library/console and
+  resolver checks pass with the new catalog entry. Existing catalog contract
+  validates the added profile/files and differentiates its NVIDIA license from
+  the Apache entries. Exact profile matches the prior real hardware receipt;
+  all9file records match live inspection of the tested immutable revision.
+- Catalog lookup recognizes the prior dynamic package despite the display-name
+  and catalog-ID change. Model-memory estimates remain7.069GiB host/6.069GiB GPU.
+  Production standalone build passes. Exact preview Source=Catalog search returns
+  only the new Nano entry without HF metadata/weight/WASM requests. Desktop/mobile
+  selection details show2.39GiB/q4 and correct pinned provenance/license; screenshots
+  reviewed. SecretWorkshop /noise WSS connected; no browser/HTTP/cleanup errors.

@@ -794,15 +794,25 @@ test('artifact client enforces concurrent-reader limits and checks stored file d
 });
 
 test('catalog pins complete selected model variants and distinguishes Git blobs from file digests', () => {
-  assert.equal(Object.keys(MODEL_CATALOG).length, 6);
+  assert.equal(Object.keys(MODEL_CATALOG).length, 7);
   assert.equal(MODEL_CATALOG['qwen3-0.6b-q4'].weightBytes, 919096585);
   assert.equal(MODEL_CATALOG['smolvlm-256m-q4'].weightBytes, 263889326);
   assert.equal(MODEL_CATALOG['smolvlm-500m-q4'].weightBytes, 485088765);
   assert.equal(MODEL_CATALOG['qwen3.5-2b-q4'].weightBytes, 1752031835);
+  const nano = MODEL_CATALOG['nemotron-3-nano-4b-q4'];
+  assert.equal(nano.model.architecture, 'nemotron_h');
+  assert.equal(nano.model.dtype, 'q4');
+  assert.deepEqual(nano.model.requiredFeatures, []);
+  assert.equal(nano.totalBytes, 2568544283);
+  assert.equal(nano.model.memoryProfile.recurrentLayers, 21);
+  assert.equal(nano.license.spdx, 'LicenseRef-NVIDIA-Nemotron-Open-Model-License');
+  assert.match(nano.license.text, /NVIDIA Nemotron Open Model License/);
+  assert.deepEqual(nano.files.filter((file) => file.path.startsWith('onnx/')).map((file) => file.path),
+    ['onnx/model_q4.onnx', 'onnx/model_q4.onnx_data', 'onnx/model_q4.onnx_data_1']);
   for (const entry of Object.values(MODEL_CATALOG)) {
     assert.match(entry.revision, /^[a-f0-9]{40}$/);
     assert.equal(entry.totalBytes, entry.files.reduce((sum, file) => sum + file.size, 0));
-    assert.equal(entry.license.spdx, 'Apache-2.0');
+    if (entry !== nano) assert.equal(entry.license.spdx, 'Apache-2.0');
     assert.ok(Object.isFrozen(entry.model));
     const packageManifest = { schema: 'peercompute.artifact.manifest.v1', model: entry.model,
       files: entry.files.map((file) => ({ ...file, cid, sha256: file.sha256 ?? digest })) };

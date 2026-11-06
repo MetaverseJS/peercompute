@@ -45,6 +45,10 @@ shader-f16. OpenReasoning's general-chat output remains off-topic/repetitive at
 256tokens; its simple math response recognizes4 but reaches the length limit
 without the requested final answer. Keep that quality follow-up separate from
 successful execution; Nano4B passes the basic chat screening.
+November5 suggested-list follow-up: promote the verified Nano4B q4 package into
+the built-in catalog as **Nemotron 3 Nano 4B (q4)**. Preserve its exact tested
+revision/files/profile so existing downloaded packages can be recognized and
+loaded directly. Verify catalog visibility in the internal preview.
 Split GGUF and agent implementation remain deferred.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.
