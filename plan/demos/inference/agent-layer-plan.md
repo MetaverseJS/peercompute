@@ -506,6 +506,15 @@ local-only policy and no executable operation receipts. Saved attachment history
 currently shows omission/reference notes; fresh image results have previews.
 These local ownership records do not implement portable cryptographic grants.
 
+Each new image task omits earlier conversational turns because the current
+transport sends one image and cannot visually ground earlier captions. Identity,
+goals and the explicit memory summary remain. Private history is not deleted.
+Text-only follow-ups use the latest completed visual exchange and its subsequent
+turns; failed/cancelled replacements do not advance this boundary. A successful
+empty answer still establishes the new boundary. This avoids the reproduced
+SmolVLM256M tendency to copy a prior image description despite different pixels;
+it does not add multi-image comparison or guarantee caption accuracy.
+
 Actual Gemma270M q4 managed WebGPU acceptance uses saved context, preserves identity
 and conversations across browser restart, passes first-token cancellation and
 releases CPU/GPU leases with all external model requests blocked. An independent

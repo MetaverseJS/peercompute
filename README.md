@@ -20,6 +20,9 @@ StateManager. Text, attached-image and image-generation tasks use already loaded
 models through the existing ComputeManager and peer inference services.
 Local only is the default; Network assisted explicitly permits sending selected
 context to an executing peer. The route trace names the model and provider.
+In chat and agent tasks, attaching a new image starts fresh visual conversation
+context. Earlier messages stay visible/stored; text follow-ups use the latest
+successful image exchange. System instructions and explicit agent memory remain.
 
 This first slice uses a transparent baseline (compatible, idle, then local),
 not a trained model-quality selector. It does not start autonomous loops or load

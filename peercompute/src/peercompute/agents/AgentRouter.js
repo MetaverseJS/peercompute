@@ -68,11 +68,18 @@ export function packAgentContext(head, input, events = []) {
     throw new Error('Agent instructions, saved context and current prompt exceed the context byte budget');
   }
   const requests = new Map(); const turns = [];
-  for (const event of events) {
+  // Only the current image is sent. Keep identity/explicit memory, but do not
+  // ground a new image in answers whose image pixels are no longer attached.
+  for (const event of input.image ? [] : events) {
     if (event.type === 'request' && event.task !== 'text-to-image' && typeof event.text === 'string') requests.set(event.operationId, event);
     if (event.type === 'result' && event.task !== 'text-to-image' && typeof event.text === 'string') {
       const request = requests.get(event.operationId);
-      if (request && event.text) turns.push([{ role: 'user', content: request.text }, { role: 'assistant', content: event.text }]);
+      if (request) {
+        // Text follow-ups continue the latest successful visual exchange.
+        // Failed/cancelled image requests never replace that context.
+        if (request.task === 'image-text-to-text') turns.length = 0;
+        if (event.text) turns.push([{ role: 'user', content: request.text }, { role: 'assistant', content: event.text }]);
+      }
       requests.delete(event.operationId);
     }
   }

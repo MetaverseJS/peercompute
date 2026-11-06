@@ -43,6 +43,12 @@ Deletion follow-up: a denied sharing-owner lock or queued cancellation no longer
 marks an untouched model as partially deleted. Real browser UI/IndexedDB/WebLock
 rejection followed by successful retry passes; the user's original error still
 needs confirmation. Existing cleanup failures retain their retry state.
+Vision follow-up: SmolVLM256M can repeat an earlier image description when that
+answer is replayed as text beside a new image. Actual equal-pixel with/without-history
+GPU comparison reproduces this. New attachments start fresh visual context in
+chat/agents; keep transcript/private records, system instructions and explicit
+agent memory. Text follow-ups use the latest successful visual exchange; failed
+or cancelled replacements preserve the previous committed context.
 November 5 authorized follow-up: widen existing engine architecture admission,
 replace the generic text ONNX1.5GiB ceiling with bounded package/config-aware
 profiles, and discover related ONNX/GGUF conversions from publisher lineage.

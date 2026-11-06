@@ -3,6 +3,7 @@ import test, { before, after } from 'node:test';
 import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
@@ -61,7 +62,7 @@ async function fixture(t, scenario = {}) {
   await page.goto(origin + '/__ui_fixture');
   await page.evaluate(async (scenario) => {
     const { mountInferencePanel } = await import('/demos/inference/src/agentPanel.js');
-    window.calls = []; window.contextCalls = [];
+    window.calls = []; window.contextCalls = []; window.pixelRequests = [];
     window.previewUrls = { created: [], revoked: [] };
     const createUrl = URL.createObjectURL.bind(URL), revokeUrl = URL.revokeObjectURL.bind(URL);
     URL.createObjectURL = (blob) => { const url = createUrl(blob); previewUrls.created.push(url); return url; };
@@ -111,8 +112,8 @@ async function fixture(t, scenario = {}) {
         available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
         name: 'Peer text model', local: false, available: true, busy: state.providers.every(Boolean),
-        providerCount: state.providers.length, modalities: ['text'],
-        task: scenario.diffusion ? 'text-to-image' : 'text-generation', outputModalities: scenario.diffusion ? ['image'] : ['text'] }] : [])],
+        providerCount: state.providers.length, modalities: scenario.peerVision ? ['text', 'image'] : ['text'],
+        task: scenario.diffusion ? 'text-to-image' : scenario.peerVision ? 'image-text-to-text' : 'text-generation', outputModalities: scenario.diffusion ? ['image'] : ['text'] }] : [])],
       async refreshPeers({ signal }) {
         state.refreshCalls++; state.refreshPeak = Math.max(state.refreshPeak, ++state.refreshActive);
         try { await delay(scenario.refreshDelay ?? 1, signal); if (state.refreshError) throw new Error('Offline'); }
@@ -146,7 +147,14 @@ async function fixture(t, scenario = {}) {
         calls.push({ type: 'generate', target, requestId: options.requestId, messages: options.messages,
           prompt: options.prompt, maxNewTokens: options.maxNewTokens,
           image: options.image ? { width: options.image.width, height: options.image.height, bytes: options.image.data.length } : null });
-        await delay(scenario.generateDelay ?? 1, scenario.ignoreAbort ? undefined : options.signal);
+        if (scenario.capturePixels && options.image) {
+          const pixels = new Uint8Array(options.image.data);
+          const digest = await crypto.subtle.digest('SHA-256', pixels);
+          pixelRequests.push({ requestId: options.requestId, width: options.image.width, height: options.image.height,
+            channels: options.image.channels, pixels: [...pixels], sha256: [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('') });
+        }
+        await delay(state.generateDelay ?? scenario.generateDelay ?? 1, scenario.ignoreAbort ? undefined : options.signal);
+        if (state.rejectGeneration) throw new Error('Vision fixture generation failed');
         if (scenario.diffusion) {
           options.onProgress?.({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 1 });
           const data = new Uint8Array(512 * 512 * 4);
@@ -520,6 +528,148 @@ test('explicit file attachment is bounded and consumed by its request; standalon
   assert.equal(request.messages.length, 1); assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), false);
   await page.getByLabel('Chat target').selectOption('peer:fixture');
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+});
+
+async function patternedImage(page, phase) {
+  const result = await page.evaluate((phase) => {
+    const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 24;
+    const context = canvas.getContext('2d'); const image = context.createImageData(canvas.width, canvas.height);
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      const index = (y * canvas.width + x) * 4;
+      image.data[index] = (x * 7 + phase * 101) % 256;
+      image.data[index + 1] = (y * 11 + phase * 43) % 256;
+      image.data[index + 2] = (x + y * 3 + phase * 71) % 256;
+      image.data[index + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+    return { png: canvas.toDataURL('image/png').split(',')[1], pixels: [...image.data], width: canvas.width, height: canvas.height };
+  }, phase);
+  return { ...result, sha256: createHash('sha256').update(Buffer.from(result.pixels)).digest('hex'),
+    file: { name: 'same-name.png', mimeType: 'image/png', buffer: Buffer.from(result.png, 'base64') } };
+}
+
+test('consecutive different images with the same filename send fresh complete pixels and unique requests', async (t) => {
+  const page = await fixture(t, { loaded: true, capturePixels: true });
+  const images = [await patternedImage(page, 0), await patternedImage(page, 1)];
+  const previews = [];
+  for (let index = 0; index < images.length; index++) {
+    await page.getByLabel('Choose image attachment').setInputFiles(images[index].file);
+    const preview = page.getByAltText('Selected image', { exact: true }); await preview.waitFor({ state: 'visible' });
+    previews.push(await preview.getAttribute('src'));
+    await page.getByLabel('Message', { exact: true }).fill('Describe the attached image.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.waitForFunction((count) => pixelRequests.length === count
+      && document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.', index + 1);
+    assert.equal(await preview.isVisible(), false);
+    assert.equal(await page.getByLabel('Choose image attachment').inputValue(), '');
+  }
+  const requests = await page.evaluate(() => pixelRequests);
+  assert.equal(new Set(requests.map((request) => request.requestId)).size, 2);
+  assert.notEqual(previews[0], previews[1]); assert.notEqual(requests[0].sha256, requests[1].sha256);
+  for (let index = 0; index < images.length; index++) {
+    assert.deepEqual(requests[index].pixels, images[index].pixels, `All pixels in request ${index + 1} must match its file`);
+    assert.equal(requests[index].sha256, images[index].sha256);
+    assert.deepEqual([requests[index].width, requests[index].height, requests[index].channels], [32, 24, 4]);
+  }
+  const visualCalls = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
+  for (const request of visualCalls) assert.deepEqual(request.messages, [{ role: 'user', content: 'Describe the attached image.' }]);
+  assert.equal(await page.locator('.pc-chat-message-user img').count(), 2, 'Earlier images remain in the visible transcript');
+  await page.getByLabel('Message', { exact: true }).fill('Now a text-only follow-up.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 3);
+  const followup = await page.evaluate(() => calls.filter((call) => call.type === 'generate')[2]);
+  assert.equal(followup.image, null);
+  assert.deepEqual(followup.messages, [
+    { role: 'user', content: 'Describe the attached image.' },
+    { role: 'assistant', content: 'Reply to Describe the attached image.' },
+    { role: 'user', content: 'Now a text-only follow-up.' },
+  ], 'Only the latest successful image exchange becomes text follow-up context');
+});
+
+for (const target of ['local', 'peer:fixture']) test(`new vision context on ${target} preserves system instructions and visible transcript`, async (t) => {
+  const page = await fixture(t, { loaded: true, peerVision: true, context: true });
+  await page.getByLabel('Chat target').selectOption(target);
+  const send = async (text, count, file) => {
+    if (file) { await page.getByLabel('Choose image attachment').setInputFiles(file); await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' }); }
+    await page.getByLabel('Message', { exact: true }).fill(text); await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.waitForFunction((count) => calls.filter((call) => call.type === 'generate').length === count
+      && document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.', count);
+  };
+  await send('Earlier text conversation.', 1);
+  await send('The first image.', 2, (await patternedImage(page, 4)).file);
+  await send('A different second image.', 3, (await patternedImage(page, 5)).file);
+  await send('Explain that latest description.', 4);
+  const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
+  const system = { role: 'system', content: 'Optional embedded scene context\nSuggest an approved action.' };
+  assert.deepEqual(requests[1].messages, [system, { role: 'user', content: 'The first image.' }]);
+  assert.deepEqual(requests[2].messages, [system, { role: 'user', content: 'A different second image.' }]);
+  assert.deepEqual(requests[3].messages, [system,
+    { role: 'user', content: 'A different second image.' }, { role: 'assistant', content: 'Reply to A different second image.' },
+    { role: 'user', content: 'Explain that latest description.' }]);
+  assert(requests.every((request) => request.target === target));
+  const transcript = await page.getByRole('log', { name: 'Conversation', exact: true }).textContent();
+  for (const text of ['Reply to Earlier text conversation.', 'Reply to The first image.', 'Reply to A different second image.']) assert(transcript.includes(text));
+  assert.equal(await page.locator('.pc-chat-message-user img').count(), 2);
+  assert.deepEqual(await page.evaluate(() => contextCalls), Array.from({ length: 4 }, () => ({ includeImage: false })));
+});
+
+for (const outcome of ['failed', 'cancelled']) test(`${outcome} new image preserves the last committed vision context`, async (t) => {
+  const page = await fixture(t, { loaded: true });
+  await page.getByLabel('Choose image attachment').setInputFiles((await patternedImage(page, 6)).file);
+  await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
+  await page.getByLabel('Message', { exact: true }).fill('Committed original image.'); await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.');
+  await page.evaluate((outcome) => { uiState.rejectGeneration = outcome === 'failed'; uiState.generateDelay = outcome === 'cancelled' ? 10000 : 1; }, outcome);
+  await page.getByLabel('Choose image attachment').setInputFiles((await patternedImage(page, 7)).file);
+  await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
+  await page.getByLabel('Message', { exact: true }).fill('Uncommitted replacement image.'); await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 2);
+  if (outcome === 'cancelled') await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.waitForFunction((outcome) => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes(outcome === 'failed' ? 'Vision fixture generation failed' : 'Cancelled:'), outcome);
+  await page.evaluate(() => { uiState.rejectGeneration = false; uiState.generateDelay = 1; });
+  await page.getByLabel('Message', { exact: true }).fill('Continue the last completed description.'); await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 3);
+  const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
+  assert.deepEqual(requests[1].messages, [{ role: 'user', content: 'Uncommitted replacement image.' }]);
+  assert.deepEqual(requests[2].messages, [
+    { role: 'user', content: 'Committed original image.' }, { role: 'assistant', content: 'Reply to Committed original image.' },
+    { role: 'user', content: 'Continue the last completed description.' },
+  ]);
+  assert.equal(requests[2].image, null);
+});
+
+test('a superseded image decode cannot replace the newer selected file or its transmitted pixels', async (t) => {
+  const page = await fixture(t, { loaded: true, capturePixels: true });
+  const first = await patternedImage(page, 2), second = await patternedImage(page, 3);
+  await page.evaluate(() => {
+    const original = createImageBitmap.bind(window); let count = 0;
+    window.decodeProof = { started: 0, firstClosed: false };
+    window.createImageBitmap = async (...args) => {
+      const index = count++; decodeProof.started++;
+      const bitmap = await original(...args);
+      if (index !== 0) return bitmap;
+      // Hold the first real decoded bitmap; the second still uses the native decoder.
+      const close = bitmap.close.bind(bitmap);
+      bitmap.close = () => { decodeProof.firstClosed = true; close(); };
+      await new Promise((resolve) => { window.releaseFirstDecode = resolve; });
+      return bitmap;
+    };
+  });
+  t.after(() => page.isClosed() ? undefined : page.evaluate(() => window.releaseFirstDecode?.()));
+  await page.getByLabel('Choose image attachment').setInputFiles(first.file);
+  await page.waitForFunction(() => typeof releaseFirstDecode === 'function');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  await page.getByLabel('Choose image attachment').setInputFiles(second.file);
+  const preview = page.getByAltText('Selected image', { exact: true }); await preview.waitFor({ state: 'visible' });
+  const latestPreview = await preview.getAttribute('src');
+  await page.evaluate(() => releaseFirstDecode()); await page.waitForFunction(() => decodeProof.firstClosed);
+  assert.equal(await preview.getAttribute('src'), latestPreview);
+  await page.getByLabel('Message', { exact: true }).fill('Describe only this selected image.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => pixelRequests.length === 1);
+  const request = await page.evaluate(() => pixelRequests[0]);
+  assert.equal(request.sha256, second.sha256); assert.deepEqual(request.pixels, second.pixels);
+  assert.notEqual(request.sha256, first.sha256);
 });
 
 test('dispose aborts active generation and stops refresh before releasing the runtime', async (t) => {

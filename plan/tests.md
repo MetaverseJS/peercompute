@@ -3634,3 +3634,26 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - `node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/modelHubPackage.test.js peercompute/tests/unit/modelConsoleRuntime.test.js demos/tests/inference-panel.test.js`:164/164 pass. Includes overlay, cancellation, retention, quota and package-reuse regression coverage.
 - The two new suites are included in `npm run test:model-library`. Standalone production build passes; no model weights/runtime changed, so no additional GPU qualification is claimed or needed for the transfer change. Deterministic fixtures prove recovery from native stream failure, not reproduction of the user's exact network-interface change.
 - Updated exact Tailscale preview passes desktop/mobile catalog visuals and actual SecretWorkshop /noise WSS connection. Separate native-browser1KiB cross-origin fetch for Nano's pinned large data file returns206 with exact/readable Content-Range and ETag, confirming browser-side recovery prerequisites. No complete model download/GPU run; owned browsers closed. Evidence in /home/cos/.cache/peercompute-download-recovery/preview/.
+### Consecutive vision-image context regression — November 5 2026
+
+- Characterize actual managed SmolVLM256M q4 on one worker using A alone, B with
+  A's question/answer, and B alone. Record full input RGBA SHA256, prompt/history,
+  model CID, worker and GPU dispatches. B's equal hashes isolate history effects
+  from stale decoding/transfer/caching. Baseline reproduces red/red/blue for
+  “Describe this image.”; explicit dominant-color control gives Red/Blue/Blue.
+- UI: native PNG decode of different patterned files with the same name must
+  match every expected RGBA byte and independent SHA, distinct request IDs and
+  consumed attachments. Delay an earlier native decode to prove it cannot replace
+  a newer preview/payload. New image requests on local/peer targets omit prior
+  conversational turns but preserve system instructions and visible transcript.
+  Following text carries the latest successful exchange; failed/cancelled image
+  attempts retain prior committed context. Full panel suite61/61 PASS.
+- Agent context/runtime suite22/22 PASS: image requests preserve identity/goals/
+  explicit summary and leave persisted events unchanged. Text follow-ups begin
+  with the latest completed image exchange. An empty completed caption also
+  resets that boundary; incomplete/failed visual requests do not.
+- Actual corrected UI and private-agent image sequences use the same source-off
+  retained Smol package. Require correct red/blue descriptions, identical expected
+  input hashes, visible retained transcript, no worker reload between images and
+  zero active resource leases after cleanup. Results and exact-preview screenshots
+  live outside Git under `/home/cos/.cache/peercompute-vision-image-reuse/`.

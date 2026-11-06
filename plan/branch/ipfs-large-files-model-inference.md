@@ -1087,3 +1087,17 @@ journaling across reloads is deferred; original interface-change cause is unknow
   cancellation restores a previously healthy model's availability. Started or
   earlier cleanup remains quarantined; retain the explanatory ownership error.
   Controller/library70/70 checks pass; no storage integrity checks are bypassed.
+### November 5 — fresh visual context for consecutive image attachments
+
+- User reports identical SmolVLM256M replies to two different attached images.
+  Managed GPU comparison confirms current pixels are correct: red alone → red,
+  blue with prior red conversation → exact repeated red answer, identical blue
+  pixels alone → blue. No cross-request pixel/KV reuse was found.
+- A new attachment starts fresh visual conversation context in ordinary chat and
+  agent requests. Retain the transcript/private journal and system/agent identity,
+  goals and explicit summary. Only a successful visual task replaces the model's
+  follow-up context; failures/cancellation preserve the previous successful one.
+- Unit/UI tests cover complete pixel identity, same filenames, late decoding,
+  local and peer targets, system instructions, following text, empty results and
+  cancellation. Actual sequential managed Smol and final preview checks accompany
+  this fix. The single-image transport and model's caption-quality limits remain.

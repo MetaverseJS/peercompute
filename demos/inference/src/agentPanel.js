@@ -521,7 +521,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const context = createsImage ? null : await getContext?.({ includeImage: false });
       const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
       const instructions = createsImage ? '' : String(actions?.instructions ?? '').slice(0, 8000);
-      const history = histories.get(targetKey) ?? [], message = text || 'Describe this image.';
+      // Requests carry one image. Replaying an earlier image's text-only answer
+      // can make a small VLM describe that image instead of the current pixels.
+      // Keep the visible transcript; replace model context only after success.
+      const history = selectedImage ? [] : histories.get(targetKey) ?? [], message = text || 'Describe this image.';
       const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
         ...history.slice(-6), { role: 'user', content: message }];
       appendMessage(view, 'user', text, { image: selectedImage?.preview });

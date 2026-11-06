@@ -51,6 +51,38 @@ test('context packing removes whole old turns and never truncates current instru
   assert.throws(() => packAgentContext({ identity: { instructions: 'x'.repeat(65536) } }, normalizeAgentTask({ prompt: 'Latest' })));
 });
 
+test('new images use fresh visual context and follow-ups retain only the latest successful image exchange', () => {
+  const head = { identity: { name: 'Ada', instructions: 'Be brief.' }, goals: ['Observe'], context: { summary: 'Prefer concise captions.' } };
+  const turn = (id, task, question, answer) => [
+    { type: 'request', operationId: id, task, text: question },
+    { type: 'result', operationId: id, task, text: answer },
+  ];
+  const events = [
+    ...turn('old-text', 'text-generation', 'Old question', 'Old answer'),
+    ...turn('red', 'image-text-to-text', 'Describe red', 'A red square.'),
+    ...turn('red-followup', 'text-generation', 'Is it bright?', 'Yes, bright red.'),
+  ];
+  const original = structuredClone(events);
+  const fresh = packAgentContext(head, normalizeAgentTask({ prompt: 'Describe blue', image }), events);
+  assert.deepEqual(fresh.messages.map((message) => message.role), ['system', 'user']);
+  assert.match(fresh.messages[0].content, /Ada/); assert.match(fresh.messages[0].content, /Be brief/);
+  assert.match(fresh.messages[0].content, /Prefer concise captions/); assert.match(fresh.messages[0].content, /Observe/);
+  assert.equal(fresh.messages[1].content, 'Describe blue'); assert.deepEqual(events, original);
+
+  const failed = [...events, { type: 'request', operationId: 'failed-blue', task: 'image-text-to-text', text: 'Describe blue' },
+    { type: 'failed', operationId: 'failed-blue', text: 'Cancelled' }];
+  assert.deepEqual(packAgentContext(head, normalizeAgentTask({ prompt: 'Continue' }), failed).messages.slice(1).map((message) => message.content),
+    ['Describe red', 'A red square.', 'Is it bright?', 'Yes, bright red.', 'Continue']);
+
+  const next = [...failed, ...turn('blue', 'image-text-to-text', 'Describe blue', 'A blue square.'),
+    ...turn('blue-followup', 'text-generation', 'Is that dark?', 'Yes, dark blue.')];
+  assert.deepEqual(packAgentContext(head, normalizeAgentTask({ prompt: 'Continue' }), next).messages.slice(1).map((message) => message.content),
+    ['Describe blue', 'A blue square.', 'Is that dark?', 'Yes, dark blue.', 'Continue']);
+  const empty = [...events, ...turn('empty-blue', 'image-text-to-text', 'Describe blue', '')];
+  assert.deepEqual(packAgentContext(head, normalizeAgentTask({ prompt: 'Continue' }), empty).messages.slice(1),
+    [{ role: 'user', content: 'Continue' }]);
+});
+
 function adapterFixture() {
   let status = { status: 'ready', sessionId: 'session-1', manifestCid: 'local-cid' };
   const calls = [];
