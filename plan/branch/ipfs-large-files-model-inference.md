@@ -1111,3 +1111,11 @@ journaling across reloads is deferred; original interface-change cause is unknow
   the required feature; the user's effective launch flags remain unconfirmed.
 - A genuine FP32 GGUF backend requires shader/layout/precision changes and
   fresh managed GPU qualification. It is not implemented by this clarification.
+
+### November 6 — CubeChat desktop input follow-up
+
+- Fix coarse-pointer desktop startup selecting touch-only controls. Actual mouse,
+  keyboard and touch events select the HUD; keyboard movement remains available.
+- Keep settings/model-console typing separate from avatar controls and clear
+  held input/captures when focus is lost. Validate native desktop/hybrid/mobile
+  interaction in a dedicated HTTPS preview without changing public Pages assets.

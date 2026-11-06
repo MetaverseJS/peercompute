@@ -14,6 +14,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November6 CubeChat input correction: native mouse activation on a touch-capable
+(coarse-pointer) desktop previously selected touch-only controls and discarded
+keyboard movement. Use the actual input to select the HUD, preserve keyboard
+controls independently and respect editable UI/focus boundaries. Eleven native
+controller tests and five full-app desktop/hybrid/mobile/denied-pointer-lock
+scenarios pass; the corrected internal preview is available on HTTPS5176.
+
 ### Next model demo TODOs — November 5 2026
 
 1. [x] **MODEL-BROWSER-01 — complete:** replace the model select list with a responsive

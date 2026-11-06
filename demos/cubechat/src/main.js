@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { P2PNetwork } from './p2p/network.js';
 import { RoomDirectory, buildRoomId, normalizeRoomName } from './p2p/roomDirectory.js';
 import { TronScene } from './renderer/scene.js';
-import { PlayerController } from './controls/input.js';
+import { PlayerController, usesTouchControls } from './controls/input.js';
 import { PhysicsWorld } from './physics/world.js';
 import {
   DEFAULT_WORLD_THEME,
@@ -548,9 +548,7 @@ class CubeChat {
       const dismissLoading = ({ mobileMode = false } = {}) => {
         if (!loadingDiv || loadingDiv.style.display === 'none') return;
         loadingDiv.style.display = 'none';
-        if (mobileMode) {
-          this.controller.setMobileMode(true);
-        }
+        this.controller.setMobileMode(mobileMode);
         this._showSettingsOnce();
       };
 
@@ -560,7 +558,7 @@ class CubeChat {
         if (event?.type === 'touchend' || event?.type === 'pointerdown') {
           event.preventDefault();
         }
-        if (isMobile) {
+        if (usesTouchControls(event, isMobile)) {
           dismissLoading({ mobileMode: true });
           return;
         }
@@ -578,41 +576,38 @@ class CubeChat {
         }
       };
       
-      if (isMobile) {
-        // Mobile: just tap to start, no pointer lock
-        loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', startFromLoading);
-        loadingDiv.addEventListener('touchend', startFromLoading, { passive: false });
-        loadingDiv.addEventListener('pointerdown', startFromLoading);
-      } else {
-        // Desktop: use pointer lock
-        canvas.addEventListener('click', () => {
-          this._requestPointerLock(canvas);
-        });
+      // A coarse primary pointer does not mean a mouse or keyboard is absent.
+      // Prefer the actual interaction; retain device detection for legacy events.
+      canvas.addEventListener('pointerdown', (event) => {
+        this.controller.setMobileMode(usesTouchControls(event, this.controller.isMobile));
+      });
+      canvas.addEventListener('click', () => {
+        if (!this.controller.isMobile) this._requestPointerLock(canvas);
+      });
 
-        loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', startFromLoading);
-        loadingDiv.addEventListener('pointerdown', startFromLoading);
-        loadingDiv.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          startFromLoading(event);
-        });
+      loadingDiv.style.cursor = 'pointer';
+      loadingDiv.addEventListener('click', startFromLoading);
+      loadingDiv.addEventListener('touchend', startFromLoading, { passive: false });
+      loadingDiv.addEventListener('pointerdown', startFromLoading);
+      loadingDiv.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        startFromLoading(event);
+      });
 
-        // Remove loading screen when pointer is locked
-        const handlePointerLockChange = () => {
-          if (this._getPointerLockElement()) {
-            dismissLoading();
-            if (pendingInitialPointerUnlock) {
-              pendingInitialPointerUnlock = false;
-              this._exitPointerLock();
-            }
-          } else {
+      const handlePointerLockChange = () => {
+        if (this._getPointerLockElement()) {
+          dismissLoading();
+          if (pendingInitialPointerUnlock) {
             pendingInitialPointerUnlock = false;
+            this._exitPointerLock();
           }
-        };
-        document.addEventListener('pointerlockchange', handlePointerLockChange);
-        document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
-      }
+        } else {
+          pendingInitialPointerUnlock = false;
+        }
+      };
+      document.addEventListener('pointerlockchange', handlePointerLockChange);
+      document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
 
       // Initialize settings
       this.initSettings();
@@ -1027,25 +1022,11 @@ class CubeChat {
   }
 
   getForwardBackInput() {
-    if (this.controller.isMobile) {
-      return -this.controller.moveJoystick.y * this.controller.mobileMoveSensitivity;
-    } else {
-      let input = 0;
-      if (this.controller.keys['w'] || this.controller.keys['arrowup']) input += 1;
-      if (this.controller.keys['s'] || this.controller.keys['arrowdown']) input -= 1;
-      return input;
-    }
+    return this.controller.getMovementInput().forward;
   }
 
   getLeftRightInput() {
-    if (this.controller.isMobile) {
-      return this.controller.moveJoystick.x * this.controller.mobileMoveSensitivity;
-    } else {
-      let input = 0;
-      if (this.controller.keys['a']) input -= 1;
-      if (this.controller.keys['d']) input += 1;
-      return input;
-    }
+    return this.controller.getMovementInput().strafe;
   }
 
   initVR() {
@@ -1114,14 +1095,13 @@ class CubeChat {
         this.controller.pitch += lookJoy.y * this.controller.mobileLookSensitivityV;
         this.controller.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.controller.pitch));
       }
-    } else {
-      // Process keyboard rotation (arrow keys and Q/E)
-      if (this.controller.keys['arrowleft'] || this.controller.keys['q']) {
-        this.controller.rotation += turnSpeed;
-      }
-      if (this.controller.keys['arrowright'] || this.controller.keys['e']) {
-        this.controller.rotation -= turnSpeed;
-      }
+    }
+    // Keyboard look remains available independently of the touch HUD.
+    if (this.controller.keys['arrowleft'] || this.controller.keys['q']) {
+      this.controller.rotation += turnSpeed;
+    }
+    if (this.controller.keys['arrowright'] || this.controller.keys['e']) {
+      this.controller.rotation -= turnSpeed;
     }
   }
 

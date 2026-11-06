@@ -3675,3 +3675,26 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   open /noise WSS to the expected SecretWorkshop relay, no page/console errors.
   Cancelled the fresh-profile automatic Smol README request before transfer;
   zero stored bytes, workers or GPUDevice requests. No model inference rerun.
+
+### CubeChat desktop and touch input — November 6 2026
+
+- `node --test demos/tests/cubechat-input.test.js`: owned browser/controller
+  fixture exercises actual keyboard and touch events, coarse-pointer mode,
+  idempotent HUD switching, focus/key release and editable fields. The input
+  source policy also covers legacy events, keyboard startup and touch fallback.
+- Actual app baseline: normal desktop W moves3.839m; coarse-pointer desktop mouse
+  start incorrectly selects mobile, records W but returns0movement; phone touch
+  correctly enables joysticks. Existing4173 overview Vite HMR errors retained.
+- Build CubeChat and validate the exact trusted HTTPS5176 candidate with native
+  desktop/hybrid/phone interactions, visible screenshots and actual encrypted
+  SecretWorkshop connection. No inferred model output, source-state simulation,
+  public Pages publication or user browser/profile changes.
+- Evidence/results: `/home/cos/.cache/peercompute-cubechat-input/`; final results
+  are recorded in plan/log.md. Temporary owned browsers/fixture servers close;
+  the user preview remains available.
+- Results: controller11/11PASS, production build16.96sPASS, exact candidate5/5PASS.
+  Native desktop/hybrid movement, QE/Space, typing and window blur are verified;
+  phone joystick/switching retains one HUD; all connect to expected SecretWorkshop.
+  Normal contexts have no page/HTTP/console errors; sandbox denial is intentional.
+  Initial headless tab-switch failure emitted no blur; retain it, then use actual
+  iframe focus for the native blur assertion. All owned test resources closed.

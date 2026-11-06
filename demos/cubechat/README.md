@@ -11,6 +11,18 @@ npm run dev
 
 Open `https://localhost:5176/`.
 
+## Controls
+
+Click the scene for mouse look; use WASD or Up/Down to move, Q/E or Left/Right
+to turn, and Space to jump. Touch the scene to show the movement/look joysticks
+and jump button. The actual mouse, touch or keyboard interaction selects the
+controls, including on touchscreen laptops; a connected keyboard always works.
+Typing in settings or the model console does not move the avatar. Switching
+focus or hiding the tab releases held controls.
+
+Input regression checks: `node --test demos/tests/cubechat-input.test.js` from
+the repository root (Node24, installed system Chrome).
+
 ## Multiplayer Rooms
 Use the Settings menu to create or join public/private rooms. Private rooms derive their room ID from a password hash (no raw password is shared).
 
