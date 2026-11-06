@@ -132,9 +132,15 @@ integration checks pass. Gemma3-270M-it q4 ONNX and StableLM2-Zephyr1.6B Q4_K_M
 GGUF pass real managed WebGPU generation, deterministic fresh-state repeat,
 streamed cancellation/recovery and source-off browser restart. The GGUF run used
 the documented NVIDIA FP16 override in its owned browser; Gemma did not.
-OpenReasoning-Nemotron1.5B q4 and Nano4B q4 pass structural inspection/profile
-admission. OpenReasoning initialization encountered an NVIDIA allocation failure
-while existing user work held~10GiB GPU memory. Its execution qualification and
-Nano4B's actual run remain pending sufficient free resources; neither is recorded
-as a passed runtime test. All three affected production builds and the exact
-internal preview/source-to-conversion UI/SecretWorkshop check pass.
+OpenReasoning-Nemotron1.5B q4 and Nano4B q4 also pass the full managed GPU lifecycle
+after the user released memory. Nano4B gives coherent short chat responses and
+needs no shader-f16 override. OpenReasoning's general-chat responses remain
+unrelated and repetitive at256tokens; simple math recognizes4 but does not finish
+the requested answer before the limit. Runtime success is not a quality
+endorsement, and its publisher/export EOS discrepancy needs a separate reference
+comparison before changing application behavior. The first
+OpenReasoning attempt encountered an NVIDIA allocation failure under existing
+memory pressure. Browser loading materializes external-data buffers as well as
+ORT/GPU allocations, despite bounded IPFS transfer chunks. All three affected
+production builds and the exact internal preview/source-to-conversion UI/
+SecretWorkshop check pass.

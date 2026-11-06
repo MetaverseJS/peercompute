@@ -3523,3 +3523,37 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   console-error, HTTP or cleanup errors. Actual authenticated `/noise` connection
   to the configured SecretWorkshop relay verified. Desktop/mobile screenshots
   inspected; owned GPU-disabled browser closed. No public Pages build published.
+
+- 19:39 AKST follow-up: OpenReasoning-Nemotron1.5B q4 retry from the retained
+  disk-backed profile passes the managed hardware lifecycle:22,496 dispatches on
+  the first32-token request,5,624 on source-off restart, deterministic repeat,
+  AbortError on streamed cancellation, recovery and zero active leases after
+  unload. No page/console errors or external restart requests. This establishes
+  execution, not useful general-chat quality: garden/ocean prompts produced
+  unrelated programming continuations. Record that quality gap separately.
+  Evidence: `openreason-retry-1939/report.json` in the support-expansion directory.
+  Nano4B remains unrun: its7.1GiB host/6.1GiB GPU reservation exceeds current
+  available GPU memory before additional loading overhead. Existing browser
+  loader retains all external-data chunks simultaneously, so chunked IPFS reads
+  do not imply streaming-weight residency. Await released resources for that gate.
+
+- After the user unloaded the resident model, measured GPU free11,125MiB and
+  host RAM available14GiB. Nano4B q4 then passes the full real managed GPU
+  lifecycle without shader-f16 at19:48:54 AKST: coherent garden/ocean responses
+  stop naturally at11/10tokens, repeated garden prompt matches exactly,
+  streamed cancellation rejects with AbortError, subsequent generation recovers,
+  unload releases every lease and source-off independent-browser restart works.
+  First request11,045 dispatches; restart8,279. Zero page/console errors.
+  Receipt: `/home/cos/.cache/peercompute-support-expansion/nano/report.json`.
+  Its pinned original-to-conversion lookup also passes before acquisition.
+
+- Stored-only OpenReasoning quality probe, separate from lifecycle acceptance:
+ 256-token math/garden queries make no external requests and execute on the
+  managed GPU with no page/console errors. Math recognizes2+2=4 in its reasoning
+  but hits length without the requested boxed final answer. Garden repeats an
+  unrelated Python word-count task. This fails the bounded response-quality
+  screening; do not interpret the harness's execution success as model quality.
+  No EOS, sampling or publisher metadata overrides were used. Report/text outputs
+  live in `openreason-quality-2026-11-06T04-49-16-113Z` in the evidence directory.
+  A future reference comparison should examine export EOS151643 vs upstream151645
+  and generation settings; neither difference alone explains the opening text.

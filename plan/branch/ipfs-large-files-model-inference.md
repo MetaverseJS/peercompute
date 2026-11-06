@@ -1031,3 +1031,13 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   Nemotron1.5B q4 initialization hit an NVIDIA allocation failure with existing
   user GPU residency; Nano4B q4 execution remains unrun pending free resources.
   These acceptance gates remain open even though structural inspection succeeds.
+- 19:49 AKST update: the user released GPU resources and both Nemotron runtime
+  gates now pass. Nano4B q4 returns coherent responses and passes managed-worker
+  reset/cancel/recovery/source-off restart with no errors and no FP16 override.
+  OpenReasoning1.5B q4 also passes the complete lifecycle, but short general-chat
+  prompts produced unrelated programming continuations. Keep response-quality
+  evidence separate. The256-token comparison recognizes2+2=4 but never produces
+  its requested final answer before the limit; the garden prompt remains off-topic
+  and repetitive. Do not recommend this export for reliable chat without further
+  reference/model-generation-setting comparison. Nano4B's execution and chat
+  screening pass independently.

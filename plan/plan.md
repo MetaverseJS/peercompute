@@ -38,9 +38,14 @@ November 5 authorized follow-up: widen existing engine architecture admission,
 replace the generic text ONNX1.5GiB ceiling with bounded package/config-aware
 profiles, and discover related ONNX/GGUF conversions from publisher lineage.
 Implementation and internal preview checks pass; Gemma270M ONNX and StableLM1.6B
-GGUF pass actual managed GPU lifecycles. Nemotron hardware qualification remains
-open after an initialization out-of-memory failure with another browser holding
-~10GiB GPU memory. Split GGUF and agent implementation remain deferred.
+GGUF pass actual managed GPU lifecycles. OpenReasoning-Nemotron1.5B and Nano4B q4
+also pass after more resources became available. Nano4B gives coherent garden/ocean
+answers and passes reset, cancellation/recovery and source-off restart without
+shader-f16. OpenReasoning's general-chat output remains off-topic/repetitive at
+256tokens; its simple math response recognizes4 but reaches the length limit
+without the requested final answer. Keep that quality follow-up separate from
+successful execution; Nano4B passes the basic chat screening.
+Split GGUF and agent implementation remain deferred.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.
 
