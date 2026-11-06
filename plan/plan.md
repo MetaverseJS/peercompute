@@ -1661,3 +1661,12 @@ or the older IPFS-01 acceptance gates.
 - Follow-up: user placed this next in the TODO queue as MODEL-BROWSER-01 and requested
   AGENT-01 immediately afterward. See the ordered queue above and the agent-layer
   plan; these supersede the earlier unprioritized brainstorming status.
+
+### November 5 — model-support expansion discussion
+
+The current Hub browser exposes more models than the qualified runtimes admit.
+Research identified existing-engine architecture restrictions, a1.5GiB generic
+ONNX package ceiling, and missing discovery of related browser conversions as
+near-term opportunities. See the [support priorities proposal](branch/ipfs-large-files-model-inference.md#november-5--broader-model-support-priorities-proposal).
+No additional runtime support is claimed; AGENT-01 ordering is unchanged pending
+the user's implementation direction.

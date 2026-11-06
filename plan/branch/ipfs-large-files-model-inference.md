@@ -982,3 +982,34 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   silently replacing the chosen package. Explicit HF-only browsing works without
   a query; reopening resumes interrupted searches. No automatic model downloads
   or new runtime support is implied by metadata visibility.
+
+### November 5 — broader model support priorities (proposal)
+
+- User asks for the lowest-effort path to many more supported HF models after
+  inspection, citing Nemotron. This is research/discussion; implementation is not
+  authorized and the ordered AGENT-01 queue is unchanged.
+- Live metadata inspection separates three limits: original publisher checkpoints
+  may have no browser package; our architecture lists are narrower than installed
+  engines; generic ONNX packages still have a1.5GiB admission ceiling. The latter
+  is an inference-package policy, separate from browser storage quota.
+- Concrete probes: onnx-community/OpenReasoning-Nemotron-1.5B-ONNX uses qwen2;
+  q4f16 passes package admission at1,251,475,659bytes and requires shader-f16;
+  q4 is rejected solely by the ceiling at1,833,957,106bytes. This is inspection,
+  not successful execution evidence. onnx-community/NVIDIA-Nemotron-3-Nano-4B-BF16-ONNX
+  q4 is2,568,544,283bytes and q4f16 is2,315,723,636bytes; nemotron_h is blocked
+  by our list despite a built-in Transformers.js4.3.2 adapter and upstream WebGPU
+  example. Both architecture and resource admission need qualification.
+- Recommended first slice: resolve related ONNX/GGUF conversions with explicit
+  source lineage; widen measured ONNX package profiles; qualify existing built-in
+  text architectures and dense GGUF families; then support complete split-GGUF
+  packages. Keep per-file digest/closure checks, managed workers, memory bounds,
+  cancellation/reset and real WebGPU execution gates. Do not equate upstream
+  architecture registration or successful inspection with tested device support.
+- Later work: hybrid/MoE families, new codecs and vision projector adapters.
+  Nemotron30B-A3B's ggml-org Q4 file is22.422GB despite only~3B active parameters;
+  active expert count is not total model storage. Its footprint differs markedly
+  from the small4B candidate.
+- Primary sources: [OpenReasoning ONNX](https://huggingface.co/onnx-community/OpenReasoning-Nemotron-1.5B-ONNX),
+  [Nano4B ONNX](https://huggingface.co/onnx-community/NVIDIA-Nemotron-3-Nano-4B-BF16-ONNX),
+  [upstream WebGPU demo](https://huggingface.co/spaces/webml-community/Nemotron-3-Nano-WebGPU),
+  [pinned llama.cpp architecture registry](https://github.com/ggml-org/llama.cpp/blob/46ca246de9bb1c35269722a6240d37d9dfd79cad/src/llama-arch.cpp).

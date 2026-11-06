@@ -3473,3 +3473,16 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   after-1360.png,after-390.png,after-inspected.png,model-browser-tests-final.log,base-tests.log}.
   This is metadata/UI acceptance; earlier managed model execution evidence is
   unchanged. No public Pages update or new inference/GPU qualification claimed.
+
+### Broader model-support proposal — November 5 2026
+
+- Metadata-only live resolver probes cover NVIDIA's original Nano4B checkpoint,
+  the onnx-community Nano4B conversion and OpenReasoning-Nemotron1.5B conversion.
+  Exact revision/package-byte/rejection receipts are outside Git at
+  /home/cos/.cache/peercompute-model-support-survey/inspections.json. No weights,
+  GPU loads, inference or new architecture acceptance were exercised.
+- Before broadening admission: representative actual managed WebGPU runs per
+  architecture/precision, prompt/template correctness, repeated-request state
+  reset, cancellation/unload, memory budgets, source-off reload and peer use.
+  Split packages require missing/duplicate/mixed-revision shards and complete
+  tensor/digest validation. These are proposed gates, not executed tests.
