@@ -234,9 +234,14 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
   const required = new Set(details.model.requiredFeatures ?? []);
   const dtype = details.model.dtype;
   if (details.model.runtime !== 'transformers.js' || (typeof dtype === 'string' ? [dtype] : Object.values(dtype ?? {})).some((type) => ['fp16', 'q4f16'].includes(type))) required.add('shader-f16');
-  for (const feature of required) if (!features.has(feature)) return result('unavailable', 'gpu_feature_unavailable', feature === 'shader-f16'
-    ? 'Required FP16 GPU math (shader-f16) is unavailable in this browser'
-    : `Required GPU feature ${feature} is unavailable in this browser`);
+  for (const feature of required) if (!features.has(feature)) {
+    // Quantized GGUF weights still execute FP16 kernels in the pinned engine.
+    const reason = feature === 'shader-f16' && details.model.runtime === 'llama.cpp'
+      ? 'This GGUF engine requires FP16 GPU math (shader-f16), even with quantized weights. This browser does not expose it; see Setup help.'
+      : feature === 'shader-f16' ? 'Required FP16 GPU math (shader-f16) is unavailable in this browser'
+        : `Required GPU feature ${feature} is unavailable in this browser`;
+    return result('unavailable', 'gpu_feature_unavailable', reason);
+  }
   if (details.descriptorOnly) return result('unknown', 'model_metadata_unverified', 'Model metadata and RAM/GPU memory fit require verification before loading');
   // No current catalog provides verified per-allocation minima. maxBufferSize
   // limits one allocation; neither it nor a coarse deviceMemory hint measures

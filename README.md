@@ -174,7 +174,12 @@ GPU can still have GGUF and diffusion disabled when Chrome withholds `shader-f16
 On this machine, Chrome157/NVIDIA595.91.7 reproduces that condition without the
 test override; the four ONNX q4 chat/vision choices remain enabled. The pinned
 [llama.cpp backend](https://github.com/ggml-org/llama.cpp/blob/46ca246de9bb1c35269722a6240d37d9dfd79cad/ggml/src/ggml-webgpu/ggml-webgpu.cpp#L4886)
-requires this feature, as do the diffusion graphs. Removing the menu check would
+requires this feature even for Q4/Q8 weights: storage quantization does not
+remove the engine's FP16 kernels. The model browser explains this distinction
+and offers Setup help. A November6 adapter-only Chrome157.0.8103.38 check confirms
+the app and browser agree: without the NVIDIA override GGUF is blocked; with it
+the feature is exposed and Load is available, with memory fit still unverified.
+The diffusion graphs also require FP16. Removing the menu check would
 not enable those runtimes. Chrome156's
 [Dawn driver check](https://github.com/google/dawn/blob/8114a24a35eed1db88d1d897e8bd193a8c334712/src/dawn/native/vulkan/PhysicalDeviceVk.cpp)
 enables NVIDIA Vulkan f16 for driver615.71 and newer; actual browser feature

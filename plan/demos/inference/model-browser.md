@@ -162,3 +162,13 @@ reads; cleanup does not wait forever on a broken stream. Page reloads do not
 retain a partial-transfer journal. The native Chrome fixture cuts an actual
 HTTP200 body after a positive prefix, then proves206 recovery produces the
 uninterrupted CID in IndexedDB; another case proves cancellation prevents retry.
+
+### November 6 — quantized GGUF and the FP16 requirement
+
+Model details now distinguish stored weight precision from the engine's GPU math.
+The pinned Wllama/llama.cpp WebGPU build requires shader-f16 even for Q4/Q8 GGUF;
+Load remains disabled when the adapter does not expose it and Setup help remains
+available. Actual Chrome157.0.8103.38/NVIDIA595.91.7.0 adapter probes agree with
+our collector: the existing NVIDIA startup override exposes the feature and
+makes the same entry selectable. No model download or GPU device allocation was
+needed for this comparison; it does not requalify model output or memory fit.

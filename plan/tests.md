@@ -3657,3 +3657,21 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   input hashes, visible retained transcript, no worker reload between images and
   zero active resource leases after cleanup. Results and exact-preview screenshots
   live outside Git under `/home/cos/.cache/peercompute-vision-image-reuse/`.
+
+### GGUF FP16 admission clarification — November 6 2026
+
+- Compare raw adapter features with actual collectModelDeviceCapabilities in
+  owned Chrome157.0.8103.38, NVIDIA595.91.7.0, identical Vulkan configuration,
+  without/with --enable-dawn-features=vulkan_enable_f16_on_nvidia. Both agree:
+  absent/present shader-f16, blocked/selectable GGUF respectively. No GPUDevice,
+  model downloads or workers. Evidence: /home/cos/.cache/peercompute-gguf-fp16/.
+- First external fixture lacked isolation headers and failed that assertion;
+  preserve its receipt, add COOP/COEP to the fixture and rerun both fresh browsers.
+  Corrected comparison passes. Owned browsers/server are closed.
+- Existing compatibility and setup-help suites cover feature/precision gating,
+  independent budgets and the startup command:26/26PASS on Node24.22.1.
+  Standalone production build passes13.80s. Exact trusted HTTPS preview passes
+  desktop/mobile wrapped details, disabled Load and actual Setup help command;
+  open /noise WSS to the expected SecretWorkshop relay, no page/console errors.
+  Cancelled the fresh-profile automatic Smol README request before transfer;
+  zero stored bytes, workers or GPUDevice requests. No model inference rerun.

@@ -1101,3 +1101,13 @@ journaling across reloads is deferred; original interface-change cause is unknow
   local and peer targets, system instructions, following text, empty results and
   cancellation. Actual sequential managed Smol and final preview checks accompany
   this fix. The single-image transport and model's caption-quality limits remain.
+
+### November 6 — investigate apparently unsupported small GGUF models
+
+- User reports disabled Load for Qwen3 0.6B Abliterated Q4. Confirmed native
+  backend and shaders require FP16, independently of stored quantization.
+- Clarify that reason in model details; preserve Setup help and the runtime gate.
+  Owned current-Chrome probes confirm the existing NVIDIA startup flag exposes
+  the required feature; the user's effective launch flags remain unconfirmed.
+- A genuine FP32 GGUF backend requires shader/layout/precision changes and
+  fresh managed GPU qualification. It is not implemented by this clarification.

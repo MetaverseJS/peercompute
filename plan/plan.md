@@ -30,6 +30,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
    [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
 
 MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and checks](demos/inference/model-browser.md).
+November6 GGUF admission follow-up: Q4/Q8 weight storage still requires FP16
+kernels in the pinned engine. Keep the correct feature gate; clarify its reason
+and retain Setup help. Current Chrome adapter/app comparison agrees with and
+without the NVIDIA startup override; this is not a new FP32 backend.
 November 5 follow-up: live HF searches returned HTTP200; missing results came from
 filters excluding uninspected metadata. Keep those candidates explicitly labeled,
 support empty-query HF browsing and resume interrupted searches on reopening.
