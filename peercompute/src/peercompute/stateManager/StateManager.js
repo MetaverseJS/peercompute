@@ -12,6 +12,7 @@ import { PeerComputeProvider } from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
 import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
+import { AgentRecordStore } from '../agents/AgentRecordStore.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -90,6 +91,7 @@ export class StateManager {
     // State
     this.isInitialized = false;
     this.persistenceFailed = false;
+    this.agentRecordStores = new Map();
   }
 
   /**
@@ -221,6 +223,21 @@ export class StateManager {
   }
 
   getArtifactStore(name = 'default') { return this.dataState.getArtifactStore(name); }
+
+  /** Acknowledged private agent journals never enter the replicated Y.Doc. */
+  createAgentRecordStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.agentRecordStores.has(name)) throw new Error(`Agent store ${name} is already registered`);
+    const store = new AgentRecordStore({ ...options, name, onDestroy: (closed) => {
+      if (this.agentRecordStores.get(name) === closed) this.agentRecordStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.agentRecordStores.set(name, store);
+    return store;
+  }
+
+  getAgentRecordStore(name = 'default') { return this.agentRecordStores.get(name) || null; }
 
   async ensureArtifact(cid, { storeName = 'default', signal } = {}) {
     if (this.destroyed) throw new Error('StateManager is destroyed');
@@ -952,6 +969,8 @@ export class StateManager {
     this.destroying = (async () => {
       const errors = [];
       const cleanup = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
+      // Agent runners acknowledge cancellation before private journals close.
+      for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       // Local artifact bytes live outside Yjs but remain owned by this manager.
       // Destroy handles without deleting their optional persistent records.
       await cleanup(() => this.dataState.destroyArtifactStores());

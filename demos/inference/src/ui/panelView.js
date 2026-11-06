@@ -59,6 +59,7 @@ export function createPanelView(container) {
   const menu = button('☰', 'Menu'); menu.title = 'Menu';
   navigation.append(back, menu); panel.append(navigation);
   const browse = button('Browse models'); browse.setAttribute('aria-haspopup', 'dialog');
+  const agents = button('Agents'); agents.setAttribute('aria-haspopup', 'dialog'); agents.disabled = true;
   const currentModel = node('span', 'Choose a model', 'pc-current-model');
   currentModel.setAttribute('aria-label', 'Current model');
   const acquire = button('Load'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
@@ -111,7 +112,7 @@ export function createPanelView(container) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
-  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, currentModel, acquire); panel.append(top);
+  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, agents, currentModel, acquire); panel.append(top);
   const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
   sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
   currentModel.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
@@ -166,7 +167,7 @@ export function createPanelView(container) {
   const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
   panel.append(configuration, storedModels, compatibility, about, menuWindow, loading); container.append(panel);
-  return { panel, browse, currentModel, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
+  return { panel, browse, agents, currentModel, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,

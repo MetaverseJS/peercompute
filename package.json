@@ -119,6 +119,8 @@
     "test:peer-inference": "node --test peercompute/tests/unit/peerInferenceNetwork.test.js peercompute/tests/unit/modelConsoleRuntime.test.js",
     "test:peer-inference:browser": "node peercompute/tests/runtime/peer-inference.mjs",
     "test:inference:ui": "node --test demos/tests/inference-panel.test.js",
+    "test:agent-layer": "node --test peercompute/tests/unit/agentRecordStore.test.js peercompute/tests/unit/agentRecordStoreBrowser.test.js peercompute/tests/unit/agentRouter.test.js peercompute/tests/unit/agentRuntime.test.js demos/tests/agent-console.test.js",
+    "test:agent-layer:browser": "node demos/tests/agent-browser.mjs",
     "test:model-library": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/modelConsoleRuntime.test.js peercompute/tests/unit/modelLibraryRuntime.test.js peercompute/tests/unit/modelDownload.test.js peercompute/tests/unit/modelDownloadBrowser.test.js"
   },
   "devDependencies": {

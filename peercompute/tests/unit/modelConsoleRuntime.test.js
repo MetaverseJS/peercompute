@@ -585,6 +585,79 @@ test('stored library lists actual local manifests and deletes a resident only af
   await f.runtime.dispose();
 });
 
+test('denied deletion ownership preserves the original error and leaves a retained model usable', async () => {
+  const f = fixture({ retained: true, connected: false });
+  await f.controller.initialize();
+  Object.assign(f.runtime.store, { persistent: true, lockName: 'test-library', lockManager: {
+    async request(name, options, callback) {
+      assert.equal(name, 'test-library:network-owner');
+      assert.deepEqual(options, { mode: 'exclusive', ifAvailable: true });
+      return callback(null);
+    },
+  } });
+  await assert.rejects(f.runtime.deleteStoredModel(cid), {
+    message: 'Another tab owns file sharing for this library. Delete the model from that tab, or close that tab and retry.',
+  });
+  assert.equal(f.calls.includes('remove'), false);
+  assert.equal(f.calls.includes('withdraw'), false);
+  assert.equal(f.calls.includes('unload'), false);
+  const [stored] = await f.runtime.listStoredModels();
+  assert.equal(stored.cleanupPending, undefined);
+  assert.notEqual(stored.localAvailability.code, 'model_deleting');
+  await f.runtime.loadStoredModel(cid);
+  assert.equal(f.runtime.service.getStatus().status, 'ready');
+  assert.equal(f.calls.includes('import'), false);
+  await f.runtime.dispose();
+});
+
+test('cancelling a queued deletion clears only its unstarted marker', async () => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const importing = new Promise((resolve) => { started = resolve; });
+  const f = fixture({ connected: false, hooks: { import() { started(); return blocked; } } });
+  await f.controller.initialize();
+  const importTask = f.runtime.importCatalog('test');
+  await importing;
+  const abort = new AbortController();
+  const reason = new DOMException('Cancelled before deletion could start', 'AbortError');
+  const deletion = assert.rejects(f.runtime.deleteStoredModel(cid, { signal: abort.signal }), (error) => error === reason);
+  abort.abort(reason);
+  release();
+  await Promise.all([importTask, deletion]);
+  assert.equal(f.calls.includes('remove'), false);
+  assert.equal(f.records.get(cid).pinned, true);
+  const [stored] = await f.runtime.listStoredModels();
+  assert.equal(stored.cleanupPending, undefined);
+  assert.notEqual(stored.localAvailability.code, 'model_deleting');
+  await f.runtime.loadStoredModel(cid);
+  assert.equal(f.runtime.service.getStatus().status, 'ready');
+  await f.runtime.dispose();
+});
+
+test('denied retry ownership preserves quarantine from an earlier cleanup failure', async () => {
+  let failRemoval = true, denyOwnership = false;
+  const f = fixture({ retained: true, connected: false, hooks: {
+    remove() { if (failRemoval) throw new Error('Storage cleanup failed'); },
+  } });
+  await f.controller.initialize();
+  Object.assign(f.runtime.store, { persistent: true, lockName: 'test-library', lockManager: {
+    async request(_name, _options, callback) { return callback(denyOwnership ? null : {}); },
+  } });
+  await assert.rejects(f.runtime.deleteStoredModel(cid), /Storage cleanup failed/);
+  assert.equal((await f.runtime.listStoredModels())[0].cleanupPending, true);
+  denyOwnership = true;
+  await assert.rejects(f.runtime.deleteStoredModel(cid), /Another tab owns file sharing/);
+  const [stored] = await f.runtime.listStoredModels();
+  assert.equal(stored.cleanupPending, true);
+  assert.equal(stored.localAvailability.code, 'model_deleting');
+  await assert.rejects(f.runtime.loadStoredModel(cid), /being deleted/);
+  assert.equal(f.calls.filter((call) => call === 'remove').length, 1);
+  failRemoval = false; denyOwnership = false;
+  assert.equal((await f.runtime.deleteStoredModel(cid)).deleted, true);
+  assert.deepEqual(await f.runtime.listStoredModels(), []);
+  await f.runtime.dispose();
+});
+
 test('failed unload keeps storage intact and quarantines the model until deletion retry succeeds', async () => {
   let fail = true;
   const f = fixture({ hooks: { unload() { if (fail && f.calls.includes('withdraw')) throw new Error('GPU termination not acknowledged'); } } });
@@ -593,6 +666,7 @@ test('failed unload keeps storage intact and quarantines the model until deletio
   await assert.rejects(f.runtime.deleteStoredModel(cid), /not acknowledged/);
   assert(f.records.has(cid)); assert(!f.calls.includes('remove'));
   assert(!f.calls.includes('release-use'));
+  assert.equal((await f.runtime.listStoredModels())[0].cleanupPending, true);
   assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
   await assert.rejects(f.runtime.generate('local', { prompt: 'hello' }), /Import a model/);
   fail = false;

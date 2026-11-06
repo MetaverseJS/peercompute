@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
 import test, { before, after } from 'node:test';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 
-let server, browser, origin;
+let server, browser, origin, cacheDir;
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 before(async () => {
+  cacheDir = await mkdtemp(path.join(tmpdir(), 'peercompute-model-panel-vite-'));
   // Exercise the real standalone shell without bootstrapping its actual runtime.
   const standaloneHtml = (await readFile(new URL('../inference/index.html', import.meta.url), 'utf8'))
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
-  server = await createServer({ configFile: false, root: repo, logLevel: 'error',
+  server = await createServer({ configFile: false, root: repo, logLevel: 'error', cacheDir,
     optimizeDeps: { entries: ['demos/inference/src/agentPanel.js'] },
     server: { host: '127.0.0.1', port: 0, hmr: false, fs: { allow: [repo] } },
     plugins: [{ name: 'inference-ui-fixture', configureServer(vite) {
@@ -23,7 +26,7 @@ before(async () => {
   await server.listen(); origin = 'http://127.0.0.1:' + server.httpServer.address().port;
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/opt/google/chrome/chrome', headless: true, args: ['--disable-gpu'] });
 });
-after(async () => { await browser?.close(); await server?.close(); });
+after(async () => { await browser?.close(); await server?.close(); if (cacheDir) await rm(cacheDir, { recursive: true, force: true }); });
 
 async function openMenuAction(page, name) {
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -869,7 +872,7 @@ test('About menu has safe links, keyboard focus and an independent visible overv
     await menu.focus(); await page.keyboard.press('Enter');
     const menuDialog = page.getByRole('dialog', { name: 'Menu', exact: true });
     assert.deepEqual(await menuDialog.getByRole('button').allTextContents(), ['Done', 'Stored Models', 'Config', 'About']);
-    assert.equal(await page.locator('.pc-model-toolbar button').allTextContents().then((labels) => labels.join(',')), 'Browse models,Load');
+    assert.equal(await page.locator('.pc-model-toolbar button').allTextContents().then((labels) => labels.join(',')), 'Browse models,Agents,Load');
     for (let index = 0; index < 6; index++) {
       await page.keyboard.press('Tab');
       assert.equal(await menuDialog.evaluate((element) => element.contains(document.activeElement)), true);

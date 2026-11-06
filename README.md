@@ -7,12 +7,30 @@ PeerCompute is a browser-based P2P networking and distributed compute library bu
 The [Humunculus design PDF](plan/demos/humunculus/humunculus.pdf) describes persistent
 embodied agents with learned neural control, specialist routing, memory,
 self-directed training, speech and evolving bodies. Its architecture, candidate
-models and staged acceptance gates are proposals; the agent runtime is not yet
-implemented. [Editable source](plan/demos/humunculus/humunculus.html) and the
+models and staged acceptance gates are proposals; learned embodiment is not yet
+implemented. The general-agent foundation below is the first software layer.
+[Editable source](plan/demos/humunculus/humunculus.html) and the
 reproducible PDF builder live beside the document.
 
 The model console includes a model browser and wider Hugging Face discovery.
-The next planned layer is a lightweight persistent agent. Its
+The **Agents** button opens the first persistent general-agent layer. Create an
+agent with a name, instructions, goals and saved context, then Resume and give it
+a task. Identity and conversation history are private IndexedDB records owned by
+StateManager. Text, attached-image and image-generation tasks use already loaded
+models through the existing ComputeManager and peer inference services.
+Local only is the default; Network assisted explicitly permits sending selected
+context to an executing peer. The route trace names the model and provider.
+
+This first slice uses a transparent baseline (compatible, idle, then local),
+not a trained model-quality selector. It does not start autonomous loops or load
+models automatically. Pause/Cancel waits for task cleanup; reload never replays
+an interrupted request. Export is a text/history backup with image omission
+markers; Restore as new creates a new paused local-only identity. Saved image
+bytes remain private on the device, while restored history previews are text.
+Per-agent history is bounded; reaching a limit pauses work instead of silently
+discarding memory. Export and explicit deletion remain available.
+
+The full
 [one-page summary](plan/demos/inference/agentlayer.pdf) and
 [implementation plan](plan/demos/inference/agent-layer-plan.md) cover one general agent type,
 IndexedDB context, learned model selection with optional peer-hosted routing,
@@ -20,8 +38,11 @@ strict local-only operation, and consented model loading, cloning and migration.
 Architecture diagrams show StateManager persistence, ComputeManager workers and
 NetworkManager peer routing. Dedicated agent types and new speech/mesh adapters
 are deferred beyond the initial agent TODO.
-These are planned capabilities; the current runtime is still the model-hosting
-foundation.
+Learned selection, peer-hosted ranking, requested model provisioning, cloning and
+migration remain planned. The full AGENT-01 TODO is not complete.
+Run `npm run test:agent-layer` for persistence/routing/UI checks. The opt-in
+`test:agent-layer:browser` harness uses `AGENT_MODEL_PROFILE` and its matching
+`AGENT_MODEL_PORT` to exercise a previously retained model without downloads.
 
 ## IPFS Files And Model Inference - November 3, 2026
 

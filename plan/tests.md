@@ -3397,7 +3397,7 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Separate package/runtime validation, local feature support and unverified memory capacity. Passing features with memory_fit_unverified must remain visible under usable-local filters; local incompatibility must not hide remote inference. GGUF/diffusion search metadata alone must not bypass package admission.
 - Responsive desktop/mobile dialog, wrapped names, keyboard search/results navigation, focus restoration and screen-reader labels. No download on browse/selection; explicit Load uses existing acquisition/spinner/cancel flow. Preserve startup preferences, stored loading/deletion, IPFS verification, remote routing, PWA/static-host behavior and existing setup help.
 
-### AGENT-01 acceptance — planned, not executed
+### AGENT-01 full acceptance — remaining stages planned
 
 - Canonical stage gates are in [agent-layer plan](demos/inference/agent-layer-plan.md#validation-and-completion).
   Spawn only the general agent type; multiple instances retain separate identity
@@ -3424,6 +3424,62 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Exercise independent browser stores and physical-host operation separately.
   Speech/mesh adapters and dedicated agent types are deferred beyond AGENT-01;
   their eventual implementation needs separate contract and runtime acceptance.
+
+### AGENT-01 first foundation checks — November 5 2026
+
+- `npm run test:agent-layer`:46/46 pass. Contracts/private-store tests cover
+  atomic IndexedDB head/event/operation/attachment writes, revision conflicts,
+  real cross-tab Web Locks, reload/schema/export-as-new and failed persistence.
+  Runtime tests cover eligibility/local-only at dispatch, exact session/CID,
+  context packing, bounded FIFO tasks, durable intent, no automatic replay,
+  cancellation, stale completions and explicit recovery. Console tests use
+  actual dialogs/IndexedDB with simulated inference and label that boundary.
+- `node --test demos/tests/inference-panel.test.js demos/tests/agent-console.test.js`:
+ 68/68 pass, including desktop/mobile bounds, focus, persistence, menus,
+  existing model startup/load/delete and cancellation. Separate temporary Vite
+  caches prevent optimizer interference between concurrent test servers. Existing
+  modelConsoleRuntime/modelLibraryRuntime/stateManager.artifacts suites passed
+ 71/71 in the integration run; its obsolete toolbar assertion was corrected and
+  the whole affected UI suite rerun above.
+- `AGENT_MODEL_PROFILE=/mnt/data2/peercompute-support-tests/gemma-profile
+  AGENT_MODEL_PORT=5291 AGENT_EVIDENCE=<external-dir> npm run test:agent-layer:browser`:
+  owned hardware Chrome, previously cached Gemma270M q4, external source requests
+  blocked. Identity/goals/summary affect the response, saved identity/history
+  survive browser restart, prior conversation is packed into the next request,
+  first-token cancellation settles and the worker remains ready. Actual RTX5060Ti
+  GPU dispatches5,951 then5,602; unload leaves zero active CPU/GPU leases. No
+  page/console/external/cleanup errors. Never run against a user's browser profile.
+- External owned two-process network acceptance also passes: real private agent
+  task → model adapter → PeerInferenceService → native WebRTC → managed Gemma
+  worker; reply “Blue.”,1,414GPU dispatches/101submissions, provider/CID persisted.
+  Requester has no GPU adapter, model bytes, workers or binary WASM. Local-only
+  makes zero discovery/generation/wire calls. Cancelled dispatched work becomes
+  outcome-unknown and pauses; no replay. Both requests use only the owned allowed
+  peer. Context marker/content fields absent from pubsub; zero external traffic,
+  browser/cleanup errors and active leases. Same-machine local relay proof only.
+- Production builds pass for inference, CubeChat and Earth. Build/runtime/UI
+  evidence lives outside Git at `/home/cos/.cache/peercompute-agent-foundation/`.
+  Internal preview is updated; public Pages bundles remain unchanged. Learned
+  routing, peer rankers, consented loading, cloning/migration, automatic planning,
+  journal compaction and restored image previews still need later acceptance.
+
+### Stored-model deletion rejection follow-up — November 5 2026
+
+- Reproduce an unavailable network-owner lock: deletion does not touch the
+  package, but the prior controller left a new deleting marker and blocked load.
+  Clear that marker only if the protected callback never began and no prior
+  cleanup marker existed. Cancellation while queued follows the same rule.
+  Once cleanup starts, quarantine remains until acknowledged retry.
+- Controller/library suite70/70 passes, including native IndexedDB, denied lock
+  preserving error/usability, queued abort, denied retry after prior failure and
+  failed unload. Fresh-browser offline UI deletion also removed a synthetic1MiB
+  target while preserving another package. The user's original failure is still
+  unconfirmed without its footer error; no missing-block GC bypass was introduced.
+- Final exact-preview controlled native WebLock check passes: held ownership
+  causes the expected explanatory error, unchanged bytes/pins, no cleanupPending
+  and button still Delete. Releasing the owned lock permits deletion in109ms,
+  frees1,050,004logical bytes and preserves the other package. Zero pending
+  operations, workers, leases or publications. Evidence: `deletion-final/`.
 
 ### Agent summary document and delivery checks — November 5 2026
 

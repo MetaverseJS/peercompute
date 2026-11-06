@@ -1,6 +1,8 @@
 # Persistent agents over the model hosting network
 
-Date: November 5, 2026. Status: planned, not implemented. Current scope: one general-purpose agent type.
+Date: November 5, 2026. Status: first persistent-agent foundation implemented;
+learned routing, host provisioning and mobility remain planned. Current scope:
+one general-purpose agent type.
 
 Read the [one-page summary](agentlayer.pdf) or its [editable source](agent-layer-summary.html).
 This is the first software-agent step toward [Humunculus](../humunculus/humunculus.pdf),
@@ -8,12 +10,12 @@ before learned bodies, navigation, training curricula and connectome experiments
 
 ## Work order and outcome
 
-1. **MODEL-BROWSER-01 — next:** implement the model-browser modal and wider Hugging
+1. **MODEL-BROWSER-01 — complete:** implement the model-browser modal and wider Hugging
    Face discovery described in the [branch plan](../../branch/ipfs-large-files-model-inference.md).
    Search names and descriptions; filter task, selected-package size, precision,
    source and compatibility; resolve exact supported variants and preserve
    provenance, stored loading, cancellation and peer availability.
-2. **AGENT-01 — immediately afterward:** implement one general-purpose agent type that uses
+2. **AGENT-01 — in progress:** implement one general-purpose agent type that uses
    eligible local or hosted models through learned model selection. Include
    strict local-only operation and optional peer-hosted routing, then consented
    model provisioning, cloning and migration through the stages below.
@@ -467,5 +469,51 @@ The initial demonstration is a saved agent that survives reload, uses different
 qualified models for text and image tasks, and explains its routing choices.
 Then demonstrate the same goal under local-only restrictions, optional peer
 ranking, a consented model load, an independent clone and an acknowledged move.
-Future speech/3D demonstrations will have separate gates. All implementation tests above
-are planned; the current change only records the plan and summary.
+Future speech/3D demonstrations will have separate gates. The roadmap's full
+acceptance set is still pending; the implemented foundation and its narrower
+evidence are recorded below.
+
+## November 5 implementation checkpoint
+
+The first release implements A0/A1 local contracts and private storage, plus the
+transparent baseline portion of A2. It exposes one **Agents** console beside
+model browsing: create/edit, saved context and goals, requested text/vision/image
+tasks, route/activity history, pause/resume/cancel, export, restore as a new
+identity, and explicit deletion. There is no automatic planning loop in this
+slice. Resume allows a new requested task; it does not initiate one.
+
+StateManager owns AgentRecordStore independently of its Yjs persistence settings.
+Heads, events, operations and bounded private RGBA attachments commit atomically
+under revision checks. A Web Lock excludes another runner on the same origin.
+Unavailable storage/locks do not silently become volatile agents. Failed writes
+pause further work; explicit Resume reconciles without overwriting newer context.
+Interrupted intents are acknowledged as outcome-unknown, never replayed.
+
+AgentRuntime serializes bounded direct tasks fairly across its agents. A small
+adapter reuses the console's existing model controller; the agent owns no model
+worker or peer service. Local candidates bind the exact manifest/session, while
+peer candidates bind the advertised manifest. Eligibility and local-only policy
+are rechecked before dispatch. The baseline prefers idle compatible candidates,
+then local execution; it makes no measured model-quality claim. Actual provider
+identity is retained with completed remote results. Only ready model sessions
+are eligible; catalog search results are not inference hosts.
+
+The compact head remains64KiB. This initial journal allows256 events,256 operation
+receipts,8MiB event JSON and64MiB private image attachments per agent. Full journals
+pause rather than dropping records; automatic memory compaction is a follow-up.
+Exports omit image bytes explicitly and restore with new local authority,
+local-only policy and no executable operation receipts. Saved attachment history
+currently shows omission/reference notes; fresh image results have previews.
+These local ownership records do not implement portable cryptographic grants.
+
+Actual Gemma270M q4 managed WebGPU acceptance uses saved context, preserves identity
+and conversations across browser restart, passes first-token cancellation and
+releases CPU/GPU leases with all external model requests blocked. An independent
+GPU-disabled browser also routes an agent task through actual native WebRTC to
+an owned Gemma host, saves the reply/provider/CID, and cancels a second request.
+Local-only makes zero discovery or inference calls with no local model. The
+private context marker is absent from pubsub. This is two browser processes on
+one machine, not physical-host migration or a new diffusion qualification. Browser tests
+cover real IndexedDB/Web Locks, UI persistence and failure paths. A2 learned
+ranking/quality benchmarks and all A3–A6 remain open; this checkpoint does not
+complete AGENT-01 or the embodied Humunculus plan.

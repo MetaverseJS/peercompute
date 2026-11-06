@@ -1062,3 +1062,28 @@ in the existing cancellable overlay. Keep PWA notices separate from this network
 failure. Do not alter model/runtime compatibility or bypass source integrity.
 Native Chrome/IndexedDB recovery and cancel checks pass. Durable partial download
 journaling across reloads is deferred; original interface-change cause is unknown.
+
+### November 5 — first persistent general-agent implementation
+
+- User authorized starting AGENT-01. Deliver the first A0/A1 local foundation
+  and A2 baseline route, keeping the full A0–A6 TODO open. One general type,
+  private IndexedDB identity/goals/summary/history, explicit direct tasks,
+  local-only by default and optional existing peer inference. StateManager owns
+  private records; existing ComputeManager and model controller own execution.
+- Add an Agents dialog beside Browse models, shared by standalone/CubeChat/Earth.
+  Save/edit, pause/resume/cancel, route history, export/restore-as-new and delete
+  are usable. Only resident models participate; no silent model loads or replay.
+  Learned quality ranking, grants, host loading and mobility remain planned.
+- Foundation46/46 and combined UI68/68 checks pass. Actual cached Gemma WebGPU,
+  private-memory reuse, browser restart and cancellation pass. A separate browser
+  with no GPU/model sends a real task over native WebRTC to an owned GPU host;
+  response/provider/CID persist. Both owned environments clean up with zero active
+  leases. The internal HTTPS preview is updated; no public Pages release.
+- Concurrent user report: model deletion still fails for them; exact error not
+  yet known. Fresh-browser synthetic package deletion through the real preview
+  passes, preserving another package. This does not qualify connected withdrawal
+  or reproduce the user's failure; retain a separate follow-up.
+- Correct a separately reproduced deletion-state bug: denied owner lock or queued
+  cancellation restores a previously healthy model's availability. Started or
+  earlier cleanup remains quarantined; retain the explanatory ownership error.
+  Controller/library70/70 checks pass; no storage integrity checks are bypassed.

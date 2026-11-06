@@ -4,6 +4,7 @@ import { buildModelCompatibilityHelp, detectModelHelpEnvironment } from './ui/mo
 import { readImageAttachment } from './ui/imageAttachment.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
+import { createAgentConsole } from './agents/agentConsole.js';
 import './panel.css';
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
@@ -22,6 +23,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let progressTimer, progressLabel, progressKey, progressStarted;
   let loadingOperation;
   let unsubscribeInstall;
+  let agentConsole, openingAgents;
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
   const sourceLabel = (source) => source.source === 'hf' ? 'Hugging Face'
@@ -54,6 +56,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.prompt.placeholder = target?.task === 'text-to-image' ? 'Describe an image…' : 'Message…';
     view.acquire.disabled = !!operation || !source || sourceBlocked(source);
     view.browse.disabled = !!operation; modelBrowser?.setBusy(!!operation);
+    view.agents.disabled = !!operation || !!openingAgents || !runtime?.getAgentController;
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
@@ -570,6 +573,21 @@ export async function mountInferencePanel({ container = document.body, stateMana
     });
   }
   view.send.onclick = () => { void send(); };
+  view.agents.onclick = () => {
+    if (!alive() || view.agents.disabled) return;
+    openingAgents = (async () => {
+      try {
+        const controller = await runtime.getAgentController();
+        if (!alive()) return;
+        agentConsole ??= createAgentConsole({ container: view.panel, controller,
+          onBrowseModels: () => { if (alive()) view.browse.click(); } });
+        view.menuWindow.close(); view.configuration.close(); view.storedModels.close();
+        view.about.close(); view.compatibility.close();
+        await agentConsole.open();
+      } catch (error) { showError(error); }
+    })().finally(() => { openingAgents = null; if (alive()) updateControls(); });
+    updateControls();
+  };
   view.prompt.onkeydown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); }
   };
@@ -610,6 +628,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);
+      await openingAgents; await agentConsole?.dispose();
       await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }

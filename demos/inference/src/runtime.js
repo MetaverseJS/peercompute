@@ -17,6 +17,8 @@ import { findHuggingFaceConversions } from './huggingface/conversionFinder.js';
 import { validateHubPackage, reuseVerifiedHubFiles } from './modelHubPackage.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import { createModelNetworkConnection } from './modelNetworkConnection.js';
+import { AgentRuntime } from '../../../peercompute/src/peercompute/agents/AgentRuntime.js';
+import { createAgentModelAdapter } from './agentModelAdapter.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
@@ -70,6 +72,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   let ggufService;
   let diffusionService;
   let activeService;
+  let agents, agentsStarting, disposingAgents = false;
   const networkConnection = createModelNetworkConnection({ store, manager: networkManager,
     async createManager(config) {
       const { NetworkManager } = await import('../../../peercompute/src/peercompute/networkManager/NetworkManager.js');
@@ -113,6 +116,19 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     inspectModelHub: (repository, options = {}) => inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG }),
     findModelConversions: (repository, options = {}) => findHuggingFaceConversions(repository, { ...options, client: hubClient }),
     stateManager: state, computeManager: compute, store,
+    async getAgentController() {
+      if (disposingAgents) throw new Error('Model console is closed');
+      if (agents) return agents;
+      if (!agentsStarting) agentsStarting = (async () => {
+        const name = `${storeName}-agents`;
+        const records = state.getAgentRecordStore(name) ?? state.createAgentRecordStore({ name });
+        await records.open();
+        if (disposingAgents) throw new Error('Model console is closed');
+        agents = new AgentRuntime({ store: records, inference: createAgentModelAdapter(runtime) });
+        return agents;
+      })().finally(() => { agentsStarting = null; });
+      return agentsStarting;
+    },
     get service() { return activeService; },
     get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },
     getDeviceCapabilities: () => deviceCapabilities,
@@ -240,6 +256,9 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return networkConnection.manager.withdrawArtifact(cid);
     },
     async dispose() {
+      disposingAgents = true;
+      await agentsStarting?.catch(() => {});
+      await agents?.dispose();
       await diffusionService.dispose();
       await ggufService.dispose();
       await service.dispose();

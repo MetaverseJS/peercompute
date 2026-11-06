@@ -21,7 +21,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
    filter task, selected-package size, precision, source and compatibility. Resolve
    exact supported variants and preserve stored/peer loading, cancellation and
    preferences. Scope: [model browser plan](branch/ipfs-large-files-model-inference.md#november-5--model-browser-design-discussion).
-2. [ ] **AGENT-01 — after MODEL-BROWSER-01:** spawn instances of one general agent with
+2. [ ] **AGENT-01 — in progress after MODEL-BROWSER-01:** spawn instances of one general agent with
    identity, goals and compact context persisted in private IndexedDB. Route tasks
    through a small learned selector to eligible local/network models; support strict
    local-only and optional peer-hosted ML routing. Add separately consented host
@@ -33,7 +33,16 @@ MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and 
 November 5 follow-up: live HF searches returned HTTP200; missing results came from
 filters excluding uninspected metadata. Keep those candidates explicitly labeled,
 support empty-query HF browsing and resume interrupted searches on reopening.
-AGENT-01 is next and remains a plan pending its own implementation.
+AGENT-01 foundation is implemented on the feature branch: private acknowledged
+IndexedDB identity/context/history, one general-agent console, cancellable direct
+text/vision/image tasks, strict local-only and explicit peer-assisted baseline
+routing through existing managed inference. Real local WebGPU, browser restart,
+private-memory reuse and two-browser native WebRTC inference pass. Learned routing, optional peer ranking, requested
+model loads, cloning and migration retain their later acceptance gates.
+Deletion follow-up: a denied sharing-owner lock or queued cancellation no longer
+marks an untouched model as partially deleted. Real browser UI/IndexedDB/WebLock
+rejection followed by successful retry passes; the user's original error still
+needs confirmation. Existing cleanup failures retain their retry state.
 November 5 authorized follow-up: widen existing engine architecture admission,
 replace the generic text ONNX1.5GiB ceiling with bounded package/config-aware
 profiles, and discover related ONNX/GGUF conversions from publisher lineage.
@@ -49,7 +58,7 @@ November5 suggested-list follow-up: promote the verified Nano4B q4 package into
 the built-in catalog as **Nemotron 3 Nano 4B (q4)**. Preserve its exact tested
 revision/files/profile so existing downloaded packages can be recognized and
 loaded directly. Verify catalog visibility in the internal preview.
-Split GGUF and agent implementation remain deferred.
+Split GGUF remains deferred; the agent foundation is now underway as described above.
 November5 download follow-up: recover interrupted HTTP model transfers within
 the active load using validated byte ranges and pinned digests. Five retries,
 network inactivity deadlines, visible recovery progress and immediate cancellation

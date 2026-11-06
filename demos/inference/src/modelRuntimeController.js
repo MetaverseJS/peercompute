@@ -511,9 +511,12 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       if (deletions.has(cid)) return deletions.get(cid);
       signal?.throwIfAborted();
       // Stop admission immediately, including while an earlier import finishes.
-      // A failed deletion stays quarantined until an explicit retry succeeds.
+      // Once cleanup starts, a failed deletion stays quarantined until retry.
+      const wasDeleting = deleting.has(cid);
+      let ownershipEntered = false;
       deleting.add(cid);
       const deletion = mutate((activeSignal) => withModelDeletionOwnership(runtime, async () => {
+        ownershipEntered = true;
         let unloaded = false;
         const record = await runtime.store.stat(cid, { signal: activeSignal });
         if (record && (record.kind !== 'manifest' || !record.manifest?.model?.runtime)) {
@@ -548,7 +551,12 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           await peerService?.setHostingEnabled(hostInference).catch(() => {});
           throw error;
         }
-      }, { signal: activeSignal }), signal).finally(() => { deletions.delete(cid); });
+      }, { signal: activeSignal }), signal).catch((error) => {
+        // A denied owner lock or queued cancellation has not changed storage.
+        // Clear only this attempt's marker, never an earlier cleanup failure.
+        if (!ownershipEntered && !wasDeleting) deleting.delete(cid);
+        throw error;
+      }).finally(() => { deletions.delete(cid); });
       deletions.set(cid, deletion);
       return deletion;
     },
