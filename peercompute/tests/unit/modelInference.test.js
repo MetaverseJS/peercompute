@@ -9,6 +9,7 @@ import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestrati
 import { ResourceLeaseBroker } from '../../src/peercompute/serviceOrchestration/ResourceLeaseBroker.js';
 import { createModelTaskRuntime, validateImageInput } from '../../src/peercompute/inference/modelTask.js';
 import { MODEL_POLICY, validateModelManifest } from '../../src/peercompute/inference/modelManifest.js';
+import { onnxMemoryProfile } from '../../src/peercompute/inference/modelCapabilities.js';
 import { MODEL_CATALOG, modelFileUrl } from '../../src/peercompute/inference/modelCatalog.js';
 import { loadInferenceRelayConfig } from '../../../demos/inference/src/relayConfig.js';
 
@@ -630,6 +631,26 @@ test('host cancellation releases a late load only after worker cleanup acknowled
   assert.equal(service.getStatus().status, 'idle');
 });
 
+test('worker independently rejects substituted memory geometry, custom code and hidden FP16 cache requirements before graph load', async () => {
+  const config = { model_type: 'phi3', hidden_size: 1536, num_attention_heads: 12,
+    num_key_value_heads: 2, num_hidden_layers: 28, vocab_size: 151936 };
+  for (const [changed, expected] of [
+    [{ ...config, num_hidden_layers: 29 }, /verified config/],
+    [{ ...config, auto_map: { AutoModel: 'repo.Code' } }, /Custom/],
+    [{ ...config, 'transformers.js_config': { kv_cache_dtype: 'float16' } }, /GPU feature/],
+  ]) {
+    const library = fakeLibrary(), events = [];
+    library.AutoConfig = { async from_pretrained() { return changed; } };
+    library.AutoTokenizer = { async from_pretrained() { events.push('tokenizer'); } };
+    library.AutoModelForCausalLM = { async from_pretrained() { events.push('graph'); } };
+    const runtime = createModelTaskRuntime({ loadLibrary: async () => library, assertWorker() {}, baseUrl: origin,
+      gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } } });
+    const input = manifest(); input.model.architecture = 'phi3'; input.model.memoryProfile = onnxMemoryProfile(config);
+    await assert.rejects(loadRuntime({ runtime }, input), expected);
+    assert.deepEqual(events, []);
+  }
+});
+
 test('default loader selects causal versus image-text model classes and cleans failed component loads', async () => {
   for (const architecture of ['qwen3', 'qwen2', 'llama', 'idefics3']) {
     const vision = architecture === 'idefics3';
@@ -981,12 +1002,12 @@ function qwen35Manifest() {
     files: entry.files.map((file) => ({ path: file.path, cid, size: file.size, sha256: file.sha256 ?? digest })) };
 }
 
-test('Qwen3.5 admits its complete external-data q4 closure with a separate package budget', () => {
+test('Qwen3.5 retains its complete external-data q4 closure and separate memory floor', () => {
   const modelManifest = qwen35Manifest();
   const validated = validateModelManifest(modelManifest);
   assert.equal(validated.totalBytes, 1771280684);
   assert.equal(validated.resourcePolicy.minimumGpuBytes, 8 * 1024 ** 3);
-  assert.ok(validated.totalBytes > MODEL_POLICY.maxModelBytes);
+  assert.ok(validated.totalBytes < MODEL_POLICY.maxModelBytes);
   const missing = structuredClone(modelManifest);
   missing.files = missing.files.filter((file) => !file.path.endsWith('embed_tokens_q4.onnx_data'));
   assert.throws(() => validateModelManifest(missing), /Incomplete/);

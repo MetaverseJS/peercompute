@@ -221,6 +221,19 @@ export function createHuggingFaceClient({ fetchImpl = globalThis.fetch, storage,
     catch { throw new HuggingFaceError('Hugging Face returned malformed metadata'); }
   }
   const api = {
+    /** Hub model-card lineage filter; no names or model weights are fetched. */
+    async listDerivedModels(repository, { signal } = {}) {
+      repository = parseHuggingFaceRepository(repository).repository;
+      const url = new URL('/api/models', HUGGING_FACE_ORIGIN);
+      url.searchParams.set('filter', `base_model:${repository}`);
+      url.searchParams.set('full', 'true'); url.searchParams.set('cardData', 'true');
+      url.searchParams.set('limit', '40');
+      const result = await json(url.href, { signal });
+      if (!Array.isArray(result.data) || result.data.length > 40) throw new HuggingFaceError('Invalid related-model metadata');
+      const next = nextLink({ headers: new Headers({ link: result.link ?? '' }) }, url.href, '/api/models');
+      return { items: result.data, truncated: Boolean(next), ...(result.cached ? { cached: true } : {}),
+        ...(result.warning ? { warning: result.warning } : {}) };
+    },
     async search({ query = '', task, cursor, signal } = {}) {
       if (typeof query !== 'string' || query.length > 250 || /[\u0000-\u001f]/.test(query)) throw new Error('Model search must be at most 250 characters');
       query = query.trim();

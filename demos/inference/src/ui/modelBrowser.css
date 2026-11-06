@@ -40,6 +40,10 @@
 .pc-browser-note { color:#b9cfbf; font-size:12px; }
 .pc-browser-warning { color:#f3d494; font-size:13px; }
 .pc-browser-details a { color:#a5e9bb; overflow-wrap:anywhere; }
+.pc-browser-conversions { display:flex; flex-direction:column; gap:9px; padding-top:12px; border-top:1px solid #385846; min-width:0; }
+.pc-browser-conversions h4 { margin:0; font-size:13px; }
+.pc-browser-conversion { display:flex; flex-direction:column; gap:4px; text-align:left; width:100%; min-width:0; }
+.pc-browser-conversion small { color:#b1cdbb; }
 .pc-browser-variants { display:flex; flex-direction:column; gap:5px; }
 .pc-browser-actions { flex-shrink:0; display:flex; gap:8px; flex-wrap:wrap; padding:10px 18px; background:#102219; border-top:1px solid #385846; }
 .pc-browser-more { flex-shrink:0; margin:8px 18px 16px; }

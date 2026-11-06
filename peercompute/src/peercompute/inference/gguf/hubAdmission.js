@@ -1,10 +1,11 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { throwIfAborted, validateArtifactPath } from '../modelManifest.js';
+import { listModelCapabilities } from '../modelCapabilities.js';
 
 export const GGUF_HUB_LIMITS = Object.freeze({ maximumBytes: 16 * 1024 ** 3,
   headerBytes: 16 * 1024 ** 2, rangeBytes: 1024 ** 2, metadata: 4096,
   tensors: 65536, arrayItems: 1048576, stringBytes: 1024 ** 2 });
-export const GGUF_HUB_ARCHITECTURES = Object.freeze(['llama', 'qwen2', 'qwen3', 'qwen35', 'gemma', 'gemma2', 'gemma3', 'phi3']);
+export const GGUF_HUB_ARCHITECTURES = Object.freeze(listModelCapabilities('llama.cpp').map((entry) => entry.architecture));
 const SCHEMA = 'peercompute.gguf.header.v1';
 const VERSION = '3.8.1';
 // ggml/gguf constants and WebGPU supported_qtype at the runtime's pinned llama.cpp

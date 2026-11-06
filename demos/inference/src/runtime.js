@@ -13,6 +13,7 @@ import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { createHuggingFaceClient, huggingFaceFileUrl } from './huggingface/hubClient.js';
 import { inspectHuggingFaceModel } from './huggingface/packageResolver.js';
+import { findHuggingFaceConversions } from './huggingface/conversionFinder.js';
 import { validateHubPackage, reuseVerifiedHubFiles } from './modelHubPackage.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import { createModelNetworkConnection } from './modelNetworkConnection.js';
@@ -110,6 +111,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const runtime = {
     searchModelHub: (options) => hubClient.search(options),
     inspectModelHub: (repository, options = {}) => inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG }),
+    findModelConversions: (repository, options = {}) => findHuggingFaceConversions(repository, { ...options, client: hubClient }),
     stateManager: state, computeManager: compute, store,
     get service() { return activeService; },
     get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },

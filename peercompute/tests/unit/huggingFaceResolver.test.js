@@ -7,7 +7,9 @@ const revision = 'a'.repeat(40), repository = 'org/small-model';
 const digest = '1'.repeat(64), git = '2'.repeat(40);
 const file = (path, size = 20) => ({ path, size, sha256: digest });
 const common = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'README.md'].map((path) => file(path));
-const resolve = (options) => resolveOnnxVariants({ repository, revision, description: 'Test model', license: { spdx: 'mit' }, ...options });
+const geometry = { num_hidden_layers: 2, hidden_size: 64, num_attention_heads: 2, num_key_value_heads: 1, head_dim: 32, vocab_size: 128 };
+const resolve = (options) => resolveOnnxVariants({ repository, revision, description: 'Test model', license: { spdx: 'mit' }, ...options,
+  config: { ...geometry, ...options.config } });
 
 test('resolves selected ONNX precision only with exact metadata closure and no other weights', () => {
   const files = [...common, file('onnx/model_q4.onnx', 100), file('onnx/model_fp16.onnx', 200), file('model.safetensors', 5000), file('training_args.bin')];
@@ -55,7 +57,7 @@ test('unsupported Qwen3.5 precisions still report all declared external-data byt
 
 test('unsupported architecture, custom code, gated repositories and undeclared data cannot become loadable', () => {
   const files = [...common, file('onnx/model_q4.onnx')];
-  for (const config of [{ model_type: 'gemma3_text' }, { model_type: 'llama', auto_map: { AutoModel: 'code.Model' } }]) {
+  for (const config of [{ model_type: 'unsupported_custom_model' }, { model_type: 'llama', auto_map: { AutoModel: 'code.Model' } }]) {
     assert.equal(resolve({ files, config })[0].loadable, false);
   }
   assert.equal(resolve({ files, config: { model_type: 'llama' }, gated: true })[0].loadable, false);
@@ -63,7 +65,7 @@ test('unsupported architecture, custom code, gated repositories and undeclared d
   assert.throws(() => normalizeHubFile({ path: 'x.onnx', size: 100, lfs: { oid: digest, size: 99 } }), /digest or size/);
 });
 
-function fixture(config = { model_type: 'llama' }) {
+function fixture(config = { model_type: 'llama', ...geometry }) {
   const texts = { 'config.json': JSON.stringify(config), 'README.md': '# Small model\nUseful text inference.', 'tokenizer.json': '{}', 'tokenizer_config.json': '{}' };
   const files = Object.entries(texts).map(([path, text]) => ({ type: 'file', path, size: Buffer.byteLength(text),
     oid: createHash('sha1').update(`blob ${Buffer.byteLength(text)}\0`).update(text).digest('hex') }));
@@ -143,4 +145,40 @@ test('GGUF browsing is metadata-only; explicit selection probes one variant with
   assert.equal(reads, 1); assert.equal(checked.variants[0].key, listed.variants[0].key);
   assert.equal(checked.variants[0].loadable, true); assert.equal(checked.variants[1].requiresInspection, true);
   assert.equal(checked.variants[0].model.gguf.path, 'model-Q4_K_M.gguf');
+});
+
+test('additional built-in ONNX families use shared capabilities and verified memory geometry', () => {
+  for (const architecture of ['phi', 'phi3', 'gemma', 'gemma2', 'gemma3_text', 'mistral', 'granite', 'starcoder2', 'smollm3', 'olmo', 'olmo2']) {
+    const variant = resolve({ files: [...common, file('onnx/model_q4.onnx')], config: { model_type: architecture } })[0];
+    assert.equal(variant.loadable, true, architecture);
+    assert.equal(variant.model.memoryProfile.architecture, architecture);
+    assert.equal(variant.status, 'candidate');
+  }
+  const invalid = resolve({ files: [...common, file('onnx/model_q4.onnx')], config: { model_type: 'phi3', hidden_size: -1 } })[0];
+  assert.equal(invalid.loadable, false); assert.match(invalid.reason, /memory profile/);
+});
+
+test('Nemotron hybrid variants include recurrent-state profile and exact multi-part ONNX closure', () => {
+  const config = { model_type: 'nemotron_h', num_hidden_layers: 3, layers_block_type: ['mamba', 'attention', 'mlp'],
+    mamba_num_heads: 2, mamba_head_dim: 16, ssm_state_size: 8, n_groups: 1, conv_kernel: 4,
+    'transformers.js_config': { use_external_data_format: { 'model_q4.onnx': 2 } } };
+  const files = [...common, file('onnx/model_q4.onnx', 1000), file('onnx/model_q4.onnx_data', 1_900_000_000), file('onnx/model_q4.onnx_data_1', 500_000_000)];
+  const variant = resolve({ files, config })[0];
+  assert.equal(variant.loadable, true); assert.equal(variant.model.memoryProfile.recurrentLayers, 1);
+  assert.equal(variant.model.memoryProfile.attentionLayers, 1); assert.equal(variant.totalBytes, 2_400_001_080);
+  const absent = resolve({ files, config: { ...config, mamba_num_heads: undefined } })[0];
+  assert.equal(absent.loadable, false); assert.match(absent.reason, /SSM heads/);
+  const incomplete = resolve({ files: files.slice(0, -1), config })[0];
+  assert.equal(incomplete.loadable, false); assert.match(incomplete.reason, /missing.*data_1/);
+});
+
+test('larger valid text packages remain bounded per file and by total package size', () => {
+  const config = { model_type: 'qwen2', 'transformers.js_config': { use_external_data_format: 1 } };
+  const files = [...common, file('onnx/model_q4.onnx', 1000), file('onnx/model_q4.onnx_data', 1_820_055_552)];
+  assert.equal(resolve({ files, config })[0].loadable, true);
+  const tooLargeFile = resolve({ files: [...common, file('onnx/model_q4.onnx', 2 * 1024 ** 3)], config: { model_type: 'qwen2' } })[0];
+  assert.equal(tooLargeFile.loadable, false); assert.match(tooLargeFile.reason, /file budget/);
+  const huge = [...common, file('onnx/model_q4.onnx'), ...Array.from({ length: 5 }, (_, i) => file(`onnx/model_q4.onnx_data${i ? `_${i}` : ''}`, 1_900_000_000))];
+  const tooLargePackage = resolve({ files: huge, config: { ...config, 'transformers.js_config': { use_external_data_format: 5 } } })[0];
+  assert.equal(tooLargePackage.loadable, false); assert.match(tooLargePackage.reason, /file budget/);
 });

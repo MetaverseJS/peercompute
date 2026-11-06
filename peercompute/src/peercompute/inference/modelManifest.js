@@ -1,11 +1,13 @@
 import { CID } from 'multiformats/cid';
+import { getModelCapability, normalizeOnnxMemoryProfile, onnxCacheBytes, ONNX_CAPABILITY_LIMITS, validateOnnxModelConfig } from './modelCapabilities.js';
 
 export const MODEL_RUNTIME = 'transformers.js';
 export const MODEL_RUNTIME_VERSION = '4.3.2';
 export const MODEL_POLICY = Object.freeze({
   maxManifestBytes: 256 * 1024,
   maxFiles: 1024,
-  maxModelBytes: 1536 * 1024 * 1024,
+  maxModelBytes: ONNX_CAPABILITY_LIMITS.maximumBytes,
+  maxFileBytes: ONNX_CAPABILITY_LIMITS.maximumFileBytes,
   maxContextTokens: 2048,
   maxNewTokens: 1024,
   maxPromptBytes: 64 * 1024,
@@ -18,16 +20,36 @@ export const MODEL_POLICY = Object.freeze({
   maxImageBytes: 4 * 1024 * 1024,
 });
 
-const QWEN35_POLICY = Object.freeze({ maxModelBytes: 2 * 1024 ** 3,
+const QWEN35_POLICY = Object.freeze({ maxModelBytes: 2 * 1024 ** 3, maxFileBytes: MODEL_POLICY.maxFileBytes,
   minimumCpuBytes: 8 * 1024 ** 3, minimumGpuBytes: 8 * 1024 ** 3,
   maxProcessedImagePixels: 512 * 512 });
-const DEFAULT_RESOURCE_POLICY = Object.freeze({ maxModelBytes: MODEL_POLICY.maxModelBytes,
+const DEFAULT_RESOURCE_POLICY = Object.freeze({ maxModelBytes: MODEL_POLICY.maxModelBytes, maxFileBytes: MODEL_POLICY.maxFileBytes,
   minimumCpuBytes: 0, minimumGpuBytes: 0, maxProcessedImagePixels: MODEL_POLICY.maxImagePixels });
-const TEXT_ARCHITECTURES = new Set(['qwen3', 'qwen2', 'llama']);
+const VISION_RESOURCE_POLICY = Object.freeze({ ...DEFAULT_RESOURCE_POLICY, maxModelBytes: ONNX_CAPABILITY_LIMITS.legacyMaximumBytes });
 
 /** Trusted application limits; a manifest cannot increase its own resource envelope. */
-export function modelResourcePolicy(model) {
-  return model?.architecture === 'qwen3_5' ? QWEN35_POLICY : DEFAULT_RESOURCE_POLICY;
+export function modelResourcePolicy(model, { files, totalBytes, config } = {}) {
+  const base = model?.architecture === 'qwen3_5' ? QWEN35_POLICY
+    : ['idefics3', 'smolvlm'].includes(model?.architecture) ? VISION_RESOURCE_POLICY : DEFAULT_RESOURCE_POLICY;
+  if (config) validateOnnxModelConfig(model, config);
+  if (files) {
+    totalBytes = 0;
+    for (const file of files) {
+      if (!Number.isSafeInteger(file.size) || file.size < 0) throw new Error('Invalid model file size');
+      if (file.size > MODEL_POLICY.maxFileBytes) throw Object.assign(new Error('Model file exceeds its bounded file budget (each ONNX file must be smaller than 2 GiB)'), { code: 'ERR_MODEL_FILE_TOO_LARGE' });
+      totalBytes += file.size;
+    }
+  }
+  if (totalBytes !== undefined && (!Number.isSafeInteger(totalBytes) || totalBytes < 0 || totalBytes > base.maxModelBytes)) throw Object.assign(new Error(`Model exceeds its admitted file budget of ${base.maxModelBytes / 1024 ** 3} GiB`), { code: 'ERR_MODEL_PACKAGE_TOO_LARGE' });
+  const profile = model?.memoryProfile && normalizeOnnxMemoryProfile(model.memoryProfile);
+  if (profile && profile.architecture !== model.architecture) throw new Error('Model memory architecture mismatch');
+  // Existing small catalog manifests keep their configured envelopes. New
+  // profiles and larger packages reserve staging/workspace plus live cache.
+  if (!profile && !(totalBytes > ONNX_CAPABILITY_LIMITS.legacyMaximumBytes)) return base;
+  const bytes = totalBytes ?? 0, cache = profile ? onnxCacheBytes(profile) : 0;
+  const GiB = 1024 ** 3;
+  return { ...base, minimumCpuBytes: Math.max(base.minimumCpuBytes, 2 * bytes + 2 * GiB + cache),
+    minimumGpuBytes: Math.max(base.minimumGpuBytes, 2 * bytes + GiB + cache), cacheBytes: cache };
 }
 
 export function abortError(reason = 'Operation cancelled') {
@@ -66,7 +88,7 @@ export function validateModelManifest(input) {
       || !Array.isArray(manifest.files) || !manifest.files.length
       || manifest.files.length > MODEL_POLICY.maxFiles) throw new Error('Invalid model manifest files');
   const paths = new Set();
-  const resourcePolicy = modelResourcePolicy(manifest.model);
+  const resourcePolicy = modelResourcePolicy(manifest.model, { files: manifest.files });
   let totalBytes = 0;
   for (const file of manifest.files) {
     validateArtifactPath(file.path);
@@ -85,15 +107,17 @@ export function validateModelManifest(input) {
     }
   }
   const model = manifest.model;
+  const capability = getModelCapability(MODEL_RUNTIME, model?.architecture);
   if (model?.runtime !== MODEL_RUNTIME || model.runtimeVersion !== MODEL_RUNTIME_VERSION
-      || ![...TEXT_ARCHITECTURES, 'idefics3', 'smolvlm', 'qwen3_5'].includes(model.architecture)) {
+      || !capability) {
     throw new Error('Model runtime, architecture or dtype is not approved');
   }
-  model.task ??= TEXT_ARCHITECTURES.has(model.architecture) ? 'text-generation' : 'image-text-to-text';
-  if (!['text-generation', 'image-text-to-text'].includes(model.task)
-      || TEXT_ARCHITECTURES.has(model.architecture) !== (model.task === 'text-generation')) {
+  model.task ??= capability.task;
+  if (model.task !== capability.task) {
     throw new Error('Model task does not match its admitted architecture');
   }
+  if ((capability.requiresMemoryProfile || (capability.task === 'text-generation' && totalBytes > ONNX_CAPABILITY_LIMITS.legacyMaximumBytes))
+      && !model.memoryProfile) throw new Error('This model requires a verified config memory profile');
   const dtypeEntries = typeof model.dtype === 'string' ? [['model', model.dtype]]
     : model.dtype && typeof model.dtype === 'object' && !Array.isArray(model.dtype)
       ? Object.entries(model.dtype) : [];

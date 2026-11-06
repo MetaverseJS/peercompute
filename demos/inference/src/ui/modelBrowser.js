@@ -1,6 +1,7 @@
 import './modelBrowser.css';
 import { blocksLocal, compatibilityFor, filterBrowserModels, knownBytes, matchingPeerTargets,
   modelBytes, modelPrecision, modelTask, needsInspection, repositoryQuery, safeModelUrl } from './modelBrowserData.js';
+import { createConversionDiscovery } from './modelBrowserConversions.js';
 
 const node = (tag, text, className) => {
   const element = document.createElement(tag);
@@ -18,7 +19,7 @@ const message = (error) => String(error?.message ?? error ?? 'Request failed').s
 
 /** Metadata-only model browsing. The owner handles every explicit load and its cancellation. */
 export function createModelBrowser({ container, getSources = () => [], getTargets = () => [],
-  searchModels, inspectModel, getCompatibility, onLoad, onUsePeer, onSetup } = {}) {
+  searchModels, inspectModel, findConversions, getCompatibility, onLoad, onUsePeer, onSetup } = {}) {
   if (!container?.append) throw new TypeError('A model browser container is required');
   const element = node('dialog', undefined, 'pc-model-browser');
   element.id = `model-browser-dialog-${crypto.randomUUID()}`;
@@ -65,7 +66,9 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   let hubItems = [], nextCursor = null, searchWarning = '', searchPending = false, inspecting = null;
   let searchIncomplete = false, resumeAppend = false;
   let inspectionError = '', callbackError = '', returnFocus, detailSignature, precisionSignature;
+  let stickySelectionKey = null;
   const inspected = new Map(), variants = new Map();
+  const conversions = createConversionDiscovery({ findConversions, onChange: () => render() });
 
   function sources() { return (getSources() ?? []).filter((source) => source && typeof source.key === 'string'); }
   function targets() { return (getTargets() ?? []).filter(Boolean); }
@@ -84,6 +87,10 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       if (variant) {
         const alternatives = detail.variants.map((item) => variantSource(row, detail, item));
         Object.assign(row, variantSource(row, detail, variant), { browserVariants: alternatives });
+      } else if (detail) {
+        Object.assign(row, { browserSummary: false, loadable: false, revision: detail.revision,
+          description: detail.description ?? row.description, license: detail.license,
+          reason: 'No supported package variants were found in this repository.' });
       }
     }
     return [...local, ...remote].map((source) => ({ ...source, browserPeerAvailable: matchingPeerTargets(source, hosts).length > 0 }));
@@ -107,6 +114,15 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   function availability(source) { return compatibilityFor(source.package ?? source, getCompatibility); }
   function isLoadable(source) { return source && !source.browserSummary && source.loadable !== false
     && !source.requiresInspection && (source.browserOrigin !== 'hub' || Boolean(source.package)) && !blocksLocal(availability(source)); }
+  function matchesSelectedPackage(source) {
+    return filterBrowserModels([{ ...source, browserVariants: [] }], filters(), availability, { includeUninspected: true }).length > 0;
+  }
+  function conversionReference(source) {
+    const repository = source?.repository ?? source?.model?.repository;
+    const detail = inspected.get(source?.inspectReference ?? repository);
+    return safeModelUrl(repository) && /^[a-f0-9]{40}$/i.test(detail?.revision ?? '')
+      ? `${safeModelUrl(repository)}/tree/${detail.revision}` : null;
+  }
   function updatePrecision(rows) {
     const selected = selects.precision.value;
     const values = new Set(rows.flatMap((row) => [row, ...(row.browserVariants ?? [])]).map(modelPrecision)
@@ -125,7 +141,9 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     const matching = filterBrowserModels(rows, filters(), (source) => availability(source), { includeUninspected: true });
     const pending = matching.filter((source) => source.browserFilterPending);
     const filtered = [...matching.filter((source) => !source.browserFilterPending), ...pending];
-    visibleKey = filtered.some((source) => source.key === desiredKey) ? desiredKey : filtered[0]?.key ?? null;
+    const hiddenSelection = stickySelectionKey === desiredKey && !filtered.some((source) => source.key === desiredKey)
+      ? rows.find((source) => source.key === desiredKey) : null;
+    visibleKey = hiddenSelection || filtered.some((source) => source.key === desiredKey) ? desiredKey : filtered[0]?.key ?? null;
     const focused = document.activeElement?.closest?.('[data-model-key]')?.dataset.modelKey;
     const scrollTop = results.scrollTop;
     results.replaceChildren();
@@ -139,7 +157,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
         node('small', `${badge(source)} · ${source.browserSummary ? 'Inspect variants' : modelTask(source)}`));
       if (source.browserMatchingVariant) choice.append(node('small', `Matching variant: ${source.browserMatchingVariant}`));
       choice.disabled = busy || actionPending;
-      choice.onclick = () => { desiredKey = source.key; inspectionError = ''; callbackError = ''; render({ revealSelected: true });
+      choice.onclick = () => { desiredKey = source.key; stickySelectionKey = null; inspectionError = ''; callbackError = ''; render({ revealSelected: true });
         const reference = source.inspectReference ?? source.repository;
         if (source.browserOrigin === 'hub' && !inspected.has(reference)) void inspect(reference); };
       item.append(choice); results.append(item);
@@ -155,7 +173,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       || (!search.value.trim() && selects.source.value === 'all' ? 'Search by name or description, or choose Hugging Face search in Source to browse the Hub.' : '');
     more.hidden = !nextCursor; more.disabled = busy || actionPending || searchPending;
     for (const input of [search, ...Object.values(selects)]) input.disabled = busy || actionPending;
-    renderDetails(filtered.find((source) => source.key === visibleKey));
+    renderDetails(hiddenSelection ? { ...hiddenSelection, browserHiddenByFilters: true } : filtered.find((source) => source.key === visibleKey));
     if (revealSelected && element.open) {
       const selected = results.querySelector('[aria-pressed="true"]');
       if (selected) {
@@ -167,10 +185,13 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     }
   }
   function renderDetails(source) {
+    const repository = source?.repository ?? source?.model?.repository;
     const signature = JSON.stringify({ source, compatibility: source ? availability(source) : null,
-      targets: source ? matchingPeerTargets(source, targets()) : [], busy, actionPending, inspecting });
+      targets: source ? matchingPeerTargets(source, targets()) : [], conversions: conversions.get(conversionReference(source)),
+      selectedMatches: source ? matchesSelectedPackage(source) : false, busy, actionPending, inspecting });
     if (signature === detailSignature) return;
     detailSignature = signature;
+    const focusedControl = details.contains(document.activeElement) ? document.activeElement.dataset.browserControl : null;
     details.replaceChildren();
     if (!source) { details.append(node('p', 'Choose a model to see its package, compatibility and available peers.', 'pc-browser-note')); return; }
     const body = node('div'); details.append(body);
@@ -178,11 +199,23 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     if (source.description) body.append(node('p', String(source.description).slice(0, 4000), 'pc-browser-note'));
     if (source.browserMatchingVariant) body.append(node('p', `Matching variant: ${source.browserMatchingVariant}. Your selected variant is unchanged; choose a matching package below.`, 'pc-browser-note'));
     if (source.browserFilterPending) body.append(node('p', 'Needs inspection: size, precision and compatibility filters cannot be confirmed until the package is inspected.', 'pc-browser-warning'));
-    const repository = source.repository ?? source.model?.repository;
+    if (source.browserHiddenByFilters || !matchesSelectedPackage(source)) {
+      body.append(node('p', 'The selected package does not match your current filters. Change the filters or choose a matching variant before loading.', 'pc-browser-warning'));
+      const reveal = button('Show selected package'); reveal.disabled = busy || actionPending;
+      reveal.title = 'Clear package filters and show this Hugging Face selection; keep the search text.';
+      reveal.onclick = () => {
+        if (busy || actionPending) return;
+        for (const name of ['task', 'size', 'precision', 'compatibility']) selects[name].value = 'all';
+        if (!['all', 'hub'].includes(selects.source.value)) selects.source.value = 'hub';
+        render({ revealSelected: true });
+      };
+      body.append(reveal);
+    }
     const reference = source.inspectReference ?? repository;
     const href = safeModelUrl(repository);
     if (href) { const link = node('a', repository); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; body.append(link); }
     const detail = inspected.get(reference);
+    if (source.browserConversion) renderLineage(body, source.browserConversion);
     if (source.browserOrigin === 'hub' && detail?.variants?.length) {
       const label = node('label', 'Package variant', 'pc-browser-variants'), input = node('select'); input.setAttribute('aria-label', 'Package variant');
       for (const variant of detail.variants) {
@@ -214,6 +247,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     blocksLocal(compat) || source.loadable === false ? 'pc-browser-warning' : 'pc-browser-note'));
     body.append(node('p', badge(source) === 'Catalog' ? 'Catalog provenance does not guarantee model quality or performance on this device.'
       : 'Candidate packages have not necessarily been tested on this device. Review the model card and license.', 'pc-browser-note'));
+    if (detail && findConversions && conversionReference(source)) renderConversions(body, source, repository);
     const actions = node('div', undefined, 'pc-browser-actions');
     if (source.browserSummary || source.requiresInspection) {
       const inspectButton = button(source.requiresInspection ? 'Inspect selected variant' : 'Inspect variants');
@@ -222,10 +256,10 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
         const variant = selectedVariant(detail); void inspect(reference, source.requiresInspection ? variant?.key ?? variant?.id : undefined);
       }; actions.append(inspectButton);
     }
-    const load = button('Load'); load.disabled = busy || actionPending || !isLoadable(source) || !onLoad;
+    const load = button('Load'); load.disabled = busy || actionPending || !isLoadable(source) || !matchesSelectedPackage(source) || !onLoad;
     load.onclick = () => {
       const current = allRows().find((row) => row.key === source.key);
-      if (busy || actionPending || !isLoadable(current)) { render(); return; }
+      if (busy || actionPending || !isLoadable(current) || !matchesSelectedPackage(current)) { render(); return; }
       void act(() => onLoad(current.package ?? current));
     }; actions.append(load);
     const providers = matchingPeerTargets(source, targets());
@@ -243,6 +277,66 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     }
     if (providers.length) body.append(node('p', 'Peer inference stays available even when this device cannot load the model. The selected peer receives your prompt.', 'pc-browser-note'));
     details.append(actions);
+    if (focusedControl) {
+      const replacement = [...details.querySelectorAll('[data-browser-control]')].find((item) => item.dataset.browserControl === focusedControl);
+      if (replacement) replacement.focus({ preventScroll: true });
+      else if (focusedControl === 'conversion-search') details.querySelector('[data-conversion-repository]')?.focus({ preventScroll: true });
+    }
+  }
+  function renderLineage(body, lineage) {
+    body.append(node('p', `Publisher-declared source: ${lineage.sourceRepository}. Relationship: ${lineage.relationship}. This does not prove equivalent weights or the same source revision.`, 'pc-browser-note'));
+    const back = button('Back to source model'); back.disabled = busy || actionPending;
+    back.onclick = () => {
+      if (busy || actionPending || !allRows().some((row) => row.key === lineage.sourceKey)) return;
+      desiredKey = lineage.sourceKey; stickySelectionKey = desiredKey; render({ revealSelected: true });
+    };
+    body.append(back);
+  }
+  function renderConversions(body, source, repository) {
+    const reference = conversionReference(source), state = conversions.get(reference);
+    const section = node('section', undefined, 'pc-browser-conversions');
+    section.setAttribute('aria-label', 'Related browser packages');
+    section.append(node('h4', 'Related browser packages'));
+    const feedback = node('p', '', 'pc-browser-note'); feedback.setAttribute('role', 'status');
+    feedback.textContent = state?.status === 'pending' ? 'Finding publisher-declared conversions…'
+      : state?.status === 'error' ? `Conversion search unavailable: ${state.error}`
+      : state?.status === 'cancelled' ? 'Conversion search cancelled. You can retry.'
+      : state?.status === 'complete' ? [state.items.length ? 'Candidates need package inspection before loading.' : 'No publisher-declared ONNX or GGUF relatives were found.', state.warning,
+        state.cached ? 'Showing cached conversion metadata.' : ''].filter(Boolean).join(' ')
+      : 'Find ONNX or GGUF packages whose publisher identifies this source model.';
+    section.append(feedback);
+    if (state?.status !== 'complete') {
+      const discover = button(state?.status === 'pending' ? 'Cancel conversion search' : 'Find browser conversions');
+      discover.dataset.browserControl = 'conversion-search';
+      discover.disabled = busy || actionPending;
+      discover.onclick = () => {
+        if (busy || actionPending) return;
+        stickySelectionKey = source.key;
+        if (state?.status === 'pending') conversions.cancel(); else void conversions.find(reference);
+      };
+      section.append(discover);
+    }
+    for (const candidate of state?.items ?? []) {
+      const choice = button(''); choice.className = 'pc-browser-conversion'; choice.dataset.conversionRepository = candidate.repository;
+      choice.dataset.browserControl = `conversion:${candidate.repository}`;
+      choice.append(node('strong', candidate.name), node('small', candidate.repository),
+        node('small', `${candidate.formats.join(' / ')} · ${candidate.relationship} · Candidate · Needs inspection`),
+        node('small', `Publisher-declared source: ${candidate.sourceRepository}`));
+      choice.disabled = busy || actionPending;
+      choice.onclick = () => {
+        if (busy || actionPending) return;
+        const key = `hub:${candidate.repository}@${candidate.revision}`;
+        const item = { repository: candidate.repository, name: candidate.name, description: candidate.description,
+          task: candidate.task, browserKey: key, inspectReference: candidate.reference,
+          browserConversion: { sourceKey: source.key, sourceRepository: repository, relationship: candidate.relationship } };
+        hubItems = [...hubItems.filter((entry) => (entry.browserKey ?? `hub:${entry.repository}`) !== key), item];
+        desiredKey = key; stickySelectionKey = key; inspectionError = ''; callbackError = '';
+        render({ revealSelected: true });
+        if (!inspected.has(candidate.reference)) void inspect(candidate.reference);
+      };
+      section.append(choice);
+    }
+    body.append(section);
   }
   async function act(callback) {
     if (disposed || busy || actionPending) return;
@@ -254,6 +348,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   async function inspect(reference, selectedVariant) {
     const parsed = repositoryQuery(reference), repository = parsed.repository ?? reference;
     if (disposed || busy || !inspectModel || !safeModelUrl(repository)) return;
+    stickySelectionKey = desiredKey;
     const priorRevision = selectedVariant ? inspected.get(reference)?.revision : null;
     const expectedRevision = parsed.revision ?? priorRevision;
     const requestReference = selectedVariant && /^[a-f0-9]{40}$/i.test(priorRevision ?? '')
@@ -276,6 +371,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   }
   function stopRequests() {
     clearTimeout(searchTimer); searchController?.abort(); inspectController?.abort();
+    conversions.cancel();
     ++searchSequence; ++inspectSequence; searchController = null; inspectController = null;
     searchPending = false; inspecting = null;
   }
@@ -313,6 +409,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   }
   function changedSearch() {
     stopRequests(); hubItems = []; nextCursor = null; searchWarning = ''; inspectionError = ''; callbackError = '';
+    stickySelectionKey = null;
     searchIncomplete = canSearch(); resumeAppend = false;
     render(); if (searchIncomplete) searchTimer = setTimeout(() => void runSearch(), 350);
   }
@@ -338,7 +435,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     element,
     open({ selectedKey } = {}) {
       if (disposed) return;
-      if (selectedKey !== undefined) desiredKey = selectedKey;
+      if (selectedKey !== undefined) { desiredKey = selectedKey; if (stickySelectionKey !== selectedKey) stickySelectionKey = null; }
       render();
       if (!element.open) {
         returnFocus = document.activeElement; element.showModal(); search.focus();
@@ -352,6 +449,6 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       if (wasBusy && !busy && element.open && searchIncomplete && !searchController) void runSearch(resumeAppend);
     },
     dispose() { if (disposed) return; disposed = true; stopRequests(); mobile.removeEventListener('change', resizeFilters);
-      if (element.open) element.close(); element.remove(); inspected.clear(); variants.clear(); },
+      if (element.open) element.close(); element.remove(); inspected.clear(); variants.clear(); conversions.dispose(); },
   };
 }

@@ -332,6 +332,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
       getSources: () => sources, getTargets: () => targets,
       searchModels: (options) => runtime.searchModelHub(options),
       inspectModel: (repository, options) => runtime.inspectModelHub(repository, options),
+      findConversions: runtime.findModelConversions
+        ? (repository, options) => runtime.findModelConversions(repository, options) : undefined,
       getCompatibility: (entry) => entry.localAvailability ?? runtime.getModelCompatibility?.(entry.package ?? entry)
         ?? { status: 'unknown', reason: 'Local memory fit is unverified.' },
       onLoad: loadSelection,

@@ -66,6 +66,14 @@ test('dynamic standard GGUF profile binds immutable identity, actual tensor code
   assert.equal(validateGgufHubModel(qwen.model).model.architecture, 'qwen3_5');
 });
 
+test('additional dense engine families share registry admission without admitting arbitrary hybrid layouts', () => {
+  for (const architecture of ['phi2', 'granite', 'starcoder2', 'olmo', 'olmo2', 'stablelm', 'nemotron', 'smollm3']) {
+    const p = profile(fixture({ architecture }));
+    assert.equal(validateGgufManifest(manifest(p)).manifest.model.architecture, architecture);
+  }
+  assert.throws(() => profile(fixture({ architecture: 'nemotron_h_moe' })), /architecture/);
+});
+
 test('bounded probe grows metadata prefixes without rereading bytes or downloading tensor payloads', async () => {
   const f = fixture({ extra: [field('general.description', 8, 'x'.repeat(180000))] });
   const calls = [];

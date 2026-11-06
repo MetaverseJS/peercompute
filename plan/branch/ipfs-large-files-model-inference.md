@@ -1013,3 +1013,21 @@ Add size-sorted model choices, remembered successful stored-model default (fallb
   [Nano4B ONNX](https://huggingface.co/onnx-community/NVIDIA-Nemotron-3-Nano-4B-BF16-ONNX),
   [upstream WebGPU demo](https://huggingface.co/spaces/webml-community/Nemotron-3-Nano-WebGPU),
   [pinned llama.cpp architecture registry](https://github.com/ggml-org/llama.cpp/blob/46ca246de9bb1c35269722a6240d37d9dfd79cad/src/llama-arch.cpp).
+
+### November 5 — support expansion authorized
+
+- User approved the first three support priorities. Implement a shared capability
+  registry, size/config-aware ONNX admission and related browser-conversion UI.
+  Preserve managed-worker execution, digest-bound artifacts and explicit loading.
+- Acceptance starts with OpenReasoning-Nemotron1.5Bq4 and NemotronNano4Bq4,
+  then representative newly admitted architecture families. Record metadata-only,
+  candidate and actual GPU execution evidence separately. Split GGUF and AGENT-01
+  implementation remain outside this slice.
+- Implementation checkpoint: shared capability registry, bounded config-aware
+  text envelopes and related conversion UI implemented. Core82, Hub34,
+  browser32 and regression192 tests pass; all3 affected production builds and
+  exact Tailscale preview/SecretWorkshop checks pass. Gemma270M ONNX and
+  StableLM1.6B GGUF pass actual managed GPU lifecycle/source-off restart gates.
+  Nemotron1.5B q4 initialization hit an NVIDIA allocation failure with existing
+  user GPU residency; Nano4B q4 execution remains unrun pending free resources.
+  These acceptance gates remain open even though structural inspection succeeds.

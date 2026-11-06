@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { filterBrowserModels, repositoryQuery, safeModelUrl, matchingPeerTargets } from '../inference/src/ui/modelBrowserData.js';
+import { conversionCandidate } from '../inference/src/ui/modelBrowserConversions.js';
 
 let server, browser, origin;
 before(async () => {
@@ -44,10 +45,27 @@ async function fixture(t, options = {}) {
       { key: 'hf:unknown', name: 'Unknown size', source: 'hf', task: 'text-to-image', localAvailability: { status: 'checking', reason: 'Checking device support.' } },
     ], targets: [{ key: 'local', local: true, available: false }, { key: 'peer:large', name: 'Large text', local: false, available: true, busy: true, providerCount: 2 }],
     searchMode: options.searchMode, inspectMode: options.inspectMode, extraVariant: options.extraVariant,
-    selected: options.selectedKey ?? 'hf:vision', pending: [] };
+    conversionMode: options.conversionMode, unsupportedOriginal: options.unsupportedOriginal,
+    selected: options.selectedKey ?? 'hf:vision', pending: [], conversionPending: [] };
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     window.modelBrowser = createModelBrowser({ container: document.querySelector('#root'), getSources: () => state.sources, getTargets: () => state.targets,
       getCompatibility: (source) => source.localAvailability ?? { status: 'unknown', code: 'memory_fit_unverified', cpuBytes: 1024 ** 3, gpuBytes: 2 * 1024 ** 3 },
+      findConversions: options.conversions ? async (reference, { signal }) => {
+        const repository = reference.startsWith('https://') ? new URL(reference).pathname.split('/').filter(Boolean).slice(0, 2).join('/') : reference;
+        calls.push({ type: 'conversions', repository, reference });
+        signal.addEventListener('abort', () => calls.push({ type: 'conversions-abort', repository }), { once: true });
+        if (state.conversionMode === 'pending') await new Promise((resolve) => state.conversionPending.push({ resolve, repository }));
+        if (state.conversionMode === 'error') throw new Error('HTTP 429: conversion metadata rate limited');
+        const revision = 'c'.repeat(40);
+        return { cached: state.conversionMode === 'cached', warning: state.conversionMode === 'cached' ? 'Offline metadata' : undefined,
+          items: state.conversionMode === 'empty' ? [] : ['onnx', 'gguf', 'finetune'].map((format) => ({
+            repository: `converters/${format}`, revision, name: options.longConversions ? 'A_long_conversion_publisher_model_name_'.repeat(4) : `${format} conversion`,
+            sourceRepository: repository, formats: [format === 'onnx' ? 'ONNX' : 'GGUF'],
+            relationship: format === 'onnx' ? 'converted' : format === 'gguf' ? 'quantized' : 'finetune',
+            evidence: { kind: 'publisher-base-model', revision, url: 'javascript:ignored-untrusted-url' },
+            task: 'text-generation', description: '<img src=x onerror=alert(1)> is plain publisher metadata',
+          })) };
+      } : undefined,
       async searchModels({ query, cursor, signal }) {
         calls.push({ type: 'search', query, cursor });
         signal.addEventListener('abort', () => calls.push({ type: 'search-abort', query }), { once: true });
@@ -77,7 +95,7 @@ async function fixture(t, options = {}) {
           package: { id: 'fixture-fp16', model: { repository, dtype: 'fp16' } } });
         await delay(1);
         return { repository, revision, license: { spdx: 'apache-2.0', notice: 'Review publisher license terms.' },
-          description: '<img src=x onerror=alert(1)> plain model description', variants: state.inspectMode === 'lazy'
+          description: '<img src=x onerror=alert(1)> plain model description', variants: state.unsupportedOriginal && repository === 'fixture/original' ? [] : state.inspectMode === 'lazy'
             ? variants.map((variant) => variant.key === selectedVariant || variant.key === 'split' ? variant
               : { ...variant, loadable: false, requiresInspection: true, reason: 'Select this variant to inspect its bounded GGUF header.' }) : variants };
       },
@@ -428,6 +446,178 @@ test('idle panel refresh preserves a slow search and a busy-to-idle transition r
   await page.evaluate(() => { state.pending[0].resolve(); state.pending[1].resolve(); });
   await dialog(page).locator('[data-model-key="hub:fixture/slow"]').waitFor();
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 2);
+});
+
+async function inspectOriginal(page) {
+  await searchFor(page, 'original'); await choose(page, 'hub:fixture/original');
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).waitFor();
+}
+const related = (page) => dialog(page).getByRole('region', { name: 'Related browser packages', exact: true });
+
+test('conversion lookup is explicit on supported models, cached across refresh/reopen and never imports a package', async (t) => {
+  const page = await fixture(t, { conversions: true }); await inspectOriginal(page);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').length), 0);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await related(page).locator('[data-conversion-repository="converters/onnx"]').waitFor();
+  assert.match(await related(page).textContent(), /Candidate.*Needs inspection/);
+  assert.match(await related(page).textContent(), /Publisher-declared source: fixture\/original/);
+  assert.match(await related(page).locator('[data-conversion-repository="converters/finetune"]').textContent(), /GGUF · finetune/);
+  for (let index = 0; index < 3; index++) await page.evaluate(() => { modelBrowser.setBusy(false); modelBrowser.refresh(); });
+  await page.keyboard.press('Escape'); await page.locator('#browse').click(); await choose(page, 'hub:fixture/original');
+  assert.equal(await related(page).locator('[data-conversion-repository]').count(), 3);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').length), 1);
+  assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'conversions').reference),
+    `https://huggingface.co/fixture/original/tree/${'a'.repeat(40)}`);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'inspect').length), 1);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('an unsupported original leads to a pinned candidate inspection with visible lineage and a separate exact Load', async (t) => {
+  const page = await fixture(t, { conversions: true, unsupportedOriginal: true });
+  await page.getByLabel('Source', { exact: true }).selectOption('hub');
+  await inspectOriginal(page);
+  assert.match(await dialog(page).getByRole('region', { name: 'Model details', exact: true }).textContent(), /Unsupported/);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Inspect variants', exact: true }).count(), 0);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await related(page).locator('[data-conversion-repository="converters/onnx"]').click();
+  await page.getByLabel('Package variant', { exact: true }).waitFor();
+  const detail = dialog(page).getByRole('region', { name: 'Model details', exact: true });
+  assert.match(await detail.textContent(), /Publisher-declared source: fixture\/original.*Relationship: converted/);
+  assert.match(await detail.textContent(), /does not prove equivalent weights or the same source revision/);
+  assert.equal(await detail.locator('img,script').count(), 0);
+  assert.equal(await page.getByLabel('Search models', { exact: true }).inputValue(), 'original');
+  assert.equal(await page.getByLabel('Source', { exact: true }).inputValue(), 'hub');
+  assert.equal(await dialog(page).locator('[data-model-key="hub:fixture/original"]').count(), 1);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'inspect').at(-1).reference),
+    `https://huggingface.co/converters/onnx/tree/${'c'.repeat(40)}`);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+  await detail.getByRole('button', { name: 'Back to source model', exact: true }).click();
+  assert.equal(await related(page).locator('[data-conversion-repository]').count(), 3);
+  await related(page).locator('[data-conversion-repository="converters/onnx"]').click();
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'inspect').length), 2, 'Returning to an inspected candidate reuses its pinned metadata');
+  await dialog(page).getByRole('button', { name: 'Load', exact: true }).click();
+  const calls = await page.evaluate(() => window.calls.filter((call) => call.type === 'load'));
+  assert.equal(calls.length, 1); assert.equal(calls[0].source.model.repository, 'converters/onnx');
+  assert.equal(calls[0].source.id, 'fixture-q4');
+});
+
+test('conversion discovery preserves the inspected source revision and separates its metadata cache by revision', async (t) => {
+  const page = await fixture(t, { conversions: true });
+  for (const revision of ['b'.repeat(40), 'd'.repeat(40)]) {
+    await searchFor(page, `https://huggingface.co/owner/source/tree/${revision}`);
+    await choose(page, `hub:owner/source@${revision}`);
+    await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+    await related(page).locator('[data-conversion-repository="converters/onnx"]').waitFor();
+  }
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').map((call) => call.reference)),
+    ['b'.repeat(40), 'd'.repeat(40)].map((revision) => `https://huggingface.co/owner/source/tree/${revision}`));
+  await searchFor(page, `https://huggingface.co/owner/source/tree/${'b'.repeat(40)}`);
+  await choose(page, `hub:owner/source@${'b'.repeat(40)}`);
+  assert.equal(await related(page).locator('[data-conversion-repository]').count(), 3);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').length), 2);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('a related selection excluded by filters stays explicit, cannot Load, and can be revealed without changing its query', async (t) => {
+  const page = await fixture(t, { conversions: true, unsupportedOriginal: true }); await inspectOriginal(page);
+  await page.getByLabel('Package size', { exact: true }).selectOption('unknown');
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await related(page).locator('[data-conversion-repository="converters/onnx"]').click();
+  await page.getByLabel('Package variant', { exact: true }).waitFor();
+  const detail = dialog(page).getByRole('region', { name: 'Model details', exact: true });
+  assert.match(await detail.textContent(), /selected package does not match your current filters/i);
+  assert.match(await detail.textContent(), /converters\/onnx/);
+  assert.equal(await dialog(page).locator('[data-model-key][aria-pressed=true]').count(), 0);
+  const load = dialog(page).getByRole('button', { name: 'Load', exact: true });
+  assert.equal(await load.isDisabled(), true); await load.evaluate((element) => element.onclick());
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+  await detail.getByRole('button', { name: 'Show selected package', exact: true }).click();
+  assert.equal(await page.getByLabel('Search models', { exact: true }).inputValue(), 'original');
+  assert.equal(await load.isEnabled(), true);
+  await page.getByLabel('Precision', { exact: true }).selectOption('q8_0');
+  assert.equal(await page.getByLabel('Package variant', { exact: true }).inputValue(), 'q4');
+  assert.match(await detail.textContent(), /Matching variant: Q8 package/);
+  assert.equal(await load.isDisabled(), true, 'A matching alternate does not authorize loading a different explicitly selected precision');
+  await load.evaluate((element) => element.onclick());
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('conversion cancellation, Escape and disposal ignore late metadata without reopening or retrying automatically', async (t) => {
+  const page = await fixture(t, { conversions: true, conversionMode: 'pending' }); await inspectOriginal(page);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await page.waitForFunction(() => state.conversionPending.length === 1);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Cancel conversion search', exact: true }).evaluate((element) => document.activeElement === element), true);
+  await dialog(page).getByRole('button', { name: 'Cancel conversion search', exact: true }).click();
+  assert.match(await related(page).textContent(), /cancelled/);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).evaluate((element) => document.activeElement === element), true);
+  await page.evaluate(() => state.conversionPending[0].resolve()); await page.waitForTimeout(30);
+  assert.equal(await related(page).locator('[data-conversion-repository]').count(), 0);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await page.waitForFunction(() => state.conversionPending.length === 2);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'conversions-abort').length === 2);
+  await page.evaluate(() => state.conversionPending[1].resolve()); await page.waitForTimeout(30);
+  assert.equal(await dialog(page).isVisible(), false);
+  assert.equal(await page.locator('#browse').evaluate((element) => document.activeElement === element), true);
+  await page.locator('#browse').click(); await choose(page, 'hub:fixture/original');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').length), 2);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await page.waitForFunction(() => state.conversionPending.length === 3);
+  await page.evaluate(() => { modelBrowser.dispose(); state.conversionPending[2].resolve(); });
+  await page.waitForTimeout(30); assert.equal(await page.locator('dialog').count(), 0);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('conversion errors and empty cached results remain readable without replacing the original selection', async (t) => {
+  const page = await fixture(t, { conversions: true, conversionMode: 'error', unsupportedOriginal: true }); await inspectOriginal(page);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await related(page).getByRole('status').filter({ hasText: '429' }).waitFor();
+  assert.equal(await dialog(page).locator('[data-model-key][aria-pressed=true]').getAttribute('data-model-key'), 'hub:fixture/original');
+  await page.evaluate(() => { state.conversionMode = 'empty'; });
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await related(page).getByRole('status').filter({ hasText: 'No publisher-declared' }).waitFor();
+  await page.evaluate(() => modelBrowser.refresh());
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions').length), 2);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+});
+
+test('conversion requests abort on query changes and cannot insert their stale candidates into a new search', async (t) => {
+  const page = await fixture(t, { conversions: true, conversionMode: 'pending' }); await inspectOriginal(page);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  await page.waitForFunction(() => state.conversionPending.length === 1);
+  await searchFor(page, 'replacement');
+  await page.evaluate(() => state.conversionPending[0].resolve()); await page.waitForTimeout(30);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'conversions-abort').length), 1);
+  assert.equal(await dialog(page).locator('[data-conversion-repository]').count(), 0);
+  assert.equal(await dialog(page).locator('[data-model-key="hub:fixture/replacement"]').count(), 1);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load').length), 0);
+});
+
+test('conversion publishers and lineage wrap on desktop/mobile while Load remains visible', async (t) => {
+  const page = await fixture(t, { conversions: true, longConversions: true, conversionMode: 'cached' }); await inspectOriginal(page);
+  await dialog(page).getByRole('button', { name: 'Find browser conversions', exact: true }).click();
+  const conversion = related(page).locator('[data-conversion-repository="converters/onnx"]'); await conversion.waitFor();
+  assert.match(await related(page).textContent(), /Offline metadata.*cached conversion metadata/);
+  const directory = process.env.MODEL_BROWSER_SCREENSHOTS || '/tmp/peercompute-model-browser-ui'; await mkdir(directory, { recursive: true });
+  for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    await page.setViewportSize(viewport); await conversion.scrollIntoViewIfNeeded();
+    assert.equal(await dialog(page).evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+    assert.equal(await conversion.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+    const action = await dialog(page).getByRole('button', { name: 'Load', exact: true }).boundingBox(), box = await dialog(page).boundingBox();
+    assert.ok(action.y >= box.y && action.y + action.height <= box.y + box.height);
+    await page.screenshot({ path: `${directory}/conversions-${name}.png` });
+  }
+});
+
+test('conversion metadata rejects forged source identity and malformed lineage while preserving distinct derivatives', () => {
+  const item = { repository: 'publisher/export', sourceRepository: 'owner/source', formats: ['GGUF'], relationship: 'finetune',
+    evidence: { kind: 'publisher-base-model', revision: 'a'.repeat(40), url: 'javascript:ignored' } };
+  assert.equal(conversionCandidate(item, 'owner/source').relationship, 'finetune');
+  assert.equal(conversionCandidate(item, 'owner/source').reference, `https://huggingface.co/publisher/export/tree/${'a'.repeat(40)}`);
+  for (const change of [{ sourceRepository: 'spoof/source' }, { sourceRepository: {} }, { repository: 'https://evil.test/export' },
+    { formats: ['safetensors'] }, { relationship: 'identical' }, { evidence: { kind: 'name-match', revision: 'a'.repeat(40) } },
+    { revision: 'b'.repeat(40) }]) assert.equal(conversionCandidate({ ...item, ...change }, 'owner/source'), null);
 });
 
 test('desktop/mobile dialog wraps long content, traps focus and produces owned UI screenshots', async (t) => {

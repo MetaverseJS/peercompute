@@ -223,7 +223,14 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
 Open **Browse models**, choose a catalog, stored, peer or Hugging Face package,
-then **Load**: it fetches,
+then **Load**. After inspecting an original Hugging Face checkpoint, use
+**Find browser conversions** to discover publisher-linked ONNX/GGUF packages.
+Each conversion is inspected independently and stays a candidate until its
+runtime and device requirements pass; a shared model name is not provenance.
+Text ONNX discovery now includes Gemma, Phi, Mistral, Granite, OLMo, StarCoder2,
+SmolLM3 and Nemotron-H families, with package/config-based memory estimates.
+Architecture support does not guarantee that every export fits or executes on
+the current device. Loading fetches,
 verifies, retains and loads the model automatically. Content addressing is handled
 internally. A loading overlay shows a spinner, the model name, downloaded bytes,
 stored-file verification and GPU initialization, with elapsed phase time.

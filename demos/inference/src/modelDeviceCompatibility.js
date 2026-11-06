@@ -1,5 +1,6 @@
 import { validateGgufHubModel } from '../../../peercompute/src/peercompute/inference/gguf/hubAdmission.js';
 import { MODEL_POLICY, MODEL_RUNTIME_VERSION, modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
+import { getModelCapability, ONNX_CAPABILITY_LIMITS } from '../../../peercompute/src/peercompute/inference/modelCapabilities.js';
 import { MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
@@ -57,7 +58,7 @@ function profile(entry) {
 
 /** Configured resident reservations, deliberately not detected device memory. */
 export function modelMemoryEstimate(entryOrManifest) {
-  const { model, totalBytes } = profile(entryOrManifest);
+  const { model, totalBytes, files, descriptorOnly } = profile(entryOrManifest);
   if (model.runtime === 'onnx-diffusion') return { cpuBytes: 8 * GiB, gpuBytes: 8 * GiB };
   if (model.runtime === 'llama.cpp') {
     if (totalBytes === null) return { cpuBytes: 0, gpuBytes: 0 };
@@ -65,7 +66,8 @@ export function modelMemoryEstimate(entryOrManifest) {
     return { cpuBytes: (large ? 8 : 2) * GiB, gpuBytes: (large ? 16 : 2) * GiB };
   }
   if (model.runtime === 'transformers.js') {
-    const policy = modelResourcePolicy(model);
+    if (descriptorOnly) return { cpuBytes: 4 * GiB, gpuBytes: 4 * GiB };
+    const policy = modelResourcePolicy(model, { ...(files ? { files } : {}), ...(totalBytes !== null ? { totalBytes } : {}) });
     return { cpuBytes: Math.max(4 * GiB, policy.minimumCpuBytes), gpuBytes: Math.max(4 * GiB, policy.minimumGpuBytes) };
   }
   throw new Error('Unsupported model runtime');
@@ -155,10 +157,14 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large',
     `Model package is ${(totalBytes / GiB).toFixed(2)} GiB; this runtime supports up to ${Number((maximum / GiB).toFixed(2))} GiB.`];
   if (model.runtime === 'transformers.js') {
+    const capability = getModelCapability('transformers.js', model.architecture);
     if (((!descriptorOnly || model.runtimeVersion !== undefined) && model.runtimeVersion !== MODEL_RUNTIME_VERSION)
-        || ((!descriptorOnly || model.architecture !== undefined) && !['qwen2', 'qwen3', 'llama', 'qwen3_5', 'idefics3', 'smolvlm'].includes(model.architecture))) {
+        || ((!descriptorOnly || model.architecture !== undefined) && !capability)) {
       return ['runtime_unsupported', 'Model version or architecture is not supported locally'];
     }
+    if (!descriptorOnly && (model.task !== undefined && model.task !== capability.task)) return ['runtime_unsupported', 'Model task does not match its supported architecture'];
+    if (!descriptorOnly && (capability.requiresMemoryProfile || (capability.task === 'text-generation' && totalBytes > ONNX_CAPABILITY_LIMITS.legacyMaximumBytes))
+        && !model.memoryProfile) return ['model_invalid', 'Inspect the model config to verify its memory profile before loading'];
     const dtypes = typeof model.dtype === 'string' ? [model.dtype]
       : model.dtype && typeof model.dtype === 'object' && !Array.isArray(model.dtype) ? Object.values(model.dtype) : [];
     if ((!descriptorOnly || model.dtype !== undefined) && (!dtypes.length || dtypes.some((dtype) => !['fp32', 'fp16', 'q4', 'q4f16', 'q8'].includes(dtype))
@@ -207,7 +213,8 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
   catch (error) { invalid = error; estimate = { cpuBytes: 0, gpuBytes: 0 }; }
   const result = (status, code, reason) => ({ status, reason, code, ...estimate });
   if (!device) return result('checking', 'device_checking', 'Checking device compatibility');
-  if (invalid) return result('unavailable', 'model_invalid', invalid.message);
+  if (invalid) return result('unavailable', invalid.code === 'ERR_MODEL_FILE_TOO_LARGE' ? 'file_too_large'
+    : invalid.code === 'ERR_MODEL_PACKAGE_TOO_LARGE' ? 'package_too_large' : 'model_invalid', invalid.message);
   const problem = runtimeProblem(details);
   if (problem) return result('unavailable', ...problem);
   if (configured.cpuBytes !== null && estimate.cpuBytes > configured.cpuBytes)

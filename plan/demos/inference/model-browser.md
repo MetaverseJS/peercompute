@@ -53,9 +53,19 @@ refresh preserves an open dialog's selection and keyboard focus.
 
 ## Supported scope and limits
 
-The current Transformers.js adapter admits Qwen2/Qwen3/Llama text and
-SmolVLM/Idefics3/Qwen3.5 vision packages with its supported module naming and
-precisions. Runtime file/context/resource envelopes remain enforced. ONNX q4
+The shared capability registry admits Qwen2/Qwen3/Llama, Phi/Phi3,
+Gemma/Gemma2/Gemma3-text, Mistral, Granite, StarCoder2, SmolLM3, OLMo/OLMo2 and
+Nemotron-H text packages supported by the pinned Transformers.js4.3.2 engine.
+SmolVLM/Idefics3/Qwen3.5 vision keeps its existing modules and limits. Generic
+families are candidates, not a promise that every graph export has been tested.
+Text packages are bounded to8GiB total and individual files below2GiB; the managed
+context remains2,048 tokens. New families and larger legacy text packages carry a
+canonical geometry profile including attention and, for Nemotron-H, recurrent
+state. Verified config is checked before reservation and again in the worker.
+Unaccounted native dimension overrides are rejected for these dynamic profiles.
+Reservations account for package bytes and double-buffered float32 state/cache;
+actual graph intermediates and browser/free GPU memory remain uncertain.
+Runtime file/context/resource envelopes remain enforced. ONNX q4
 without FP16 operators/cache can work without shader-f16; a nominal quantization
 label alone does not establish GPU feature requirements.
 
@@ -66,6 +76,16 @@ standard supported tensor codecs, immutable SHA256 file identity and the existin
 shader-f16 prerequisites remain. Split files, custom GeoRefine layouts, unsupported
 codecs and projector-only packages are not admitted through discovery. No CPU
 fallback or arbitrary runtime assets are introduced.
+
+After an inspection, **Find browser conversions** queries publisher-declared
+base-model relationships, requiring actual ONNX/GGUF files at a pinned revision.
+It inspects at most12 related repositories from a bounded40-result metadata page;
+ONNX candidates are ordered first. Names/tags alone do not establish lineage,
+and a publisher declaration does not prove equivalent weights or conversion from
+the exact selected source revision. Selecting a related package performs normal
+pinned inspection; loading remains explicit. Discovery can be cancelled and
+completed metadata is reused without periodic re-query. Current filters remain
+active and cannot silently substitute or load a hidden variant.
 
 Diffusion discovery can identify the pinned catalog profiles. Additional image
 pipelines need their own adapter and validation; merely having ONNX files does not
@@ -106,3 +126,15 @@ browser restart. All3 affected production builds and Pages-shaped routes pass.
 [Internal preview](https://fastbox.tail5c077c.ts.net:5189/?dev=1) connects to
 SecretWorkshop. This slice is local to the feature branch and internal preview;
 it does not publish new GitHub Pages bundles.
+
+November5 support expansion checkpoint:82 core,34 Hub,32 model-browser and192
+integration checks pass. Gemma3-270M-it q4 ONNX and StableLM2-Zephyr1.6B Q4_K_M
+GGUF pass real managed WebGPU generation, deterministic fresh-state repeat,
+streamed cancellation/recovery and source-off browser restart. The GGUF run used
+the documented NVIDIA FP16 override in its owned browser; Gemma did not.
+OpenReasoning-Nemotron1.5B q4 and Nano4B q4 pass structural inspection/profile
+admission. OpenReasoning initialization encountered an NVIDIA allocation failure
+while existing user work held~10GiB GPU memory. Its execution qualification and
+Nano4B's actual run remain pending sufficient free resources; neither is recorded
+as a passed runtime test. All three affected production builds and the exact
+internal preview/source-to-conversion UI/SecretWorkshop check pass.

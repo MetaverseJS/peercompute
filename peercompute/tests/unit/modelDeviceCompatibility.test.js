@@ -145,7 +145,7 @@ test('checking and failed or timed-out probes remain distinguishable from missin
 
 test('runtime and package bounds reject impossible loads without trusting peer metadata claims', () => {
   const huge = structuredClone(onnx); huge.files[0].size = 2 * GiB;
-  assert.equal(evaluate(huge).code, 'package_too_large');
+  assert.equal(evaluate(huge).code, 'file_too_large');
   const hugeGguf = structuredClone(large); hugeGguf.files[0].size = 17 * GiB;
   assert.equal(evaluate(hugeGguf).code, 'package_too_large');
   const wrong = structuredClone(diffusion); wrong.model.revision = '0'.repeat(40);

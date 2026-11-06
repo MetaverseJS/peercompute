@@ -2,11 +2,10 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { modelResourcePolicy, MODEL_RUNTIME_VERSION } from '../../../../peercompute/src/peercompute/inference/modelManifest.js';
+import { getModelCapability, onnxExternalDataFiles, onnxMemoryProfile, onnxRequiredFeatures } from '../../../../peercompute/src/peercompute/inference/modelCapabilities.js';
 import { huggingFaceFileUrl, parseHuggingFaceRepository, plainDescription, validateHubPath, validateRevision } from './hubClient.js';
 
 const MAX_VARIANTS = 32;
-const TEXT_ARCHITECTURES = new Set(['qwen2', 'qwen3', 'llama']);
-const VISION_ARCHITECTURES = new Set(['idefics3', 'smolvlm', 'qwen3_5']);
 const DTYPES = ['q4', 'q4f16', 'q8', 'fp16', 'fp32'];
 const SIDECARS = new Set(['config.json', 'tokenizer.json', 'tokenizer_config.json', 'added_tokens.json',
   'special_tokens_map.json', 'vocab.json', 'merges.txt', 'tokenizer.model', 'sentencepiece.bpe.model',
@@ -55,20 +54,6 @@ function licenseFor(info, repository, revision) {
     reviewRequired: true };
 }
 
-/** Mirrors Transformers.js 4.3.2 model-loader.js; no graph/weight download required. */
-function externalFiles(config, architecture, name, dtype) {
-  const js = config['transformers.js_config'] ?? {};
-  const selected = { ...js, ...js.device_config?.webgpu };
-  // The existing admitted Qwen3.5 worker explicitly overrides this with one chunk.
-  const settings = architecture === 'qwen3_5' && dtype === 'q4' ? 1 : selected.use_external_data_format;
-  const full = `${name}${suffix(dtype)}.onnx`;
-  const value = settings && typeof settings === 'object' ? settings[full] ?? settings[name] ?? 0 : settings ?? 0;
-  if (!(typeof value === 'boolean' || (Number.isSafeInteger(value) && value >= 0 && value <= 32))) {
-    throw new Error('Unsupported external-data chunk configuration');
-  }
-  return Array.from({ length: Number(value) }, (_, index) => `onnx/${full}_data${index ? `_${index}` : ''}`);
-}
-
 function basePackage(repository, revision, description, license, files, model, variant) {
   return { id: idFor(repository, revision, variant), name: `${repository.split('/')[1]} (${variant})`,
     description, repository, revision, status: 'candidate', license, files, totalBytes: totalBytes(files),
@@ -81,8 +66,14 @@ const HUGGING_FACE_ORIGIN = 'https://huggingface.co';
 export function resolveOnnxVariants({ repository, revision, description = '', license, files, config, gated = false }) {
   const byPath = new Map(files.map((file) => [file.path, file]));
   const architecture = config?.model_type;
-  const isText = TEXT_ARCHITECTURES.has(architecture), isVision = VISION_ARCHITECTURES.has(architecture);
-  const modules = isVision ? ['embed_tokens', 'vision_encoder', 'decoder_model_merged'] : ['model'];
+  const capability = getModelCapability('transformers.js', architecture);
+  const isVision = capability?.task === 'image-text-to-text';
+  const modules = capability?.modules ?? ['model'];
+  let memoryProfile, memoryProfileError;
+  if (capability) {
+    try { memoryProfile = onnxMemoryProfile(config); }
+    catch (error) { memoryProfileError = error.message; }
+  }
   const metadata = files.filter((file) => sidecar(file.path));
   const variants = [];
   for (const dtype of DTYPES) {
@@ -90,12 +81,14 @@ export function resolveOnnxVariants({ repository, revision, description = '', li
     // Expose incomplete variants when at least one module is present.
     if (!required.some((path) => byPath.has(path))) continue;
     let reason = null;
-    if (!isText && !isVision) reason = `Architecture ${architecture || 'unknown'} has no admitted browser adapter`;
+    if (!capability) reason = `Architecture ${architecture || 'unknown'} has no admitted browser adapter`;
     if (config?.auto_map && Object.keys(config.auto_map).length) reason = 'This configuration declares custom model code; no custom code is executed';
     if (gated) reason = 'This repository requires Hugging Face access approval; anonymous import is unavailable';
-    if (architecture === 'qwen3_5' && dtype !== 'q4') reason = 'The Qwen3.5 browser adapter currently admits only all-q4 modules';
+    if (capability && !capability.dtypes.includes(dtype)) reason = architecture === 'qwen3_5'
+      ? 'The Qwen3.5 browser adapter currently admits only all-q4 modules' : `Precision ${dtype} has no admitted browser adapter for ${architecture}`;
+    if (memoryProfileError) reason ??= `Model memory profile unavailable: ${memoryProfileError}`;
     const extras = [];
-    try { for (const name of modules) extras.push(...externalFiles(config ?? {}, architecture, name, dtype)); }
+    try { for (const name of modules) extras.push(...onnxExternalDataFiles(config ?? {}, architecture, name, dtype)); }
     catch (error) { reason ??= error.message; }
     const missing = [...required, ...extras, 'config.json', 'tokenizer.json', 'tokenizer_config.json'].filter((path) => !byPath.has(path));
     if (isVision && !byPath.has('preprocessor_config.json') && !byPath.has('processor_config.json')) missing.push('preprocessor_config.json or processor_config.json');
@@ -108,15 +101,13 @@ export function resolveOnnxVariants({ repository, revision, description = '', li
     }
     const selected = [...new Set([...metadata.map((file) => file.path), ...required, ...extras])]
       .filter((path) => byPath.has(path)).sort().map((path) => byPath.get(path));
-    const custom = config?.['transformers.js_config'] ?? {};
-    const webgpu = { ...custom, ...custom.device_config?.webgpu };
-    const kvDtype = typeof webgpu.kv_cache_dtype === 'string' ? webgpu.kv_cache_dtype : webgpu.kv_cache_dtype?.[dtype];
-    const features = ['fp16', 'q4f16'].includes(dtype) || kvDtype === 'float16' ? ['shader-f16'] : [];
     const model = { runtime: 'transformers.js', runtimeVersion: MODEL_RUNTIME_VERSION, architecture,
       task: isVision ? 'image-text-to-text' : 'text-generation', dtype: isVision ? Object.fromEntries(modules.map((name) => [name, dtype])) : dtype,
-      modalities: isVision ? ['text', 'image'] : ['text'], requiredFeatures: features, repository, revision };
+      modalities: capability?.modalities ?? ['text'], requiredFeatures: onnxRequiredFeatures(dtype, config ?? {}), repository, revision,
+      ...(memoryProfile ? { memoryProfile } : {}) };
     const entry = basePackage(repository, revision, description, license, selected, model, dtype);
-    if (entry.totalBytes > modelResourcePolicy(model).maxModelBytes) reason ??= 'Selected package exceeds this browser adapter’s admitted file budget';
+    try { modelResourcePolicy(model, { files: selected, totalBytes: entry.totalBytes, config }); }
+    catch (error) { reason ??= error.message; }
     if (selected.length > 1024) reason ??= 'Selected package has too many files for the browser adapter';
     variants.push(packageVariant(entry, { reason, dtype }));
   }

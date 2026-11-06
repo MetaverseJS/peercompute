@@ -3486,3 +3486,40 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   reset, cancellation/unload, memory budgets, source-off reload and peer use.
   Split packages require missing/duplicate/mixed-revision shards and complete
   tensor/digest validation. These are proposed gates, not executed tests.
+### Existing-engine support expansion — November 5 2026
+
+- Core registry/resource/manifest/task/admission tests:82/82 pass. Hub
+  client/resolver/conversion tests:34/34 pass. Model-browser DOM checks:32/32
+  pass. Existing panel, library, package, console, encrypted peer and GGUF
+  regression set:192/192 pass. Evidence in
+  `/home/cos/.cache/peercompute-support-expansion/`.
+- Real managed hardware acceptance uses `demos/tests/model-support-browser.mjs`.
+  Set `MODEL_SUPPORT_REPO`, optional `MODEL_SUPPORT_DTYPE` (q4 default),
+  `MODEL_SUPPORT_VARIANT` (exact GGUF filename), `MODEL_SUPPORT_SOURCE` (original
+  repository conversion lookup), `MODEL_SUPPORT_EVIDENCE`, disk-backed
+  `MODEL_SUPPORT_DATA_DIR` and optional persistent `MODEL_SUPPORT_PROFILE` plus
+  stable `MODEL_SUPPORT_PORT`. Run cases sequentially. Existing user GPU work
+  must retain enough free host/GPU memory; admission estimates are not measurements.
+  `MODEL_SUPPORT_ENABLE_F16=1` enables the previously documented NVIDIA override
+  only in this owned test browser for GGUF. Never apply it to the user's browser.
+- The harness imports through the shipped runtime/ArtifactStore, requires a
+  ComputeManager worker and real hardware dispatches, compares fresh repeated
+  prompts, cancels during token streaming, checks recovery/unload and restarts the
+  same saved library with external sources blocked. Header-only GGUF Range reads
+  are allowed during inspection; full weights are not. Test prompts and packages
+  are never shared with other peers. A crashed owned page closes its own context;
+  bounded failure diagnostics preserve a receipt instead of hanging cleanup.
+- Gemma3-270M-it q4 passes all above hardware/lifecycle gates without shader-f16.
+  StableLM2-Zephyr1.6B Q4_K_M also passes all lifecycle gates using the documented
+  owned-browser FP16 override;1,031,446,861-byte complete package, revision
+  `6da77f49f48f36f1a01753ca27ba531bde13b861`. Both runs have zero page/console errors.
+  OpenReasoning-Nemotron1.5B q4 passes metadata and verified import but encountered
+  NVIDIA out-of-memory during worker initialization while another browser held
+  ~10GiB GPU memory. Its execution gate remains open. Nano4B q4 also passes
+  metadata/profile admission; its full hardware lifecycle is pending free resources.
+- Standalone, CubeChat and Earth production builds pass with existing size
+  warnings. Exact5189 HTTPS preview passes real source→12 related candidates→
+  pinned Nano4B ONNX inspection;24 metadata requests, zero weights, no page,
+  console-error, HTTP or cleanup errors. Actual authenticated `/noise` connection
+  to the configured SecretWorkshop relay verified. Desktop/mobile screenshots
+  inspected; owned GPU-disabled browser closed. No public Pages build published.

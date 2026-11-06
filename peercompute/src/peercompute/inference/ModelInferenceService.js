@@ -3,6 +3,26 @@ import { CID } from 'multiformats/cid';
 import { normalizeModelMessages, validateImageInput } from './modelTask.js';
 import { MODEL_POLICY, abortError, throwIfAborted, validateModelManifest,
   validateRuntimeAssets, validateSessionId } from './modelManifest.js';
+import { ONNX_CAPABILITY_LIMITS, validateOnnxModelConfig } from './modelCapabilities.js';
+
+async function verifyResidentConfig(store, manifest, signal) {
+  if (manifest.model.runtime !== 'transformers.js' || !manifest.model.memoryProfile) return;
+  const file = manifest.files.find((entry) => entry.path === 'config.json');
+  if (!file || file.size > ONNX_CAPABILITY_LIMITS.maximumConfigBytes) throw new Error('Model config exceeds its metadata budget');
+  const stat = await store.stat(file.cid, { signal });
+  throwIfAborted(signal);
+  if (stat?.status !== 'complete' || stat.size !== file.size || stat.sha256 !== file.sha256) throw new Error('Model config is not verified locally');
+  const bytes = new Uint8Array(file.size);
+  let offset = 0;
+  for await (const chunk of await store.openRead(file.cid, { signal })) {
+    throwIfAborted(signal);
+    if (!(chunk instanceof Uint8Array) || chunk.length > bytes.length - offset) throw new Error('Invalid model config bytes');
+    bytes.set(chunk, offset); offset += chunk.length;
+  }
+  throwIfAborted(signal);
+  if (offset !== bytes.length) throw new Error('Incomplete model config');
+  validateOnnxModelConfig(manifest.model, JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
+}
 
 function operationSignal(signal, timeoutMs) {
   const controller = new AbortController();
@@ -104,6 +124,7 @@ export class ModelInferenceService {
           ? await this.artifactStore.getManifest(manifestCid, { signal: operation.controller.signal }) : manifest;
         const validated = this.runtimeDefinition.validateManifest(source);
         entry.manifest = validated.manifest;
+        await verifyResidentConfig(this.artifactStore, entry.manifest, operation.controller.signal);
         const estimate = typeof this.resourceEstimate === 'function'
           ? await this.resourceEstimate(entry.manifest, validated) : this.resourceEstimate;
         for (const [key, floor] of [['cpuBytes', validated.resourcePolicy.minimumCpuBytes],

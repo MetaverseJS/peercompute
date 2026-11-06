@@ -34,6 +34,13 @@ November 5 follow-up: live HF searches returned HTTP200; missing results came fr
 filters excluding uninspected metadata. Keep those candidates explicitly labeled,
 support empty-query HF browsing and resume interrupted searches on reopening.
 AGENT-01 is next and remains a plan pending its own implementation.
+November 5 authorized follow-up: widen existing engine architecture admission,
+replace the generic text ONNX1.5GiB ceiling with bounded package/config-aware
+profiles, and discover related ONNX/GGUF conversions from publisher lineage.
+Implementation and internal preview checks pass; Gemma270M ONNX and StableLM1.6B
+GGUF pass actual managed GPU lifecycles. Nemotron hardware qualification remains
+open after an initialization out-of-memory failure with another browser holding
+~10GiB GPU memory. Split GGUF and agent implementation remain deferred.
 AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
 or the older IPFS-01 acceptance gates.
 

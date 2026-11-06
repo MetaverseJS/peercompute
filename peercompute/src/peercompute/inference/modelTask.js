@@ -1,4 +1,5 @@
 import { createArtifactFetch } from './ArtifactReadBridge.js';
+import { validateOnnxModelConfig } from './modelCapabilities.js';
 import { MODEL_POLICY, MODEL_RUNTIME_VERSION, abortError, throwIfAborted,
   modelResourcePolicy, validateModelManifest, validateRuntimeAssets, validateSessionId } from './modelManifest.js';
 
@@ -78,13 +79,12 @@ function generationFinishReason(model, generated, maximum) {
   return generated.length >= maximum ? 'length' : 'unknown';
 }
 
-async function loadComponents({ library, modelPath, options, manifest }) {
+async function loadComponents({ library, modelPath, options, manifest, adapterFeatures = [] }) {
   const components = {};
   try {
     const config = await library.AutoConfig.from_pretrained(modelPath, options);
-    if (config.model_type !== manifest.model.architecture) {
-      throw new Error('Model config architecture does not match its admitted manifest');
-    }
+    const required = validateOnnxModelConfig(manifest.model, config);
+    for (const feature of required) if (!adapterFeatures.includes(feature)) throw new Error(`Model config requires unsupported GPU feature: ${feature}`);
     const modelOptions = { ...options, config };
     if (manifest.model.architecture === 'qwen3_5') modelOptions.use_external_data_format = 1;
     if (manifest.model.task === 'image-text-to-text') {
@@ -213,7 +213,7 @@ export function createModelTaskRuntime({
         },
       };
       entry.library = library;
-      entry.components = await loadModel({ library, modelPath: sessionId, options, manifest });
+      entry.components = await loadModel({ library, modelPath: sessionId, options, manifest, adapterFeatures: [...adapter.features] });
       // A non-abortable ORT load can finish after cancellation. Dispose before acknowledging failure.
       throwIfAborted(context.signal);
       const runtimeDevice = await env.backends.onnx.webgpu?.device;
