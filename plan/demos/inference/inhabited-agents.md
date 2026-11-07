@@ -92,6 +92,31 @@ only recognized text goes to a remote agent/model. Replies are synthesized local
 into real PCM and played using the selected body's audio pose. Longer replies
 are split into bounded sentences without silently truncating text.
 
+### November 7 voice follow-up
+
+The user's CubeChat report exposed an incorrect generic “Unsupported model
+runtime” label on loaded speech packages. Their runtime is an auxiliary service,
+not a main chat model. Stored Models must recognize the exact pinned packages,
+show their 1GiB RAM/GPU reservations and direct loading through Enable voice.
+FP32 speech does not require shader-f16; unknown or modified packages remain
+unsupported.
+
+Capture, pending microphone permission and transcription are conversation work:
+typed Send and Models must not overlap them or hide an active recorder. Cancel
+must retain ownership through cleanup. If a speech package is unloaded/deleted,
+resynchronize the checkbox and show an explicit recovery message; reloading is
+the user's Enable voice action. Do not silently omit a requested spoken reply.
+CubeChat acoustic distance uses the player's body, with camera orientation for
+spatial direction. Orbit-camera zoom must not move the listener away from the
+player. EarthGrid has no separate player avatar and retains its camera listener.
+
+Native Talk/Stop with real cached managed reasoning/ASR/TTS reproduced successful
+capture, transcription, generated PCM and playback before these corrections.
+This does not establish the cause of every reported failure. Controlled native
+UI/host tests reproduce overlapping-operation and stale-readiness bugs; actual
+audio measurements establish camera-distance attenuation. Keep those evidence
+categories separate from human listening and the user's unresolved exact path.
+
 ## Acceptance gates
 
 1. Unit/browser contracts: durable bindings, private visitor history, authenticated

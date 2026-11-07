@@ -4,6 +4,8 @@ import { findModelCatalogEntry, modelMemoryEstimate, normalizeModelMemoryBudgets
 import { MODEL_CATALOG } from '../../src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../src/peercompute/artifacts/diffusionModelCatalog.js';
+import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
+import { SPEECH_LIMITS } from '../../src/peercompute/inference/speech/runtimeDefinition.js';
 
 const GiB = 1024 ** 3;
 const onnx = MODEL_CATALOG['qwen3-0.6b-q4'];
@@ -14,6 +16,50 @@ const diffusion = DIFFUSION_MODEL_CATALOG['sd-turbo-onnx'];
 const device = (overrides = {}) => ({ webgpu: true, features: ['shader-f16'], limits: { maxBufferSize: 256 * 1024 ** 2, maxStorageBufferBindingSize: 128 * 1024 ** 2 },
   crossOriginIsolated: true, sharedArrayBuffer: true, jspi: true, memory64: true, deviceMemoryGiB: 8, ...overrides });
 const evaluate = (entry, overrides = {}, budgets) => evaluateModelCompatibility(entry, { device: device(overrides), budgets });
+
+test('pinned fp32 voice packages use their dedicated 1GiB reservations without requiring shader-f16', () => {
+  for (const entry of Object.values(SPEECH_MODEL_CATALOG)) {
+    assert.equal(findModelCatalogEntry(entry), entry);
+    const bytes = SPEECH_LIMITS.residentBytes;
+    assert.equal(bytes, GiB);
+    assert.deepEqual(modelMemoryEstimate(entry), { cpuBytes: bytes, gpuBytes: bytes });
+    const result = evaluate(entry, { features: [] }, { cpuBytes: bytes, gpuBytes: bytes });
+    assert.equal(result.status, 'unknown'); assert.equal(result.code, 'voice_managed');
+    assert.match(result.reason, /Enable voice/); assert.match(result.reason, /memory fit is unverified/);
+    assert.equal(evaluate(entry, { features: [] }, { cpuBytes: bytes - 1 }).code, 'cpu_budget_exceeded');
+    assert.equal(evaluate(entry, { features: [] }, { gpuBytes: bytes - 1 }).code, 'gpu_budget_exceeded');
+    assert.equal(evaluate(entry, { webgpu: false }).code, 'webgpu_unavailable');
+    assert.equal(evaluate(entry, { webgpu: null }).code, 'device_probe_unknown');
+  }
+});
+
+test('voice compatibility rejects unknown, incomplete and tampered pinned profiles and file closures', () => {
+  const entry = SPEECH_MODEL_CATALOG['moonshine-tiny-fp32'];
+  for (const change of [
+    (value) => { value.model.repository = 'other/moonshine'; },
+    (value) => { value.model.revision = '0'.repeat(40); },
+    (value) => { value.model.runtimeVersion = '99.0.0'; },
+    (value) => { value.model.dtype = 'fp16'; },
+    (value) => { value.model.task = 'text-generation'; },
+    (value) => { value.model.sampleRate = 48000; },
+    (value) => { value.model.requiredFeatures = ['shader-f16']; },
+    (value) => { value.model.custom = true; },
+    (value) => { value.files[0].sha256 = '0'.repeat(64); },
+    (value) => { value.files[0].size++; },
+    (value) => { value.files.pop(); },
+    (value) => { value.files[0] = value.files[1]; },
+    (value) => { delete value.files; },
+  ]) {
+    const invalid = structuredClone(entry); change(invalid);
+    assert.equal(findModelCatalogEntry(invalid), undefined);
+    assert.throws(() => modelMemoryEstimate(invalid), /pinned voice catalog/);
+    assert.equal(evaluate(invalid).status, 'unavailable');
+    assert.equal(evaluate(invalid).code, 'catalog_unsupported');
+  }
+  const descriptor = { ...entry.model, modelId: entry.id, totalBytes: entry.totalBytes };
+  assert.equal(findModelCatalogEntry(descriptor), undefined);
+  assert.equal(evaluate(descriptor).code, 'catalog_unsupported');
+});
 
 function probeScope({ gpu, deviceMemory = 8, memory64 = true } = {}) {
   return { navigator: { gpu, deviceMemory }, crossOriginIsolated: true, SharedArrayBuffer,

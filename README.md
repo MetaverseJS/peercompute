@@ -69,6 +69,10 @@ package also passes the independent-peer reseeding test. CubeChat and EarthGrid
 now have selectable world inhabitants with persistent identities,
 private visitor conversations and optional managed speech. The model console is
 secondary configuration; see the [architecture and acceptance plan](plan/demos/inference/inhabited-agents.md).
+To speak with a world agent, select its body (or open Agents), enable voice, and
+use Talk followed by Stop. Speak replies enables local speech synthesis. These
+controls belong to the world conversation; the standalone Agents console runs
+typed/image tasks. Speech packages are managed together through Enable voice.
 
 The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
 storage and hosting. All 11 files (14.20 GB total) are verified and pinned;

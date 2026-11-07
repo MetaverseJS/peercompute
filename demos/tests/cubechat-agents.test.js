@@ -205,16 +205,24 @@ test('a paused local agent can render a full-length name before the owner is con
   }), { status: 'paused', nameLength: 240, owner: '', intensity: .12 });
 });
 
-test('context is plain bounded scene data and audio pose follows the camera and selected body', async t => {
+test('audio listener follows the physical avatar while orbit-camera translation only changes the view', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {
     layer.upsert(base);
     const context = layer.getContext(base);
     shell.camera.position.set(3, 9, 25); shell.camera.lookAt(0, 3, 0);
-    return { context, pose: layer.getAudioPose(base.key), missing: layer.getAudioPose('missing'), focusMissing: layer.focus('missing') };
+    const pose = layer.getAudioPose(base.key);
+    shell.camera.position.set(300, 90, 250); shell.camera.updateMatrixWorld();
+    const zoomed = layer.getAudioPose(base.key);
+    layer.getPlayerPosition = () => [2, 3, 7];
+    const moved = layer.getAudioPose(base.key);
+    return { context, pose, zoomed, moved, missing: layer.getAudioPose('missing'), focusMissing: layer.focus('missing') };
   });
   assert.deepEqual(result.context, { demo: 'CubeChat', theme: 'tron', agent: { name: 'Ada', position: [0, 3, 0], status: 'idle' }, nearbyPlayers: 1 });
-  assert.deepEqual(result.pose.source, [0, 5, 0]); assert.deepEqual(result.pose.listener, [3, 9, 25]);
+  assert.deepEqual(result.pose.source, [0, 5, 0]); assert.deepEqual(result.pose.listener, [0, 5, 20]);
+  assert.deepEqual(result.zoomed.listener, result.pose.listener);
+  assert.deepEqual(result.zoomed.source, result.pose.source);
+  assert.deepEqual(result.moved.listener, [2, 5, 7]);
   assert.ok(Math.abs(Math.hypot(...result.pose.forward) - 1) < 1e-9);
   assert.ok(Math.abs(Math.hypot(...result.pose.up) - 1) < 1e-9);
   assert.equal(result.missing, null); assert.equal(result.focusMissing, false);

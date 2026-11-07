@@ -208,10 +208,13 @@ export function renderStoredModels(view, models, onDelete, onLoad) {
     details.append(node('p', metadata.join(' · '), 'pc-inference-note'));
     if (model.shareError) details.append(node('p', `Sharing unavailable: ${String(model.shareError).slice(0, 256)}`, 'pc-inference-note'));
     const blocked = ['checking', 'unavailable'].includes(model.localAvailability?.status);
+    const voice = model.loadMode === 'voice';
+    if (voice) details.append(node('p', String(model.loadHint || 'Use Enable voice in the world-agent window to load speech models.').slice(0, 512), 'pc-inference-note'));
     if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
-    const load = button(model.loaded ? 'Loaded' : 'Load', `${model.loaded ? 'Loaded' : 'Load'} ${model.name}`);
-    load.dataset.inactive = String(Boolean(model.loaded || model.cleanupPending || blocked || !onLoad));
-    load.disabled = load.dataset.inactive === 'true'; load.onclick = () => onLoad?.(model);
+    const loadLabel = model.loaded ? 'Loaded' : voice ? 'Voice controls' : 'Load';
+    const load = button(loadLabel, `${loadLabel} ${model.name}`);
+    load.dataset.inactive = String(Boolean(voice || model.loaded || model.cleanupPending || blocked || !onLoad));
+    load.disabled = load.dataset.inactive === 'true'; load.onclick = () => { if (!voice) onLoad?.(model); };
     const removeLabel = model.cleanupPending ? 'Retry delete' : 'Delete';
     const remove = button(removeLabel, `${removeLabel} ${model.name}`); remove.className = 'pc-delete-model';
     const actions = node('div', undefined, 'pc-stored-actions'); actions.append(load, remove);

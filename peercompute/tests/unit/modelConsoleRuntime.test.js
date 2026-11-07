@@ -5,6 +5,7 @@ import { attachModelRuntimeController } from '../../../demos/inference/src/model
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
 import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inference/src/modelPreferences.js';
+import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
@@ -860,6 +861,56 @@ function customStoredRecord(overrides = {}) {
     manifest: { ...manifest, name: 'Custom offline model', model: { ...model, repository: 'custom/offline' }, files: [{ size: 50 }] },
     ...overrides };
 }
+
+test('stored speech models stay voice-managed and cannot replace or become the default chat model', async () => {
+  const speech = SPEECH_MODEL_CATALOG['moonshine-tiny-fp32'];
+  const saved = customStoredRecord({ manifest: { name: speech.name, model: speech.model, files: speech.files } });
+  const preferences = preferenceStore(); await preferences().rememberLoaded({ manifestCid: secondCid, modelId: secondCid });
+  const f = fixture({ retained: true, connected: false, retainedRecords: [saved], preferences: preferences(), hooks: {
+    compatibility: (entry) => entry.model?.runtime === 'transformers-speech'
+      ? evaluateModelCompatibility(entry, { device: { webgpu: true, features: [] } })
+      : { status: 'unknown', reason: 'Memory fit unverified' },
+  } });
+  let speechStatus = 'ready';
+  f.runtime.services = { speech: { getStatus: () => ({ status: speechStatus, manifestCid: secondCid }) } };
+  await f.controller.initialize();
+  assert.equal(f.runtime.getStartupModel().manifestCid, cid);
+  assert(!f.runtime.getPreferredModelSourceKey().includes(secondCid));
+  assert(!f.runtime.listModelSources().some((entry) => entry.manifestCid === secondCid));
+  await f.runtime.loadStoredModel(cid);
+  for (const loaded of [true, false]) {
+    speechStatus = loaded ? 'ready' : 'idle';
+    const row = (await f.runtime.listStoredModels()).find((entry) => entry.manifestCid === secondCid);
+    assert.equal(row.loaded, loaded); assert.equal(row.loadMode, 'voice');
+    assert.match(row.loadHint, /Enable voice/); assert.equal(row.localAvailability.code, 'voice_managed');
+    assert.equal(row.localAvailability.cpuBytes, 1024 ** 3); assert.equal(row.localAvailability.gpuBytes, 1024 ** 3);
+    const before = f.calls.length;
+    await assert.rejects(f.runtime.loadStoredModel(secondCid), { code: 'ERR_MODEL_VOICE_MANAGED' });
+    await assert.rejects(f.runtime.load(secondCid), { code: 'ERR_MODEL_VOICE_MANAGED' });
+    assert(!f.calls.slice(before).some((call) => ['load', 'unload', 'import', 'fetch-peer', 'use'].includes(call)));
+    assert.equal(f.runtime.service.getStatus().manifestCid, cid);
+  }
+  await assert.rejects(f.runtime.acquireModel(`stored:${secondCid}`), /source is no longer available/);
+  assert.equal(f.runtime.getPreferredModelSourceKey(), 'hf:test');
+  await f.runtime.deleteStoredModel(secondCid);
+  assert.equal(f.runtime.service.getStatus().manifestCid, cid);
+  assert(!(await f.runtime.listStoredModels()).some((entry) => entry.manifestCid === secondCid));
+  await f.runtime.dispose();
+});
+
+test('speech library metadata remains unavailable when its file digest is changed', async () => {
+  const speech = structuredClone(SPEECH_MODEL_CATALOG['supertonic-fp32']); speech.files[0].sha256 = '0'.repeat(64);
+  const f = fixture({ connected: false, retainedRecords: [customStoredRecord({
+    manifest: { name: speech.name, model: speech.model, files: speech.files },
+  })], hooks: { compatibility: (entry) => evaluateModelCompatibility(entry, { device: { webgpu: true, features: [] } }) } });
+  await f.controller.initialize();
+  const row = (await f.runtime.listStoredModels())[0];
+  assert.equal(row.loadMode, 'voice'); assert.equal(row.localAvailability.status, 'unavailable');
+  assert.equal(row.localAvailability.code, 'catalog_unsupported');
+  await assert.rejects(f.runtime.loadStoredModel(secondCid), { code: 'ERR_MODEL_LOCAL_UNAVAILABLE' });
+  assert(!f.calls.includes('load')); assert(!f.calls.includes('unload'));
+  await f.runtime.dispose();
+});
 
 test('startup selects the default only for an empty complete retained library', async () => {
   const defaultCatalog = { [DEFAULT_MODEL_ID]: { ...catalog.test, id: DEFAULT_MODEL_ID } };

@@ -48,6 +48,20 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   const bindingOf = (head) => head.embodiments?.find((binding) => binding.worldId === worldId);
   const fail = (error) => { if (!disposed) ui?.setStatus(error?.name === 'AbortError' ? 'Cancelled.' : error?.message ?? String(error)); };
   const alive = () => { if (disposed) throw new Error('World agents are closed'); };
+  const voiceUnavailable = 'Voice models are no longer loaded. Enable voice to prepare them again.';
+  function refreshVoiceAvailability() {
+    if (voiceEnabled && speech?.getStatus().status !== 'ready') {
+      voiceEnabled = false;
+      ui.setVoiceStatus({ enabled: false, recording, preparing: !!voicePreparation });
+      ui.setStatus(voiceUnavailable);
+    }
+    return voiceEnabled;
+  }
+  function requireConversationIdle() {
+    if (operation) throw new Error('Wait for the current conversation or cancel it');
+    if (recording || recordingStart) throw new Error('Stop or cancel the microphone recording first');
+    if (panel || panelOpening) throw new Error('Close Models before starting a conversation');
+  }
   const worldNetwork = () => worldManager ?? runtime.networkManager;
   const list = () => [...bodies.values()];
   const updateList = () => { if (!disposed) ui.setAgents(list()); };
@@ -163,6 +177,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   async function spawn({ name, goals = [], localOnly = false, shared = true }) {
     await ready; alive();
+    requireConversationIdle();
     if (list().filter((body) => body.local).length >= WORLD_AGENT_LIMITS.agents) throw new Error('This world already has 16 local agents');
     worldAgentText(name, 240, 'name');
     const position = adapter.normalizePosition(await adapter.getSpawnPosition());
@@ -180,39 +195,54 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     await refreshLocal(); ui.setStatus('Body removed. Agent identity and memory are still saved.');
   }
   async function resume(key) {
+    requireConversationIdle();
     const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can resume this agent');
     await agents.resume(body.agentId); await refreshLocal(); await select(key);
   }
-  async function send({ key = selectedKey, text, voiceReply = false }) {
-    await ready; alive();
-    if (operation) throw new Error('Wait for the current conversation or cancel it');
+  async function converse({ key, text, voiceReply, signal }) {
+    signal.throwIfAborted();
     if (typeof text !== 'string' || !text.trim() || encoder.encode(text).length > WORLD_AGENT_LIMITS.promptBytes) throw new Error('Enter a message within 16 KiB');
     const body = bodies.get(key); if (!body) throw new Error('Choose an agent in this world');
+    message(key, 'user', text); ui.setStatus(`${body.name} is thinking…`);
+    const result = body.local ? await respond({ agentId: body.agentId, prompt: text, signal })
+      : await network?.request(body.ownerPeerId, { agentId: body.agentId, prompt: text }, { signal });
+    signal.throwIfAborted(); if (!result) throw new Error('The agent owner is not connected');
+    message(key, 'assistant', result.text); caption(key, result.text);
+    ui.setStatus(result.finishReason === 'length' ? 'Reply reached the output limit. Ask the agent to continue.' : 'Ready.');
+    if (voiceReply && voiceEnabled) {
+      if (!refreshVoiceAvailability()) ui.setStatus(`Text reply received. ${voiceUnavailable}`);
+      else {
+        try {
+          caption(key, result.text, 'speaking');
+          for (const chunk of speechChunks(result.text)) {
+            signal.throwIfAborted(); const pcm = await speech.synthesize(chunk, { signal });
+            await audio.play(pcm, { key, signal });
+          }
+        } catch (error) {
+          signal.throwIfAborted(); refreshVoiceAvailability();
+          ui.setStatus(`Text reply received. Voice: ${error.message}${voiceEnabled ? '' : ` ${voiceUnavailable}`}`);
+        }
+        finally { caption(key, result.text); }
+      }
+    }
+    return result;
+  }
+  function runOperation(work) {
+    if (operation) throw new Error('Wait for the current conversation or cancel it');
     const controller = new AbortController(); operation = controller;
     const signal = AbortSignal.any([controller.signal, lifetime.signal]); ui.setBusy(true);
-    message(key, 'user', text); ui.setStatus(`${body.name} is thinking…`);
-    const pending = (async () => {
-      try {
-        const result = body.local ? await respond({ agentId: body.agentId, prompt: text, signal })
-          : await network?.request(body.ownerPeerId, { agentId: body.agentId, prompt: text }, { signal });
-        signal.throwIfAborted(); if (!result) throw new Error('The agent owner is not connected');
-        message(key, 'assistant', result.text); caption(key, result.text);
-        ui.setStatus(result.finishReason === 'length' ? 'Reply reached the output limit. Ask the agent to continue.' : 'Ready.');
-        if (voiceReply && voiceEnabled && speech?.getStatus().status === 'ready') {
-          try {
-            caption(key, result.text, 'speaking');
-            for (const chunk of speechChunks(result.text)) {
-              signal.throwIfAborted(); const pcm = await speech.synthesize(chunk, { signal });
-              await audio.play(pcm, { key, signal });
-            }
-          } catch (error) { signal.throwIfAborted(); ui.setStatus(`Text reply received. Voice: ${error.message}`); }
-          finally { caption(key, result.text); }
-        }
-        return result;
-      } catch (error) { fail(error); throw error; }
-      finally { if (operation === controller) { operation = null; operationDone = null; if (!disposed) ui.setBusy(false); } }
-    })();
+    // One owner covers capture completion, transcription, reply and playback.
+    // Stop must never replace the controller of an existing typed request.
+    const pending = Promise.resolve().then(() => { signal.throwIfAborted(); return work(signal); })
+      .catch((error) => { fail(error); throw error; })
+      .finally(() => {
+        if (operation === controller) { operation = null; operationDone = null; if (!disposed) ui.setBusy(false); }
+      });
     operationDone = pending; return pending;
+  }
+  async function send({ key = selectedKey, text, voiceReply = false }) {
+    await ready; alive(); requireConversationIdle();
+    return runOperation((signal) => converse({ key, text, voiceReply, signal }));
   }
   async function cancel() {
     operation?.abort(new DOMException('Conversation cancelled', 'AbortError'));
@@ -243,9 +273,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     })(); voicePreparationDone = pending; return pending;
   }
   async function record({ key = selectedKey, recording: start, voiceReply = true }) {
+    alive();
     if (!voiceEnabled || !bodies.has(key)) throw new Error('Choose an agent and enable voice first');
     if (start) {
-      if (operation) throw new Error('Wait for the current reply or cancel it');
+      requireConversationIdle();
+      if (!refreshVoiceAvailability()) throw new Error(voiceUnavailable);
       if (recording || recordingStart) throw new Error('Microphone is already starting or recording');
       const entry = { controller: new AbortController() }; recordingStart = entry;
       const signal = AbortSignal.any([entry.controller.signal, lifetime.signal]);
@@ -259,28 +291,34 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     } else {
       if (recordingStart) {
         recordingStart.controller.abort(new DOMException('Recording cancelled', 'AbortError'));
-        await audio.cancelRecording(); await recordingStart?.promise.catch(() => {}); return;
+        await audio.cancelRecording(); await recordingStart?.promise.catch(() => {});
+        ui.setVoiceStatus({ enabled: voiceEnabled, recording: false, preparing: false });
+        ui.setStatus('Recording cancelled.'); return;
       }
       if (!recording) return;
+      if (operation) throw new Error('Wait for the current conversation or cancel it');
       recording = false; ui.setVoiceStatus({ enabled: true, recording: false, preparing: false });
-      const controller = new AbortController(); operation = controller; ui.setBusy(true); ui.setStatus('Transcribing…');
-      const pending = (async () => {
+      ui.setStatus('Transcribing…');
+      return runOperation(async (signal) => {
         const input = await audio.stopRecording();
-        return speech.transcribe(input, { signal: AbortSignal.any([controller.signal, lifetime.signal]) });
-      })(); operationDone = pending;
-      let result;
-      try { result = await pending; controller.signal.throwIfAborted(); }
-      finally { operation = null; operationDone = null; if (!disposed) ui.setBusy(false); }
-      if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
-      return send({ key, text: result.text, voiceReply });
+        signal.throwIfAborted();
+        if (!refreshVoiceAvailability()) throw new Error(voiceUnavailable);
+        const result = await speech.transcribe(input, { signal });
+        signal.throwIfAborted();
+        if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
+        return converse({ key, text: result.text, voiceReply, signal });
+      });
     }
   }
   async function closePanel() {
     await panelOpening;
     await panel?.dispose(); panel = null; panelShell?.remove(); panelShell = null;
+    if (!disposed) refreshVoiceAvailability();
   }
   async function models() {
     await ready; alive(); if (panel || panelOpening) return;
+    requireConversationIdle();
+    if (voicePreparation) throw new Error('Wait for voice preparation or cancel it before opening Models');
     beforeOpen?.();
     panelOpening = (async () => {
       panelShell = document.createElement('dialog'); panelShell.className = 'world-agent-models';

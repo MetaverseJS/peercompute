@@ -207,7 +207,11 @@ export class CubeAgentLayer {
     const entry = this.entries.get(key);
     if (!entry || this.closed) return null;
     this.scene.camera.updateWorldMatrix(true, false);
-    const listener = this.scene.camera.getWorldPosition(new THREE.Vector3());
+    // The orbit camera can be far behind the avatar. Zooming the view must not
+    // change acoustic distance while the player and speaker remain stationary.
+    const player = this.getPlayerPosition();
+    const listener = new THREE.Vector3(...this.normalizePosition(Array.isArray(player)
+      ? player : [player?.x, player?.y, player?.z])).add(new THREE.Vector3(0, 2, 0));
     const forward = this.scene.camera.getWorldDirection(new THREE.Vector3());
     const rotation = this.scene.camera.getWorldQuaternion(new THREE.Quaternion());
     return { source: entry.mesh.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 2, 0)).toArray(),

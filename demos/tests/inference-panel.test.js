@@ -1158,6 +1158,32 @@ test('unavailable, deleting and loaded stored packages cannot start another load
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
 });
 
+test('Stored Models explains loaded and saved voice packages without dispatching them to chat', async (t) => {
+  const page = await fixture(t, { loaded: true, stored: [
+    { manifestCid: 'fixture-vision', name: 'Moonshine Tiny', totalBytes: 113009473, runtime: 'transformers-speech',
+      loadMode: 'voice', loadHint: 'Use Enable voice in the agent window to load speech models.',
+      localAvailability: { status: 'unknown', code: 'voice_managed' } },
+    { manifestCid: 'saved-voice', name: 'Supertonic', totalBytes: 262000000, runtime: 'transformers-speech',
+      loadMode: 'voice', localAvailability: { status: 'unknown', code: 'voice_managed' } },
+    { manifestCid: 'bad-voice', name: 'Changed voice package', totalBytes: 1024, runtime: 'transformers-speech',
+      loadMode: 'voice', localAvailability: { status: 'unavailable', code: 'catalog_unsupported', reason: 'Speech package differs from the pinned voice catalog' } },
+  ] });
+  await openMenuAction(page, 'Stored Models');
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  for (const name of ['Loaded Moonshine Tiny', 'Voice controls Supertonic', 'Voice controls Changed voice package']) {
+    const control = modal.getByRole('button', { name, exact: true }); await control.waitFor();
+    assert.equal(await control.isDisabled(), true);
+    await control.evaluate((button) => button.onclick());
+  }
+  assert.match(await modal.textContent(), /Enable voice/);
+  assert.match(await modal.textContent(), /differs from the pinned voice catalog/);
+  assert.doesNotMatch(await modal.textContent(), /Unsupported model runtime/);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
+  await modal.getByRole('button', { name: 'Delete Supertonic', exact: true }).click();
+  await page.waitForFunction(() => !uiState.stored.some((model) => model.manifestCid === 'saved-voice'));
+  assert.equal(await modal.getByRole('button', { name: 'Loaded Moonshine Tiny', exact: true }).isDisabled(), true);
+});
+
 test('startup downloads the default once, without waiting for the peer network', async (t) => {
   const page = await fixture(t, { startup: { sourceKey: 'hf:vision', name: 'Fixture vision' },
     acquireDelay: 100, connectFailure: true, interval: 50 });

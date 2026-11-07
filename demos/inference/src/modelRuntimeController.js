@@ -1,7 +1,7 @@
 import { createModelMutationQueue, listStoredModelRecords, modelStorageError, withModelDeletionOwnership } from './modelLibrary.js';
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
-import { findModelCatalogEntry } from './modelDeviceCompatibility.js';
+import { findModelCatalogEntry, VOICE_MODEL_LOAD_HINT } from './modelDeviceCompatibility.js';
 import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from './modelHubPackage.js';
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
 
@@ -18,6 +18,7 @@ function capabilities(model = {}) {
   const task = model.task ?? (modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
   return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : 'text'])] };
 }
+const voiceManaged = (entry) => (entry?.model ?? entry)?.runtime === 'transformers-speech';
 
 function awaitLoadStep(promise, signal, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -75,6 +76,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         { code: 'ERR_MODEL_LOCAL_UNAVAILABLE', availability });
     }
     return availability;
+  }
+  function assertChatLoadable(entry) {
+    assertLocallyAvailable(entry);
+    if (voiceManaged(entry)) throw Object.assign(new Error(VOICE_MODEL_LOAD_HINT), { code: 'ERR_MODEL_VOICE_MANAGED' });
   }
   if (runtime.setMemoryBudgets) {
     const setBudgets = runtime.setMemoryBudgets.bind(runtime);
@@ -256,7 +261,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   }
   async function loadModel(cid, options = {}) {
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
-    assertLocallyAvailable(await runtime.store.getManifest(cid, { signal: options.signal }));
+    assertChatLoadable(await runtime.store.getManifest(cid, { signal: options.signal }));
     if (!modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
     const signal = options.signal;
     let preferenceReceipt;
@@ -307,7 +312,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   async function activateRecord(record, options, signal) {
     signal.throwIfAborted();
     // Validate persisted metadata before replacing a working local session.
-    assertLocallyAvailable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
+    assertChatLoadable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
     signal.throwIfAborted();
     if (resident()?.manifestCid === record.cid) {
       await rememberSuccessfulLoad(record.cid, signal);
@@ -347,18 +352,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     getDiscoveryStatus: () => structuredClone({ ...discovery, connected: Boolean(runtime.networkManager?.isConnected) }),
     getPreferredModelSourceKey() {
       const saved = lastLoaded && !deleting.has(lastLoaded.manifestCid) && retained.get(lastLoaded.manifestCid);
-      return saved ? catalog[saved.modelId] ? `hf:${saved.modelId}` : `stored:${saved.manifestCid}`
+      return saved && !voiceManaged(saved) ? catalog[saved.modelId] ? `hf:${saved.modelId}` : `stored:${saved.manifestCid}`
         : `hf:${DEFAULT_MODEL_ID}`;
     },
     getStartupModel() {
       assertOpen();
-      const saved = [...retained.values()].filter((entry) => !deleting.has(entry.manifestCid))
+      const saved = [...retained.values()].filter((entry) => !voiceManaged(entry) && !deleting.has(entry.manifestCid))
         .sort(compareModelSizes).map((entry) => ({
           sourceKey: catalog[entry.modelId] ? `hf:${entry.modelId}` : `stored:${entry.manifestCid}`,
           manifestCid: entry.manifestCid, name: entry.name,
           localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry),
         }));
-      const choices = Object.values(catalog).map((entry) => ({ ...entry, key: `hf:${entry.id}` }))
+      const choices = Object.values(catalog).filter((entry) => !voiceManaged(entry)).map((entry) => ({ ...entry, key: `hf:${entry.id}` }))
         .sort(compareModelSizes).map((entry) => ({ sourceKey: entry.key, name: entry.name,
           localAvailability: localAvailability(entry) }));
       const preferred = saved.find((entry) => entry.manifestCid === lastLoaded?.manifestCid);
@@ -391,7 +396,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           license: retainedManifests.get(entry.manifestCid)?.provenance?.license,
           dtype: retainedManifests.get(entry.manifestCid)?.model?.dtype,
           localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) }))]
-        .sort(compareModelSizes);
+        .filter((entry) => !voiceManaged(entry)).sort(compareModelSizes);
     },
     listInferenceTargets() {
       const model = resident();
@@ -437,9 +442,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       if (!source) throw new Error('This model source is no longer available');
       if (source.source === 'stored') return runtime.loadStoredModel(source.manifestCid, options);
       const profile = source.source === 'hf' ? catalog[source.modelId] : source;
-      assertLocallyAvailable(profile);
+      assertChatLoadable(profile);
       return acquire(async (signal) => {
-        assertLocallyAvailable(profile);
+        assertChatLoadable(profile);
         let record;
         if (source.source === 'hf') {
           const preferred = lastLoaded && retained.get(lastLoaded.manifestCid);
@@ -497,6 +502,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         modelId: descriptor(record.cid, record.manifest)?.modelId ?? record.cid,
         totalBytes: record.manifest.files.reduce((sum, file) => sum + file.size, 0),
         runtime: record.manifest.model.runtime,
+        ...(voiceManaged(record.manifest) ? { loadMode: 'voice', loadHint: VOICE_MODEL_LOAD_HINT } : {}),
         localAvailability: record.status === 'deleting' || deleting.has(record.cid)
           ? { status: 'unavailable', code: 'model_deleting', reason: 'Finish deleting this package before loading it.' }
           : !(record.pinned || record.retain)

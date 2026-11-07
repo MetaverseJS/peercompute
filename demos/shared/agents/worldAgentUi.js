@@ -69,9 +69,10 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
 
   let agents = [], selected = null, busy = false, disposed = false, closing = null, restoreFocus = null;
   let sending = false, mutating = false, cancelling = false, selecting = false;
-  let voiceState = { enabled: false, recording: false, preparing: false }, recordIntent = false, voiceEpoch = 0, recordEpoch = 0;
+  let voiceState = { enabled: false, recording: false, preparing: false }, recordIntent = false, recordPending = false, voiceEpoch = 0, recordEpoch = 0;
   let messageList = [];
   const active = () => busy || sending;
+  const capturing = () => voiceState.recording || recordIntent || recordPending;
   const paused = () => selected?.status === 'paused' || selected?.recoveryRequired === true;
   const setStatus = (value) => { if (!disposed) status.textContent = text(value); };
 
@@ -79,15 +80,15 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
     const blocked = disposed || Boolean(closing), pending = mutating || selecting;
     launcher.disabled = blocked;
     closeButton.disabled = blocked; closeButton.textContent = closing ? 'Closing…' : 'Close';
-    models.disabled = blocked || pending || active();
+    models.disabled = blocked || pending || active() || capturing() || voiceState.preparing;
     name.disabled = goals.disabled = localOnly.input.disabled = shared.input.disabled = blocked || mutating;
-    spawn.disabled = blocked || mutating || active() || typeof onSpawn !== 'function';
-    prompt.disabled = blocked || !selected || paused() || active() || pending;
+    spawn.disabled = blocked || mutating || active() || capturing() || typeof onSpawn !== 'function';
+    prompt.disabled = blocked || !selected || paused() || active() || capturing() || pending;
     send.disabled = prompt.disabled || !prompt.value.trim() || typeof onSend !== 'function';
     record.textContent = voiceState.recording || recordIntent ? 'Stop' : 'Talk';
     record.disabled = blocked || !selected || paused() || pending || !voiceState.enabled || voiceState.preparing
-      || (active() && !voiceState.recording && !recordIntent) || typeof onRecord !== 'function';
-    cancel.disabled = blocked || cancelling || !active() || typeof onCancel !== 'function';
+      || ((active() || recordPending) && !voiceState.recording && !recordIntent) || typeof onRecord !== 'function';
+    cancel.disabled = blocked || cancelling || !(active() || capturing() || voiceState.preparing) || typeof onCancel !== 'function';
     cancel.textContent = cancelling ? 'Cancelling…' : 'Cancel';
     voice.input.disabled = blocked || typeof onVoice !== 'function';
     voice.input.checked = voiceState.enabled || voiceState.preparing;
@@ -99,14 +100,14 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
         : 'Voice models download about 376 MB on first use. Text chat remains available.';
     const owned = selected?.local === true;
     ownerActions.hidden = !owned;
-    remove.hidden = !owned; remove.disabled = blocked || pending || active() || typeof onRemove !== 'function';
-    resume.hidden = !owned || !paused(); resume.disabled = blocked || pending || active() || typeof onResume !== 'function';
+    remove.hidden = !owned; remove.disabled = blocked || pending || active() || capturing() || typeof onRemove !== 'function';
+    resume.hidden = !owned || !paused(); resume.disabled = blocked || pending || active() || capturing() || typeof onResume !== 'function';
     resume.textContent = selected?.recoveryRequired ? 'Acknowledge and resume' : 'Resume';
     recovery.hidden = !paused();
     recovery.textContent = selected?.recoveryRequired
       ? 'The previous request has an unknown outcome. Resume acknowledges it without replaying that request.'
       : owned ? 'This agent is paused. Resume it before starting a new conversation.' : 'This agent is paused by its host.';
-    for (const row of list.querySelectorAll('button')) row.disabled = blocked || pending || active() || voiceState.recording || recordIntent;
+    for (const row of list.querySelectorAll('button')) row.disabled = blocked || pending || active() || capturing();
   }
 
   async function invoke(callback, argument, { mutation = false, selection = false } = {}) {
@@ -219,10 +220,10 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   record.addEventListener('click', async () => {
     if (record.disabled || !selected) return;
     const recording = !(voiceState.recording || recordIntent), epoch = ++recordEpoch;
-    recordIntent = recording; updateControls();
+    recordIntent = recording; recordPending = true; updateControls();
     try { await onRecord({ key: selected.key, recording, voiceReply: voiceReply.input.checked }); }
     catch (error) { if (epoch === recordEpoch) setStatus(error?.message ?? error); }
-    finally { if (epoch === recordEpoch) recordIntent = false; updateControls(); }
+    finally { if (epoch === recordEpoch) { recordIntent = false; recordPending = false; } updateControls(); }
   });
 
   function open() {

@@ -27,6 +27,14 @@ SecretWorkshop checks. Tiny Gemma reply quality remains inconsistent; direct
 native upgrade timed out in one fixture, with encrypted relay conversation
 success recorded separately. Agent-to-agent initiation is not implemented.
 
+November7 voice follow-up: correct auxiliary speech compatibility labels and
+protect microphone capture, transcription and generation from overlapping UI
+actions. Reconcile voice controls after a speech package is unloaded; an enabled
+speech request must not silently become text-only. CubeChat audio distance must
+follow the player body rather than orbit-camera zoom. Native Talk/Stop, managed
+ASR/reasoning/TTS playback and corrected internal previews pass; focused
+regression evidence and remaining user-specific diagnosis are recorded in log.md.
+
 November6 CubeChat input correction: native mouse activation on a touch-capable
 (coarse-pointer) desktop previously selected touch-only controls and discarded
 keyboard movement. Use the actual input to select the HUD, preserve keyboard

@@ -8,11 +8,21 @@
   scope/replay/deadline and acknowledged cancellation/teardown. Existing
   agent record/router/runtime suites remain required.
 - `node --test demos/tests/world-agent-host.test.js
-  demos/tests/world-agent-runtime.test.js demos/tests/world-agent-ui.test.js`
+  demos/tests/world-agent-runtime.test.js demos/tests/world-agent-ui.test.js
+  demos/tests/world-agent-voice-controls.test.js`
   checks scene ownership, persistence after close/restart, safe directory
   projection, auxiliary model deletion, pending microphone/voice cancellation,
   native keyboard/dialog controls and phone wrapping. These use explicitly
   simulated inference; they do not prove a model or speech works.
+- November7 voice regression coverage must compose the real host and native UI:
+  pending microphone permission, Talk/Stop, typed Send and Models during capture,
+  cancellation ownership through transcription/generation, and deleted/unloaded
+  speech services. Check actionable status and explicit Enable voice recovery;
+  never silently synthesize nothing while reporting success. Pinned speech
+  compatibility must use the actual 1GiB per-service reservations, accept FP32
+  without shader-f16, reject modified packages, and keep auxiliary packages out
+  of automatic/main chat loading. CubeChat listener distance follows the player
+  while camera translation/zoom leaves it unchanged.
 - CubeChat `demos/tests/cubechat-agents.test.js` and existing input tests cover
   separate body/collision ownership, native picking, controller isolation and
   room teardown. Earth `demos/earth/tests/agentLayer.test.mjs` and

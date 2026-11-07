@@ -4,13 +4,17 @@ import { getModelCapability, ONNX_CAPABILITY_LIMITS } from '../../../peercompute
 import { MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
+import { SPEECH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/speech/speechCatalog.js';
+import { SPEECH_LIMITS } from '../../../peercompute/src/peercompute/inference/speech/runtimeDefinition.js';
 
 const GiB = 1024 ** 3;
-const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG), ...Object.values(DIFFUSION_MODEL_CATALOG)];
+const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG),
+  ...Object.values(DIFFUSION_MODEL_CATALOG), ...Object.values(SPEECH_MODEL_CATALOG)];
 const limitNames = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize',
   'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX', 'maxComputeWorkgroupSizeY',
   'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
-const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion']);
+const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech']);
+export const VOICE_MODEL_LOAD_HINT = 'Managed by the world-agent voice controls. Use Enable voice in the agent window to load speech models.';
 
 /** Resolve a catalog identity without choosing the first same-revision variant. */
 export function findModelCatalogEntry(entry, entries = catalogs) {
@@ -20,6 +24,12 @@ export function findModelCatalogEntry(entry, entries = catalogs) {
     && (candidate.revision ?? candidate.model.revision) === (input.revision ?? entry?.revision)
     && ['architecture', 'task', 'format', 'dtype'].every((key) =>
       (!entry?.model && input[key] === undefined) || sameValue(input[key], candidate.model[key]))
+    // Speech supports only the complete pinned profile and file closure. A
+    // display-only peer descriptor cannot authorize its dedicated loader.
+    && (input.runtime !== 'transformers-speech' || (entry?.model && sameValue(input, candidate.model)
+      && Array.isArray(entry.files) && entry.files.length === candidate.files.length
+      && candidate.files.every((expected) => entry.files.some((file) => file.path === expected.path
+        && file.size === expected.size && file.sha256 === expected.sha256))))
     && (!entry?.model || !Array.isArray(entry.files) || !Array.isArray(candidate.files)
       || catalogFilesMatch(input.runtime, entry.files, candidate.files)));
   // Repositories may publish several quantizations at the same immutable
@@ -58,7 +68,11 @@ function profile(entry) {
 
 /** Configured resident reservations, deliberately not detected device memory. */
 export function modelMemoryEstimate(entryOrManifest) {
-  const { model, totalBytes, files, descriptorOnly } = profile(entryOrManifest);
+  const { model, totalBytes, files, trusted, descriptorOnly } = profile(entryOrManifest);
+  if (model.runtime === 'transformers-speech') {
+    if (!trusted) throw Object.assign(new Error('Speech package differs from the pinned voice catalog'), { code: 'ERR_MODEL_SPEECH_UNVERIFIED' });
+    return { cpuBytes: SPEECH_LIMITS.residentBytes, gpuBytes: SPEECH_LIMITS.residentBytes };
+  }
   if (model.runtime === 'onnx-diffusion') return { cpuBytes: 8 * GiB, gpuBytes: 8 * GiB };
   if (model.runtime === 'llama.cpp') {
     if (totalBytes === null) return { cpuBytes: 0, gpuBytes: 0 };
@@ -152,6 +166,9 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   if (model.requiredFeatures !== undefined && (!Array.isArray(model.requiredFeatures) || model.requiredFeatures.length > 32
       || model.requiredFeatures.some((feature) => typeof feature !== 'string' || !feature || feature.length > 80)))
     return ['model_invalid', 'Invalid model GPU feature requirements'];
+  // The memory estimator has already required the exact speech model metadata,
+  // sizes and SHA-256 closure; no generic architecture or package expansion.
+  if (model.runtime === 'transformers-speech') return null;
   const maximum = model.runtime === 'llama.cpp' ? 16 * GiB
     : model.runtime === 'onnx-diffusion' ? 3 * GiB : modelResourcePolicy(model).maxModelBytes;
   if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large',
@@ -214,7 +231,8 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
   const result = (status, code, reason) => ({ status, reason, code, ...estimate });
   if (!device) return result('checking', 'device_checking', 'Checking device compatibility');
   if (invalid) return result('unavailable', invalid.code === 'ERR_MODEL_FILE_TOO_LARGE' ? 'file_too_large'
-    : invalid.code === 'ERR_MODEL_PACKAGE_TOO_LARGE' ? 'package_too_large' : 'model_invalid', invalid.message);
+    : invalid.code === 'ERR_MODEL_PACKAGE_TOO_LARGE' ? 'package_too_large'
+      : invalid.code === 'ERR_MODEL_SPEECH_UNVERIFIED' ? 'catalog_unsupported' : 'model_invalid', invalid.message);
   const problem = runtimeProblem(details);
   if (problem) return result('unavailable', ...problem);
   if (configured.cpuBytes !== null && estimate.cpuBytes > configured.cpuBytes)
@@ -233,7 +251,8 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
   const features = new Set(device.features ?? []);
   const required = new Set(details.model.requiredFeatures ?? []);
   const dtype = details.model.dtype;
-  if (details.model.runtime !== 'transformers.js' || (typeof dtype === 'string' ? [dtype] : Object.values(dtype ?? {})).some((type) => ['fp16', 'q4f16'].includes(type))) required.add('shader-f16');
+  if (['llama.cpp', 'onnx-diffusion'].includes(details.model.runtime)
+      || (typeof dtype === 'string' ? [dtype] : Object.values(dtype ?? {})).some((type) => ['fp16', 'q4f16'].includes(type))) required.add('shader-f16');
   for (const feature of required) if (!features.has(feature)) {
     // Quantized GGUF weights still execute FP16 kernels in the pinned engine.
     const reason = feature === 'shader-f16' && details.model.runtime === 'llama.cpp'
@@ -243,6 +262,8 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
     return result('unavailable', 'gpu_feature_unavailable', reason);
   }
   if (details.descriptorOnly) return result('unknown', 'model_metadata_unverified', 'Model metadata and RAM/GPU memory fit require verification before loading');
+  if (details.model.runtime === 'transformers-speech') return result('unknown', 'voice_managed',
+    `${VOICE_MODEL_LOAD_HINT} RAM/GPU memory fit is unverified.`);
   // No current catalog provides verified per-allocation minima. maxBufferSize
   // limits one allocation; neither it nor a coarse deviceMemory hint measures
   // total/free VRAM or proves that a package cannot fit. Do not stress-probe RAM.

@@ -1132,3 +1132,16 @@ journaling across reloads is deferred; original interface-change cause is unknow
   and cleanup before room replacement. Reuse the existing routing and aggregate
   resource broker. No automatic microphone capture or speech-model downloads.
 - Detailed boundaries and acceptance: [inhabited-agent plan](../demos/inference/inhabited-agents.md).
+
+### November 7 — CubeChat speech follow-up
+
+- Diagnose “Unsupported model runtime” on loaded voice packages and reported
+  silence. Classify the pinned auxiliary speech runtimes with their actual
+  reservations, and keep them separate from main chat-model loading.
+- Protect microphone/transcription ownership from overlapping Send/Models,
+  preserve cancellation, and resynchronize controls after speech unload/deletion.
+  CubeChat positional audio follows the player body rather than orbit-camera
+  distance. Preserve explicit microphone/model-loading actions.
+- Validate the real native Talk/Stop path and controlled failure regressions;
+  publish corrected internal previews only. Standalone agent administration is
+  the Agents button in the existing inference console on HTTPS5189.
