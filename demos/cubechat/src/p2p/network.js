@@ -499,8 +499,8 @@ export class P2PNetwork {
     });
   }
 
-  stop() {
-    this._shutdownNode();
+  async stop() {
+    await this._shutdownNode();
     if (this.peerConnections.size) {
       Array.from(this.peerConnections.keys()).forEach((peerId) => this.closePeerConnection(peerId));
     }

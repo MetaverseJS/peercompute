@@ -4,6 +4,12 @@ Date: November 5, 2026. Status: first persistent-agent foundation implemented;
 learned routing, host provisioning and mobility remain planned. Current scope:
 one general-purpose agent type.
 
+November6 correction: CubeChat and EarthGrid agents must inhabit visible bodies
+and converse with players through text and voice. This integration brings managed
+speech forward; see [inhabited-agent architecture](inhabited-agents.md). Shared
+world bodies and conversations are explicitly confirmed by the user. It does not
+advance the deferred learned locomotion, training or migration claims.
+
 Read the [one-page summary](agentlayer.pdf) or its [editable source](agent-layer-summary.html).
 This is the first software-agent step toward [Humunculus](../humunculus/humunculus.pdf),
 before learned bodies, navigation, training curricula and connectome experiments.

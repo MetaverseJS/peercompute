@@ -39,8 +39,9 @@ The full
 IndexedDB context, learned model selection with optional peer-hosted routing,
 strict local-only operation, and consented model loading, cloning and migration.
 Architecture diagrams show StateManager persistence, ComputeManager workers and
-NetworkManager peer routing. Dedicated agent types and new speech/mesh adapters
-are deferred beyond the initial agent TODO.
+NetworkManager peer routing. Dedicated agent types and mesh generation remain
+deferred. The explicitly requested CubeChat/EarthGrid inhabitant slice adds
+managed local speech and shared-world conversations.
 Learned selection, peer-hosted ranking, requested model provisioning, cloning and
 migration remain planned. The full AGENT-01 TODO is not complete.
 Run `npm run test:agent-layer` for persistence/routing/UI checks. The opt-in
@@ -65,8 +66,9 @@ ComputeManager-owned WebGPU workers on Chrome155/RTX5060Ti, including warm reuse
 cancellation, unload and browser restart with external model requests blocked.
 All three vision models distinguish red and blue image inputs. The complete SmolVLM256M
 package also passes the independent-peer reseeding test. CubeChat and EarthGrid
-expose an optional agent panel with bounded scene context and explicit image attachments;
-model-proposed demo actions require an explicit apply button.
+now have selectable world inhabitants with persistent identities,
+private visitor conversations and optional managed speech. The model console is
+secondary configuration; see the [architecture and acceptance plan](plan/demos/inference/inhabited-agents.md).
 
 The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
 storage and hosting. All 11 files (14.20 GB total) are verified and pinned;

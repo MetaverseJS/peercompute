@@ -14,6 +14,19 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November6 inhabited-agent correction is implemented in both CubeChat and
+EarthGrid: actual selectable scene bodies, persistent identity and isolated
+visitor conversations, typed and managed spoken interaction, and authenticated
+shared-world discovery. The model console becomes secondary configuration.
+This explicitly brings speech adapters forward from the original deferral;
+learned movement, training and migration remain later work.
+See [inhabited-agent architecture and acceptance](demos/inference/inhabited-agents.md).
+Actual managed peer conversations and three-resident reasoning/ASR/TTS playback
+pass; both complete production scenes pass internal HTTPS visual/persistence and
+SecretWorkshop checks. Tiny Gemma reply quality remains inconsistent; direct
+native upgrade timed out in one fixture, with encrypted relay conversation
+success recorded separately. Agent-to-agent initiation is not implemented.
+
 November6 CubeChat input correction: native mouse activation on a touch-capable
 (coarse-pointer) desktop previously selected touch-only controls and discarded
 keyboard movement. Use the actual input to select the HUD, preserve keyboard
@@ -33,7 +46,8 @@ scenarios pass; the corrected internal preview is available on HTTPS5176.
    through a small learned selector to eligible local/network models; support strict
    local-only and optional peer-hosted ML routing. Add separately consented host
    model loading, cloning and same-identity migration. Dedicated agent types and
-   new speech/3D adapters are deferred beyond this TODO. [One-page summary](demos/inference/agentlayer.pdf) ·
+   new 3D generation adapters are deferred; world conversation speech is now an
+   explicitly requested integration slice. [One-page summary](demos/inference/agentlayer.pdf) ·
    [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
 
 MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and checks](demos/inference/model-browser.md).

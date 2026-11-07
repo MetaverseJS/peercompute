@@ -14,8 +14,8 @@ import {
   normalizeWorldTheme
 } from './world/themes.js';
 import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
-import { installDemoAgentLauncher } from '../../shared/agents/launcher.js';
-import { boundedSceneContext, createDemoAgentActions, captureAgentImage } from '../../shared/agents/DemoAgent.js';
+import { installWorldAgents } from '../../shared/agents/WorldAgentHost.js';
+import { CubeAgentLayer } from './agents/CubeAgentLayer.js';
 import {
   bindPeercomputeBotSettingsControls,
   createPeercomputeBotHost,
@@ -46,6 +46,11 @@ class CubeChat {
     this.worldTheme = DEFAULT_WORLD_THEME;
     this.worldThemeStateUnsubscribe = null;
     this._initialThemeFromQuery = null;
+    this.worldAgents = null;
+    this.agentLayer = null;
+    this.roomSwitchPromise = null;
+    this.destroying = null;
+    this.isDestroying = false;
   }
 
   _isMobileLikeDevice() {
@@ -99,6 +104,47 @@ class CubeChat {
       settingsMenu.style.display = 'block';
     }
     this.settingsShownOnce = true;
+  }
+
+  _installWorldAgents() {
+    if (this.botLaunch.enabled || this.isDestroying || this.worldAgents) return;
+    let host;
+    const layer = new CubeAgentLayer({
+      scene: this.scene,
+      physics: this.physics,
+      getPlayerPosition: () => this.physics.getPosition(this.network.localPlayer.id) ?? this.network.localPlayer.position,
+      onSelect: (key) => host?.openConversation(key)
+    });
+    try {
+      host = installWorldAgents({
+        worldId: `cubechat:${this.currentRoom.roomId}`,
+        worldLabel: 'CubeChat',
+        adapter: layer,
+        getRuntimeOptions: () => ({
+          stateManager: this.network.node.getStateManager(),
+          networkManager: this.network.node.getNetworkManager()
+        }),
+        beforeOpen: () => { this.controller.clearInput(); this._exitPointerLock(); }
+      });
+      this.agentLayer = layer;
+      this.worldAgents = host;
+      Promise.resolve(host.ready).catch((error) => {
+        if (this.worldAgents !== host || this.isDestroying) return;
+        this.logEvent(`Agents unavailable: ${error.message}`, 'error');
+      });
+    } catch (error) {
+      layer.dispose();
+      this.logEvent(`Agents unavailable: ${error.message}`, 'error');
+    }
+  }
+
+  async _disposeWorldAgents() {
+    const host = this.worldAgents;
+    // Keep the reference on failed cleanup so room changes and shutdown can retry.
+    await host?.dispose();
+    this.agentLayer?.dispose();
+    this.worldAgents = null;
+    this.agentLayer = null;
   }
 
   _getWorldThemeSelect() {
@@ -616,32 +662,7 @@ class CubeChat {
       this.initVR();
 
       this._registerBotBridge();
-      if (!this.botLaunch.enabled) {
-        const actions = createDemoAgentActions([{
-          name: 'setLocalTheme', description: `{"theme":one of ${JSON.stringify(WORLD_THEMES.map((theme) => theme.id))}}; changes only your local view`,
-          validate: (args) => args && Object.keys(args).length === 1 && WORLD_THEMES.some((theme) => theme.id === args.theme),
-          apply: ({ theme }) => this._setWorldThemeLocal(theme)
-        }]);
-        this.agentLauncher = installDemoAgentLauncher({
-          beforeOpen: () => this._exitPointerLock(),
-          getOptions: () => ({
-            stateManager: this.network.node.getStateManager(),
-            computeManager: this.network.node.getComputeManager(),
-            networkManager: this.network.node.getNetworkManager(),
-            actions,
-            getContext: ({ includeImage = false } = {}) => {
-              const text = boundedSceneContext({ demo: 'CubeChat', theme: this.worldTheme,
-                peerCount: this.remotePlayers.size,
-                position: this.network.localPlayer?.position
-                  ? ['x', 'y', 'z'].map((axis) => Number(this.network.localPlayer.position[axis])) : null,
-                availableThemes: WORLD_THEMES.map((theme) => theme.id) });
-              if (!includeImage) return { text };
-              this.scene.renderer.render(this.scene.scene, this.scene.camera);
-              return { text, image: captureAgentImage(this.scene.renderer.domElement) };
-            }
-          })
-        });
-      }
+      this._installWorldAgents();
       this.botRuntime = maybeStartPeercomputeLocalBotRuntime({
         demoId: 'cubechat',
         bridgeId: 'cubechat',
@@ -1490,8 +1511,17 @@ class CubeChat {
   }
 
   async switchRoom({ name, visibility, roomId, password = '' }) {
+    if (this.isDestroying) throw new Error('CubeChat is closing');
+    if (this.roomSwitchPromise) throw new Error('A room change is already in progress');
     if (!roomId || roomId === this.currentRoom.roomId) return;
+    this.roomSwitchPromise = this._switchRoom({ name, visibility, roomId, password });
+    try { await this.roomSwitchPromise; }
+    finally { this.roomSwitchPromise = null; }
+  }
+
+  async _switchRoom({ name, visibility, roomId, password }) {
     this.setRoomStatus('Switching rooms...');
+    await this._disposeWorldAgents();
     this.stopScreenShare();
     this.clearRemoteState();
     const previousLocalId = this.network.peerId;
@@ -1515,6 +1545,7 @@ class CubeChat {
     this._syncRoomInputs();
     this._updateLinkQueryParams();
     this.botHost?.refreshBots();
+    this._installWorldAgents();
     this.setRoomStatus(`Current room: ${name} (${visibility})`);
   }
 
@@ -1874,21 +1905,24 @@ class CubeChat {
     });
   }
 
-  // Clean up on page unload
+  // Agent execution acknowledges cancellation before manager-owned stores close.
   destroy() {
-    void this.agentLauncher?.dispose().catch((error) => console.warn('Agent cleanup failed', error));
-    this.stopScreenShare();
-    if (this.worldThemeStateUnsubscribe) {
-      try {
+    if (this.destroying) return this.destroying;
+    this.isDestroying = true;
+    this.destroying = (async () => {
+      await this.roomSwitchPromise?.catch(() => {});
+      await this._disposeWorldAgents();
+      this.controller?.clearInput();
+      this.scene?.renderer.setAnimationLoop(null);
+      this.stopScreenShare();
+      if (this.worldThemeStateUnsubscribe) {
         this.worldThemeStateUnsubscribe();
-      } catch (_) {
-        // ignore
+        this.worldThemeStateUnsubscribe = null;
       }
-      this.worldThemeStateUnsubscribe = null;
-    }
-    if (this.network) {
-      this.network.stop();
-    }
+      await this.roomDirectory?.stop();
+      await this.network?.stop();
+    })().catch((error) => { this.destroying = null; throw error; });
+    return this.destroying;
   }
 }
 
@@ -1898,5 +1932,5 @@ app.init();
 
 // Clean up on page unload
 window.addEventListener('beforeunload', () => {
-  app.destroy();
+  void app.destroy().catch((error) => console.warn('CubeChat cleanup incomplete', error));
 });

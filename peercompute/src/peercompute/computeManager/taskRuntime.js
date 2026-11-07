@@ -16,6 +16,9 @@ async function importTaskModule(modulePath) {
   if (modulePath === 'peercompute:diffusion-inference') {
     return import('../inference/diffusion/modelTask.js');
   }
+  if (modulePath === 'peercompute:speech-inference') {
+    return import('../inference/speech/modelTask.js');
+  }
 
   return import(
     /* webpackChunkName: "compute-task" */

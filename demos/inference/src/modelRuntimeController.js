@@ -213,7 +213,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           const status = runtime.service.getStatus();
           const busy = localRequests > 0 || !!status.activeRequestId || status.queuedRequests > 0;
           const local = resident();
-          const models = [...retained.values()].filter((model) => published.has(model.manifestCid) && !deleting.has(model.manifestCid));
+          // The inference-directory protocol supports these tasks only. Speech
+          // packages remain in file storage/sharing without poisoning its schema.
+          const models = [...retained.values()].filter((model) => published.has(model.manifestCid) && !deleting.has(model.manifestCid)
+            && ['text-generation', 'image-text-to-text', 'text-to-image'].includes(model.task));
           if (local) models.sort((left, right) => Number(right.manifestCid === local.manifestCid) - Number(left.manifestCid === local.manifestCid));
           return { sharedModels: sharing ? models.slice(0, PEER_INFERENCE_LIMITS.maximumModels) : [],
             hostedModel: hostInference && !closed ? resident() : null,
@@ -499,7 +502,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           : !(record.pinned || record.retain)
             ? { status: 'unavailable', code: 'model_not_retained', reason: 'This package is not retained for local use. Import it before loading.' }
             : localAvailability(record.manifest),
-        loaded: status.status !== 'idle' && status.manifestCid === record.cid,
+        loaded: (status.status !== 'idle' && status.manifestCid === record.cid)
+          || Object.values(runtime.services ?? {}).some((service) => service.getStatus().status !== 'idle' && service.getStatus().manifestCid === record.cid),
         shared: actual.has(record.cid),
         ...(record.status === 'deleting' || deleting.has(record.cid) ? { cleanupPending: true } : {}),
         ...(sharingErrors.has(record.cid) ? { shareError: sharingErrors.get(record.cid).message } : {}),
@@ -537,6 +541,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
             await releaseModelUse(cid);
             current = null; unloaded = true;
           }
+          activeSignal.throwIfAborted();
+          unloaded = await runtime.unloadAuxiliaryModel?.(cid) || unloaded;
           activeSignal.throwIfAborted();
           const result = await runtime.store.remove(cid, { signal: activeSignal });
           retained.delete(cid); retainedManifests.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);

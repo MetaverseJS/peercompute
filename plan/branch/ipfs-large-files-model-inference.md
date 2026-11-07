@@ -1119,3 +1119,16 @@ journaling across reloads is deferred; original interface-change cause is unknow
 - Keep settings/model-console typing separate from avatar controls and clear
   held input/captures when focus is lost. Validate native desktop/hybrid/mobile
   interaction in a dedicated HTTPS preview without changing public Pages assets.
+
+### November 6 — inhabited conversational agents in both worlds
+
+- Correct the old console-only demo integration. CubeChat agents inhabit cubes;
+  EarthGrid agents inhabit georeferenced bodies. Players select a body and type
+  or speak, receiving text and optional positional managed speech.
+- The user explicitly confirmed other players should see and talk to the agent.
+  Authenticate its owner through encrypted libp2p streams, isolate visitor
+  histories and keep private agent records in StateManager-owned IndexedDB.
+- Keep scene/model/voice lifetimes separate from open windows; await cancellation
+  and cleanup before room replacement. Reuse the existing routing and aggregate
+  resource broker. No automatic microphone capture or speech-model downloads.
+- Detailed boundaries and acceptance: [inhabited-agent plan](../demos/inference/inhabited-agents.md).

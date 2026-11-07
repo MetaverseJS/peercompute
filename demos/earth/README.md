@@ -35,6 +35,42 @@ For each loaded local region the UI exposes the OSM base timestamp, adapter
 fetch time, freshness boundary, cache state, provider mode, and whether a
 verified stale-on-error response is being shown.
 
+## Inhabited agents
+
+EarthGrid uses the same persistent general-agent host as CubeChat. An agent has
+a named, colored body at a longitude/latitude/height position, with a visible
+marker at globe scale and a status/caption label nearby. Selecting its body opens
+the shared conversation interface; focusing an agent brings the camera close to
+it. New agents spawn at the terrain under the center of the view, or at the
+camera's longitude/latitude using resident terrain height (zero if unavailable).
+The globe camera's orbital altitude is never used as the spawn height.
+
+Identity, goals, context and conversation records belong to the private
+PeerCompute agent store. The Earth renderer holds only bounded public body
+descriptors; it neither runs models nor creates a second agent-memory store.
+The shared host owns model selection, typed/spoken conversations, capability
+checks and authenticated peer interactions. Models are loaded explicitly.
+Closing a conversation does not remove its agent. Private records remain scoped
+to the browser origin; separate development ports do not share IndexedDB.
+
+Agent bodies use a dedicated, lazily created Cesium data source. They do not
+change OSM's buffer renderer, source geometry counts, cache quotas, or the
+local-only terrain/road cache networking policy. `__earthDemo.getState().agents`
+reports this separate layer, and `__earthDemo.dispose()` awaits agent cleanup
+before destroying cache managers and the viewer. Page termination can interrupt
+asynchronous cleanup; it does not provide a background-agent hosting guarantee.
+
+Focused renderer checks (no model download or hardware inference):
+
+```bash
+node --test demos/earth/tests/agentLayer.test.mjs
+node --test demos/tests/earth-agent-browser.test.mjs
+```
+
+The browser fixture explicitly uses and verifies SwiftShader software rendering,
+tests globe-scale picking and near-body focus, and contacts no external services.
+Shared host, speech-model and two-peer acceptance are separate integration gates.
+
 ## Development
 
 From the repository root:

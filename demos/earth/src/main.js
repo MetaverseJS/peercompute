@@ -12,8 +12,8 @@ import {
   WEB_MERCATOR_MAX_LATITUDE
 } from '@peercompute/geo-core';
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
-import { installDemoAgentLauncher } from '../../shared/agents/launcher.js';
-import { boundedSceneContext, createDemoAgentActions, captureAgentImage } from '../../shared/agents/DemoAgent.js';
+import { installWorldAgents } from '../../shared/agents/WorldAgentHost.js';
+import { EarthAgentLayer } from './agents/EarthAgentLayer.js';
 
 import { GeodataClient, resolveEarthGeodataBaseUrl } from './api.js';
 import {
@@ -28,7 +28,7 @@ import {
   shortbreadGeometryPresentation,
   SHORTBREAD_GEOMETRY_DETAIL_MINIMUM_ZOOM,
 } from './layers/shortbreadGeometry.js';
-import { TerrainNurbsGeometryLayer } from './layers/terrainGeometry.js';
+import { TerrainNurbsGeometryLayer, terrainHeightSamplerForViewer } from './layers/terrainGeometry.js';
 import {
   formatLocalProvenance,
   LOCAL_REGION_RADII_METERS,
@@ -88,6 +88,10 @@ const geodata = new GeodataClient({ baseUrl: geodataBaseUrl, fetchImpl: sourceFe
 
 const runtime = {
   ready: false,
+  destroying: false,
+  destroyPromise: null,
+  agentHost: null,
+  agentLayer: null,
   fatalError: null,
   sceneRenderError: null,
   lastSceneRenderError: null,
@@ -148,6 +152,7 @@ function publicState() {
     sceneRenderConsecutiveFailures: runtime.sceneRenderConsecutiveFailures,
     sceneRenderRecoveryAttempts: runtime.sceneRenderRecoveryAttempts,
     frameCount: runtime.frameCount,
+    agents: runtime.agentLayer?.getState() ?? { count: 0, dataSourcePresent: false, error: null, bodies: [] },
     sourceCache: sourceCacheSnapshot(),
     terrainSource: runtime.terrainSource,
     terrainStatus: runtime.terrainStatus,
@@ -322,6 +327,8 @@ function initializeSourceCaches() {
 
 window.__earthDemo = {
   getState: publicState,
+  dispose: () => destroy(),
+  get agentHost() { return runtime.agentHost; },
   setLocation: (location) => applyLocation(location, { source: 'api', fly: true }),
   reloadLocalRegion: () => loadLocalRegion(),
   setOsmVisible: (visible) => setOsmVisibility(Boolean(visible)),
@@ -367,6 +374,7 @@ function recordSceneRenderError(sceneOrError, possibleError) {
 }
 
 function updateReady() {
+  if (runtime.destroying) return;
   if (runtime.fatalError) {
     runtime.ready = false;
     document.documentElement.dataset.earthReady = 'false';
@@ -1004,30 +1012,21 @@ async function start() {
     showRenderLoopErrors: false
   });
   runtime.viewer = viewer;
-  const agentActions = createDemoAgentActions([{
-    name: 'resetView', description: '{}; return the local camera to the whole Earth',
-    validate: (args) => args && Object.keys(args).length === 0 && Boolean(runtime.viewer),
-    apply: () => {
-      viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-20, 16, 21_000_000),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 } });
-      viewer.scene.requestRender();
-    }
-  }]);
-  const agentLauncher = installDemoAgentLauncher({ getOptions: () => ({
-    stateManager: runtime.sourceCacheManager || undefined,
-    actions: agentActions,
-    getContext: ({ includeImage = false } = {}) => {
+  runtime.agentLayer = new EarthAgentLayer({ Cesium, viewer,
+    onSelect: (key) => runtime.agentHost?.openConversation(key),
+    sampleHeight: (longitude, latitude) => terrainHeightSamplerForViewer(viewer)?.(longitude, latitude),
+    getWorldContext: () => {
       const camera = viewer.camera.positionCartographic;
-      const text = boundedSceneContext({ demo: 'EarthGrid', terrain: runtime.terrainSource,
+      return { terrain: runtime.terrainSource,
         terrainStatus: runtime.terrainStatus, weather: runtime.weatherStatus,
         camera: { latitude: Number(Cesium.Math.toDegrees(camera.latitude).toFixed(3)),
-          longitude: Number(Cesium.Math.toDegrees(camera.longitude).toFixed(3)), height: Math.round(camera.height) } });
-      if (!includeImage) return { text };
-      viewer.render();
-      return { text, image: captureAgentImage(viewer.scene.canvas) };
+          longitude: Number(Cesium.Math.toDegrees(camera.longitude).toFixed(3)), height: Math.round(camera.height) } };
     }
-  }) });
-  runtime.cleanup.push(() => { agentActions.invalidate(); void agentLauncher.dispose().catch(console.warn); });
+  });
+  runtime.agentHost = installWorldAgents({ worldId: 'earthgrid:global', worldLabel: 'EarthGrid',
+    adapter: runtime.agentLayer,
+    getRuntimeOptions: () => ({ stateManager: runtime.sourceCacheManager || undefined }) });
+  runtime.agentHost.ready.catch((error) => console.warn('Earth agent host unavailable:', error));
   viewer.scene.canvas.setAttribute('role', 'application');
   viewer.scene.canvas.setAttribute('aria-label', 'Interactive real-data Earth with actual water, road, building-wire, and terrain-contour geometry plus optional source weather imagery.');
   viewer.scene.canvas.tabIndex = 0;
@@ -1052,6 +1051,9 @@ async function start() {
 }
 
 function destroy() {
+  if (runtime.destroyPromise) return runtime.destroyPromise;
+  runtime.destroying = true;
+  runtime.ready = false;
   runtime.localGeneration += 1;
   runtime.weatherGeneration += 1;
   runtime.localAbortController?.abort();
@@ -1060,20 +1062,27 @@ function destroy() {
     clearTimeout(runtime.vectorHeightRefreshTimer);
     runtime.vectorHeightRefreshTimer = null;
   }
-  runtime.localRender?.destroy();
-  runtime.weather?.destroy();
-  runtime.osmGeometry?.destroy();
-  runtime.terrainContours?.destroy();
-  void runtime.cachedGeoFetch?.destroy?.();
-  void runtime.sourceCacheManager?.destroy?.();
-  for (const cleanup of runtime.cleanup.splice(0)) cleanup?.();
-  const viewer = runtime.viewer;
-  viewer?.terrainProvider?.wxglobe?.abort?.();
-  if (viewer && !viewer.isDestroyed()) viewer.destroy();
-  runtime.viewer = null;
+  runtime.viewer?.terrainProvider?.wxglobe?.abort?.();
+  runtime.destroyPromise = (async () => {
+    // Keep storage and renderer alive until model/agent cancellation is acknowledged.
+    await runtime.agentHost?.dispose();
+    await runtime.agentLayer?.dispose();
+    runtime.localRender?.destroy();
+    runtime.weather?.destroy();
+    runtime.osmGeometry?.destroy();
+    runtime.terrainContours?.destroy();
+    await runtime.cachedGeoFetch?.destroy?.();
+    await runtime.sourceCacheManager?.destroy?.();
+    for (const cleanup of runtime.cleanup.splice(0)) cleanup?.();
+    const viewer = runtime.viewer;
+    if (viewer && !viewer.isDestroyed()) viewer.destroy();
+    runtime.viewer = null;
+  })().catch((error) => { runtime.destroyPromise = null; throw error; });
+  return runtime.destroyPromise;
 }
 
-window.addEventListener('pagehide', destroy, { once: true });
+// Explicit dispose can be awaited; browser page termination cannot guarantee async completion.
+window.addEventListener('pagehide', () => { void destroy().catch(console.error); }, { once: true });
 
 start().catch((error) => {
   runtime.fatalError = error instanceof Error ? error.message : String(error);

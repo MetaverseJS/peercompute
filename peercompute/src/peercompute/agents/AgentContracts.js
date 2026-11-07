@@ -1,3 +1,5 @@
+import { normalizeAgentEmbodiments } from './WorldAgentContracts.js';
+
 export const AGENT_SCHEMA = 'peercompute.agent.v1';
 export const AGENT_EXPORT_SCHEMA = 'peercompute.agent.export.v1';
 export const AGENT_LIMITS = Object.freeze({ headBytes: 64 * 1024, eventBytes: 128 * 1024,
@@ -48,7 +50,8 @@ export function normalizeAgentInput(input = {}) {
   if (!['local-only', 'network-assisted'].includes(inferenceMode)) throw new TypeError('Invalid agent inference mode');
   return { identity: { name, instructions: text(input.instructions ?? '', 16 * 1024, 'instructions') },
     goals: goals.map((goal) => text(goal, 4096, 'goal').trim()).filter(Boolean),
-    context: { summary: text(input.summary ?? '', 24 * 1024, 'summary') }, policy: { inferenceMode } };
+    context: { summary: text(input.summary ?? '', 24 * 1024, 'summary') }, policy: { inferenceMode },
+    ...(input.embodiments !== undefined ? { embodiments: normalizeAgentEmbodiments(input.embodiments) } : {}) };
 }
 export function normalizeAgentOperation(input) {
   const { value } = boundedAgentJson(input, AGENT_LIMITS.operationBytes, 'operation');
@@ -60,7 +63,7 @@ export function normalizeAgentOperation(input) {
 export function normalizeAgentRecord(input) {
   if (!input || input.schema !== AGENT_SCHEMA || input.agentKind !== 'general') throw new TypeError('Unsupported agent schema or kind');
   const fields = normalizeAgentInput({ name: input.identity?.name, instructions: input.identity?.instructions,
-    goals: input.goals, summary: input.context?.summary, inferenceMode: input.policy?.inferenceMode });
+    goals: input.goals, summary: input.context?.summary, inferenceMode: input.policy?.inferenceMode, embodiments: input.embodiments });
   agentIdentifier(input.agentId, 'ID');
   if (input.authority?.kind !== 'local' || input.authority.epoch !== 0) throw new TypeError('Portable agent authority is not supported');
   agentIdentifier(input.authority.hostId, 'local host ID');

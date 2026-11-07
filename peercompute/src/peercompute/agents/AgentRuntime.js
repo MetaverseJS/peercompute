@@ -57,6 +57,7 @@ export class AgentRuntime {
       if (input.goals !== undefined) updated.goals = copy(input.goals);
       if (input.summary !== undefined) updated.context.summary = input.summary;
       if (input.inferenceMode !== undefined) updated.policy.inferenceMode = input.inferenceMode;
+      if (input.embodiments !== undefined) updated.embodiments = copy(input.embodiments);
       return this.#save(id, head, { head: normalizeAgentRecord(updated), event: { type: 'edited', text: 'Agent settings saved' } }, lockSignal);
     }, { signal });
   }
@@ -150,6 +151,7 @@ export class AgentRuntime {
             policyMode: saved.policy.inferenceMode, authorityEpoch: saved.authority.epoch, route };
           saved = await this.#save(id, saved, { head: { ...saved, status: 'running' }, operation,
             event: { type: 'request', operationId: requestId, task: input.task, text: input.prompt, route,
+              ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
               ...(attachmentId ? { attachmentIds: [attachmentId], inputAttachmentId: attachmentId } : {}) },
             ...(attachmentId ? { attachments: [{ id: attachmentId, ...input.image }] } : {}) }, combined);
           prepared = true; combined.throwIfAborted();
@@ -185,6 +187,7 @@ export class AgentRuntime {
           saved = await this.#save(id, saved, { head: { ...saved, status: 'completed' },
             operation: { ...operation, status: 'completed', route: actualRoute },
             event: { type: 'result', operationId: requestId, task: input.task, text: result.text, route: actualRoute,
+              ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
               finishReason: result.finishReason ?? 'unknown',
               ...(imageId ? { attachmentIds: [imageId], imageAttachmentId: imageId } : {}) },
             ...(imageId ? { attachments: [{ id: imageId, ...result.image }] } : {}) });

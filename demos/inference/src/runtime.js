@@ -52,9 +52,12 @@ export async function checkGgufCapabilities() {
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
-  memoryBudgets, preferenceStorage, probeDeviceCapabilities = collectModelDeviceCapabilities,
+  memoryBudgets, preferenceStorage, residentModelSlots = 1, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
+  if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 3) {
+    throw new Error('Managed model slots must be between one and three');
+  }
   let deviceCapabilities = null, deviceCheck;
   const ownsState = !stateManager;
   const ownsCompute = !computeManager;
@@ -62,7 +65,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     enablePersistence: false, disableNetworkProvider: true, disableBroadcast: true,
   });
   const compute = computeManager ?? new ComputeManager({ requireWorkers: true, enableWorkers: true,
-    enableWebGPU: true, minWorkers: 1, targetWorkers: 1, maxWorkers: 1, autoScaleWorkers: false,
+    enableWebGPU: true, minWorkers: 1, targetWorkers: residentModelSlots, maxWorkers: residentModelSlots, autoScaleWorkers: false,
     workerBootstrapTimeoutMs: 60_000 });
   const existingTransport = networkManager?.getArtifactTransport?.();
   const existingStore = existingTransport?.store ?? state.getArtifactStore(storeName);
@@ -73,6 +76,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   let diffusionService;
   let activeService;
   let agents, agentsStarting, disposingAgents = false;
+  const auxiliaryServices = new Map();
   const networkConnection = createModelNetworkConnection({ store, manager: networkManager,
     async createManager(config) {
       const { NetworkManager } = await import('../../../peercompute/src/peercompute/networkManager/NetworkManager.js');
@@ -84,7 +88,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const cpuBytes = 12 * 1024 ** 3;
   const gpuBytes = 16 * 1024 ** 3;
     service = await compute.createModelInferenceService({ artifactStore: store,
-    resourceBudgets: { cpu: { units: 1, memoryBytes: cpuBytes }, gpu: { units: 1, memoryBytes: gpuBytes } },
+    resourceBudgets: { cpu: { units: residentModelSlots, memoryBytes: cpuBytes }, gpu: { units: residentModelSlots, memoryBytes: gpuBytes } },
     resourceEstimate: modelMemoryEstimate, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
       collectGpuEvidence, generationTimeoutMs: 300_000 });
     ggufService = await createGgufService(ggufRuntimeOptions);
@@ -130,7 +134,27 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return agentsStarting;
     },
     get service() { return activeService; },
-    get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService }; },
+    get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService, ...Object.fromEntries(auxiliaryServices) }; },
+    runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
+    registerAuxiliaryService(id, auxiliary) {
+      if (disposingAgents || !/^[a-z][a-z0-9-]{0,63}$/.test(id) || ['onnx', 'gguf', 'diffusion'].includes(id)
+          || auxiliaryServices.has(id) || !auxiliary?.getStatus || !auxiliary.unloadModel || !auxiliary.dispose) {
+        throw new Error('Invalid or duplicate auxiliary model service');
+      }
+      auxiliaryServices.set(id, auxiliary);
+      return () => {
+        const status = auxiliary.getStatus();
+        if (!['idle', 'closed'].includes(status.status) || status.manifestCid) throw new Error('Unload the auxiliary model before unregistering it');
+        if (auxiliaryServices.get(id) === auxiliary) auxiliaryServices.delete(id);
+      };
+    },
+    async unloadAuxiliaryModel(cid) {
+      let unloaded = false;
+      for (const auxiliary of auxiliaryServices.values()) if (auxiliary.getStatus().manifestCid === cid) {
+        await auxiliary.unloadModel(); unloaded = true;
+      }
+      return unloaded;
+    },
     getDeviceCapabilities: () => deviceCapabilities,
     async checkDeviceCapabilities() {
       deviceCheck ??= Promise.resolve().then(() => probeDeviceCapabilities()).then((value) => {
@@ -259,6 +283,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       disposingAgents = true;
       await agentsStarting?.catch(() => {});
       await agents?.dispose();
+      for (const auxiliary of auxiliaryServices.values()) await auxiliary.dispose();
+      auxiliaryServices.clear();
       await diffusionService.dispose();
       await ggufService.dispose();
       await service.dispose();

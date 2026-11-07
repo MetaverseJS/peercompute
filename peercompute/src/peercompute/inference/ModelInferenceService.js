@@ -192,7 +192,7 @@ export class ModelInferenceService {
   }
 
   generate({ requestId = crypto.randomUUID(), sessionId = this.session?.sessionId,
-    messages, prompt, image, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
+    messages, prompt, image, audio, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
     signal, onProgress, onToken } = {}) {
     if (this.closed || this.session?.status !== 'ready' || sessionId !== this.session.sessionId) {
       return Promise.reject(new Error('Requested model is not ready'));
@@ -202,8 +202,9 @@ export class ModelInferenceService {
     let normalized;
     try {
       validateSessionId(requestId);
+      if (audio != null && !this.runtimeDefinition.acceptsAudio) throw new Error('This runtime does not accept audio input');
       if (this.runtimeDefinition.normalizeGenerationInput) {
-        normalized = this.runtimeDefinition.normalizeGenerationInput({ messages, prompt, image, maxNewTokens,
+        normalized = this.runtimeDefinition.normalizeGenerationInput({ messages, prompt, image, audio, maxNewTokens,
           seed, steps, width, height }, this.session.manifest);
       } else {
         validateImageInput(image);
@@ -228,8 +229,11 @@ export class ModelInferenceService {
     // Copy at most the admitted RGBA budget, then transfer the owned copy to the managed worker.
     const copiedImage = normalized.image ? { width: normalized.image.width, height: normalized.image.height, channels: 4,
       data: new Uint8Array(normalized.image.data) } : undefined;
+    const copiedAudio = normalized.audio ? { samples: new Float32Array(normalized.audio.samples),
+      sampleRate: normalized.audio.sampleRate } : undefined;
     const item = { requestId, session: entry, operation, started: false,
-      data: { ...normalized, command: 'generate', sessionId, requestId, image: copiedImage },
+      data: { ...normalized, command: 'generate', sessionId, requestId, image: copiedImage,
+        ...(copiedAudio ? { audio: copiedAudio } : {}) },
       onProgress: (event) => {
         if (operation.controller.signal.aborted) return;
         try {
@@ -269,7 +273,8 @@ export class ModelInferenceService {
         id: `${item.session.sessionId}-generate-${item.requestId}`,
         module: this.moduleUrl, exportName: 'handleModelTask', data: item.data,
         affinityKey: item.session.affinityKey, requireWorker: true,
-        transferables: item.data.image ? [item.data.image.data.buffer] : [],
+        transferables: [...(item.data.image ? [item.data.image.data.buffer] : []),
+          ...(item.data.audio ? [item.data.audio.samples.buffer] : [])],
         signal: item.operation.controller.signal, onProgress: item.onProgress,
       });
       const completionError = await this.#checkReadinessAsync(item.session, item.operation.controller.signal);

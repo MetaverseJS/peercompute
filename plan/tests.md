@@ -1,5 +1,40 @@
 ## PeerCompute Test Strategy
 
+### Inhabited world agents — November 6, 2026
+
+- `node --test peercompute/tests/unit/agentWorldContracts.test.js
+  peercompute/tests/unit/agentConversation.test.js` checks durable body bindings,
+  private visitor channels, public descriptor bounds, real Noise authentication,
+  scope/replay/deadline and acknowledged cancellation/teardown. Existing
+  agent record/router/runtime suites remain required.
+- `node --test demos/tests/world-agent-host.test.js
+  demos/tests/world-agent-runtime.test.js demos/tests/world-agent-ui.test.js`
+  checks scene ownership, persistence after close/restart, safe directory
+  projection, auxiliary model deletion, pending microphone/voice cancellation,
+  native keyboard/dialog controls and phone wrapping. These use explicitly
+  simulated inference; they do not prove a model or speech works.
+- CubeChat `demos/tests/cubechat-agents.test.js` and existing input tests cover
+  separate body/collision ownership, native picking, controller isolation and
+  room teardown. Earth `demos/earth/tests/agentLayer.test.mjs` and
+  `demos/tests/earth-agent-browser.test.mjs` cover geographic bounds, lazy
+  GIS-separated data source, real Cesium picking and audio poses.
+- Managed speech: `node --test peercompute/tests/unit/speechRuntime.test.js
+  demos/tests/speech-lifecycle.test.js demos/tests/speech-audio.test.js`, followed
+  by `node demos/tests/speech-browser.mjs` and
+  `node demos/tests/speech-audio-browser.mjs`. Hardware requires the verified
+  external speech cache and an owned profile. Require actual WebGPU dispatch,
+  intelligible ASR/TTS, generated PCM, cancellation, source-off restart and zero
+  worker/resource leases after unload; microphone tracks must end.
+- Full acceptance uses owned browsers and external receipts for production
+  scene visuals/SecretWorkshop connection and actual two-browser inference.
+  Never send tests to an unrelated public model host, claim simulated replies
+  as inference, or use a terminal browser/split. Preserve all failures and record
+  the precise tested scope in plan/log.md before the local commit.
+- Existing bot survey adds a later movement gate: per-agent motor isolation,
+  dynamic physics/collision, bounded stale-action rejection, interpolation,
+  low-rate saved positions and geographic-to-local-metre conversion for Earth.
+  Passing the scripted Quake baseline does not qualify a learned controller.
+
 ### Requested9B variants and non-FP16 catalog — 2026-11-03 22:14 AKST
 
 - Check immutable HF commits, sizes, publisher LFS SHA-256, metadata Git blob
