@@ -20,7 +20,11 @@ flowchart TD
   UI --> Intent[Explicit task: text, vision, or Generate image]
   Voice -->|bounded PCM| Router[Shared capability router]
   Router -->|ASR transcript| Intent
-  Intent --> Router
+  Intent --> Target{Chat target}
+  Target -->|Direct model| Router
+  Target -->|Persistent agent| Agent[AgentChatSession → AgentRuntime]
+  Agent --> Memory[StateManager: private identity and history]
+  Agent --> Router
   Router --> Local[ResidentModelRegistry: exact CID and session]
   Router --> Peer[Peer inference: versioned multi-model and audio protocol]
   Local --> CM[ComputeManager workers and shared resource broker]
@@ -117,3 +121,47 @@ final cleanup releases every CPU/GPU lease. The test uses owned profiles and
 separate browsers on one machine, not two physical devices. No27B or diffusion
 hardware rerun is claimed for this change. Exact internal console and world
 previews pass desktop/mobile and SecretWorkshop connection checks.
+
+
+## One conversation surface — November 7
+
+The main Chat target menu includes saved agents alongside Mixed, Local only and
+explicit model choices. The Agents modal manages identity, instructions, goals,
+summary, policy, export/import and deletion. Its Chat button selects that identity
+in the main composer; it neither executes work nor resumes a paused agent. New
+agents use Network assisted/Mixed, while saved policies and import-as-new's
+paused local-only policy are preserved. Resume agent remains explicit.
+
+`agents/agentChatSession.js` adapts the existing controller rather than owning a
+second runtime. Direct model turns retain their transient model histories; agent
+turns always pass through AgentRuntime's identity/context and acknowledged
+request/result checkpoints. Selecting an agent restores bounded private history
+(up to 300 inspected events, 24 visible entries, six image previews), excluding
+world visitor channels. No agent data is merged into a direct model history.
+Switching targets aborts stale reads; failed reads show an error rather than
+substituting another identity. Clear conversation is unavailable for agents
+because clearing a transcript would not erase persistent memory.
+
+The agent identity is fixed for each complete turn. The selector stays locked
+through capture, ASR, agent execution, TTS, cancellation and history refresh.
+VoiceSession receives only local-only or mixed speech policies, with the saved
+agent policy re-read before every ASR/TTS dispatch. Tightening policy during a
+turn blocks subsequent remote stages. Agent cancellation waits for its own
+runtime cleanup; disposing the UI aborts its reads and does not take ownership of
+unrelated agents or shared model workers.
+
+Controlled native browser acceptance covers history/reload/channel isolation,
+image previews, voice policy, failed saves, explicit Resume, cancellation and
+late reads. Separate actual GPU acceptance uses Gemma270M, Moonshine Tiny and
+Supertonic on a private peer, native Talk/Stop, durable agent request/result and
+completed speech playback in the same main composer. It uses two owned browser
+contexts on one machine; model output quality and physical-device networking
+are not established by that check.
+
+
+Unified UI acceptance: agent/store/bridge60 tests, console/voice/unified97 tests
+and world-agent85 tests pass. All three affected production builds and final
+exact internal TLS desktop/mobile/SecretWorkshop checks pass. Native model-load
+focus restoration and post-deletion cleanup were included in the final regressions.
+The earlier external Earth tile-network failure and generic ICC deletion-size
+failure remain in the log; neither was hidden by modifying an acceptance rule.

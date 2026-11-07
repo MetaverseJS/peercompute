@@ -1176,3 +1176,16 @@ journaling across reloads is deferred; original interface-change cause is unknow
 - Preserve16GiB GPU/12GiB CPU admission envelopes, model retention/recovery,
   cancellation and exact-CID provenance. No learned-router or motor-training
   claim. Detailed design: ../demos/inference/multimodal-console.md.
+
+
+### November 7 — unify model and agent conversation UI
+
+User: “there should only be one chat interface as well not one for agents and
+one for models.” Put agent identity selection in the main Chat target menu and
+reuse text, attachments, image intent, Talk and Speak replies. Agents becomes
+management only, with Chat selecting the main conversation. Preserve independent
+direct context, acknowledged private agent memory, explicit Resume/recovery,
+local-only speech and cancellation across the whole turn. New identities use
+Mixed; existing policies remain unchanged. See the multimodal console plan and
+repository log for implementation and acceptance evidence. No public deployment
+or merge is included in this correction.

@@ -18,6 +18,8 @@ import { identify } from '@libp2p/identify';
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const evidence = process.env.MULTIMODAL_EVIDENCE || '/home/cos/.cache/peercompute-multimodal-console-20261107/hardware';
 const speechCache = process.env.SPEECH_CACHE || '/mnt/data2/peercompute-world-speech';
+const agentChat = process.env.MULTIMODAL_AGENT_CHAT === '1';
+const agentsOnly = process.env.MULTIMODAL_AGENTS_ONLY === '1';
 const profiles = [process.env.MULTIMODAL_HOST_PROFILE || '/mnt/data2/peercompute-support-tests/gemma-profile',
   process.env.MULTIMODAL_VISITOR_PROFILE || '/mnt/data2/peercompute-support-tests/smol-vision-profile'];
 const origins = ['https://127.0.0.1:5291', 'https://127.0.0.1:5295'];
@@ -60,7 +62,7 @@ window.start=async({relayAddress,scope,index})=>{
 window.cached=async(repository)=>{for(const record of await runtime.listStoredModels()){const manifest=await runtime.store.getManifest(record.manifestCid);if(manifest.model.repository===repository)return{...record,manifest};}throw new Error('Owned cached model missing: '+repository)};
 window.dial=address=>network.libp2p.dial(multiaddr(address));
 window.fixture=async()=>{const bytes=await(await fetch('/__speech_fixture')).arrayBuffer(),context=new AudioContext();try{const decoded=await context.decodeAudioData(bytes),offline=new OfflineAudioContext(1,Math.ceil(decoded.duration*16000),16000),source=offline.createBufferSource();source.buffer=decoded;source.connect(offline.destination);source.start();return {samples:new Float32Array((await offline.startRendering()).getChannelData(0)),sampleRate:16000};}finally{await context.close()}};
-window.closeFixture=async()=>{await speech?.dispose();await panel?.dispose();await network?.disconnect()};
+window.closeFixture=async()=>{if(window.ownedAgentId)await(await runtime.getAgentController()).remove(ownedAgentId);await speech?.dispose();await panel?.dispose();await network?.disconnect()};
 window.ready=true;
 </script></body></html>`;
 
@@ -132,6 +134,42 @@ try {
   await visitor.waitForFunction(() => playbacks.length > 0 && playbacks.every(item => item.completed) && [...document.querySelectorAll('button')].some(button => button.textContent === 'Talk' && !button.disabled), null, { timeout: 180000 });
   report.nativeVoice = await visitor.evaluate(() => ({ calls, playbacks, text: document.querySelector('[role=log]').textContent }));
   await visitor.screenshot({ path: path.join(evidence, 'peer-voice-desktop.png') }); await save();
+  if (agentChat) {
+    phase = 'native-agent-voice'; console.log('Same composer: persistent agent through peer ASR, reasoning and speech');
+    const name = `Voice guide ${crypto.randomUUID().slice(0, 8)}`;
+    await visitor.getByRole('button', { name: 'Agents', exact: true }).click();
+    const manager = visitor.getByRole('dialog', { name: 'Agents', exact: true });
+    await manager.getByRole('button', { name: 'New agent', exact: true }).click();
+    await manager.getByLabel('Agent name', { exact: true }).fill(name);
+    await manager.getByLabel('Instructions', { exact: true }).fill('Reply in one short sentence. You are a friendly guide.');
+    assert.equal(await manager.getByLabel('Inference policy', { exact: true }).inputValue(), 'network-assisted');
+    await manager.getByRole('button', { name: 'Save agent', exact: true }).click();
+    await manager.getByRole('button', { name: 'Chat', exact: true }).waitFor();
+    await visitor.waitForFunction(name => [...document.querySelectorAll('[aria-label="Chat target"] option')].some(option => option.textContent.includes(name)), name);
+    const id = await visitor.evaluate(async name => { const head=(await(await runtime.getAgentController()).list()).find(head=>head.identity.name===name);window.ownedAgentId=head.agentId;return head.agentId; }, name);
+    await manager.getByRole('button', { name: 'Chat', exact: true }).click();
+    await visitor.getByRole('button', { name: 'Resume agent', exact: true }).click();
+    await visitor.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === 'Talk' && !button.disabled));
+    assert.equal(await visitor.getByLabel('Chat target').inputValue(), `agent:${id}`);
+    assert.equal(await visitor.getByLabel('Agent message', { exact: true }).count(), 0);
+    const beforePlayback = await visitor.evaluate(() => playbacks.length);
+    await visitor.getByRole('button', { name: 'Talk', exact: true }).click();
+    await visitor.getByRole('button', { name: 'Stop recording', exact: true }).waitFor();
+    await visitor.waitForTimeout(6200);
+    await visitor.getByRole('button', { name: 'Stop recording', exact: true }).click();
+    await visitor.waitForFunction(before => playbacks.length > before && playbacks.every(item => item.completed)
+      && [...document.querySelectorAll('button')].some(button => button.textContent === 'Talk' && !button.disabled), beforePlayback, { timeout: 180000 });
+    report.agentVoice = await visitor.evaluate(async id => ({ head: await(await runtime.getAgentController()).get(id),
+      events: await(await runtime.getAgentController()).events(id), playbacks, text: document.querySelector('[role=log]').textContent }), id);
+    assert.equal(report.agentVoice.events.filter(event => event.type === 'request').length, 1);
+    const results = report.agentVoice.events.filter(event => event.type === 'result');
+    assert.equal(results.length, 1); assert.equal(results[0].route.local, false); assert(results[0].text.trim());
+    await visitor.screenshot({ path: path.join(evidence, 'agent-voice-desktop.png') });
+    await visitor.setViewportSize({ width: 390, height: 844 });
+    for (const label of ['Talk', 'Send']) { const box=await visitor.getByRole('button',{name:label,exact:true}).boundingBox();assert(box && box.y+box.height<=844); }
+    await visitor.screenshot({ path: path.join(evidence, 'agent-voice-mobile.png') }); await save();
+  }
+  if (!agentsOnly) {
   phase = 'same-backend-residents'; console.log('Loading cached vision package from the private peer');
   report.smol = await visitor.evaluate(async () => { const records = await runtime.listStoredModels();
     const found=records.find(item=>/SmolVLM.*256|SmolVLM-256/i.test(item.name ?? item.model?.repository ?? ''));if(!found)throw new Error('Cached SmolVLM missing');
@@ -154,6 +192,7 @@ try {
   await host.setViewportSize({ width: 390, height: 844 });
   for (const name of ['Talk', 'Send']) { const box = await host.getByRole('button', { name, exact: true }).boundingBox(); assert(box && box.y + box.height <= 844); }
   await host.screenshot({ path: path.join(evidence, 'resident-models-mobile.png') });
+  }
   report.finalPressure = await host.evaluate(async () => { await speech.dispose();await runtime.unload();return runtime.computeManager.resourceBroker.reportPressure(); });
   assert.equal(report.finalPressure.activeLeaseCount, 0);
   assert.equal(report.external.length, 0); assert.equal(report.pageErrors.length, 0);

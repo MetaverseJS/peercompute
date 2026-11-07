@@ -19,27 +19,17 @@ export function buildAgentConsoleView(container) {
   const workspace = node('section', null, 'pc-agent-workspace');
   const name = node('h3', 'Create or select an agent'); const metadata = node('p', '', 'pc-agent-note');
   const identity = node('p', '', 'pc-agent-note');
+  const instructionsText = node('p', '', 'pc-agent-record-text'), summaryText = node('p', '', 'pc-agent-record-text');
+  const record = node('dl', null, 'pc-agent-record');
+  for (const [title, value] of [['Instructions', instructionsText], ['Goals', identity], ['Saved memory summary', summaryText]]) {
+    const detail = node('dd'); detail.append(value); record.append(node('dt', title), detail);
+  }
   const actions = node('div', null, 'pc-agent-buttons');
-  const edit = button('Edit agent'), pause = button('Pause'), resume = button('Resume'), exportButton = button('Export'), remove = button('Delete agent');
-  actions.append(edit, pause, resume, exportButton, remove);
+  const chat = button('Chat'), edit = button('Edit agent'), pause = button('Pause'), resume = button('Resume'), exportButton = button('Export'), remove = button('Delete agent');
+  actions.append(chat, edit, pause, resume, exportButton, remove);
   const policy = node('p', '', 'pc-agent-policy');
-  const history = node('div', null, 'pc-agent-history'); history.setAttribute('role', 'log'); history.setAttribute('aria-label', 'Saved agent history'); history.setAttribute('aria-live', 'polite');
-  const live = node('div', null, 'pc-agent-live'); live.setAttribute('aria-label', 'Current agent result');
-  const route = node('details', null, 'pc-agent-route'); route.append(node('summary', 'Route trace · baseline'));
-  const routeText = node('pre', 'No task has been routed.'); route.append(routeText);
-  const composer = node('form', null, 'pc-agent-composer');
-  const prompt = input('textarea', 'Agent message', 16000); prompt.rows = 3; prompt.placeholder = 'Give this agent one task…';
-  const output = input('select', 'Agent output'); for (const [value, label] of [['text', 'Text'], ['image', 'Image']]) { const option = node('option', label); option.value = value; output.append(option); }
-  const attach = button('+'); attach.setAttribute('aria-label', 'Attach image to agent task');
-  const imageFile = input('input', 'Agent image file'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true;
-  const attachment = node('div', null, 'pc-agent-attachment'); attachment.hidden = true;
-  const attachmentName = node('span'); const clearImage = button('Remove image'); attachment.append(attachmentName, clearImage);
-  const send = button('Run task'); send.type = 'submit'; const cancel = button('Cancel task');
-  const browse = button('Browse models');
-  const composeTools = node('div', null, 'pc-agent-buttons'); composeTools.append(field('Output', output), attach, imageFile, send, cancel);
-  composer.append(prompt, attachment, composeTools);
-  const note = node('p', 'One requested task at a time. Resume permits new tasks; it does not start one.', 'pc-agent-note');
-  workspace.append(name, metadata, identity, actions, policy, history, live, route, composer, browse, note);
+  const note = node('p', 'Chat opens this agent in the main conversation. Resume allows new messages; it never starts a task.', 'pc-agent-note');
+  workspace.append(name, metadata, actions, policy, record, note);
   main.append(sidebar, workspace);
   const editor = node('form', null, 'pc-agent-editor'); editor.hidden = true;
   const editorHeading = node('h3', 'New agent');
@@ -47,11 +37,11 @@ export function buildAgentConsoleView(container) {
   const instructions = input('textarea', 'Instructions', 16000); instructions.rows = 4;
   const goals = input('textarea', 'Goals', 8000); goals.rows = 3;
   const summary = input('textarea', 'Saved memory summary', 16000); summary.rows = 4;
-  const mode = input('select', 'Inference policy'); for (const [value, label] of [['local-only', 'Local only'], ['network-assisted', 'Allow peer inference']]) { const option = node('option', label); option.value = value; mode.append(option); }
-  const disclosure = node('p', 'Local only uses a ready model on this device. Allow peer inference permits sending your instructions, goals, saved context, task and attached image to the executing peer.', 'pc-agent-policy');
+  const mode = input('select', 'Inference policy'); for (const [value, label] of [['local-only', 'Local only'], ['network-assisted', 'Mixed · local first, then peers']]) { const option = node('option', label); option.value = value; mode.append(option); }
+  const disclosure = node('p', 'Mixed uses a compatible local model first, then an available peer. Your instructions, goals, saved context, messages and attachments may be sent to that peer. Local only keeps execution on this device.', 'pc-agent-policy');
   const save = button('Save agent'); save.type = 'submit'; const cancelEdit = button('Cancel edit');
   const editorActions = node('div', null, 'pc-agent-buttons'); editorActions.append(save, cancelEdit);
   editor.append(editorHeading, field('Name', agentName), field('Instructions', instructions), field('Goals · one per line', goals), field('Saved memory summary', summary), field('Inference policy', mode), disclosure, editorActions);
   body.append(main, editor); element.append(header, status, body); container.append(element);
-  return { element, close, status, body, main, create, restore, restoreFile, list, workspace, name, metadata, identity, edit, pause, resume, exportButton, remove, policy, history, live, routeText, composer, prompt, output, attach, imageFile, attachment, attachmentName, clearImage, send, cancel, browse, editor, editorHeading, agentName, instructions, goals, summary, mode, save, cancelEdit };
+  return { element, close, status, body, main, create, restore, restoreFile, list, workspace, name, metadata, identity, instructionsText, summaryText, chat, edit, pause, resume, exportButton, remove, policy, editor, editorHeading, agentName, instructions, goals, summary, mode, save, cancelEdit };
 }

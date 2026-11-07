@@ -13,18 +13,22 @@ implemented. The general-agent foundation below is the first software layer.
 reproducible PDF builder live beside the document.
 
 The model console includes a model browser and wider Hugging Face discovery.
-The **Agents** button opens the first persistent general-agent layer. Create an
-agent with a name, instructions, goals and saved context, then Resume and give it
-a task. Identity and conversation history are private IndexedDB records owned by
+The **Agents** button manages persistent general agents. Create an agent with a
+name, instructions, goals and saved context, then choose **Chat** and **Resume
+agent**. Agents and direct models use the same main transcript, Message, Send,
+Talk, Speak replies and Generate image controls. Select an agent or model mode
+in **Chat target**. Identity and conversation history are private IndexedDB records owned by
 StateManager. Text, attached-image and image-generation tasks use already loaded
 models through the existing ComputeManager and peer inference services.
-Local only is the default; Network assisted explicitly permits sending selected
-context to an executing peer. The route trace names the model and provider.
+New agents default to Network assisted (Mixed), preferring a capable local model
+and using peers otherwise. Existing Local only policies stay unchanged and
+apply to speech recognition and synthesis too. The route trace names the model
+and provider. Selection never starts work or resumes a paused agent.
 In chat and agent tasks, attaching a new image starts fresh visual conversation
 context. Earlier messages stay visible/stored; text follow-ups use the latest
 successful image exchange. System instructions and explicit agent memory remain.
 
-This first slice uses a transparent baseline (compatible, idle, then local),
+This first slice uses a transparent capability and local-first baseline,
 not a trained model-quality selector. It does not start autonomous loops or load
 models automatically. Pause/Cancel waits for task cleanup; reload never replays
 an interrupted request. Export is a text/history backup with image omission

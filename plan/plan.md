@@ -14,6 +14,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 unified conversation correction: agents and direct models share the
+main transcript/composer, voice, attachment and explicit image-generation
+controls. Chat target chooses the persistent identity or direct model policy;
+Agents manages identities only. Saved agent history remains isolated from direct
+chat and world visitor channels. Explicit Resume, durable checkpoints, local-only
+speech, cancellation and reload recovery remain required. New agents use Mixed;
+existing locality policies are preserved. See the multimodal console plan below.
+
 November7 multimodal console is implemented after user-confirmed model recovery:
 concurrent managed model residents, shared capability routing with Mixed
 local-first/peer fallback as the default, explicit image generation and reusable

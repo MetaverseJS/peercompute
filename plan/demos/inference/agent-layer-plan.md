@@ -4,6 +4,14 @@ Date: November 5, 2026. Status: first persistent-agent foundation implemented;
 learned routing, host provisioning and mobility remain planned. Current scope:
 one general-purpose agent type.
 
+November7 correction: the dedicated demo has one conversation interface for
+agents and direct models. The Agents modal manages identities; **Chat** selects
+an agent in the main Chat target control. Text, image and voice turns share the
+main composer while AgentRuntime continues to own private durable identity and
+history. New agents default to Network assisted/Mixed; saved Local only policies
+remain unchanged and govern every speech stage. Selection does not resume or
+execute an agent. See [unified console contracts](multimodal-console.md).
+
 November6 correction: CubeChat and EarthGrid agents must inhabit visible bodies
 and converse with players through text and voice. This integration brings managed
 speech forward; see [inhabited-agent architecture](inhabited-agents.md). Shared
@@ -89,17 +97,17 @@ The shown connections apply only to network-assisted operation.
 | --- | --- |
 | `demos/inference/src/modelRuntimeController.js` | `listModelSources`, `listInferenceTargets`, `refreshPeers`, `generate`, `acquireModel` and `loadStoredModel`; add shared agent-facing adapters rather than another importer |
 | `networkManager/inference/PeerInferenceService.js` | Existing private inference, host discovery, cancellation and pre-commit fallback; add separate agent/host-control protocols |
-| `networkManager/inference/protocol.js` | Currently accepts text generation, image-to-text and text-to-image; negotiate new versions/capabilities for other tasks |
+| `networkManager/inference/protocol.js` | v3 carries text, vision, image generation and bounded ASR/TTS audio; v2 text/vision/image peers remain compatible |
 | `stateManager/StateManager.js` | Own a private agent-record repository through an additive composition seam; do not redesign current public state APIs |
 | `inference/ModelInferenceService.js` and ComputeManager | Own GPU execution, workers, cancellation and admission; add a trusted scorer task; speech/mesh adapters are outside AGENT-01 |
 | ArtifactStore | Verified weights and explicit artifacts/checkpoints; private context is not automatically shared or announced |
 
 Source paths in the table after the first row are relative to
 `peercompute/src/peercompute/`. One NetworkManager owns one inference service;
-many agents multiplex that service. The standalone console currently configures
-one worker and one CPU/GPU admission unit. Sharing one loaded model across agents
-is practical; simultaneous model residency is not assumed. A small router must
-not evict the answering model or bypass ComputeManager resource accounting.
+many agents multiplex that service. The console now supports multiple resident
+models through independent managed workers under aggregate resource admission.
+Sharing a loaded model across agents remains supported. A small router must not
+evict the answering model or bypass ComputeManager resource accounting.
 
 The existing console disables ordinary StateManager Yjs persistence/networking;
 its conversations are transient. Model files already have separate persistence.

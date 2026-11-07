@@ -13,7 +13,7 @@ before(async () => {
   cacheDir = await mkdtemp(path.join(tmpdir(), 'peercompute-agent-console-vite-'));
   server = await createServer({ configFile: false, root: repo, logLevel: 'error', cacheDir, optimizeDeps: { entries: ['demos/inference/src/agents/agentConsole.js'] },
     server: { host: '127.0.0.1', port: 0, hmr: false }, plugins: [{ name: 'agent-console-fixture', configureServer(vite) {
-      vite.middlewares.use('/__agent_fixture', (_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent fixture</title><button id="launch">Agents</button><main id="root"></main>'); });
+      vite.middlewares.use('/__agent_fixture', (_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent fixture</title><button id="launch">Agents</button><main id="root"></main><textarea id="main-prompt" aria-label="Main message"></textarea>'); });
     } }] });
   await server.listen(); origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/opt/google/chrome/chrome', headless: true, args: ['--disable-gpu'] });
@@ -42,21 +42,21 @@ async function fixture(t, options = {}) {
     const make = (id, input = {}) => ({ schema: 'peercompute.agent.v1', agentId: id, agentKind: 'general', identity: { name: input.name || 'Ada', instructions: input.instructions || 'Be concise' },
       goals: input.goals || ['Help with ideas'], context: { summary: input.summary || 'Saved private context' }, policy: { inferenceMode: input.inferenceMode || 'local-only' },
       authority: { kind: 'local', hostId: 'local-installation', epoch: 0 }, revision: 1, status: 'paused', updatedAt: 1770000000000, createdAt: 1770000000000, pendingOperation: null });
-    state.records = options.empty ? [] : [{ ...make('agent-1'), status: options.paused ? 'paused' : 'waiting', ...(options.unsaved ? { activity: { status: 'paused', unsaved: true } } : {}) }];
+    state.records = options.empty ? [] : [{ ...make('agent-1'), status: options.paused ? 'paused' : 'waiting', ...(options.unsaved ? { activity: { status: 'paused', unsaved: true } } : {}), ...(options.busy ? { activity: {status:'running'} } : {}) }];
     state.history = options.history || [{ type: 'request', text: '<script>not executed</script>', operationId: 'old' }, { type: 'result', text: 'Saved reply', operationId: 'old', route: { kind: 'local', modelId: 'fixture', manifestCid: 'bafy-fixture' } }];
     const emit = (type, agentId = 'agent-1', extra = {}) => { for (const listener of listeners) listener({ type, agentId, ...extra }); };
     const change = (id, values) => { const record = state.records.find((item) => item.agentId === id); Object.assign(record, values, { revision: record.revision + 1 }); emit('changed', id); return clone(record); };
     const controller = {
       async list() { if (state.failList) throw new Error('Agent database unavailable'); return clone(state.records); },
       async get(id) { return clone(state.records.find((item) => item.agentId === id)); },
-      async events(_id, { after, limit } = {}) { return clone(state.history.filter((event) => after === undefined || event.sequence > after).slice(0, limit)); },
-      async create(input) { calls.push({ type: 'create', input }); if (state.failSave) throw new Error('Storage quota exceeded'); const record = make(`new-${++count}`, input); state.records.push(record); emit('changed', record.agentId); return clone(record); },
-      async update(id, input, meta) { calls.push({ type: 'update', id, input, meta }); if (state.failSave) throw new Error('Storage quota exceeded'); const prior = state.records.find((item) => item.agentId === id); return change(id, { ...make(id, input), revision: prior.revision }); },
+      async events(_id, { after, limit } = {}) { calls.push({type:'events'}); return clone(state.history.filter((event) => after === undefined || event.sequence > after).slice(0, limit)); },
+      async create(input) { calls.push({ type: 'create', input }); if (state.failSave) throw new Error('Storage quota exceeded'); if(state.holdSave) await new Promise(resolve=>{window.releaseSave=resolve}); const record = make(`new-${++count}`, input); state.records.push(record); emit('changed', record.agentId); return clone(record); },
+      async update(id, input, meta) { calls.push({ type: 'update', id, input, meta }); if (state.failSave) throw new Error('Storage quota exceeded'); const prior = state.records.find((item) => item.agentId === id); if(state.failAfterSave) state.failList=true; return change(id, { ...make(id, input), revision: prior.revision }); },
       async remove(id) { calls.push({ type: 'remove', id }); state.records = state.records.filter((item) => item.agentId !== id); emit('removed', id); },
       async export(id) { calls.push({ type: 'export', id }); return { schema: 'test-backup', record: await this.get(id) }; },
       async importAsNew(bundle) { calls.push({ type: 'restore', bundle }); const record = make('restored-new', { name: bundle.record.identity.name }); state.records.push(record); return clone(record); },
       async resume(id) { calls.push({ type: 'resume', id }); return change(id, { status: 'waiting', activity: null }); },
-      async pause(id) { calls.push({ type: 'pause', id }); await this.cancel(id); return change(id, { status: 'paused' }); },
+      async pause(id) { calls.push({ type: 'pause', id }); if(state.pauseBarrier) await new Promise(resolve=>{window.releaseCleanup=resolve}); if(state.cleanupFailure) throw Error('Worker termination failed'); await this.cancel(id); return change(id, { status: 'paused' }); },
       run(id, options) {
         calls.push({ type: 'run', id, task: options.task, prompt: options.prompt, image: options.image ? { width: options.image.width, height: options.image.height } : null });
         const promise = (async () => {
@@ -81,7 +81,7 @@ async function fixture(t, options = {}) {
       subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); calls.push({ type: 'unsubscribe' }); }; },
     };
     window.controller = controller; window.emit = emit;
-    window.consoleUI = createAgentConsole({ container: document.querySelector('#root'), controller, onBrowseModels: () => calls.push({ type: 'browse' }) });
+    window.consoleUI = createAgentConsole({ container: document.querySelector('#root'), controller, onChat: async id => { calls.push({type:'chat',id}); if(state.holdChat) await new Promise(resolve=>{window.releaseChat=resolve}); if(state.failChat) throw Error('Selected agent no longer exists'); requestAnimationFrame(()=>document.querySelector('#main-prompt').focus()); } });
     document.querySelector('#launch').addEventListener('click', () => { void consoleUI.open(); });
   }, options);
   await page.locator('#launch').click();
@@ -92,29 +92,29 @@ async function fixture(t, options = {}) {
 const button = (page, name) => page.getByRole('button', { name, exact: true });
 const calls = (page, type) => page.evaluate((type) => window.calls.filter((call) => call.type === type), type);
 
-test('create persists a single general agent, defaults local, starts paused and never auto-runs', async (t) => {
+test('create defaults Mixed, persists paused identity and never runs or fetches conversation history', async (t) => {
   const page = await fixture(t, { empty: true });
   await button(page, 'New agent').click();
-  assert.equal(await page.getByLabel('Inference policy', { exact: true }).inputValue(), 'local-only');
+  assert.equal(await page.getByLabel('Inference policy', { exact: true }).inputValue(), 'network-assisted');
   await page.getByLabel('Agent name', { exact: true }).fill('Helper');
   await page.getByLabel('Goals', { exact: true }).fill('First goal\n\nSecond goal');
   await page.getByLabel('Saved memory summary', { exact: true }).fill('Remember my project');
   await button(page, 'Save agent').click(); await page.getByRole('heading', { name: 'Helper' }).waitFor();
   assert.deepEqual((await calls(page, 'create'))[0].input.goals, ['First goal', 'Second goal']);
-  await page.getByLabel('Agent message', { exact: true }).fill('Hello');
-  assert.equal(await button(page, 'Run task').isDisabled(), true);
-  await button(page, 'Resume').click(); await page.waitForFunction(() => window.state.records[0].status === 'waiting');
-  assert.deepEqual(await calls(page, 'run'), []);
-  await page.getByLabel('Agent message', { exact: true }).press('Enter');
-  await page.getByLabel('Current agent result').getByText('A useful answer').waitFor();
-  assert.equal((await calls(page, 'run')).length, 1);
+  assert.equal((await calls(page, 'create'))[0].input.inferenceMode, 'network-assisted');
+  assert.equal(await page.evaluate(() => state.records[0].status), 'paused');
+  assert.equal(await button(page, 'Chat').isEnabled(), true);
+  assert.equal(await page.getByLabel('Agent message', {exact:true}).count(), 0);
+  assert.equal(await button(page, 'Run task').count(), 0);
+  assert.equal(await page.locator('.pc-agent-history,.pc-agent-live,.pc-agent-route').count(), 0);
+  assert.deepEqual(await calls(page, 'run'), []); assert.deepEqual(await calls(page, 'events'), []);
 });
 
 test('failed save keeps draft visible and only acknowledged records replace identity', async (t) => {
   const page = await fixture(t); await button(page, 'Edit agent').click();
   await page.getByLabel('Agent name', { exact: true }).fill('New name');
   await page.getByLabel('Inference policy', { exact: true }).selectOption('network-assisted');
-  assert.match(await page.locator('.pc-agent-editor .pc-agent-policy').textContent(), /executing peer/);
+  assert.match(await page.locator('.pc-agent-editor .pc-agent-policy').textContent(), /messages and attachments may be sent to that peer/);
   await page.evaluate(() => { state.failSave = true; }); await button(page, 'Save agent').click();
   await page.getByRole('status').getByText('Storage quota exceeded').waitFor();
   assert.equal(await page.getByLabel('Agent name', { exact: true }).inputValue(), 'New name');
@@ -122,68 +122,79 @@ test('failed save keeps draft visible and only acknowledged records replace iden
   await page.evaluate(() => { state.failSave = false; }); await button(page, 'Save agent').click();
   await page.getByRole('heading', { name: 'New name' }).waitFor();
   assert.equal((await calls(page, 'update'))[1].meta.expectedRevision, 1);
-  assert.match(await page.locator('.pc-agent-workspace>.pc-agent-policy').textContent(), /Peer inference allowed/);
+  assert.match(await page.locator('.pc-agent-workspace>.pc-agent-policy').textContent(), /Mixed · local first, then peers/);
 });
 
-test('history is safe text, route is explicit baseline and closing/reopening never executes', async (t) => {
+test('identity details are safe text; existing local policy and saved memory remain unchanged', async (t) => {
   const page = await fixture(t);
-  assert.match(await page.getByRole('log', { name: 'Saved agent history' }).textContent(), /<script>not executed<\/script>/);
-  assert.equal(await page.locator('.pc-agent-history script').count(), 0);
-  await page.locator('.pc-agent-route summary').click();
-  assert.match(await page.locator('.pc-agent-route pre').textContent(), /Baseline routing[\s\S]*bafy-fixture/);
-  await button(page, 'Done').click(); assert.equal(await page.locator('#launch').evaluate((el) => el === document.activeElement), true);
+  await page.evaluate(() => { state.records[0].identity.instructions='<script>not executed</script>'; emit('changed'); });
+  await page.locator('.pc-agent-record').getByText('<script>not executed</script>', {exact:true}).waitFor();
+  assert.equal(await page.locator('.pc-agent-record script').count(), 0);
+  assert.match(await page.locator('.pc-agent-record').textContent(), /Saved private context/);
+  assert.match(await page.locator('.pc-agent-workspace>.pc-agent-policy').textContent(), /Local only/);
+  await button(page, 'Edit agent').click();
+  assert.equal(await page.getByLabel('Inference policy', {exact:true}).inputValue(), 'local-only');
+  await button(page, 'Cancel edit').click();
+  await button(page, 'Done').click(); assert.equal(await page.locator('#launch').evaluate(el=>el===document.activeElement), true);
   await page.locator('#launch').click();
-  assert.deepEqual(await calls(page, 'run'), []);
-  await button(page, 'Browse models').click(); assert.equal((await calls(page, 'browse')).length, 1);
+  assert.deepEqual(await calls(page,'events'), []); assert.deepEqual(await calls(page,'run'), []);
 });
 
-test('Shift+Enter stays multiline; attached image selects vision and image output remains explicit', async (t) => {
-  const page = await fixture(t); const prompt = page.getByLabel('Agent message', { exact: true });
-  await prompt.fill('First'); await prompt.press('Shift+Enter'); await prompt.type('Second');
-  assert.equal(await prompt.inputValue(), 'First\nSecond'); assert.deepEqual(await calls(page, 'run'), []);
-  const encoded = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; canvas.getContext('2d').fillRect(0, 0, 1, 1); return canvas.toDataURL('image/png').split(',')[1]; });
-  const png = Buffer.from(encoded, 'base64');
-  await page.getByLabel('Agent image file', { exact: true }).setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png });
-  await page.getByText('Image attached for a vision task.', { exact: true }).waitFor();
-  await button(page, 'Run task').click(); await page.getByLabel('Current agent result').getByText('A useful answer').waitFor();
-  assert.equal((await calls(page, 'run'))[0].task, 'image-text-to-text');
-  assert.deepEqual((await calls(page, 'run'))[0].image, { width: 1, height: 1 });
-  await page.getByLabel('Agent output', { exact: true }).selectOption('image'); await prompt.fill('A white square');
-  await button(page, 'Run task').click(); await page.getByAltText('Generated image: A white square').waitFor();
-  assert.equal((await calls(page, 'run'))[1].task, 'text-to-image');
-  assert.match(await page.getByRole('log', { name: 'Saved agent history' }).textContent(), /Image attachment recorded/);
+test('Chat selects a paused agent once, waits for handoff and leaves focus to main chat', async (t) => {
+  const page = await fixture(t, {paused:true,holdChat:true});
+  await button(page, 'Chat').click();
+  await page.waitForFunction(()=>typeof releaseChat==='function');
+  assert.equal(await page.getByRole('dialog',{name:'Agents',exact:true}).isVisible(), true);
+  assert.equal(await button(page, 'Chat').isDisabled(), true);
+  await button(page, 'Chat').evaluate(el=>el.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+  assert.equal((await calls(page,'chat')).length,1);
+  await page.evaluate(()=>releaseChat());
+  await page.getByRole('dialog',{name:'Agents',exact:true}).waitFor({state:'hidden'});
+  await page.waitForFunction(()=>document.activeElement===document.querySelector('#main-prompt'));
+  assert.deepEqual(await calls(page,'chat'),[{type:'chat',id:'agent-1'}]);
+  assert.deepEqual(await calls(page,'resume'),[]); assert.deepEqual(await calls(page,'run'),[]);
 });
 
-test('cancellation stays busy until controller cleanup settles; failure is not labelled success', async (t) => {
-  const page = await fixture(t, { holdTask: true, cleanupBarrier: true });
-  await page.getByLabel('Agent message', { exact: true }).fill('Long task'); await button(page, 'Run task').click();
-  await button(page, 'Cancel task').click();
-  await page.waitForFunction(() => typeof window.releaseCleanup === 'function');
-  assert.equal(await button(page, 'Cancelling…').isDisabled(), true);
-  assert.equal(await button(page, 'Run task').isDisabled(), true);
-  await page.evaluate(() => { state.cleanupFailure = true; releaseCleanup(); });
-  await page.getByRole('status').getByText('Cleanup incomplete: Worker termination failed', { exact: true }).waitFor();
-  assert.notEqual(await page.getByRole('status').textContent(), 'Task cancelled.');
+test('failed Chat leaves management open and permits an explicit retry', async (t) => {
+  const page = await fixture(t, {failChat:true});
+  await button(page,'Chat').click();
+  await page.getByRole('status').getByText('Could not open chat: Selected agent no longer exists',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('dialog',{name:'Agents',exact:true}).isVisible(), true);
+  await page.evaluate(()=>{state.failChat=false}); await button(page,'Chat').click();
+  await page.getByRole('dialog',{name:'Agents',exact:true}).waitFor({state:'hidden'});
+  assert.equal((await calls(page,'chat')).length,2); assert.deepEqual(await calls(page,'run'),[]);
 });
 
-test('Pause awaits the task, Resume does not replay, and paused Enter cannot dispatch', async (t) => {
-  const page = await fixture(t, { holdTask: true, cleanupBarrier: true });
-  await page.getByLabel('Agent message', { exact: true }).fill('Keep working'); await button(page, 'Run task').click();
-  await button(page, 'Pause').click(); await page.waitForFunction(() => typeof releaseCleanup === 'function');
-  assert.equal(await button(page, 'Run task').isDisabled(), true);
-  await page.evaluate(() => releaseCleanup()); await page.waitForFunction(() => state.records[0].status === 'paused');
-  await page.getByLabel('Agent message', { exact: true }).press('Enter'); assert.equal((await calls(page, 'run')).length, 1);
-  await button(page, 'Resume').click(); await page.waitForFunction(() => state.records[0].status === 'waiting');
-  assert.equal((await calls(page, 'run')).length, 1);
+test('open selectedId synchronizes identity without execution and falls back after deletion', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(async()=>{const second=structuredClone(state.records[0]);second.agentId='agent-2';second.identity.name='Second';state.records.push(second);await consoleUI.open({selectedId:'agent-2'})});
+  await page.getByRole('heading',{name:'Second',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-agent-id="agent-2"]').getAttribute('aria-current'),'true');
+  await button(page,'Delete agent').click(); await page.getByRole('heading',{name:'Ada',exact:true}).waitFor();
+  assert.equal((await calls(page,'remove'))[0].id,'agent-2'); assert.deepEqual(await calls(page,'run'),[]);
 });
 
-test('unsaved outcome blocks new dispatch and exposes Resume for reconciliation', async (t) => {
-  const page = await fixture(t, { unsaved: true });
-  await page.getByLabel('Agent message', { exact: true }).fill('No replay');
-  assert.equal(await button(page, 'Run task').isDisabled(), true);
-  await page.getByLabel('Agent message', { exact: true }).press('Enter'); assert.deepEqual(await calls(page, 'run'), []);
-  await button(page, 'Resume').click(); await page.waitForFunction(() => state.records[0].activity === null);
-  assert.deepEqual(await calls(page, 'run'), []);
+test('Pause awaits external task cleanup and failed cleanup remains visible', async (t) => {
+  const page=await fixture(t,{busy:true,pauseBarrier:true});
+  assert.equal(await button(page,'Edit agent').isDisabled(),true);
+  assert.equal(await button(page,'Chat').isDisabled(),true);
+  await button(page,'Pause').click();await page.waitForFunction(()=>typeof releaseCleanup==='function');
+  assert.equal(await button(page,'Resume').isDisabled(),true);
+  await page.evaluate(()=>{state.cleanupFailure=true;releaseCleanup()});
+  await page.getByRole('status').getByText('Cleanup incomplete: Worker termination failed',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>state.records[0].status),'waiting');
+  await page.evaluate(()=>{state.cleanupFailure=false;state.pauseBarrier=false;state.records[0].activity=null;emit('changed')});
+  await button(page,'Pause').click(); await page.waitForFunction(()=>state.records[0].status==='paused');
+  await button(page,'Resume').click();await page.waitForFunction(()=>state.records[0].status==='waiting');
+  assert.deepEqual(await calls(page,'run'),[]);
+});
+
+test('unsaved outcome exposes reconciliation without replay and Chat remains selection only', async (t) => {
+  const page=await fixture(t,{unsaved:true});
+  assert.match(await page.locator('.pc-agent-workspace').textContent(),/Unsaved outcome/);
+  assert.equal(await button(page,'Chat').isEnabled(),true);
+  await button(page,'Resume').click();await page.waitForFunction(()=>state.records[0].activity===null);
+  assert.deepEqual(await calls(page,'run'),[]);
 });
 
 test('restore calls importAsNew, delete affects only the chosen identity, export is an owned JSON download', async (t) => {
@@ -206,23 +217,35 @@ test('read failures are visible, refresh events do not overwrite an unsaved edit
   await page.getByRole('status').getByText('Could not read saved agents: Agent database unavailable', { exact: true }).waitFor();
 });
 
-test('all bounded history pages are available, including results beyond the first 100 events', async (t) => {
-  const history = Array.from({ length: 205 }, (_, index) => ({ sequence: index + 1, type: 'result', text: `Saved event ${index + 1}` }));
-  const page = await fixture(t, { history });
-  await page.getByText('Saved event 205', { exact: true }).waitFor();
-  assert.equal(await page.locator('.pc-agent-history article').count(), 205);
+test('a failed read after acknowledged save is not overwritten by a success label', async (t) => {
+  const page=await fixture(t);await button(page,'Edit agent').click();
+  await page.getByLabel('Agent name',{exact:true}).fill('Saved but unreadable');
+  await page.evaluate(()=>{state.failAfterSave=true});await button(page,'Save agent').click();
+  await page.getByRole('status').getByText('Could not read saved agents: Agent database unavailable',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>state.records[0].identity.name),'Saved but unreadable');
+  assert.equal(await page.getByRole('status').getAttribute('data-error'),'true');
 });
 
-test('disposal shares one cleanup promise, aborts its task and waits before removing the UI', async (t) => {
-  const page = await fixture(t, { holdTask: true, cleanupBarrier: true });
-  await page.getByLabel('Agent message', { exact: true }).fill('Active task'); await button(page, 'Run task').click();
-  await page.evaluate(() => { window.disposedSettled = false; window.firstDispose = consoleUI.dispose(); window.sameDisposal = firstDispose === consoleUI.dispose(); firstDispose.then(() => { disposedSettled = true; }); });
-  await page.waitForFunction(() => typeof releaseCleanup === 'function');
-  assert.equal(await page.evaluate(() => sameDisposal && !disposedSettled), true);
-  assert.equal(await page.locator('.pc-agent-console').count(), 1);
-  await page.evaluate(async () => { releaseCleanup(); await firstDispose; });
-  assert.equal(await page.locator('.pc-agent-console').count(), 0);
-  assert.equal((await calls(page, 'unsubscribe')).length, 1);
+test('manager disposal leaves caller-owned active conversation and controller untouched', async (t) => {
+  const page=await fixture(t,{busy:true});
+  await page.evaluate(async()=>{window.firstDispose=consoleUI.dispose();window.sameDisposal=firstDispose===consoleUI.dispose();await firstDispose});
+  assert.equal(await page.evaluate(()=>sameDisposal),true);
+  assert.equal(await page.locator('.pc-agent-console').count(),0);
+  assert.equal((await calls(page,'unsubscribe')).length,1);
+  assert.deepEqual(await calls(page,'cancel'),[]);assert.deepEqual(await calls(page,'run'),[]);
+  assert.equal(await page.evaluate(()=>state.records[0].activity.status),'running');
+});
+
+test('dispose waits for its own save without cancelling the shared controller', async (t) => {
+  const page=await fixture(t,{empty:true,holdSave:true});
+  await button(page,'New agent').click();await page.getByLabel('Agent name',{exact:true}).fill('Durable save');await button(page,'Save agent').click();
+  await page.waitForFunction(()=>typeof releaseSave==='function');
+  await page.evaluate(()=>{window.disposedSettled=false;window.disposing=consoleUI.dispose().then(()=>{disposedSettled=true})});
+  assert.equal(await page.evaluate(()=>disposedSettled),false);
+  await page.evaluate(async()=>{releaseSave();await disposing});
+  assert.equal(await page.locator('.pc-agent-console').count(),0);
+  assert.equal(await page.evaluate(()=>state.records[0].identity.name),'Durable save');
+  assert.deepEqual(await calls(page,'cancel'),[]);
 });
 
 test('responsive native dialog traps focus and disposal unsubscribes without owning the controller', async (t) => {
@@ -246,7 +269,7 @@ test('responsive native dialog traps focus and disposal unsubscribes without own
   assert.equal(await page.locator('.pc-agent-console').count(), 0);
 });
 
-test('native IndexedDB and real AgentRuntime persist the UI-created identity, route and task across reload', async (t) => {
+test('native IndexedDB preserves managed identities and existing conversation history across reload', async (t) => {
   const page = await browser.newPage(); page.setDefaultTimeout(8000);
   const errors = [], external = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -267,24 +290,28 @@ test('native IndexedDB and real AgentRuntime persist the UI-created identity, ro
       listCandidates: async () => [{ key: 'local', available: true, local: true, manifestCid: 'bafy-native-fixture', runtime: 'test', task: 'text-generation', modalities: ['text'], outputModalities: ['text'] }],
       generate: async (candidate, input) => { nativeCalls.push({ candidate, input }); return { text: 'Native persistence answer', finishReason: 'stop' }; },
     } });
-    window.consoleUI = createAgentConsole({ container: document.querySelector('#root'), controller: nativeController }); await consoleUI.open();
+    window.consoleUI = createAgentConsole({ container: document.querySelector('#root'), controller: nativeController, onChat: id=>{window.selectedNativeAgent=id} }); await consoleUI.open();
   });
   await page.goto(origin + '/__agent_fixture'); await mount();
   await button(page, 'New agent').click(); await page.getByLabel('Agent name', { exact: true }).fill('Durable helper');
   await page.getByLabel('Saved memory summary', { exact: true }).fill('Remember the green project'); await button(page, 'Save agent').click();
   await page.getByRole('heading', { name: 'Durable helper' }).waitFor(); await button(page, 'Resume').click();
   await page.waitForFunction(async () => (await nativeController.list())[0].status === 'waiting');
-  await page.getByLabel('Agent message', { exact: true }).fill('Recall our project'); await button(page, 'Run task').click();
-  await page.getByLabel('Current agent result').getByText('Native persistence answer', { exact: true }).waitFor();
-  assert.equal(await page.evaluate(() => nativeCalls.length), 1);
-  assert.match(await page.evaluate(() => nativeCalls[0].input.messages[0].content), /Remember the green project/);
+  await button(page,'Chat').click();
+  await page.getByRole('dialog',{name:'Agents',exact:true}).waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>nativeCalls.length),0);
+  // The caller-owned main chat supplies execution; the manager never calls run.
+  await page.evaluate(()=>nativeController.run(selectedNativeAgent,{task:'text-generation',prompt:'Recall our project'}));
+  assert.equal(await page.evaluate(()=>nativeCalls.length),1);
+  assert.match(await page.evaluate(()=>nativeCalls[0].input.messages[0].content),/Remember the green project/);
   const id = await page.evaluate(async () => (await nativeController.list())[0].agentId);
   await page.evaluate(async () => { await consoleUI.dispose(); await nativeController.dispose(); await nativeStore.destroy(); });
   await page.reload(); await mount();
   await page.getByRole('heading', { name: 'Durable helper' }).waitFor();
-  await page.getByRole('log', { name: 'Saved agent history' }).getByText('Native persistence answer', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('log').count(),0);
+  assert.match(await page.evaluate(async()=>JSON.stringify(await nativeController.events((await nativeController.list())[0].agentId))),/Native persistence answer/);
   assert.equal(await page.evaluate(async () => (await nativeController.list())[0].agentId), id);
   assert.equal(await page.evaluate(() => nativeCalls.length), 0);
-  assert.match(await page.locator('.pc-agent-route pre').textContent(), /bafy-native-fixture/);
+  assert.match(await page.locator('.pc-agent-record').textContent(),/Remember the green project/);
   assert.equal(page.workers().length, 0);
 });

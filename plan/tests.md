@@ -1,5 +1,29 @@
 ## PeerCompute Test Strategy
 
+### Unified model and agent chat — November 7, 2026
+
+- `npm run test:agent-layer` includes the management-only Agents modal and
+  AgentChatSession bridge, alongside durable store/runtime/router checks.
+- `npm run test:inference:ui` includes native unified-chat tests using actual
+  IndexedDB, Web Locks, AgentRuntime and VoiceSession with controlled inference
+  and audio. Assert one composer, explicit Resume, direct/agent isolation,
+  private versus world history, bounded images and stale-read rejection,
+  local-only ASR/TTS, policy changes, durable-save failure and cancellation.
+  Hold final list reads to prove turn ownership, and initial list reads to prove
+  panel disposal cannot hang. Controlled outputs do not qualify GPU execution.
+- Optional actual hardware: `MULTIMODAL_AGENT_CHAT=1
+  MULTIMODAL_AGENTS_ONLY=1 node demos/tests/multimodal-console-browser.mjs`.
+  Requires the owned preseeded acceptance profiles; blocks external downloads.
+  Check native management Chat → Resume → main Talk/Stop, real peer ASR,
+  AgentRuntime reasoning, persisted private request/result and completed TTS.
+  The flag skips the separately qualified fourth vision resident. Default full
+  multimodal acceptance still covers four residents and vision routing.
+- Build inference, CubeChat and Earth to external output directories. Check exact
+  internal HTTPS links, native desktop/mobile controls and SecretWorkshop Noise
+  connection. Preserve public Pages artifacts, user browser data and unrelated
+  running previews; close owned test processes.
+
+
 ### Inhabited world agents — November 6, 2026
 
 - `node --test peercompute/tests/unit/agentWorldContracts.test.js

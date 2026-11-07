@@ -1336,6 +1336,8 @@ test('Stored Models loads speech as an additional capability without dispatching
   await openMenuAction(page, 'Stored Models');
   await modal.getByRole('button', { name: 'Delete Supertonic', exact: true }).click();
   await page.waitForFunction(() => !uiState.stored.some((model) => model.manifestCid === 'saved-voice'));
+  // The storage mutation precedes acknowledged UI cleanup and library refresh.
+  await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).and(page.locator(':enabled')).waitFor();
   assert.equal(await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).isEnabled(), true);
 });
 

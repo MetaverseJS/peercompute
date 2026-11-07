@@ -170,6 +170,7 @@ export function createPanelView(container) {
   const target = node('select'); target.setAttribute('aria-label', 'Chat target');
   const attach = button('+', 'Attach image'); attach.title = 'Attach an image';
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
+  const resumeAgent = button('Resume agent'); resumeAgent.hidden = true; panel.append(resumeAgent);
   const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
   talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, talk, send, cancel); panel.append(composer);
@@ -181,7 +182,7 @@ export function createPanelView(container) {
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
-    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, modeStatus };
+    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, modeStatus, resumeAgent };
 }
 
 export function renderModelCompatibilityHelp(view, help) {
